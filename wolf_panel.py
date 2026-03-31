@@ -592,7 +592,7 @@ def tab_screener():
     section_title("Market Scanner — 4-Layer Regime Scoring")
 
     # ── Controls ──────────────────────────────────────────────────────────────
-    col1, col2, col3 = st.columns([1, 1, 0.6])
+    col1, col2, col3, col4 = st.columns([1, 1, 1, 0.6])
 
     with col1:
         market_opt = st.selectbox(
@@ -610,6 +610,15 @@ def tab_screener():
         )
 
     with col3:
+        screener_preset = st.selectbox(
+            "PRESET",
+            ["Auto-detect", "Universal", "Oil Sector", "Gold Miners",
+             "OXY", "XOM", "GOLD", "NEM", "GLD"],
+            key="screener_preset",
+            help="Select parameter preset or Auto-detect based on ticker",
+        )
+
+    with col4:
         st.markdown("<br>", unsafe_allow_html=True)
         run_btn = st.button("⚡ SCAN", key="screener_run", use_container_width=True)
 
@@ -671,10 +680,14 @@ def tab_screener():
         st.markdown("<br>", unsafe_allow_html=True)
 
         # ── Build display table ───────────────────────────────────────────────
-        display_cols = [
-            "Ticker", "Name", "Total Score", "Market(30)", "Sector(30)",
-            "Stock(50)", "Ichi(15)", "EMA Stack", "Entry Signal", "RSI", "Close",
-        ]
+        _adx_cols = ["ADX"] if "ADX" in df_results.columns else []
+        _preset_cols = ["Preset"] if "Preset" in df_results.columns else []
+        display_cols = (
+            ["Ticker", "Name"] + _preset_cols +
+            ["Total Score", "Market(30)", "Sector(30)",
+             "Stock(50)", "Ichi(15)", "EMA Stack", "Entry Signal", "RSI"]
+            + _adx_cols + ["Close"]
+        )
         df_display = df_results[display_cols].copy()
 
         # Style rows by score and entry signal
@@ -731,8 +744,10 @@ def tab_screener():
                 "Ichi(15)":     st.column_config.NumberColumn("ICHI(15)", format="%d"),
                 "EMA Stack":    st.column_config.TextColumn("EMA STACK"),
                 "Entry Signal": st.column_config.TextColumn("ENTRY"),
-                "RSI":          st.column_config.NumberColumn("RSI",   format="%.1f"),
-                "Close":        st.column_config.NumberColumn("CLOSE", format="%.2f"),
+                "RSI":          st.column_config.NumberColumn("RSI",    format="%.1f"),
+                "ADX":          st.column_config.NumberColumn("ADX",    format="%.1f"),
+                "Preset":       st.column_config.TextColumn("PRESET"),
+                "Close":        st.column_config.NumberColumn("CLOSE",  format="%.2f"),
             },
         )
 
@@ -827,27 +842,49 @@ def tab_backtest():
             st.warning("Please enter a ticker symbol.")
             return
 
-        # ── V2 optimised parameters ─────────────────────────────────────
+        # ── v2.2 preset parameters ─────────────────────────────────────
+        _PRESET_PARAMS_BT = {
+            "OXY":         {"atr_mult":2.8, "adx_thresh":27, "tp1_r":3.0,  "tp1_pct":0.20, "tp2_r":5.5,  "tp2_pct":0.25, "core_pct":0.70},
+            "XOM":         {"atr_mult":2.7, "adx_thresh":27, "tp1_r":3.5,  "tp1_pct":0.10, "tp2_r":5.5,  "tp2_pct":0.10, "core_pct":0.70},
+            "GOLD":        {"atr_mult":1.5, "adx_thresh":16, "tp1_r":1.75, "tp1_pct":0.20, "tp2_r":5.75, "tp2_pct":0.05, "core_pct":0.50},
+            "NEM":         {"atr_mult":3.1, "adx_thresh":17, "tp1_r":3.0,  "tp1_pct":0.05, "tp2_r":4.25, "tp2_pct":0.25, "core_pct":0.60},
+            "GLD":         {"atr_mult":2.6, "adx_thresh":7,  "tp1_r":1.75, "tp1_pct":0.10, "tp2_r":5.0,  "tp2_pct":0.20, "core_pct":0.60},
+            "Oil Sector":  {"atr_mult":2.8, "adx_thresh":27, "tp1_r":3.2,  "tp1_pct":0.15, "tp2_r":5.5,  "tp2_pct":0.18, "core_pct":0.70},
+            "Gold Miners": {"atr_mult":2.3, "adx_thresh":16, "tp1_r":2.4,  "tp1_pct":0.12, "tp2_r":5.0,  "tp2_pct":0.15, "core_pct":0.55},
+            "Universal":   {"atr_mult":2.5, "adx_thresh":19, "tp1_r":2.6,  "tp1_pct":0.13, "tp2_r":5.2,  "tp2_pct":0.17, "core_pct":0.62},
+        }
+        _oil_bt  = {"XOM","CVX","COP","EOG","DVN","FANG","OXY","MPC","VLO","PSX","CTRA","APA","EQT","XLE","EQNR.OL","AKRBP.OL","VAR.OL"}
+        _gold_bt = {"NEM","GOLD","FNV","WPM","RGLD","AGI","KGC","EQX","CDE","HL","PAAS","GDX","GDXJ","SIL","MAG","AG","GLD","SLV","BOL.ST","LUND-B.ST","NHY.OL"}
+        if bt_preset == "Auto-detect":
+            if ticker_input in _PRESET_PARAMS_BT:    _bt_pkey = ticker_input
+            elif ticker_input in _oil_bt:             _bt_pkey = "Oil Sector"
+            elif ticker_input in _gold_bt:            _bt_pkey = "Gold Miners"
+            else:                                     _bt_pkey = "Universal"
+        else:
+            _bt_pkey = bt_preset
+        _bt_p = _PRESET_PARAMS_BT.get(_bt_pkey, _PRESET_PARAMS_BT["Universal"])
         V2_CONFIG = {
-            "atr_mult":        2.5,    # stop-loss ATR multiplier
-            "tp1_r":           2.5,    # TP1 in R
-            "tp1_pct":         0.15,   # 15% of position at TP1
-            "tp2_r":           4.0,    # TP2 in R
-            "tp2_pct":         0.15,   # 15% of position at TP2
-            "daily_breaker":  -0.08,   # -8% daily loss breaker (blocks new entries only)
-            "core_exit_bars":   3,     # bars below EMA50 to trigger core exit
-            "trail_exit":      "kijun_ema10",  # TRIM exit: Kijun + EMA10 trail
+            "atr_mult":        _bt_p["atr_mult"],
+            "adx_threshold":   _bt_p["adx_thresh"],
+            "tp1_r":           _bt_p["tp1_r"],
+            "tp1_pct":         _bt_p["tp1_pct"],
+            "tp2_r":           _bt_p["tp2_r"],
+            "tp2_pct":         _bt_p["tp2_pct"],
+            "daily_breaker":  -0.08,
+            "core_exit_bars":   3,
+            "trail_exit":      "kijun_ema10",
         }
 
         _backtest_module = None
         try:
             import wolf_shadow_backtest as _bt_mod
-            # Override CONFIG values with v2 parameters
+            # Override CONFIG values with v2.2 preset parameters
             if hasattr(_bt_mod, "CONFIG"):
                 _bt_mod.CONFIG["atr_mult"]       = V2_CONFIG["atr_mult"]
-                _bt_mod.CONFIG["tp1_r"]          = V2_CONFIG["tp1_r"]
+                _bt_mod.CONFIG["adx_threshold"]  = V2_CONFIG["adx_threshold"]
+                _bt_mod.CONFIG["tp1_rr"]         = V2_CONFIG["tp1_r"]
                 _bt_mod.CONFIG["tp1_pct"]        = V2_CONFIG["tp1_pct"]
-                _bt_mod.CONFIG["tp2_r"]          = V2_CONFIG["tp2_r"]
+                _bt_mod.CONFIG["tp2_rr"]         = V2_CONFIG["tp2_r"]
                 _bt_mod.CONFIG["tp2_pct"]        = V2_CONFIG["tp2_pct"]
                 _bt_mod.CONFIG["daily_breaker"]  = V2_CONFIG["daily_breaker"]
                 _bt_mod.CONFIG["core_exit_bars"] = V2_CONFIG["core_exit_bars"]
@@ -1318,6 +1355,19 @@ def tab_regime():
                     ], axis=1).max(axis=1)
                     return tr.ewm(com=period - 1, adjust=False).mean()
 
+                def _adx(df, period=14):
+                    high, low, close = df["High"], df["Low"], df["Close"]
+                    plus_dm  = high.diff()
+                    minus_dm = -low.diff()
+                    plus_dm  = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0.0)
+                    minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0.0)
+                    tr = pd.concat([high-low, (high-close.shift(1)).abs(), (low-close.shift(1)).abs()], axis=1).max(axis=1)
+                    atr_v    = tr.ewm(span=period, adjust=False).mean()
+                    plus_di  = 100 * (plus_dm.ewm(span=period, adjust=False).mean() / atr_v)
+                    minus_di = 100 * (minus_dm.ewm(span=period, adjust=False).mean() / atr_v)
+                    dx = (plus_di - minus_di).abs() / (plus_di + minus_di) * 100
+                    return dx.ewm(span=period, adjust=False).mean()
+
                 def _ichimoku(df):
                     """Returns (tenkan, kijun, span_a, span_b, chikou)."""
                     hi9  = df["High"].rolling(9).max()
@@ -1386,9 +1436,11 @@ def tab_regime():
                     atr_s = _atr(stk_df)
                     tenkan, kijun, span_a, span_b, chikou = _ichimoku(stk_df)
 
+                    adx_s    = _adx(stk_df)
                     last     = c.iloc[-1]
                     rsi_val  = float(rsi_s.iloc[-1])
                     atr_val  = float(atr_s.iloc[-1])
+                    adx_val  = float(adx_s.iloc[-1]) if not pd.isna(adx_s.iloc[-1]) else 0.0
                     e10_last = float(e10.iloc[-1])
                     e21_last = float(e21.iloc[-1])
                     e50_last = float(e50.iloc[-1])
@@ -1435,6 +1487,7 @@ def tab_regime():
                         "close":       float(last),
                         "rsi":         rsi_val,
                         "atr":         atr_val,
+                        "adx":         round(adx_val, 1),
                         "ema_stack":   ema_stack,
                         "ema_trend":   ema_trend,
                         "has_entry":   has_entry,
@@ -1467,6 +1520,7 @@ def tab_regime():
                 tp1         = stk_result["tp1_2R"]     if stk_result else 0
                 tp2         = stk_result["tp2_3R"]     if stk_result else 0
                 atr_val     = stk_result["atr"]        if stk_result else 0
+                adx_val_reg = stk_result["adx"]        if stk_result else 0
 
                 st.session_state.regime_data = {
                     "mkt_score":   mkt_score,
@@ -1476,6 +1530,7 @@ def tab_regime():
                     "total":       total,
                     "close":       close_price,
                     "rsi":         rsi_val,
+                    "adx":         adx_val_reg,
                     "ema_stack":   ema_stack,
                     "ema_trend":   ema_trend,
                     "has_entry":   has_entry,
@@ -1617,13 +1672,17 @@ def tab_regime():
     # ── Live price info ───────────────────────────────────────────────────────
     section_title(f"Live Levels — {watch_ticker}")
 
-    p1, p2, p3, p4, p5 = st.columns(5)
+    p1, p2, p3, p4, p5, p6 = st.columns(6)
     p1.metric("CLOSE PRICE",  f"{data['close']:.2f}")
     p2.metric("RSI (14)",     f"{data['rsi']:.1f}",
               delta="Overbought" if data['rsi'] > 70 else ("Oversold" if data['rsi'] < 30 else "Neutral"))
-    p3.metric("ATR (14)",     f"{data['atr']:.2f}")
-    p4.metric("ENTRY ZONE",   f"{data['entry_zone']:.2f}")
-    p5.metric("STOP LOSS",    f"{data['sl_level']:.2f}")
+    _adx_disp = data.get("adx", 0)
+    _adx_thresh_disp = 19  # Universal default
+    p3.metric("ADX (14)",     f"{_adx_disp:.1f}",
+              delta="Trending" if _adx_disp >= _adx_thresh_disp else "Weak trend")
+    p4.metric("ATR (14)",     f"{data['atr']:.2f}")
+    p5.metric("ENTRY ZONE",   f"{data['entry_zone']:.2f}")
+    p6.metric("STOP LOSS",    f"{data['sl_level']:.2f}")
 
     t1, t2 = st.columns(2)
     t1.metric("TP1 (2R)",     f"{data['tp1']:.2f}",

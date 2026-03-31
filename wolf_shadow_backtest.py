@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-WOLF x SHADOW BACKTESTER v1.0
+WOLF x SHADOW BACKTESTER v2.2
 ==============================
 Full backtesting engine mirroring the Pine Script strategy.
 Core/Trim position management, 4-layer regime scoring,
@@ -71,10 +71,40 @@ CONFIG = {
     "add_min_score": 50,
     # Cooldown
     "cooldown_bars": 4,
+    # ADX filter
+    "adx_threshold": 19,    # default Universal preset
     # Commission & slippage
     "commission": 0.0005,
     "slippage": 0.001,
 }
+
+
+# =============================================================================
+# PRESET PARAMETERS (v2.2 — mirrors screener PRESET_PARAMS)
+# =============================================================================
+PRESET_PARAMS = {
+    "OXY":         {"ema_pulse":6,  "ema_fast":23, "ema_slow":40,  "tenkan":7,  "kijun":24, "spanb":65, "atr_mult":2.8, "adx_thresh":27, "tp1_rr":3.0, "tp1_pct":0.20, "tp2_rr":5.5, "tp2_pct":0.25, "core_pct":0.70, "min_regime":53},
+    "XOM":         {"ema_pulse":13, "ema_fast":23, "ema_slow":39,  "tenkan":8,  "kijun":39, "spanb":48, "atr_mult":2.7, "adx_thresh":27, "tp1_rr":3.5, "tp1_pct":0.10, "tp2_rr":5.5, "tp2_pct":0.10, "core_pct":0.70, "min_regime":60},
+    "GOLD":        {"ema_pulse":5,  "ema_fast":18, "ema_slow":71,  "tenkan":15, "kijun":36, "spanb":67, "atr_mult":1.5, "adx_thresh":16, "tp1_rr":1.75,"tp1_pct":0.20, "tp2_rr":5.75,"tp2_pct":0.05, "core_pct":0.50, "min_regime":49},
+    "NEM":         {"ema_pulse":11, "ema_fast":13, "ema_slow":99,  "tenkan":9,  "kijun":33, "spanb":41, "atr_mult":3.1, "adx_thresh":17, "tp1_rr":3.0, "tp1_pct":0.05, "tp2_rr":4.25,"tp2_pct":0.25, "core_pct":0.60, "min_regime":44},
+    "GLD":         {"ema_pulse":7,  "ema_fast":28, "ema_slow":37,  "tenkan":13, "kijun":22, "spanb":59, "atr_mult":2.6, "adx_thresh":7,  "tp1_rr":1.75,"tp1_pct":0.10, "tp2_rr":5.0, "tp2_pct":0.20, "core_pct":0.60, "min_regime":50},
+    "Oil Sector":  {"ema_pulse":10, "ema_fast":23, "ema_slow":40,  "tenkan":8,  "kijun":32, "spanb":56, "atr_mult":2.8, "adx_thresh":27, "tp1_rr":3.2, "tp1_pct":0.15, "tp2_rr":5.5, "tp2_pct":0.18, "core_pct":0.70, "min_regime":56},
+    "Gold Miners": {"ema_pulse":8,  "ema_fast":16, "ema_slow":85,  "tenkan":12, "kijun":34, "spanb":54, "atr_mult":2.3, "adx_thresh":16, "tp1_rr":2.4, "tp1_pct":0.12, "tp2_rr":5.0, "tp2_pct":0.15, "core_pct":0.55, "min_regime":46},
+    "Universal":   {"ema_pulse":8,  "ema_fast":21, "ema_slow":57,  "tenkan":10, "kijun":31, "spanb":56, "atr_mult":2.5, "adx_thresh":19, "tp1_rr":2.6, "tp1_pct":0.13, "tp2_rr":5.2, "tp2_pct":0.17, "core_pct":0.62, "min_regime":51},
+}
+
+
+def get_preset_for_ticker(ticker):
+    """Auto-detect which preset to use based on ticker symbol."""
+    oil_tickers = {"XOM","CVX","COP","EOG","DVN","FANG","OXY","MPC","VLO","PSX","CTRA","APA","EQT","XLE","EQNR.OL","AKRBP.OL","VAR.OL"}
+    gold_tickers = {"NEM","GOLD","FNV","WPM","RGLD","AGI","KGC","EQX","CDE","HL","PAAS","GDX","GDXJ","SIL","MAG","AG","GLD","SLV","BOL.ST","LUND-B.ST","NHY.OL"}
+    if ticker in PRESET_PARAMS:
+        return PRESET_PARAMS[ticker]
+    if ticker in oil_tickers:
+        return PRESET_PARAMS["Oil Sector"]
+    if ticker in gold_tickers:
+        return PRESET_PARAMS["Gold Miners"]
+    return PRESET_PARAMS["Universal"]
 
 
 # =============================================================================
@@ -95,6 +125,18 @@ def calc_atr(h, l, c, p=14):
     tr = pd.concat([h-l, (h-c.shift(1)).abs(), (l-c.shift(1)).abs()], axis=1).max(axis=1)
     return tr.ewm(span=p, adjust=False).mean()
 
+def calc_adx(high, low, close, period=14):
+    plus_dm = high.diff()
+    minus_dm = -low.diff()
+    plus_dm = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0.0)
+    minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0.0)
+    tr = pd.concat([high-low, (high-close.shift(1)).abs(), (low-close.shift(1)).abs()], axis=1).max(axis=1)
+    atr_val = tr.ewm(span=period, adjust=False).mean()
+    plus_di = 100 * (plus_dm.ewm(span=period, adjust=False).mean() / atr_val)
+    minus_di = 100 * (minus_dm.ewm(span=period, adjust=False).mean() / atr_val)
+    dx = (plus_di - minus_di).abs() / (plus_di + minus_di) * 100
+    return dx.ewm(span=period, adjust=False).mean()
+
 def donchian(h, l, p):
     return (h.rolling(p).max() + l.rolling(p).min()) / 2
 
@@ -108,9 +150,10 @@ def add_indicators(df, cfg=CONFIG):
     d["ema50"] = calc_ema(c, cfg["ema_slow"])
     d["ema200"] = calc_ema(c, cfg["ema_macro"])
 
-    # RSI & ATR
+    # RSI, ATR & ADX
     d["rsi"] = calc_rsi(c, cfg["rsi_len"])
     d["atr"] = calc_atr(h, l, c, cfg["atr_len"])
+    d["adx"] = calc_adx(h, l, c, 14)
     d["vol_ma"] = v.rolling(20).mean()
 
     # Ichimoku
@@ -352,6 +395,7 @@ class Backtester:
             # Entry conditions
             entry_signal = (row["ema_trend"] and
                            regime >= cfg["entry_min_score"] and
+                           row["adx"] >= cfg["adx_threshold"] and
                            (row["bull_ob"] or row["ema_cross_up"] or
                             row["ema_reclaim"] or row["mom_up"]))
 
@@ -776,7 +820,7 @@ def run_backtest(tickers, sector_etf="XLE", years=3, do_walk_forward=False):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="WOLF x SHADOW Backtester")
+    parser = argparse.ArgumentParser(description="WOLF x SHADOW Backtester v2.2")
     parser.add_argument("--ticker", nargs="+", default=["SPY"],
                         help="Ticker(s) to backtest (default: SPY)")
     parser.add_argument("--sector", type=str, default="XLE",
@@ -785,7 +829,45 @@ def main():
                         help="Years of data (default: 3)")
     parser.add_argument("--walk-forward", action="store_true",
                         help="Run walk-forward analysis")
+    parser.add_argument("--preset", type=str, default=None,
+                        help="Preset name to use: OXY, XOM, GOLD, NEM, GLD, 'Oil Sector', 'Gold Miners', Universal, or 'auto' for auto-detect (default: auto)")
     args = parser.parse_args()
+
+    # Apply preset params to CONFIG
+    if args.preset and args.preset.lower() != "auto":
+        preset_key = args.preset
+        if preset_key not in PRESET_PARAMS:
+            print(f"  Unknown preset '{preset_key}'. Available: {list(PRESET_PARAMS.keys())}")
+        else:
+            p = PRESET_PARAMS[preset_key]
+            CONFIG["ema_pulse"]      = p["ema_pulse"]
+            CONFIG["ema_fast"]       = p["ema_fast"]
+            CONFIG["ema_slow"]       = p["ema_slow"]
+            CONFIG["atr_mult"]       = p["atr_mult"]
+            CONFIG["adx_threshold"]  = p["adx_thresh"]
+            CONFIG["tp1_rr"]         = p["tp1_rr"]
+            CONFIG["tp1_pct"]        = p["tp1_pct"]
+            CONFIG["tp2_rr"]         = p["tp2_rr"]
+            CONFIG["tp2_pct"]        = p["tp2_pct"]
+            CONFIG["core_pct"]       = p["core_pct"]
+            CONFIG["entry_min_score"]= p["min_regime"]
+            print(f"  Using preset: {preset_key} (ADX threshold: {p['adx_thresh']})")
+    elif len(args.ticker) == 1:
+        # Auto-detect preset from ticker
+        ticker = args.ticker[0]
+        p = get_preset_for_ticker(ticker)
+        CONFIG["ema_pulse"]      = p["ema_pulse"]
+        CONFIG["ema_fast"]       = p["ema_fast"]
+        CONFIG["ema_slow"]       = p["ema_slow"]
+        CONFIG["atr_mult"]       = p["atr_mult"]
+        CONFIG["adx_threshold"]  = p["adx_thresh"]
+        CONFIG["tp1_rr"]         = p["tp1_rr"]
+        CONFIG["tp1_pct"]        = p["tp1_pct"]
+        CONFIG["tp2_rr"]         = p["tp2_rr"]
+        CONFIG["tp2_pct"]        = p["tp2_pct"]
+        CONFIG["core_pct"]       = p["core_pct"]
+        CONFIG["entry_min_score"]= p["min_regime"]
+        print(f"  Auto-detected preset for {ticker} (ADX threshold: {p['adx_thresh']})")
 
     run_backtest(args.ticker, args.sector, args.years, args.walk_forward)
 

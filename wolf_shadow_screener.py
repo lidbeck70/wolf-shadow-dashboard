@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-WOLF x SHADOW SCREENER v1.0
+WOLF x SHADOW SCREENER v2.2
 ============================
 Scans Commodity stocks, S&P 500, Stockholm (OMXSTO), and Oslo (OBX)
 using the same 4-layer regime scoring as the Pine Script strategy.
@@ -117,6 +117,34 @@ MARKETS = {
     "oslo": OSLO_TICKERS,
 }
 
+# =============================================================================
+# PRESET PARAMETERS (v2.2 — ADX filter + per-instrument tuning)
+# =============================================================================
+PRESET_PARAMS = {
+    "OXY":         {"ema_pulse":6,  "ema_fast":23, "ema_slow":40,  "tenkan":7,  "kijun":24, "spanb":65, "atr_mult":2.8, "adx_thresh":27, "tp1_rr":3.0, "tp1_pct":0.20, "tp2_rr":5.5, "tp2_pct":0.25, "core_pct":0.70, "min_regime":53},
+    "XOM":         {"ema_pulse":13, "ema_fast":23, "ema_slow":39,  "tenkan":8,  "kijun":39, "spanb":48, "atr_mult":2.7, "adx_thresh":27, "tp1_rr":3.5, "tp1_pct":0.10, "tp2_rr":5.5, "tp2_pct":0.10, "core_pct":0.70, "min_regime":60},
+    "GOLD":        {"ema_pulse":5,  "ema_fast":18, "ema_slow":71,  "tenkan":15, "kijun":36, "spanb":67, "atr_mult":1.5, "adx_thresh":16, "tp1_rr":1.75,"tp1_pct":0.20, "tp2_rr":5.75,"tp2_pct":0.05, "core_pct":0.50, "min_regime":49},
+    "NEM":         {"ema_pulse":11, "ema_fast":13, "ema_slow":99,  "tenkan":9,  "kijun":33, "spanb":41, "atr_mult":3.1, "adx_thresh":17, "tp1_rr":3.0, "tp1_pct":0.05, "tp2_rr":4.25,"tp2_pct":0.25, "core_pct":0.60, "min_regime":44},
+    "GLD":         {"ema_pulse":7,  "ema_fast":28, "ema_slow":37,  "tenkan":13, "kijun":22, "spanb":59, "atr_mult":2.6, "adx_thresh":7,  "tp1_rr":1.75,"tp1_pct":0.10, "tp2_rr":5.0, "tp2_pct":0.20, "core_pct":0.60, "min_regime":50},
+    "Oil Sector":  {"ema_pulse":10, "ema_fast":23, "ema_slow":40,  "tenkan":8,  "kijun":32, "spanb":56, "atr_mult":2.8, "adx_thresh":27, "tp1_rr":3.2, "tp1_pct":0.15, "tp2_rr":5.5, "tp2_pct":0.18, "core_pct":0.70, "min_regime":56},
+    "Gold Miners": {"ema_pulse":8,  "ema_fast":16, "ema_slow":85,  "tenkan":12, "kijun":34, "spanb":54, "atr_mult":2.3, "adx_thresh":16, "tp1_rr":2.4, "tp1_pct":0.12, "tp2_rr":5.0, "tp2_pct":0.15, "core_pct":0.55, "min_regime":46},
+    "Universal":   {"ema_pulse":8,  "ema_fast":21, "ema_slow":57,  "tenkan":10, "kijun":31, "spanb":56, "atr_mult":2.5, "adx_thresh":19, "tp1_rr":2.6, "tp1_pct":0.13, "tp2_rr":5.2, "tp2_pct":0.17, "core_pct":0.62, "min_regime":51},
+}
+
+
+def get_preset_for_ticker(ticker):
+    """Auto-detect which preset to use based on ticker symbol."""
+    oil_tickers = {"XOM","CVX","COP","EOG","DVN","FANG","OXY","MPC","VLO","PSX","CTRA","APA","EQT","XLE","EQNR.OL","AKRBP.OL","VAR.OL"}
+    gold_tickers = {"NEM","GOLD","FNV","WPM","RGLD","AGI","KGC","EQX","CDE","HL","PAAS","GDX","GDXJ","SIL","MAG","AG","GLD","SLV","BOL.ST","LUND-B.ST","NHY.OL"}
+    if ticker in PRESET_PARAMS:
+        return PRESET_PARAMS[ticker]
+    if ticker in oil_tickers:
+        return PRESET_PARAMS["Oil Sector"]
+    if ticker in gold_tickers:
+        return PRESET_PARAMS["Gold Miners"]
+    return PRESET_PARAMS["Universal"]
+
+
 # Sector ETF mapping (for regime scoring)
 SECTOR_MAP = {
     "Energy": "XLE", "Materials": "XLB", "Financials": "XLF",
@@ -151,6 +179,19 @@ def calc_atr(high, low, close, period=14):
     tr3 = (low - close.shift(1)).abs()
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     return tr.ewm(span=period, adjust=False).mean()
+
+
+def calc_adx(high, low, close, period=14):
+    plus_dm = high.diff()
+    minus_dm = -low.diff()
+    plus_dm = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0.0)
+    minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0.0)
+    tr = pd.concat([high-low, (high-close.shift(1)).abs(), (low-close.shift(1)).abs()], axis=1).max(axis=1)
+    atr_val = tr.ewm(span=period, adjust=False).mean()
+    plus_di = 100 * (plus_dm.ewm(span=period, adjust=False).mean() / atr_val)
+    minus_di = 100 * (minus_dm.ewm(span=period, adjust=False).mean() / atr_val)
+    dx = (plus_di - minus_di).abs() / (plus_di + minus_di) * 100
+    return dx.ewm(span=period, adjust=False).mean()
 
 
 def calc_ichimoku(high, low, close, conv=9, base=26, span_b=52, displacement=26):
@@ -192,6 +233,9 @@ def score_stock(df):
     # ATR
     atr = calc_atr(high, low, close, 14)
 
+    # ADX
+    adx = calc_adx(high, low, close, 14)
+
     # Ichimoku
     tenkan, kijun, senkou_a, senkou_b, chikou = calc_ichimoku(high, low, close)
 
@@ -203,6 +247,7 @@ def score_stock(df):
     e200 = ema200.iloc[-1]
     r = rsi.iloc[-1]
     a = atr.iloc[-1]
+    adx_val = adx.iloc[-1]
     t = tenkan.iloc[-1]
     k = kijun.iloc[-1]
     sa = senkou_a.iloc[-1] if not pd.isna(senkou_a.iloc[-1]) else 0
@@ -285,6 +330,7 @@ def score_stock(df):
         "ema200": round(e200, 2),
         "rsi": round(r, 1),
         "atr": round(a, 2),
+        "adx": round(adx_val, 1),
         "entry_zone": round(entry_zone, 2),
         "sl_level": round(sl_level, 2),
         "tp1_2R": round(tp1_level, 2),
@@ -451,10 +497,18 @@ def run_screener(markets=None, min_score=0):
             # Total regime score
             total_score = market_score + sector_etf_score + result["stock_score"] + result["ichi_score"]
 
+            preset = get_preset_for_ticker(ticker)
+            preset_name = (
+                ticker if ticker in PRESET_PARAMS
+                else "Oil Sector" if ticker in {"XOM","CVX","COP","EOG","DVN","FANG","OXY","MPC","VLO","PSX","CTRA","APA","EQT","XLE","EQNR.OL","AKRBP.OL","VAR.OL"}
+                else "Gold Miners" if ticker in {"NEM","GOLD","FNV","WPM","RGLD","AGI","KGC","EQX","CDE","HL","PAAS","GDX","GDXJ","SIL","MAG","AG","GLD","SLV","BOL.ST","LUND-B.ST","NHY.OL"}
+                else "Universal"
+            )
             row = {
                 "Market": market_name.upper(),
                 "Ticker": ticker,
                 "Name": tickers.get(ticker, ticker),
+                "Preset": preset_name,
                 "Close": result["close"],
                 "Total Score": total_score,
                 "Market(30)": market_score,
@@ -466,6 +520,7 @@ def run_screener(markets=None, min_score=0):
                 "Entry Signal": "YES" if result["has_entry"] else "no",
                 "Candle Trig": "YES" if result["candle_trigger"] else "no",
                 "RSI": result["rsi"],
+                "ADX": result["adx"],
                 "ATR": result["atr"],
                 "Entry Zone": result["entry_zone"],
                 "SL (1.5 ATR)": result["sl_level"],
@@ -506,8 +561,8 @@ def run_screener(markets=None, min_score=0):
     print(f"\n  TOP 20 BY REGIME SCORE:")
     print("-" * 70)
     top = df_results.head(20)
-    cols_display = ["Ticker", "Name", "Total Score", "Stock(50)", "Ichi(15)",
-                    "EMA Stack", "Entry Signal", "RSI", "Close"]
+    cols_display = ["Ticker", "Name", "Preset", "Total Score", "Stock(50)", "Ichi(15)",
+                    "EMA Stack", "Entry Signal", "RSI", "ADX", "Close"]
     print(top[cols_display].to_string(index=False))
 
     # Entry signals
