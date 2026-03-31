@@ -52,19 +52,36 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Börsdata API import
 # ---------------------------------------------------------------------------
-try:
-    from dashboard.borsdata_api import BorsdataAPI, get_api as _get_borsdata_api, KPI
-    _BORSDATA_MODULE = True
-except ImportError:
+_BORSDATA_MODULE = False
+_get_borsdata_api = None  # type: ignore
+
+# Try multiple import paths to work in all contexts:
+#   1. Absolute: "from dashboard.borsdata_api" (pytest / workspace root)
+#   2. Relative: "from borsdata_api" (Streamlit Cloud runs from dashboard/)
+#   3. sys.path fallback (edge cases)
+
+for _import_attempt in range(1):
     try:
-        # Relative import fallback (running from dashboard dir)
-        import sys
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+        from dashboard.borsdata_api import BorsdataAPI, get_api as _get_borsdata_api, KPI
+        _BORSDATA_MODULE = True
+        break
+    except ImportError:
+        pass
+    try:
+        from borsdata_api import BorsdataAPI, get_api as _get_borsdata_api, KPI
+        _BORSDATA_MODULE = True
+        break
+    except ImportError:
+        pass
+    try:
+        import sys as _sys
+        _parent = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        if _parent not in _sys.path:
+            _sys.path.insert(0, _parent)
         from borsdata_api import BorsdataAPI, get_api as _get_borsdata_api, KPI
         _BORSDATA_MODULE = True
     except ImportError:
-        _BORSDATA_MODULE = False
-        _get_borsdata_api = None  # type: ignore
+        pass
 
 
 # ---------------------------------------------------------------------------
