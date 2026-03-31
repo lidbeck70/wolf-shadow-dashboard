@@ -37,6 +37,13 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 import plotly.graph_objects as go
+
+# CAGR Strategy module
+try:
+    from cagr.cagr_streamlit import render_cagr_page
+    CAGR_AVAILABLE = True
+except ImportError:
+    CAGR_AVAILABLE = False
 import plotly.express as px
 from plotly.subplots import make_subplots
 import streamlit as st
@@ -612,8 +619,10 @@ def tab_screener():
     with col3:
         screener_preset = st.selectbox(
             "PRESET",
-            ["Auto-detect", "Universal", "Oil Sector", "Gold Miners",
-             "OXY", "XOM", "GOLD", "NEM", "GLD"],
+            ["Auto-detect", "Universal",
+             "XLE", "XLB", "XLF", "XLK", "XLV", "XLI", "XLY", "XLP", "XLRE", "XLU", "XLC",
+             "OMX Stockholm", "OMX Copenhagen", "Oslo OSEBX", "OMX Helsinki",
+             "OXY", "GOLD", "NEM", "XOM", "GLD"],
             key="screener_preset",
             help="Select parameter preset or Auto-detect based on ticker",
         )
@@ -808,7 +817,7 @@ def tab_screener():
 def tab_backtest():
     section_title("Strategy Backtester — Historical Performance Analysis")
 
-    col1, col2, col3 = st.columns([1.2, 0.8, 1])
+    col1, col2, col3, col4 = st.columns([1.2, 0.8, 1, 1.2])
 
     with col1:
         ticker_input = st.text_input(
@@ -834,6 +843,17 @@ def tab_backtest():
             key="bt_sector",
         )
 
+    with col4:
+        bt_preset = st.selectbox(
+            "PRESET",
+            ["Auto-detect", "Universal",
+             "XLE", "XLB", "XLF", "XLK", "XLV", "XLI", "XLY", "XLP", "XLRE", "XLU", "XLC",
+             "OMX Stockholm", "OMX Copenhagen", "Oslo OSEBX", "OMX Helsinki",
+             "OXY", "GOLD", "NEM", "XOM", "GLD"],
+            key="bt_preset",
+            help="Select parameter preset or Auto-detect based on ticker",
+        )
+
     run_btn = st.button("▶ RUN BACKTEST", key="bt_run", use_container_width=False)
     st.markdown("---")
 
@@ -842,24 +862,47 @@ def tab_backtest():
             st.warning("Please enter a ticker symbol.")
             return
 
-        # ── v2.2 preset parameters ─────────────────────────────────────
+        # ── v3 preset parameters (21 presets) ─────────────────────────
         _PRESET_PARAMS_BT = {
-            "OXY":         {"atr_mult":2.8, "adx_thresh":27, "tp1_r":3.0,  "tp1_pct":0.20, "tp2_r":5.5,  "tp2_pct":0.25, "core_pct":0.70},
-            "XOM":         {"atr_mult":2.7, "adx_thresh":27, "tp1_r":3.5,  "tp1_pct":0.10, "tp2_r":5.5,  "tp2_pct":0.10, "core_pct":0.70},
-            "GOLD":        {"atr_mult":1.5, "adx_thresh":16, "tp1_r":1.75, "tp1_pct":0.20, "tp2_r":5.75, "tp2_pct":0.05, "core_pct":0.50},
-            "NEM":         {"atr_mult":3.1, "adx_thresh":17, "tp1_r":3.0,  "tp1_pct":0.05, "tp2_r":4.25, "tp2_pct":0.25, "core_pct":0.60},
-            "GLD":         {"atr_mult":2.6, "adx_thresh":7,  "tp1_r":1.75, "tp1_pct":0.10, "tp2_r":5.0,  "tp2_pct":0.20, "core_pct":0.60},
-            "Oil Sector":  {"atr_mult":2.8, "adx_thresh":27, "tp1_r":3.2,  "tp1_pct":0.15, "tp2_r":5.5,  "tp2_pct":0.18, "core_pct":0.70},
-            "Gold Miners": {"atr_mult":2.3, "adx_thresh":16, "tp1_r":2.4,  "tp1_pct":0.12, "tp2_r":5.0,  "tp2_pct":0.15, "core_pct":0.55},
-            "Universal":   {"atr_mult":2.5, "adx_thresh":19, "tp1_r":2.6,  "tp1_pct":0.13, "tp2_r":5.2,  "tp2_pct":0.17, "core_pct":0.62},
+            # US Sector ETFs
+            "XLE":  {"atr_mult":2.1, "adx_thresh":5,  "tp1_r":1.75, "tp1_pct":0.10, "tp2_r":5.5,  "tp2_pct":0.10, "core_pct":0.40},
+            "XLB":  {"atr_mult":1.5, "adx_thresh":21, "tp1_r":2.25, "tp1_pct":0.10, "tp2_r":6.0,  "tp2_pct":0.15, "core_pct":0.55},
+            "XLF":  {"atr_mult":3.2, "adx_thresh":28, "tp1_r":2.5,  "tp1_pct":0.25, "tp2_r":3.5,  "tp2_pct":0.15, "core_pct":0.55},
+            "XLK":  {"atr_mult":2.3, "adx_thresh":3,  "tp1_r":2.5,  "tp1_pct":0.20, "tp2_r":5.25, "tp2_pct":0.05, "core_pct":0.70},
+            "XLV":  {"atr_mult":2.0, "adx_thresh":2,  "tp1_r":4.0,  "tp1_pct":0.05, "tp2_r":4.5,  "tp2_pct":0.20, "core_pct":0.40},
+            "XLI":  {"atr_mult":1.8, "adx_thresh":6,  "tp1_r":3.75, "tp1_pct":0.10, "tp2_r":4.0,  "tp2_pct":0.10, "core_pct":0.60},
+            "XLY":  {"atr_mult":2.0, "adx_thresh":2,  "tp1_r":3.0,  "tp1_pct":0.20, "tp2_r":3.75, "tp2_pct":0.25, "core_pct":0.55},
+            "XLP":  {"atr_mult":2.3, "adx_thresh":0,  "tp1_r":2.25, "tp1_pct":0.05, "tp2_r":5.75, "tp2_pct":0.25, "core_pct":0.50},
+            "XLRE": {"atr_mult":2.5, "adx_thresh":1,  "tp1_r":3.5,  "tp1_pct":0.05, "tp2_r":5.25, "tp2_pct":0.20, "core_pct":0.40},
+            "XLU":  {"atr_mult":1.1, "adx_thresh":13, "tp1_r":3.5,  "tp1_pct":0.15, "tp2_r":4.5,  "tp2_pct":0.20, "core_pct":0.45},
+            "XLC":  {"atr_mult":3.1, "adx_thresh":14, "tp1_r":3.25, "tp1_pct":0.25, "tp2_r":3.5,  "tp2_pct":0.05, "core_pct":0.60},
+            # Nordic Exchanges
+            "OMX Stockholm":  {"atr_mult":2.0, "adx_thresh":18, "tp1_r":3.15, "tp1_pct":0.20, "tp2_r":4.8,  "tp2_pct":0.22, "core_pct":0.46},
+            "OMX Copenhagen": {"atr_mult":2.1, "adx_thresh":12, "tp1_r":2.2,  "tp1_pct":0.12, "tp2_r":5.15, "tp2_pct":0.12, "core_pct":0.48},
+            "Oslo OSEBX":     {"atr_mult":2.3, "adx_thresh":20, "tp1_r":3.55, "tp1_pct":0.16, "tp2_r":4.8,  "tp2_pct":0.19, "core_pct":0.49},
+            "OMX Helsinki":   {"atr_mult":2.1, "adx_thresh":11, "tp1_r":3.05, "tp1_pct":0.21, "tp2_r":5.55, "tp2_pct":0.15, "core_pct":0.54},
+            # Individual stocks
+            "OXY":  {"atr_mult":2.8, "adx_thresh":27, "tp1_r":3.0,  "tp1_pct":0.20, "tp2_r":5.5,  "tp2_pct":0.25, "core_pct":0.70},
+            "GOLD": {"atr_mult":1.5, "adx_thresh":16, "tp1_r":1.75, "tp1_pct":0.20, "tp2_r":5.75, "tp2_pct":0.05, "core_pct":0.50},
+            "NEM":  {"atr_mult":3.1, "adx_thresh":17, "tp1_r":3.0,  "tp1_pct":0.05, "tp2_r":4.25, "tp2_pct":0.25, "core_pct":0.60},
+            "XOM":  {"atr_mult":2.7, "adx_thresh":27, "tp1_r":3.5,  "tp1_pct":0.10, "tp2_r":5.5,  "tp2_pct":0.10, "core_pct":0.70},
+            "GLD":  {"atr_mult":2.6, "adx_thresh":7,  "tp1_r":1.75, "tp1_pct":0.10, "tp2_r":5.0,  "tp2_pct":0.20, "core_pct":0.60},
+            # Universal fallback
+            "Universal": {"atr_mult":2.5, "adx_thresh":19, "tp1_r":2.6,  "tp1_pct":0.13, "tp2_r":5.2,  "tp2_pct":0.17, "core_pct":0.62},
         }
-        _oil_bt  = {"XOM","CVX","COP","EOG","DVN","FANG","OXY","MPC","VLO","PSX","CTRA","APA","EQT","XLE","EQNR.OL","AKRBP.OL","VAR.OL"}
-        _gold_bt = {"NEM","GOLD","FNV","WPM","RGLD","AGI","KGC","EQX","CDE","HL","PAAS","GDX","GDXJ","SIL","MAG","AG","GLD","SLV","BOL.ST","LUND-B.ST","NHY.OL"}
         if bt_preset == "Auto-detect":
-            if ticker_input in _PRESET_PARAMS_BT:    _bt_pkey = ticker_input
-            elif ticker_input in _oil_bt:             _bt_pkey = "Oil Sector"
-            elif ticker_input in _gold_bt:            _bt_pkey = "Gold Miners"
-            else:                                     _bt_pkey = "Universal"
+            if ticker_input in _PRESET_PARAMS_BT:
+                _bt_pkey = ticker_input
+            elif ticker_input.endswith(".ST"):
+                _bt_pkey = "OMX Stockholm"
+            elif ticker_input.endswith(".OL"):
+                _bt_pkey = "Oslo OSEBX"
+            elif ticker_input.endswith(".CO"):
+                _bt_pkey = "OMX Copenhagen"
+            elif ticker_input.endswith(".HE"):
+                _bt_pkey = "OMX Helsinki"
+            else:
+                _bt_pkey = "Universal"
         else:
             _bt_pkey = bt_preset
         _bt_p = _PRESET_PARAMS_BT.get(_bt_pkey, _PRESET_PARAMS_BT["Universal"])
@@ -1739,11 +1782,11 @@ def main():
     inject_css()
     wolf_banner()
 
-    tab1, tab2, tab3 = st.tabs([
-        "  🔍  SCREENER  ",
-        "  📈  BACKTEST  ",
-        "  🎯  REGIME MONITOR  ",
-    ])
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "  SCREENER  ",
+        "  BACKTEST  ",
+        "  REGIME MONITOR  ",
+        "  CAGR STRATEGY  "])
 
     with tab1:
         tab_screener()
@@ -1753,6 +1796,13 @@ def main():
 
     with tab3:
         tab_regime()
+
+    with tab4:
+        if CAGR_AVAILABLE:
+            render_cagr_page()
+        else:
+            st.warning("CAGR Strategy module not found. Make sure the cagr/ folder is in the dashboard directory.")
+            st.code("Expected: dashboard/cagr/cagr_streamlit.py")
 
 
 if __name__ == "__main__":

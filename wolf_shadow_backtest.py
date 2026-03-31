@@ -80,30 +80,51 @@ CONFIG = {
 
 
 # =============================================================================
-# PRESET PARAMETERS (v2.2 — mirrors screener PRESET_PARAMS)
+# PRESET PARAMETERS (v3 — 21 presets: US Sector ETFs, Nordic, Individual, Universal)
 # =============================================================================
 PRESET_PARAMS = {
-    "OXY":         {"ema_pulse":6,  "ema_fast":23, "ema_slow":40,  "tenkan":7,  "kijun":24, "spanb":65, "atr_mult":2.8, "adx_thresh":27, "tp1_rr":3.0, "tp1_pct":0.20, "tp2_rr":5.5, "tp2_pct":0.25, "core_pct":0.70, "min_regime":53},
-    "XOM":         {"ema_pulse":13, "ema_fast":23, "ema_slow":39,  "tenkan":8,  "kijun":39, "spanb":48, "atr_mult":2.7, "adx_thresh":27, "tp1_rr":3.5, "tp1_pct":0.10, "tp2_rr":5.5, "tp2_pct":0.10, "core_pct":0.70, "min_regime":60},
-    "GOLD":        {"ema_pulse":5,  "ema_fast":18, "ema_slow":71,  "tenkan":15, "kijun":36, "spanb":67, "atr_mult":1.5, "adx_thresh":16, "tp1_rr":1.75,"tp1_pct":0.20, "tp2_rr":5.75,"tp2_pct":0.05, "core_pct":0.50, "min_regime":49},
-    "NEM":         {"ema_pulse":11, "ema_fast":13, "ema_slow":99,  "tenkan":9,  "kijun":33, "spanb":41, "atr_mult":3.1, "adx_thresh":17, "tp1_rr":3.0, "tp1_pct":0.05, "tp2_rr":4.25,"tp2_pct":0.25, "core_pct":0.60, "min_regime":44},
-    "GLD":         {"ema_pulse":7,  "ema_fast":28, "ema_slow":37,  "tenkan":13, "kijun":22, "spanb":59, "atr_mult":2.6, "adx_thresh":7,  "tp1_rr":1.75,"tp1_pct":0.10, "tp2_rr":5.0, "tp2_pct":0.20, "core_pct":0.60, "min_regime":50},
-    "Oil Sector":  {"ema_pulse":10, "ema_fast":23, "ema_slow":40,  "tenkan":8,  "kijun":32, "spanb":56, "atr_mult":2.8, "adx_thresh":27, "tp1_rr":3.2, "tp1_pct":0.15, "tp2_rr":5.5, "tp2_pct":0.18, "core_pct":0.70, "min_regime":56},
-    "Gold Miners": {"ema_pulse":8,  "ema_fast":16, "ema_slow":85,  "tenkan":12, "kijun":34, "spanb":54, "atr_mult":2.3, "adx_thresh":16, "tp1_rr":2.4, "tp1_pct":0.12, "tp2_rr":5.0, "tp2_pct":0.15, "core_pct":0.55, "min_regime":46},
-    "Universal":   {"ema_pulse":8,  "ema_fast":21, "ema_slow":57,  "tenkan":10, "kijun":31, "spanb":56, "atr_mult":2.5, "adx_thresh":19, "tp1_rr":2.6, "tp1_pct":0.13, "tp2_rr":5.2, "tp2_pct":0.17, "core_pct":0.62, "min_regime":51},
+    # US Sector ETFs
+    "XLE": {"ema_pulse":9,"ema_fast":38,"ema_slow":80,"tenkan":7,"kijun":35,"spanb":42,"atr_mult":2.1,"adx_thresh":5,"tp1_rr":1.75,"tp1_pct":0.10,"tp2_rr":5.5,"tp2_pct":0.10,"core_pct":0.40,"min_regime":63},
+    "XLB": {"ema_pulse":11,"ema_fast":12,"ema_slow":31,"tenkan":15,"kijun":29,"spanb":57,"atr_mult":1.5,"adx_thresh":21,"tp1_rr":2.25,"tp1_pct":0.10,"tp2_rr":6.0,"tp2_pct":0.15,"core_pct":0.55,"min_regime":41},
+    "XLF": {"ema_pulse":18,"ema_fast":36,"ema_slow":91,"tenkan":5,"kijun":34,"spanb":61,"atr_mult":3.2,"adx_thresh":28,"tp1_rr":2.5,"tp1_pct":0.25,"tp2_rr":3.5,"tp2_pct":0.15,"core_pct":0.55,"min_regime":51},
+    "XLK": {"ema_pulse":7,"ema_fast":39,"ema_slow":108,"tenkan":6,"kijun":29,"spanb":73,"atr_mult":2.3,"adx_thresh":3,"tp1_rr":2.5,"tp1_pct":0.20,"tp2_rr":5.25,"tp2_pct":0.05,"core_pct":0.70,"min_regime":36},
+    "XLV": {"ema_pulse":15,"ema_fast":34,"ema_slow":105,"tenkan":10,"kijun":29,"spanb":64,"atr_mult":2.0,"adx_thresh":2,"tp1_rr":4.0,"tp1_pct":0.05,"tp2_rr":4.5,"tp2_pct":0.20,"core_pct":0.40,"min_regime":44},
+    "XLI": {"ema_pulse":14,"ema_fast":18,"ema_slow":103,"tenkan":5,"kijun":34,"spanb":65,"atr_mult":1.8,"adx_thresh":6,"tp1_rr":3.75,"tp1_pct":0.10,"tp2_rr":4.0,"tp2_pct":0.10,"core_pct":0.60,"min_regime":61},
+    "XLY": {"ema_pulse":10,"ema_fast":18,"ema_slow":75,"tenkan":10,"kijun":29,"spanb":38,"atr_mult":2.0,"adx_thresh":2,"tp1_rr":3.0,"tp1_pct":0.20,"tp2_rr":3.75,"tp2_pct":0.25,"core_pct":0.55,"min_regime":60},
+    "XLP": {"ema_pulse":18,"ema_fast":19,"ema_slow":56,"tenkan":7,"kijun":32,"spanb":47,"atr_mult":2.3,"adx_thresh":0,"tp1_rr":2.25,"tp1_pct":0.05,"tp2_rr":5.75,"tp2_pct":0.25,"core_pct":0.50,"min_regime":64},
+    "XLRE": {"ema_pulse":13,"ema_fast":25,"ema_slow":33,"tenkan":5,"kijun":29,"spanb":57,"atr_mult":2.5,"adx_thresh":1,"tp1_rr":3.5,"tp1_pct":0.05,"tp2_rr":5.25,"tp2_pct":0.20,"core_pct":0.40,"min_regime":64},
+    "XLU": {"ema_pulse":5,"ema_fast":45,"ema_slow":117,"tenkan":12,"kijun":29,"spanb":61,"atr_mult":1.1,"adx_thresh":13,"tp1_rr":3.5,"tp1_pct":0.15,"tp2_rr":4.5,"tp2_pct":0.20,"core_pct":0.45,"min_regime":31},
+    "XLC": {"ema_pulse":17,"ema_fast":44,"ema_slow":100,"tenkan":7,"kijun":30,"spanb":45,"atr_mult":3.1,"adx_thresh":14,"tp1_rr":3.25,"tp1_pct":0.25,"tp2_rr":3.5,"tp2_pct":0.05,"core_pct":0.60,"min_regime":28},
+    # Nordic Exchanges
+    "OMX Stockholm": {"ema_pulse":13,"ema_fast":22,"ema_slow":55,"tenkan":8,"kijun":29,"spanb":56,"atr_mult":2.0,"adx_thresh":18,"tp1_rr":3.15,"tp1_pct":0.20,"tp2_rr":4.8,"tp2_pct":0.22,"core_pct":0.46,"min_regime":61},
+    "OMX Copenhagen": {"ema_pulse":10,"ema_fast":27,"ema_slow":58,"tenkan":10,"kijun":26,"spanb":72,"atr_mult":2.1,"adx_thresh":12,"tp1_rr":2.2,"tp1_pct":0.12,"tp2_rr":5.15,"tp2_pct":0.12,"core_pct":0.48,"min_regime":47},
+    "Oslo OSEBX": {"ema_pulse":13,"ema_fast":24,"ema_slow":68,"tenkan":9,"kijun":30,"spanb":66,"atr_mult":2.3,"adx_thresh":20,"tp1_rr":3.55,"tp1_pct":0.16,"tp2_rr":4.8,"tp2_pct":0.19,"core_pct":0.49,"min_regime":51},
+    "OMX Helsinki": {"ema_pulse":13,"ema_fast":26,"ema_slow":84,"tenkan":10,"kijun":33,"spanb":61,"atr_mult":2.1,"adx_thresh":11,"tp1_rr":3.05,"tp1_pct":0.21,"tp2_rr":5.55,"tp2_pct":0.15,"core_pct":0.54,"min_regime":48},
+    # Individual stocks
+    "OXY": {"ema_pulse":6,"ema_fast":23,"ema_slow":40,"tenkan":7,"kijun":24,"spanb":65,"atr_mult":2.8,"adx_thresh":27,"tp1_rr":3.0,"tp1_pct":0.20,"tp2_rr":5.5,"tp2_pct":0.25,"core_pct":0.70,"min_regime":53},
+    "GOLD": {"ema_pulse":5,"ema_fast":18,"ema_slow":71,"tenkan":15,"kijun":36,"spanb":67,"atr_mult":1.5,"adx_thresh":16,"tp1_rr":1.75,"tp1_pct":0.20,"tp2_rr":5.75,"tp2_pct":0.05,"core_pct":0.50,"min_regime":49},
+    "NEM": {"ema_pulse":11,"ema_fast":13,"ema_slow":99,"tenkan":9,"kijun":33,"spanb":41,"atr_mult":3.1,"adx_thresh":17,"tp1_rr":3.0,"tp1_pct":0.05,"tp2_rr":4.25,"tp2_pct":0.25,"core_pct":0.60,"min_regime":44},
+    "XOM": {"ema_pulse":13,"ema_fast":23,"ema_slow":39,"tenkan":8,"kijun":39,"spanb":48,"atr_mult":2.7,"adx_thresh":27,"tp1_rr":3.5,"tp1_pct":0.10,"tp2_rr":5.5,"tp2_pct":0.10,"core_pct":0.70,"min_regime":60},
+    "GLD": {"ema_pulse":7,"ema_fast":28,"ema_slow":37,"tenkan":13,"kijun":22,"spanb":59,"atr_mult":2.6,"adx_thresh":7,"tp1_rr":1.75,"tp1_pct":0.10,"tp2_rr":5.0,"tp2_pct":0.20,"core_pct":0.60,"min_regime":50},
+    # Universal fallback
+    "Universal": {"ema_pulse":8,"ema_fast":21,"ema_slow":57,"tenkan":10,"kijun":31,"spanb":56,"atr_mult":2.5,"adx_thresh":19,"tp1_rr":2.6,"tp1_pct":0.13,"tp2_rr":5.2,"tp2_pct":0.17,"core_pct":0.62,"min_regime":51},
 }
 
 
 def get_preset_for_ticker(ticker):
     """Auto-detect which preset to use based on ticker symbol."""
-    oil_tickers = {"XOM","CVX","COP","EOG","DVN","FANG","OXY","MPC","VLO","PSX","CTRA","APA","EQT","XLE","EQNR.OL","AKRBP.OL","VAR.OL"}
-    gold_tickers = {"NEM","GOLD","FNV","WPM","RGLD","AGI","KGC","EQX","CDE","HL","PAAS","GDX","GDXJ","SIL","MAG","AG","GLD","SLV","BOL.ST","LUND-B.ST","NHY.OL"}
+    # Direct match first
     if ticker in PRESET_PARAMS:
         return PRESET_PARAMS[ticker]
-    if ticker in oil_tickers:
-        return PRESET_PARAMS["Oil Sector"]
-    if ticker in gold_tickers:
-        return PRESET_PARAMS["Gold Miners"]
+    # Nordic exchange suffix detection
+    if ticker.endswith(".ST"):
+        return PRESET_PARAMS["OMX Stockholm"]
+    if ticker.endswith(".OL"):
+        return PRESET_PARAMS["Oslo OSEBX"]
+    if ticker.endswith(".CO"):
+        return PRESET_PARAMS["OMX Copenhagen"]
+    if ticker.endswith(".HE"):
+        return PRESET_PARAMS["OMX Helsinki"]
     return PRESET_PARAMS["Universal"]
 
 
@@ -830,7 +851,7 @@ def main():
     parser.add_argument("--walk-forward", action="store_true",
                         help="Run walk-forward analysis")
     parser.add_argument("--preset", type=str, default=None,
-                        help="Preset name to use: OXY, XOM, GOLD, NEM, GLD, 'Oil Sector', 'Gold Miners', Universal, or 'auto' for auto-detect (default: auto)")
+                        help="Preset name to use: any key from PRESET_PARAMS (XLE, XLB, ..., 'OMX Stockholm', 'Oslo OSEBX', OXY, Universal, etc.) or 'auto' for auto-detect (default: auto)")
     args = parser.parse_args()
 
     # Apply preset params to CONFIG
