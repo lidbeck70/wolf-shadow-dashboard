@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.cache/
+.borsdata_cache/
+*.egg-info/
+.env
