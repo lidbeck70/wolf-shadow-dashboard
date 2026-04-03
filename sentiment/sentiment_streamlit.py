@@ -201,15 +201,33 @@ def _render_history() -> None:
     """Section 3: Fear & Greed History — VIX-based proxy, last 60 trading days."""
     _section_header("Fear & Greed Trend", "VIX-based proxy — last 60 trading days")
 
-    df = get_fear_greed_history(days=60)
+    try:
+        df = get_fear_greed_history(days=60)
+    except Exception as exc:
+        st.markdown(
+            f"<p style='color:{DIM};font-family:Courier New,monospace;'>History data unavailable: {exc}</p>",
+            unsafe_allow_html=True,
+        )
+        return
 
-    if df.empty:
+    if df is None or df.empty:
         st.markdown(
             f"<p style='color:{DIM};font-family:Courier New,monospace;'>No historical data available.</p>",
             unsafe_allow_html=True,
         )
         return
 
+    try:
+        _render_history_chart(df)
+    except Exception as exc:
+        st.markdown(
+            f"<p style='color:{DIM};font-family:Courier New,monospace;'>Chart render error: {exc}</p>",
+            unsafe_allow_html=True,
+        )
+
+
+def _render_history_chart(df: "pd.DataFrame") -> None:
+    """Build and display the Fear & Greed history chart."""
     fig = go.Figure()
 
     # Horizontal fill bands (zone backgrounds)
@@ -279,8 +297,7 @@ def _render_history() -> None:
             "showgrid": True,
             "gridcolor": "rgba(74,74,106,0.3)",
             "tickfont": {"size": 10, "color": DIM},
-            "title": "Score",
-            "titlefont": {"size": 11, "color": DIM},
+            "title": {"text": "Score", "font": {"size": 11, "color": DIM}},
         },
         showlegend=False,
         hovermode="x unified",
