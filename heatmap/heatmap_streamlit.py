@@ -343,6 +343,98 @@ def _fetch_heatmap_data(tickers_tuple: tuple) -> pd.DataFrame:
     return pd.DataFrame(rows) if rows else pd.DataFrame()
 
 
+# ---------------------------------------------------------------------------
+# US & Canada ticker registries
+# ---------------------------------------------------------------------------
+US_TICKERS: Dict[str, dict] = {
+    # ── Energy (commodity-driven) ──
+    "XOM":   {"name": "ExxonMobil",         "country": "US", "sector": "Energy"},
+    "CVX":   {"name": "Chevron",            "country": "US", "sector": "Energy"},
+    "COP":   {"name": "ConocoPhillips",     "country": "US", "sector": "Energy"},
+    "DVN":   {"name": "Devon Energy",        "country": "US", "sector": "Energy"},
+    "PBR":   {"name": "Petrobras",           "country": "US", "sector": "Energy"},
+    "SLB":   {"name": "Schlumberger",        "country": "US", "sector": "Energy"},
+    "HAL":   {"name": "Halliburton",         "country": "US", "sector": "Energy"},
+    "OXY":   {"name": "Occidental Petroleum", "country": "US", "sector": "Energy"},
+    # ── Gold & Silver miners ──
+    "NEM":   {"name": "Newmont",             "country": "US", "sector": "Materials"},
+    "GOLD":  {"name": "Barrick Gold",        "country": "US", "sector": "Materials"},
+    "FNV":   {"name": "Franco-Nevada",       "country": "US", "sector": "Materials"},
+    "WPM":   {"name": "Wheaton Precious Metals", "country": "US", "sector": "Materials"},
+    "AEM":   {"name": "Agnico Eagle Mines",  "country": "US", "sector": "Materials"},
+    "KGC":   {"name": "Kinross Gold",        "country": "US", "sector": "Materials"},
+    "PAAS":  {"name": "Pan American Silver", "country": "US", "sector": "Materials"},
+    "HL":    {"name": "Hecla Mining",        "country": "US", "sector": "Materials"},
+    "AG":    {"name": "First Majestic Silver", "country": "US", "sector": "Materials"},
+    # ── Tech mega-caps ──
+    "AAPL":  {"name": "Apple",               "country": "US", "sector": "Technology"},
+    "MSFT":  {"name": "Microsoft",           "country": "US", "sector": "Technology"},
+    "NVDA":  {"name": "NVIDIA",              "country": "US", "sector": "Technology"},
+    "GOOGL": {"name": "Alphabet",            "country": "US", "sector": "Technology"},
+    "AMZN":  {"name": "Amazon",              "country": "US", "sector": "Technology"},
+    "META":  {"name": "Meta Platforms",      "country": "US", "sector": "Technology"},
+    "TSLA":  {"name": "Tesla",               "country": "US", "sector": "Consumer Discretionary"},
+    # ── Financials ──
+    "JPM":   {"name": "JPMorgan Chase",      "country": "US", "sector": "Financials"},
+    "BAC":   {"name": "Bank of America",     "country": "US", "sector": "Financials"},
+    "GS":    {"name": "Goldman Sachs",       "country": "US", "sector": "Financials"},
+    "MS":    {"name": "Morgan Stanley",      "country": "US", "sector": "Financials"},
+    # ── Healthcare ──
+    "JNJ":   {"name": "Johnson & Johnson",   "country": "US", "sector": "Healthcare"},
+    "UNH":   {"name": "UnitedHealth",        "country": "US", "sector": "Healthcare"},
+    "LLY":   {"name": "Eli Lilly",           "country": "US", "sector": "Healthcare"},
+    "PFE":   {"name": "Pfizer",              "country": "US", "sector": "Healthcare"},
+    # ── Industrials ──
+    "CAT":   {"name": "Caterpillar",         "country": "US", "sector": "Industrials"},
+    "DE":    {"name": "Deere & Co",          "country": "US", "sector": "Industrials"},
+    "BA":    {"name": "Boeing",              "country": "US", "sector": "Industrials"},
+    "HON":   {"name": "Honeywell",           "country": "US", "sector": "Industrials"},
+    # ── Consumer ──
+    "KO":    {"name": "Coca-Cola",           "country": "US", "sector": "Consumer Staples"},
+    "PEP":   {"name": "PepsiCo",             "country": "US", "sector": "Consumer Staples"},
+    "WMT":   {"name": "Walmart",             "country": "US", "sector": "Consumer Staples"},
+    "COST":  {"name": "Costco",              "country": "US", "sector": "Consumer Staples"},
+}
+
+CANADA_TICKERS: Dict[str, dict] = {
+    # ── Energy ──
+    "CNQ.TO":  {"name": "Canadian Natural Resources", "country": "Canada", "sector": "Energy"},
+    "SU.TO":   {"name": "Suncor Energy",       "country": "Canada", "sector": "Energy"},
+    "CVE.TO":  {"name": "Cenovus Energy",      "country": "Canada", "sector": "Energy"},
+    "IMO.TO":  {"name": "Imperial Oil",         "country": "Canada", "sector": "Energy"},
+    "TOU.TO":  {"name": "Tourmaline Oil",       "country": "Canada", "sector": "Energy"},
+    # ── Gold & Silver miners ──
+    "ABX.TO":  {"name": "Barrick Gold",         "country": "Canada", "sector": "Materials"},
+    "K.TO":    {"name": "Kinross Gold",         "country": "Canada", "sector": "Materials"},
+    "AGI.TO":  {"name": "Alamos Gold",          "country": "Canada", "sector": "Materials"},
+    "BTO.TO":  {"name": "B2Gold",               "country": "Canada", "sector": "Materials"},
+    "FR.TO":   {"name": "First Majestic Silver", "country": "Canada", "sector": "Materials"},
+    "LUG.TO":  {"name": "Lundin Gold",          "country": "Canada", "sector": "Materials"},
+    "SSL.TO":  {"name": "Sandstorm Gold",       "country": "Canada", "sector": "Materials"},
+    # ── Banks ──
+    "RY.TO":   {"name": "Royal Bank of Canada",  "country": "Canada", "sector": "Financials"},
+    "TD.TO":   {"name": "Toronto-Dominion Bank", "country": "Canada", "sector": "Financials"},
+    "BNS.TO":  {"name": "Bank of Nova Scotia",   "country": "Canada", "sector": "Financials"},
+    "BMO.TO":  {"name": "Bank of Montreal",      "country": "Canada", "sector": "Financials"},
+    # ── Industrials / Tech ──
+    "CP.TO":   {"name": "Canadian Pacific Kansas City", "country": "Canada", "sector": "Industrials"},
+    "CNR.TO":  {"name": "Canadian National Railway",    "country": "Canada", "sector": "Industrials"},
+    "SHOP.TO": {"name": "Shopify",              "country": "Canada", "sector": "Technology"},
+    # ── Materials ──
+    "NTR.TO":  {"name": "Nutrien",              "country": "Canada", "sector": "Materials"},
+    "TECK-B.TO": {"name": "Teck Resources B",   "country": "Canada", "sector": "Materials"},
+    "FM.TO":   {"name": "First Quantum Minerals", "country": "Canada", "sector": "Materials"},
+}
+
+
+def _load_us_tickers() -> Dict[str, dict]:
+    return dict(US_TICKERS)
+
+
+def _load_canada_tickers() -> Dict[str, dict]:
+    return dict(CANADA_TICKERS)
+
+
 def _build_full_df(
     market_choice: str,
     country_choice: str,
@@ -354,6 +446,8 @@ def _build_full_df(
     """
     nordic  = load_nordic_tickers()
     etf     = load_etf_tickers()
+    us      = _load_us_tickers()
+    canada  = _load_canada_tickers()
 
     # Build combined registry with market_type label
     registry: Dict[str, dict] = {}
@@ -361,14 +455,22 @@ def _build_full_df(
         registry[k] = {**v, "market_type": "Nordic Stocks"}
     for k, v in etf.items():
         registry[k] = {**v, "market_type": "UCITS ETFs"}
+    for k, v in us.items():
+        registry[k] = {**v, "market_type": "US Stocks"}
+    for k, v in canada.items():
+        registry[k] = {**v, "market_type": "Canada Stocks"}
 
     # Market filter
     if market_choice == "Nordic Stocks":
         registry = {k: v for k, v in registry.items() if v["market_type"] == "Nordic Stocks"}
     elif market_choice == "UCITS ETFs":
         registry = {k: v for k, v in registry.items() if v["market_type"] == "UCITS ETFs"}
+    elif market_choice == "US Stocks":
+        registry = {k: v for k, v in registry.items() if v["market_type"] == "US Stocks"}
+    elif market_choice == "Canada Stocks":
+        registry = {k: v for k, v in registry.items() if v["market_type"] == "Canada Stocks"}
 
-    # Country filter (only meaningful for Nordic stocks)
+    # Country filter
     if country_choice != "All":
         registry = {k: v for k, v in registry.items() if v.get("country") == country_choice}
 
@@ -816,14 +918,14 @@ def render_heatmap_page() -> None:
 
     market_choice = st.sidebar.selectbox(
         "Market",
-        options=["All", "Nordic Stocks", "UCITS ETFs"],
+        options=["All", "Nordic Stocks", "US Stocks", "Canada Stocks", "UCITS ETFs"],
         index=0,
         key="heatmap_market",
     )
 
     country_choice = st.sidebar.selectbox(
         "Country",
-        options=["All", "Sweden", "Norway", "Denmark", "Finland"],
+        options=["All", "Sweden", "Norway", "Denmark", "Finland", "US", "Canada"],
         index=0,
         key="heatmap_country",
     )

@@ -107,26 +107,75 @@ def _rsi(series: pd.Series, period: int = 14) -> pd.Series:
 # ---------------------------------------------------------------------------
 # Price fetching
 # ---------------------------------------------------------------------------
+# Map period strings to approximate bar counts for Börsdata
+_PERIOD_TO_BARS = {
+    "5y": 1260,
+    "10y": 2520,
+    "20y": 5040,
+    "max": 5040,
+}
+
+
 @_cache(ttl=3600)
 def fetch_long_history(ticker: str, period: str = "10y") -> pd.DataFrame:
     """
-    Fetch long-term OHLCV data for a ticker via yfinance.
+    Fetch long-term OHLCV data for a ticker.
+
+    Data source priority:
+      1. Börsdata API (up to 20 years, reliable, no rate limit issues)
+      2. yfinance (fallback for tickers not in Börsdata, e.g. US/global)
 
     Returns DataFrame with columns: Open, High, Low, Close, Volume
     indexed by Date.
     """
+    # --- Try Börsdata first ---
+    if _BORSDATA_OK and _get_api is not None:
+        try:
+            api = _get_api()
+            if api.is_configured:
+                max_bars = _PERIOD_TO_BARS.get(PERIOD_MAP.get(period, period), 2520)
+                df = api.get_stockprices_df(ticker, max_count=max_bars)
+                if not df.empty and len(df) >= 20:
+                    logger.info(
+                        "fetch_long_history(%s): Börsdata OK, %d bars",
+                        ticker, len(df),
+                    )
+                    return df
+        except Exception as exc:
+            logger.warning("fetch_long_history(%s) Börsdata failed: %s", ticker, exc)
+
+    # --- Fallback to yfinance ---
     yf_period = PERIOD_MAP.get(period, period)
-    try:
-        tk = yf.Ticker(ticker)
-        df = tk.history(period=yf_period, auto_adjust=True, progress=False)
-        df = df.dropna(how="all")
-        if df.index.tz is not None:
-            df.index = df.index.tz_localize(None)
-        df.index.name = "Date"
-        return df
-    except Exception as exc:
-        logger.warning("fetch_long_history(%s, %s): %s", ticker, period, exc)
-        return pd.DataFrame()
+    fallback_periods = [yf_period]
+    if yf_period in ("20y", "max"):
+        fallback_periods += ["10y", "5y"]
+    elif yf_period == "10y":
+        fallback_periods += ["5y", "2y"]
+    elif yf_period == "5y":
+        fallback_periods += ["2y", "1y"]
+
+    import time as _time
+    for attempt_period in fallback_periods:
+        for attempt in range(2):
+            try:
+                tk = yf.Ticker(ticker)
+                df = tk.history(period=attempt_period, auto_adjust=True, progress=False)
+                df = df.dropna(how="all")
+                if df.index.tz is not None:
+                    df.index = df.index.tz_localize(None)
+                df.index.name = "Date"
+                if not df.empty and len(df) >= 20:
+                    return df
+            except Exception as exc:
+                logger.warning(
+                    "fetch_long_history(%s, %s) yfinance attempt %d: %s",
+                    ticker, attempt_period, attempt + 1, exc,
+                )
+                if attempt == 0:
+                    _time.sleep(1)
+
+    logger.error("fetch_long_history(%s): all sources failed", ticker)
+    return pd.DataFrame()
 
 
 @_cache(ttl=3600)

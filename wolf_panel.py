@@ -1819,10 +1819,10 @@ def main():
     wolf_banner()
 
     tab_labels = [
-        "  SCREENER  ",
+        "  TRADE SCREENER  ",
         "  BACKTEST  ",
         "  REGIME MONITOR  ",
-        "  CAGR STRATEGY  ",
+        "  LONG SCREENER  ",
         "  LONG-TERM TREND  ",
         "  SECTOR & REGIME  ",
         "  SENTIMENT  ",

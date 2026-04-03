@@ -530,6 +530,56 @@ class BorsdataAPI:
         data = self._get("/instruments/stockprices/last")
         return data.get("stockPricesList", [])
 
+    def get_stockprices_df(
+        self,
+        ticker_or_id,
+        from_date: str | None = None,
+        max_count: int = 5040,
+    ):
+        """
+        Convenience: fetch stock prices as a pandas DataFrame.
+
+        Parameters
+        ----------
+        ticker_or_id : str (yfinance-style ticker) or int (Börsdata ins_id)
+        from_date    : "YYYY-MM-DD" start date (optional)
+        max_count    : max bars, default 5040 (20 years)
+
+        Returns DataFrame with DatetimeIndex ("Date") and columns:
+          Open, High, Low, Close, Volume
+        Returns empty DataFrame if ticker cannot be resolved.
+        """
+        import pandas as _pd
+
+        if isinstance(ticker_or_id, int):
+            ins_id = ticker_or_id
+        else:
+            ins_id = self.resolve_instrument_id(str(ticker_or_id))
+            if ins_id is None:
+                return _pd.DataFrame()
+
+        raw = self.get_stockprices(ins_id, from_date=from_date, max_count=max_count)
+        if not raw:
+            return _pd.DataFrame()
+
+        rows = []
+        for bar in raw:
+            rows.append({
+                "Date":   bar.get("d"),
+                "Open":   bar.get("o"),
+                "High":   bar.get("h"),
+                "Low":    bar.get("l"),
+                "Close":  bar.get("c"),
+                "Volume": bar.get("v", 0),
+            })
+
+        df = _pd.DataFrame(rows)
+        df["Date"] = _pd.to_datetime(df["Date"], errors="coerce")
+        df = df.dropna(subset=["Date", "Close"])
+        df = df.set_index("Date").sort_index()
+        df.index.name = "Date"
+        return df
+
     # ─── KPI Screener ─────────────────────────────────────────────────────
 
     def get_kpi_screener(
