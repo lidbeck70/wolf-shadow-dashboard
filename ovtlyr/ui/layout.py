@@ -445,7 +445,8 @@ def render_ovtlyr_page() -> None:
 
         # Determine sector_green from breadth (placeholder: True if >50% bullish)
         bullish_sectors = sum(
-            1 for v in breadth_data.values() if v.get("state") == "bullish"
+            1 for v in breadth_data.values()
+            if isinstance(v, dict) and v.get("state") == "bullish"
         )
         sector_green = bullish_sectors > len(breadth_data) / 2 if breadth_data else True
 
