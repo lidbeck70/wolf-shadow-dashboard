@@ -224,22 +224,7 @@ def build_price_chart(
             row=1, col=1,
         )
 
-        # Annotation label
-        status_emoji = {"active": "●", "mitigated": "◐", "invalidated": "○"}.get(status, "●")
-        fig.add_annotation(
-            x=str(date_start), y=ob_high,
-            text=(
-                f"{status_emoji} {ob_type.upper()} OB<br>"
-                f"H:{ob_high:.2f} L:{ob_low:.2f}<br>"
-                f"Vol:{ob_vol:,.0f} [{status}]"
-            ),
-            showarrow=False, xanchor="left", yanchor="bottom",
-            font=dict(size=8, color=label_color),
-            bgcolor="rgba(10,10,30,0.85)",
-            bordercolor=line_color, borderwidth=1,
-            opacity=0.9,
-            row=1, col=1,
-        )
+        # Clean OB zones — no text labels, just colored rectangles
 
     # ── Volume bars ──────────────────────────────────────────────────
     if "Volume" in df.columns:
