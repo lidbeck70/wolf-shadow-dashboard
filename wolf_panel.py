@@ -72,6 +72,13 @@ try:
     HEATMAP_AVAILABLE = True
 except ImportError:
     HEATMAP_AVAILABLE = False
+
+# RS Backtest module
+try:
+    from rs_backtest.rs_backtest_streamlit import render_rs_backtest_page
+    RS_BACKTEST_AVAILABLE = True
+except ImportError:
+    RS_BACKTEST_AVAILABLE = False
 import plotly.express as px
 from plotly.subplots import make_subplots
 import streamlit as st
@@ -1830,6 +1837,7 @@ def main():
     tab_labels = [
         "  TRADE SCREENER  ",
         "  BACKTEST  ",
+        "  RS BACKTEST  ",
         "  REGIME MONITOR  ",
         "  LONG SCREENER  ",
         "  LONG-TERM TREND  ",
@@ -1837,13 +1845,19 @@ def main():
         "  SENTIMENT  ",
         "  HEATMAP  ",
     ]
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(tab_labels)
+    tab1, tab2, tab2b, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(tab_labels)
 
     with tab1:
         tab_screener()
 
     with tab2:
         tab_backtest()
+
+    with tab2b:
+        if RS_BACKTEST_AVAILABLE:
+            render_rs_backtest_page()
+        else:
+            _tab_not_found("RS Backtest", "rs_backtest")
 
     with tab3:
         tab_regime()
