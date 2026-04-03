@@ -934,15 +934,17 @@ def render_cagr_page() -> None:
         style_map[total_col] = lambda v: _style_score_col(v, total_max)
 
     styled = display_df.style
-    styled = styled.applymap(_style_signal_col, subset=["Signal"])
-    styled = styled.applymap(_style_pct_col, subset=["Score %"])
-    styled = styled.applymap(lambda v: _style_score_col(v, 3), subset=["Cyc (0-3)"])
-    styled = styled.applymap(lambda v: _style_score_col(v, 4), subset=["Tech (0-4)"])
+    # pandas >= 2.1 renamed applymap → map
+    _map = styled.map if hasattr(styled, "map") else styled.applymap
+    styled = _map(_style_signal_col, subset=["Signal"])
+    styled = _map(_style_pct_col, subset=["Score %"])
+    styled = _map(lambda v: _style_score_col(v, 3), subset=["Cyc (0-3)"])
+    styled = _map(lambda v: _style_score_col(v, 4), subset=["Tech (0-4)"])
 
     if fund_col:
-        styled = styled.applymap(lambda v: _style_score_col(v, fund_max), subset=[fund_col])
+        styled = _map(lambda v: _style_score_col(v, fund_max), subset=[fund_col])
     if total_col:
-        styled = styled.applymap(lambda v: _style_score_col(v, total_max), subset=[total_col])
+        styled = _map(lambda v: _style_score_col(v, total_max), subset=[total_col])
 
     styled = styled.set_properties(**{
         "background-color": BG2,
