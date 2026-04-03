@@ -79,6 +79,20 @@ try:
     RS_BACKTEST_AVAILABLE = True
 except ImportError:
     RS_BACKTEST_AVAILABLE = False
+
+# OVTLYR module
+try:
+    from ovtlyr.ui.layout import render_ovtlyr_page
+    OVTLYR_AVAILABLE = True
+except ImportError:
+    OVTLYR_AVAILABLE = False
+
+# Rules page
+try:
+    from ovtlyr.ui.rules_page import render_rules_page
+    RULES_AVAILABLE = True
+except ImportError:
+    RULES_AVAILABLE = False
 import plotly.express as px
 from plotly.subplots import make_subplots
 import streamlit as st
@@ -1838,14 +1852,17 @@ def main():
         "  TRADE SCREENER  ",
         "  BACKTEST  ",
         "  RS BACKTEST  ",
+        "  OVTLYR  ",
         "  REGIME MONITOR  ",
         "  LONG SCREENER  ",
         "  LONG-TERM TREND  ",
         "  SECTOR & REGIME  ",
         "  SENTIMENT  ",
         "  HEATMAP  ",
+        "  RULES  ",
     ]
-    tab1, tab2, tab2b, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(tab_labels)
+    (tab1, tab2, tab2b, tab_ovtlyr, tab3, tab4, tab5,
+     tab6, tab7, tab8, tab_rules) = st.tabs(tab_labels)
 
     with tab1:
         tab_screener()
@@ -1858,6 +1875,12 @@ def main():
             render_rs_backtest_page()
         else:
             _tab_not_found("RS Backtest", "rs_backtest")
+
+    with tab_ovtlyr:
+        if OVTLYR_AVAILABLE:
+            render_ovtlyr_page()
+        else:
+            _tab_not_found("OVTLYR", "ovtlyr")
 
     with tab3:
         tab_regime()
@@ -1891,6 +1914,12 @@ def main():
             render_heatmap_page()
         else:
             _tab_not_found("Heatmap", "heatmap")
+
+    with tab_rules:
+        if RULES_AVAILABLE:
+            render_rules_page()
+        else:
+            _tab_not_found("Rules", "ovtlyr/ui")
 
 
 if __name__ == "__main__":
