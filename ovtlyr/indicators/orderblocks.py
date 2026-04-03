@@ -1,12 +1,16 @@
 """
-Order Block detection for OVTLYR.
+orderblocks.py — OVTLYR-style Order Block Detection
 
-An Order Block is the last counter-trend candle before a strong impulse move
-that creates a Break of Structure (BOS). These zones represent institutional
-supply/demand and often act as future support/resistance.
-
-Pure functions — no Streamlit imports.
+Ported from the Deepthought v3.4.1 Pine Script logic:
+  - Uses Rate of Change (ROC) crossover to detect momentum shifts
+  - Bullish OB = last RED candle before ROC crosses UP above sensitivity
+  - Bearish OB = last GREEN candle before ROC crosses DOWN below -sensitivity
+  - Two sensitivity levels (28% and 50%) for different-sized OBs
+  - Mitigation: close breaks through OB → marked as mitigated
+  - Volume analysis: relative volume strength at OB creation
 """
+
+from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import List, Optional
@@ -16,345 +20,275 @@ import pandas as pd
 
 
 # ---------------------------------------------------------------------------
-# Data class
+# Data classes
 # ---------------------------------------------------------------------------
 
 @dataclass
 class OrderBlock:
-    type: str            # "bullish" or "bearish"
-    start_idx: int       # integer bar index (iloc position) of the OB candle
-    high: float          # OB zone high
-    low: float           # OB zone low
-    date: str            # ISO date string of OB candle
-    volume: float        # volume at OB candle
-    status: str          # "Active" | "Mitigated" | "Invalidated"
+    """Single detected Order Block."""
+    type: str               # "bullish" or "bearish"
+    start_idx: int          # bar index in the DataFrame where OB candle sits
+    high: float             # OB zone top
+    low: float              # OB zone bottom
+    date: str               # date string of OB candle
+    volume: float           # volume at OB candle
+    vol_strength: float     # relative volume (volume / 20-bar avg)
+    sensitivity: int        # which sensitivity set (1 or 2)
+    status: str             # "Active" / "Mitigated"
     mitigation_date: str = ""
+    mitigation_idx: int = -1
 
 
 # ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
-    """ATR using EWM smoothing aligned to df index."""
-    high = df["High"]
-    low = df["Low"]
-    close = df["Close"]
-    prev_close = close.shift(1)
-    tr = pd.concat(
-        [
-            high - low,
-            (high - prev_close).abs(),
-            (low - prev_close).abs(),
-        ],
-        axis=1,
-    ).max(axis=1)
-    return tr.ewm(span=period, adjust=False).mean()
-
-
-def _impulse_move(df: pd.DataFrame, start_iloc: int, direction: str, max_bars: int = 3) -> float:
-    """
-    Return the total net move (signed, in price units) across up to *max_bars*
-    starting at *start_iloc* in the given *direction* ("up" or "down").
-    """
-    end_iloc = min(start_iloc + max_bars, len(df))
-    slice_df = df.iloc[start_iloc:end_iloc]
-    if slice_df.empty:
-        return 0.0
-    if direction == "up":
-        return float(slice_df["Close"].iloc[-1] - slice_df["Open"].iloc[0])
-    else:
-        return float(slice_df["Open"].iloc[0] - slice_df["Close"].iloc[-1])
-
-
-def _avg_volume(df: pd.DataFrame, end_iloc: int, window: int = 20) -> float:
-    """Simple average volume over *window* bars ending at *end_iloc* (exclusive)."""
-    start = max(0, end_iloc - window)
-    vol = df["Volume"].iloc[start:end_iloc]
-    if vol.empty:
-        return float("nan")
-    return float(vol.mean())
-
-
-def _swing_high(df: pd.DataFrame, end_iloc: int, lookback: int = 10) -> float:
-    """Highest High in the *lookback* bars before *end_iloc*."""
-    start = max(0, end_iloc - lookback)
-    return float(df["High"].iloc[start:end_iloc].max())
-
-
-def _swing_low(df: pd.DataFrame, end_iloc: int, lookback: int = 10) -> float:
-    """Lowest Low in the *lookback* bars before *end_iloc*."""
-    start = max(0, end_iloc - lookback)
-    return float(df["Low"].iloc[start:end_iloc].min())
-
-
-def _validate_status(
-    ob: OrderBlock,
-    df: pd.DataFrame,
-    ob_iloc: int,
-) -> OrderBlock:
-    """
-    Update ob.status and ob.mitigation_date by scanning price action
-    after the OB candle (all bars from ob_iloc + 1 onwards).
-
-    Mitigated   : price has wicked into the OB zone (Low <= zone_high and High >= zone_low)
-    Invalidated :
-        Bullish OB – a candle closed below ob.low
-        Bearish OB – a candle closed above ob.high
-    Active      : none of the above
-    """
-    future = df.iloc[ob_iloc + 1:]
-    if future.empty:
-        return ob
-
-    for i, row in future.iterrows():
-        high_i = row["High"]
-        low_i = row["Low"]
-        close_i = row["Close"]
-        date_str = str(i.date()) if hasattr(i, "date") else str(i)
-
-        if ob.type == "bullish":
-            # Invalidated: close below OB low
-            if close_i < ob.low:
-                ob.status = "Invalidated"
-                ob.mitigation_date = date_str
-                return ob
-            # Mitigated: price has touched the OB zone
-            if low_i <= ob.high and high_i >= ob.low:
-                ob.status = "Mitigated"
-                ob.mitigation_date = date_str
-                # Do NOT return — invalidation later overrides mitigation
-
-        else:  # bearish
-            # Invalidated: close above OB high
-            if close_i > ob.high:
-                ob.status = "Invalidated"
-                ob.mitigation_date = date_str
-                return ob
-            # Mitigated
-            if high_i >= ob.low and low_i <= ob.high:
-                ob.status = "Mitigated"
-                ob.mitigation_date = date_str
-
-    return ob
-
-
-# ---------------------------------------------------------------------------
-# Public functions
+# Core detection — OVTLYR / Deepthought method
 # ---------------------------------------------------------------------------
 
 def detect_orderblocks(
     df: pd.DataFrame,
-    lookback: int = 250,
-    impulse_factor: float = 1.0,
+    sens1: float = 0.28,
+    sens2: float = 0.50,
+    lookback_candles: int = 15,
+    min_gap: int = 5,
+    max_blocks: int = 40,
+    mitigation_type: str = "close",
 ) -> List[OrderBlock]:
     """
-    Detect Bullish and Bearish Order Blocks in the OHLCV DataFrame.
+    Detect Order Blocks using the OVTLYR Rate-of-Change method.
 
-    Bullish OB — last bearish (red) candle before a strong bullish impulse:
-        1. Candle closes below its open.
-        2. Over the next 1-3 candles, total upward move > impulse_factor × ATR(14).
-        3. Average volume of impulse candles > 1.2× 20-bar average volume.
-        4. BOS: impulse closes above the highest High of the preceding 10 bars.
+    Logic (from Deepthought Pine Script):
+      1. Compute ROC = (open - open[4]) / open[4] * 100
+      2. When ROC crosses BELOW -sensitivity → Bearish OB
+         Find the last GREEN (close > open) candle within 4-15 bars back
+         That candle's high/low = the OB zone
+      3. When ROC crosses ABOVE +sensitivity → Bullish OB
+         Find the last RED (close < open) candle within 4-15 bars back
+      4. Min 5 bars between OBs of the same sensitivity set
+      5. Mitigation: if close (or wick) breaks through OB → mark as mitigated
 
-    Bearish OB — last bullish (green) candle before a strong bearish impulse:
-        1. Candle closes above its open.
-        2. Over the next 1-3 candles, total downward move > impulse_factor × ATR(14).
-        3. Volume confirmation (same as above).
-        4. BOS: impulse closes below the lowest Low of the preceding 10 bars.
+    Parameters
+    ----------
+    df             : OHLCV DataFrame with DatetimeIndex
+    sens1          : Sensitivity level 1 (default 0.28 = 28%)
+    sens2          : Sensitivity level 2 (default 0.50 = 50%)
+    lookback_candles : How far back to search for the OB candle (4-15)
+    min_gap        : Minimum bars between OBs of same set
+    max_blocks     : Maximum OBs to keep
+    mitigation_type: "close" = close must break OB; "wick" = high/low can break
 
-    Status assigned per _validate_status rules.
-
-    Returns a list of OrderBlock objects, most-recent first.
+    Returns list of OrderBlock objects, most recent first.
     """
-    if df is None or df.empty:
+    if df is None or df.empty or len(df) < 20:
         return []
 
-    # Work on a clean, reset-indexed copy of the last *lookback* bars
-    df_work = df.dropna(subset=["Open", "High", "Low", "Close", "Volume"]).copy()
-    df_work = df_work.iloc[-lookback:].reset_index(drop=False)
-    # Keep original index (dates) in a column called "orig_index"
-    orig_col = df_work.columns[0]   # first column is the original index
+    # Ensure we have the right columns
+    o = df["Open"].values.astype(float)
+    h = df["High"].values.astype(float)
+    l = df["Low"].values.astype(float)
+    c = df["Close"].values.astype(float)
+    v = df["Volume"].values.astype(float) if "Volume" in df.columns else np.zeros(len(df))
 
-    atr_series = _atr(df_work.rename(columns={orig_col: "_idx"}).set_index("_idx")[["High", "Low", "Close", "Open", "Volume"]])
-    # Realign ATR to integer positions
-    atr_values = atr_series.values
+    n = len(df)
 
-    n = len(df_work)
-    max_impulse_bars = 3
-    bos_lookback = 10
-    vol_confirm_factor = 1.2
-    order_blocks: List[OrderBlock] = []
+    # Get dates
+    if isinstance(df.index, pd.DatetimeIndex):
+        dates = [str(d.date()) for d in df.index]
+    elif "Date" in df.columns:
+        dates = [str(d) for d in pd.to_datetime(df["Date"])]
+    else:
+        dates = [str(i) for i in range(n)]
 
-    for i in range(n - max_impulse_bars - 1):
-        row = df_work.iloc[i]
-        open_i = row["Open"]
-        close_i = row["Close"]
-        high_i = row["High"]
-        low_i = row["Low"]
-        vol_i = row["Volume"]
-        atr_i = float(atr_values[i]) if not np.isnan(atr_values[i]) else 0.0
-        date_i = str(row[orig_col])
-        if hasattr(row[orig_col], "date"):
-            date_i = str(row[orig_col].date())
+    # Compute ROC: (open - open[4]) / open[4] * 100
+    roc = np.full(n, 0.0)
+    for i in range(4, n):
+        if o[i - 4] != 0:
+            roc[i] = (o[i] - o[i - 4]) / o[i - 4] * 100
 
-        avg_vol = _avg_volume(df_work, i, window=20)
-        min_impulse = impulse_factor * atr_i
+    # Volume relative strength (20-bar SMA)
+    vol_avg = np.full(n, 1.0)
+    for i in range(20, n):
+        avg = np.mean(v[i - 20:i])
+        vol_avg[i] = v[i] / avg if avg > 0 else 1.0
 
-        # ---- Bullish OB: bearish candle → bullish impulse ----
-        if close_i < open_i:
-            # Check impulse over next 1-3 bars
-            for bars in range(1, max_impulse_bars + 1):
-                end = i + bars + 1
-                if end > n:
+    # Helper: detect crossover/crossunder
+    def crossover(series, level):
+        """True at bar i if series[i] > level and series[i-1] <= level."""
+        result = np.zeros(n, dtype=bool)
+        for i in range(1, n):
+            if series[i] > level and series[i - 1] <= level:
+                result[i] = True
+        return result
+
+    def crossunder(series, level):
+        result = np.zeros(n, dtype=bool)
+        for i in range(1, n):
+            if series[i] < level and series[i - 1] >= level:
+                result[i] = True
+        return result
+
+    all_obs: List[OrderBlock] = []
+
+    # Process each sensitivity level
+    for sens_num, sens_val in [(1, sens1), (2, sens2)]:
+        bearish_cross = crossunder(roc, -sens_val)
+        bullish_cross = crossover(roc, sens_val)
+
+        last_cross_idx = -min_gap - 1  # track gap between OBs
+
+        for i in range(lookback_candles + 1, n):
+            # ── Bearish OB: ROC crosses under -sensitivity ──
+            if bearish_cross[i] and (i - last_cross_idx) > min_gap:
+                # Find the last GREEN candle (close > open) within 4-15 bars back
+                ob_idx = -1
+                for j in range(4, min(lookback_candles + 1, i)):
+                    if c[i - j] > o[i - j]:  # green candle
+                        ob_idx = i - j
+                        break
+
+                if ob_idx >= 0:
+                    all_obs.append(OrderBlock(
+                        type="bearish",
+                        start_idx=ob_idx,
+                        high=h[ob_idx],
+                        low=l[ob_idx],
+                        date=dates[ob_idx],
+                        volume=v[ob_idx],
+                        vol_strength=round(vol_avg[i], 2),
+                        sensitivity=sens_num,
+                        status="Active",
+                    ))
+                    last_cross_idx = i
+
+            # ── Bullish OB: ROC crosses over +sensitivity ──
+            if bullish_cross[i] and (i - last_cross_idx) > min_gap:
+                # Find the last RED candle (close < open) within 4-15 bars back
+                ob_idx = -1
+                for j in range(4, min(lookback_candles + 1, i)):
+                    if c[i - j] < o[i - j]:  # red candle
+                        ob_idx = i - j
+                        break
+
+                if ob_idx >= 0:
+                    all_obs.append(OrderBlock(
+                        type="bullish",
+                        start_idx=ob_idx,
+                        high=h[ob_idx],
+                        low=l[ob_idx],
+                        date=dates[ob_idx],
+                        volume=v[ob_idx],
+                        vol_strength=round(vol_avg[i], 2),
+                        sensitivity=sens_num,
+                        status="Active",
+                    ))
+                    last_cross_idx = i
+
+    # ── Validate status: check mitigation ──
+    for ob in all_obs:
+        idx = ob.start_idx
+        for i in range(idx + 1, n):
+            if ob.type == "bearish":
+                # Bearish OB mitigated when close (or high) goes above OB top
+                test_val = c[i] if mitigation_type == "close" else h[i]
+                if test_val > ob.high:
+                    ob.status = "Mitigated"
+                    ob.mitigation_date = dates[i]
+                    ob.mitigation_idx = i
                     break
-                impulse = _impulse_move(df_work, i + 1, "up", bars)
-                if impulse < min_impulse:
-                    continue
-
-                # Volume check on impulse bars
-                impulse_vol = float(df_work["Volume"].iloc[i + 1: i + 1 + bars].mean())
-                if avg_vol > 0 and impulse_vol < vol_confirm_factor * avg_vol:
-                    continue
-
-                # BOS: impulse close must exceed swing high of 10 bars before OB
-                swing_hi = _swing_high(df_work, i, bos_lookback)
-                impulse_close = float(df_work["Close"].iloc[i + bars])
-                if impulse_close <= swing_hi:
-                    continue
-
-                # Valid bullish OB found
-                ob = OrderBlock(
-                    type="bullish",
-                    start_idx=i,
-                    high=float(high_i),
-                    low=float(low_i),
-                    date=date_i,
-                    volume=float(vol_i),
-                    status="Active",
-                )
-                ob = _validate_status(ob, df_work.set_index(orig_col)[["Open", "High", "Low", "Close", "Volume"]], i)
-                order_blocks.append(ob)
-                break  # one OB per candle
-
-        # ---- Bearish OB: bullish candle → bearish impulse ----
-        elif close_i > open_i:
-            for bars in range(1, max_impulse_bars + 1):
-                end = i + bars + 1
-                if end > n:
+            else:  # bullish
+                # Bullish OB mitigated when close (or low) goes below OB bottom
+                test_val = c[i] if mitigation_type == "close" else l[i]
+                if test_val < ob.low:
+                    ob.status = "Mitigated"
+                    ob.mitigation_date = dates[i]
+                    ob.mitigation_idx = i
                     break
-                impulse = _impulse_move(df_work, i + 1, "down", bars)
-                if impulse < min_impulse:
-                    continue
 
-                impulse_vol = float(df_work["Volume"].iloc[i + 1: i + 1 + bars].mean())
-                if avg_vol > 0 and impulse_vol < vol_confirm_factor * avg_vol:
-                    continue
+    # Sort by date descending, limit count
+    all_obs.sort(key=lambda x: x.start_idx, reverse=True)
+    return all_obs[:max_blocks]
 
-                swing_lo = _swing_low(df_work, i, bos_lookback)
-                impulse_close = float(df_work["Close"].iloc[i + bars])
-                if impulse_close >= swing_lo:
-                    continue
 
-                ob = OrderBlock(
-                    type="bearish",
-                    start_idx=i,
-                    high=float(high_i),
-                    low=float(low_i),
-                    date=date_i,
-                    volume=float(vol_i),
-                    status="Active",
-                )
-                ob = _validate_status(ob, df_work.set_index(orig_col)[["Open", "High", "Low", "Close", "Volume"]], i)
-                order_blocks.append(ob)
-                break
-
-    # Most recent first
-    order_blocks.sort(key=lambda ob: ob.start_idx, reverse=True)
-    return order_blocks
-
+# ---------------------------------------------------------------------------
+# Price-vs-OB analysis
+# ---------------------------------------------------------------------------
 
 def classify_price_vs_ob(
     current_price: float,
     orderblocks: List[OrderBlock],
+    proximity_pct: float = 0.02,
 ) -> dict:
     """
     Classify current price position relative to active order blocks.
 
-    Returns a dict with:
-        nearest_bullish_ob  : OrderBlock or None – nearest active bullish OB below price
-        nearest_bearish_ob  : OrderBlock or None – nearest active bearish OB above price
-        approaching_bullish : bool – price within 2% of bullish OB high
-        approaching_bearish : bool – price within 2% of bearish OB low
-        reacting_to         : "bullish_ob" | "bearish_ob" | None
-        signal_bias         : "BUY" | "SELL" | "HOLD" | "REDUCE"
-
-    Signal bias logic
-    -----------------
-    BUY    : price bouncing from bullish OB (low touched zone, close above OB high)
-    SELL   : price bouncing from bearish OB (high touched zone, close below OB low)
-    HOLD   : price between OBs, no immediate reaction
-    REDUCE : price breaking through an OB against expected direction (OB invalidated)
+    Returns dict with:
+      nearest_bullish_ob : OrderBlock or None
+      nearest_bearish_ob : OrderBlock or None
+      approaching_bullish: bool (price within proximity_pct of bullish OB high)
+      approaching_bearish: bool (price within proximity_pct of bearish OB low)
+      inside_ob          : bool (price is inside an active OB zone)
+      signal_bias        : "BUY" / "SELL" / "HOLD" / "REDUCE"
+      active_count       : int
+      mitigated_count    : int
     """
     active_bullish = [ob for ob in orderblocks if ob.type == "bullish" and ob.status == "Active"]
     active_bearish = [ob for ob in orderblocks if ob.type == "bearish" and ob.status == "Active"]
-    invalidated_any = [ob for ob in orderblocks if ob.status == "Invalidated"]
 
-    # Nearest bullish OB below current price
-    below_bullish = [ob for ob in active_bullish if ob.high < current_price]
-    nearest_bullish_ob: Optional[OrderBlock] = (
-        max(below_bullish, key=lambda ob: ob.high) if below_bullish else None
-    )
+    active_count = len(active_bullish) + len(active_bearish)
+    mitigated_count = sum(1 for ob in orderblocks if ob.status == "Mitigated")
 
-    # Nearest bearish OB above current price
-    above_bearish = [ob for ob in active_bearish if ob.low > current_price]
-    nearest_bearish_ob: Optional[OrderBlock] = (
-        min(above_bearish, key=lambda ob: ob.low) if above_bearish else None
-    )
+    # Find nearest OBs
+    nearest_bull = None
+    nearest_bear = None
+    min_bull_dist = float("inf")
+    min_bear_dist = float("inf")
 
-    # Approaching flags (within 2%)
-    approaching_bullish = False
-    if nearest_bullish_ob is not None and nearest_bullish_ob.high > 0:
-        approaching_bullish = abs(current_price - nearest_bullish_ob.high) / nearest_bullish_ob.high < 0.02
+    for ob in active_bullish:
+        dist = abs(current_price - ob.high)
+        if dist < min_bull_dist:
+            min_bull_dist = dist
+            nearest_bull = ob
 
-    approaching_bearish = False
-    if nearest_bearish_ob is not None and nearest_bearish_ob.low > 0:
-        approaching_bearish = abs(nearest_bearish_ob.low - current_price) / nearest_bearish_ob.low < 0.02
+    for ob in active_bearish:
+        dist = abs(current_price - ob.low)
+        if dist < min_bear_dist:
+            min_bear_dist = dist
+            nearest_bear = ob
 
-    # Reacting to
-    reacting_to: Optional[str] = None
-    if nearest_bullish_ob is not None:
-        # Price is within the bullish OB zone
-        if nearest_bullish_ob.low <= current_price <= nearest_bullish_ob.high:
-            reacting_to = "bullish_ob"
-    if nearest_bearish_ob is not None:
-        if nearest_bearish_ob.low <= current_price <= nearest_bearish_ob.high:
-            reacting_to = "bearish_ob"
+    # Proximity checks
+    approaching_bull = False
+    approaching_bear = False
+    inside_ob = False
+
+    if nearest_bull and current_price > 0:
+        if abs(current_price - nearest_bull.high) / current_price < proximity_pct:
+            approaching_bull = True
+        if nearest_bull.low <= current_price <= nearest_bull.high:
+            inside_ob = True
+
+    if nearest_bear and current_price > 0:
+        if abs(current_price - nearest_bear.low) / current_price < proximity_pct:
+            approaching_bear = True
+        if nearest_bear.low <= current_price <= nearest_bear.high:
+            inside_ob = True
 
     # Signal bias
-    signal_bias = "HOLD"
-
-    # REDUCE: most-recent OB got invalidated (price broke through)
-    if invalidated_any:
-        signal_bias = "REDUCE"
-
-    # BUY: approaching or reacting to bullish OB
-    if nearest_bullish_ob is not None and approaching_bullish:
+    if approaching_bull and not approaching_bear:
         signal_bias = "BUY"
-    if reacting_to == "bullish_ob":
-        signal_bias = "BUY"
-
-    # SELL: approaching or reacting to bearish OB (overrides BUY if both simultaneously)
-    if nearest_bearish_ob is not None and approaching_bearish:
+    elif approaching_bear and not approaching_bull:
         signal_bias = "SELL"
-    if reacting_to == "bearish_ob":
-        signal_bias = "SELL"
+    elif inside_ob:
+        signal_bias = "HOLD"
+    elif active_bearish and current_price > active_bearish[0].high:
+        signal_bias = "REDUCE"  # broke through bearish OB
+    else:
+        signal_bias = "HOLD"
 
     return {
-        "nearest_bullish_ob": nearest_bullish_ob,
-        "nearest_bearish_ob": nearest_bearish_ob,
-        "approaching_bullish": approaching_bullish,
-        "approaching_bearish": approaching_bearish,
-        "reacting_to": reacting_to,
+        "nearest_bullish_ob": nearest_bull,
+        "nearest_bearish_ob": nearest_bear,
+        "approaching_bullish": approaching_bull,
+        "approaching_bearish": approaching_bear,
+        "inside_ob": inside_ob,
         "signal_bias": signal_bias,
+        "active_count": active_count,
+        "mitigated_count": mitigated_count,
     }
