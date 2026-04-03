@@ -106,6 +106,19 @@ st.set_page_config(
     page_icon="🐺",
 )
 
+# PWA / Mobile meta tags for iPad home screen
+st.markdown(
+    """
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="SweWolf">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <meta name="theme-color" content="#050510">
+    <link rel="apple-touch-icon" href="https://em-content.zobj.net/source/apple/391/wolf_1f43a.png">
+    """,
+    unsafe_allow_html=True,
+)
+
 # ---------------------------------------------------------------------------
 # CYBERPUNK CSS
 # ---------------------------------------------------------------------------
@@ -400,6 +413,62 @@ hr {
     text-transform: uppercase;
     display: inline-block;
 }
+
+/* ── iPad & Mobile Responsive ─────────────────────────────────── */
+@media (max-width: 1024px) {
+    .stTabs [data-baseweb="tab"] {
+        font-size: 10px !important;
+        letter-spacing: 1px !important;
+        padding: 8px 12px !important;
+    }
+    .stTabs [data-baseweb="tab-list"] {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        flex-wrap: nowrap;
+    }
+    [data-testid="stMetricValue"] {
+        font-size: 20px !important;
+    }
+    [data-testid="stMetricLabel"] {
+        font-size: 9px !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .stTabs [data-baseweb="tab"] {
+        font-size: 9px !important;
+        padding: 6px 8px !important;
+        letter-spacing: 0.5px !important;
+    }
+    [data-testid="stMetricValue"] {
+        font-size: 16px !important;
+    }
+    [data-testid="column"] {
+        min-width: 100% !important;
+    }
+}
+
+/* Touch-friendly targets (44px minimum per Apple HIG) */
+.stButton > button,
+.stSelectbox > div {
+    min-height: 44px;
+}
+
+/* Smooth scrolling iOS */
+[data-testid="stAppViewContainer"] {
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Scrollable tab bar on iPad */
+.stTabs [data-baseweb="tab-list"] {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+.stTabs [data-baseweb="tab"] {
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
 </style>
 """
 
