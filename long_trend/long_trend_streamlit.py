@@ -191,6 +191,61 @@ def _build_trend_ticker_registry() -> dict:
     return registry
 
 
+@st.cache_data(ttl=1800, show_spinner=False)
+def _compute_rs_rankings(tickers: tuple) -> dict:
+    """
+    Compute 6-month relative strength (momentum) for all tickers.
+    Returns dict of ticker → {return_6m: float, rs_rank: int, rs_percentile: float}.
+    """
+    import yfinance as _yf
+
+    results: dict = {}
+
+    # Batch download 7 months of data (need buffer for 6M calc)
+    try:
+        raw = _yf.download(
+            tickers=list(tickers),
+            period="7mo",
+            auto_adjust=True,
+            progress=False,
+            threads=True,
+        )
+    except Exception:
+        raw = None
+
+    for ticker in tickers:
+        try:
+            if raw is not None and not raw.empty:
+                if isinstance(raw.columns, pd.MultiIndex):
+                    close = raw.xs(ticker, level=1, axis=1).get("Close")
+                elif len(tickers) == 1:
+                    close = raw.get("Close")
+                else:
+                    close = None
+            else:
+                close = None
+
+            if close is None or close.dropna().empty or len(close.dropna()) < 60:
+                results[ticker] = {"return_6m": None, "rs_rank": 999, "rs_percentile": 0.0}
+                continue
+
+            close = close.dropna()
+            ret_6m = (close.iloc[-1] / close.iloc[0] - 1) * 100
+            results[ticker] = {"return_6m": round(float(ret_6m), 1), "rs_rank": 0, "rs_percentile": 0.0}
+        except Exception:
+            results[ticker] = {"return_6m": None, "rs_rank": 999, "rs_percentile": 0.0}
+
+    # Rank by 6M return (descending)
+    valid = [(t, r["return_6m"]) for t, r in results.items() if r["return_6m"] is not None]
+    valid.sort(key=lambda x: x[1], reverse=True)
+    total = len(valid)
+    for rank, (t, ret) in enumerate(valid, 1):
+        results[t]["rs_rank"] = rank
+        results[t]["rs_percentile"] = round((1 - (rank - 1) / max(total, 1)) * 100, 1)
+
+    return results
+
+
 # ---------------------------------------------------------------------------
 # Cyberpunk theme constants
 # ---------------------------------------------------------------------------
@@ -826,12 +881,38 @@ def render_long_trend_page() -> None:
             unsafe_allow_html=True,
         )
 
-        # Ticker selector — categorised dropdown with all universes
+        # Ticker selector — categorised dropdown with RS filter
         full_registry = _build_trend_ticker_registry()
 
         if full_registry:
-            # Group by category for the dropdown
-            categories = sorted(set(v.get("_category", "") for v in full_registry.values()))
+            # RS Momentum filter
+            rs_filter = st.checkbox(
+                "RS Top 20% filter (6M momentum)",
+                value=False,
+                key="lt_rs_filter",
+            )
+
+            # Compute RS rankings (cached 30 min)
+            if rs_filter:
+                with st.spinner("Ranking momentum..."):
+                    rs_data = _compute_rs_rankings(tuple(sorted(full_registry.keys())))
+                top_20_cutoff = 80.0
+                filtered_by_rs = {
+                    t: v for t, v in full_registry.items()
+                    if rs_data.get(t, {}).get("rs_percentile", 0) >= top_20_cutoff
+                }
+                st.markdown(
+                    f"<div style='color:{GREEN};font-size:0.65rem;font-family:monospace;'>"
+                    f"TOP 20%: {len(filtered_by_rs)}/{len(full_registry)} instruments</div>",
+                    unsafe_allow_html=True,
+                )
+                working_reg = filtered_by_rs if filtered_by_rs else full_registry
+            else:
+                rs_data = {}
+                working_reg = full_registry
+
+            # Category filter
+            categories = sorted(set(v.get("_category", "") for v in working_reg.values()))
             selected_cat = st.selectbox(
                 "Category",
                 ["All"] + categories,
@@ -839,22 +920,35 @@ def render_long_trend_page() -> None:
                 key="lt_category",
             )
 
-            # Filter registry by category
             if selected_cat != "All":
-                filtered_reg = {k: v for k, v in full_registry.items() if v.get("_category") == selected_cat}
+                filtered_reg = {k: v for k, v in working_reg.items() if v.get("_category") == selected_cat}
             else:
-                filtered_reg = full_registry
+                filtered_reg = working_reg
+
+            # Build display names with RS info
+            def _display_name(k: str, v: dict) -> str:
+                name = v.get("name", k)
+                rs = rs_data.get(k, {})
+                ret = rs.get("return_6m")
+                if ret is not None and rs_filter:
+                    sign = "+" if ret >= 0 else ""
+                    return f"{name} ({k}) [{sign}{ret:.0f}%]"
+                return f"{name} ({k})"
 
             ticker_options = {
-                f"{v.get('name', k)} ({k})": k
-                for k, v in sorted(filtered_reg.items(), key=lambda x: x[1].get("name", x[0]))
+                _display_name(k, v): k
+                for k, v in sorted(filtered_reg.items(), key=lambda x: (
+                    -(rs_data.get(x[0], {}).get("return_6m") or -999),
+                    x[1].get("name", x[0]),
+                ))
             }
             display_names = list(ticker_options.keys())
             default_idx = 0
-            for i, name in enumerate(display_names):
-                if "VOLV" in name or "Volvo" in name:
-                    default_idx = i
-                    break
+            if not rs_filter:
+                for i, name in enumerate(display_names):
+                    if "VOLV" in name or "Volvo" in name:
+                        default_idx = i
+                        break
             selected_display = st.selectbox(
                 "Stock / ETF",
                 display_names,
@@ -863,7 +957,7 @@ def render_long_trend_page() -> None:
             )
             ticker = ticker_options[selected_display]
 
-            st.caption(f"{len(filtered_reg)} instruments in this category")
+            st.caption(f"{len(filtered_reg)} instruments")
         else:
             ticker = st.text_input("Ticker (yfinance)", value="VOLV-B.ST")
 

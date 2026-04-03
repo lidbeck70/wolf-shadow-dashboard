@@ -33,6 +33,9 @@ from .cagr_loader import (
 from .cagr_fundamentals import score_fundamentals
 from .cagr_cycle import (
     DEFAULT_CYCLE,
+    SECTOR_CONFIG,
+    SCORE_LABELS,
+    score_label,
     score_cycle,
     score_cycle_for_sector,
 )
@@ -493,44 +496,53 @@ def _build_rsi_chart(df: pd.DataFrame) -> Optional[go.Figure]:
 # ---------------------------------------------------------------------------
 
 def _cycle_sidebar_controls(sectors: list) -> Dict[str, dict]:
-    """Render per-sector cycle override controls in the sidebar."""
+    """Render per-sector cycle controls as clean sliders (0–3) with color coding."""
     overrides: Dict[str, dict] = {}
     st.sidebar.markdown(
         f"<div style='color:{CYAN};font-size:0.7rem;text-transform:uppercase;"
         f"letter-spacing:0.1em;margin-top:1rem;'>Cycle Assessment</div>",
         unsafe_allow_html=True,
     )
-    with st.sidebar.expander("Per-Sector Cycle Inputs", expanded=False):
+    with st.sidebar.expander("Sector Cycle Scores", expanded=False):
+        st.markdown(
+            f"<div style='color:{DIM};font-size:0.65rem;margin-bottom:8px;'>"
+            "0 = Bearish &nbsp; 1 = Neutral &nbsp; 2 = Bullish &nbsp; 3 = Strong"
+            "</div>",
+            unsafe_allow_html=True,
+        )
         for sector in sorted(sectors):
-            defaults = DEFAULT_CYCLE.get(sector, DEFAULT_CYCLE["Unknown"])
-            st.markdown(
-                f"<span style='color:{MAGENTA};font-size:0.7rem;'>{sector}</span>",
-                unsafe_allow_html=True,
-            )
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                uv = st.checkbox(
-                    "Underval",
-                    value=defaults["sector_undervalued"],
-                    key=f"cycle_uv_{sector}",
+            cfg = SECTOR_CONFIG.get(sector, SECTOR_CONFIG.get("Unknown", {}))
+            default_val = cfg.get("default_score", 1)
+            thesis = cfg.get("thesis", "")
+
+            col_name, col_slider = st.columns([1, 1.5])
+            with col_name:
+                lbl, clr = score_label(default_val)
+                st.markdown(
+                    f"<div style='font-size:0.72rem;font-family:monospace;color:{CYAN};padding-top:8px;'>"
+                    f"{sector}</div>",
+                    unsafe_allow_html=True,
                 )
-            with col2:
-                ui = st.checkbox(
-                    "UnderInv",
-                    value=defaults["underinvestment"],
-                    key=f"cycle_ui_{sector}",
+            with col_slider:
+                val = st.slider(
+                    sector,
+                    min_value=0,
+                    max_value=3,
+                    value=default_val,
+                    key=f"cycle_{sector}",
+                    label_visibility="collapsed",
                 )
-            with col3:
-                sl = st.checkbox(
-                    "Sent Low",
-                    value=defaults["sentiment_low"],
-                    key=f"cycle_sl_{sector}",
+            # Show thesis as tooltip-style caption
+            if thesis:
+                lbl_now, clr_now = score_label(val)
+                st.markdown(
+                    f"<div style='font-size:0.6rem;color:{clr_now};margin:-10px 0 4px 0;'>"
+                    f"{lbl_now} — {thesis}</div>",
+                    unsafe_allow_html=True,
                 )
-            overrides[sector] = {
-                "sector_undervalued": uv,
-                "underinvestment":    ui,
-                "sentiment_low":      sl,
-            }
+
+            overrides[sector] = {"cycle_score": val}
+
     return overrides
 
 

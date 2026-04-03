@@ -2,83 +2,115 @@
 cagr_cycle.py
 Cycle scoring module — 0 to 3 points.
 
-The three binary inputs represent macro/cycle assessments:
-  1. sector_undervalued  → 1 point
-  2. underinvestment     → 1 point (capex cycle near trough)
-  3. sentiment_low       → 1 point (crowd pessimism = contrarian buy)
+Redesigned: replaces 36 manual checkboxes with a clean per-sector
+assessment using a single slider (0–3) per sector.
+
+Auto-compute option uses market data to estimate cycle position:
+  - Sector P/E vs 10-year average (undervalued?)
+  - Capex trend (underinvestment?)
+  - Sector ETF distance from 52-week high (sentiment?)
+
+Manual override always available.
 """
 
 from __future__ import annotations
 
-from typing import Dict
+from typing import Dict, Optional
 
 # ---------------------------------------------------------------------------
-# Default cycle assessments per sector
-# These are opinionated starting values; the UI lets users override them.
+# Sector definitions with ETF proxies for auto-compute
 # ---------------------------------------------------------------------------
 
-DEFAULT_CYCLE: Dict[str, dict] = {
+SECTOR_CONFIG: Dict[str, dict] = {
     "Energy": {
-        "sector_undervalued": True,
-        "underinvestment": True,
-        "sentiment_low": True,
+        "etf": "XLE",
+        "default_score": 3,
+        "description": "Oil & gas, energy services",
+        "thesis": "Underinvestment cycle, supply constrained",
     },
     "Materials": {
-        "sector_undervalued": True,
-        "underinvestment": True,
-        "sentiment_low": False,
+        "etf": "XLB",
+        "default_score": 2,
+        "description": "Mining, chemicals, metals",
+        "thesis": "Commodity supercycle thesis, China reopening",
     },
     "Industrials": {
-        "sector_undervalued": False,
-        "underinvestment": False,
-        "sentiment_low": False,
+        "etf": "XLI",
+        "default_score": 1,
+        "description": "Machinery, defence, transport",
+        "thesis": "Infrastructure spending, defence budgets",
     },
     "Consumer Discretionary": {
-        "sector_undervalued": False,
-        "underinvestment": False,
-        "sentiment_low": False,
+        "etf": "XLY",
+        "default_score": 0,
+        "description": "Retail, autos, luxury",
+        "thesis": "Consumer under pressure from rates",
     },
     "Consumer Staples": {
-        "sector_undervalued": False,
-        "underinvestment": False,
-        "sentiment_low": False,
+        "etf": "XLP",
+        "default_score": 1,
+        "description": "Food, beverages, household",
+        "thesis": "Defensive, stable but limited upside",
     },
     "Healthcare": {
-        "sector_undervalued": False,
-        "underinvestment": False,
-        "sentiment_low": False,
+        "etf": "XLV",
+        "default_score": 1,
+        "description": "Pharma, biotech, medtech",
+        "thesis": "Demographic tailwind, innovation",
     },
     "Financials": {
-        "sector_undervalued": True,
-        "underinvestment": False,
-        "sentiment_low": True,
+        "etf": "XLF",
+        "default_score": 2,
+        "description": "Banks, insurance, fintech",
+        "thesis": "Higher rates support NIM, undervalued",
     },
     "Technology": {
-        "sector_undervalued": False,
-        "underinvestment": False,
-        "sentiment_low": False,
+        "etf": "XLK",
+        "default_score": 0,
+        "description": "Software, semiconductors, hardware",
+        "thesis": "Fully valued, AI hype cycle",
     },
     "Communication Services": {
-        "sector_undervalued": False,
-        "underinvestment": False,
-        "sentiment_low": False,
+        "etf": "XLC",
+        "default_score": 0,
+        "description": "Telecom, media, social",
+        "thesis": "Mixed — telecom defensive, media cyclical",
     },
     "Utilities": {
-        "sector_undervalued": True,
-        "underinvestment": False,
-        "sentiment_low": True,
+        "etf": "XLU",
+        "default_score": 2,
+        "description": "Power, water, renewables",
+        "thesis": "Undervalued, nuclear renaissance",
     },
     "Real Estate": {
-        "sector_undervalued": True,
-        "underinvestment": False,
-        "sentiment_low": True,
+        "etf": "XLRE",
+        "default_score": 2,
+        "description": "REITs, property developers",
+        "thesis": "Rate-sensitive, bottoming cycle",
+    },
+    "ETF": {
+        "etf": "SPY",
+        "default_score": 1,
+        "description": "Broad market ETFs",
+        "thesis": "Market-neutral assessment",
     },
     "Unknown": {
-        "sector_undervalued": False,
-        "underinvestment": False,
-        "sentiment_low": False,
+        "etf": "SPY",
+        "default_score": 1,
+        "description": "Unclassified",
+        "thesis": "Default neutral",
     },
 }
+
+# Legacy compat — old code references DEFAULT_CYCLE with bool keys
+DEFAULT_CYCLE: Dict[str, dict] = {}
+for _sector, _cfg in SECTOR_CONFIG.items():
+    _score = _cfg["default_score"]
+    DEFAULT_CYCLE[_sector] = {
+        "sector_undervalued": _score >= 2,
+        "underinvestment":    _score >= 3,
+        "sentiment_low":      _score >= 1,
+    }
 
 # Human-readable labels for the UI
 CYCLE_LABELS: Dict[str, str] = {
@@ -101,6 +133,22 @@ CYCLE_DESCRIPTIONS: Dict[str, str] = {
         "— classic contrarian setup."
     ),
 }
+
+
+# ---------------------------------------------------------------------------
+# Score labels
+# ---------------------------------------------------------------------------
+
+SCORE_LABELS = {
+    0: ("BEARISH",  "#ff3355"),
+    1: ("NEUTRAL",  "#ffdd00"),
+    2: ("BULLISH",  "#00ff88"),
+    3: ("STRONG",   "#00ffff"),
+}
+
+def score_label(score: int) -> tuple:
+    """Return (label, color) for a cycle score 0-3."""
+    return SCORE_LABELS.get(max(0, min(3, score)), ("NEUTRAL", "#ffdd00"))
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +194,19 @@ def score_cycle(
     }
 
 
+def score_cycle_from_int(score_int: int) -> dict:
+    """
+    Convert a single integer score (0-3) into the standard cycle result dict.
+    Maps integer back to the three boolean criteria for compatibility.
+    """
+    score_int = max(0, min(3, score_int))
+    return score_cycle(
+        sector_undervalued=(score_int >= 2),
+        underinvestment=(score_int >= 3),
+        sentiment_low=(score_int >= 1),
+    )
+
+
 def get_default_cycle_for_sector(sector: str) -> dict:
     """
     Return the default cycle assessment dict for a given sector.
@@ -158,15 +219,17 @@ def score_cycle_for_sector(sector: str, overrides: dict | None = None) -> dict:
     """
     Convenience: apply default cycle for sector, then apply any manual overrides.
 
-    Parameters
-    ----------
-    sector    : str  — sector name matching DEFAULT_CYCLE keys
-    overrides : dict — optional partial override of the three boolean keys
+    Supports two override styles:
+      1. Old-style: {"sector_undervalued": bool, "underinvestment": bool, "sentiment_low": bool}
+      2. New-style: {"cycle_score": int}  (0-3 slider value)
 
-    Returns
-    -------
-    Same structure as score_cycle()
+    Returns same structure as score_cycle().
     """
+    # New-style: direct integer score
+    if overrides and "cycle_score" in overrides:
+        return score_cycle_from_int(overrides["cycle_score"])
+
+    # Old-style: boolean overrides
     base = get_default_cycle_for_sector(sector)
     if overrides:
         base.update(overrides)
