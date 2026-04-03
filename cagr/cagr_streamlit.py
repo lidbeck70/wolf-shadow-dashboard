@@ -887,11 +887,7 @@ def render_cagr_page() -> None:
     if "cagr_last_scan" not in st.session_state:
         st.session_state.cagr_last_scan = 0.0
 
-    needs_scan = (
-        scan_clicked
-        or not st.session_state.cagr_results
-        or (time.time() - st.session_state.cagr_last_scan) > 3600
-    )
+    needs_scan = scan_clicked  # Only scan on button press — no auto-scan
 
     if needs_scan and tickers_meta:
         with st.spinner("Running CAGR scan..."):
