@@ -56,32 +56,56 @@ try:
 except ImportError:
     _HAS_BORSDATA = False
 
-try:
-    from ovtlyr.indicators.trend      import compute_trend
-    from ovtlyr.indicators.momentum   import compute_momentum
-    from ovtlyr.indicators.volatility import compute_volatility
-    from ovtlyr.indicators.volume     import compute_volume
-    from ovtlyr.indicators.orderblocks import detect_orderblocks, classify_price_vs_ob
-    from ovtlyr.indicators.sentiment   import fetch_sentiment
-    from ovtlyr.indicators.sector      import fetch_sector_breadth
-except ImportError:
+# Import each indicator module separately to avoid one failure killing all
+compute_trend        = None
+compute_momentum     = None
+compute_volatility   = None
+compute_volume       = None
+detect_orderblocks   = None
+classify_price_vs_ob = None
+compute_sentiment    = None
+compute_breadth      = None
+
+for _prefix in ("ovtlyr.indicators", "indicators"):
     try:
-        from indicators.trend       import compute_trend       # type: ignore
-        from indicators.momentum    import compute_momentum    # type: ignore
-        from indicators.volatility  import compute_volatility  # type: ignore
-        from indicators.volume      import compute_volume      # type: ignore
-        from indicators.orderblocks import detect_orderblocks, classify_price_vs_ob  # type: ignore
-        from indicators.sentiment   import fetch_sentiment     # type: ignore
-        from indicators.sector      import fetch_sector_breadth  # type: ignore
-    except ImportError:
-        compute_trend        = None
-        compute_momentum     = None
-        compute_volatility   = None
-        compute_volume       = None
-        detect_orderblocks   = None
-        classify_price_vs_ob = None
-        fetch_sentiment      = None
-        fetch_sector_breadth = None
+        _mod = __import__(f"{_prefix}.trend", fromlist=["compute_trend"])
+        compute_trend = _mod.compute_trend
+    except Exception:
+        pass
+    try:
+        _mod = __import__(f"{_prefix}.momentum", fromlist=["compute_momentum"])
+        compute_momentum = _mod.compute_momentum
+    except Exception:
+        pass
+    try:
+        _mod = __import__(f"{_prefix}.volatility", fromlist=["compute_volatility"])
+        compute_volatility = _mod.compute_volatility
+    except Exception:
+        pass
+    try:
+        _mod = __import__(f"{_prefix}.volume", fromlist=["compute_volume"])
+        compute_volume = _mod.compute_volume
+    except Exception:
+        pass
+    try:
+        _mod = __import__(f"{_prefix}.orderblocks", fromlist=["detect_orderblocks", "classify_price_vs_ob"])
+        detect_orderblocks = _mod.detect_orderblocks
+        classify_price_vs_ob = _mod.classify_price_vs_ob
+    except Exception:
+        pass
+    try:
+        _mod = __import__(f"{_prefix}.sentiment", fromlist=["compute_sentiment"])
+        compute_sentiment = _mod.compute_sentiment
+    except Exception:
+        pass
+    try:
+        _mod = __import__(f"{_prefix}.breadth", fromlist=["compute_breadth"])
+        compute_breadth = _mod.compute_breadth
+    except Exception:
+        pass
+    # If we got at least orderblocks, stop trying other prefixes
+    if detect_orderblocks is not None:
+        break
 
 # ------------------------------------------------------------------ #
 #  Constants
@@ -123,16 +147,16 @@ def _load_ohlcv(ticker: str, period: str) -> pd.DataFrame:
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def _load_sentiment() -> dict:
-    if fetch_sentiment is not None:
-        return fetch_sentiment()
+    if compute_sentiment is not None:
+        return compute_sentiment({}, {}, {}, {})
     # Dummy fallback
     return {"score": 50, "label": "Neutral"}
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def _load_sector_breadth() -> dict:
-    if fetch_sector_breadth is not None:
-        return fetch_sector_breadth()
+    if compute_breadth is not None:
+        return compute_breadth()
     # Dummy fallback
     return {
         "Technology":   {"state": "bullish", "change": 1.2,  "weight": 20},
