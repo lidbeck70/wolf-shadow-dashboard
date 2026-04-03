@@ -446,3 +446,182 @@ def build_momentum_chart(df: pd.DataFrame, momentum_data: dict) -> go.Figure:
         legend=dict(font=dict(color=_TEXT, size=10), bgcolor="rgba(0,0,0,0)"),
     )
     return fig
+
+
+# ------------------------------------------------------------------ #
+#  build_volatility_histogram
+# ------------------------------------------------------------------ #
+
+def build_volatility_histogram(vol_hist: dict) -> go.Figure:
+    """
+    OVTLYR-style directional volatility histogram.
+    Green bars for positive returns, red for negative.
+    """
+    bins = vol_hist.get("bins", [])
+    counts = vol_hist.get("counts", [])
+    classification = vol_hist.get("classification", "")
+    up_pct = vol_hist.get("up_pct", 50)
+    skew = vol_hist.get("skew", 0)
+
+    colors = []
+    for b in bins:
+        if b > 0:
+            colors.append("rgba(0,255,136,0.7)")
+        elif b < 0:
+            colors.append("rgba(255,51,85,0.7)")
+        else:
+            colors.append("rgba(74,74,106,0.7)")
+
+    fig = go.Figure(go.Bar(
+        x=bins, y=counts,
+        marker_color=colors,
+        hovertemplate="Return: %{x:.1f}%<br>Days: %{y}<extra></extra>",
+    ))
+
+    # Add classification annotation
+    class_color = _GREEN if "Bullish" in classification else (_RED if "Bearish" in classification else _YELLOW)
+
+    fig.update_layout(
+        template="plotly_dark", paper_bgcolor=_BG2, plot_bgcolor=_BG,
+        title=dict(
+            text=f"Volatility Distribution — {classification}",
+            font=dict(color=class_color, size=13),
+        ),
+        xaxis=dict(title="Daily Return %", tickfont=dict(size=10, color=_DIM), gridcolor="rgba(74,74,106,0.2)"),
+        yaxis=dict(title="Days", tickfont=dict(size=10, color=_DIM), gridcolor="rgba(74,74,106,0.2)"),
+        height=220,
+        margin=dict(l=40, r=16, t=36, b=32),
+        showlegend=False,
+        # Add annotation with stats
+        annotations=[dict(
+            x=0.98, y=0.95, xref="paper", yref="paper",
+            text=f"Up: {up_pct:.0f}% | Skew: {skew:+.2f}",
+            showarrow=False, font=dict(size=10, color=_DIM),
+            xanchor="right",
+        )],
+    )
+
+    # Vertical line at zero
+    fig.add_vline(x=0, line_color="rgba(224,224,255,0.3)", line_dash="dot", line_width=1)
+
+    return fig
+
+
+# ------------------------------------------------------------------ #
+#  build_oscillator_direction
+# ------------------------------------------------------------------ #
+
+def build_oscillator_direction(osc: dict) -> go.Figure:
+    """
+    RSI oscillator with direction arrows and timing indicator.
+    """
+    rsi_series = osc.get("rsi_series", [])
+    rsi_now = osc.get("rsi", 50)
+    direction = osc.get("direction", "Flat")
+    days = osc.get("days_in_direction", 0)
+    timing = osc.get("timing", "Flat")
+    timing_color = osc.get("timing_color", "rgba(74,74,106,0.9)")
+    signal = osc.get("signal", "WAIT")
+
+    fig = go.Figure()
+
+    # OB/OS zones
+    fig.add_hrect(y0=70, y1=100, fillcolor="rgba(255,51,85,0.07)", line_width=0)
+    fig.add_hrect(y0=0, y1=30, fillcolor="rgba(0,255,136,0.07)", line_width=0)
+    fig.add_hline(y=70, line_color="rgba(255,51,85,0.3)", line_dash="dot", line_width=1)
+    fig.add_hline(y=30, line_color="rgba(0,255,136,0.3)", line_dash="dot", line_width=1)
+    fig.add_hline(y=50, line_color="rgba(74,74,106,0.4)", line_dash="dot", line_width=1)
+
+    # RSI line
+    line_color = _GREEN if direction == "Rising" else (_RED if direction == "Falling" else _DIM)
+    fig.add_trace(go.Scatter(
+        y=rsi_series, mode="lines", name="RSI",
+        line=dict(color=line_color, width=2),
+        fill="tozeroy", fillcolor="rgba(0,255,255,0.03)",
+    ))
+
+    # Direction arrow annotation
+    arrow = "▲" if direction == "Rising" else ("▼" if direction == "Falling" else "◆")
+    signal_color = _GREEN if signal == "ENTER" else (_RED if signal in ("EXIT", "LATE") else _YELLOW)
+
+    fig.update_layout(
+        template="plotly_dark", paper_bgcolor=_BG2, plot_bgcolor=_BG,
+        title=dict(
+            text=(
+                f"Oscillator: {arrow} {direction} ({days}d) — "
+                f"<span style='color:{timing_color}'>{timing}</span> — "
+                f"<span style='color:{signal_color}'>{signal}</span>"
+            ),
+            font=dict(color=_TEXT, size=12),
+        ),
+        yaxis=dict(range=[0, 100], tickfont=dict(size=10, color=_DIM)),
+        xaxis=dict(showticklabels=False),
+        height=200,
+        margin=dict(l=32, r=16, t=36, b=8),
+        showlegend=False,
+    )
+
+    return fig
+
+
+# ------------------------------------------------------------------ #
+#  build_bull_list_gauge
+# ------------------------------------------------------------------ #
+
+def build_bull_list_gauge(bl: dict) -> go.Figure:
+    """
+    Bull List % gauge with zone indicators and EMA5 crossover.
+    """
+    bull_pct = bl.get("bull_pct", 50)
+    zone = bl.get("zone", "Bullish")
+    signal = bl.get("signal", "CAUTION")
+    bull_count = bl.get("bull_count", 0)
+    total = bl.get("total_count", 1)
+
+    # Colors based on zone
+    if "Extreme Bullish" in zone:
+        bar_color = _RED  # Extreme greed = danger
+        zone_label = "EXTREME GREED — STOP NEW BUYS"
+    elif "Bullish" in zone:
+        bar_color = _GREEN
+        zone_label = "BULLISH ZONE"
+    elif "Extreme Bearish" in zone:
+        bar_color = _GREEN  # Extreme fear = opportunity
+        zone_label = "EXTREME FEAR — BEST ENTRY"
+    else:
+        bar_color = _YELLOW
+        zone_label = "BEARISH ZONE — CAUTION"
+
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=bull_pct,
+        title=dict(
+            text=f"<b>Bull List %</b><br><span style='font-size:0.7em;color:{bar_color}'>{zone_label}</span>",
+            font=dict(color=_TEXT, size=13),
+        ),
+        number=dict(suffix="%", font=dict(color=bar_color, size=26)),
+        gauge=dict(
+            axis=dict(range=[0, 100], tickfont=dict(size=9, color=_DIM)),
+            bar=dict(color=bar_color, thickness=0.3),
+            bgcolor=_BG, borderwidth=0,
+            steps=[
+                dict(range=[0, 25], color="rgba(0,255,136,0.15)"),   # Extreme fear = green (opportunity)
+                dict(range=[25, 50], color="rgba(255,221,0,0.10)"),
+                dict(range=[50, 75], color="rgba(255,221,0,0.10)"),
+                dict(range=[75, 100], color="rgba(255,51,85,0.15)"),  # Extreme greed = red (danger)
+            ],
+            threshold=dict(line=dict(color=_CYAN, width=2), thickness=0.75, value=bull_pct),
+        ),
+    ))
+
+    fig.add_annotation(
+        x=0.5, y=-0.15, xref="paper", yref="paper",
+        text=f"{bull_count}/{total} stocks bullish | Signal: {signal}",
+        showarrow=False, font=dict(size=10, color=_DIM),
+    )
+
+    fig.update_layout(
+        template="plotly_dark", paper_bgcolor=_BG2, plot_bgcolor=_BG,
+        height=220, margin=dict(l=16, r=16, t=40, b=24),
+    )
+    return fig

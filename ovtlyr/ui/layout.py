@@ -27,6 +27,7 @@ try:
         build_price_chart, build_sentiment_gauge,
         build_sector_pie, build_heatmap,
         build_risk_gauge, build_momentum_chart,
+        build_volatility_histogram, build_oscillator_direction, build_bull_list_gauge,
     )
 except ImportError:
     from ui.colors import (  # type: ignore
@@ -39,6 +40,7 @@ except ImportError:
         build_price_chart, build_sentiment_gauge,
         build_sector_pie, build_heatmap,
         build_risk_gauge, build_momentum_chart,
+        build_volatility_histogram, build_oscillator_direction, build_bull_list_gauge,
     )
 
 # Signal engines
@@ -65,6 +67,9 @@ detect_orderblocks   = None
 classify_price_vs_ob = None
 compute_sentiment    = None
 compute_breadth      = None
+compute_volatility_histogram = None
+compute_oscillator_direction = None
+compute_bull_list_pct        = None
 
 for _prefix in ("ovtlyr.indicators", "indicators"):
     try:
@@ -101,6 +106,13 @@ for _prefix in ("ovtlyr.indicators", "indicators"):
     try:
         _mod = __import__(f"{_prefix}.breadth", fromlist=["compute_breadth"])
         compute_breadth = _mod.compute_breadth
+    except Exception:
+        pass
+    try:
+        _mod = __import__(f"{_prefix}.advanced", fromlist=["compute_volatility_histogram", "compute_oscillator_direction", "compute_bull_list_pct"])
+        compute_volatility_histogram = _mod.compute_volatility_histogram
+        compute_oscillator_direction = _mod.compute_oscillator_direction
+        compute_bull_list_pct = _mod.compute_bull_list_pct
     except Exception:
         pass
     # If we got at least orderblocks, stop trying other prefixes
@@ -219,6 +231,22 @@ def _indicator_card(title: str, lines: list[tuple[str, str, str]], color: str) -
         f'</div>',
         unsafe_allow_html=True,
     )
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _fetch_etf_data_for_bull_list():
+    import yfinance as yf
+    etf_tickers = ["XLE", "XLF", "XLK", "XLV", "XLI", "XLB", "XLC", "XLY", "XLP", "XLU", "XLRE"]
+    etf_data = {}
+    for etf in etf_tickers:
+        try:
+            t = yf.Ticker(etf)
+            h = t.history(period="3mo", auto_adjust=True)
+            if not h.empty:
+                etf_data[etf] = h
+        except Exception:
+            pass
+    return etf_data
 
 
 # ------------------------------------------------------------------ #
@@ -450,6 +478,31 @@ def render_ovtlyr_page() -> None:
         )
         sector_green = bullish_sectors > len(breadth_data) / 2 if breadth_data else True
 
+        # Advanced indicators
+        vol_histogram = {}
+        oscillator = {}
+        bull_list = {}
+
+        if compute_volatility_histogram is not None:
+            try:
+                vol_histogram = compute_volatility_histogram(df)
+            except Exception:
+                vol_histogram = {}
+
+        if compute_oscillator_direction is not None:
+            try:
+                oscillator = compute_oscillator_direction(df)
+            except Exception:
+                oscillator = {}
+
+        if compute_bull_list_pct is not None:
+            try:
+                etf_data = _fetch_etf_data_for_bull_list()
+                if etf_data:
+                    bull_list = compute_bull_list_pct(etf_data)
+            except Exception:
+                bull_list = {}
+
         # Build scalar-only trend dict for signal modules
         def _last(val, default=0.0):
             if val is None:
@@ -643,6 +696,69 @@ def render_ovtlyr_page() -> None:
             st.plotly_chart(fig_risk, use_container_width=True, config={"displayModeBar": False})
         except Exception:
             pass
+
+    # ── Advanced Indicators Row ──────────────────────────────────────
+    st.markdown(
+        f"<div style='color:{CYAN};font-size:0.7rem;text-transform:uppercase;"
+        f"letter-spacing:0.1em;margin:16px 0 8px 0;border-top:1px solid rgba(0,255,255,0.13);"
+        f"padding-top:12px;'>OVTLYR Advanced Analysis</div>",
+        unsafe_allow_html=True,
+    )
+
+    adv_c1, adv_c2, adv_c3 = st.columns([1, 1, 1])
+
+    with adv_c1:
+        if vol_histogram:
+            try:
+                fig_vh = build_volatility_histogram(vol_histogram)
+                st.plotly_chart(fig_vh, use_container_width=True, key="vol_hist")
+                # Stats below
+                st.markdown(
+                    f"<div style='font-size:0.68rem;color:{DIM};text-align:center;'>"
+                    f"Up days: {vol_histogram.get('up_pct', 50):.0f}% | "
+                    f"Avg up: +{vol_histogram.get('mean_up', 0):.2f}% | "
+                    f"Avg down: {vol_histogram.get('mean_down', 0):.2f}% | "
+                    f"{vol_histogram.get('years_analyzed', 0):.1f}y data"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+            except Exception:
+                st.info("Volatility histogram: chart error")
+        else:
+            st.info("Volatility histogram: insufficient data")
+
+    with adv_c2:
+        if oscillator:
+            try:
+                fig_osc = build_oscillator_direction(oscillator)
+                st.plotly_chart(fig_osc, use_container_width=True, key="osc_dir")
+                # Timing badge
+                timing = oscillator.get("timing", "")
+                tc = oscillator.get("timing_color", "rgba(74,74,106,0.9)")
+                sig = oscillator.get("signal", "WAIT")
+                st.markdown(
+                    f"<div style='text-align:center;font-size:0.72rem;'>"
+                    f"<span style='color:{tc};font-weight:700;'>{timing}</span>"
+                    f" ({oscillator.get('days_in_direction', 0)} days) — "
+                    f"RSI: {oscillator.get('rsi', 50):.0f} "
+                    f"({'↑' if oscillator.get('direction') == 'Rising' else '↓'}{abs(oscillator.get('rsi_change_5d', 0)):.0f} 5d)"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+            except Exception:
+                st.info("Oscillator: chart error")
+        else:
+            st.info("Oscillator: insufficient data")
+
+    with adv_c3:
+        if bull_list:
+            try:
+                fig_bl = build_bull_list_gauge(bull_list)
+                st.plotly_chart(fig_bl, use_container_width=True, key="bull_list")
+            except Exception:
+                st.info("Bull List %: chart error")
+        else:
+            st.info("Bull List %: loading...")
 
     # ── BOTTOM TABS ───────────────────────────────────────────────────
     tab_a, tab_b, tab_c, tab_d = st.tabs(
