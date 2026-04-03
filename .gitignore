@@ -4,4 +4,3 @@ __pycache__/
 .borsdata_cache/
 *.egg-info/
 .env
-output/

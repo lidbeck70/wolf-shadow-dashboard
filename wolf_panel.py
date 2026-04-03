@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-WOLF x SHADOW PANEL — Streamlit Dashboard v1.0
-================================================
-Cyberpunk dark-theme dashboard for the WOLF x SHADOW swing trading strategy.
+SweWolf Panel — Lidbeck Edition v2.0
+====================================
+Cyberpunk dark-theme dashboard for Nordic swing trading intelligence.
 
 Run:
     streamlit run wolf_panel.py
@@ -44,6 +44,34 @@ try:
     CAGR_AVAILABLE = True
 except ImportError:
     CAGR_AVAILABLE = False
+
+# Long-Term Trend & Drawdowns module
+try:
+    from long_trend.long_trend_streamlit import render_long_trend_page
+    LONG_TREND_AVAILABLE = True
+except ImportError:
+    LONG_TREND_AVAILABLE = False
+
+# Sector & Global Regime module
+try:
+    from sector_cycle.sector_cycle_streamlit import render_sector_cycle_page
+    SECTOR_CYCLE_AVAILABLE = True
+except ImportError:
+    SECTOR_CYCLE_AVAILABLE = False
+
+# Sentiment & Flow module
+try:
+    from sentiment.sentiment_streamlit import render_sentiment_page
+    SENTIMENT_AVAILABLE = True
+except ImportError:
+    SENTIMENT_AVAILABLE = False
+
+# Heatmap module
+try:
+    from heatmap.heatmap_streamlit import render_heatmap_page
+    HEATMAP_AVAILABLE = True
+except ImportError:
+    HEATMAP_AVAILABLE = False
 import plotly.express as px
 from plotly.subplots import make_subplots
 import streamlit as st
@@ -53,7 +81,7 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 st.set_page_config(
     layout="wide",
-    page_title="WOLF x SHADOW",
+    page_title="SweWolf Panel — Lidbeck Edition",
     page_icon="🐺",
 )
 
@@ -385,8 +413,8 @@ def inject_css():
 def wolf_banner():
     st.markdown("""
     <div class="wolf-banner">
-        <h1>🐺 WOLF x SHADOW</h1>
-        <p>Swing Trading Intelligence Platform &nbsp;|&nbsp; 4-Layer Regime Scoring &nbsp;|&nbsp; Cyberpunk Edition</p>
+        <h1>🐺 SweWolf Panel</h1>
+        <p>Lidbeck Edition &nbsp;|&nbsp; Nordic Swing Trading Intelligence &nbsp;|&nbsp; Multi-Layer Analysis</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1780,15 +1808,27 @@ def tab_regime():
 # MAIN APP
 # =============================================================================
 
+def _tab_not_found(module_name: str, folder: str):
+    """Show a friendly message when a module is not found."""
+    st.warning(f"{module_name} module not found. Make sure the `{folder}/` folder is in the dashboard directory.")
+    st.code(f"Expected: dashboard/{folder}/")
+
+
 def main():
     inject_css()
     wolf_banner()
 
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab_labels = [
         "  SCREENER  ",
         "  BACKTEST  ",
         "  REGIME MONITOR  ",
-        "  CAGR STRATEGY  "])
+        "  CAGR STRATEGY  ",
+        "  LONG-TERM TREND  ",
+        "  SECTOR & REGIME  ",
+        "  SENTIMENT  ",
+        "  HEATMAP  ",
+    ]
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(tab_labels)
 
     with tab1:
         tab_screener()
@@ -1803,8 +1843,31 @@ def main():
         if CAGR_AVAILABLE:
             render_cagr_page()
         else:
-            st.warning("CAGR Strategy module not found. Make sure the cagr/ folder is in the dashboard directory.")
-            st.code("Expected: dashboard/cagr/cagr_streamlit.py")
+            _tab_not_found("CAGR Strategy", "cagr")
+
+    with tab5:
+        if LONG_TREND_AVAILABLE:
+            render_long_trend_page()
+        else:
+            _tab_not_found("Long-Term Trend", "long_trend")
+
+    with tab6:
+        if SECTOR_CYCLE_AVAILABLE:
+            render_sector_cycle_page()
+        else:
+            _tab_not_found("Sector & Global Regime", "sector_cycle")
+
+    with tab7:
+        if SENTIMENT_AVAILABLE:
+            render_sentiment_page()
+        else:
+            _tab_not_found("Sentiment & Flow", "sentiment")
+
+    with tab8:
+        if HEATMAP_AVAILABLE:
+            render_heatmap_page()
+        else:
+            _tab_not_found("Heatmap", "heatmap")
 
 
 if __name__ == "__main__":
