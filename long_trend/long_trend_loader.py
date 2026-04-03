@@ -128,8 +128,20 @@ def fetch_long_history(ticker: str, period: str = "10y") -> pd.DataFrame:
     Returns DataFrame with columns: Open, High, Low, Close, Volume
     indexed by Date.
     """
-    # --- Try Börsdata first ---
-    if _BORSDATA_OK and _get_api is not None:
+    # Skip Börsdata for index tickers and non-stock instruments
+    _skip_borsdata = (
+        ticker.startswith("^")              # Index (^GSPC, ^OMX, etc)
+        or ticker.endswith(".AS")           # Amsterdam ETFs (UCITS)
+        or ticker.endswith(".DE")           # Xetra ETFs (UCITS)
+        or ticker.endswith(".PA")           # Paris ETFs
+        or ticker.endswith(".L")            # London ETFs
+        or ticker in ("SPY", "QQQ", "IWM", "GLD", "SLV", "GDX", "GDXJ",
+                      "XLE", "XLB", "XLF", "XLK", "XLV", "XLI", "XLY",
+                      "XLP", "XLU", "XLC", "XLRE")
+    )
+
+    # --- Try Börsdata first (only for stocks it covers) ---
+    if _BORSDATA_OK and _get_api is not None and not _skip_borsdata:
         try:
             api = _get_api()
             if api.is_configured:
