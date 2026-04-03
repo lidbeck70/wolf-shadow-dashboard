@@ -171,7 +171,7 @@ def fetch_long_history(ticker: str, period: str = "10y") -> pd.DataFrame:
         for attempt in range(2):
             try:
                 tk = yf.Ticker(ticker)
-                df = tk.history(period=attempt_period, auto_adjust=True, progress=False)
+                df = tk.history(period=attempt_period, auto_adjust=True)
                 df = df.dropna(how="all")
                 if df.index.tz is not None:
                     df.index = df.index.tz_localize(None)
@@ -195,7 +195,7 @@ def _fetch_index_history(index_ticker: str, period: str = "10y") -> pd.Series:
     """Fetch close series for a market index."""
     try:
         tk = yf.Ticker(index_ticker)
-        df = tk.history(period=period, auto_adjust=True, progress=False)
+        df = tk.history(period=period, auto_adjust=True)
         if df.empty:
             return pd.Series(dtype=float)
         if df.index.tz is not None:
