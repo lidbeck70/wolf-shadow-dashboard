@@ -56,6 +56,142 @@ except ImportError:
             NORDIC_TICKERS = {}
 
 # ---------------------------------------------------------------------------
+# Extended ticker universes for Long-Term Trend analysis
+# ---------------------------------------------------------------------------
+
+# Nordic mid & small caps (Sweden)
+NORDIC_MIDSMALL_SE: dict = {
+    "BEIA-B.ST": {"name": "Beijer Alma B", "country": "Sweden", "sector": "Industrials"},
+    "BURE.ST":   {"name": "Bure Equity", "country": "Sweden", "sector": "Financials"},
+    "CAST.ST":   {"name": "Castellum", "country": "Sweden", "sector": "Real Estate"},
+    "CATE.ST":   {"name": "Catena", "country": "Sweden", "sector": "Real Estate"},
+    "DIOS.ST":   {"name": "Dios Fastigheter", "country": "Sweden", "sector": "Real Estate"},
+    "ELUX-B.ST": {"name": "Electrolux B", "country": "Sweden", "sector": "Consumer Discretionary"},
+    "FABG.ST":   {"name": "Fabege", "country": "Sweden", "sector": "Real Estate"},
+    "GETI-B.ST": {"name": "Getinge B", "country": "Sweden", "sector": "Healthcare"},
+    "HUFV-A.ST": {"name": "Hufvudstaden A", "country": "Sweden", "sector": "Real Estate"},
+    "HUSQ-B.ST": {"name": "Husqvarna B", "country": "Sweden", "sector": "Industrials"},
+    "KINV-B.ST": {"name": "Kinnevik B", "country": "Sweden", "sector": "Financials"},
+    "LATO-B.ST": {"name": "Latour B", "country": "Sweden", "sector": "Financials"},
+    "LUND-B.ST": {"name": "Lundin Mining B", "country": "Sweden", "sector": "Materials"},
+    "LUMI.ST":   {"name": "Loomis", "country": "Sweden", "sector": "Industrials"},
+    "SCA-B.ST":  {"name": "SCA B", "country": "Sweden", "sector": "Materials"},
+    "SAGA-B.ST": {"name": "Sagax B", "country": "Sweden", "sector": "Real Estate"},
+    "SECU-B.ST": {"name": "Securitas B", "country": "Sweden", "sector": "Industrials"},
+    "SKA-B.ST":  {"name": "Skanska B", "country": "Sweden", "sector": "Industrials"},
+    "SSAB-B.ST": {"name": "SSAB B", "country": "Sweden", "sector": "Materials"},
+    "SWMA.ST":   {"name": "Swedish Match", "country": "Sweden", "sector": "Consumer Staples"},
+    "TEL2-B.ST": {"name": "Tele2 B", "country": "Sweden", "sector": "Communication"},
+    "TELIA.ST":  {"name": "Telia Company", "country": "Sweden", "sector": "Communication"},
+    "THULE.ST":  {"name": "Thule Group", "country": "Sweden", "sector": "Consumer Discretionary"},
+    "TREL-B.ST": {"name": "Trelleborg B", "country": "Sweden", "sector": "Industrials"},
+    "WIHL.ST":   {"name": "Wihlborgs", "country": "Sweden", "sector": "Real Estate"},
+    "ADDV-B.ST": {"name": "Addvise B", "country": "Sweden", "sector": "Healthcare"},
+    "BALD-B.ST": {"name": "Balder B", "country": "Sweden", "sector": "Real Estate"},
+    "BILL.ST":   {"name": "Billerud", "country": "Sweden", "sector": "Materials"},
+    "CLAR-B.ST": {"name": "Clas Ohlson B", "country": "Sweden", "sector": "Consumer Discretionary"},
+    "NOLA-B.ST": {"name": "Nolato B", "country": "Sweden", "sector": "Industrials"},
+}
+
+# Nordic mid & small caps (Norway)
+NORDIC_MIDSMALL_NO: dict = {
+    "ORK.OL":    {"name": "Orkla", "country": "Norway", "sector": "Consumer Staples"},
+    "YAR.OL":    {"name": "Yara International", "country": "Norway", "sector": "Materials"},
+    "GOGL.OL":   {"name": "Golden Ocean", "country": "Norway", "sector": "Industrials"},
+    "FRO.OL":    {"name": "Frontline", "country": "Norway", "sector": "Energy"},
+    "VAR.OL":    {"name": "Vår Energi", "country": "Norway", "sector": "Energy"},
+    "HAFNI.OL":  {"name": "Hafnia", "country": "Norway", "sector": "Energy"},
+    "TGS.OL":    {"name": "TGS NOPEC", "country": "Norway", "sector": "Energy"},
+    "HAUTO.OL":  {"name": "Höegh Autoliners", "country": "Norway", "sector": "Industrials"},
+    "AKER.OL":   {"name": "Aker ASA", "country": "Norway", "sector": "Financials"},
+    "AKSO.OL":   {"name": "Aker Solutions", "country": "Norway", "sector": "Energy"},
+    "NOD.OL":    {"name": "Nordic Semiconductor", "country": "Norway", "sector": "Technology"},
+    "NEL.OL":    {"name": "Nel ASA", "country": "Norway", "sector": "Energy"},
+    "KOG.OL":    {"name": "Kongsberg Gruppen", "country": "Norway", "sector": "Industrials"},
+    "SCHB.OL":   {"name": "Schibsted B", "country": "Norway", "sector": "Communication"},
+    "BWLPG.OL":  {"name": "BW LPG", "country": "Norway", "sector": "Energy"},
+    "FLNG.OL":   {"name": "Flex LNG", "country": "Norway", "sector": "Energy"},
+}
+
+# Nordic mid & small caps (Denmark)
+NORDIC_MIDSMALL_DK: dict = {
+    "AMBU-B.CO": {"name": "Ambu B", "country": "Denmark", "sector": "Healthcare"},
+    "DEMANT.CO": {"name": "Demant", "country": "Denmark", "sector": "Healthcare"},
+    "GN.CO":     {"name": "GN Audio", "country": "Denmark", "sector": "Technology"},
+    "RBREW.CO":  {"name": "Royal Unibrew", "country": "Denmark", "sector": "Consumer Staples"},
+    "JYSK.CO":   {"name": "Jyske Bank", "country": "Denmark", "sector": "Financials"},
+    "DANSKE.CO": {"name": "Danske Bank", "country": "Denmark", "sector": "Financials"},
+    "ISS.CO":    {"name": "ISS A/S", "country": "Denmark", "sector": "Industrials"},
+    "PNDORA.CO": {"name": "Pandora", "country": "Denmark", "sector": "Consumer Discretionary"},
+    "FLS.CO":    {"name": "FLSmidth", "country": "Denmark", "sector": "Industrials"},
+    "ROCK-B.CO": {"name": "Rockwool B", "country": "Denmark", "sector": "Industrials"},
+    "SYDB.CO":   {"name": "Sydbank", "country": "Denmark", "sector": "Financials"},
+    "SIM.CO":    {"name": "SimCorp", "country": "Denmark", "sector": "Technology"},
+}
+
+# Nordic mid & small caps (Finland)
+NORDIC_MIDSMALL_FI: dict = {
+    "ORNBV.HE":  {"name": "Orion", "country": "Finland", "sector": "Healthcare"},
+    "TIETO.HE":  {"name": "TietoEVRY", "country": "Finland", "sector": "Technology"},
+    "VALMT.HE":  {"name": "Valmet", "country": "Finland", "sector": "Industrials"},
+    "CGCBV.HE":  {"name": "Cargotec", "country": "Finland", "sector": "Industrials"},
+    "METSB.HE":  {"name": "Metsä Board", "country": "Finland", "sector": "Materials"},
+    "HUH1V.HE":  {"name": "Huhtamäki", "country": "Finland", "sector": "Industrials"},
+    "ELISA.HE":  {"name": "Elisa", "country": "Finland", "sector": "Communication"},
+    "KEMIRA.HE":  {"name": "Kemira", "country": "Finland", "sector": "Materials"},
+    "OLVAS.HE":  {"name": "Olvi", "country": "Finland", "sector": "Consumer Staples"},
+    "OUT1V.HE":  {"name": "Outokumpu", "country": "Finland", "sector": "Materials"},
+    "TOKMAN.HE": {"name": "Tokmanni", "country": "Finland", "sector": "Consumer Discretionary"},
+}
+
+# UCITS ETFs & SPY
+ETF_TREND_TICKERS: dict = {
+    "SPY":       {"name": "SPDR S&P 500 ETF", "country": "US", "sector": "ETF"},
+    "QQQ":       {"name": "Invesco QQQ (Nasdaq 100)", "country": "US", "sector": "ETF"},
+    "IWM":       {"name": "iShares Russell 2000 ETF", "country": "US", "sector": "ETF"},
+    "GLD":       {"name": "SPDR Gold Trust", "country": "US", "sector": "ETF"},
+    "SLV":       {"name": "iShares Silver Trust", "country": "US", "sector": "ETF"},
+    "GDX":       {"name": "VanEck Gold Miners ETF", "country": "US", "sector": "ETF"},
+    "GDXJ":      {"name": "VanEck Junior Gold Miners ETF", "country": "US", "sector": "ETF"},
+    "XLE":       {"name": "Energy Select SPDR", "country": "US", "sector": "ETF"},
+    "XLB":       {"name": "Materials Select SPDR", "country": "US", "sector": "ETF"},
+    "XLF":       {"name": "Financial Select SPDR", "country": "US", "sector": "ETF"},
+    "XLK":       {"name": "Technology Select SPDR", "country": "US", "sector": "ETF"},
+    "IWDA.AS":   {"name": "iShares MSCI World UCITS", "country": "IE", "sector": "ETF"},
+    "IEMA.AS":   {"name": "iShares MSCI EM UCITS", "country": "IE", "sector": "ETF"},
+    "CSPX.AS":   {"name": "iShares S&P 500 UCITS", "country": "IE", "sector": "ETF"},
+    "VWRL.AS":   {"name": "Vanguard FTSE All-World UCITS", "country": "IE", "sector": "ETF"},
+    "VUSA.AS":   {"name": "Vanguard S&P 500 UCITS", "country": "IE", "sector": "ETF"},
+    "EUNL.DE":   {"name": "iShares MSCI World UCITS (EUR)", "country": "IE", "sector": "ETF"},
+    "IUSQ.DE":   {"name": "iShares MSCI ACWI UCITS", "country": "IE", "sector": "ETF"},
+    "IQQQ.DE":   {"name": "iShares Nasdaq 100 UCITS", "country": "IE", "sector": "ETF"},
+    "SXRV.DE":   {"name": "iShares MSCI Europe UCITS", "country": "IE", "sector": "ETF"},
+    "IQQH.DE":   {"name": "iShares Global Clean Energy UCITS", "country": "IE", "sector": "ETF"},
+    "MEUD.PA":   {"name": "Lyxor STOXX 600 UCITS", "country": "FR", "sector": "ETF"},
+    "XDWD.DE":   {"name": "Xtrackers MSCI World UCITS", "country": "LU", "sector": "ETF"},
+    "BTCE.DE":   {"name": "ETC Group Bitcoin ETP", "country": "DE", "sector": "ETF"},
+}
+
+
+def _build_trend_ticker_registry() -> dict:
+    """Combine all ticker sources into a categorised registry for the UI dropdown."""
+    registry: dict = {}
+
+    def _add(source: dict, category: str) -> None:
+        for ticker, meta in source.items():
+            registry[ticker] = {**meta, "_category": category}
+
+    _add(NORDIC_TICKERS, "🇸🇪 Nordic Large Cap") if NORDIC_TICKERS else None
+    _add(NORDIC_MIDSMALL_SE, "🇸🇪 Sweden Mid/Small")
+    _add(NORDIC_MIDSMALL_NO, "🇳🇴 Norway Mid/Small")
+    _add(NORDIC_MIDSMALL_DK, "🇩🇰 Denmark Mid/Small")
+    _add(NORDIC_MIDSMALL_FI, "🇫🇮 Finland Mid/Small")
+    _add(ETF_TREND_TICKERS, "📊 ETFs & Index")
+
+    return registry
+
+
+# ---------------------------------------------------------------------------
 # Cyberpunk theme constants
 # ---------------------------------------------------------------------------
 BG = "#050510"
@@ -690,25 +826,44 @@ def render_long_trend_page() -> None:
             unsafe_allow_html=True,
         )
 
-        # Ticker selector — build display options from NORDIC_TICKERS
-        if NORDIC_TICKERS:
+        # Ticker selector — categorised dropdown with all universes
+        full_registry = _build_trend_ticker_registry()
+
+        if full_registry:
+            # Group by category for the dropdown
+            categories = sorted(set(v.get("_category", "") for v in full_registry.values()))
+            selected_cat = st.selectbox(
+                "Category",
+                ["All"] + categories,
+                index=0,
+                key="lt_category",
+            )
+
+            # Filter registry by category
+            if selected_cat != "All":
+                filtered_reg = {k: v for k, v in full_registry.items() if v.get("_category") == selected_cat}
+            else:
+                filtered_reg = full_registry
+
             ticker_options = {
                 f"{v.get('name', k)} ({k})": k
-                for k, v in NORDIC_TICKERS.items()
+                for k, v in sorted(filtered_reg.items(), key=lambda x: x[1].get("name", x[0]))
             }
             display_names = list(ticker_options.keys())
             default_idx = 0
-            # Try to default to VOLV-B.ST
             for i, name in enumerate(display_names):
                 if "VOLV" in name or "Volvo" in name:
                     default_idx = i
                     break
             selected_display = st.selectbox(
-                "Stock",
+                "Stock / ETF",
                 display_names,
                 index=default_idx,
+                key="lt_ticker",
             )
             ticker = ticker_options[selected_display]
+
+            st.caption(f"{len(filtered_reg)} instruments in this category")
         else:
             ticker = st.text_input("Ticker (yfinance)", value="VOLV-B.ST")
 
