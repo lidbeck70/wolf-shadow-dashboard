@@ -167,8 +167,25 @@ def _load_sentiment() -> dict:
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def _load_sector_breadth() -> dict:
+    """Return sector breadth as {sector_name: {state, change, weight}} for pie/heatmap."""
     if compute_breadth is not None:
-        return compute_breadth()
+        try:
+            raw = compute_breadth()
+            # compute_breadth returns {total, bullish, bearish, sectors: {name: {bullish, bearish, ...}}}
+            sectors_raw = raw.get("sectors", {})
+            if sectors_raw and isinstance(sectors_raw, dict):
+                result = {}
+                for name, info in sectors_raw.items():
+                    if not isinstance(info, dict):
+                        continue
+                    b = info.get("bullish", 0)
+                    total = info.get("total", 1)
+                    state = "bullish" if b > total / 2 else ("bearish" if b < total / 3 else "neutral")
+                    result[name] = {"state": state, "change": 0.0, "weight": total}
+                if result:
+                    return result
+        except Exception:
+            pass
     # Dummy fallback
     return {
         "Technology":   {"state": "bullish", "change": 1.2,  "weight": 20},
