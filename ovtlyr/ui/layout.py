@@ -567,15 +567,32 @@ def render_ovtlyr_page() -> None:
 
     with mid_right:
         # Trend card
-        ema50_last  = trend["ema50"][-1]  if isinstance(trend["ema50"],  list) else trend["ema50"]
-        ema200_last = trend["ema200"][-1] if isinstance(trend["ema200"], list) else trend["ema200"]
+        def _safe_last(val, default=0.0):
+            if val is None:
+                return default
+            if isinstance(val, list):
+                return float(val[-1]) if val else default
+            try:
+                return float(val.iloc[-1]) if hasattr(val, 'iloc') and len(val) > 0 else float(val)
+            except Exception:
+                return default
+
+        ema50_last  = _safe_last(trend.get("ema50"), 0.0)
+        ema200_last = _safe_last(trend.get("ema200"), 0.0)
+        direction_str = trend.get("direction", "")
+        if hasattr(direction_str, 'capitalize'):
+            direction_str = direction_str.capitalize()
+        else:
+            direction_str = str(direction_str)
+        regime_str = str(trend.get("regime_color", "")).upper()
+
         _indicator_card(
             "Trend",
             [
-                ("Direction",  trend.get("direction", "—").capitalize(), regime_color_hex),
+                ("Direction",  direction_str, regime_color_hex),
                 ("EMA 50",     f"{ema50_last:.2f}",  YELLOW),
                 ("EMA 200",    f"{ema200_last:.2f}", MAGENTA),
-                ("Regime",     trend.get("regime_color", "—").upper(), regime_color_hex),
+                ("Regime",     regime_str, regime_color_hex),
             ],
             color=regime_color_hex,
         )
