@@ -71,6 +71,11 @@ SWING_RULES: list[dict] = [
         "text": "Max två förluster per dag",
         "explanation": "Stoppa dagen direkt efter två minus.",
     },
+    {
+        "number": 11,
+        "text": "Exit: 10 EMA trailing stop",
+        "explanation": "Stäng position om pris stänger under 10 EMA. ½ ATR som hård stop loss.",
+    },
 ]
 
 LONGTERM_RULES: list[dict] = [
@@ -205,7 +210,7 @@ def render_rules_page() -> None:
         st.markdown(
             _section_header_html(
                 "Swing Trading",
-                "10 regler — kortsiktig taktik",
+                "11 regler — kortsiktig taktik + exit",
                 _CYAN,
             ),
             unsafe_allow_html=True,

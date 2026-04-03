@@ -61,7 +61,7 @@ try:
     from ovtlyr.indicators.momentum   import compute_momentum
     from ovtlyr.indicators.volatility import compute_volatility
     from ovtlyr.indicators.volume     import compute_volume
-    from ovtlyr.indicators.orderblocks import detect_orderblocks, analyse_orderblocks
+    from ovtlyr.indicators.orderblocks import detect_orderblocks, classify_price_vs_ob
     from ovtlyr.indicators.sentiment   import fetch_sentiment
     from ovtlyr.indicators.sector      import fetch_sector_breadth
 except ImportError:
@@ -70,7 +70,7 @@ except ImportError:
         from indicators.momentum    import compute_momentum    # type: ignore
         from indicators.volatility  import compute_volatility  # type: ignore
         from indicators.volume      import compute_volume      # type: ignore
-        from indicators.orderblocks import detect_orderblocks, analyse_orderblocks  # type: ignore
+        from indicators.orderblocks import detect_orderblocks, classify_price_vs_ob  # type: ignore
         from indicators.sentiment   import fetch_sentiment     # type: ignore
         from indicators.sector      import fetch_sector_breadth  # type: ignore
     except ImportError:
@@ -79,7 +79,7 @@ except ImportError:
         compute_volatility   = None
         compute_volume       = None
         detect_orderblocks   = None
-        analyse_orderblocks  = None
+        classify_price_vs_ob = None
         fetch_sentiment      = None
         fetch_sector_breadth = None
 
@@ -397,9 +397,10 @@ def render_ovtlyr_page() -> None:
             except Exception:
                 orderblocks = []
 
-        if analyse_orderblocks is not None:
+        if classify_price_vs_ob is not None and orderblocks:
             try:
-                ob_analysis = analyse_orderblocks(df, orderblocks, trend)
+                current_price = float(df["Close"].iloc[-1]) if len(df) > 0 else 0
+                ob_analysis = classify_price_vs_ob(current_price, orderblocks)
             except Exception:
                 ob_analysis = {"signal_bias": "HOLD"}
 
