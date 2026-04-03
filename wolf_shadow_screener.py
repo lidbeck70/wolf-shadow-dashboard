@@ -110,11 +110,320 @@ OSLO_TICKERS = {
     "NOD.OL": "Nordic Semi", "NEL.OL": "Nel ASA",
 }
 
+# Copenhagen OMX C25 — Danish large caps
+COPENHAGEN_TICKERS = {
+    "NOVO-B.CO": "Novo Nordisk",
+    "DSV.CO": "DSV",
+    "MAERSK-B.CO": "Maersk",
+    "CARL-B.CO": "Carlsberg",
+    "VWS.CO": "Vestas",
+    "ORSTED.CO": "Ørsted",
+    "NZYM-B.CO": "Novozymes",
+    "GMAB.CO": "Genmab",
+    "TRYG.CO": "Tryg",
+    "COLOB.CO": "Coloplast",
+    "AMBU-B.CO": "Ambu",
+    "DEMANT.CO": "Demant",
+    "GN.CO": "GN Audio",
+    "RBREW.CO": "Royal Unibrew",
+    "JYSK.CO": "Jyske Bank",
+    "DANSKE.CO": "Danske Bank",
+    "ISS.CO": "ISS A/S",
+    "PNDORA.CO": "Pandora",
+    "FLS.CO": "FLSmidth",
+    "ROCK-B.CO": "Rockwool",
+}
+
+# Helsinki OMX H25 — Finnish large caps
+HELSINKI_TICKERS = {
+    "NOKIA.HE": "Nokia",
+    "SAMPO.HE": "Sampo",
+    "NESTE.HE": "Neste",
+    "UPM.HE": "UPM-Kymmene",
+    "FORTUM.HE": "Fortum",
+    "KNEBV.HE": "Kone",
+    "STERV.HE": "Stora Enso",
+    "METSO.HE": "Metso",
+    "KESKOB.HE": "Kesko",
+    "WRT1V.HE": "Wärtsilä",
+    "ORNBV.HE": "Orion",
+    "TIETO.HE": "TietoEVRY",
+    "VALMT.HE": "Valmet",
+    "CGCBV.HE": "Cargotec",
+    "METSB.HE": "Metsä Board",
+    "HUH1V.HE": "Huhtamäki",
+    "ELISA.HE": "Elisa",
+    "KEMIRA.HE": "Kemira",
+    "SSABBH.HE": "Outokumpu",
+    "OLVAS.HE": "Olvi",
+}
+
+# European large caps — STOXX 50 + major names
+EUROPE_TICKERS = {
+    # Netherlands
+    "ASML.AS": "ASML",
+    "INGA.AS": "ING Group",
+    "PHIA.AS": "Philips",
+    "AD.AS": "Ahold Delhaize",
+    "UNA.AS": "Unilever NV",
+    "ABN.AS": "ABN AMRO",
+    # Switzerland
+    "NESN.SW": "Nestlé",
+    "ROG.SW": "Roche",
+    "NOVN.SW": "Novartis",
+    # Germany
+    "SAP.DE": "SAP",
+    "SIE.DE": "Siemens",
+    "ALV.DE": "Allianz",
+    "BAS.DE": "BASF",
+    "DTE.DE": "Deutsche Telekom",
+    "MBG.DE": "Mercedes-Benz",
+    "BMW.DE": "BMW",
+    "VOW3.DE": "Volkswagen",
+    "ADS.DE": "Adidas",
+    "MUV2.DE": "Munich Re",
+    "SHL.DE": "Siemens Healthineers",
+    # France
+    "MC.PA": "LVMH",
+    "OR.PA": "L'Oréal",
+    "SAN.PA": "Sanofi",
+    "AI.PA": "Air Liquide",
+    "BNP.PA": "BNP Paribas",
+    "SU.PA": "Schneider Electric",
+    "DG.PA": "Vinci",
+    "AIR.PA": "Airbus",
+    "CS.PA": "AXA",
+    "RI.PA": "Pernod Ricard",
+    # UK
+    "SHEL.L": "Shell",
+    "AZN.L": "AstraZeneca",
+    "ULVR.L": "Unilever",
+    "BP.L": "BP",
+    "GSK.L": "GSK",
+    "RIO.L": "Rio Tinto",
+    "BHP.L": "BHP Group",
+    "GLEN.L": "Glencore",
+    "LSEG.L": "LSEG",
+    "DGE.L": "Diageo",
+    "BARC.L": "Barclays",
+    "HSBA.L": "HSBC",
+    "LLOY.L": "Lloyds",
+    # Italy
+    "ENI.MI": "ENI",
+    "ISP.MI": "Intesa Sanpaolo",
+    "UCG.MI": "UniCredit",
+    "ENEL.MI": "Enel",
+    # Spain
+    "SAN.MC": "Banco Santander",
+    "ITX.MC": "Inditex",
+    "IBE.MC": "Iberdrola",
+    "TEF.MC": "Telefonica",
+}
+
+# US small caps — Russell 2000 leaders + commodity small caps
+US_SMALLCAP_TICKERS = {
+    # Oil & Gas E&P
+    "CIVI": "Civitas Resources",
+    "SM": "SM Energy",
+    "MTDR": "Matador Resources",
+    "CHRD": "Chord Energy",
+    "NOG": "Northern Oil Gas",
+    "RRC": "Range Resources",
+    "AR": "Antero Resources",
+    "CNX": "CNX Resources",
+    "GPOR": "Gulfport Energy",
+    "REI": "Ring Energy",
+    "SWN": "Southwestern Energy",
+    # Oil Services
+    "PTEN": "Patterson-UTI",
+    "DRQ": "Dril-Quip",
+    "CLB": "Core Labs",
+    "PUMP": "ProPetro",
+    "USAC": "USA Compression",
+    # Junior Gold & Silver
+    "GATO": "Gatos Silver",
+    "SSRM": "SSR Mining",
+    "BTG": "B2Gold",
+    "NGD": "New Gold",
+    "EGO": "Eldorado Gold",
+    "ORLA": "Orla Mining",
+    "ASA": "ASA Gold",
+    "IAG": "IAMGOLD",
+    "SA": "Seabridge Gold",
+    "FSM": "Fortuna Silver",
+    "SILV": "SilverCrest",
+    "GPL": "Great Panther",
+    "MUX": "McEwen Mining",
+    "HYMC": "Hycroft Mining",
+    # Other
+    "DOLE": "Dole",
+    "WOLF": "Wolfspeed",
+    "AEHR": "Aehr Test",
+    # Shipping
+    "SBLK": "Star Bulk",
+    "ZIM": "ZIM Shipping",
+    "GOGL": "Golden Ocean ADR",
+    "STNG": "Scorpio Tankers",
+    "INSW": "International Seaways",
+    "TNK": "Teekay Tankers",
+    "ASC": "Ardmore Shipping",
+}
+
+# US mid caps — S&P 400 leaders
+US_MIDCAP_TICKERS = {
+    # Energy
+    "FANG": "Diamondback Energy",
+    "MPC": "Marathon Petroleum",
+    "VLO": "Valero",
+    "PSX": "Phillips 66",
+    "HES": "Hess",
+    "CTRA": "Coterra",
+    "APA": "APA Corp",
+    "EQT": "EQT",
+    "OVV": "Ovintiv",
+    "CHAP": "Chaparral",
+    # Metals & Mining
+    "CLF": "Cleveland-Cliffs",
+    "X": "US Steel",
+    "NUE": "Nucor",
+    "STLD": "Steel Dynamics",
+    "FCX": "Freeport-McMoRan",
+    "TECK": "Teck Resources",
+    "SCCO": "Southern Copper",
+    "MP": "MP Materials",
+    "ALB": "Albemarle",
+    "CC": "Chemours",
+    # Chemicals & Materials
+    "RPM": "RPM International",
+    "AXTA": "Axalta Coating",
+    "FMC": "FMC Corp",
+    "CF": "CF Industries",
+    "MOS": "Mosaic",
+    "IPI": "Intrepid Potash",
+    "SQM": "SQM",
+    "LPX": "Louisiana-Pacific",
+    # Airlines
+    "JBLU": "JetBlue",
+    "AAL": "American Airlines",
+    "LUV": "Southwest",
+    "UAL": "United Airlines",
+    "DAL": "Delta",
+    # Consumer / Hotels
+    "WYNN": "Wynn Resorts",
+    "MGM": "MGM Resorts",
+    "HLT": "Hilton",
+    "MAR": "Marriott",
+    "BURL": "Burlington",
+    "WSM": "Williams-Sonoma",
+    "DECK": "Deckers Outdoor",
+}
+
+# Canadian mid & large caps — TSX
+CANADA_TICKERS = {
+    # Oil & Gas
+    "CNQ.TO": "Canadian Natural",
+    "SU.TO": "Suncor",
+    "CVE.TO": "Cenovus",
+    "IMO.TO": "Imperial Oil",
+    "TOU.TO": "Tourmaline",
+    "ARX.TO": "ARC Resources",
+    "WCP.TO": "Whitecap",
+    "PEY.TO": "Peyto",
+    "BIR.TO": "Birchcliff",
+    "KEL.TO": "Kelt",
+    "MEG.TO": "MEG Energy",
+    "VET.TO": "Vermilion",
+    "ERF.TO": "Enerplus",
+    "NVA.TO": "NuVista",
+    # Banks & Financials
+    "RY.TO": "Royal Bank",
+    "TD.TO": "TD Bank",
+    "BNS.TO": "Scotiabank",
+    "BMO.TO": "BMO",
+    "CM.TO": "CIBC",
+    "MFC.TO": "Manulife",
+    "SLF.TO": "Sun Life",
+    # Industrials & Tech
+    "CP.TO": "CPKC",
+    "CNR.TO": "CN Rail",
+    "SHOP.TO": "Shopify",
+    # Mining & Materials
+    "NTR.TO": "Nutrien",
+    "TECK-B.TO": "Teck Resources",
+    "FM.TO": "First Quantum",
+    "LUN.TO": "Lundin Mining",
+    "IVN.TO": "Ivanhoe Mines",
+    "CS.TO": "Capstone Copper",
+    "HBM.TO": "Hudbay",
+    "TKO.TO": "Taseko",
+    "ERO.TO": "Ero Copper",
+    # Uranium
+    "CCO.TO": "Cameco",
+    "DML.TO": "Denison Mines",
+}
+
+# Junior gold, silver, copper, lithium, uranium miners
+JUNIOR_MINERS_TICKERS = {
+    # ETFs
+    "GDXJ": "VanEck Junior Gold ETF",
+    "SILJ": "ETFMG Junior Silver ETF",
+    "URNM": "Sprott Uranium ETF",
+    "COPX": "Global X Copper Miners",
+    "LIT": "Global X Lithium ETF",
+    # Gold miners — TSX
+    "ABX.TO": "Barrick Gold TSX",
+    "K.TO": "Kinross TSX",
+    "AGI.TO": "Alamos Gold TSX",
+    "BTO.TO": "B2Gold TSX",
+    "FR.TO": "First Majestic TSX",
+    "LUG.TO": "Lundin Gold TSX",
+    "SSL.TO": "Sandstorm Gold TSX",
+    "WDO.TO": "Wesdome Gold",
+    "MAG.TO": "MAG Silver TSX",
+    "SIL.TO": "SilverCrest TSX",
+    "KNT.TO": "K92 Mining",
+    "EDV.TO": "Endeavour Mining",
+    "PAAS.TO": "Pan American Silver TSX",
+    "ELEF.TO": "Elephant Mining",
+    "AIS.TO": "AIS Resources",
+    # Silver & Development
+    "DSV.V": "Discovery Silver",
+    "GMIN.TO": "G Mining",
+    "SKE.TO": "Skeena Resources",
+    "TML.TO": "Treasury Metals",
+    "PGM.TO": "Pure Gold",
+    "TECK-B.TO": "Teck Resources",
+    # Lithium
+    "LAC": "Lithium Americas",
+    "LAC.TO": "Lithium Americas TSX",
+    "ALTM": "Arcadium Lithium",
+    "SLI": "Standard Lithium",
+    # Uranium
+    "UUUU": "Energy Fuels",
+    "DNN": "Denison Mines US",
+    "UEC": "Uranium Energy",
+    "CCJ": "Cameco US",
+    "URG": "Ur-Energy",
+    "NXE": "NexGen Energy",
+    "FCU.TO": "Fission Uranium",
+    "FIND.V": "F3 Uranium",
+    "GXU.V": "GoviEx Uranium",
+    "SPUT.TO": "Sprott Physical Uranium",
+    "LEU": "Centrus Energy",
+}
+
 MARKETS = {
     "commodity": COMMODITY_TICKERS,
     "sp500": SP500_TICKERS,
     "stockholm": STOCKHOLM_TICKERS,
     "oslo": OSLO_TICKERS,
+    "copenhagen": COPENHAGEN_TICKERS,
+    "helsinki": HELSINKI_TICKERS,
+    "europe": EUROPE_TICKERS,
+    "us_smallcap": US_SMALLCAP_TICKERS,
+    "us_midcap": US_MIDCAP_TICKERS,
+    "canada": CANADA_TICKERS,
+    "junior_miners": JUNIOR_MINERS_TICKERS,
 }
 
 # =============================================================================
@@ -163,6 +472,12 @@ def get_preset_for_ticker(ticker):
         return PRESET_PARAMS["OMX Copenhagen"]
     if ticker.endswith(".HE"):
         return PRESET_PARAMS["OMX Helsinki"]
+    # European exchanges — use Universal preset (no optimised params yet)
+    if any(ticker.endswith(s) for s in (".AS", ".DE", ".PA", ".L", ".SW", ".MI", ".MC")):
+        return PRESET_PARAMS["Universal"]
+    # Canadian exchanges
+    if ticker.endswith(".TO") or ticker.endswith(".V"):
+        return PRESET_PARAMS["Universal"]
     return PRESET_PARAMS["Universal"]
 
 

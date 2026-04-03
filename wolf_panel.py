@@ -632,7 +632,9 @@ def tab_screener():
     with col1:
         market_opt = st.selectbox(
             "SELECT MARKET",
-            ["All", "Commodity", "S&P 500", "Stockholm", "Oslo"],
+            ["All", "Commodity", "S&P 500", "US Mid Cap", "US Small Cap",
+             "Stockholm", "Oslo", "Copenhagen", "Helsinki",
+             "Europe", "Canada", "Junior Miners"],
             key="screener_market",
         )
 
@@ -683,8 +685,15 @@ def tab_screener():
                 "All": None,
                 "Commodity": ["commodity"],
                 "S&P 500": ["sp500"],
+                "US Mid Cap": ["us_midcap"],
+                "US Small Cap": ["us_smallcap"],
                 "Stockholm": ["stockholm"],
                 "Oslo": ["oslo"],
+                "Copenhagen": ["copenhagen"],
+                "Helsinki": ["helsinki"],
+                "Europe": ["europe"],
+                "Canada": ["canada"],
+                "Junior Miners": ["junior_miners"],
             }
             selected_markets = market_map[market_opt]
 
