@@ -394,8 +394,11 @@ def render_ovtlyr_page() -> None:
         if detect_orderblocks is not None:
             try:
                 orderblocks = detect_orderblocks(df)
-            except Exception:
+            except Exception as _ob_err:
                 orderblocks = []
+                st.warning(f"Order block detection error: {_ob_err}")
+        else:
+            st.warning("Order block module not loaded — check imports.")
 
         if classify_price_vs_ob is not None and orderblocks:
             try:
