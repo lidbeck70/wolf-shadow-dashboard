@@ -416,9 +416,35 @@ def render_ovtlyr_page() -> None:
         )
         sector_green = bullish_sectors > len(breadth_data) / 2 if breadth_data else True
 
-        # Compute signals
-        lt_signal  = compute_longterm_signal(trend, sentiment, volatility, ob_analysis, sector_green)
-        swg_signal = compute_swing_signal(trend, momentum, volume_data, ob_analysis)
+        # Build scalar-only trend dict for signal modules
+        def _last(val, default=0.0):
+            if val is None:
+                return default
+            if isinstance(val, list):
+                return float(val[-1]) if val else default
+            try:
+                return float(val.iloc[-1]) if hasattr(val, 'iloc') and len(val) > 0 else float(val)
+            except Exception:
+                return default
+
+        trend_scalar = {
+            "price": _last(trend.get("price", close.iloc[-1] if len(close) > 0 else 0)),
+            "last_close": _last(trend.get("price", close.iloc[-1] if len(close) > 0 else 0)),
+            "ema50": _last(trend.get("ema50", 0)),
+            "ema200": _last(trend.get("ema200", 0)),
+            "regime_color": trend.get("regime_color", "orange"),
+            "regime_prev": trend.get("regime_prev", trend.get("regime_color", "orange")),
+            "trend_state": trend.get("trend_state", trend.get("direction", "neutral")),
+            "direction": trend.get("direction", "neutral"),
+            "price_above_200": trend.get("price_above_200", False),
+            "ema50_above_200": trend.get("ema50_above_200", False),
+            "in_consolidation": trend.get("in_consolidation", False),
+            "pullback_to_ema": trend.get("pullback_to_ema", False),
+        }
+
+        # Compute signals with scalar trend dict
+        lt_signal  = compute_longterm_signal(trend_scalar, sentiment, volatility, ob_analysis, sector_green)
+        swg_signal = compute_swing_signal(trend_scalar, momentum, volume_data, ob_analysis)
 
     # ── Composite score ───────────────────────────────────────────────
     composite_score = int(

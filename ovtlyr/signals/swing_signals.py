@@ -59,13 +59,35 @@ def compute_swing_signal(
     # ------------------------------------------------------------------ #
     #  Extract inputs with safe defaults
     # ------------------------------------------------------------------ #
-    direction = trend.get("direction", "neutral").lower()
+    def _to_float(val, default=0.0):
+        if val is None:
+            return default
+        try:
+            import pandas as _pd
+            if isinstance(val, _pd.Series):
+                return float(val.iloc[-1]) if len(val) > 0 else default
+        except Exception:
+            pass
+        try:
+            return float(val)
+        except (TypeError, ValueError):
+            return default
+
+    # Map trend_state to direction
+    ts = trend.get("trend_state", trend.get("direction", "neutral"))
+    direction = str(ts).lower() if ts else "neutral"
+    if direction == "bullish":
+        direction = "bullish"
+    elif direction == "bearish":
+        direction = "bearish"
+    else:
+        direction = "neutral"
     in_consolidation = bool(trend.get("in_consolidation", False))
     pullback_to_ema = bool(trend.get("pullback_to_ema", False))
-    price = float(trend.get("price", 0))
-    ema50 = float(trend.get("ema50", 0))
+    price = _to_float(trend.get("price", trend.get("last_close", 0)))
+    ema50 = _to_float(trend.get("ema50", 0))
 
-    rsi = float(momentum.get("rsi", 50))
+    rsi = _to_float(momentum.get("rsi", 50))
     ob_os_flag = momentum.get("ob_os_flag", "neutral")
 
     vol_confirms = bool(volume.get("confirms", False))

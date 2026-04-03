@@ -53,14 +53,29 @@ def compute_longterm_signal(
     # ------------------------------------------------------------------ #
     #  Extract inputs with safe defaults
     # ------------------------------------------------------------------ #
-    price = float(trend.get("price", 0))
-    ema50 = float(trend.get("ema50", 0))
-    ema200 = float(trend.get("ema200", 0))
+    def _to_float(val, default=0.0):
+        """Safely convert a value (possibly pd.Series) to float."""
+        if val is None:
+            return default
+        try:
+            import pandas as _pd
+            if isinstance(val, _pd.Series):
+                return float(val.iloc[-1]) if len(val) > 0 else default
+        except Exception:
+            pass
+        try:
+            return float(val)
+        except (TypeError, ValueError):
+            return default
+
+    price = _to_float(trend.get("price", trend.get("last_close", 0)))
+    ema50 = _to_float(trend.get("ema50", 0))
+    ema200 = _to_float(trend.get("ema200", 0))
     regime = trend.get("regime_color", "red")
     regime_prev = trend.get("regime_prev", regime)
 
-    sentiment_score = float(sentiment.get("score", 50))
-    risk_score = float(volatility.get("risk_score", 50))
+    sentiment_score = _to_float(sentiment.get("score", 50))
+    risk_score = _to_float(volatility.get("risk_score", 50))
     ob_bias = ob_analysis.get("signal_bias", "HOLD")
 
     # ------------------------------------------------------------------ #
