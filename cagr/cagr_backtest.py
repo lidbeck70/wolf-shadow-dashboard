@@ -1,16 +1,34 @@
 """
 cagr_backtest.py
-CAGR Strategy Backtester with Walk-Forward Validation.
+CAGR Strategy Backtester with 5-Level Signal System and Walk-Forward Validation.
 
 Strategy overview
 -----------------
 Monthly rebalancing against the 50 Nordic stocks universe.
   • Score all stocks at each month-end using price-based proxies
     (no look-ahead; fundamentals are omitted for backtesting integrity).
-  • BUY  — top-N stocks with total_score >= 9 (equal weight)
-  • HOLD — existing positions with total_score 6-8
-  • SELL — positions with total_score <= 5
-  • Cash — when no BUY signals are available
+
+  Signal levels (based on % of max score = 13 points):
+  • STRONG BUY  — total_score >= 70% of max (>=9.1) AND all hard gates pass
+  • BUY         — total_score >= 55% of max (>=7.15) AND all hard gates pass
+  • HOLD        — total_score >= 35% of max (>=4.55)
+  • SELL        — total_score < 35% OR price < EMA200 OR regime red
+  • STRONG SELL — SELL trigger + score < 55% of max (<7.15)
+
+  Hard gates (required for BUY / STRONG BUY):
+  • Price >= EMA200 (Rule 6)
+  • cycle_score > 0 (regime not red, Rule 7)
+
+Position sizing (concentrated portfolio, per user Rule 9):
+  • STRONG BUY → 10% of portfolio per position
+  • BUY        → 7% of portfolio per position
+  • Max 10 positions (Rule 9)
+  • Max 25% per sector (Rule 8)
+
+Sell triggers:
+  • Rule 6: price closes below EMA200 → immediate exit
+  • Rule 7: cycle/regime turns red (cycle_score == 0) → immediate exit
+  • SELL/STRONG SELL signal → exit
 
 Walk-forward validation
 -----------------------
@@ -63,6 +81,44 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------------
+# Signal level constants
+# ---------------------------------------------------------------------------
+
+# Max possible score: value_score(0-6) + cycle_score(0-3) + tech_score(0-4) = 13
+MAX_SCORE = 13
+
+# Signal thresholds as % of MAX_SCORE
+STRONG_BUY_PCT  = 0.70   # >= 70%  → 9.1 pts
+BUY_PCT         = 0.55   # >= 55%  → 7.15 pts
+HOLD_PCT        = 0.35   # >= 35%  → 4.55 pts
+# SELL: score < HOLD_PCT OR price < EMA200 OR regime red
+# STRONG SELL: SELL trigger + score < BUY_PCT
+
+STRONG_BUY_THRESHOLD  = MAX_SCORE * STRONG_BUY_PCT   # 9.1
+BUY_THRESHOLD         = MAX_SCORE * BUY_PCT           # 7.15
+HOLD_THRESHOLD        = MAX_SCORE * HOLD_PCT          # 4.55
+
+# Position sizing (fraction of portfolio)
+STRONG_BUY_ALLOC = 0.10   # 10% per position (Rule 9)
+BUY_ALLOC        = 0.07   # 7% per position
+
+# Portfolio limits
+MAX_POSITIONS     = 10     # Rule 9: concentrated portfolio
+MAX_SECTOR_ALLOC  = 0.25   # Rule 8: max 25% per sector
+
+
+# ---------------------------------------------------------------------------
+# Signal level enum strings
+# ---------------------------------------------------------------------------
+
+SIGNAL_STRONG_BUY  = "STRONG BUY"
+SIGNAL_BUY         = "BUY"
+SIGNAL_HOLD        = "HOLD"
+SIGNAL_SELL        = "SELL"
+SIGNAL_STRONG_SELL = "STRONG SELL"
+
+
+# ---------------------------------------------------------------------------
 # Accept / reject criteria
 # ---------------------------------------------------------------------------
 
@@ -70,14 +126,12 @@ ACCEPT_CRITERIA: dict = {
     "Sharpe Ratio":    (">=", 0.8),
     "Profit Factor":   (">=", 1.5),
     "Max Drawdown %":  (">=", -25.0),
-    "Winrate %":       (">=", 55.0),
+    "Win Rate %":      (">=", 55.0),
     "CAGR %":          (">=", 8.0),
 }
 
 # Sector defaults for cycle scoring at each historical date
-# (Energy undervalued 2020-2022, Utilities cheap 2022-2024, etc.)
 HISTORICAL_CYCLE_DEFAULTS: Dict[str, Dict[str, dict]] = {
-    # year → sector → {sector_undervalued, underinvestment, sentiment_low}
     "2019": {
         "Energy":    {"sector_undervalued": False, "underinvestment": False, "sentiment_low": False},
         "Financials":{"sector_undervalued": True,  "underinvestment": False, "sentiment_low": True},
@@ -110,7 +164,6 @@ HISTORICAL_CYCLE_DEFAULTS: Dict[str, Dict[str, dict]] = {
     },
 }
 
-# Default cycle (used for years not explicitly mapped)
 _DEFAULT_SECTOR_CYCLE: dict = {
     "sector_undervalued": False,
     "underinvestment": False,
@@ -144,9 +197,6 @@ def _price_based_value_score(close_slice: pd.Series) -> int:
     """
     Compute a 0-6 value score from historical OHLCV close series.
 
-    This replaces the fundamental score for backtesting purposes so that
-    no future fundamental data leaks into historical decisions.
-
     Criteria
     --------
     1. Price < EMA200            — below long-term trend (value territory)
@@ -170,7 +220,6 @@ def _price_based_value_score(close_slice: pd.Series) -> int:
     rsi_val = _rsi(close, 14)
     current_rsi = rsi_val.iloc[-1] if not rsi_val.empty else np.nan
 
-    # 52-week window (≈ 252 trading days; use what we have)
     lookback = min(252, len(close) - 1)
     period_slice = close.iloc[-lookback - 1:]
     high_52w = period_slice.max()
@@ -189,12 +238,11 @@ def _price_based_value_score(close_slice: pd.Series) -> int:
     if not np.isnan(current_rsi) and current_rsi < 40:
         score += 1
 
-    # 4. Price > 52-week low × 1.1 (not in free-fall)
+    # 4. Price > 52-week low × 1.1
     if low_52w > 0 and current > low_52w * 1.1:
         score += 1
 
-    # 5. Volume increasing — handled in caller when volume is available
-    # (placeholder, always score 0 here; caller can increment)
+    # 5. Volume increasing — handled in caller
 
     # 6. Price > EMA50
     if not np.isnan(ema50) and current > ema50:
@@ -204,10 +252,6 @@ def _price_based_value_score(close_slice: pd.Series) -> int:
 
 
 def _volume_increasing(df_slice: pd.DataFrame, window: int = 20) -> bool:
-    """
-    Return True if average volume in the last `window` bars is above the
-    previous `window` bars (accumulation signal).
-    """
     vol_col = next((c for c in ("Volume", "volume") if c in df_slice.columns), None)
     if vol_col is None or len(df_slice) < window * 2:
         return False
@@ -268,6 +312,7 @@ def _technical_score_historical(df_slice: pd.DataFrame) -> int:
 def _cycle_score_historical(sector: str, year: int) -> int:
     """
     Return 0-3 cycle score using hardcoded historical sector assessments.
+    0 = regime red (SELL trigger per Rule 7).
     Falls back to all-False (0) for unmapped sectors/years.
     """
     year_str = str(year)
@@ -276,22 +321,50 @@ def _cycle_score_historical(sector: str, year: int) -> int:
     return sum(1 for v in cycle.values() if v)
 
 
+def _get_ema200_at_date(
+    df: pd.DataFrame,
+    as_of,
+) -> Optional[float]:
+    """Return EMA200 value for the close series up to as_of date."""
+    close_col = next(
+        (c for c in ("Close", "Adj Close", "close") if c in df.columns),
+        None,
+    )
+    if close_col is None:
+        return None
+    try:
+        if hasattr(df.index, "tz") and df.index.tz is not None:
+            as_of_ts = pd.Timestamp(as_of).tz_localize(df.index.tz)
+        else:
+            as_of_ts = pd.Timestamp(as_of)
+        hist = df[df.index <= as_of_ts]
+        if len(hist) < 30:
+            return None
+        ema200 = _ema(hist[close_col], 200)
+        return float(ema200.iloc[-1])
+    except Exception:
+        return None
+
+
 def _compute_score_at_date(
     ticker: str,
     sector: str,
     df: pd.DataFrame,
     as_of_date,
     min_bars: int = 60,
-) -> int:
+) -> Tuple[int, int, bool, bool]:
     """
     Compute total CAGR score for a ticker as of a given date using only
     data available up to (and including) that date.
 
     Score breakdown:
       value_score (0-6) + cycle_score (0-3) + tech_score (0-4) = 0-13
+
+    Returns
+    -------
+    (total_score, cycle_score, price_above_ema200, hard_gates_pass)
     """
     try:
-        # Slice to history available at rebalance date
         if hasattr(df.index, "tz") and df.index.tz is not None:
             as_of = pd.Timestamp(as_of_date).tz_localize(df.index.tz)
         else:
@@ -299,41 +372,89 @@ def _compute_score_at_date(
 
         hist = df[df.index <= as_of]
         if len(hist) < min_bars:
-            return 0
+            return 0, 0, False, False
 
         close_col = next(
             (c for c in ("Close", "Adj Close", "close") if c in hist.columns),
             None,
         )
         if close_col is None:
-            return 0
+            return 0, 0, False, False
 
         close_slice = hist[close_col]
+        current_price = float(close_slice.iloc[-1])
 
-        # Value score (price-based proxy for fundamentals)
+        # Value score
         v_score = _price_based_value_score(close_slice)
-
-        # Volume increasing (+1 bonus, capped at 6 total for value)
         if _volume_increasing(hist) and v_score < 6:
             v_score += 1
         v_score = min(6, v_score)
 
-        # Cycle score
+        # Cycle score (0 = regime red → Rule 7 hard sell)
         year = as_of.year
         c_score = _cycle_score_historical(sector, year)
 
         # Technical score
         t_score = _technical_score_historical(hist)
 
-        return v_score + c_score + t_score
+        total = v_score + c_score + t_score
+
+        # Hard gate checks for BUY / STRONG BUY
+        # Gate 1: price >= EMA200 (Rule 6)
+        ema200_val = _ema(close_slice, 200).iloc[-1]
+        price_above_ema200 = bool(
+            not np.isnan(ema200_val) and current_price >= ema200_val
+        )
+        # Gate 2: regime not red (cycle_score > 0, Rule 7)
+        regime_ok = c_score > 0
+
+        hard_gates_pass = price_above_ema200 and regime_ok
+
+        return total, c_score, price_above_ema200, hard_gates_pass
 
     except Exception as exc:
         logger.debug("_compute_score_at_date(%s, %s): %s", ticker, as_of_date, exc)
-        return 0
+        return 0, 0, False, False
+
+
+def _classify_signal(
+    total_score: int,
+    hard_gates_pass: bool,
+    price_above_ema200: bool,
+    cycle_score: int,
+) -> str:
+    """
+    Classify a ticker into one of the 5 signal levels.
+
+    STRONG BUY  : score >= 70% of max AND all hard gates pass
+    BUY         : score >= 55% of max AND all hard gates pass
+    HOLD        : score >= 35% of max
+    SELL        : score < 35% OR price < EMA200 OR regime red
+    STRONG SELL : SELL trigger + score < 55% of max
+    """
+    regime_red = (cycle_score == 0)
+    sell_trigger = (
+        total_score < HOLD_THRESHOLD
+        or not price_above_ema200
+        or regime_red
+    )
+
+    if sell_trigger:
+        if total_score < BUY_THRESHOLD:
+            return SIGNAL_STRONG_SELL
+        return SIGNAL_SELL
+
+    # Score >= HOLD_THRESHOLD AND price >= EMA200 AND regime ok
+    if total_score >= STRONG_BUY_THRESHOLD and hard_gates_pass:
+        return SIGNAL_STRONG_BUY
+    if total_score >= BUY_THRESHOLD and hard_gates_pass:
+        return SIGNAL_BUY
+    # Enough score but fails hard gates → HOLD (don't initiate new, keep existing)
+    return SIGNAL_HOLD
 
 
 # ---------------------------------------------------------------------------
-# Metrics calculations
+# Extended metrics calculations
 # ---------------------------------------------------------------------------
 
 def _compute_metrics(
@@ -344,28 +465,25 @@ def _compute_metrics(
     """
     Compute full suite of performance metrics from equity curve and returns.
 
-    Parameters
-    ----------
-    equity_curve    : pd.Series  — portfolio value, dated index
-    monthly_returns : pd.Series  — monthly percentage returns
-    trade_log       : list[dict] — list of trade records
-
-    Returns
-    -------
-    dict with all ACCEPT_CRITERIA keys plus additional diagnostics.
+    Includes all user-requested metrics:
+      CAGR, Max Drawdown, Sharpe, Win Rate, Profit Factor,
+      Num Trades, Avg Holding Period, Best/Worst Trade, Turnover Rate.
     """
     metrics: dict = {
-        "Total Return %": float("nan"),
-        "CAGR %": float("nan"),
-        "Sharpe Ratio": float("nan"),
-        "Sortino Ratio": float("nan"),
-        "Profit Factor": float("nan"),
-        "Max Drawdown %": float("nan"),
-        "Winrate %": float("nan"),
-        "Num Trades": 0,
-        "Turnover Rate": float("nan"),
+        "Total Return %":       float("nan"),
+        "CAGR %":               float("nan"),
+        "Sharpe Ratio":         float("nan"),
+        "Sortino Ratio":        float("nan"),
+        "Max Drawdown %":       float("nan"),
+        "Win Rate %":           float("nan"),
+        "Profit Factor":        float("nan"),
+        "Num Trades":           0,
+        "Avg Holding (months)": float("nan"),
+        "Best Trade %":         float("nan"),
+        "Worst Trade %":        float("nan"),
+        "Turnover Rate":        float("nan"),
         "Avg Monthly Return %": float("nan"),
-        "Volatility (Ann) %": float("nan"),
+        "Volatility (Ann) %":   float("nan"),
     }
 
     if equity_curve is None or len(equity_curve) < 2:
@@ -391,12 +509,13 @@ def _compute_metrics(
         if len(returns) > 0:
             avg = returns.mean()
             std = returns.std(ddof=1)
-            downside = returns[returns < 0].std(ddof=1) if (returns < 0).any() else np.nan
+            downside_vals = returns[returns < 0]
+            downside = downside_vals.std(ddof=1) if len(downside_vals) > 1 else np.nan
 
             metrics["Avg Monthly Return %"] = round(float(avg * 100), 2)
             metrics["Volatility (Ann) %"] = round(float(std * math.sqrt(12) * 100), 2)
 
-            # Sharpe (monthly risk-free ≈ 0; annualised)
+            # Sharpe (annualised, risk-free ≈ 0)
             if std > 0:
                 sharpe = (avg / std) * math.sqrt(12)
                 metrics["Sharpe Ratio"] = round(float(sharpe), 3)
@@ -406,42 +525,67 @@ def _compute_metrics(
                 sortino = (avg / downside) * math.sqrt(12)
                 metrics["Sortino Ratio"] = round(float(sortino), 3)
 
-            # Winrate — % of months with positive return
-            pos_months = (returns > 0).sum()
-            metrics["Winrate %"] = round(float(pos_months / len(returns) * 100), 1)
-
     # Max drawdown
     if len(equity_curve) > 1:
         roll_max = equity_curve.cummax()
         dd = (equity_curve - roll_max) / roll_max * 100
         metrics["Max Drawdown %"] = round(float(dd.min()), 2)
 
-    # Profit factor
+    # Trade-level metrics
     if trade_log:
-        gains = [t["pnl"] for t in trade_log if t.get("pnl", 0) > 0]
-        losses = [abs(t["pnl"]) for t in trade_log if t.get("pnl", 0) < 0]
-        if losses:
-            pf = sum(gains) / sum(losses) if sum(losses) > 0 else float("inf")
-            metrics["Profit Factor"] = round(pf, 3)
-        elif gains:
-            metrics["Profit Factor"] = float("inf")
+        closed_trades = [t for t in trade_log if t.get("action") == "SELL" and "pnl" in t]
 
-        metrics["Num Trades"] = len(trade_log)
+        if closed_trades:
+            metrics["Num Trades"] = len(closed_trades)
 
-        # Turnover rate: average monthly change in positions
-        # (simplified: total trades / num months / max_positions)
+            gains  = [t["pnl"] for t in closed_trades if t["pnl"] > 0]
+            losses = [abs(t["pnl"]) for t in closed_trades if t["pnl"] < 0]
+
+            # Win Rate: % of closed positions with positive PnL
+            win_rate = len(gains) / len(closed_trades) * 100
+            metrics["Win Rate %"] = round(win_rate, 1)
+
+            # Profit Factor
+            if losses:
+                pf = sum(gains) / sum(losses) if sum(losses) > 0 else float("inf")
+                metrics["Profit Factor"] = round(pf, 3)
+            elif gains:
+                metrics["Profit Factor"] = float("inf")
+
+            # Best / Worst trade %
+            pnl_pcts = []
+            for t in closed_trades:
+                cost_basis = t.get("shares", 1) * t.get("entry_price", t.get("price", 1))
+                if cost_basis != 0:
+                    pnl_pcts.append(t["pnl"] / abs(cost_basis) * 100)
+            if pnl_pcts:
+                metrics["Best Trade %"]  = round(max(pnl_pcts), 2)
+                metrics["Worst Trade %"] = round(min(pnl_pcts), 2)
+
+            # Avg holding period in months
+            holding_months = []
+            for t in closed_trades:
+                entry_date = t.get("entry_date")
+                exit_date  = t.get("date")
+                if entry_date and exit_date:
+                    try:
+                        diff = (pd.Timestamp(exit_date) - pd.Timestamp(entry_date)).days / 30.44
+                        holding_months.append(diff)
+                    except Exception:
+                        pass
+            if holding_months:
+                metrics["Avg Holding (months)"] = round(float(np.mean(holding_months)), 1)
+
+        # Turnover rate: total buys / number of months in equity curve
+        buy_count = sum(1 for t in trade_log if t.get("action") == "BUY")
+        if len(equity_curve) > 1:
+            n_months = max(1, len(equity_curve))
+            metrics["Turnover Rate"] = round(buy_count / n_months, 3)
 
     return metrics
 
 
 def _passes_criteria(metrics: dict) -> Tuple[bool, List[str]]:
-    """
-    Check metrics against ACCEPT_CRITERIA.
-
-    Returns
-    -------
-    (passed: bool, failures: list[str])
-    """
     failures = []
     for key, (op, threshold) in ACCEPT_CRITERIA.items():
         val = metrics.get(key)
@@ -462,20 +606,25 @@ def _passes_criteria(metrics: dict) -> Tuple[bool, List[str]]:
 
 class CAGRBacktester:
     """
-    Monthly-rebalancing backtester for the CAGR Nordic stock strategy.
+    Monthly-rebalancing backtester for the CAGR Nordic stock strategy
+    using the 5-level signal system and user's 10 long-term rules.
+
+    Rules enforced:
+      Rule 6 : Sell when price closes below EMA200 (hard sell)
+      Rule 7 : Sell when cycle/regime turns red (hard sell)
+      Rule 8 : Max 25% per sector
+      Rule 9 : Concentrated portfolio — max 10 positions;
+               STRONG BUY = 10% alloc, BUY = 7% alloc
 
     Parameters
     ----------
     tickers         : dict[str, dict]  — ticker → metadata (name, sector, ...)
     start_date      : str              — "YYYY-MM-DD"
     end_date        : str              — "YYYY-MM-DD"
-    initial_capital : float            — starting portfolio value (SEK / EUR)
-    max_positions   : int              — maximum concurrent positions
-    rebalance_freq  : str              — "M" (monthly) or "W" (weekly, experimental)
-    commission      : float            — round-trip commission per trade (0.0015 = 0.15%)
-    buy_threshold   : int              — minimum score to initiate new buy
-    sell_threshold  : int              — score at or below which positions are sold
-    hold_min        : int              — minimum score to hold an existing position
+    initial_capital : float            — starting portfolio value
+    max_positions   : int              — max concurrent positions (default 10)
+    rebalance_freq  : str              — "M" (monthly) or "W" (weekly)
+    commission      : float            — round-trip commission per trade
     """
 
     def __init__(
@@ -484,12 +633,9 @@ class CAGRBacktester:
         start_date: str,
         end_date: str,
         initial_capital: float = 100_000.0,
-        max_positions: int = 10,
+        max_positions: int = MAX_POSITIONS,
         rebalance_freq: str = "M",
         commission: float = 0.0015,
-        buy_threshold: int = 9,
-        sell_threshold: int = 5,
-        hold_min: int = 6,
     ) -> None:
         self.tickers = tickers
         self.start_date = pd.Timestamp(start_date)
@@ -498,9 +644,6 @@ class CAGRBacktester:
         self.max_positions = max_positions
         self.rebalance_freq = rebalance_freq
         self.commission = commission
-        self.buy_threshold = buy_threshold
-        self.sell_threshold = sell_threshold
-        self.hold_min = hold_min
 
         # Populated after run()
         self._price_data: Dict[str, pd.DataFrame] = {}
@@ -516,11 +659,7 @@ class CAGRBacktester:
     # ------------------------------------------------------------------
 
     def _load_price_data(self) -> None:
-        """
-        Load price data for all tickers using cagr_loader.fetch_price_data.
-        Falls back gracefully for tickers that fail.
-        """
-        from .cagr_loader import fetch_price_data  # local import avoids circular dep
+        from .cagr_loader import fetch_price_data
 
         ticker_list = list(self.tickers.keys())
         years_needed = max(
@@ -541,26 +680,27 @@ class CAGRBacktester:
     # ------------------------------------------------------------------
 
     def _rebalance_dates(self) -> List[pd.Timestamp]:
-        """Generate month-end rebalance dates within the backtest window."""
         dates = pd.date_range(
             start=self.start_date,
             end=self.end_date,
-            freq="BME",  # Business Month End
+            freq="BME",
         )
         return [d for d in dates if self.start_date <= d <= self.end_date]
 
     # ------------------------------------------------------------------
-    # Scoring at a given rebalance date
+    # Score all tickers at a rebalance date → signals
     # ------------------------------------------------------------------
 
-    def _score_all(self, rebalance_date: pd.Timestamp) -> pd.DataFrame:
+    def _score_monthly(self, rebalance_date: pd.Timestamp) -> pd.DataFrame:
         """
-        Score every ticker on the given rebalance date.
+        Score every ticker and classify into 5-level signals.
 
         Returns
         -------
-        DataFrame with columns: ticker, name, sector, total_score
-        Sorted descending by total_score.
+        DataFrame with columns:
+          ticker, name, sector, total_score, cycle_score,
+          price_above_ema200, hard_gates_pass, signal
+        Sorted by total_score descending.
         """
         rows = []
         for ticker, meta in self.tickers.items():
@@ -568,54 +708,91 @@ class CAGRBacktester:
             if df is None or df.empty:
                 continue
             sector = meta.get("sector", "Unknown")
-            name = meta.get("name", ticker)
-            total = _compute_score_at_date(
+            name   = meta.get("name", ticker)
+
+            total, c_score, above_ema200, gates_ok = _compute_score_at_date(
                 ticker=ticker,
                 sector=sector,
                 df=df,
                 as_of_date=rebalance_date,
             )
+            signal = _classify_signal(
+                total_score=total,
+                hard_gates_pass=gates_ok,
+                price_above_ema200=above_ema200,
+                cycle_score=c_score,
+            )
             rows.append({
-                "ticker": ticker,
-                "name": name,
-                "sector": sector,
-                "total_score": total,
+                "ticker":           ticker,
+                "name":             name,
+                "sector":           sector,
+                "total_score":      total,
+                "cycle_score":      c_score,
+                "price_above_ema200": above_ema200,
+                "hard_gates_pass":  gates_ok,
+                "signal":           signal,
             })
 
         if not rows:
-            return pd.DataFrame(columns=["ticker", "name", "sector", "total_score"])
+            return pd.DataFrame(columns=[
+                "ticker", "name", "sector", "total_score", "cycle_score",
+                "price_above_ema200", "hard_gates_pass", "signal",
+            ])
 
         scored = pd.DataFrame(rows).sort_values("total_score", ascending=False)
         return scored.reset_index(drop=True)
 
+    # Alias for backward-compat
+    def _score_all(self, rebalance_date: pd.Timestamp) -> pd.DataFrame:
+        return self._score_monthly(rebalance_date)
+
     # ------------------------------------------------------------------
-    # Position sizing
+    # Price lookup
     # ------------------------------------------------------------------
 
     def _get_price_at(self, ticker: str, date: pd.Timestamp) -> Optional[float]:
-        """Return the closing price for a ticker on or before `date`."""
         df = self._price_data.get(ticker)
         if df is None or df.empty:
             return None
-
         close_col = next(
             (c for c in ("Close", "Adj Close", "close") if c in df.columns),
             None,
         )
         if close_col is None:
             return None
-
         if hasattr(df.index, "tz") and df.index.tz is not None:
             loc_date = date.tz_localize(df.index.tz)
         else:
             loc_date = date
-
         hist = df[df.index <= loc_date]
         if hist.empty:
             return None
-
         price = hist[close_col].iloc[-1]
         return float(price) if np.isfinite(price) else None
+
+    # ------------------------------------------------------------------
+    # Sector allocation check (Rule 8)
+    # ------------------------------------------------------------------
+
+    def _sector_alloc_ok(
+        self,
+        sector: str,
+        positions: Dict[str, dict],
+        portfolio_value: float,
+        new_alloc: float,
+    ) -> bool:
+        """
+        Return True if adding new_alloc to the sector keeps it <= 25%.
+        Rule 8: max sector allocation = 25% of portfolio.
+        """
+        current_sector_value = sum(
+            p.get("value", 0.0)
+            for t, p in positions.items()
+            if self.tickers.get(t, {}).get("sector") == sector
+        )
+        projected = current_sector_value + new_alloc
+        limit = portfolio_value * MAX_SECTOR_ALLOC
+        return projected <= limit
 
     # ------------------------------------------------------------------
     # Main backtest loop
@@ -625,14 +802,20 @@ class CAGRBacktester:
         """
         Execute the full backtest over [start_date, end_date].
 
+        Signal-based rebalancing:
+          STRONG BUY  → enter at 10% of portfolio (if slot + sector budget allow)
+          BUY         → enter at 7% of portfolio (if slot + sector budget allow)
+          HOLD        → keep existing position unchanged
+          SELL        → exit immediately
+          STRONG SELL → exit immediately
+
+        Hard sells (Rules 6 & 7):
+          • price < EMA200 → forced exit regardless of fundamental score
+          • cycle_score == 0 (regime red) → forced exit
+
         Parameters
         ----------
         price_data : optional pre-loaded dict (skip network calls in WF)
-
-        Returns
-        -------
-        dict with keys:
-          metrics, equity_curve, trade_log, monthly_returns, position_history
         """
         if price_data is not None:
             self._price_data = price_data
@@ -644,38 +827,47 @@ class CAGRBacktester:
             logger.warning("No rebalance dates in [%s, %s]", self.start_date, self.end_date)
             return self._empty_result()
 
-        capital = self.initial_capital
-        positions: Dict[str, dict] = {}  # ticker → {shares, cost_price, value}
-        equity_records: List[dict] = []
-        trade_log: List[dict] = []
+        capital    = self.initial_capital
+        positions: Dict[str, dict] = {}  # ticker → {shares, cost_price, value, entry_date, entry_price}
+        equity_records:   List[dict] = []
+        trade_log:        List[dict] = []
         position_history: List[dict] = []
 
-        prev_date: Optional[pd.Timestamp] = None
-
         for rb_date in rebalance_dates:
-            # ── Mark-to-market existing positions ─────────────────────
-            cash = capital
+            # ── Mark-to-market existing positions ────────────────────
             pos_value = 0.0
             for ticker, pos in list(positions.items()):
                 price = self._get_price_at(ticker, rb_date)
                 if price is not None:
                     pos["current_price"] = price
                     pos["value"] = pos["shares"] * price
-                    pos_value += pos["value"]
-                else:
-                    pos_value += pos.get("value", 0.0)
-            # cash = total_capital - positions_value
+                pos_value += pos.get("value", 0.0)
+
+            cash = capital - pos_value
+            if cash < 0:
+                cash = 0.0
             total_portfolio = cash + pos_value
 
-            # ── Score universe ─────────────────────────────────────────
-            scored = self._score_all(rb_date)
+            # ── Score universe → 5-level signals ─────────────────────
+            scored = self._score_monthly(rb_date)
 
-            # ── Sell decisions ─────────────────────────────────────────
+            # ── SELL / STRONG SELL → exit (includes Rule 6 & Rule 7) ─
             tickers_to_sell: List[str] = []
             for ticker in list(positions.keys()):
                 row = scored[scored["ticker"] == ticker]
-                score = int(row["total_score"].iloc[0]) if not row.empty else 0
-                if score <= self.sell_threshold:
+                if row.empty:
+                    # No data → treat as SELL
+                    tickers_to_sell.append(ticker)
+                    continue
+                signal          = row["signal"].iloc[0]
+                above_ema200    = bool(row["price_above_ema200"].iloc[0])
+                c_score_val     = int(row["cycle_score"].iloc[0])
+
+                # Hard sell: Rule 6 (EMA200) or Rule 7 (regime red)
+                hard_sell = (not above_ema200) or (c_score_val == 0)
+                soft_sell = signal in (SIGNAL_SELL, SIGNAL_STRONG_SELL)
+
+                if hard_sell or soft_sell:
                     tickers_to_sell.append(ticker)
 
             for ticker in tickers_to_sell:
@@ -684,94 +876,128 @@ class CAGRBacktester:
                 if sell_price is None:
                     sell_price = pos.get("current_price", pos["cost_price"])
                 proceeds = pos["shares"] * sell_price * (1 - self.commission)
-                pnl = proceeds - pos["shares"] * pos["cost_price"]
-                cash += proceeds
+                pnl      = proceeds - pos["shares"] * pos["cost_price"]
+                cash    += proceeds
+                pos_value -= pos.get("value", 0.0)
+
                 trade_log.append({
-                    "date": rb_date,
-                    "ticker": ticker,
-                    "action": "SELL",
-                    "shares": pos["shares"],
-                    "price": sell_price,
-                    "proceeds": proceeds,
-                    "pnl": pnl,
+                    "date":        rb_date,
+                    "ticker":      ticker,
+                    "action":      "SELL",
+                    "shares":      pos["shares"],
+                    "price":       sell_price,
+                    "entry_price": pos["cost_price"],
+                    "entry_date":  pos["entry_date"],
+                    "proceeds":    proceeds,
+                    "pnl":         pnl,
                 })
 
-            # ── Buy decisions ──────────────────────────────────────────
-            n_free_slots = self.max_positions - len(positions)
-            buy_candidates = scored[
-                (scored["total_score"] >= self.buy_threshold) &
+            total_portfolio = cash + sum(p.get("value", 0.0) for p in positions.values())
+
+            # ── BUY / STRONG BUY → enter new positions ────────────────
+            strong_buys = scored[
+                (scored["signal"] == SIGNAL_STRONG_BUY) &
                 (~scored["ticker"].isin(positions.keys()))
-            ].head(n_free_slots)
+            ]
+            buys = scored[
+                (scored["signal"] == SIGNAL_BUY) &
+                (~scored["ticker"].isin(positions.keys()))
+            ]
 
-            if not buy_candidates.empty:
-                # Equal-weight allocation across new buys + existing positions
-                n_new = len(buy_candidates)
-                total_slots = len(positions) + n_new
+            # Process STRONG BUY first (higher priority), then BUY
+            for signal_type, candidates, alloc_frac in [
+                (SIGNAL_STRONG_BUY, strong_buys, STRONG_BUY_ALLOC),
+                (SIGNAL_BUY,        buys,         BUY_ALLOC),
+            ]:
+                for _, row in candidates.iterrows():
+                    # Check position cap
+                    if len(positions) >= self.max_positions:
+                        break
 
-                # Per-position target value (equal weight)
-                per_position_value = total_portfolio / total_slots if total_slots > 0 else 0
+                    ticker  = row["ticker"]
+                    sector  = row["sector"]
 
-                for _, row in buy_candidates.iterrows():
-                    ticker = row["ticker"]
+                    # Target allocation amount
+                    alloc_amount = total_portfolio * alloc_frac
+                    alloc_amount = min(alloc_amount, cash * 0.99)
+
+                    if alloc_amount <= 0:
+                        continue
+
+                    # Rule 8: sector cap check
+                    if not self._sector_alloc_ok(sector, positions, total_portfolio, alloc_amount):
+                        logger.debug(
+                            "Skipping %s (%s) — sector %s at 25%% cap",
+                            ticker, signal_type, sector,
+                        )
+                        continue
+
                     buy_price = self._get_price_at(ticker, rb_date)
                     if buy_price is None or buy_price <= 0:
                         continue
-                    alloc = min(per_position_value, cash * 0.99)  # leave 1% buffer
-                    shares = alloc / (buy_price * (1 + self.commission))
+
+                    shares = alloc_amount / (buy_price * (1 + self.commission))
                     if shares <= 0:
                         continue
-                    cost = shares * buy_price * (1 + self.commission)
-                    cash -= cost
+
+                    cost   = shares * buy_price * (1 + self.commission)
+                    cash  -= cost
+
                     positions[ticker] = {
-                        "shares": shares,
-                        "cost_price": buy_price,
+                        "shares":        shares,
+                        "cost_price":    buy_price,
                         "current_price": buy_price,
-                        "value": shares * buy_price,
-                        "entry_date": rb_date,
+                        "value":         shares * buy_price,
+                        "entry_date":    rb_date,
+                        "entry_price":   buy_price,
+                        "signal":        signal_type,
                     }
                     trade_log.append({
-                        "date": rb_date,
-                        "ticker": ticker,
-                        "action": "BUY",
-                        "shares": shares,
-                        "price": buy_price,
-                        "proceeds": -cost,
-                        "pnl": 0.0,
+                        "date":        rb_date,
+                        "ticker":      ticker,
+                        "action":      signal_type,   # "STRONG BUY" or "BUY"
+                        "shares":      shares,
+                        "price":       buy_price,
+                        "entry_price": buy_price,
+                        "entry_date":  rb_date,
+                        "proceeds":    -cost,
+                        "pnl":         0.0,
                     })
 
+                    total_portfolio = cash + sum(p.get("value", 0.0) for p in positions.values())
+
             # ── Recompute portfolio value ──────────────────────────────
-            pos_value = sum(
-                self._get_price_at(t, rb_date) * p["shares"]
-                if self._get_price_at(t, rb_date) is not None
-                else p.get("value", 0.0)
-                for t, p in positions.items()
-            )
+            pos_value = 0.0
+            for t, p in positions.items():
+                px = self._get_price_at(t, rb_date)
+                if px is not None:
+                    p["current_price"] = px
+                    p["value"] = p["shares"] * px
+                pos_value += p.get("value", 0.0)
+
             capital = cash + pos_value
 
             equity_records.append({"date": rb_date, "equity": capital})
             position_history.append({
-                "date": rb_date,
-                "positions": list(positions.keys()),
+                "date":        rb_date,
+                "positions":   list(positions.keys()),
                 "n_positions": len(positions),
-                "cash": cash,
-                "equity": capital,
+                "cash":        cash,
+                "equity":      capital,
             })
-            prev_date = rb_date
 
-        # ── Build equity curve DataFrame ────────────────────────────────
+        # ── Build equity curve DataFrame ──────────────────────────────
         if not equity_records:
             return self._empty_result()
 
         equity_df = pd.DataFrame(equity_records).set_index("date")
         equity_df.index = pd.to_datetime(equity_df.index)
 
-        # ── Monthly returns ─────────────────────────────────────────────
         monthly_rets = equity_df["equity"].pct_change().dropna()
 
-        # ── Compute metrics ─────────────────────────────────────────────
-        self.equity_curve = equity_df
-        self.monthly_returns = monthly_rets
-        self.trade_log = trade_log
+        self.equity_curve     = equity_df
+        self.monthly_returns  = monthly_rets
+        self.trade_log        = trade_log
         self.position_history = position_history
         self.metrics = _compute_metrics(
             equity_curve=equity_df["equity"],
@@ -780,19 +1006,19 @@ class CAGRBacktester:
         )
 
         return {
-            "metrics": self.metrics,
-            "equity_curve": self.equity_curve,
-            "trade_log": self.trade_log,
-            "monthly_returns": self.monthly_returns,
+            "metrics":          self.metrics,
+            "equity_curve":     self.equity_curve,
+            "trade_log":        self.trade_log,
+            "monthly_returns":  self.monthly_returns,
             "position_history": self.position_history,
         }
 
     def _empty_result(self) -> dict:
         return {
-            "metrics": _compute_metrics(pd.Series(dtype=float), pd.Series(dtype=float), []),
-            "equity_curve": pd.DataFrame(),
-            "trade_log": [],
-            "monthly_returns": pd.Series(dtype=float),
+            "metrics":          _compute_metrics(pd.Series(dtype=float), pd.Series(dtype=float), []),
+            "equity_curve":     pd.DataFrame(),
+            "trade_log":        [],
+            "monthly_returns":  pd.Series(dtype=float),
             "position_history": [],
         }
 
@@ -816,10 +1042,10 @@ class CAGRBacktester:
         Returns
         -------
         dict with:
-          wf_windows : list[dict]  — per-window IS/OOS metrics
-          oos_metrics: dict        — aggregated OOS-only metrics
-          is_metrics : dict        — aggregated IS-only metrics
-          equity_curve_oos: pd.DataFrame — OOS-only equity path
+          wf_windows       : list[dict]    — per-window IS/OOS metrics
+          oos_metrics      : dict          — aggregated OOS-only metrics
+          is_metrics       : dict          — aggregated IS-only metrics
+          equity_curve_oos : pd.DataFrame  — OOS-only equity path
         """
         n_windows = max(3, n_windows)
         total_days = (self.end_date - self.start_date).days
@@ -832,13 +1058,12 @@ class CAGRBacktester:
                 window_days,
             )
 
-        # Load price data once, shared across all windows
         self._load_price_data()
 
-        wf_windows: List[dict] = []
+        wf_windows:       List[dict] = []
         oos_equity_parts: List[pd.DataFrame] = []
-        oos_trades: List[dict] = []
-        is_trades: List[dict] = []
+        oos_trades:       List[dict] = []
+        is_trades:        List[dict] = []
 
         for i in range(n_windows):
             win_start = self.start_date + timedelta(days=i * window_days)
@@ -848,9 +1073,9 @@ class CAGRBacktester:
                 else self.end_date
             )
 
-            is_end = win_start + timedelta(days=int(window_days * is_frac))
+            is_end    = win_start + timedelta(days=int(window_days * is_frac))
             oos_start = is_end + timedelta(days=1)
-            oos_end = win_end
+            oos_end   = win_end
 
             logger.info(
                 "WF window %d/%d  IS=[%s → %s]  OOS=[%s → %s]",
@@ -859,37 +1084,26 @@ class CAGRBacktester:
                 oos_start.date(), oos_end.date(),
             )
 
-            # ── IS run ──────────────────────────────────────────────────
-            is_bt = CAGRBacktester(
-                tickers=self.tickers,
-                start_date=str(win_start.date()),
-                end_date=str(is_end.date()),
-                initial_capital=self.initial_capital,
-                max_positions=self.max_positions,
-                rebalance_freq=self.rebalance_freq,
-                commission=self.commission,
-                buy_threshold=self.buy_threshold,
-                sell_threshold=self.sell_threshold,
-                hold_min=self.hold_min,
-            )
+            def _make_bt(start, end) -> "CAGRBacktester":
+                return CAGRBacktester(
+                    tickers=self.tickers,
+                    start_date=str(start.date()),
+                    end_date=str(end.date()),
+                    initial_capital=self.initial_capital,
+                    max_positions=self.max_positions,
+                    rebalance_freq=self.rebalance_freq,
+                    commission=self.commission,
+                )
+
+            # ── IS run ────────────────────────────────────────────────
+            is_bt = _make_bt(win_start, is_end)
             is_result = is_bt.run(price_data=self._price_data)
             is_metrics = is_result["metrics"]
             is_passed, is_failures = _passes_criteria(is_metrics)
             is_trades.extend(is_result.get("trade_log", []))
 
-            # ── OOS run ──────────────────────────────────────────────────
-            oos_bt = CAGRBacktester(
-                tickers=self.tickers,
-                start_date=str(oos_start.date()),
-                end_date=str(oos_end.date()),
-                initial_capital=self.initial_capital,
-                max_positions=self.max_positions,
-                rebalance_freq=self.rebalance_freq,
-                commission=self.commission,
-                buy_threshold=self.buy_threshold,
-                sell_threshold=self.sell_threshold,
-                hold_min=self.hold_min,
-            )
+            # ── OOS run ───────────────────────────────────────────────
+            oos_bt = _make_bt(oos_start, oos_end)
             oos_result = oos_bt.run(price_data=self._price_data)
             oos_metrics = oos_result["metrics"]
             oos_passed, oos_failures = _passes_criteria(oos_metrics)
@@ -899,22 +1113,21 @@ class CAGRBacktester:
                 oos_equity_parts.append(oos_result["equity_curve"])
 
             wf_windows.append({
-                "window": i + 1,
-                "is_start": win_start,
-                "is_end": is_end,
-                "oos_start": oos_start,
-                "oos_end": oos_end,
-                "is_metrics": is_metrics,
-                "oos_metrics": oos_metrics,
-                "is_passed": is_passed,
-                "is_failures": is_failures,
-                "oos_passed": oos_passed,
+                "window":       i + 1,
+                "is_start":     win_start,
+                "is_end":       is_end,
+                "oos_start":    oos_start,
+                "oos_end":      oos_end,
+                "is_metrics":   is_metrics,
+                "oos_metrics":  oos_metrics,
+                "is_passed":    is_passed,
+                "is_failures":  is_failures,
+                "oos_passed":   oos_passed,
                 "oos_failures": oos_failures,
             })
 
-        # ── Aggregate OOS equity ──────────────────────────────────────
+        # ── Aggregate OOS equity (chained) ────────────────────────────
         if oos_equity_parts:
-            # Chain OOS equity curves (rebased sequentially)
             chains = []
             running_capital = self.initial_capital
             for part in oos_equity_parts:
@@ -925,23 +1138,15 @@ class CAGRBacktester:
                 part_scaled["equity"] *= scale
                 chains.append(part_scaled)
                 running_capital = part_scaled["equity"].iloc[-1]
-
             oos_equity_df = pd.concat(chains).sort_index().drop_duplicates()
         else:
             oos_equity_df = pd.DataFrame()
 
-        # Aggregate OOS metrics
-        oos_monthly = (
-            pd.concat([
-                w["oos_metrics"].get("Avg Monthly Return %", np.nan)
-                and pd.Series() or pd.Series()
-                for w in wf_windows
-            ])
-            if wf_windows else pd.Series(dtype=float)
-        )
-
         agg_oos_metrics = _compute_metrics(
-            equity_curve=oos_equity_df["equity"] if not oos_equity_df.empty else pd.Series(dtype=float),
+            equity_curve=(
+                oos_equity_df["equity"] if not oos_equity_df.empty
+                else pd.Series(dtype=float)
+            ),
             monthly_returns=pd.Series(dtype=float),
             trade_log=oos_trades,
         )
@@ -954,18 +1159,17 @@ class CAGRBacktester:
         self.wf_results = wf_windows
 
         return {
-            "wf_windows": wf_windows,
-            "oos_metrics": agg_oos_metrics,
-            "is_metrics": agg_is_metrics,
+            "wf_windows":       wf_windows,
+            "oos_metrics":      agg_oos_metrics,
+            "is_metrics":       agg_is_metrics,
             "equity_curve_oos": oos_equity_df,
         }
 
 
 # ---------------------------------------------------------------------------
-# Streamlit rendering
+# Streamlit rendering — Cyberpunk theme
 # ---------------------------------------------------------------------------
 
-# Cyberpunk theme constants
 _BG    = "#050510"
 _BG2   = "#0a0a1e"
 _CYAN  = "#00ffff"
@@ -974,6 +1178,15 @@ _GREEN = "#00ff88"
 _YEL   = "#ffdd00"
 _RED   = "#ff3355"
 _TEXT  = "#e0e0ff"
+
+# Signal → colour mapping for display
+_SIGNAL_COLORS = {
+    SIGNAL_STRONG_BUY:  _GREEN,
+    SIGNAL_BUY:         _CYAN,
+    SIGNAL_HOLD:        _YEL,
+    SIGNAL_SELL:        _RED,
+    SIGNAL_STRONG_SELL: _MAG,
+}
 
 
 def _metric_card_html(label: str, value: str, color: str = _CYAN) -> str:
@@ -988,20 +1201,23 @@ def _metric_card_html(label: str, value: str, color: str = _CYAN) -> str:
 
 
 def _render_metrics_cards(metrics: dict) -> None:
-    """Render metrics as styled HTML cards in Streamlit."""
     if st is None:
         return
 
     card_defs = [
-        ("CAGR %",          "CAGR %",           _GREEN),
-        ("Total Return %",  "Total Return %",    _CYAN),
-        ("Sharpe Ratio",    "Sharpe Ratio",      _CYAN),
-        ("Sortino Ratio",   "Sortino Ratio",     _CYAN),
-        ("Max Drawdown %",  "Max Drawdown %",    _RED),
-        ("Winrate %",       "Winrate %",         _YEL),
-        ("Profit Factor",   "Profit Factor",     _GREEN),
-        ("Num Trades",      "Num Trades",        _TEXT),
-        ("Volatility (Ann) %", "Volatility %",   _MAG),
+        ("CAGR %",                "CAGR %",               _GREEN),
+        ("Total Return %",        "Total Return %",        _CYAN),
+        ("Sharpe Ratio",          "Sharpe Ratio",          _CYAN),
+        ("Sortino Ratio",         "Sortino Ratio",         _CYAN),
+        ("Max Drawdown %",        "Max Drawdown %",        _RED),
+        ("Win Rate %",            "Win Rate %",            _YEL),
+        ("Profit Factor",         "Profit Factor",         _GREEN),
+        ("Num Trades",            "Num Trades",            _TEXT),
+        ("Avg Holding (months)",  "Avg Hold (months)",     _CYAN),
+        ("Best Trade %",          "Best Trade %",          _GREEN),
+        ("Worst Trade %",         "Worst Trade %",         _RED),
+        ("Turnover Rate",         "Turnover Rate",         _MAG),
+        ("Volatility (Ann) %",    "Volatility % (Ann)",    _MAG),
     ]
 
     cols = st.columns(3)
@@ -1017,7 +1233,6 @@ def _render_metrics_cards(metrics: dict) -> None:
 
 
 def _render_equity_chart(equity_df: pd.DataFrame, title: str = "Equity Curve") -> None:
-    """Render Plotly equity curve in Streamlit."""
     if st is None or go is None or equity_df is None or equity_df.empty:
         return
 
@@ -1031,7 +1246,6 @@ def _render_equity_chart(equity_df: pd.DataFrame, title: str = "Equity Curve") -
         fill="tozeroy",
         fillcolor="rgba(0,255,255,0.06)",
     ))
-
     fig.update_layout(
         title=dict(text=title, font=dict(color=_CYAN, size=16)),
         paper_bgcolor=_BG,
@@ -1046,7 +1260,6 @@ def _render_equity_chart(equity_df: pd.DataFrame, title: str = "Equity Curve") -
 
 
 def _render_drawdown_chart(equity_df: pd.DataFrame) -> None:
-    """Render drawdown chart."""
     if st is None or go is None or equity_df is None or equity_df.empty:
         return
 
@@ -1077,21 +1290,19 @@ def _render_drawdown_chart(equity_df: pd.DataFrame) -> None:
 
 
 def _render_monthly_returns_heatmap(monthly_returns: pd.Series) -> None:
-    """Render monthly returns as a year × month heatmap."""
     if st is None or go is None or monthly_returns is None or monthly_returns.empty:
         return
 
     ret_pct = (monthly_returns * 100).round(2)
     df = pd.DataFrame({"ret": ret_pct})
     df.index = pd.to_datetime(df.index)
-    df["year"] = df.index.year
+    df["year"]  = df.index.year
     df["month"] = df.index.month
 
     pivot = df.pivot_table(index="year", columns="month", values="ret", aggfunc="sum")
-    pivot.columns = [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-    ][:len(pivot.columns)]
+    month_labels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    pivot.columns = month_labels[:len(pivot.columns)]
 
     fig = go.Figure(data=go.Heatmap(
         z=pivot.values,
@@ -1118,24 +1329,103 @@ def _render_monthly_returns_heatmap(monthly_returns: pd.Series) -> None:
     st.plotly_chart(fig, use_container_width=True)
 
 
+def _render_signal_distribution_chart(scored_df: pd.DataFrame) -> None:
+    """Render a bar chart of signal distribution across the universe."""
+    if st is None or go is None or scored_df is None or scored_df.empty:
+        return
+    if "signal" not in scored_df.columns:
+        return
+
+    order = [SIGNAL_STRONG_BUY, SIGNAL_BUY, SIGNAL_HOLD, SIGNAL_SELL, SIGNAL_STRONG_SELL]
+    counts = scored_df["signal"].value_counts().reindex(order, fill_value=0)
+
+    bar_colors = [_SIGNAL_COLORS.get(s, _TEXT) for s in order]
+    # Convert to rgba for Plotly
+    rgba_colors = []
+    for hx in bar_colors:
+        hx = hx.lstrip("#")
+        r, g, b = int(hx[0:2], 16), int(hx[2:4], 16), int(hx[4:6], 16)
+        rgba_colors.append(f"rgba({r},{g},{b},0.85)")
+
+    fig = go.Figure(data=go.Bar(
+        x=order,
+        y=counts.values,
+        marker_color=rgba_colors,
+        text=counts.values,
+        textposition="outside",
+    ))
+    fig.update_layout(
+        title=dict(text="Signal Distribution (Current Universe)", font=dict(color=_CYAN, size=14)),
+        paper_bgcolor=_BG,
+        plot_bgcolor=_BG,
+        font=dict(color=_TEXT, family="JetBrains Mono, monospace"),
+        xaxis=dict(showgrid=False),
+        yaxis=dict(showgrid=True, gridcolor=_BG2, title="Count"),
+        height=280,
+        margin=dict(l=40, r=20, t=50, b=40),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def _style_signal(val: str) -> str:
+    """Return CSS style string for a signal value cell."""
+    color_map = {
+        SIGNAL_STRONG_BUY:  (_GREEN,  "rgba(0,255,136,0.15)"),
+        SIGNAL_BUY:         (_CYAN,   "rgba(0,255,255,0.12)"),
+        SIGNAL_HOLD:        (_YEL,    "rgba(255,221,0,0.10)"),
+        SIGNAL_SELL:        (_RED,    "rgba(255,51,85,0.12)"),
+        SIGNAL_STRONG_SELL: (_MAG,    "rgba(255,0,255,0.12)"),
+    }
+    fg, bg = color_map.get(val, (_TEXT, "transparent"))
+    return f"color: {fg}; background: {bg}; font-weight: 700;"
+
+
+def _render_scored_table(scored_df: pd.DataFrame) -> None:
+    """Render the scored/signal DataFrame as a styled Streamlit table."""
+    if st is None or scored_df is None or scored_df.empty:
+        return
+
+    display_cols = ["ticker", "name", "sector", "total_score", "cycle_score",
+                    "price_above_ema200", "signal"]
+    cols_present = [c for c in display_cols if c in scored_df.columns]
+    df_display = scored_df[cols_present].copy()
+
+    # Rename for readability
+    df_display = df_display.rename(columns={
+        "ticker":           "Ticker",
+        "name":             "Name",
+        "sector":           "Sector",
+        "total_score":      "Score",
+        "cycle_score":      "Cycle",
+        "price_above_ema200": "≥ EMA200",
+        "signal":           "Signal",
+    })
+
+    if "Signal" in df_display.columns:
+        styled = df_display.style.map(_style_signal, subset=["Signal"])
+    else:
+        styled = df_display.style
+
+    st.dataframe(styled, use_container_width=True, hide_index=True)
+
+
 def _render_walk_forward_table(wf_windows: List[dict]) -> None:
-    """Render walk-forward per-window results as a styled DataFrame."""
     if st is None or not wf_windows:
         return
 
     rows = []
     for w in wf_windows:
         rows.append({
-            "Window": w["window"],
-            "IS Period": f"{w['is_start'].date()} → {w['is_end'].date()}",
-            "IS CAGR%": round(w["is_metrics"].get("CAGR %", float("nan")), 1),
-            "IS Sharpe": round(w["is_metrics"].get("Sharpe Ratio", float("nan")), 2),
-            "IS Pass": "✅" if w["is_passed"] else "❌",
+            "Window":     w["window"],
+            "IS Period":  f"{w['is_start'].date()} → {w['is_end'].date()}",
+            "IS CAGR%":   round(w["is_metrics"].get("CAGR %",      float("nan")), 1),
+            "IS Sharpe":  round(w["is_metrics"].get("Sharpe Ratio", float("nan")), 2),
+            "IS Pass":    "✅" if w["is_passed"]  else "❌",
             "OOS Period": f"{w['oos_start'].date()} → {w['oos_end'].date()}",
-            "OOS CAGR%": round(w["oos_metrics"].get("CAGR %", float("nan")), 1),
+            "OOS CAGR%":  round(w["oos_metrics"].get("CAGR %",      float("nan")), 1),
             "OOS Sharpe": round(w["oos_metrics"].get("Sharpe Ratio", float("nan")), 2),
             "OOS MaxDD%": round(w["oos_metrics"].get("Max Drawdown %", float("nan")), 1),
-            "OOS Pass": "✅" if w["oos_passed"] else "❌",
+            "OOS Pass":   "✅" if w["oos_passed"] else "❌",
         })
 
     st.dataframe(
@@ -1165,12 +1455,30 @@ def render_backtest_section() -> None:
         f"""<h3 style="color:{_CYAN};text-transform:uppercase;
                        letter-spacing:0.1em;border-bottom:1px solid {_CYAN};
                        padding-bottom:6px;">
-            📊 Strategy Backtester
+            📊 Strategy Backtester — 5-Level Signal System
         </h3>""",
         unsafe_allow_html=True,
     )
 
-    # ── Sidebar / control parameters ─────────────────────────────────
+    # ── Signal legend ─────────────────────────────────────────────────
+    with st.expander("ℹ️ Signal Definitions", expanded=False):
+        st.markdown(f"""
+| Signal | Threshold | Allocation | Rules |
+|--------|-----------|-----------|-------|
+| <span style="color:{_GREEN}">**STRONG BUY**</span>  | Score ≥ 70% of max **AND** gates pass | 10% of portfolio | Rules 6+7 gates green |
+| <span style="color:{_CYAN}">**BUY**</span>          | Score ≥ 55% of max **AND** gates pass | 7% of portfolio  | Rules 6+7 gates green |
+| <span style="color:{_YEL}">**HOLD**</span>          | Score ≥ 35% of max                   | Keep position    | No new entries |
+| <span style="color:{_RED}">**SELL**</span>          | Score < 35% OR price < EMA200 OR regime red | Exit          | Rules 6 & 7 |
+| <span style="color:{_MAG}">**STRONG SELL**</span>   | SELL trigger + score < 55%           | Immediate exit   | Hard sells |
+
+**Hard Gates** (required for BUY/STRONG BUY):
+- **Rule 6**: Price ≥ EMA200 at month-end
+- **Rule 7**: Cycle/regime score > 0 (not red)
+- **Rule 8**: Sector allocation ≤ 25%
+- **Rule 9**: Max 10 concentrated positions
+        """, unsafe_allow_html=True)
+
+    # ── Controls ──────────────────────────────────────────────────────
     with st.expander("⚙️ Backtest Settings", expanded=False):
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -1180,7 +1488,7 @@ def render_backtest_section() -> None:
                 min_value=10_000,
             )
         with col2:
-            max_pos = st.slider("Max Positions", 3, 20, 10)
+            max_pos = st.slider("Max Positions", 3, 20, MAX_POSITIONS)
             commission = st.number_input(
                 "Commission (round-trip %)", value=0.15,
                 min_value=0.0, max_value=2.0, step=0.05,
@@ -1195,7 +1503,7 @@ def render_backtest_section() -> None:
         return
 
     # ── Run ───────────────────────────────────────────────────────────
-    end_date = datetime.today().strftime("%Y-%m-%d")
+    end_date   = datetime.today().strftime("%Y-%m-%d")
     start_date = (datetime.today() - timedelta(days=years * 365)).strftime("%Y-%m-%d")
 
     tickers = load_nordic_tickers()
@@ -1212,15 +1520,15 @@ def render_backtest_section() -> None:
 
         if run_wf:
             wf_result = bt.run_walk_forward(n_windows=n_wf_windows)
-            result = bt.run(price_data=bt._price_data)
+            result    = bt.run(price_data=bt._price_data)
         else:
-            result = bt.run()
+            result    = bt.run()
             wf_result = None
 
-    metrics = result["metrics"]
-    equity_df = result["equity_curve"]
+    metrics     = result["metrics"]
+    equity_df   = result["equity_curve"]
     monthly_rets = result["monthly_returns"]
-    trade_log = result["trade_log"]
+    trade_log   = result["trade_log"]
 
     passed, failures = _passes_criteria(metrics)
 
@@ -1246,8 +1554,18 @@ def render_backtest_section() -> None:
         )
 
     # ── Metrics cards ─────────────────────────────────────────────────
-    st.markdown(f"<br>", unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
     _render_metrics_cards(metrics)
+
+    # ── Signal distribution (latest rebalance) ────────────────────────
+    if not equity_df.empty:
+        latest_date = equity_df.index[-1]
+        st.markdown("<br>", unsafe_allow_html=True)
+        scored_latest = bt._score_monthly(latest_date)
+        _render_signal_distribution_chart(scored_latest)
+
+        with st.expander("🔍 Latest Signal Scorecard", expanded=False):
+            _render_scored_table(scored_latest)
 
     # ── Equity curve ──────────────────────────────────────────────────
     st.markdown("<br>", unsafe_allow_html=True)
@@ -1276,9 +1594,24 @@ def render_backtest_section() -> None:
         with st.expander(f"📋 Trade Log ({len(trade_log)} trades)", expanded=False):
             trade_df = pd.DataFrame(trade_log)
             trade_df["date"] = pd.to_datetime(trade_df["date"]).dt.strftime("%Y-%m-%d")
-            trade_df["pnl"] = trade_df["pnl"].round(0).astype(int)
+            if "entry_date" in trade_df.columns:
+                trade_df["entry_date"] = pd.to_datetime(trade_df["entry_date"]).dt.strftime("%Y-%m-%d")
+            trade_df["pnl"]   = trade_df["pnl"].round(0).astype(int)
             trade_df["price"] = trade_df["price"].round(2)
             st.dataframe(trade_df, use_container_width=True, hide_index=True)
+
+    # ── Position history ──────────────────────────────────────────────
+    pos_history = result.get("position_history", [])
+    if pos_history:
+        with st.expander("📈 Position History", expanded=False):
+            pos_df = pd.DataFrame([{
+                "Date":        p["date"].strftime("%Y-%m-%d") if hasattr(p["date"], "strftime") else str(p["date"]),
+                "Positions":   ", ".join(p["positions"]) if p["positions"] else "—",
+                "# Held":      p["n_positions"],
+                "Cash":        f"{p['cash']:,.0f}",
+                "Equity":      f"{p['equity']:,.0f}",
+            } for p in pos_history])
+            st.dataframe(pos_df, use_container_width=True, hide_index=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1287,45 +1620,17 @@ def render_backtest_section() -> None:
 
 def _cli_main() -> None:
     parser = argparse.ArgumentParser(
-        description="CAGR Nordic Stock Strategy Backtester",
+        description="CAGR Nordic Stock Strategy Backtester — 5-Level Signal System",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument(
-        "--years", type=int, default=5,
-        help="Number of years to backtest",
-    )
-    parser.add_argument(
-        "--max-positions", type=int, default=10,
-        help="Maximum concurrent stock positions",
-    )
-    parser.add_argument(
-        "--initial-capital", type=float, default=100_000.0,
-        help="Starting portfolio value",
-    )
-    parser.add_argument(
-        "--commission", type=float, default=0.0015,
-        help="Round-trip commission per trade (e.g. 0.0015 = 0.15%%)",
-    )
-    parser.add_argument(
-        "--walk-forward", action="store_true",
-        help="Run walk-forward validation",
-    )
-    parser.add_argument(
-        "--wf-windows", type=int, default=3,
-        help="Number of walk-forward windows",
-    )
-    parser.add_argument(
-        "--buy-threshold", type=int, default=9,
-        help="Minimum total_score to initiate a BUY",
-    )
-    parser.add_argument(
-        "--sell-threshold", type=int, default=5,
-        help="Total_score at or below which a position is SOLD",
-    )
-    parser.add_argument(
-        "--log-level", default="INFO",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-    )
+    parser.add_argument("--years",           type=int,   default=5,        help="Number of years to backtest")
+    parser.add_argument("--max-positions",   type=int,   default=MAX_POSITIONS, help="Max concurrent positions (Rule 9)")
+    parser.add_argument("--initial-capital", type=float, default=100_000.0, help="Starting portfolio value")
+    parser.add_argument("--commission",      type=float, default=0.0015,   help="Round-trip commission (e.g. 0.0015 = 0.15%%)")
+    parser.add_argument("--walk-forward",    action="store_true",           help="Run walk-forward validation")
+    parser.add_argument("--wf-windows",      type=int,   default=3,        help="Number of walk-forward windows")
+    parser.add_argument("--log-level",       default="INFO",
+                        choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -1333,16 +1638,13 @@ def _cli_main() -> None:
         format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
     )
 
-    # Resolve tickers
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from dashboard.cagr.cagr_loader import load_nordic_tickers  # noqa: E402
 
     tickers = load_nordic_tickers()
 
-    end_date = datetime.today().strftime("%Y-%m-%d")
-    start_date = (
-        datetime.today() - timedelta(days=args.years * 365)
-    ).strftime("%Y-%m-%d")
+    end_date   = datetime.today().strftime("%Y-%m-%d")
+    start_date = (datetime.today() - timedelta(days=args.years * 365)).strftime("%Y-%m-%d")
 
     logger.info(
         "Starting backtest: %s → %s  (%d tickers, max_positions=%d)",
@@ -1356,54 +1658,68 @@ def _cli_main() -> None:
         initial_capital=args.initial_capital,
         max_positions=args.max_positions,
         commission=args.commission,
-        buy_threshold=args.buy_threshold,
-        sell_threshold=args.sell_threshold,
     )
 
     if args.walk_forward:
-        wf = bt.run_walk_forward(n_windows=args.wf_windows)
+        wf     = bt.run_walk_forward(n_windows=args.wf_windows)
         result = bt.run(price_data=bt._price_data)
     else:
         result = bt.run()
-        wf = None
+        wf     = None
 
-    # Print metrics table
+    # ── Print metrics ──────────────────────────────────────────────────
     metrics = result["metrics"]
-    print("\n" + "=" * 60)
-    print("  CAGR STRATEGY BACKTEST RESULTS")
-    print("=" * 60)
+    print("\n" + "=" * 65)
+    print("  CAGR STRATEGY BACKTEST RESULTS — 5-LEVEL SIGNAL SYSTEM")
+    print("=" * 65)
+    print(f"  {'Signal Thresholds':<32}")
+    print(f"    STRONG BUY : score >= {STRONG_BUY_THRESHOLD:.1f} ({STRONG_BUY_PCT*100:.0f}% of {MAX_SCORE})"
+          f"  + EMA200 gate + regime gate")
+    print(f"    BUY        : score >= {BUY_THRESHOLD:.1f} ({BUY_PCT*100:.0f}% of {MAX_SCORE})"
+          f"  + EMA200 gate + regime gate")
+    print(f"    HOLD       : score >= {HOLD_THRESHOLD:.1f} ({HOLD_PCT*100:.0f}% of {MAX_SCORE})")
+    print(f"    SELL/SS    : score < {HOLD_THRESHOLD:.1f} OR price<EMA200 OR regime red")
+    print("-" * 65)
     for key, val in metrics.items():
         if isinstance(val, float):
-            print(f"  {key:<28}: {val:>10.3f}")
+            print(f"  {key:<32}: {val:>10.3f}")
         else:
-            print(f"  {key:<28}: {val!s:>10}")
+            print(f"  {key:<32}: {val!s:>10}")
 
     passed, failures = _passes_criteria(metrics)
-    print("=" * 60)
+    print("=" * 65)
     if passed:
         print("  ✅  PASSES ALL ACCEPT CRITERIA")
     else:
         print("  ❌  FAILS:")
         for f in failures:
             print(f"      • {f}")
-    print("=" * 60)
+    print("=" * 65)
 
+    # ── Walk-forward summary ───────────────────────────────────────────
     if wf:
         print("\nWALK-FORWARD SUMMARY")
-        print("-" * 60)
+        print("-" * 65)
         for w in wf["wf_windows"]:
             status = "PASS" if w["oos_passed"] else "FAIL"
+            oos_cagr   = w["oos_metrics"].get("CAGR %", float("nan"))
+            oos_sharpe = w["oos_metrics"].get("Sharpe Ratio", float("nan"))
+            cagr_str   = f"{oos_cagr:.1f}%" if not math.isnan(oos_cagr) else "N/A"
+            sharpe_str = f"{oos_sharpe:.2f}"  if not math.isnan(oos_sharpe) else "N/A"
             print(
                 f"  Window {w['window']}  OOS=[{w['oos_start'].date()} → {w['oos_end'].date()}]"
-                f"  CAGR={w['oos_metrics'].get('CAGR %', 'N/A'):.1f}%"
-                f"  Sharpe={w['oos_metrics'].get('Sharpe Ratio', 'N/A'):.2f}"
+                f"  CAGR={cagr_str}"
+                f"  Sharpe={sharpe_str}"
                 f"  [{status}]"
             )
-        print("-" * 60)
+        print("-" * 65)
 
-    n_trades = len(result["trade_log"])
-    print(f"\n  Total trades executed : {n_trades}")
-    print(f"  Final equity          : {result['equity_curve']['equity'].iloc[-1]:,.0f}" if not result["equity_curve"].empty else "")
+    n_trades = len([t for t in result["trade_log"] if t.get("action") == "SELL"])
+    print(f"\n  Closed positions     : {n_trades}")
+    if not result["equity_curve"].empty:
+        final_eq = result["equity_curve"]["equity"].iloc[-1]
+        print(f"  Final equity         : {final_eq:,.0f}")
+    print()
 
 
 if __name__ == "__main__":

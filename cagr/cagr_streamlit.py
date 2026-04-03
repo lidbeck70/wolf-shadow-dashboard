@@ -118,9 +118,11 @@ def _inject_css() -> None:
         }}
 
         /* Signal badges in dataframe */
-        .signal-buy  {{ color: {GREEN};  font-weight: 700; }}
-        .signal-hold {{ color: {YELLOW}; font-weight: 700; }}
-        .signal-sell {{ color: {RED};    font-weight: 700; }}
+        .signal-strongbuy {{ color: {CYAN};    font-weight: 700; }}
+        .signal-buy       {{ color: {GREEN};   font-weight: 700; }}
+        .signal-hold      {{ color: {YELLOW};  font-weight: 700; }}
+        .signal-sell      {{ color: {RED};     font-weight: 700; }}
+        .signal-strongsell {{ color: {MAGENTA}; font-weight: 700; }}
 
         /* Data source badge */
         .data-badge {{
@@ -319,9 +321,13 @@ def _kpi_card(label: str, value: str, extra_class: str = "") -> str:
 
 
 def _signal_badge(signal: str) -> str:
-    cls = {"BUY": "signal-buy", "HOLD": "signal-hold", "SELL": "signal-sell"}.get(
-        signal, ""
-    )
+    cls = {
+        "STRONG BUY": "signal-strongbuy",
+        "BUY": "signal-buy",
+        "HOLD": "signal-hold",
+        "SELL": "signal-sell",
+        "STRONG SELL": "signal-strongsell",
+    }.get(signal, "")
     return f'<span class="{cls}">{signal}</span>'
 
 
@@ -682,7 +688,10 @@ def _build_display_df(records: list) -> pd.DataFrame:
 
 
 def _style_signal_col(val: str) -> str:
-    colors = {"BUY": GREEN, "HOLD": YELLOW, "SELL": RED}
+    colors = {
+        "STRONG BUY": CYAN, "BUY": GREEN,
+        "HOLD": YELLOW, "SELL": RED, "STRONG SELL": MAGENTA,
+    }
     c = colors.get(val, TEXT)
     return f"color: {c}; font-weight: 700;"
 
@@ -752,25 +761,29 @@ def _render_header() -> None:
 # ---------------------------------------------------------------------------
 
 def _render_kpi_row(stats: dict) -> None:
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
     with c1:
         st.markdown(
             _kpi_card("Scanned", str(stats["total_scanned"])),
             unsafe_allow_html=True,
         )
     with c2:
+        strong_buy = stats.get("strong_buy_count", 0)
+        buy = stats.get("buy_count", 0)
         st.markdown(
-            _kpi_card("BUY Signals", str(stats["buy_count"]), "kpi-buy"),
+            _kpi_card("BUY", f"{strong_buy}+{buy}", "kpi-buy"),
             unsafe_allow_html=True,
         )
     with c3:
         st.markdown(
-            _kpi_card("HOLD Signals", str(stats["hold_count"]), "kpi-hold"),
+            _kpi_card("HOLD", str(stats["hold_count"]), "kpi-hold"),
             unsafe_allow_html=True,
         )
     with c4:
+        sell = stats.get("sell_count", 0)
+        strong_sell = stats.get("strong_sell_count", 0)
         st.markdown(
-            _kpi_card("SELL Signals", str(stats["sell_count"]), "kpi-sell"),
+            _kpi_card("SELL", f"{sell}+{strong_sell}", "kpi-sell"),
             unsafe_allow_html=True,
         )
     with c5:
@@ -778,6 +791,11 @@ def _render_kpi_row(stats: dict) -> None:
         badge_class = "kpi-buy" if "börsdata" in ds.lower() else ""
         st.markdown(
             _kpi_card("Data Source", ds, badge_class),
+            unsafe_allow_html=True,
+        )
+    with c6:
+        st.markdown(
+            _kpi_card("Max Score", "30" if "börsdata" in stats.get("data_source", "").lower() else "16"),
             unsafe_allow_html=True,
         )
     st.markdown("<div style='height:20px;'></div>", unsafe_allow_html=True)
