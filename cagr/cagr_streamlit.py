@@ -26,6 +26,7 @@ from .cagr_loader import (
     load_etf_tickers,
     fetch_price_data,
     fetch_fundamentals,
+    fetch_fundamentals_batch_fast,
     fetch_insider_transactions,
     get_data_source,
 )
@@ -226,19 +227,29 @@ def _run_scan(
 
     progress = st.progress(0, text="Fetching price data...")
     price_data = _cached_fetch_price_data(tuple(tickers), period=period)
-    progress.progress(20, text="Prices fetched. Scoring...")
+    progress.progress(15, text="Prices fetched. Loading fundamentals...")
+
+    # Batch-fetch all fundamentals at once (23 API calls instead of 1500+)
+    try:
+        all_fundamentals = fetch_fundamentals_batch_fast(tuple(tickers))
+    except Exception as exc:
+        logger.warning("Batch fundamentals failed, falling back: %s", exc)
+        all_fundamentals = {}
+    progress.progress(50, text="Fundamentals loaded. Scoring...")
 
     for i, (ticker, meta) in enumerate(tickers_meta.items()):
         progress.progress(
-            20 + int(80 * (i + 1) / max(len(tickers_meta), 1)),
+            50 + int(50 * (i + 1) / max(len(tickers_meta), 1)),
             text=f"Scoring {ticker}...",
         )
 
         df = price_data.get(ticker, pd.DataFrame())
 
-        # Fundamentals
+        # Fundamentals (from batch or per-ticker fallback)
         try:
-            fund_info = _cached_fetch_fundamentals(ticker)
+            fund_info = all_fundamentals.get(ticker)
+            if not fund_info:
+                fund_info = _cached_fetch_fundamentals(ticker)
             insider_df = _cached_fetch_insider(ticker)
             fund_result = score_fundamentals(fund_info, insider_df)
         except Exception as exc:

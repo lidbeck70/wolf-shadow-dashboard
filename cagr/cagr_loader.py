@@ -875,3 +875,103 @@ def fetch_fundamentals_batch(
     for ticker in tickers:
         results[ticker] = fetch_fundamentals(ticker)
     return results
+
+
+# ---------------------------------------------------------------------------
+# FAST batch loader via Börsdata Screener endpoints
+# ---------------------------------------------------------------------------
+
+@_cache(ttl=3600)
+def fetch_fundamentals_batch_fast(
+    tickers: tuple,
+) -> Dict[str, dict]:
+    """
+    Fetch fundamentals for many tickers using Börsdata screener endpoints.
+
+    Instead of N×25 API calls (per-ticker KPI history), this uses the
+    screener endpoint: 1 call per KPI returns values for ALL instruments.
+    Total: ~25 API calls regardless of how many tickers.
+
+    Falls back to per-ticker yfinance if Börsdata is unavailable.
+
+    Parameters: tickers must be a tuple (hashable for caching).
+    Returns dict of ticker → fundamentals dict.
+    """
+    ticker_list = list(tickers)
+
+    if not _borsdata_available():
+        # Fallback: per-ticker yfinance
+        return {t: fetch_fundamentals(t) for t in ticker_list}
+
+    api = _get_borsdata_api()
+
+    # 1. Resolve all instrument IDs
+    ticker_to_ins: Dict[str, Optional[int]] = {}
+    for t in ticker_list:
+        ticker_to_ins[t] = api.resolve_instrument_id(t)
+
+    ins_to_ticker: Dict[int, str] = {
+        ins_id: t for t, ins_id in ticker_to_ins.items() if ins_id is not None
+    }
+    ins_ids = list(ins_to_ticker.keys())
+    id_set = set(ins_ids)
+
+    # 2. Initialise results
+    results: Dict[str, dict] = {}
+    for t in ticker_list:
+        results[t] = _make_empty_fundamentals(t)
+        ins_id = ticker_to_ins.get(t)
+        if ins_id is not None:
+            results[t]["_data_source"] = "borsdata"
+            results[t]["_borsdata_ins_id"] = ins_id
+            info = api.get_instrument_info(ins_id)
+            if info:
+                results[t]["shortName"] = info.get("name", t)
+
+    # 3. Batch-fetch KPIs via screener (1 API call per KPI)
+    kpi_mapping = {
+        # output_key:         (kpi_id, divisor)
+        "enterpriseToEbitda": (KPI["ev_ebitda"], 1),
+        "priceToBook":        (KPI["pb"], 1),
+        "trailingPE":         (KPI["pe"], 1),
+        "returnOnEquity":     (KPI["roe"], 0.01),
+        "returnOnAssets":     (KPI["roa"], 0.01),
+        "roic_approx":        (KPI["roic"], 0.01),
+        "de_ratio":           (KPI["debt_to_equity"], 0.01),
+        "equity_ratio":       (KPI["equity_ratio"], 0.01),
+        "gross_margin":       (KPI["gross_margin"], 0.01),
+        "operating_margin":   (KPI["operating_margin"], 0.01),
+        "profit_margin":      (KPI["profit_margin"], 0.01),
+        "fcf_margin":         (KPI["fcf_margin"], 0.01),
+        "ebitda_margin":      (KPI["ebitda_margin"], 0.01),
+        "net_debt_ebitda":    (KPI["net_debt_ebitda"], 1),
+        "current_ratio":      (KPI["current_ratio"], 1),
+        "dividend_yield":     (KPI["dividend_yield"], 0.01),
+        "revenue_growth":     (KPI["revenue_growth"], 0.01),
+        "earnings_growth":    (KPI["earnings_growth"], 0.01),
+        "earnings_stability": (KPI["earnings_stab"], 1),
+        "fcf_stability":      (KPI["fcf_stab"], 1),
+        "f_score":            (KPI["f_score"], 1),
+        "magic_formula":      (KPI["magic_formula"], 1),
+        "rs_rank":            (KPI["rs_rank"], 1),
+    }
+
+    for out_key, (kpi_id, divisor) in kpi_mapping.items():
+        try:
+            all_vals = api.get_kpi_screener(kpi_id, "last", "latest")
+            for entry in all_vals:
+                iid = entry.get("i")
+                if iid in id_set:
+                    val = entry.get("n")
+                    if val is not None:
+                        ticker = ins_to_ticker[iid]
+                        results[ticker][out_key] = val * divisor if divisor != 1 else val
+        except Exception as exc:
+            logger.warning("Batch KPI %s failed: %s", out_key, exc)
+
+    # 4. Fill tickers not found in Börsdata with yfinance
+    for t in ticker_list:
+        if results[t].get("_data_source") != "borsdata":
+            results[t] = _extract_yfinance_fundamentals(t)
+
+    return results
