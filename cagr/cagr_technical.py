@@ -171,6 +171,7 @@ def score_technical(df: pd.DataFrame) -> dict:
     """
     empty_result = {
         "tech_score": 0,
+        "tech_max": 7,
         "details": {
             "Price > EMA200":       {"value": "N/A", "pass": False},
             "EMA50 > EMA200":       {"value": "N/A", "pass": False},
@@ -362,6 +363,7 @@ def score_technical(df: pd.DataFrame) -> dict:
 
     return {
         "tech_score": score,
+        "tech_max": 7,
         "details": details,
         "sparkline_data": sparkline_data,
     }

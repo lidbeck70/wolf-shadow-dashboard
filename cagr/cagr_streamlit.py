@@ -299,6 +299,7 @@ def _run_scan(
             "_fund_details":  fund_result.get("details", {}),
             "_cycle_details": cycle_result.get("details", {}),
             "_tech_details":  tech_result.get("details", {}),
+            "tech_max":       tech_result.get("tech_max", 7),
             "_data_source":   fund_result.get("_data_source", "yfinance"),
             "_df":            df,
         })
@@ -628,9 +629,10 @@ def _render_detail_expander(rec: dict) -> None:
                 )
 
         with right:
+            tech_max = rec.get('tech_max', 7)
             st.markdown(
                 f"<div style='color:{YELLOW};font-size:0.75rem;text-transform:uppercase;"
-                f"letter-spacing:0.1em;'>Technical Score: {rec['tech_score']}/4</div>",
+                f"letter-spacing:0.1em;'>Technical Score: {rec['tech_score']}/{tech_max}</div>",
                 unsafe_allow_html=True,
             )
             tech_rows = []
@@ -679,7 +681,7 @@ def _build_display_df(records: list) -> pd.DataFrame:
             "Sector":     r["sector"],
             f"Fund (0-{fund_max})": r["fund_score"],
             "Cyc (0-3)":  r["cycle_score"],
-            "Tech (0-4)": r["tech_score"],
+            "Tech (0-7)": r["tech_score"],
             f"Total (0-{max_score})": r["total_score"],
             "Score %":    f"{r.get('score_pct', 0) * 100:.0f}%",
             "Signal":     r["signal"],
@@ -743,10 +745,10 @@ def _render_header() -> None:
             <h1 style='margin:0;font-size:2rem;letter-spacing:0.12em;
                        background:linear-gradient(90deg,{CYAN},{MAGENTA});
                        -webkit-background-clip:text;-webkit-text-fill-color:transparent;'>
-                CAGR STRATEGY SCANNER
+                LONG SCREENER
             </h1>
             <div style='color:{DIM};font-size:0.7rem;letter-spacing:0.15em;margin-top:4px;'>
-                NORDIC STOCKS &amp; UCITS ETFs — FUNDAMENTAL · CYCLE · TECHNICAL
+                NORDIC STOCKS &amp; UCITS ETFs — 20-POINT FUNDAMENTAL · 7-POINT TECHNICAL · 5-LEVEL SIGNALS
                 &nbsp;&nbsp;{badge}
             </div>
         </div>
@@ -980,7 +982,7 @@ def render_cagr_page() -> None:
     styled = _map(_style_signal_col, subset=["Signal"])
     styled = _map(_style_pct_col, subset=["Score %"])
     styled = _map(lambda v: _style_score_col(v, 3), subset=["Cyc (0-3)"])
-    styled = _map(lambda v: _style_score_col(v, 4), subset=["Tech (0-4)"])
+    styled = _map(lambda v: _style_score_col(v, 7), subset=["Tech (0-7)"])
 
     if fund_col:
         styled = _map(lambda v: _style_score_col(v, fund_max), subset=[fund_col])

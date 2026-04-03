@@ -881,9 +881,14 @@ def fetch_fundamentals_batch(
 # FAST batch loader via Börsdata Screener endpoints
 # ---------------------------------------------------------------------------
 
+# Version tag — bump to invalidate Streamlit cache after scoring model changes
+_SCORING_VERSION = "v2_20pt"
+
+
 @_cache(ttl=3600)
 def fetch_fundamentals_batch_fast(
     tickers: tuple,
+    _version: str = _SCORING_VERSION,
 ) -> Dict[str, dict]:
     """
     Fetch fundamentals for many tickers using Börsdata screener endpoints.
