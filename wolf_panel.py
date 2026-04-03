@@ -726,13 +726,15 @@ def tab_screener():
                 return "color: #00ff88; font-weight: bold"
             return "color: rgba(255,255,255,0.3)"
 
+        _styler = df_display.style
+        _map_fn = _styler.map if hasattr(_styler, "map") else _styler.applymap
         styled_df = (
-            df_display.style
+            _styler
             .apply(style_screener_row, axis=1)
-            .applymap(style_score_cell, subset=["Total Score"])
-            .applymap(style_entry_cell, subset=["Entry Signal"])
             .format({"RSI": "{:.1f}", "Close": "{:.2f}"})
         )
+        styled_df = _map_fn(style_score_cell, subset=["Total Score"])
+        styled_df = _map_fn(style_entry_cell, subset=["Entry Signal"])
 
         st.dataframe(
             styled_df,
