@@ -301,6 +301,11 @@ def render_ovtlyr_page() -> None:
             trend["ema200"] = close.ewm(span=200, adjust=False).mean().tolist()
         if "price" not in trend:
             trend["price"] = float(close.iloc[-1])
+
+        # EMA10 / EMA20 — required for OVTLYR NINE scoring
+        if "Close" in df.columns:
+            trend["ema10"] = df["Close"].ewm(span=10, adjust=False).mean()
+            trend["ema20"] = df["Close"].ewm(span=20, adjust=False).mean()
         if "regime_color" not in trend:
             ema50_last  = trend["ema50"][-1] if isinstance(trend["ema50"], list) else trend["ema50"]
             ema200_last = trend["ema200"][-1] if isinstance(trend["ema200"], list) else trend["ema200"]
@@ -430,6 +435,8 @@ def render_ovtlyr_page() -> None:
         trend_scalar = {
             "price": _last(trend.get("price", close.iloc[-1] if len(close) > 0 else 0)),
             "last_close": _last(trend.get("price", close.iloc[-1] if len(close) > 0 else 0)),
+            "ema10": _last(trend.get("ema10", 0)),
+            "ema20": _last(trend.get("ema20", 0)),
             "ema50": _last(trend.get("ema50", 0)),
             "ema200": _last(trend.get("ema200", 0)),
             "regime_color": trend.get("regime_color", "orange"),
@@ -600,21 +607,23 @@ def render_ovtlyr_page() -> None:
     with tab_a:
         if orderblocks:
             ob_rows = []
-            for ob in sorted(orderblocks, key=lambda x: x.get("date_start", ""), reverse=True):
+            for ob in orderblocks:
+                # Support both OrderBlock objects (with attributes) and plain dicts
                 ob_rows.append({
-                    "Type":    ob.get("type", "—").capitalize(),
-                    "Date":    str(ob.get("date_start", "—")),
-                    "High":    ob.get("high", 0),
-                    "Low":     ob.get("low", 0),
-                    "Volume":  int(ob.get("volume", 0)),
-                    "Status":  ob.get("status", "—").capitalize(),
+                    "Type": ob.type.upper() if hasattr(ob, 'type') else str(ob.get('type', '')).upper(),
+                    "Date": ob.date if hasattr(ob, 'date') else ob.get('date', ob.get('date_start', '')),
+                    "High": f"{ob.high:.2f}" if hasattr(ob, 'high') else f"{ob.get('high', 0):.2f}",
+                    "Low":  f"{ob.low:.2f}"  if hasattr(ob, 'low')  else f"{ob.get('low', 0):.2f}",
+                    "Volume": f"{ob.volume:,.0f}" if hasattr(ob, 'volume') else f"{ob.get('volume', 0):,.0f}",
+                    "Status": ob.status if hasattr(ob, 'status') else ob.get('status', ''),
                 })
             ob_df = pd.DataFrame(ob_rows)
 
             def _ob_row_style(row):
-                if row["Type"].lower() == "bullish":
+                t = str(row["Type"]).lower()
+                if "bull" in t:
                     color = "rgba(0,255,136,0.08)"
-                elif row["Type"].lower() == "bearish":
+                elif "bear" in t:
                     color = "rgba(255,51,85,0.08)"
                 else:
                     color = "rgba(74,74,106,0.08)"
@@ -623,7 +632,7 @@ def render_ovtlyr_page() -> None:
             styled_ob = ob_df.style.apply(_ob_row_style, axis=1)
             st.dataframe(styled_ob, use_container_width=True, hide_index=True)
         else:
-            st.info("No order blocks detected. Run the analysis with a longer period or check indicator modules.")
+            st.info("No order blocks detected.")
 
     # ── Tab B: Sectors ───────────────────────────────────────────────
     with tab_b:
@@ -714,20 +723,57 @@ def render_ovtlyr_page() -> None:
                 f'letter-spacing:0.08em; margin-bottom:8px;">LONG-TERM SIGNAL</div>',
                 unsafe_allow_html=True,
             )
+            # ── OVTLYR NINE score breakdown ──
+            ovtlyr_nine   = lt_signal.get("ovtlyr_nine",   lt_signal.get("confidence", 0))
+            market_score  = lt_signal.get("market_score",  0)
+            sector_score  = lt_signal.get("sector_score",  0)
+            stock_score   = lt_signal.get("stock_score",   0)
+            nine_color    = GREEN if ovtlyr_nine >= 70 else (YELLOW if ovtlyr_nine >= 40 else RED)
             st.markdown(
-                f'<div style="margin-bottom:10px;">{_badge(lt_signal["signal"], lt_color)}'
-                f'  <span style="color:{DIM}; font-size:0.8rem;">confidence {lt_signal["confidence"]}%</span></div>',
+                f'<div style="margin-bottom:10px;">{_badge(lt_signal["signal"], lt_color)}'  
+                f'  <span style="color:{nine_color}; font-size:1.0rem; font-weight:700;">'
+                f'  OVTLYR NINE: {ovtlyr_nine}/100</span></div>',
+                unsafe_allow_html=True,
+            )
+            # Layer breakdown
+            st.markdown(
+                f'<div style="display:flex; gap:10px; margin-bottom:10px;">'
+                f'<div style="flex:1; background:rgba(0,255,255,0.06); border-left:3px solid rgba(0,255,255,0.5); '
+                f'padding:8px; border-radius:4px;">'
+                f'<div style="color:{DIM}; font-size:0.68rem; text-transform:uppercase;">Market (40%)</div>'
+                f'<div style="color:{CYAN}; font-size:1.2rem; font-weight:700;">{market_score}</div>'
+                f'</div>'
+                f'<div style="flex:1; background:rgba(255,0,255,0.06); border-left:3px solid rgba(255,0,255,0.5); '
+                f'padding:8px; border-radius:4px;">'
+                f'<div style="color:{DIM}; font-size:0.68rem; text-transform:uppercase;">Sector (30%)</div>'
+                f'<div style="color:{MAGENTA}; font-size:1.2rem; font-weight:700;">{sector_score}</div>'
+                f'</div>'
+                f'<div style="flex:1; background:rgba(0,255,136,0.06); border-left:3px solid rgba(0,255,136,0.5); '
+                f'padding:8px; border-radius:4px;">'
+                f'<div style="color:{DIM}; font-size:0.68rem; text-transform:uppercase;">Stock (30%)</div>'
+                f'<div style="color:{GREEN}; font-size:1.2rem; font-weight:700;">{stock_score}</div>'
+                f'</div>'
+                f'</div>',
                 unsafe_allow_html=True,
             )
             for reason in lt_signal.get("reasons", []):
-                color = GREEN if reason.startswith("✓") else (RED if reason.startswith("✗") else DIM)
+                color = (
+                    GREEN  if reason.startswith("✓")
+                    else RED    if reason.startswith("✗")
+                    else YELLOW if reason.startswith("⚠")
+                    else DIM
+                )
                 st.markdown(
                     f'<div style="color:{color}; font-size:0.78rem; margin:2px 0;">{reason}</div>',
                     unsafe_allow_html=True,
                 )
 
-            # Gates table
-            st.markdown(f'<div style="color:{DIM}; font-size:0.72rem; margin-top:10px;">GATES</div>', unsafe_allow_html=True)
+            # OVTLYR NINE gates table
+            st.markdown(
+                f'<div style="color:{DIM}; font-size:0.72rem; margin-top:10px; margin-bottom:4px;">'
+                f'OVTLYR NINE GATES</div>',
+                unsafe_allow_html=True,
+            )
             gates_df = pd.DataFrame(lt_signal.get("gates", []))
             if not gates_df.empty:
                 def _gate_style(row):
@@ -738,6 +784,22 @@ def render_ovtlyr_page() -> None:
                     use_container_width=True,
                     hide_index=True,
                 )
+
+            # Exit triggers
+            exit_triggers = lt_signal.get("exit_triggers", [])
+            active_exits  = [t for t in exit_triggers if t.get("active")]
+            if active_exits:
+                st.markdown(
+                    f'<div style="color:{RED}; font-size:0.78rem; font-weight:700; margin-top:10px;">'
+                    f'ACTIVE EXIT TRIGGERS</div>',
+                    unsafe_allow_html=True,
+                )
+                for t in active_exits:
+                    st.markdown(
+                        f'<div style="color:{RED}; font-size:0.75rem; margin:2px 0;">'
+                        f'⚠ {t["trigger"]}</div>',
+                        unsafe_allow_html=True,
+                    )
 
         with sig_col2:
             st.markdown(
