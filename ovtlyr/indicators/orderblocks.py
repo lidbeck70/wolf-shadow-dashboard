@@ -145,8 +145,8 @@ def _validate_status(
 
 def detect_orderblocks(
     df: pd.DataFrame,
-    lookback: int = 100,
-    impulse_factor: float = 1.5,
+    lookback: int = 250,
+    impulse_factor: float = 1.0,
 ) -> List[OrderBlock]:
     """
     Detect Bullish and Bearish Order Blocks in the OHLCV DataFrame.

@@ -244,7 +244,7 @@ def render_ovtlyr_page() -> None:
             ticker = ticker_input if ticker_input else DEFAULT_TICKER
 
         period = st.selectbox(
-            "Period", ["6mo", "1y", "2y"], index=1, key="ovtlyr_period"
+            "Period", ["6mo", "1y", "2y"], index=2, key="ovtlyr_period"
         )
 
         st.markdown("---")
