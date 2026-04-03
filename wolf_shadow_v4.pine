@@ -1,0 +1,552 @@
+// =============================================================================
+// WOLF x SHADOW v4.0 — MAXIMIZER
+// =============================================================================
+// 21 optimized presets: 11 US sector ETFs + 4 Nordic exchanges + 5 stocks + Universal
+// Minervini Trend Template, Anti-Consolidation, Pullback Entry, Candlestick Trigger
+// Volume Confirmation, R:R Gate, Daily Loss Counter, Dead Money Exit
+// Swing-High BE logic, 10% TP1 trim, 80% runner on Kijun/EMA50 trail
+// =============================================================================
+
+//@version=6
+strategy("WOLF x SHADOW v4.0 — MAXIMIZER",
+     overlay=true, initial_capital=100000,
+     commission_type=strategy.commission.percent, commission_value=0.05,
+     slippage=1, process_orders_on_close=false,
+     calc_on_every_tick=false, pyramiding=10)
+
+// =============================================================================
+// PRESET SELECTION
+// =============================================================================
+grpP = "PRESET"
+preset = input.string("Universal", "Strategy Preset", options=[
+     "Universal",
+     "--- US SECTORS ---",
+     "XLE Energy", "XLB Materials", "XLF Financials", "XLK Technology",
+     "XLV Healthcare", "XLI Industrials", "XLY Consumer Disc",
+     "XLP Consumer Stap", "XLRE Real Estate", "XLU Utilities", "XLC Communication",
+     "--- NORDIC ---",
+     "OMX Stockholm", "OMX Copenhagen", "Oslo OSEBX", "OMX Helsinki",
+     "--- STOCKS ---",
+     "OXY", "GOLD", "NEM", "XOM", "GLD",
+     "Manual"], group=grpP)
+
+// === PARAMETER LOOKUP FUNCTIONS ===
+// Each returns the optimized value for the selected preset
+
+f_ep() =>
+    preset=="XLE Energy"?9 : preset=="XLB Materials"?11 : preset=="XLF Financials"?18 : preset=="XLK Technology"?7 : preset=="XLV Healthcare"?15 : preset=="XLI Industrials"?14 : preset=="XLY Consumer Disc"?10 : preset=="XLP Consumer Stap"?18 : preset=="XLRE Real Estate"?13 : preset=="XLU Utilities"?5 : preset=="XLC Communication"?17 : preset=="OMX Stockholm"?13 : preset=="OMX Copenhagen"?10 : preset=="Oslo OSEBX"?13 : preset=="OMX Helsinki"?13 : preset=="OXY"?6 : preset=="GOLD"?5 : preset=="NEM"?11 : preset=="XOM"?13 : preset=="GLD"?7 : 8
+
+f_ef() =>
+    preset=="XLE Energy"?38 : preset=="XLB Materials"?12 : preset=="XLF Financials"?36 : preset=="XLK Technology"?39 : preset=="XLV Healthcare"?34 : preset=="XLI Industrials"?18 : preset=="XLY Consumer Disc"?18 : preset=="XLP Consumer Stap"?19 : preset=="XLRE Real Estate"?25 : preset=="XLU Utilities"?45 : preset=="XLC Communication"?44 : preset=="OMX Stockholm"?22 : preset=="OMX Copenhagen"?27 : preset=="Oslo OSEBX"?24 : preset=="OMX Helsinki"?26 : preset=="OXY"?23 : preset=="GOLD"?18 : preset=="NEM"?13 : preset=="XOM"?23 : preset=="GLD"?28 : 21
+
+f_es() =>
+    preset=="XLE Energy"?80 : preset=="XLB Materials"?31 : preset=="XLF Financials"?91 : preset=="XLK Technology"?108 : preset=="XLV Healthcare"?105 : preset=="XLI Industrials"?103 : preset=="XLY Consumer Disc"?75 : preset=="XLP Consumer Stap"?56 : preset=="XLRE Real Estate"?33 : preset=="XLU Utilities"?117 : preset=="XLC Communication"?100 : preset=="OMX Stockholm"?55 : preset=="OMX Copenhagen"?58 : preset=="Oslo OSEBX"?68 : preset=="OMX Helsinki"?84 : preset=="OXY"?40 : preset=="GOLD"?71 : preset=="NEM"?99 : preset=="XOM"?39 : preset=="GLD"?37 : 57
+
+f_tk() =>
+    preset=="XLE Energy"?7 : preset=="XLB Materials"?15 : preset=="XLF Financials"?5 : preset=="XLK Technology"?6 : preset=="XLV Healthcare"?10 : preset=="XLI Industrials"?5 : preset=="XLY Consumer Disc"?10 : preset=="XLP Consumer Stap"?7 : preset=="XLRE Real Estate"?5 : preset=="XLU Utilities"?12 : preset=="XLC Communication"?7 : preset=="OMX Stockholm"?8 : preset=="OMX Copenhagen"?10 : preset=="Oslo OSEBX"?9 : preset=="OMX Helsinki"?10 : preset=="OXY"?7 : preset=="GOLD"?15 : preset=="NEM"?9 : preset=="XOM"?8 : preset=="GLD"?13 : 10
+
+f_kj() =>
+    preset=="XLE Energy"?35 : preset=="XLB Materials"?29 : preset=="XLF Financials"?34 : preset=="XLK Technology"?29 : preset=="XLV Healthcare"?29 : preset=="XLI Industrials"?34 : preset=="XLY Consumer Disc"?29 : preset=="XLP Consumer Stap"?32 : preset=="XLRE Real Estate"?29 : preset=="XLU Utilities"?29 : preset=="XLC Communication"?30 : preset=="OMX Stockholm"?29 : preset=="OMX Copenhagen"?26 : preset=="Oslo OSEBX"?30 : preset=="OMX Helsinki"?33 : preset=="OXY"?24 : preset=="GOLD"?36 : preset=="NEM"?33 : preset=="XOM"?39 : preset=="GLD"?22 : 31
+
+f_sb() =>
+    preset=="XLE Energy"?42 : preset=="XLB Materials"?57 : preset=="XLF Financials"?61 : preset=="XLK Technology"?73 : preset=="XLV Healthcare"?64 : preset=="XLI Industrials"?65 : preset=="XLY Consumer Disc"?38 : preset=="XLP Consumer Stap"?47 : preset=="XLRE Real Estate"?57 : preset=="XLU Utilities"?61 : preset=="XLC Communication"?45 : preset=="OMX Stockholm"?56 : preset=="OMX Copenhagen"?72 : preset=="Oslo OSEBX"?66 : preset=="OMX Helsinki"?61 : preset=="OXY"?65 : preset=="GOLD"?67 : preset=="NEM"?41 : preset=="XOM"?48 : preset=="GLD"?59 : 56
+
+f_am() =>
+    preset=="XLE Energy"?2.1 : preset=="XLB Materials"?1.5 : preset=="XLF Financials"?3.2 : preset=="XLK Technology"?2.3 : preset=="XLV Healthcare"?2.0 : preset=="XLI Industrials"?1.8 : preset=="XLY Consumer Disc"?2.0 : preset=="XLP Consumer Stap"?2.3 : preset=="XLRE Real Estate"?2.5 : preset=="XLU Utilities"?1.1 : preset=="XLC Communication"?3.1 : preset=="OMX Stockholm"?2.0 : preset=="OMX Copenhagen"?2.1 : preset=="Oslo OSEBX"?2.3 : preset=="OMX Helsinki"?2.1 : preset=="OXY"?2.8 : preset=="GOLD"?1.5 : preset=="NEM"?3.1 : preset=="XOM"?2.7 : preset=="GLD"?2.6 : 2.5
+
+f_adx() =>
+    preset=="XLE Energy"?5 : preset=="XLB Materials"?21 : preset=="XLF Financials"?28 : preset=="XLK Technology"?3 : preset=="XLV Healthcare"?2 : preset=="XLI Industrials"?6 : preset=="XLY Consumer Disc"?2 : preset=="XLP Consumer Stap"?0 : preset=="XLRE Real Estate"?1 : preset=="XLU Utilities"?13 : preset=="XLC Communication"?14 : preset=="OMX Stockholm"?18 : preset=="OMX Copenhagen"?12 : preset=="Oslo OSEBX"?20 : preset=="OMX Helsinki"?11 : preset=="OXY"?27 : preset=="GOLD"?16 : preset=="NEM"?17 : preset=="XOM"?27 : preset=="GLD"?7 : 19
+
+f_t1r() =>
+    preset=="XLE Energy"?1.75 : preset=="XLB Materials"?2.25 : preset=="XLF Financials"?2.5 : preset=="XLK Technology"?2.5 : preset=="XLV Healthcare"?4.0 : preset=="XLI Industrials"?3.75 : preset=="XLY Consumer Disc"?3.0 : preset=="XLP Consumer Stap"?2.25 : preset=="XLRE Real Estate"?3.5 : preset=="XLU Utilities"?3.5 : preset=="XLC Communication"?3.25 : preset=="OMX Stockholm"?3.15 : preset=="OMX Copenhagen"?2.2 : preset=="Oslo OSEBX"?3.55 : preset=="OMX Helsinki"?3.05 : preset=="OXY"?3.0 : preset=="GOLD"?1.75 : preset=="NEM"?3.0 : preset=="XOM"?3.5 : preset=="GLD"?1.75 : 2.6
+
+f_t1p() =>
+    preset=="XLE Energy"?10 : preset=="XLB Materials"?10 : preset=="XLF Financials"?25 : preset=="XLK Technology"?20 : preset=="XLV Healthcare"?5 : preset=="XLI Industrials"?10 : preset=="XLY Consumer Disc"?20 : preset=="XLP Consumer Stap"?5 : preset=="XLRE Real Estate"?5 : preset=="XLU Utilities"?15 : preset=="XLC Communication"?25 : preset=="OMX Stockholm"?20 : preset=="OMX Copenhagen"?12 : preset=="Oslo OSEBX"?16 : preset=="OMX Helsinki"?21 : preset=="OXY"?20 : preset=="GOLD"?20 : preset=="NEM"?5 : preset=="XOM"?10 : preset=="GLD"?10 : 13
+
+f_t2r() =>
+    preset=="XLE Energy"?5.5 : preset=="XLB Materials"?6.0 : preset=="XLF Financials"?3.5 : preset=="XLK Technology"?5.25 : preset=="XLV Healthcare"?4.5 : preset=="XLI Industrials"?4.0 : preset=="XLY Consumer Disc"?3.75 : preset=="XLP Consumer Stap"?5.75 : preset=="XLRE Real Estate"?5.25 : preset=="XLU Utilities"?4.5 : preset=="XLC Communication"?3.5 : preset=="OMX Stockholm"?4.8 : preset=="OMX Copenhagen"?5.15 : preset=="Oslo OSEBX"?4.8 : preset=="OMX Helsinki"?5.55 : preset=="OXY"?5.5 : preset=="GOLD"?5.75 : preset=="NEM"?4.25 : preset=="XOM"?5.5 : preset=="GLD"?5.0 : 5.2
+
+f_t2p() =>
+    preset=="XLE Energy"?10 : preset=="XLB Materials"?15 : preset=="XLF Financials"?15 : preset=="XLK Technology"?5 : preset=="XLV Healthcare"?20 : preset=="XLI Industrials"?10 : preset=="XLY Consumer Disc"?25 : preset=="XLP Consumer Stap"?25 : preset=="XLRE Real Estate"?20 : preset=="XLU Utilities"?20 : preset=="XLC Communication"?5 : preset=="OMX Stockholm"?22 : preset=="OMX Copenhagen"?12 : preset=="Oslo OSEBX"?19 : preset=="OMX Helsinki"?15 : preset=="OXY"?25 : preset=="GOLD"?5 : preset=="NEM"?25 : preset=="XOM"?10 : preset=="GLD"?20 : 17
+
+f_cp() =>
+    preset=="XLE Energy"?40.0 : preset=="XLB Materials"?55.0 : preset=="XLF Financials"?55.0 : preset=="XLK Technology"?70.0 : preset=="XLV Healthcare"?40.0 : preset=="XLI Industrials"?60.0 : preset=="XLY Consumer Disc"?55.0 : preset=="XLP Consumer Stap"?50.0 : preset=="XLRE Real Estate"?40.0 : preset=="XLU Utilities"?45.0 : preset=="XLC Communication"?60.0 : preset=="OMX Stockholm"?46.0 : preset=="OMX Copenhagen"?48.0 : preset=="Oslo OSEBX"?49.0 : preset=="OMX Helsinki"?54.0 : preset=="OXY"?70.0 : preset=="GOLD"?50.0 : preset=="NEM"?60.0 : preset=="XOM"?70.0 : preset=="GLD"?60.0 : 62.0
+
+f_mr() =>
+    preset=="XLE Energy"?63 : preset=="XLB Materials"?41 : preset=="XLF Financials"?51 : preset=="XLK Technology"?36 : preset=="XLV Healthcare"?44 : preset=="XLI Industrials"?61 : preset=="XLY Consumer Disc"?60 : preset=="XLP Consumer Stap"?64 : preset=="XLRE Real Estate"?64 : preset=="XLU Utilities"?31 : preset=="XLC Communication"?28 : preset=="OMX Stockholm"?61 : preset=="OMX Copenhagen"?47 : preset=="Oslo OSEBX"?51 : preset=="OMX Helsinki"?48 : preset=="OXY"?53 : preset=="GOLD"?49 : preset=="NEM"?44 : preset=="XOM"?60 : preset=="GLD"?50 : 51
+
+f_cd() =>
+    preset=="XLE Energy"?6 : preset=="XLB Materials"?4 : preset=="XLF Financials"?6 : preset=="XLK Technology"?2 : preset=="XLV Healthcare"?4 : preset=="XLI Industrials"?3 : preset=="XLY Consumer Disc"?6 : preset=="XLP Consumer Stap"?2 : preset=="XLRE Real Estate"?4 : preset=="XLU Utilities"?5 : preset=="XLC Communication"?5 : preset=="OMX Stockholm"?4 : preset=="OMX Copenhagen"?3 : preset=="Oslo OSEBX"?4 : preset=="OMX Helsinki"?5 : preset=="OXY"?6 : preset=="GOLD"?4 : preset=="NEM"?4 : preset=="XOM"?2 : preset=="GLD"?3 : 4
+
+f_rl() =>
+    preset=="XLE Energy"?15 : preset=="XLB Materials"?10 : preset=="XLF Financials"?10 : preset=="XLK Technology"?18 : preset=="XLV Healthcare"?10 : preset=="XLI Industrials"?17 : preset=="XLY Consumer Disc"?10 : preset=="XLP Consumer Stap"?18 : preset=="XLRE Real Estate"?10 : preset=="XLU Utilities"?13 : preset=="XLC Communication"?16 : preset=="OMX Stockholm"?13 : preset=="OMX Copenhagen"?14 : preset=="Oslo OSEBX"?14 : preset=="OMX Helsinki"?14 : preset=="OXY"?16 : preset=="GOLD"?13 : preset=="NEM"?14 : preset=="XOM"?11 : preset=="GLD"?11 : 13
+
+// =============================================================================
+// MANUAL OVERRIDE (only when preset = "Manual")
+// =============================================================================
+grpM = "MANUAL (only if Manual)"
+m_ep=input.int(8,"EMA Pulse",minval=1,group=grpM)
+m_ef=input.int(21,"EMA Fast",minval=1,group=grpM)
+m_es=input.int(57,"EMA Slow",minval=1,group=grpM)
+m_tk=input.int(10,"Tenkan",minval=1,group=grpM)
+m_kj=input.int(31,"Kijun",minval=1,group=grpM)
+m_sb=input.int(56,"Span B",minval=1,group=grpM)
+m_am=input.float(2.5,"ATR Mult",minval=0.5,step=0.1,group=grpM)
+m_adx=input.int(19,"ADX Thresh",minval=0,group=grpM)
+m_t1r=input.float(2.6,"TP1 R:R",minval=1.0,step=0.25,group=grpM)
+m_t1p=input.int(13,"TP1 %",minval=1,maxval=50,group=grpM)
+m_t2r=input.float(5.2,"TP2 R:R",minval=2.0,step=0.25,group=grpM)
+m_t2p=input.int(17,"TP2 %",minval=1,maxval=50,group=grpM)
+m_cp=input.float(62.0,"Core %",minval=20,maxval=90,step=1,group=grpM)
+m_mr=input.int(51,"Min Regime",minval=10,group=grpM)
+m_cd=input.int(4,"Cooldown",minval=0,group=grpM)
+m_rl=input.int(13,"RSI Len",minval=5,group=grpM)
+
+// =============================================================================
+// RESOLVE (preset or manual)
+// =============================================================================
+mn = preset == "Manual"
+// Skip separator labels
+validPreset = preset != "--- US SECTORS ---" and preset != "--- NORDIC ---" and preset != "--- STOCKS ---"
+
+emaPulseLen = mn?m_ep:f_ep()
+emaFastLen  = mn?m_ef:f_ef()
+emaSlowLen  = mn?m_es:f_es()
+i_convLen   = mn?m_tk:f_tk()
+i_baseLen   = mn?m_kj:f_kj()
+i_spanBLen  = mn?m_sb:f_sb()
+atrMult     = mn?m_am:f_am()
+adxThresh   = mn?m_adx:f_adx()
+tp1RR       = mn?m_t1r:f_t1r()
+tp1Pct      = mn?m_t1p:f_t1p()
+tp2RR       = mn?m_t2r:f_t2r()
+tp2Pct      = mn?m_t2p:f_t2p()
+corePct     = mn?m_cp:f_cp()
+minRegime   = mn?m_mr:f_mr()
+cooldownBars= mn?m_cd:f_cd()
+rsiLen      = mn?m_rl:f_rl()
+
+trimPct=100.0-corePct
+addPct=10.0
+i_displacement=26
+
+// Other inputs
+grpS="SECTOR ETF"
+sectorETFInput=input.symbol("AMEX:XLE","Sector ETF",group=grpS)
+grpB="BACKTESTING"
+i_useTP=input.bool(false,"Limit Period",group=grpB)
+i_tpS=input.time(timestamp("2020-01-01"),"Start",group=grpB)
+i_tpE=input.time(timestamp("2026-12-31"),"End",group=grpB)
+grpPn="PANEL"
+i_showPanel=input.bool(true,"Show HUD",group=grpPn)
+
+// =============================================================================
+// HELPERS
+// =============================================================================
+inTP()=>i_useTP?(time>=i_tpS and time<=i_tpE):true
+f_qty(pct)=>(strategy.equity*(pct/100.0))/close
+sectorETF=sectorETFInput
+
+// =============================================================================
+// INDICATORS
+// =============================================================================
+ema10=ta.ema(close,emaPulseLen)
+ema20=ta.ema(close,emaFastLen)
+ema50=ta.ema(close,emaSlowLen)
+ema200=ta.ema(close,200)
+
+emaTrend=ema10>ema20 and ema20>ema50 and close>ema50
+emaStackFull=ema10>ema20 and ema20>ema50 and ema50>ema200
+
+donchian(len)=>math.avg(ta.lowest(len),ta.highest(len))
+tenkan=donchian(i_convLen)
+kijun=donchian(i_baseLen)
+senkouA=math.avg(tenkan,kijun)
+senkouB=donchian(i_spanBLen)
+kumoTop=math.max(senkouA[i_displacement],senkouB[i_displacement])
+
+ichiScore=0
+ichiScore+= close>kumoTop?5:0
+ichiScore+= tenkan>kijun?5:0
+ichiScore+= close>close[i_displacement]?3:0
+ichiScore+= senkouA>senkouB?2:0
+
+rsiVal=ta.rsi(close,rsiLen)
+atrVal=ta.atr(14)
+atrD=request.security(syminfo.tickerid,"1D",ta.atr(14),gaps=barmerge.gaps_off,lookahead=barmerge.lookahead_off,ignore_invalid_symbol=true)
+
+// ADX
+dxP=ta.change(high)
+dxM=-ta.change(low)
+sP=ta.rma(dxP>dxM and dxP>0?dxP:0,14)
+sM=ta.rma(dxM>dxP and dxM>0?dxM:0,14)
+sT=ta.rma(ta.tr,14)
+pdi=sP/sT*100
+mdi=sM/sT*100
+dxV=math.abs(pdi-mdi)/(pdi+mdi)*100
+adxVal=ta.rma(dxV,14)
+adxOK=adxThresh==0 or adxVal>=adxThresh
+
+// Momentum / OB / Events
+overExt=close>ema10*(1.027) or rsiVal>70
+momUp=rsiVal>rsiVal[1] and rsiVal[1]>rsiVal[2]
+momDown=rsiVal<rsiVal[1] and rsiVal[1]<rsiVal[2]
+weakSeq=close<ema10 and close[1]<ema10
+bullOB=low<=ta.lowest(low,5)[1] and close>open
+bearOB=high>=ta.highest(high,5)[1] and close<open
+emaCrossUp=ta.crossover(ema10,ema20) and close>ema50
+emaReclaim=close>ema10 and close[1]<=ema10
+
+var int lastSellBar=-100
+// Minimum cooldown is 10 bars (Rule upgrade)
+effectiveCooldown = math.max(cooldownBars, 10)
+inCooldown=(bar_index-lastSellBar)<=effectiveCooldown
+
+// =============================================================================
+// REGIME SCORE
+// =============================================================================
+spyC=request.security("AMEX:SPY","1D",close,gaps=barmerge.gaps_off,lookahead=barmerge.lookahead_off,ignore_invalid_symbol=true)
+spyE50=request.security("AMEX:SPY","1D",ta.ema(close,50),gaps=barmerge.gaps_off,lookahead=barmerge.lookahead_off,ignore_invalid_symbol=true)
+spyE200=request.security("AMEX:SPY","1D",ta.ema(close,200),gaps=barmerge.gaps_off,lookahead=barmerge.lookahead_off,ignore_invalid_symbol=true)
+spyR=request.security("AMEX:SPY","1D",ta.rsi(close,14),gaps=barmerge.gaps_off,lookahead=barmerge.lookahead_off,ignore_invalid_symbol=true)
+
+mktScore=0
+mktScore+=nz(spyC)>nz(spyE50)?10:0
+mktScore+=nz(spyC)>nz(spyE200)?10:0
+mktScore+=nz(spyR)>50?5:0
+
+secC=request.security(sectorETF,"1D",close,gaps=barmerge.gaps_off,lookahead=barmerge.lookahead_off,ignore_invalid_symbol=true)
+secE50=request.security(sectorETF,"1D",ta.ema(close,50),gaps=barmerge.gaps_off,lookahead=barmerge.lookahead_off,ignore_invalid_symbol=true)
+secE200=request.security(sectorETF,"1D",ta.ema(close,200),gaps=barmerge.gaps_off,lookahead=barmerge.lookahead_off,ignore_invalid_symbol=true)
+secR=request.security(sectorETF,"1D",ta.rsi(close,14),gaps=barmerge.gaps_off,lookahead=barmerge.lookahead_off,ignore_invalid_symbol=true)
+
+secScore=0
+secScore+=nz(secC)>nz(secE50)?10:0
+secScore+=nz(secC)>nz(secE200)?10:0
+secScore+=nz(secR)>50?10:0
+
+stkScore=0
+stkScore+=ema10>ema20?8:0
+stkScore+=ema20>ema50?8:0
+stkScore+=close>ema50?8:0
+stkScore+=close>ema200?8:0
+stkScore+=rsiVal>50?8:0
+stkScore+=momUp?10:0
+
+regScore=mktScore+secScore+stkScore+ichiScore
+
+// Sizing
+coreSzAdj=regScore>=70?corePct:regScore>=50?corePct*0.7:corePct*0.4
+trimSzAdj=regScore>=70?trimPct:regScore>=50?trimPct*0.7:trimPct*0.4
+addQty=regScore>=90?f_qty(addPct*2.0):regScore>=70?f_qty(addPct*1.25):f_qty(addPct*0.5)
+
+// Avg entry
+f_avgEP()=>
+    float tc=0.0
+    float tq=0.0
+    if strategy.opentrades>0
+        for idx=0 to strategy.opentrades-1
+            tc+=strategy.opentrades.entry_price(idx)*strategy.opentrades.size(idx)
+            tq+=strategy.opentrades.size(idx)
+    tq>0?tc/tq:close
+
+avgEP=f_avgEP()
+atrHit=strategy.position_size>0 and close<=(avgEP-nz(atrD,atrVal)*atrMult)
+
+// Circuit breakers (block entries only)
+var float dEqS=strategy.equity
+if ta.change(time("D"))!=0
+    dEqS:=strategy.equity
+dBrk=((strategy.equity-dEqS)/dEqS)*100.0<=-8.0
+
+var float wEqS=strategy.equity
+if ta.change(time("W"))!=0
+    wEqS:=strategy.equity
+wBrk=((strategy.equity-wEqS)/wEqS)*100.0<=-15.0
+
+brkOK=not dBrk and not wBrk
+
+// =============================================================================
+// A. MINERVINI TREND TEMPLATE (8 criteria)
+// =============================================================================
+// 1. Price > 150-day MA (using ema50 as slow MA proxy, ema200 for 200-day)
+// 2. Price > 200-day MA
+// 3. 200 MA rising at least 1 month (20 bars)
+// 4. 50 MA > 200 MA
+// 5. Price 30%+ above 52-week low
+// 6. Within 25% of 52-week high
+// 7. RS positive vs SPY (6-month return)
+// 8. Volume increasing on up moves
+
+stockReturn = (close - close[126]) / close[126]
+spyReturn = (nz(spyC) - nz(spyC[126])) / nz(spyC[126])
+rsRaw = stockReturn - spyReturn
+rsOK = rsRaw > 0
+
+volUp = ta.sma(volume * (close > open ? 1.0 : 0.0), 20)
+volDown = ta.sma(volume * (close < open ? 1.0 : 0.0), 20)
+volOK = volUp > volDown * 1.2
+
+low52 = ta.lowest(low, 252)
+high52 = ta.highest(high, 252)
+
+trendTemplate = true
+trendTemplate := trendTemplate and close > ema50
+trendTemplate := trendTemplate and close > ema200
+trendTemplate := trendTemplate and ema200 > ema200[20]
+trendTemplate := trendTemplate and ema50 > ema200
+trendTemplate := trendTemplate and close > low52 * 1.30
+trendTemplate := trendTemplate and close > high52 * 0.75
+trendTemplate := trendTemplate and rsOK
+trendTemplate := trendTemplate and volOK
+
+// =============================================================================
+// B. ANTI-CONSOLIDATION FILTER — Bollinger inside Keltner (squeeze)
+// =============================================================================
+bbBasis = ta.sma(close, 20)
+bbDev = 2.0 * ta.stdev(close, 20)
+bbUpper = bbBasis + bbDev
+bbLower = bbBasis - bbDev
+kcBasis = ta.ema(close, 20)
+kcRange = 1.5 * ta.atr(20)
+kcUpper = kcBasis + kcRange
+kcLower = kcBasis - kcRange
+inSqueeze = bbLower > kcLower and bbUpper < kcUpper
+noSqueeze = not inSqueeze
+
+// =============================================================================
+// C. PULLBACK ENTRY (Rule 4) — touch EMA20 or Kijun then close above
+// =============================================================================
+pullbackToEMA = low <= ema20 * 1.01 and close > ema20
+pullbackToKijun = low <= kijun * 1.01 and close > kijun
+isPullback = pullbackToEMA or pullbackToKijun
+
+// =============================================================================
+// D. CANDLESTICK TRIGGER (Rule 5)
+// =============================================================================
+bodySize = math.abs(close - open)
+upperWick = high - math.max(close, open)
+lowerWick = math.min(close, open) - low
+isBullishPinbar = lowerWick > bodySize * 2 and close > open and lowerWick > upperWick * 2
+isBullishEngulfing = close > open and close[1] < open[1] and close > open[1] and open < close[1]
+isBreakRetest = close > high[1] and low <= high[1] * 1.005
+candleTrigger = isBullishPinbar or isBullishEngulfing or isBreakRetest or bullOB
+
+// =============================================================================
+// E. VOLUME CONFIRMATION (Rule 6)
+// =============================================================================
+volSMA = ta.sma(volume, 20)
+volConfirm = volume > volSMA * 1.3
+
+// =============================================================================
+// F. R:R GATE (Rule 7) — reject if expected R:R < 2.0
+// =============================================================================
+entryPrice = close
+slPrice = entryPrice - nz(atrD, atrVal) * atrMult
+slDist = entryPrice - slPrice
+tpTarget = entryPrice + slDist * tp1RR
+rrRatio = slDist > 0 ? (tpTarget - entryPrice) / slDist : 0.0
+rrOK = rrRatio >= 2.0
+
+// =============================================================================
+// G. DAILY LOSS COUNTER (Rule 10)
+// =============================================================================
+var int dailyLosses = 0
+if ta.change(time("D")) != 0
+    dailyLosses := 0
+if strategy.closedtrades > strategy.closedtrades[1]
+    float lastTradeProfit = strategy.closedtrades.profit(strategy.closedtrades - 1)
+    if lastTradeProfit < 0
+        dailyLosses += 1
+maxDailyLossOK = dailyLosses < 2
+
+// =============================================================================
+// TRADE STATE
+// =============================================================================
+var int bIT=0
+var bool tp1Hit=false
+var float hiC=0.0
+
+if strategy.position_size!=0
+    bIT+=1
+    hiC:=math.max(hiC,close)
+else
+    bIT:=0
+    tp1Hit:=false
+    hiC:=0.0
+
+if strategy.position_size>0 and strategy.closedtrades>strategy.closedtrades[1]
+    tp1Hit:=true
+
+// =============================================================================
+// H. SWING-HIGH BREAKEVEN (Rule 9) — move SL to BE after new HH above entry+ATR
+// =============================================================================
+var float swingHigh = 0.0
+if strategy.position_size > 0
+    if high > swingHigh
+        swingHigh := high
+    // nothing else needed here — newHH used below
+else
+    swingHigh := 0.0
+
+newHH = strategy.position_size > 0 and swingHigh > avgEP + nz(atrD, atrVal) * 1.0
+
+// =============================================================================
+// I. DEAD MONEY EXIT — close if no 5% gain within 25 bars
+// =============================================================================
+var int entryBar = 0
+if strategy.position_size > 0 and strategy.position_size[1] == 0
+    entryBar := bar_index
+deadMoney = strategy.position_size > 0 and (bar_index - entryBar) > 25 and close < avgEP * 1.05
+
+// =============================================================================
+// ENTRY CONDITION (MAXIMIZED)
+// =============================================================================
+longEntry = validPreset and inTP() and brkOK and maxDailyLossOK and not inCooldown and trendTemplate and noSqueeze and adxOK and regScore >= minRegime and isPullback and candleTrigger and volConfirm and rrOK
+
+addCond=emaTrend and emaReclaim and strategy.position_size>0 and not inCooldown and brkOK and regScore>=50
+
+// =============================================================================
+// EXITS — baseline
+// =============================================================================
+var int b50=0
+if close<ema50
+    b50+=1
+else
+    b50:=0
+
+coreExit=b50>=3 and bIT>5
+trimE50=b50>=2 and bIT>8
+kijunExit=tp1Hit and close<kijun and close<ema10 and bIT>5
+trailStop=hiC>0?hiC-nz(atrD,atrVal)*2.0:0.0
+trailExit=tp1Hit and close<trailStop and bIT>10
+catExit=strategy.position_size>0 and atrHit
+
+// =============================================================================
+// ORDERS
+// =============================================================================
+if strategy.position_size==0 and longEntry
+    strategy.entry("CORE",strategy.long,qty=f_qty(coreSzAdj))
+    strategy.entry("TRIM",strategy.long,qty=f_qty(trimSzAdj))
+    tp1Hit:=false
+    hiC:=close
+
+if addCond
+    strategy.entry("TRIM",strategy.long,qty=addQty)
+
+if strategy.position_size>0
+    float ep=strategy.opentrades.entry_price(0)
+    float slD=nz(atrD,atrVal)*atrMult
+    // BE logic: use newHH instead of tp1Hit for stop level
+    float tSL=newHH?ep:ep-slD
+    float tp1P=ep+slD*tp1RR
+    // TP1: take only 10% to let winners run (Rule — let winners run)
+    strategy.exit("TP1","TRIM",qty_percent=10,limit=tp1P,stop=tSL,comment_profit="TP1",comment_loss=newHH?"BE":"SL")
+    float tp2P=ep+slD*tp2RR
+    // TP2: take only 10%, remaining 80% rides Kijun/EMA50 trail
+    strategy.exit("TP2","TRIM",qty_percent=10,limit=tp2P,stop=tSL,comment_profit="TP2",comment_loss=newHH?"BE":"SL")
+    float cSL=ep-slD*1.8
+    strategy.exit("CSL","CORE",stop=cSL,comment_loss="CAT")
+
+// Dead money exit
+if deadMoney
+    strategy.close("CORE",comment="DEAD")
+    strategy.close("TRIM",comment="DEAD")
+    lastSellBar:=bar_index
+
+if kijunExit and strategy.position_size>0
+    strategy.close("TRIM",comment="KIJUN")
+    lastSellBar:=bar_index
+if trailExit and strategy.position_size>0
+    strategy.close("TRIM",comment="TRAIL")
+    lastSellBar:=bar_index
+if trimE50 and strategy.position_size>0
+    strategy.close("TRIM",comment="EMA50")
+    lastSellBar:=bar_index
+if coreExit and strategy.position_size>0
+    strategy.close("CORE",comment="CORE50")
+    lastSellBar:=bar_index
+if catExit
+    strategy.close("CORE",comment="CAT")
+    strategy.close("TRIM",comment="CAT")
+    lastSellBar:=bar_index
+
+// =============================================================================
+// PLOTS
+// =============================================================================
+plot(ema10,"Pulse",color.new(color.teal,0),1)
+plot(ema20,"Fast",color.new(color.orange,0),2)
+plot(ema50,"Slow",color.new(color.purple,2),2)
+plot(ema200,"200",color.new(color.white,30),3)
+
+pA=plot(senkouA,offset=i_displacement-1,color=color.new(color.green,60),linewidth=1,title="SA")
+pB=plot(senkouB,offset=i_displacement-1,color=color.new(color.red,60),linewidth=1,title="SB")
+fill(pA,pB,color=senkouA>senkouB?color.new(color.green,92):color.new(color.red,92),title="Kumo")
+plot(tenkan,color=color.new(color.blue,70),linewidth=1,title="TK")
+plot(kijun,color=color.new(color.maroon,70),linewidth=1,title="KJ")
+
+plotshape(longEntry and strategy.position_size==0,style=shape.triangleup,location=location.belowbar,color=color.new(color.lime,0),size=size.normal,title="Entry")
+plotshape(addCond,style=shape.diamond,location=location.belowbar,color=color.new(color.teal,0),size=size.tiny,title="Add")
+bgcolor(dBrk?color.new(color.red,90):wBrk?color.new(color.orange,92):na,title="Brk")
+bgcolor(emaStackFull?color.new(color.lime,96):na,title="Stk")
+bgcolor(inSqueeze?color.new(color.yellow,94):na,title="Squeeze")
+
+// =============================================================================
+// HUD PANEL — 15 rows (upgraded)
+// =============================================================================
+var table hud=table.new(position.top_right,2,15,bgcolor=color.new(color.black,10),border_width=2,border_color=color.new(color.aqua,0),frame_width=2,frame_color=color.new(color.fuchsia,40))
+
+// Determine candle pattern label for HUD
+triggerLabel = isBullishPinbar ? "PINBAR" : isBullishEngulfing ? "ENGULF" : isBreakRetest ? "RETEST" : bullOB ? "BULL OB" : "NONE"
+templateColor = trendTemplate ? color.new(color.green,0) : color.new(color.red,0)
+squeezeColor = inSqueeze ? color.new(color.red,0) : color.new(color.green,0)
+triggerColor = candleTrigger ? color.new(color.green,0) : color.new(color.gray,0)
+rrColor = rrOK ? color.new(color.green,0) : color.new(color.red,0)
+
+if i_showPanel
+    table.clear(hud,0,0,1,14)
+    rClr=regScore>=90?color.new(color.green,0):regScore>=70?color.new(color.green,30):regScore>=50?color.new(color.yellow,0):color.new(color.red,0)
+    table.cell(hud,0,0,"WOLF v4",text_color=color.new(color.aqua,0),bgcolor=color.new(color.black,10),text_size=size.normal)
+    table.cell(hud,1,0,str.tostring(regScore,"#"),text_color=color.white,bgcolor=rClr,text_size=size.large)
+    table.cell(hud,0,1,"PRESET",text_color=color.white,bgcolor=color.new(color.navy,20),text_size=size.small)
+    table.cell(hud,1,1,preset,text_color=color.new(color.aqua,0),bgcolor=color.new(color.navy,20),text_size=size.small)
+    table.cell(hud,0,2,"MKT",text_color=color.white,bgcolor=color.new(color.navy,20),text_size=size.small)
+    table.cell(hud,1,2,str.tostring(mktScore,"#")+"/25",text_color=color.white,bgcolor=mktScore>=20?color.new(color.green,0):color.new(color.red,0),text_size=size.normal)
+    table.cell(hud,0,3,"SEC",text_color=color.white,bgcolor=color.new(color.navy,20),text_size=size.small)
+    table.cell(hud,1,3,str.tostring(secScore,"#")+"/30",text_color=color.white,bgcolor=secScore>=20?color.new(color.green,0):color.new(color.red,0),text_size=size.normal)
+    table.cell(hud,0,4,"STK",text_color=color.white,bgcolor=color.new(color.navy,20),text_size=size.small)
+    table.cell(hud,1,4,str.tostring(stkScore,"#")+"/50",text_color=color.white,bgcolor=stkScore>=30?color.new(color.green,0):color.new(color.red,0),text_size=size.normal)
+    table.cell(hud,0,5,"ICHI",text_color=color.white,bgcolor=color.new(color.navy,20),text_size=size.small)
+    table.cell(hud,1,5,str.tostring(ichiScore,"#")+"/15",text_color=color.white,bgcolor=ichiScore>=10?color.new(color.green,0):color.new(color.red,0),text_size=size.normal)
+    table.cell(hud,0,6,"ADX",text_color=color.white,bgcolor=color.new(color.navy,20),text_size=size.small)
+    table.cell(hud,1,6,str.tostring(adxVal,"#")+"/"+str.tostring(adxThresh),text_color=color.white,bgcolor=adxOK?color.new(color.green,0):color.new(color.red,0),text_size=size.small)
+    stTxt=emaStackFull?"FULL":emaTrend?"TREND":"WEAK"
+    table.cell(hud,0,7,"EMA",text_color=color.white,bgcolor=color.new(color.navy,20),text_size=size.small)
+    table.cell(hud,1,7,stTxt,text_color=color.white,bgcolor=emaStackFull?color.new(color.green,0):emaTrend?color.new(color.yellow,0):color.new(color.red,0),text_size=size.small)
+    table.cell(hud,0,8,"RISK",text_color=color.white,bgcolor=color.new(color.navy,20),text_size=size.small)
+    table.cell(hud,1,8,brkOK?"OK":"STOP",text_color=color.white,bgcolor=brkOK?color.new(color.green,0):color.new(color.red,0),text_size=size.normal)
+    table.cell(hud,0,9,"POS",text_color=color.white,bgcolor=color.new(color.navy,20),text_size=size.small)
+    table.cell(hud,1,9,strategy.position_size>0?"LONG":"FLAT",text_color=color.white,bgcolor=strategy.position_size>0?color.new(color.green,0):color.new(color.gray,0),text_size=size.normal)
+    // New v4 rows
+    table.cell(hud,0,10,"TEMPLATE",text_color=color.white,bgcolor=color.new(color.navy,20),text_size=size.small)
+    table.cell(hud,1,10,trendTemplate?"PASS":"FAIL",text_color=color.white,bgcolor=templateColor,text_size=size.small)
+    table.cell(hud,0,11,"SQUEEZE",text_color=color.white,bgcolor=color.new(color.navy,20),text_size=size.small)
+    table.cell(hud,1,11,inSqueeze?"YES":"NO",text_color=color.white,bgcolor=squeezeColor,text_size=size.small)
+    table.cell(hud,0,12,"TRIGGER",text_color=color.white,bgcolor=color.new(color.navy,20),text_size=size.small)
+    table.cell(hud,1,12,triggerLabel,text_color=color.white,bgcolor=triggerColor,text_size=size.small)
+    table.cell(hud,0,13,"LOSSES",text_color=color.white,bgcolor=color.new(color.navy,20),text_size=size.small)
+    table.cell(hud,1,13,str.tostring(dailyLosses),text_color=color.white,bgcolor=dailyLosses>=2?color.new(color.red,0):dailyLosses>=1?color.new(color.yellow,0):color.new(color.green,0),text_size=size.small)
+    table.cell(hud,0,14,"R:R",text_color=color.white,bgcolor=color.new(color.navy,20),text_size=size.small)
+    table.cell(hud,1,14,str.tostring(rrRatio,"#.##"),text_color=color.white,bgcolor=rrColor,text_size=size.small)
+
+// =============================================================================
+// ALERTS
+// =============================================================================
+if longEntry and strategy.position_size==0
+    alert("WOLF v4 ["+preset+"]: LONG "+syminfo.ticker+" Regime:"+str.tostring(regScore)+" ADX:"+str.tostring(adxVal,"#")+" RR:"+str.tostring(rrRatio,"#.#"),alert.freq_once_per_bar)
+if coreExit and strategy.position_size>0
+    alert("WOLF v4: CORE EXIT "+syminfo.ticker,alert.freq_once_per_bar)
+if deadMoney
+    alert("WOLF v4: DEAD MONEY EXIT "+syminfo.ticker+" ("+str.tostring(bar_index-entryBar)+" bars)",alert.freq_once_per_bar)
+if newHH and strategy.position_size>0 and not newHH[1]
+    alert("WOLF v4: NEW SWING HIGH — SL moved to BE "+syminfo.ticker,alert.freq_once_per_bar)
