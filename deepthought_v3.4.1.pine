@@ -1,0 +1,570 @@
+//Credit to Chris, Mark, Mahesh and all at OVTLYR.com as well as Warfish(Ric UK), for the inspiration behind this code. 
+//Profit follows Price
+//@version=6
+indicator("Deepthought v3.4.1", overlay=true, behind_chart=false, max_boxes_count = 200)
+
+// Define EMA and SMA lengths with user input
+ema1_length = input.int(10, title="EMA 1 Length", group="Moving Averages")
+ema2_length = input.int(20, title="EMA 2 Length", group="Moving Averages")
+ema3_length = input.int(50, title="EMA 3 Length", group="Moving Averages")
+ema4_length = input.int(5, title="EMA 4 Length", group="Moving Averages")
+sma1_length = input.int(200, title="SMA 1 Length", group="Smoothed Moving Average")
+
+// Calculate EMAs and SMA
+ema1 = ta.ema(close, ema1_length )
+ema2 = ta.ema(close, ema2_length)
+ema3 = ta.ema(close, ema3_length)
+ema4 = ta.ema(close, ema4_length)
+sma1 = ta.sma(close, sma1_length)
+
+// Define colors
+ema1_color = color.red
+ema2_color = color.blue
+ema3_color = color.green
+ema4_color = color.white
+sma1_color = color.orange
+
+// Plot EMAs and SMA
+plot(ema1, title="EMA 1", color=ema1_color, linewidth=2)
+plot(ema2, title="EMA 2", color=ema2_color, linewidth=2)
+plot(ema3, title="EMA 3", color=ema3_color, linewidth=2)
+plot(sma1, title="SMA 1", color=sma1_color, linewidth=2)
+plot(ema4, title="EMA 4", color=ema4_color, linewidth=1)
+
+//Get trade direction input
+showMasterKeyTable = input.bool(title= "Show Master Key Table", defval=false, group="Master KEY")
+tradeType = input.string(title= "Trade Direction", defval="Long", options= ["Long", "Short"], group="Master KEY")
+
+//ATR's and trailing stop loss
+// Trailing stop loss indicator and ATR values
+    //get user inputs
+
+plotATRvals = input.bool(title="Show ATR's on chart", defval=false, group="Stop Loss and ATR's")    
+atrLength = input.int(title="ATR Period", defval=14, group="Stop Loss and ATR's")
+stopColour = input.color(defval=color.yellow, title="Stop Loss Line colour", group="Stop Loss and ATR's")
+atrColour = input.color(defval=color.blue, title="+1 ATR Line colour", group="Stop Loss and ATR's")
+doubleATRColour = input.color(defval=color.blue, title="+2 ATR Line colour", group="Stop Loss and ATR's")
+halfatrColour = input.color(defval=color.orange, title="1/2 ATR Line colour", group="Stop Loss and ATR's")
+showRMtable = input.bool(title="Show Risk Management Table", defval=false, group="Position Sizing and Risk Management")
+plotSL = input.bool(title="Show Stop Loss on chart", defval=false, group="Position Sizing and Risk Management")
+atrMultiplier = input.float(title="Stop Loss ATR Multiplier", defval=2.0, group="Position Sizing and Risk Management", step=0.1)
+
+
+//Get inputs for risk managment
+accountSize = input.float(title="Account size", defval=10000.00, group="Position Sizing and Risk Management")
+riskPercent = input.float(title="Risk % Per trade", defval=0.5, group="Position Sizing and Risk Management", step=0.1)
+
+
+//declare trailing price variables
+var float stopTrailPrice = na
+var float next_stopTrailPrice = na
+
+//declare ATR price values
+float atr_value = request.security(syminfo.tickerid, "1D", ta.atr(atrLength))
+float doubleatr_value = atr_value * 2
+float halfatr_value = atr_value / 2
+var float directionHalfATR = na
+var float directionFullATR = na
+var float directionDoubleATR = na
+
+//Position sizing tool and risk management
+
+//var
+float positionSize = na
+float totalRiskPerShare = na
+float totalAccountRiskAmmount = na
+
+//calculations for risk management
+//Risk = (account value * risk percent)/ 2ATR
+totalAccountRiskAmmount := (accountSize * (riskPercent / 100))
+totalRiskPerShare := atrMultiplier * atr_value
+positionSize := totalAccountRiskAmmount / totalRiskPerShare
+
+
+
+// calculate current trailing price  and ATR values based on atr and Multiplier
+if (tradeType == "Long" and barstate.islast)
+    next_stopTrailPrice := close - (totalRiskPerShare)
+else if (tradeType == "Short" and barstate.islast)
+    next_stopTrailPrice := open + (totalRiskPerShare)
+
+if (tradeType == "Long" and barstate.islast)
+    directionHalfATR := (close - halfatr_value)
+    directionFullATR := (close + atr_value)
+    directionDoubleATR := (close + doubleatr_value)
+else if (tradeType == "Short")
+    directionHalfATR := (close + halfatr_value)
+    directionFullATR := (close - atr_value)
+    directionDoubleATR := (close - doubleatr_value)
+
+
+//Check for trailing stop price update on bar close
+if barstate.islast
+     //update only if temp trail price is na or if new trailing price is > temp trail price (long trades)
+    if (next_stopTrailPrice > stopTrailPrice or na(stopTrailPrice))
+        stopTrailPrice := next_stopTrailPrice 
+    //update only if temp trail price is na or if new trailing price is < temp trail price (short trades)
+    if (next_stopTrailPrice < stopTrailPrice or na(stopTrailPrice)) 
+        stopTrailPrice := next_stopTrailPrice 
+       
+//plot the new price line x bars wide if bool user select == true,  with label to left
+if plotSL
+    stopLossLine = line.new(x1=bar_index[5], y1=stopTrailPrice, x2=bar_index, y2=stopTrailPrice, extend=extend.right, color=stopColour)
+    stopLossLabel = label.new(bar_index[5], stopTrailPrice, "Stop Loss: " + str.tostring(stopTrailPrice, '#.00'), color=color.yellow, textcolor=color.black, size=size.normal, style=label.style_label_right)
+    line.delete(stopLossLine[1])
+    label.delete(stopLossLabel[1])
+
+
+//plot the ATR values if user input == true. Print labels mid line no style
+if plotATRvals
+    halfATRline = line.new(x1=bar_index, y1=(directionHalfATR), x2=bar_index+1, y2=(directionHalfATR), extend=extend.right, color=halfatrColour, width=2)
+    line.delete(halfATRline[1])
+    halfATRLabel = label.new(bar_index+10, (directionHalfATR), "1/2 ATR", textcolor=halfatrColour, size=size.normal, style=label.style_none)
+    label.delete(halfATRLabel[1])
+    atrLine = line.new(x1=bar_index, y1=(directionFullATR), x2=bar_index+1, y2=(directionFullATR), extend=extend.right, color=atrColour, width=2)
+    line.delete(atrLine[1])
+    atrLabel = label.new(bar_index+10, (directionFullATR), "+1 ATR", textcolor=atrColour, size=size.normal, style=label.style_none)
+    label.delete(atrLabel[1])
+    doubleATRline = line.new(x1=bar_index, y1=(directionDoubleATR), x2=bar_index+1, y2=(directionDoubleATR), extend=extend.right, color=doubleATRColour, width=2)
+    line.delete(doubleATRline[1])
+    doubleATRlabel = label.new(bar_index+10, (directionDoubleATR), "+2 ATR", textcolor=doubleATRColour, size=size.normal, style=label.style_none)
+    label.delete(doubleATRlabel[1])
+    vertATRline = line.new(bar_index, directionDoubleATR, bar_index, directionHalfATR, extend=extend.none, color=atrColour, width=2)
+    line.delete(vertATRline[1])
+    
+
+// MACD Calculation for later versions
+[macdLine, signalLine, macdHist] = ta.macd(close, 12, 26, 9)
+
+//Golden Ticket MasterKey
+//declare variables
+ema10 = ta.ema(close, 10)
+ema20 = ta.ema(close, 20)
+ema50 = ta.ema(close, 50)
+
+//determine market Posture
+//declare variables
+float SPYema10 = request.security("SPY", "1D", ta.ema(close, 10))
+float SPYema20 = request.security("SPY", "1D", ta.ema(close, 20))
+float SPYema50 = request.security("SPY", "1D", ta.ema(close, 50))
+float SPYPrice = request.security("SPY", "1D", close)
+bool SPYbull = false
+string marketPosture = ""
+
+string MasterKey = ""
+string tentwentyfifty = ""
+tentwentyfiftyColor = color.black
+marketpostureColour = color.black
+masterKeyColor = color.black
+
+//Deetermine sector posture goes here 
+//Get ticker sector
+string tickerSector = syminfo.sector
+
+//Determine ETF symbol based on sector
+string etf_symbol = na
+
+if tickerSector == "Communications" or tickerSector == "Commercial Services"
+    etf_symbol := "XLC"
+if tickerSector == "Consumer Durables" or tickerSector == "Consumer Services" or tickerSector == "Consumer Discretionary"
+    etf_symbol := "XLY"
+if tickerSector == "Consumer Staples" or tickerSector == "Consumer Non-Durables"
+    etf_symbol := "XLP"
+if tickerSector == "Energy Minerals" or tickerSector == "Energy"
+    etf_symbol := "XLE"
+if tickerSector == "Finance" or tickerSector == "Finance"
+    etf_symbol := "XLF"
+if tickerSector == "Health Services" or tickerSector == "Health Technology" or tickerSector == "Health Care"
+    etf_symbol := "XLV"
+if tickerSector == "Industrials" or tickerSector == "Industrial Services"
+    etf_symbol := "XLI"
+if tickerSector == "Materials"
+    etf_symbol := "XLB"
+if tickerSector == "Real Estate"
+    etf_symbol := "XLRE"
+if tickerSector == "Technology" or tickerSector == "Technology Services" or tickerSector == "Electronic Technology"
+    etf_symbol := "XLK"
+if tickerSector == "Utilities"
+    etf_symbol := "XLU"
+
+
+//calculation logic
+if (SPYema10 > SPYema20) and (SPYPrice > SPYema50)
+    SPYbull := true
+    marketPosture := "Bullish"
+    marketpostureColour := color.green
+else
+    SPYbull := false
+    marketPosture := "Bearish"
+    marketpostureColour := color.red
+
+//determine if current ticker is bull or bear
+    
+bool tickerBull = false
+
+string directionTenTwentyFifty = ""
+
+if ema10 > ema20 and close > ema50
+    tickerBull := true
+
+
+//calculate master Key using current ticker and SPY posture
+if tradeType == "Long"
+    directionTenTwentyFifty := "10EMA > 20EMA : Price > 50EMA"
+    if tickerBull
+        tentwentyfifty := "YES"
+        tentwentyfiftyColor := color.green
+    else    
+        tentwentyfifty := "NO"
+        tentwentyfiftyColor := color.red
+
+    if tickerBull and SPYbull
+        masterKeyColor := color.green
+        MasterKey := "OK to Trade"
+    else
+        masterKeyColor := color.red
+        MasterKey := "NO trading"
+
+if tradeType == "Short"
+    directionTenTwentyFifty := "10EMA < 20EMA : Price < 50EMA"
+    if tickerBull == false
+        tentwentyfifty := "YES"
+        tentwentyfiftyColor := color.green
+    else
+        tentwentyfifty := "NO"
+        tentwentyfiftyColor := color.red
+
+    if tickerBull == false and SPYbull == false
+        masterKeyColor := color.green
+        MasterKey := "OK to Trade"
+    else
+        masterKeyColor := color.red
+        MasterKey := "NO trading"
+
+
+
+//Dashboard ATR, Stop loss and informaton Table
+// show ATR and sizing / risk management table if bool user select == true
+if showRMtable 
+    dashboardTable = table.new(position.top_right, 2, 9, bgcolor = color.rgb(30, 34, 45), frame_color=color.white, frame_width=1, border_color=color.white, border_width = 1)
+    
+    table.cell(dashboardTable, 0, 0, "ATR Value", text_color = color.white)
+    table.cell(dashboardTable, 1, 0, str.tostring(atr_value, '#.00'), text_color = color.white)
+    
+    table.cell(dashboardTable, 0, 1, "ATR to Price", text_color = color.white)
+    table.cell(dashboardTable, 1, 1, str.tostring((directionFullATR), '#.00'), text_color = color.white)  
+    
+    table.cell(dashboardTable, 0, 2, "2x ATR to Price", text_color = color.white)
+    table.cell(dashboardTable, 1, 2, str.tostring((directionDoubleATR), '#.00'), text_color= color.white)
+    
+    table.cell(dashboardTable, 0, 3, "Account Balance", text_color = color.yellow)
+    table.cell(dashboardTable, 1, 3, str.tostring((accountSize), "#.00"), text_color = color.yellow)
+    
+    table.cell(dashboardTable, 0, 4, "Risk % per trade", text_color = color.white)
+    table.cell(dashboardTable, 1, 4, str.tostring(riskPercent), text_color = color.white)
+
+    table.cell(dashboardTable, 0, 5, "Account Risk Amount", text_color = color.white)
+    table.cell(dashboardTable, 1, 5, str.tostring(totalAccountRiskAmmount, "#.00"), text_color = color.white)
+
+    table.cell(dashboardTable, 0, 6, "Position Size", text_color = color.white)
+    table.cell(dashboardTable, 1, 6, str.tostring(math.round(positionSize)), text_color = color.white)
+
+    table.cell(dashboardTable, 0, 7, "Risk Amount per share", text_color = color.white)
+    table.cell(dashboardTable, 1, 7, str.tostring((totalRiskPerShare), "#.00"), text_color = color.white)
+
+    table.cell(dashboardTable, 0, 8, "Recommended Risk Adjusted Stop Loss", text_color = color.yellow)
+    table.cell(dashboardTable, 1, 8, str.tostring((next_stopTrailPrice), '#.00'), text_color = color.yellow)
+
+// Master Key Table
+
+if showMasterKeyTable //show table if user bool user select == true
+    masterKeyTable = table.new(position.bottom_right, 2, 5, bgcolor = color.rgb(30, 34, 45), frame_color=color.white, frame_width=1, border_color=color.white, border_width = 1)
+
+    table.cell(masterKeyTable, 0, 0, "Trade Direction", text_color = color.white)
+    table.cell(masterKeyTable, 1, 0, str.tostring(tradeType), text_color = color.white)
+
+    table.cell(masterKeyTable, 0, 1, str.tostring(directionTenTwentyFifty), text_color = color.white)
+    table.cell(masterKeyTable, 1, 1, str.tostring(tentwentyfifty), text_color = tentwentyfiftyColor)
+
+    table.cell(masterKeyTable, 0, 2, "Market Posture ", text_color = color.white)
+    table.cell(masterKeyTable, 1, 2, str.tostring(marketPosture), text_color = marketpostureColour)
+
+    table.cell(masterKeyTable, 0, 3, "MASTER KEY", text_color = color.white)
+    table.cell(masterKeyTable, 1, 3, str.tostring(MasterKey), text_color = masterKeyColor)
+
+    table.cell(masterKeyTable, 0, 4, "ETF: " + str.tostring(etf_symbol), text_color = color.white)
+    table.cell(masterKeyTable, 1, 4, str.tostring(tickerSector), text_color = color.white)
+
+//ORDER BLOCKS 
+
+showOB1 = input.bool(title= "Show Block Set 1 ", defval=true, group="Order Block")
+showOB2 = input.bool(title= "Show Block Set 2 ", defval=true, group="Order Block")
+showOBVOL = input.bool(title= "Show Volume analysis of Order Blocks", defval=true, group="Order Blocks")
+i_lookback = input.int(3, "Consolidation Lookback", minval=2, group = "Order Blocks")
+i_threshold = input.float(0.5, "Breakout Threshold %", minval=0.1, group = "Order Blocks") / 100
+i_maxBlocks = input.int(20, "Maximum Order Blocks", minval=1, maxval=100, group = "Order Blocks")
+sens1 = input.int(28, minval=1, title='Sensitivity 1', group='Order Block', tooltip='Lower sensitivity shows more order blocks. Higher sensitivity shows less order blocks.')
+sens1 /= 100
+sens2 = input.int(50, minval=1, title='Sensitivity 2', group='Order Block', tooltip='Lower sensitivity shows more order blocks. Higher sensitivity shows less order blocks.')
+sens2 /= 100
+
+// Volume Analysis Inputs
+var string VOL_CALC_METHOD = input.string("Relative", "Volume Calculation Method", options=["Simple", "Relative", "Weighted"], group = "OB Volume")
+var int VOL_LOOKBACK = input.int(20, "Volume Lookback Period", minval=5, maxval=100, group = "OB Volume")
+var float VOL_THRESHOLD = input.float(1.2, "Volume Threshold Multiplier", minval=1.0, maxval=5.0, step=0.1, group = "OB Volume")
+
+// Create function to analyze volume strength
+get_ob_volume(len) =>
+    float vol = 0.0
+    
+    if VOL_CALC_METHOD == "Simple"
+        vol := math.avg(volume, volume[1])
+    else if VOL_CALC_METHOD == "Relative"
+        avg_vol = ta.sma(volume, len)
+        vol := volume / avg_vol
+    else // Weighted
+        weight1 = 2.0
+        weight2 = 1.0
+        vol := (volume * weight1 + volume[1] * weight2) / (weight1 + weight2)
+
+// Create function to check consolidation
+isConsolidation(len) =>
+    high_range = ta.highest(high, len) - ta.lowest(high, len)
+    low_range = ta.highest(low, len) - ta.lowest(low, len)
+    avg_range = (high_range + low_range) / 2
+    current_range = high[1] - low[1]
+    current_range <= avg_range * (1 + i_threshold)
+
+// Create function to check breakout
+isBreakout(len) =>
+    bool bullish = close > high[2] and close > open
+    bool bearish = close < low[2] and close < open
+    [bullish, bearish]
+
+// Check for consolidation and breakout for OBs
+bool is_consol = isConsolidation(i_lookback)
+[bull_break, bear_break] = isBreakout(i_lookback)
+float vol_strength = get_ob_volume(i_lookback)
+
+// OB
+OBMitigationType = input.string("Close", title="OB Mitigation Type", options=["Close", "Wick"], group="Order Block", tooltip="Choose how Order Blocks are mitigated")
+OBBullMitigation = OBMitigationType=="Close" ? close[1] : low
+OBBearMitigation = OBMitigationType=="Close" ? close[1] : high
+
+//OB Colors
+col_bullish = input.color(#5db49e, title="Bullish OB Border", inline="a", group="Order Block")
+col_bullish_ob = input.color(color.new(#64C4AC, 85), title="Background", inline="a", group="Order Block")
+col_bullishd = input.color(color.new(#5db49e, 75), title="Bullish OB Border", inline="a", group="Order Block")
+col_bullish_obd = input.color(color.new(#64C4AC, 98), title="Background", inline="a", group="Order Block")
+
+
+col_bearish = input.color(#faa1a4, title="Bearish OB Border", inline="b", group="Order Block")
+col_bearish_ob = input.color(color.new(#faa1a4, 85), title="Background", inline="b", group="Order Block")
+col_bearishd = input.color(color.new(#faa1a4, 75), title="Bearish OB Border", inline="b", group="Order Block")
+col_bearish_obd = input.color(color.new(#faa1a4, 98), title="Background", inline="b", group="Order Block")
+
+
+
+// Alerts
+buy_alert = input.bool(title='Buy Signal', defval=true, group='Alerts', tooltip='An alert will be sent when price goes below the top of a bullish order block.')
+sell_alert = input.bool(title='Sell Signal', defval=true, group='Alerts', tooltip='An alert will be sent when price goes above the bottom of a bearish order block.')
+
+
+// Delacring Variables
+bool ob_created1 = false
+bool ob_created_bull1 = false
+var int cross_index1 = na
+bool ob_created2 = false
+bool ob_created_bull2 = false
+var int cross_index2 = na
+
+
+// Declaring Box Arrays
+var box drawlongBox1 = na
+var longBoxes1 = array.new_box()
+var box drawShortBox1 = na
+var shortBoxes1 = array.new_box()
+var box drawlongBox2 = na
+var longBoxes2 = array.new_box()
+var box drawShortBox2 = na
+var shortBoxes2 = array.new_box()
+
+
+// Custom Rate of Change (ROC) calculation. This is to calculate high momentum moves in the market.
+pc = (open - open[4]) / open[4] * 100
+
+// If the ROC crossover our Sensitivty input - Then create an Order Block
+// Sensitivty is negative as this is a Bearish OB
+if ta.crossunder(pc, -sens1)
+    ob_created1 := true
+    cross_index1 := bar_index
+    cross_index1
+
+if ta.crossunder(pc, -sens2)
+    ob_created2 := true
+    cross_index2 := bar_index
+    cross_index2
+
+// If the ROC crossover our Sensitivty input - Then create an Order Block
+if ta.crossover(pc, sens1)
+    ob_created_bull1 := true
+    cross_index1:= bar_index
+    cross_index1
+
+if ta.crossover(pc, sens2)
+    ob_created_bull2 := true
+    cross_index2:= bar_index
+    cross_index2
+
+// -------------------------------
+// Bearish OB Creation block 1
+// -------------------------------
+// Check if we should create a OB, Also check if we haven't created an OB in the last 5 candles.
+if showOB1 and ob_created1 and cross_index1 - cross_index1[1] > 5
+    string vol_text = "                                            Vol: " + str.tostring(vol_strength, "#.##") + "x"
+    float last_green = 0
+    float highest = 0
+    // Loop through the most recent candles and find the first GREEN (Bullish) candle. We will place our OB here.
+    for i = 4 to 15 by 1
+        if close[i] > open[i]
+            last_green := i
+            break
+    // Draw our OB on that candle - then push the box into our box arrays.
+    if showOB1 and showOBVOL
+        drawShortBox1 := box.new(left=bar_index[last_green], top=high[last_green], bottom=low[last_green], right=bar_index[last_green], bgcolor=col_bearish_ob, border_color=col_bearish, extend=extend.right, text=vol_text, text_color=col_bearish, text_size=size.small)
+    else
+        drawShortBox1 := box.new(left=bar_index[last_green], top=high[last_green], bottom=low[last_green], right=bar_index[last_green], bgcolor=col_bearish_ob, border_color=col_bearish, extend=extend.right)
+
+    array.push(shortBoxes1, drawShortBox1)
+    if array.size(shortBoxes1) > i_maxBlocks
+        box.delete(array.shift(shortBoxes1))
+
+// -------------------------------
+// Bearish OB Creation block 2
+// -------------------------------
+// Check if we should create a OB, Also check if we haven't created an OB in the last 5 candles.
+if showOB2 and ob_created2 and cross_index2 - cross_index2[1] > 5
+    string vol_text = "                                            Vol: " + str.tostring(vol_strength, "#.##") + "x"
+    float last_green = 0
+    float highest = 0
+    // Loop through the most recent candles and find the first GREEN (Bullish) candle. We will place our OB here.
+    for i = 4 to 15 by 1
+        if close[i] > open[i]
+            last_green := i
+            break
+    // Draw our OB on that candle - then push the box into our box arrays.
+    if showOB2 and showOBVOL
+        drawShortBox2 := box.new(left=bar_index[last_green], top=high[last_green], bottom=low[last_green], right=bar_index[last_green], bgcolor=col_bearish_ob, border_color=col_bearish, extend=extend.right, text=vol_text, text_color=col_bearish, text_size=size.small)
+    else
+        drawShortBox2 := box.new(left=bar_index[last_green], top=high[last_green], bottom=low[last_green], right=bar_index[last_green], bgcolor=col_bearish_ob, border_color=col_bearish, extend=extend.right)
+
+    array.push(shortBoxes2, drawShortBox2)
+    if array.size(shortBoxes2) > i_maxBlocks
+        box.delete(array.shift(shortBoxes2))
+
+// -------------------------------
+// Bullish OB Creation 1
+// -------------------------------
+// Check if we should create a OB, Also check if we haven't created an OB in the last 5 candles.
+if showOB1 and ob_created_bull1 and cross_index1 - cross_index1[1] > 5
+    float last_red = 0
+    float highest = 0
+    // Loop through the most recent candles and find the first RED (Bearish) candle. We will place our OB here.
+    for i = 4 to 15 by 1
+        if close[i] < open[i]
+            last_red := i
+            break
+    // Draw our OB on that candle - then push the box into our box arrays.
+    drawlongBox1 := box.new(left=bar_index[last_red], top=high[last_red], bottom=low[last_red], right=bar_index[last_red], bgcolor=col_bullish_ob, border_color=col_bullish, extend=extend.right)
+    array.push(longBoxes1, drawlongBox1)
+    
+
+// -------------------------------
+// Bullish OB Creation 2
+// -------------------------------
+// Check if we should create a OB, Also check if we haven't created an OB in the last 5 candles.
+if showOB2 and ob_created_bull2 and cross_index2 - cross_index2[1] > 5
+    float last_red = 0
+    float highest = 0
+    // Loop through the most recent candles and find the first RED (Bearish) candle. We will place our OB here.
+    for i = 4 to 15 by 1
+        if close[i] < open[i]
+            last_red := i
+            break
+    // Draw our OB on that candle - then push the box into our box arrays.
+    drawlongBox2 := box.new(left=bar_index[last_red], top=high[last_red], bottom=low[last_red], right=bar_index[last_red], bgcolor=col_bullish_ob, border_color=col_bullish, extend=extend.right)
+    array.push(longBoxes2, drawlongBox2)
+
+
+// ----------------- Bearish blocks 1 cleanup -------------------
+// Clean up OB boxes and place alerts
+if array.size(shortBoxes1) > 0
+    for i = array.size(shortBoxes1) - 1 to 0 by 1
+        sbox = array.get(shortBoxes1, i)
+        top = box.get_top(sbox)
+        bot = box.get_bottom(sbox)
+        // If the two last closes are above the high of the bearish OB - Remove the OB
+        if OBBearMitigation > top
+            array.remove(shortBoxes1, i)
+            //box.delete(sbox)
+            box.set_bgcolor(sbox, col_bearish_obd)
+            box.set_border_color(sbox, col_bearishd)
+            box.set_right(sbox, bar_index[1])
+            box.set_extend(sbox, extend.none)
+        // Alerts
+        if high > bot and sell_alert
+            alert('Price inside Bearish OB', alert.freq_once_per_bar)
+
+// ----------------- Bearish blocks 2 cleanup -------------------
+// Clean up OB boxes and place alerts
+if array.size(shortBoxes2) > 0
+    for i = array.size(shortBoxes2) - 1 to 0 by 1
+        sbox = array.get(shortBoxes2, i)
+        top = box.get_top(sbox)
+        bot = box.get_bottom(sbox)
+        // If the two last closes are above the high of the bearish OB - Remove the OB
+        if OBBearMitigation > top
+            array.remove(shortBoxes2, i)
+            //box.delete(sbox)
+            box.set_bgcolor(sbox, col_bearish_obd)
+            box.set_border_color(sbox, col_bearishd)
+            box.set_right(sbox, bar_index[1])
+            box.set_extend(sbox, extend.none)
+        // Alerts
+        if high > bot and sell_alert
+            alert('Price inside Bearish OB', alert.freq_once_per_bar)
+
+// ----------------- Bullish box 1 Clean Up -------------------
+// Clean up OB boxes and place alerts
+if array.size(longBoxes1) > 0
+    for i = array.size(longBoxes1) - 1 to 0 by 1
+        sbox = array.get(longBoxes1, i)
+        bot = box.get_bottom(sbox)
+        top = box.get_top(sbox)
+        // If the two last closes are below the low of the bullish OB - Remove the OB
+        if OBBullMitigation < bot
+            array.remove(longBoxes1, i)
+            //box.delete(sbox)
+            box.set_bgcolor(sbox, col_bullish_obd)
+            box.set_border_color(sbox, col_bullishd)
+            box.set_right(sbox, bar_index[1])
+            box.set_extend(sbox, extend.none)
+
+// ----------------- Bullish box 2 Clean Up -------------------
+// Clean up OB boxes and place alerts
+if array.size(longBoxes2) > 0
+    for i = array.size(longBoxes2) - 1 to 0 by 1
+        sbox = array.get(longBoxes2, i)
+        bot = box.get_bottom(sbox)
+        top = box.get_top(sbox)
+        // If the two last closes are below the low of the bullish OB - Remove the OB
+        if OBBullMitigation < bot
+            array.remove(longBoxes2, i)
+            //box.delete(sbox)
+            box.set_bgcolor(sbox, col_bullish_obd)
+            box.set_border_color(sbox, col_bullishd)
+            box.set_right(sbox, bar_index[1])
+            box.set_extend(sbox, extend.none)
+
+
+//End of code//
