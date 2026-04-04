@@ -939,8 +939,11 @@ def render_cagr_page() -> None:
     # ── Main table ─────────────────────────────────────────────────────────
     if not filtered:
         st.markdown(
-            f"<div style='color:{DIM};text-align:center;padding:40px;'>"
-            "No results match the current filters. Press SCAN to refresh data."
+            f"<div style='text-align:center;padding:40px;'>"
+            f"<div style='color:{CYAN};font-size:1.5rem;margin-bottom:8px;'>🐺</div>"
+            f"<div style='color:{TEXT};font-size:0.9rem;margin-bottom:4px;'>Tryck <b>SCAN</b> i sidebaren för att ladda instrument</div>"
+            f"<div style='color:{DIM};font-size:0.7rem;'>Visar alla 65 nordiska aktier + ETFs med 20-poängs fundamentalscoring</div>"
+            f"<div style='color:{DIM};font-size:0.65rem;margin-top:12px;'>Signal: STRONG BUY · BUY · HOLD · SELL · STRONG SELL</div>"
             "</div>",
             unsafe_allow_html=True,
         )

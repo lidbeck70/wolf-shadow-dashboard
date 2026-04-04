@@ -107,6 +107,13 @@ try:
     BACKTEST_ENGINE_AVAILABLE = True
 except ImportError:
     BACKTEST_ENGINE_AVAILABLE = False
+
+# Long Regime Monitor
+try:
+    from long_regime_monitor import render_long_regime_monitor
+    LONG_REGIME_AVAILABLE = True
+except ImportError:
+    LONG_REGIME_AVAILABLE = False
 import plotly.express as px
 from plotly.subplots import make_subplots
 import streamlit as st
@@ -2160,14 +2167,15 @@ def main():
     tab_labels = [
         "  SCREENER  ",
         "  BACKTEST  ",
-        "  OVTLYR  ",
-        "  REGIME MONITOR  ",
+        "  SWING REGIME  ",
+        "  LONG REGIME  ",
+        "  OVTLYR REGIME  ",
         "  SECTOR & REGIME  ",
         "  SENTIMENT  ",
         "  HEATMAP  ",
         "  RULES  ",
     ]
-    (tab1, tab2, tab_ovtlyr, tab3,
+    (tab1, tab2, tab_swing_regime, tab_long_regime, tab_ovtlyr,
      tab6, tab7, tab8, tab_rules) = st.tabs(tab_labels)
 
     with tab1:
@@ -2176,14 +2184,20 @@ def main():
     with tab2:
         tab_backtest_consolidated()
 
+    with tab_swing_regime:
+        tab_regime()  # Existing swing regime monitor — UNTOUCHED
+
+    with tab_long_regime:
+        if LONG_REGIME_AVAILABLE:
+            render_long_regime_monitor()
+        else:
+            _tab_not_found("Long Regime Monitor", "long_regime_monitor")
+
     with tab_ovtlyr:
         if OVTLYR_AVAILABLE:
             render_ovtlyr_page()
         else:
             _tab_not_found("OVTLYR", "ovtlyr")
-
-    with tab3:
-        tab_regime()
 
     with tab6:
         if SECTOR_CYCLE_AVAILABLE:
