@@ -481,14 +481,10 @@ def render_rs_backtest_page() -> None:
     # ------------------------------------------------------------------
     # Sidebar controls
     # ------------------------------------------------------------------
-    with st.sidebar:
-        st.markdown(
-            f"<div style='color:{CYAN}; font-weight:700; text-transform:uppercase; "
-            f"letter-spacing:0.08em; font-size:0.8rem; margin-bottom:16px;'>"
-            f"RS BACKTEST CONTROLS</div>",
-            unsafe_allow_html=True,
-        )
+    # ── Controls in main area ────────────────────────────────────────────
+    ctrl_col1, ctrl_col2, ctrl_col3 = st.columns([1, 1, 1])
 
+    with ctrl_col1:
         period_label = st.radio(
             "Backtest Period",
             options=["1y", "2y", "3y", "5y"],
@@ -498,6 +494,7 @@ def render_rs_backtest_page() -> None:
         )
         years = YEARS_MAP[period_label]
 
+    with ctrl_col2:
         top_pct = st.slider(
             "RS Top %",
             min_value=10,
@@ -508,17 +505,10 @@ def render_rs_backtest_page() -> None:
             help="Keep only the top N% of tickers by 6-month momentum before backtesting",
         )
 
-        st.markdown("<hr style='border-color:#1a1a3a;'>", unsafe_allow_html=True)
-        run_btn = st.button(
-            "▶  RUN BACKTEST",
-            use_container_width=True,
-            type="primary",
-            key="rs_bt_run",
-        )
-
+    with ctrl_col3:
         st.markdown(
             f"""
-            <div style='margin-top:24px; padding:12px; background:{BG2};
+            <div style='padding:12px; background:{BG2};
                         border:1px solid {DIM}; border-radius:6px;
                         font-size:0.72rem; color:{DIM}; line-height:1.6;'>
                 <b style='color:{CYAN}'>Strategy:</b><br>
@@ -532,6 +522,14 @@ def render_rs_backtest_page() -> None:
             unsafe_allow_html=True,
         )
 
+    st.markdown("<hr style='border-color:#1a1a3a;'>", unsafe_allow_html=True)
+    run_btn = st.button(
+        "▶  RUN BACKTEST",
+        use_container_width=True,
+        type="primary",
+        key="rs_bt_run",
+    )
+
     # ------------------------------------------------------------------
     # Run on button press
     # ------------------------------------------------------------------
@@ -540,7 +538,7 @@ def render_rs_backtest_page() -> None:
             f"""
             <div style="text-align:center; padding:80px 0; color:{DIM};">
                 <div style="font-size:2.5rem; margin-bottom:16px; opacity:0.4;">◈</div>
-                <div style="font-size:1rem;">Configure parameters in the sidebar and press
+                <div style="font-size:1rem;">Configure parameters above and press
                     <b style="color:{CYAN}">RUN BACKTEST</b>
                 </div>
                 <div style="font-size:0.8rem; margin-top:8px;">

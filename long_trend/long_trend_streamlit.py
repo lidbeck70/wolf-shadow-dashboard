@@ -873,17 +873,13 @@ def render_long_trend_page() -> None:
     )
 
     # ── Sidebar controls ──────────────────────────────────────────────────
-    with st.sidebar:
-        st.markdown(
-            f'<div style="color:{CYAN};font-family:monospace;font-size:0.8rem;'
-            f'text-transform:uppercase;letter-spacing:2px;margin-bottom:8px;">'
-            f'Long-Term Analysis</div>',
-            unsafe_allow_html=True,
-        )
+    # ── Controls in main area ────────────────────────────────────────────
+    # Ticker selector — categorised dropdown with RS filter
+    full_registry = _build_trend_ticker_registry()
 
-        # Ticker selector — categorised dropdown with RS filter
-        full_registry = _build_trend_ticker_registry()
+    ctrl_col1, ctrl_col2, ctrl_col3 = st.columns([2, 1, 1])
 
+    with ctrl_col1:
         if full_registry:
             # RS Momentum filter
             rs_filter = st.checkbox(
@@ -961,14 +957,16 @@ def render_long_trend_page() -> None:
         else:
             ticker = st.text_input("Ticker (yfinance)", value="VOLV-B.ST")
 
+    with ctrl_col2:
         period = st.radio(
             "Analysis Period",
             options=["5y", "10y", "20y"],
             index=1,
-            horizontal=True,
+            horizontal=False,
+            key="lt_period",
         )
 
-        st.markdown("---")
+    with ctrl_col3:
         st.markdown(
             f'<div style="color:{DIM};font-size:0.72rem;font-family:monospace;">'
             f'Data: yfinance (price) + Börsdata (fundamentals if key set)</div>',

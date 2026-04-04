@@ -908,28 +908,7 @@ def render_heatmap_page() -> None:
     _inject_css()
     _render_header()
 
-    # ── Sidebar controls ───────────────────────────────────────────────────
-    st.sidebar.markdown(
-        f"<div style='color:{CYAN};font-size:0.8rem;letter-spacing:0.1em;"
-        f"text-transform:uppercase;padding:10px 0 6px 0;'>"
-        f"Heatmap Controls</div>",
-        unsafe_allow_html=True,
-    )
-
-    market_choice = st.sidebar.selectbox(
-        "Market",
-        options=["All", "Nordic Stocks", "US Stocks", "Canada Stocks", "UCITS ETFs"],
-        index=0,
-        key="heatmap_market",
-    )
-
-    country_choice = st.sidebar.selectbox(
-        "Country",
-        options=["All", "Sweden", "Norway", "Denmark", "Finland", "US", "Canada"],
-        index=0,
-        key="heatmap_country",
-    )
-
+    # ── Controls in main area ─────────────────────────────────────────────
     # Build sector list dynamically from both registries
     nordic_meta = load_nordic_tickers()
     etf_meta    = load_etf_tickers()
@@ -937,30 +916,49 @@ def render_heatmap_page() -> None:
         v.get("sector", "Unknown")
         for v in {**nordic_meta, **etf_meta}.values()
     ))
-    sector_choice = st.sidebar.selectbox(
-        "Sector",
-        options=["All"] + all_sectors,
-        index=0,
-        key="heatmap_sector",
-    )
 
-    timeframe = st.sidebar.radio(
-        "Timeframe",
-        options=["1D", "5D", "1M"],
-        index=0,
-        horizontal=True,
-        key="heatmap_timeframe",
-    )
+    ctrl1, ctrl2, ctrl3 = st.columns(3)
+    with ctrl1:
+        market_choice = st.selectbox(
+            "Market",
+            options=["All", "Nordic Stocks", "US Stocks", "Canada Stocks", "UCITS ETFs"],
+            index=0,
+            key="heatmap_market",
+        )
+    with ctrl2:
+        country_choice = st.selectbox(
+            "Country",
+            options=["All", "Sweden", "Norway", "Denmark", "Finland", "US", "Canada"],
+            index=0,
+            key="heatmap_country",
+        )
+    with ctrl3:
+        sector_choice = st.selectbox(
+            "Sector",
+            options=["All"] + all_sectors,
+            index=0,
+            key="heatmap_sector",
+        )
 
-    sort_by = st.sidebar.selectbox(
-        "Sort By",
-        options=["Performance", "Name", "Sector"],
-        index=0,
-        key="heatmap_sortby",
-    )
-
-    st.sidebar.markdown("<hr style='border-color:rgba(255,255,255,0.07);'/>", unsafe_allow_html=True)
-    refresh_clicked = st.sidebar.button("⟳  REFRESH DATA", use_container_width=True)
+    ctrl4, ctrl5, ctrl6 = st.columns(3)
+    with ctrl4:
+        timeframe = st.radio(
+            "Timeframe",
+            options=["1D", "5D", "1M"],
+            index=0,
+            horizontal=True,
+            key="heatmap_timeframe",
+        )
+    with ctrl5:
+        sort_by = st.selectbox(
+            "Sort By",
+            options=["Performance", "Name", "Sector"],
+            index=0,
+            key="heatmap_sortby",
+        )
+    with ctrl6:
+        st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+        refresh_clicked = st.button("⟳  REFRESH DATA", use_container_width=True, key="heatmap_refresh")
 
     if refresh_clicked:
         st.cache_data.clear()

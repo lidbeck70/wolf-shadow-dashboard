@@ -619,13 +619,10 @@ def render_sector_cycle_page() -> None:
     # ------------------------------------------------------------------ #
     #  Controls sidebar                                                    #
     # ------------------------------------------------------------------ #
-    with st.sidebar:
-        st.markdown(
-            f'<p style="font-family:monospace;font-size:0.7rem;letter-spacing:0.12em;'
-            f'color:{CYAN};text-transform:uppercase;margin-bottom:8px;">Regime Controls</p>',
-            unsafe_allow_html=True,
-        )
+    # ── Controls in main area ────────────────────────────────────────────
+    ctrl_col1, ctrl_col2, ctrl_col3 = st.columns([2, 2, 1])
 
+    with ctrl_col1:
         # Category filter for the global grid section
         show_categories = st.multiselect(
             "Show categories",
@@ -633,9 +630,9 @@ def render_sector_cycle_page() -> None:
             default=["Global", "Nordic"],
             key="sector_cycle_cat_filter",
         )
-        st.divider()
 
-        # Quick stats in sidebar
+    with ctrl_col2:
+        # Quick stats
         total_up = int((summary["trend_state"] == TREND_UP).sum())
         total    = len(summary)
         total_dn = int((summary["trend_state"] == TREND_DOWN).sum())
@@ -653,6 +650,8 @@ def render_sector_cycle_page() -> None:
             unsafe_allow_html=True,
         )
 
+    with ctrl_col3:
+        st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
         if st.button("↺ Refresh Data", key="sector_cycle_refresh"):
             compute_sector_summary.clear()
             st.rerun()

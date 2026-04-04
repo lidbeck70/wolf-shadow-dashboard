@@ -505,12 +505,12 @@ def _build_rsi_chart(df: pd.DataFrame) -> Optional[go.Figure]:
 def _cycle_sidebar_controls(sectors: list) -> Dict[str, dict]:
     """Render per-sector cycle controls as clean sliders (0–3) with color coding."""
     overrides: Dict[str, dict] = {}
-    st.sidebar.markdown(
+    st.markdown(
         f"<div style='color:{CYAN};font-size:0.7rem;text-transform:uppercase;"
         f"letter-spacing:0.1em;margin-top:1rem;'>Cycle Assessment</div>",
         unsafe_allow_html=True,
     )
-    with st.sidebar.expander("Sector Cycle Scores", expanded=False):
+    with st.expander("Sector Cycle Scores", expanded=False):
         st.markdown(
             f"<div style='color:{DIM};font-size:0.65rem;margin-bottom:8px;'>"
             "0 = Bearish &nbsp; 1 = Neutral &nbsp; 2 = Bullish &nbsp; 3 = Strong"
@@ -812,52 +812,55 @@ def render_cagr_page() -> None:
     _inject_css()
     _render_header()
 
-    # ── Sidebar ────────────────────────────────────────────────────────────
-    st.sidebar.markdown(
-        f"<div style='color:{CYAN};font-size:0.8rem;letter-spacing:0.1em;"
-        f"text-transform:uppercase;padding:10px 0 6px 0;'>"
-        f"CAGR Scanner Controls</div>",
-        unsafe_allow_html=True,
-    )
+    # ── Controls in main area ──────────────────────────────────────────────
+    ctrl_row1 = st.columns([1, 1, 1, 1])
+    with ctrl_row1[0]:
+        market_choice = st.selectbox(
+            "Market",
+            options=["All", "Nordic Stocks", "UCITS ETFs"],
+            index=0,
+            key="cagr_market",
+        )
+    with ctrl_row1[1]:
+        country_choice = st.selectbox(
+            "Country",
+            options=["All", "Sweden", "Norway", "Denmark", "Finland"],
+            index=0,
+            key="cagr_country",
+        )
+    with ctrl_row1[2]:
+        # Score filter uses percentage (works for both scales)
+        min_score_pct = st.slider(
+            "Min Score %",
+            min_value=0,
+            max_value=100,
+            value=0,
+            step=5,
+            key="cagr_min_score",
+        )
+    with ctrl_row1[3]:
+        sort_by = st.selectbox(
+            "Sort By",
+            options=["Score % (↓)", "Name (A-Z)", "Country", "Signal"],
+            index=0,
+            key="cagr_sort_by",
+        )
 
-    market_choice = st.sidebar.selectbox(
-        "Market",
-        options=["All", "Nordic Stocks", "UCITS ETFs"],
-        index=0,
-    )
-
-    country_choice = st.sidebar.selectbox(
-        "Country",
-        options=["All", "Sweden", "Norway", "Denmark", "Finland"],
-        index=0,
-    )
-
-    # Score filter uses percentage (works for both scales)
-    min_score_pct = st.sidebar.slider(
-        "Min Score %",
-        min_value=0,
-        max_value=100,
-        value=0,
-        step=5,
-    )
-
-    sort_by = st.sidebar.selectbox(
-        "Sort By",
-        options=["Score % (↓)", "Name (A-Z)", "Country", "Signal"],
-        index=0,
-    )
-
-    data_period = st.sidebar.selectbox(
-        "Price History Period",
-        options=["6mo", "1y", "2y"],
-        index=2,
-    )
-
-    all_sectors = sorted(set(DEFAULT_CYCLE.keys()))
-    cycle_overrides = _cycle_sidebar_controls(all_sectors)
-
-    st.sidebar.markdown("<hr style='border-color:rgba(255,255,255,0.07);'/>", unsafe_allow_html=True)
-    scan_clicked = st.sidebar.button("⟳  SCAN", use_container_width=True)
+    ctrl_row2 = st.columns([1, 2, 1])
+    with ctrl_row2[0]:
+        data_period = st.selectbox(
+            "Price History Period",
+            options=["6mo", "1y", "2y"],
+            index=2,
+            key="cagr_data_period",
+        )
+    with ctrl_row2[1]:
+        # Cycle assessment expander (moved from sidebar)
+        all_sectors = sorted(set(DEFAULT_CYCLE.keys()))
+        cycle_overrides = _cycle_sidebar_controls(all_sectors)
+    with ctrl_row2[2]:
+        st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+        scan_clicked = st.button("⟳  SCAN", use_container_width=True, key="cagr_scan")
 
     # ── Build ticker list ──────────────────────────────────────────────────
     nordic_tickers = load_nordic_tickers()
