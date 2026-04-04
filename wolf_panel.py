@@ -93,6 +93,20 @@ try:
     RULES_AVAILABLE = True
 except ImportError:
     RULES_AVAILABLE = False
+
+# OVTLYR Screener
+try:
+    from screener_ovtlyr import run_ovtlyr_screener
+    OVTLYR_SCREENER_AVAILABLE = True
+except ImportError:
+    OVTLYR_SCREENER_AVAILABLE = False
+
+# Unified backtest engine
+try:
+    from backtest_engine import run_batch_backtest, run_backtest
+    BACKTEST_ENGINE_AVAILABLE = True
+except ImportError:
+    BACKTEST_ENGINE_AVAILABLE = False
 import plotly.express as px
 from plotly.subplots import make_subplots
 import streamlit as st
@@ -1913,37 +1927,254 @@ def _tab_not_found(module_name: str, folder: str):
     st.code(f"Expected: dashboard/{folder}/")
 
 
+# =============================================================================
+# CONSOLIDATED SCREENER TAB
+# =============================================================================
+
+def tab_screener_consolidated():
+    """Unified Screener tab with dropdown: Swing / Long / OVTLYR."""
+    mode = st.selectbox(
+        "SCREENER MODE",
+        ["Swing Screener", "Long Screener", "OVTLYR Screener"],
+        key="screener_mode_select",
+    )
+
+    if mode == "Swing Screener":
+        tab_screener()  # Existing swing screener — UNTOUCHED
+
+    elif mode == "Long Screener":
+        if CAGR_AVAILABLE:
+            render_cagr_page()  # Existing long screener — UNTOUCHED
+        else:
+            _tab_not_found("Long Screener", "cagr")
+
+    elif mode == "OVTLYR Screener":
+        _render_ovtlyr_screener_ui()
+
+
+def _render_ovtlyr_screener_ui():
+    """OVTLYR Screener with z-score weighted scoring."""
+    st.markdown(
+        "<h2 style='color:#00ffff;letter-spacing:0.1em;'>"
+        "OVTLYR SCREENER</h2>"
+        "<p style='color:#4a4a6a;font-size:0.7rem;'>Z-score normalized · "
+        "Weighted composite · Trend 30% + Momentum 25% + Vol 15% + Volume 15% + ADX 15%</p>",
+        unsafe_allow_html=True,
+    )
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        universe = st.selectbox("Universe", ["Nordic", "US", "Canada", "All"], key="ovtlyr_univ")
+    with col2:
+        min_vol = st.number_input("Min Avg Volume", value=100_000, step=50_000, key="ovtlyr_minvol")
+    with col3:
+        top_n = st.number_input("Top N for Test", value=10, min_value=3, max_value=50, key="ovtlyr_topn")
+
+    col_scan, col_test = st.columns(2)
+    with col_scan:
+        scan_clicked = st.button("↻  SCAN", key="ovtlyr_scan", use_container_width=True)
+    with col_test:
+        test_clicked = st.button("⚡ TEST TOP N", key="ovtlyr_test_topn", use_container_width=True)
+
+    if scan_clicked or test_clicked:
+        if not OVTLYR_SCREENER_AVAILABLE:
+            st.error("OVTLYR Screener module not found.")
+            return
+
+        with st.spinner("🐺 Scanning universe..."):
+            if universe == "All":
+                dfs = []
+                for u in ["Nordic", "US", "Canada"]:
+                    df = run_ovtlyr_screener(u, min_vol)
+                    if not df.empty:
+                        dfs.append(df)
+                results = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+                if not results.empty:
+                    results = results.sort_values("Composite", ascending=False).reset_index(drop=True)
+                    results["Rank"] = range(1, len(results) + 1)
+            else:
+                results = run_ovtlyr_screener(universe, min_vol)
+
+        if results.empty:
+            st.warning("No results. Try a different universe or lower the volume filter.")
+            return
+
+        # Store in session state
+        st.session_state["ovtlyr_results"] = results
+
+        # KPI cards
+        total = len(results)
+        strong_buy = len(results[results["Signal"] == "STRONG BUY"])
+        buy = len(results[results["Signal"] == "BUY"])
+        hold = len(results[results["Signal"] == "HOLD"])
+        sell = len(results[results["Signal"] == "SELL"])
+
+        k1, k2, k3, k4, k5 = st.columns(5)
+        k1.metric("Scanned", total)
+        k2.metric("STRONG BUY", strong_buy)
+        k3.metric("BUY", buy)
+        k4.metric("HOLD", hold)
+        k5.metric("SELL", sell)
+
+        # Color styling
+        def _signal_color(val):
+            colors = {"STRONG BUY": "color:#00ffff", "BUY": "color:#00ff88",
+                      "HOLD": "color:#ffdd00", "SELL": "color:#ff3355"}
+            return colors.get(val, "")
+
+        styled = results.style
+        _map = styled.map if hasattr(styled, "map") else styled.applymap
+        styled = _map(_signal_color, subset=["Signal"])
+        st.dataframe(styled, use_container_width=True, hide_index=True,
+                     height=min(600, 38 + 35 * len(results)))
+
+        # Test Top N
+        if test_clicked:
+            top_tickers = results.head(int(top_n))["Ticker"].tolist()
+            st.session_state["test_topn_tickers"] = top_tickers
+            st.session_state["test_topn_mode"] = "ovtlyr"
+            st.session_state["auto_run_backtest"] = True
+            st.success(f"Top {len(top_tickers)} tickers queued for backtest: {', '.join(top_tickers)}")
+            st.info("→ Switch to the BACKTEST tab to see results.")
+
+    elif "ovtlyr_results" in st.session_state:
+        results = st.session_state["ovtlyr_results"]
+        st.dataframe(results, use_container_width=True, hide_index=True,
+                     height=min(600, 38 + 35 * len(results)))
+
+
+# =============================================================================
+# CONSOLIDATED BACKTEST TAB
+# =============================================================================
+
+def tab_backtest_consolidated():
+    """Unified Backtest tab with dropdown: Swing / Long / OVTLYR."""
+    mode = st.selectbox(
+        "BACKTEST MODE",
+        ["Swing", "Long", "OVTLYR", "RS Sector"],
+        key="backtest_mode_select",
+    )
+
+    if mode == "Swing":
+        tab_backtest()  # Existing backtest — UNTOUCHED
+
+    elif mode == "Long":
+        if LONG_TREND_AVAILABLE:
+            render_long_trend_page()  # Existing long-term trend — UNTOUCHED
+        else:
+            _tab_not_found("Long-Term Trend", "long_trend")
+
+    elif mode == "RS Sector":
+        if RS_BACKTEST_AVAILABLE:
+            render_rs_backtest_page()  # Existing RS backtest — UNTOUCHED
+        else:
+            _tab_not_found("RS Backtest", "rs_backtest")
+
+    elif mode == "OVTLYR":
+        _render_ovtlyr_backtest_ui()
+
+
+def _render_ovtlyr_backtest_ui():
+    """OVTLYR backtest with Test Top N integration."""
+    st.markdown(
+        "<h2 style='color:#00ffff;letter-spacing:0.1em;'>"
+        "OVTLYR BACKTEST</h2>"
+        "<p style='color:#4a4a6a;font-size:0.7rem;'>EMA 10/20 crossover + ADX filter + Volume confirmation</p>",
+        unsafe_allow_html=True,
+    )
+
+    # Check for auto-run from Test Top N
+    auto_run = st.session_state.pop("auto_run_backtest", False)
+    auto_tickers = st.session_state.get("test_topn_tickers", [])
+    auto_mode = st.session_state.get("test_topn_mode", "ovtlyr")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        ticker_input = st.text_input(
+            "Tickers (comma-separated)",
+            value=", ".join(auto_tickers) if auto_tickers else "VOLV-B.ST, EQNR.OL, BOL.ST",
+            key="ovtlyr_bt_tickers",
+        )
+    with col2:
+        years = st.selectbox("Period", [1, 2, 3, 5], index=2, key="ovtlyr_bt_years")
+
+    run_bt = st.button("▶  RUN BACKTEST", key="ovtlyr_bt_run", use_container_width=True)
+
+    if run_bt or auto_run:
+        if not BACKTEST_ENGINE_AVAILABLE:
+            st.error("Backtest engine not found.")
+            return
+
+        tickers = [t.strip() for t in ticker_input.split(",") if t.strip()]
+        if not tickers:
+            st.warning("Enter at least one ticker.")
+            return
+
+        with st.spinner(f"🐺 Backtesting {len(tickers)} tickers ({years}y)..."):
+            summary = run_batch_backtest(tickers, years, auto_mode)
+
+        if summary.empty:
+            st.warning("No backtest results. Check tickers or period.")
+            return
+
+        # KPI row
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Tickers Tested", len(summary))
+        k2.metric("Avg Return", f"{summary['Total Return %'].mean():.1f}%")
+        k3.metric("Avg Win Rate", f"{summary['Win Rate %'].mean():.1f}%")
+        k4.metric("Avg Max DD", f"{summary['Max DD %'].mean():.1f}%")
+
+        # Results table
+        def _ret_color(val):
+            try:
+                v = float(val)
+                return "color:#00ff88" if v > 0 else "color:#ff3355"
+            except (TypeError, ValueError):
+                return ""
+
+        styled = summary.style
+        _map = styled.map if hasattr(styled, "map") else styled.applymap
+        for col in ["Total Return %", "CAGR %", "Max DD %", "Avg Return %"]:
+            if col in summary.columns:
+                styled = _map(_ret_color, subset=[col])
+        st.dataframe(styled, use_container_width=True, hide_index=True)
+
+        # Individual trade details
+        with st.expander("Individual Trades", expanded=False):
+            for ticker in tickers[:5]:
+                bt = run_backtest(ticker, years, auto_mode)
+                trades = bt.get("trades", [])
+                if trades:
+                    st.markdown(f"**{ticker}** — {len(trades)} trades")
+                    st.dataframe(pd.DataFrame(trades), use_container_width=True, hide_index=True)
+
+
+# =============================================================================
+# MAIN APP
+# =============================================================================
+
 def main():
     inject_css()
     wolf_banner()
 
     tab_labels = [
-        "  TRADE SCREENER  ",
+        "  SCREENER  ",
         "  BACKTEST  ",
-        "  RS BACKTEST  ",
         "  OVTLYR  ",
         "  REGIME MONITOR  ",
-        "  LONG SCREENER  ",
-        "  LONG-TERM TREND  ",
         "  SECTOR & REGIME  ",
         "  SENTIMENT  ",
         "  HEATMAP  ",
         "  RULES  ",
     ]
-    (tab1, tab2, tab2b, tab_ovtlyr, tab3, tab4, tab5,
+    (tab1, tab2, tab_ovtlyr, tab3,
      tab6, tab7, tab8, tab_rules) = st.tabs(tab_labels)
 
     with tab1:
-        tab_screener()
+        tab_screener_consolidated()
 
     with tab2:
-        tab_backtest()
-
-    with tab2b:
-        if RS_BACKTEST_AVAILABLE:
-            render_rs_backtest_page()
-        else:
-            _tab_not_found("RS Backtest", "rs_backtest")
+        tab_backtest_consolidated()
 
     with tab_ovtlyr:
         if OVTLYR_AVAILABLE:
@@ -1953,18 +2184,6 @@ def main():
 
     with tab3:
         tab_regime()
-
-    with tab4:
-        if CAGR_AVAILABLE:
-            render_cagr_page()
-        else:
-            _tab_not_found("CAGR Strategy", "cagr")
-
-    with tab5:
-        if LONG_TREND_AVAILABLE:
-            render_long_trend_page()
-        else:
-            _tab_not_found("Long-Term Trend", "long_trend")
 
     with tab6:
         if SECTOR_CYCLE_AVAILABLE:
