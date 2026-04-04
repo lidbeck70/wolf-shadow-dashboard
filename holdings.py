@@ -2,8 +2,8 @@
 holdings.py — Portfolio Holdings Manager
 
 Three portfolios tied to three strategies:
-  - Swing Portfolio (max 2 holdings)
-  - OVTLYR Portfolio (max 2 holdings)
+  - Swing Portfolio (max 5 holdings)
+  - OVTLYR Portfolio (max 5 holdings)
   - Long Portfolio (max 10 holdings)
 
 Each holding gets live signals from its strategy's scoring system.
