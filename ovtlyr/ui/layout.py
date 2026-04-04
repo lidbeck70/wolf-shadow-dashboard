@@ -814,73 +814,102 @@ def render_ovtlyr_page() -> None:
         )
 
     # ── SL/TP Calculator ─────────────────────────────────────────────────────
-    st.markdown(
-        f"<div style='color:{CYAN};font-size:0.75rem;text-transform:uppercase;"
-        f"letter-spacing:0.1em;margin:16px 0 8px 0;border-top:1px solid rgba(0,255,255,0.1);"
-        f"padding-top:12px;'>SL / TP KALKYLATOR — OVTLYR</div>",
-        unsafe_allow_html=True,
-    )
-    
-    # Use the already-fetched data for current ticker
-    if df is not None and not df.empty and len(df) >= 20:
-        _close = df["Close"].astype(float)
-        _high = df["High"].astype(float)
-        _low = df["Low"].astype(float)
-        _price = float(_close.iloc[-1])
-        
-        _tr = pd.concat([_high - _low, abs(_high - _close.shift(1)), abs(_low - _close.shift(1))], axis=1).max(axis=1)
-        _atr = float(_tr.rolling(14).mean().iloc[-1])
-        _half_atr = _atr / 2
-        _ema10 = float(_close.ewm(span=10).mean().iloc[-1])
-        
-        _sl = _price - _half_atr
-        _sl_dist = _price - _sl
-        _tp_2r = _price + _sl_dist * 2
-        _tp_3r = _price + _sl_dist * 3
-        
-        sltp_c1, sltp_c2 = st.columns(2)
-        with sltp_c1:
-            capital_ov = st.number_input("Kapital (SEK)", value=100000, step=10000, key="sltp_cap_ovtlyr_main")
-        with sltp_c2:
-            risk_ov = st.number_input("Risk %", value=5.0, min_value=0.5, max_value=10.0, step=0.5, key="sltp_risk_ovtlyr_main")
-        
-        _risk_amount = capital_ov * (risk_ov / 100)
-        _shares = int(_risk_amount / _sl_dist) if _sl_dist > 0 else 0
-        _pos_value = _shares * _price
-        _pos_pct = (_pos_value / capital_ov * 100) if capital_ov > 0 else 0
-        
-        sl_c, tp_c, ps_c = st.columns(3)
-        with sl_c:
-            st.markdown(
-                f'<div style="background:{BG2};border:2px solid rgba(255,51,85,0.3);border-radius:8px;padding:12px;">'
-                f'<div style="color:{RED};font-weight:700;font-size:0.8rem;">STOP LOSS</div>'
-                f'<div style="color:{TEXT};font-size:1.1rem;font-weight:700;">{_sl:.2f}</div>'
-                f'<div style="color:{DIM};font-size:0.65rem;">½ ATR = {_half_atr:.2f}</div>'
-                f'<div style="color:{RED};font-size:0.72rem;">Risk: {_sl_dist:.2f} ({_sl_dist/_price*100:.1f}%)</div>'
-                f'<div style="color:{DIM};font-size:0.6rem;margin-top:4px;">Trail: EMA10 ({_ema10:.2f})</div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-        with tp_c:
-            st.markdown(
-                f'<div style="background:{BG2};border:2px solid rgba(0,255,136,0.3);border-radius:8px;padding:12px;">'
-                f'<div style="color:{GREEN};font-weight:700;font-size:0.8rem;">TARGETS</div>'
-                f'<div style="color:{TEXT};font-size:0.85rem;">2R: <b style="color:{GREEN};">{_tp_2r:.2f}</b> (+{(_tp_2r/_price-1)*100:.1f}%)</div>'
-                f'<div style="color:{TEXT};font-size:0.85rem;">3R: <b style="color:{GREEN};">{_tp_3r:.2f}</b> (+{(_tp_3r/_price-1)*100:.1f}%)</div>'
-                f'<div style="color:{DIM};font-size:0.6rem;margin-top:4px;">Trailing stop — ej fast TP</div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-        with ps_c:
-            st.markdown(
-                f'<div style="background:{BG2};border:2px solid rgba(0,255,255,0.2);border-radius:8px;padding:12px;">'
-                f'<div style="color:{CYAN};font-weight:700;font-size:0.8rem;">POSITION</div>'
-                f'<div style="color:{TEXT};font-size:0.85rem;">{_shares} aktier</div>'
-                f'<div style="color:{TEXT};font-size:0.85rem;">{_pos_value:,.0f} SEK ({_pos_pct:.1f}%)</div>'
-                f'<div style="color:{RED};font-size:0.72rem;">Risk: {_risk_amount:,.0f} SEK</div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
+    try:
+        st.markdown(
+            f"<div style='color:{CYAN};font-size:0.85rem;text-transform:uppercase;"
+            f"letter-spacing:0.1em;margin:20px 0 10px 0;border-top:2px solid rgba(0,255,255,0.2);"
+            f"padding-top:14px;font-weight:700;'>SL / TP KALKYLATOR — OVTLYR</div>",
+            unsafe_allow_html=True,
+        )
+
+        if df is not None and not df.empty and len(df) >= 20:
+            _close_col = None
+            _high_col = None
+            _low_col = None
+            for c in df.columns:
+                cl = str(c).lower().strip()
+                if cl == "close":
+                    _close_col = c
+                elif cl == "high":
+                    _high_col = c
+                elif cl == "low":
+                    _low_col = c
+
+            if _close_col and _high_col and _low_col:
+                _close = pd.to_numeric(df[_close_col], errors="coerce")
+                _high = pd.to_numeric(df[_high_col], errors="coerce")
+                _low = pd.to_numeric(df[_low_col], errors="coerce")
+                _price = float(_close.dropna().iloc[-1])
+
+                _tr = pd.concat([
+                    _high - _low,
+                    abs(_high - _close.shift(1)),
+                    abs(_low - _close.shift(1)),
+                ], axis=1).max(axis=1)
+                _atr = float(_tr.rolling(14).mean().dropna().iloc[-1])
+                _half_atr = _atr / 2
+                _ema10 = float(_close.ewm(span=10).mean().iloc[-1])
+
+                _sl = _price - _half_atr
+                _sl_dist = _price - _sl
+                _tp_2r = _price + _sl_dist * 2
+                _tp_3r = _price + _sl_dist * 3
+
+                sltp_c1, sltp_c2 = st.columns(2)
+                with sltp_c1:
+                    capital_ov = st.number_input(
+                        "Kapital (SEK)", value=100000, step=10000,
+                        key="sltp_cap_ovtlyr_main",
+                    )
+                with sltp_c2:
+                    risk_ov = st.number_input(
+                        "Risk %", value=5.0, min_value=0.5, max_value=10.0,
+                        step=0.5, key="sltp_risk_ovtlyr_main",
+                    )
+
+                _risk_amount = capital_ov * (risk_ov / 100)
+                _shares = int(_risk_amount / _sl_dist) if _sl_dist > 0 else 0
+                _pos_value = _shares * _price
+                _pos_pct = (_pos_value / capital_ov * 100) if capital_ov > 0 else 0
+
+                sl_c, tp_c, ps_c = st.columns(3)
+                with sl_c:
+                    st.markdown(
+                        f'<div style="background:{BG2};border:2px solid rgba(255,51,85,0.3);border-radius:8px;padding:12px;">'
+                        f'<div style="color:{RED};font-weight:700;font-size:0.8rem;">STOP LOSS</div>'
+                        f'<div style="color:{TEXT};font-size:1.1rem;font-weight:700;">{_sl:.2f}</div>'
+                        f'<div style="color:{DIM};font-size:0.65rem;">½ ATR = {_half_atr:.2f}</div>'
+                        f'<div style="color:{RED};font-size:0.72rem;">Risk: {_sl_dist:.2f} ({_sl_dist/_price*100:.1f}%)</div>'
+                        f'<div style="color:{DIM};font-size:0.6rem;margin-top:4px;">Trail: EMA10 ({_ema10:.2f})</div>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+                with tp_c:
+                    st.markdown(
+                        f'<div style="background:{BG2};border:2px solid rgba(0,255,136,0.3);border-radius:8px;padding:12px;">'
+                        f'<div style="color:{GREEN};font-weight:700;font-size:0.8rem;">TARGETS</div>'
+                        f'<div style="color:{TEXT};font-size:0.85rem;">2R: <b style="color:{GREEN};">{_tp_2r:.2f}</b> (+{(_tp_2r/_price-1)*100:.1f}%)</div>'
+                        f'<div style="color:{TEXT};font-size:0.85rem;">3R: <b style="color:{GREEN};">{_tp_3r:.2f}</b> (+{(_tp_3r/_price-1)*100:.1f}%)</div>'
+                        f'<div style="color:{DIM};font-size:0.6rem;margin-top:4px;">Trailing stop — ej fast TP</div>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+                with ps_c:
+                    st.markdown(
+                        f'<div style="background:{BG2};border:2px solid rgba(0,255,255,0.2);border-radius:8px;padding:12px;">'
+                        f'<div style="color:{CYAN};font-weight:700;font-size:0.8rem;">POSITION</div>'
+                        f'<div style="color:{TEXT};font-size:0.85rem;">{_shares} aktier</div>'
+                        f'<div style="color:{TEXT};font-size:0.85rem;">{_pos_value:,.0f} SEK ({_pos_pct:.1f}%)</div>'
+                        f'<div style="color:{RED};font-size:0.72rem;">Risk: {_risk_amount:,.0f} SEK</div>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+            else:
+                st.info("SL/TP: OHLC-kolumner saknas i data.")
+        else:
+            st.info("SL/TP: Otillräcklig data för beräkning.")
+    except Exception as sltp_err:
+        st.warning(f"SL/TP-kalkylator kunde inte renderas: {sltp_err}")
 
     # ── Advanced Indicators Row ─────────────────────────────────────
     st.markdown(
