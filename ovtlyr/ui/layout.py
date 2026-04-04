@@ -756,45 +756,58 @@ def render_ovtlyr_page() -> None:
         except Exception:
             pass
 
-        # Bullish Entry Patterns card
+    # ── Candlestick Pattern Cards (outside mid columns, full width) ──
+    cs_left, cs_right = st.columns(2)
+
+    with cs_left:
         bull_patterns = candle_patterns.get("bullish", [])
         if bull_patterns:
             patterns_html = "".join(
-                f'<div style="display:flex;justify-content:space-between;margin:3px 0;">'
-                f'<span style="color:{TEXT};font-size:0.78rem;">{p.visual} {p.name}</span>'
-                f'<span style="color:{GREEN};font-size:0.72rem;">{p.confidence}</span>'
+                f'<div style="display:flex;justify-content:space-between;margin:4px 0;">'
+                f'<span style="color:{TEXT};font-size:0.85rem;">{p.visual} {p.name}</span>'
+                f'<span style="color:{GREEN};font-size:0.75rem;font-weight:600;">{p.confidence}</span>'
                 f'</div>'
-                f'<div style="color:{DIM};font-size:0.62rem;margin-bottom:4px;">{p.description}</div>'
-                for p in bull_patterns[:4]
+                f'<div style="color:{DIM};font-size:0.65rem;margin-bottom:6px;">{p.description}</div>'
+                for p in bull_patterns[:5]
             )
+            count_text = f"{len(bull_patterns)} mönster hittade"
         else:
-            patterns_html = f'<div style="color:{DIM};font-size:0.78rem;">Inga bullish mönster</div>'
+            patterns_html = f'<div style="color:{DIM};font-size:0.8rem;padding:8px 0;">Inga bullish mönster just nu</div>'
+            count_text = "0 mönster"
 
         st.markdown(
-            f'<div style="background:{BG2};border:1px solid rgba(0,255,136,0.2);border-radius:6px;padding:10px 12px;margin:8px 0;">'
-            f'<div style="color:{GREEN};font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Entry Patterns</div>'
+            f'<div style="background:{BG2};border:2px solid rgba(0,255,136,0.3);border-radius:8px;padding:14px 16px;margin:8px 0;">'
+            f'<div style="display:flex;justify-content:space-between;margin-bottom:8px;">'
+            f'<span style="color:{GREEN};font-size:0.85rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">ENTRY PATTERNS</span>'
+            f'<span style="color:{DIM};font-size:0.7rem;">{count_text}</span>'
+            f'</div>'
             f'{patterns_html}'
             f'</div>',
             unsafe_allow_html=True,
         )
 
-        # Bearish Exit/Warning Patterns card (komplement — ej strategibunden)
+    with cs_right:
         bear_patterns = candle_patterns.get("bearish", [])
         if bear_patterns:
             patterns_html = "".join(
-                f'<div style="display:flex;justify-content:space-between;margin:3px 0;">'
-                f'<span style="color:{TEXT};font-size:0.78rem;">{p.visual} {p.name}</span>'
-                f'<span style="color:{RED};font-size:0.72rem;">{p.confidence}</span>'
+                f'<div style="display:flex;justify-content:space-between;margin:4px 0;">'
+                f'<span style="color:{TEXT};font-size:0.85rem;">{p.visual} {p.name}</span>'
+                f'<span style="color:{RED};font-size:0.75rem;font-weight:600;">{p.confidence}</span>'
                 f'</div>'
-                f'<div style="color:{DIM};font-size:0.62rem;margin-bottom:4px;">{p.description}</div>'
-                for p in bear_patterns[:4]
+                f'<div style="color:{DIM};font-size:0.65rem;margin-bottom:6px;">{p.description}</div>'
+                for p in bear_patterns[:5]
             )
+            count_text = f"{len(bear_patterns)} varningar"
         else:
-            patterns_html = f'<div style="color:{DIM};font-size:0.78rem;">Inga bearish mönster</div>'
+            patterns_html = f'<div style="color:{DIM};font-size:0.8rem;padding:8px 0;">Inga bearish varningar just nu</div>'
+            count_text = "0 varningar"
 
         st.markdown(
-            f'<div style="background:{BG2};border:1px solid rgba(255,51,85,0.2);border-radius:6px;padding:10px 12px;margin:8px 0;">'
-            f'<div style="color:{RED};font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Exit Warnings</div>'
+            f'<div style="background:{BG2};border:2px solid rgba(255,51,85,0.3);border-radius:8px;padding:14px 16px;margin:8px 0;">'
+            f'<div style="display:flex;justify-content:space-between;margin-bottom:8px;">'
+            f'<span style="color:{RED};font-size:0.85rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">EXIT WARNINGS</span>'
+            f'<span style="color:{DIM};font-size:0.7rem;">{count_text}</span>'
+            f'</div>'
             f'{patterns_html}'
             f'</div>',
             unsafe_allow_html=True,
