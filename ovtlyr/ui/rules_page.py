@@ -1,12 +1,11 @@
 """
-Rules page — clean cyberpunk-styled display of all trading rules
-plus a practical guide on how to use each rule with the SweWolf Panel.
-No external data dependencies. Pure display.
+Rules page — clean cyberpunk-styled display of all trading rules.
+Every rule has a PANEL guide showing exactly which SweWolf tab to use.
+Updated for the consolidated 9-tab layout.
 """
 
 import streamlit as st
 
-# Cyberpunk palette (inline — no circular import)
 _BG2     = "#0a0a1e"
 _CYAN    = "#00ffff"
 _GREEN   = "#00ff88"
@@ -18,7 +17,7 @@ _TEXT    = "#e0e0ff"
 _DIM     = "#4a4a6a"
 
 # ------------------------------------------------------------------ #
-#  Rule data
+#  Rule data — updated panel guides for 9-tab layout
 # ------------------------------------------------------------------ #
 
 SWING_RULES: list[dict] = [
@@ -26,67 +25,67 @@ SWING_RULES: list[dict] = [
         "number": 1,
         "text": "Handla endast i trendens riktning",
         "explanation": "Upptrend = long. Nedtrend = short. Aldrig mot trenden.",
-        "panel_guide": "TRADE SCREENER → Kontrollera Regime Score. Grön = long. Röd = short. OVTLYR → Trend-kort visar Bullish/Bearish.",
+        "panel_guide": "SWING REGIME → Regime Score visar trendriktning. Grön badge = long. Röd = stå utanför.",
     },
     {
         "number": 2,
         "text": "Ta inga trades i konsolidering",
         "explanation": "Range = förbjudet område. Vänta på breakout.",
-        "panel_guide": "OVTLYR → Om priset ligger mellan EMA 10 och EMA 50 utan riktning, och RSI pendlar 40-60 = konsolidering. Vänta.",
+        "panel_guide": "OVTLYR REGIME → Kolla grafen: om pris ligger platt mellan EMA 10 och EMA 50, och RSI pendlar 40-60 = konsolidering. Vänta.",
     },
     {
         "number": 3,
         "text": "En trade kräver en key level",
         "explanation": "Supply/demand eller tydligt stöd/motstånd.",
-        "panel_guide": "OVTLYR → Order Blocks i grafen markerar supply/demand-zoner. Grön zon = stöd. Röd zon = motstånd.",
+        "panel_guide": "OVTLYR REGIME → Order Blocks i grafen = supply/demand-zoner. Grön zon = stöd (köpläge). Röd zon = motstånd (sälj/undvik).",
     },
     {
         "number": 4,
         "text": "Entry endast efter pullback",
         "explanation": "Inga impulsiva entries i rakt fall eller rally.",
-        "panel_guide": "OVTLYR → Vänta tills pris drar tillbaka till EMA 10/20 eller till en bullish OB-zon innan entry.",
+        "panel_guide": "OVTLYR REGIME → Vänta tills pris drar tillbaka till EMA 10/20 (vita/orangea linjerna) eller till en grön OB-zon.",
     },
     {
         "number": 5,
         "text": "Candlestick-trigger krävs",
         "explanation": "Pinbar, engulfing eller break-and-retest.",
-        "panel_guide": "Använd TradingView med Deepthought-skriptet för candlestick-analys. SweWolf visar signalen, TV bekräftar mönstret.",
+        "panel_guide": "OVTLYR REGIME → Candlestick-mönster syns i grafen. Zooma in på area runt EMA/OB-studs. Bekräfta med TradingView om osäker.",
     },
     {
         "number": 6,
         "text": "Volym måste bekräfta rörelsen",
         "explanation": "Ingen volym = ingen trade.",
-        "panel_guide": "OVTLYR → Momentum-kort visar Vol ratio. Över 1.3x = bekräftad. Under 0.8x = svag, undvik.",
+        "panel_guide": "OVTLYR REGIME → Momentum-kortet visar 'Vol ratio'. Över 1.3x = bekräftad. Under 0.8x = svag signal, undvik entry.",
     },
     {
         "number": 7,
-        "text": "Minsta R/R är 1:2",
+        "text": "Minsta R:R är 1:2",
         "explanation": "Helst 1:3. Aldrig under 1:2.",
-        "panel_guide": "Beräkna manuellt: SL-avstånd (½ ATR) vs närmaste motstånd/OB-zon. Om motståndet är inom 2× SL = skippa.",
+        "panel_guide": "OVTLYR REGIME → ATR-värde i Volatility-kortet. SL = ½ ATR. Kolla avstånd till nästa röda OB-zon = target. Target / SL måste vara ≥ 2.",
     },
     {
         "number": 8,
         "text": "Max 1% risk per trade",
         "explanation": "SL baseras på struktur, aldrig procent.",
-        "panel_guide": "OVTLYR → Volatility-kort visar ATR 14. Position size = (Kapital × 1%) / (½ ATR). Aldrig mer.",
+        "panel_guide": "OVTLYR REGIME → ATR i Volatility-kortet. Formel: Antal aktier = (Kapital × 1%) ÷ (½ ATR).",
     },
     {
         "number": 9,
         "text": "Flytta SL till BE först efter ny HH/LL",
         "explanation": "Inte tidigare, inte senare.",
-        "panel_guide": "Bevaka i TradingView. När ny swing high skapas ovanför din entry = flytta SL till entry.",
+        "panel_guide": "SWING REGIME → Ichimoku-gaugen visar prisnivåer. När pris gör ny swing high ovanför din entry → flytta SL till entry.",
     },
     {
         "number": 10,
         "text": "Max två förluster per dag",
         "explanation": "Stoppa dagen direkt efter två minus.",
-        "panel_guide": "Håll daglig logg. Två förluster = stäng av datorn. SweWolf Panelen analyserar — du handlar nästa dag.",
+        "panel_guide": "Egen disciplin. Två förluster = stäng plattformen. SweWolf analyserar — du handlar nästa dag.",
     },
     {
         "number": 11,
         "text": "Exit: Kijun-sen trail + ½ ATR hård stop",
-        "explanation": "Ichimoku Kijun-sen (26p) som dynamiskt trailing stop. Stäng om pris stänger under Kijun OCH under EMA 10. ½ ATR som absolut nödstopp.",
-        "panel_guide": "REGIME MONITOR → Ichimoku-gaugen visar Kijun-nivå. OVTLYR → EMA 10 i grafen. Exit när BÅDA bryts. Wolf v4 Pine Script hanterar detta automatiskt med Kijun trail + BE efter swing high.",
+        "explanation": "Kijun-sen (26p) som dynamiskt trailing stop. Stäng om pris stänger under Kijun OCH under EMA 10. ½ ATR som nödstopp.",
+        "panel_guide": "SWING REGIME → Ichimoku-gaugen visar Kijun-nivå. OVTLYR REGIME → EMA 10 (vit linje) i grafen. Exit när BÅDA bryts.",
     },
 ]
 
@@ -95,94 +94,117 @@ LONGTERM_RULES: list[dict] = [
         "number": 1,
         "text": "Köp endast i grön regim",
         "explanation": "Regimindikatorn måste vara grön.",
-        "panel_guide": "REGIME MONITOR → Total score > 70 = grön. OVTLYR → Regime-badge visar GREEN/ORANGE/RED.",
+        "panel_guide": "LONG REGIME → Regime-badge visar GRÖN/ORANGE/RÖD. Gates 1-7 måste passera. Alla gröna = OK att köpa.",
     },
     {
         "number": 2,
         "text": "Pris måste ligga över 200 EMA",
         "explanation": "Bekräftar långsiktig upptrend.",
-        "panel_guide": "OVTLYR → Trend-kort visar EMA 200-värde. LONG SCREENER → Tech-poäng inkluderar 'Price > EMA200'.",
+        "panel_guide": "LONG REGIME → Gate #2 visar 'Pris vs EMA200' med exakt avstånd i %. OVTLYR REGIME → Magenta-linjen (EMA 200) i grafen.",
     },
     {
         "number": 3,
         "text": "50 EMA måste ligga över 200 EMA",
         "explanation": "Golden cross = positivt momentum.",
-        "panel_guide": "OVTLYR → Trend-kort: EMA 50 > EMA 200. LONG SCREENER → Tech-poäng inkluderar 'EMA50 > EMA200'.",
+        "panel_guide": "LONG REGIME → Gate #3 visar 'Golden Cross' eller 'Death Cross'. OVTLYR REGIME → Gul (EMA 50) ovanför magenta (EMA 200).",
     },
     {
         "number": 4,
         "text": "Sektorn måste vara grön",
         "explanation": "Ingen exponering i svaga sektorer.",
-        "panel_guide": "SECTOR & REGIME → Sektorhjulet visar grön/gul/röd per sektor. LONG SCREENER → Cycle Score visar sektorstatus.",
+        "panel_guide": "LONG REGIME → Gate #4 visar sektorstatus (0-3). SECTOR & REGIME → Sektorhjulet visar grön/gul/röd per sektor.",
     },
     {
         "number": 5,
         "text": "Fear & Greed under 60 vid köp",
         "explanation": "Undvik eufori och toppjakt.",
-        "panel_guide": "SENTIMENT → Fear & Greed-gaugen. OVTLYR → Sentiment-kort. Under 60 = OK att köpa. Över 60 = vänta.",
+        "panel_guide": "LONG REGIME → Gate #5 visar F&G-score + OK/EJ OK. SENTIMENT → Stor F&G-gauge. Under 60 = OK. Över 60 = vänta med köp.",
     },
     {
         "number": 6,
         "text": "Minska vid EMA200-brott, sälj vid regimskifte",
-        "explanation": "Stängning under EMA200 = reducera 50%. Om regim byter till röd = sälj resten. Ger andrum vid korta dippar.",
-        "panel_guide": "OVTLYR → Bevaka EMA 200 i Trend-kortet. REGIME MONITOR → Om regim går från grön till orange = reducera. Orange till röd = sälj allt.",
+        "explanation": "EMA200-brott = reducera 50%. Regim röd = sälj resten.",
+        "panel_guide": "LONG REGIME → Gate #6 visar dagar under EMA200. Gate #7 visar regime-färg. Orange = reducera halvt. Röd = sälj allt.",
     },
     {
         "number": 7,
         "text": "Sälj vid sektor + breadth crossover",
-        "explanation": "Om sektorn OCH marknadsbredden vänder nedåt samtidigt = sälj positioner i den sektorn.",
-        "panel_guide": "SECTOR & REGIME → Sektorhjul + OVTLYR NINE → Om sector score faller under 30% = sälj sektorpositioner.",
+        "explanation": "Sektor OCH marknadsbreadd vänder ner = sälj sektorpositioner.",
+        "panel_guide": "SECTOR & REGIME → Sektorhjulet: om sektor byter från grön till röd. OVTLYR REGIME → OVTLYR NINE sektorpoäng under 30.",
     },
     {
         "number": 8,
         "text": "Max 20-25% per sektor",
         "explanation": "Riskkontroll på portföljnivå.",
-        "panel_guide": "LONG SCREENER → Sortera efter sektor. Räkna din totala allokering per sektor manuellt.",
+        "panel_guide": "SCREENER → Long Screener: sortera efter sektor. Räkna: hur mycket äger du redan i samma sektor? Max 25%.",
     },
     {
         "number": 9,
         "text": "Max 10% per aktie",
         "explanation": "Ingen enskild position får dominera.",
-        "panel_guide": "LONG SCREENER → STRONG BUY = 10% allokering, BUY = 7%. Aldrig mer per position.",
+        "panel_guide": "SCREENER → Long Screener: STRONG BUY = allokera 10%. BUY = allokera 7%. Aldrig mer oavsett hur bra det ser ut.",
     },
     {
         "number": 10,
         "text": "Analysera alltid historiska nedgångar",
         "explanation": "Avgör om fallet är brus eller strukturellt.",
-        "panel_guide": "LONG-TERM TREND → Drawdown-tabell klassificerar nedgångar som Noise/Fundamental/Macro/Sector. OVTLYR → Drawdowns sub-tab.",
+        "panel_guide": "OVTLYR REGIME → Drawdowns sub-tab klassificerar nedgångar. BACKTEST → Long mode: historisk prestation med drawdown-analys.",
     },
 ]
 
 OVTLYR_ENTRY_RULES: list[dict] = [
-    {"number": 1, "text": "Market Trend: SPY 10 DEMA > 20 DEMA, Price > 50 DEMA", "explanation": "Bullish = buy zone. Bearish = inga trades."},
-    {"number": 2, "text": "Market Signal: Buy signal on $SPY", "explanation": "OVTLYR overlay måste vara grön."},
-    {"number": 3, "text": "Market Breadth: Bull list 10EMA bullish crossover", "explanation": "Måste matcha market trend."},
-    {"number": 4, "text": "Sector Breadth: Advancing", "explanation": "Bullish 10EMA cross krävs."},
-    {"number": 5, "text": "Sector Fear & Greed: Advancing", "explanation": "Sektorsentiment måste förbättras."},
-    {"number": 6, "text": "Stock Signal: Buy", "explanation": "OVTLYR signal måste visa Buy."},
-    {"number": 7, "text": "Stock Trend: 10EMA/20EMA, Price > 50EMA", "explanation": "Alla EMA:er alignade för entry."},
-    {"number": 8, "text": "Stock Fear & Greed: Advancing", "explanation": "Aktiens sentiment förbättras."},
-    {"number": 9, "text": "Order Blocks: Inga restriktiva OBs", "explanation": "Inga bearish OBs blockerar vägen."},
-    {"number": 10, "text": "Momentum: Pris ovanför gårdagens lägsta", "explanation": "Bekräftar positivt momentum."},
+    {"number": 1, "text": "Market Trend: SPY 10EMA > 20EMA, Price > 50EMA", "explanation": "Bullish = buy zone. Bearish = inga trades.",
+     "panel_guide": "OVTLYR REGIME → Trend-kort visar 'Direction: Bullish/Bearish'. Regime-badge = GRÖN krävs."},
+    {"number": 2, "text": "Market Signal: Köpsignal på $SPY", "explanation": "OVTLYR overlay måste vara grön.",
+     "panel_guide": "OVTLYR REGIME → Välj SPY som ticker. Long-term signal = 'BUY'. Regime = GRÖN."},
+    {"number": 3, "text": "Market Breadth: Bull List bullish crossover", "explanation": "Måste matcha market trend.",
+     "panel_guide": "OVTLYR REGIME → Bull List % gauge (Advanced Analysis). Under 25 + vänder upp = bästa entry. Över 75 + vänder ner = stopp."},
+    {"number": 4, "text": "Sector Breadth: Stigande", "explanation": "Bullish 10EMA-kors krävs.",
+     "panel_guide": "SECTOR & REGIME → Sektorhjulet: sektorn måste vara grön. Trend Distribution: sektorn i 'Uptrend'."},
+    {"number": 5, "text": "Sector Fear & Greed: Stigande", "explanation": "Sektorsentiment måste förbättras.",
+     "panel_guide": "SENTIMENT → F&G-gauge stigande. OVTLYR REGIME → Sentiment-kort: score stigande (jämför med förra veckan)."},
+    {"number": 6, "text": "Stock Signal: Köp", "explanation": "OVTLYR signal måste visa Buy.",
+     "panel_guide": "OVTLYR REGIME → Long-term signal badge visar 'BUY' (grön). Score > 60 krävs."},
+    {"number": 7, "text": "Stock Trend: 10EMA/20EMA, Price > 50EMA", "explanation": "Alla EMA:er alignade.",
+     "panel_guide": "OVTLYR REGIME → Grafen: vit (10) > orange (20) > gul (50). Alla stigande. Pris ovanför alla tre."},
+    {"number": 8, "text": "Stock Fear & Greed: Stigande", "explanation": "Aktiens sentiment förbättras.",
+     "panel_guide": "OVTLYR REGIME → Oscillator Direction visar 'Rising' + timing 'Early' eller 'Mid'. Inte 'Exhausted'."},
+    {"number": 9, "text": "Order Blocks: Inga restriktiva OBs", "explanation": "Inga bearish OBs blockerar vägen uppåt.",
+     "panel_guide": "OVTLYR REGIME → Grafen: inga röda OB-zoner ovanför nuvarande pris. Order Blocks-tab: inga aktiva bearish OBs nära."},
+    {"number": 10, "text": "Momentum: Pris ovanför gårdagens lägsta", "explanation": "Bekräftar positivt momentum.",
+     "panel_guide": "OVTLYR REGIME → Grafen: dagens candle stänger ovanför gårdagens lägsta nivå. Momentum-kort: RSI > 50."},
 ]
 
 OVTLYR_EXIT_RULES: list[dict] = [
-    {"number": 1, "text": "$SPY stänger under 20 EMA → STÄNG ALLT", "explanation": "Hård exit. Inga undantag."},
-    {"number": 2, "text": "½ ATR Stop Loss från entry", "explanation": "Strukturbaserad stop."},
-    {"number": 3, "text": "10 EMA Trailing Stop", "explanation": "Pris stänger under 10 EMA = exit."},
-    {"number": 4, "text": "Order Block hit", "explanation": "Pris springer in i restriktivt OB = exit."},
-    {"number": 5, "text": "Gap & Crap", "explanation": "Gap up följt av reversal = omedelbar exit."},
-    {"number": 6, "text": "Stängning under gårdagens lägsta", "explanation": "Efter rolling: exit."},
-    {"number": 7, "text": "Sektor + Market breadth crossover", "explanation": "Sälj alla trades i sektorn."},
-    {"number": 8, "text": "Stock Sell signal", "explanation": "OVTLYR signal flippar till Sell."},
-    {"number": 9, "text": "Fear & Greed target hit", "explanation": "0-50: exit vid 63. 50-75: 10pt spread. 75+: 5pt spread."},
-    {"number": 10, "text": "Earnings risk", "explanation": "Stäng position före rapportdag."},
+    {"number": 1, "text": "$SPY stänger under 20 EMA → STÄNG ALLT", "explanation": "Hård exit. Inga undantag.",
+     "panel_guide": "OVTLYR REGIME → Välj SPY. Om pris under orange linje (EMA 20) = stäng alla positioner omedelbart."},
+    {"number": 2, "text": "½ ATR Stop Loss från entry", "explanation": "Strukturbaserad stop, aldrig %. ",
+     "panel_guide": "OVTLYR REGIME → Volatility-kort: ATR 14 värde. SL = entry-pris minus (ATR ÷ 2)."},
+    {"number": 3, "text": "10 EMA Trailing Stop", "explanation": "Pris stänger under 10 EMA = exit.",
+     "panel_guide": "OVTLYR REGIME → Grafen: vit linje = EMA 10. Om candle stänger under den vita linjen = exit."},
+    {"number": 4, "text": "Order Block hit", "explanation": "Pris springer in i restriktivt OB = exit.",
+     "panel_guide": "OVTLYR REGIME → Grafen: om pris rör sig in i en röd OB-zon (bearish) = stäng positionen."},
+    {"number": 5, "text": "Gap & Crap", "explanation": "Gap up följt av reversal = omedelbar exit.",
+     "panel_guide": "OVTLYR REGIME → Grafen: om dagens öppning gappar upp men sedan faller tillbaka under gårdagens stängning = exit direkt."},
+    {"number": 6, "text": "Stängning under gårdagens lägsta", "explanation": "Efter att du redan rullat (moved SL) = exit.",
+     "panel_guide": "OVTLYR REGIME → Grafen: jämför dagens stängning med gårdagens lägsta. Stänger under = exit."},
+    {"number": 7, "text": "Sektor + Market breadth crossover", "explanation": "Sälj alla trades i den sektorn.",
+     "panel_guide": "SECTOR & REGIME → Om sektorn byter från grön till röd, OCH Bull List % vänder ner = sälj alla positioner i sektorn."},
+    {"number": 8, "text": "Stock Sell signal", "explanation": "OVTLYR signal flippar till Sell.",
+     "panel_guide": "OVTLYR REGIME → Long-term signal badge byter till 'SELL' (röd) eller 'REDUCE' (magenta)."},
+    {"number": 9, "text": "Fear & Greed target hit", "explanation": "Beror på var du köpte: 0-50 = exit vid 63. 50-75 = 10p spread. 75+ = 5p spread.",
+     "panel_guide": "SENTIMENT → F&G-gauge. Notera ditt entry-F&G-värde. Räkna target: entry + spread. Exit när target nås."},
+    {"number": 10, "text": "Earnings risk", "explanation": "Stäng position minst 1 vecka före rapportdag.",
+     "panel_guide": "Kolla rapportdatum externt (t.ex. Börsdata, Yahoo Finance). Stäng senast 5 handelsdagar innan rapport."},
 ]
 
 OVTLYR_MINDSET: list[dict] = [
-    {"number": 1, "text": "Det finns INGA FÖRVÄNTNINGAR på utfallet", "explanation": "Handla planen, inte prediktionen."},
-    {"number": 2, "text": "Det finns INGA VINSTMÅL", "explanation": "Låt exit-signalerna göra sitt jobb."},
-    {"number": 3, "text": "Jag har bara en plan att ta mig ur när en exit-signal triggar", "explanation": "Planen ÄR din edge."},
+    {"number": 1, "text": "Det finns INGA FÖRVÄNTNINGAR på utfallet", "explanation": "Handla planen, inte prediktionen.",
+     "panel_guide": "Alla flikar i SweWolf visar DATA, inte åsikter. Följ signalerna — känn ingenting."},
+    {"number": 2, "text": "Det finns INGA VINSTMÅL", "explanation": "Låt exit-signalerna göra sitt jobb.",
+     "panel_guide": "Sätt aldrig en TP-order baserat på känsla. Använd trailing stop (EMA 10) eller exit-signal."},
+    {"number": 3, "text": "Jag har bara en plan att ta mig ur", "explanation": "Planen ÄR din edge. Exekveringen är allt.",
+     "panel_guide": "RULES-fliken (denna sida) = din plan. Läs igenom före varje handelsdag. Inga avvikelser."},
 ]
 
 
@@ -199,9 +221,10 @@ def _rule_card_html(rule: dict, color: str) -> str:
     guide_html = ""
     if guide:
         guide_html = (
-            f"<div style='color:{_CYAN};font-size:0.65rem;margin-top:4px;"
-            f"padding:4px 8px;background:rgba(0,255,255,0.05);border-radius:3px;'>"
-            f"PANEL: {guide}</div>"
+            f"<div style='color:{_CYAN};font-size:0.62rem;margin-top:5px;"
+            f"padding:5px 8px;background:rgba(0,255,255,0.05);border-radius:3px;"
+            f"border-left:2px solid rgba(0,255,255,0.2);'>"
+            f"<b>SWEWOLF:</b> {guide}</div>"
         )
 
     return (
@@ -225,92 +248,58 @@ def _section_header_html(title: str, subtitle: str, color: str) -> str:
 
 
 # ------------------------------------------------------------------ #
-#  Main render function
+#  Main render
 # ------------------------------------------------------------------ #
 
 def render_rules_page() -> None:
-    """Display all trading rules with SweWolf Panel usage guides."""
-
     st.markdown(
         f"<div style='text-align:center;padding:20px 0 10px 0;'>"
         f"<h1 style='color:{_CYAN};letter-spacing:0.15em;margin:0;'>TRADING RULES</h1>"
         f"<p style='color:{_DIM};font-size:0.75rem;letter-spacing:0.12em;'>"
-        f"The rules that govern every trade. No exceptions. "
-        f"<span style='color:{_CYAN};'>PANEL</span>-guider visar hur varje regel kontrolleras i SweWolf.</p>"
+        f"Varje regel har en <span style='color:{_CYAN};'>SWEWOLF</span>-guide "
+        f"som visar exakt vilken flik och vad du ska titta på.</p>"
         f"</div>",
         unsafe_allow_html=True,
     )
 
-    # ── Two-column layout: Swing + Long-term ──────────────────────────
+    # ── Swing + Long side by side ─────────────────────────────────────
     left_col, right_col = st.columns([1, 1])
 
     with left_col:
         st.markdown(
-            _section_header_html(
-                "Swing Trading",
-                "11 regler — kortsiktig taktik + Ichimoku exit",
-                _CYAN,
-            ),
+            _section_header_html("Swing Trading", "11 regler — kortsiktig taktik + Ichimoku exit", _CYAN),
             unsafe_allow_html=True,
         )
-        cards_html = "".join(_rule_card_html(r, _CYAN) for r in SWING_RULES)
-        st.markdown(cards_html, unsafe_allow_html=True)
+        st.markdown("".join(_rule_card_html(r, _CYAN) for r in SWING_RULES), unsafe_allow_html=True)
 
     with right_col:
         st.markdown(
-            _section_header_html(
-                "Långsiktig Trend / Regim",
-                "10 regler — strategisk position",
-                _GREEN,
-            ),
+            _section_header_html("Långsiktig Trend / Regim", "10 regler — strategisk position", _GREEN),
             unsafe_allow_html=True,
         )
-        cards_html = "".join(_rule_card_html(r, _GREEN) for r in LONGTERM_RULES)
-        st.markdown(cards_html, unsafe_allow_html=True)
-
-    # ── Divider ───────────────────────────────────────────────────────
-    st.markdown(
-        "<hr style='border-color:rgba(0,255,255,0.13);margin:30px 0;'/>",
-        unsafe_allow_html=True,
-    )
+        st.markdown("".join(_rule_card_html(r, _GREEN) for r in LONGTERM_RULES), unsafe_allow_html=True)
 
     # ── OVTLYR Golden Ticket ──────────────────────────────────────────
+    st.markdown("<hr style='border-color:rgba(0,255,255,0.13);margin:30px 0;'/>", unsafe_allow_html=True)
     st.markdown(
         f"<div style='text-align:center;margin-bottom:20px;'>"
         f"<h2 style='color:{_BLUE};letter-spacing:0.15em;'>OVTLYR GOLDEN TICKET</h2>"
-        f"<p style='color:{_DIM};font-size:0.75rem;letter-spacing:0.1em;'>"
-        f"GOLDEN TICKET TRADING STRATEGY — WHERE OUTLIERS WIN</p>"
+        f"<p style='color:{_DIM};font-size:0.75rem;'>WHERE OUTLIERS WIN</p>"
         f"</div>",
         unsafe_allow_html=True,
     )
 
     oc1, oc2, oc3 = st.columns([1, 1, 0.6])
-
     with oc1:
-        st.markdown(
-            _section_header_html("Open (Long)", "10 entry-regler", _BLUE),
-            unsafe_allow_html=True,
-        )
-        cards_html = "".join(_rule_card_html(r, _BLUE) for r in OVTLYR_ENTRY_RULES)
-        st.markdown(cards_html, unsafe_allow_html=True)
-
+        st.markdown(_section_header_html("Open (Long)", "10 entry-regler", _BLUE), unsafe_allow_html=True)
+        st.markdown("".join(_rule_card_html(r, _BLUE) for r in OVTLYR_ENTRY_RULES), unsafe_allow_html=True)
     with oc2:
-        st.markdown(
-            _section_header_html("Close (Long)", "10 exit-regler", _RED),
-            unsafe_allow_html=True,
-        )
-        cards_html = "".join(_rule_card_html(r, _RED) for r in OVTLYR_EXIT_RULES)
-        st.markdown(cards_html, unsafe_allow_html=True)
-
+        st.markdown(_section_header_html("Close (Long)", "10 exit-regler", _RED), unsafe_allow_html=True)
+        st.markdown("".join(_rule_card_html(r, _RED) for r in OVTLYR_EXIT_RULES), unsafe_allow_html=True)
     with oc3:
-        st.markdown(
-            _section_header_html("Mindset", "3 gyllene regler", _YELLOW),
-            unsafe_allow_html=True,
-        )
-        cards_html = "".join(_rule_card_html(r, _YELLOW) for r in OVTLYR_MINDSET)
-        st.markdown(cards_html, unsafe_allow_html=True)
+        st.markdown(_section_header_html("Mindset", "3 gyllene regler", _YELLOW), unsafe_allow_html=True)
+        st.markdown("".join(_rule_card_html(r, _YELLOW) for r in OVTLYR_MINDSET), unsafe_allow_html=True)
 
-    # ── Footer ────────────────────────────────────────────────────────
     st.markdown(
         f"<div style='text-align:center;padding:30px 0 10px 0;'>"
         f"<span style='color:{_BLUE};font-size:0.7rem;letter-spacing:0.15em;'>"
@@ -319,38 +308,43 @@ def render_rules_page() -> None:
         unsafe_allow_html=True,
     )
 
-    # ── Panel usage guide ─────────────────────────────────────────────
-    st.markdown(
-        "<hr style='border-color:rgba(0,255,255,0.13);margin:20px 0;'/>",
-        unsafe_allow_html=True,
-    )
+    # ── Panel guide table ─────────────────────────────────────────────
+    st.markdown("<hr style='border-color:rgba(0,255,255,0.13);margin:20px 0;'/>", unsafe_allow_html=True)
     st.markdown(
         f"<div style='text-align:center;margin-bottom:16px;'>"
-        f"<h2 style='color:{_MAGENTA};letter-spacing:0.12em;'>SWEWOLF PANEL — REGELGUIDE</h2>"
-        f"<p style='color:{_DIM};font-size:0.7rem;'>Så här kontrollerar du varje regel med panelens flikar</p>"
+        f"<h2 style='color:{_MAGENTA};letter-spacing:0.12em;'>SWEWOLF — FLIKGUIDE</h2>"
+        f"<p style='color:{_DIM};font-size:0.7rem;'>Vilken flik kontrollerar vilken regel?</p>"
         f"</div>",
         unsafe_allow_html=True,
     )
 
     guide_data = [
-        ("TRADE SCREENER", "Swing #1, #6", "Regime Score visar trendriktning. Volymbekräftelse i scan-resultat."),
-        ("BACKTEST", "Swing #7", "Verifiera R:R-kvot historiskt. Kör backtest med dina parametrar."),
-        ("RS BACKTEST", "Swing #1", "Momentum-filtrerade sektorer. Bara starkaste tickers."),
-        ("OVTLYR", "Swing #2-4, #6, #8, #11 | Lång #1-5", "Order Blocks = key levels. EMA 10/20/50/200 i grafen. Regime-badge. F&G. ATR för position sizing."),
-        ("REGIME MONITOR", "Swing #1, #11 | Lång #1", "4-lagers regime (Market + Sector + Stock + Ichimoku). Kijun-nivå för trailing stop."),
-        ("LONG SCREENER", "Lång #1-5, #8-9", "20-poängs fundamental + 7-poängs teknisk. STRONG BUY = alla gates passerar."),
-        ("LONG-TERM TREND", "Lång #2-3, #6, #10", "EMA200/50 trend. Rick Rule-signaler. Drawdown-klassificering."),
-        ("SECTOR & REGIME", "Swing #1 | Lång #4, #7", "Sektorhjul grön/röd. Global regime Risk-On/Off."),
-        ("SENTIMENT", "Lång #5", "Fear & Greed gauge. Under 60 = OK köpa. Över 60 = vänta."),
-        ("HEATMAP", "Lång #4, #8", "Performance per sektor/land. Identifiera starka/svaga sektorer."),
+        ("SCREENER", "Swing Screener / Long Screener / OVTLYR Screener",
+         "Swing: Regime Score + volymbekräftelse. Long: 20-poängs fundamental. OVTLYR: Z-score composite."),
+        ("BACKTEST", "Swing / Long / OVTLYR / RS Sector",
+         "Verifiera strategi historiskt. Test Top N: skicka screener-resultat till backtest."),
+        ("SWING REGIME", "Swing #1, #9, #11",
+         "4-lagers regime (Market + Sector + Stock + Ichimoku). Kijun-nivå för trailing stop. Entry/exit gates."),
+        ("LONG REGIME", "Lång #1-7",
+         "Alla 10 regler som live gates. GRÖN/ORANGE/RÖD badge. X/10 gates passed. EMA-nivåer + F&G + drawdown."),
+        ("OVTLYR REGIME", "Swing #2-8, #11 | Lång #1-5 | OVTLYR alla",
+         "Prisgraf + EMA 10/20/50/200 + Order Blocks. Trend/Volatility/Sentiment/Momentum-kort. Oscillator Direction."),
+        ("SECTOR & REGIME", "Swing #1 | Lång #4, #7 | OVTLYR #4",
+         "Sektorhjul grön/gul/röd. Global index-regime. Risk-On/Off."),
+        ("SENTIMENT", "Lång #5 | OVTLYR #5, #9",
+         "Fear & Greed gauge 0-100. Under 60 = OK köpa. Över 60 = vänta."),
+        ("HEATMAP", "Lång #4, #8",
+         "Performance per sektor/land. 1D/5D/1M. Identifiera starka/svaga sektorer."),
+        ("RULES", "Alla regelverk",
+         "Denna sida. Läs före varje handelsdag. Inga avvikelser."),
     ]
 
     guide_html = "<table style='width:100%;border-collapse:collapse;'>"
     guide_html += (
         f"<tr style='border-bottom:1px solid rgba(0,255,255,0.15);'>"
-        f"<th style='text-align:left;color:{_CYAN};font-size:0.75rem;padding:8px;'>Flik</th>"
-        f"<th style='text-align:left;color:{_CYAN};font-size:0.75rem;padding:8px;'>Regler</th>"
-        f"<th style='text-align:left;color:{_CYAN};font-size:0.75rem;padding:8px;'>Användning</th>"
+        f"<th style='text-align:left;color:{_CYAN};font-size:0.75rem;padding:8px;'>FLIK</th>"
+        f"<th style='text-align:left;color:{_CYAN};font-size:0.75rem;padding:8px;'>KONTROLLERAR</th>"
+        f"<th style='text-align:left;color:{_CYAN};font-size:0.75rem;padding:8px;'>HUR DU ANVÄNDER DEN</th>"
         f"</tr>"
     )
     for tab, rules, usage in guide_data:
