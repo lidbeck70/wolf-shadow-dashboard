@@ -131,12 +131,15 @@ def _remove_holding(portfolio_key: str, ticker: str):
 # ── Live data & signals ───────────────────────────────────────────────
 
 @st.cache_data(ttl=900, show_spinner=False)
-def _fetch_live_price(ticker: str) -> dict:
+def _fetch_live_price(ticker: str, period: str = "6mo") -> dict:
     try:
         tk = yf.Ticker(ticker)
-        df = tk.history(period="6mo", auto_adjust=True)
+        df = tk.history(period=period, auto_adjust=True)
         if df.index.tz is not None:
             df.index = df.index.tz_localize(None)
+        # Flatten MultiIndex columns (newer yfinance)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
         if df.empty:
             return {"price": 0, "change_1d": 0, "df": None}
         price = float(df["Close"].iloc[-1])
@@ -395,7 +398,9 @@ def _render_portfolio(portfolio_key: str):
     # Holdings with live signals
     for holding in holdings:
         ticker = holding["ticker"]
-        live = _fetch_live_price(ticker)
+        # Long strategy needs 200+ days for EMA200 → fetch 2y
+        fetch_period = "2y" if portfolio_key == "long" else "6mo"
+        live = _fetch_live_price(ticker, period=fetch_period)
         df = live.get("df")
 
         # Compute signal based on strategy
@@ -412,7 +417,7 @@ def _render_portfolio(portfolio_key: str):
     total_pnl = 0
     count = 0
     for h in holdings:
-        live = _fetch_live_price(h["ticker"])
+        live = _fetch_live_price(h["ticker"], period=fetch_period)
         if h.get("entry_price", 0) > 0 and live["price"] > 0:
             total_pnl += (live["price"] / h["entry_price"] - 1) * 100
             count += 1
@@ -450,8 +455,8 @@ def render_holdings_page():
 
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Totalt innehav", total)
-    k2.metric("Swing", f"{len(swing_h)}/2")
-    k3.metric("OVTLYR", f"{len(ovtlyr_h)}/2")
+    k2.metric("Swing", f"{len(swing_h)}/5")
+    k3.metric("OVTLYR", f"{len(ovtlyr_h)}/5")
     k4.metric("Long", f"{len(long_h)}/10")
 
     st.markdown("<hr style='border-color:rgba(0,255,255,0.1);margin:12px 0;'/>", unsafe_allow_html=True)
