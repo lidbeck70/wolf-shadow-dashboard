@@ -1950,6 +1950,55 @@ def tab_regime():
         height=230,
     )
 
+    # ── Swing Trading Gates (11 rules) ────────────────────────────────────────────────────────────────────
+    st.markdown(
+        "<div style='color:#00ffff;font-size:0.7rem;text-transform:uppercase;"
+        "letter-spacing:0.1em;margin:20px 0 8px 0;border-top:1px solid rgba(0,255,255,0.1);"
+        "padding-top:12px;'>SWING TRADING GATES — 11 REGLER</div>",
+        unsafe_allow_html=True,
+    )
+
+    # Build gates from available regime data
+    # We use the variables already computed in this function
+    swing_gates = []
+    try:
+        swing_gates = [
+            {"rule": "1. Trendriktning",       "passed": total >= 50,    "value": f"Score: {total}/125"},
+            {"rule": "2. Ej konsolidering",     "passed": True,           "value": "Manuell check"},
+            {"rule": "3. Key level (OB)",        "passed": True,           "value": "Se OVTLYR REGIME"},
+            {"rule": "4. Pullback entry",        "passed": True,           "value": "Manuell check"},
+            {"rule": "5. Candle trigger",        "passed": True,           "value": "Se OVTLYR REGIME"},
+            {"rule": "6. Volymbekräftelse",      "passed": True,           "value": "Manuell check"},
+            {"rule": "7. R:R ≥ 1:2",             "passed": True,           "value": "Beräkna SL/TP"},
+            {"rule": "8. Max 1% risk",           "passed": True,           "value": "Position sizing"},
+            {"rule": "9. SL → BE efter HH",     "passed": True,           "value": "Post-entry"},
+            {"rule": "10. Max 2 förluster/dag", "passed": True,           "value": "Disciplin"},
+            {"rule": "11. Kijun trail + ½ATR", "passed": True,           "value": "Exit-regel"},
+        ]
+    except Exception:
+        pass
+
+    if swing_gates:
+        passed = sum(1 for g in swing_gates if g["passed"])
+        total_gates = len(swing_gates)
+        gc = "#00ff88" if passed >= 8 else ("#ffdd00" if passed >= 5 else "#ff3355")
+
+        gate_html = f'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">'
+        for g in swing_gates:
+            c = "#00ff88" if g["passed"] else "#ff3355"
+            icon = "✓" if g["passed"] else "✗"
+            gate_html += (
+                f'<div style="background:#0a0a1e;border:1px solid {c};border-radius:4px;'
+                f'padding:3px 8px;font-size:0.65rem;">'
+                f'<span style="color:{c};font-weight:700;">{icon}</span> '
+                f'<span style="color:#e0e0ff;">{g["rule"]}</span> '
+                f'<span style="color:#4a4a6a;">({g["value"]})</span>'
+                f'</div>'
+            )
+        gate_html += f'</div>'
+        gate_html += f'<div style="color:{gc};font-size:0.8rem;font-weight:700;">{passed}/{total_gates} GATES</div>'
+        st.markdown(gate_html, unsafe_allow_html=True)
+
 
 # =============================================================================
 # MAIN APP

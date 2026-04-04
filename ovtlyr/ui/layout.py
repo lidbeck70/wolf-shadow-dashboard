@@ -70,6 +70,7 @@ compute_breadth      = None
 compute_volatility_histogram = None
 compute_oscillator_direction = None
 compute_bull_list_pct        = None
+detect_patterns              = None
 
 for _prefix in ("ovtlyr.indicators", "indicators"):
     try:
@@ -113,6 +114,11 @@ for _prefix in ("ovtlyr.indicators", "indicators"):
         compute_volatility_histogram = _mod.compute_volatility_histogram
         compute_oscillator_direction = _mod.compute_oscillator_direction
         compute_bull_list_pct = _mod.compute_bull_list_pct
+    except Exception:
+        pass
+    try:
+        _mod = __import__(f"{_prefix}.candlesticks", fromlist=["detect_patterns"])
+        detect_patterns = _mod.detect_patterns
     except Exception:
         pass
     # If we got at least orderblocks, stop trying other prefixes
@@ -472,6 +478,14 @@ def render_ovtlyr_page() -> None:
             except Exception:
                 ob_analysis = {"signal_bias": "HOLD"}
 
+        # Detect candlestick patterns
+        candle_patterns = {"bullish": [], "bearish": []}
+        if detect_patterns is not None:
+            try:
+                candle_patterns = detect_patterns(df, lookback=5)
+            except Exception:
+                candle_patterns = {"bullish": [], "bearish": []}
+
         # Sentiment
         try:
             sentiment = _load_sentiment()
@@ -621,6 +635,38 @@ def render_ovtlyr_page() -> None:
 
     st.markdown("---")
 
+    # OVTLYR Gates Passed
+    st.markdown(
+        f"<div style='color:{CYAN};font-size:0.7rem;text-transform:uppercase;"
+        f"letter-spacing:0.1em;margin:12px 0 8px 0;'>OVTLYR ENTRY GATES</div>",
+        unsafe_allow_html=True,
+    )
+
+    gates = lt_signal.get("gates", [])
+    if gates:
+        passed = sum(1 for g in gates if g.get("passed", False))
+        total = len(gates)
+        gate_color = GREEN if passed >= total * 0.7 else (YELLOW if passed >= total * 0.4 else RED)
+
+        gate_html = f'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">'
+        for g in gates:
+            c = GREEN if g.get("passed") else RED
+            icon = "✓" if g.get("passed") else "✗"
+            short_rule = g.get("rule", "")[:30]
+            gate_html += (
+                f'<div style="background:{BG2};border:1px solid {c};border-radius:4px;'
+                f'padding:3px 8px;font-size:0.65rem;">'
+                f'<span style="color:{c};font-weight:700;">{icon}</span> '
+                f'<span style="color:{TEXT};">{short_rule}</span>'
+                f'</div>'
+            )
+        gate_html += f'</div>'
+        gate_html += (
+            f'<div style="color:{gate_color};font-size:0.8rem;font-weight:700;">'
+            f'{passed}/{total} GATES PASSED</div>'
+        )
+        st.markdown(gate_html, unsafe_allow_html=True)
+
     # ── MIDDLE ROW ────────────────────────────────────────────────────
     mid_left, mid_right = st.columns([7, 3])
 
@@ -709,6 +755,50 @@ def render_ovtlyr_page() -> None:
             st.plotly_chart(fig_risk, use_container_width=True, config={"displayModeBar": False})
         except Exception:
             pass
+
+        # Bullish Entry Patterns card
+        bull_patterns = candle_patterns.get("bullish", [])
+        if bull_patterns:
+            patterns_html = "".join(
+                f'<div style="display:flex;justify-content:space-between;margin:3px 0;">'
+                f'<span style="color:{TEXT};font-size:0.78rem;">{p.visual} {p.name}</span>'
+                f'<span style="color:{GREEN};font-size:0.72rem;">{p.confidence}</span>'
+                f'</div>'
+                f'<div style="color:{DIM};font-size:0.62rem;margin-bottom:4px;">{p.description}</div>'
+                for p in bull_patterns[:4]
+            )
+        else:
+            patterns_html = f'<div style="color:{DIM};font-size:0.78rem;">Inga bullish mönster</div>'
+
+        st.markdown(
+            f'<div style="background:{BG2};border:1px solid rgba(0,255,136,0.2);border-radius:6px;padding:10px 12px;margin:8px 0;">'
+            f'<div style="color:{GREEN};font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Entry Patterns</div>'
+            f'{patterns_html}'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+        # Bearish Exit/Warning Patterns card (komplement — ej strategibunden)
+        bear_patterns = candle_patterns.get("bearish", [])
+        if bear_patterns:
+            patterns_html = "".join(
+                f'<div style="display:flex;justify-content:space-between;margin:3px 0;">'
+                f'<span style="color:{TEXT};font-size:0.78rem;">{p.visual} {p.name}</span>'
+                f'<span style="color:{RED};font-size:0.72rem;">{p.confidence}</span>'
+                f'</div>'
+                f'<div style="color:{DIM};font-size:0.62rem;margin-bottom:4px;">{p.description}</div>'
+                for p in bear_patterns[:4]
+            )
+        else:
+            patterns_html = f'<div style="color:{DIM};font-size:0.78rem;">Inga bearish mönster</div>'
+
+        st.markdown(
+            f'<div style="background:{BG2};border:1px solid rgba(255,51,85,0.2);border-radius:6px;padding:10px 12px;margin:8px 0;">'
+            f'<div style="color:{RED};font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Exit Warnings</div>'
+            f'{patterns_html}'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
 
     # ── Advanced Indicators Row ──────────────────────────────────────
     st.markdown(
