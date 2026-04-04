@@ -115,6 +115,13 @@ try:
 except ImportError:
     LONG_REGIME_AVAILABLE = False
 
+# Holdings
+try:
+    from holdings import render_holdings_page
+    HOLDINGS_AVAILABLE = True
+except ImportError:
+    HOLDINGS_AVAILABLE = False
+
 # Sector ETF → Display name mapping
 SECTOR_ETF_NAMES = {
     "XLE": "XLE Energy",
@@ -2243,6 +2250,7 @@ def main():
     tab_labels = [
         "  SCREENER  ",
         "  BACKTEST  ",
+        "  HOLDINGS  ",
         "  SWING REGIME  ",
         "  LONG REGIME  ",
         "  OVTLYR REGIME  ",
@@ -2251,7 +2259,7 @@ def main():
         "  HEATMAP  ",
         "  RULES  ",
     ]
-    (tab1, tab2, tab_swing_regime, tab_long_regime, tab_ovtlyr,
+    (tab1, tab2, tab_holdings, tab_swing_regime, tab_long_regime, tab_ovtlyr,
      tab6, tab7, tab8, tab_rules) = st.tabs(tab_labels)
 
     with tab1:
@@ -2259,6 +2267,12 @@ def main():
 
     with tab2:
         tab_backtest_consolidated()
+
+    with tab_holdings:
+        if HOLDINGS_AVAILABLE:
+            render_holdings_page()
+        else:
+            _tab_not_found("Holdings", "holdings")
 
     with tab_swing_regime:
         tab_regime()  # Existing swing regime monitor — UNTOUCHED
