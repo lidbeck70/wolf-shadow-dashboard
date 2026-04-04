@@ -1523,6 +1523,157 @@ def tab_backtest():
 
 
 # =============================================================================
+# SL/TP CALCULATOR
+# =============================================================================
+
+def _render_sl_tp_calculator(strategy: str = "swing"):
+    """
+    SL/TP calculator based on strategy rules.
+    
+    Swing strategy:
+      SL = Entry - ½ ATR (Kijun trail as dynamic)
+      TP = not fixed (trailing), but R:R minimum 1:2 shown
+      Position size = (Capital × 5%) / (½ ATR)
+    
+    OVTLYR strategy:
+      SL = Entry - ½ ATR 
+      TP = 10 EMA trailing (no fixed target)
+      Position size = (Capital × 5%) / (½ ATR)
+    """
+    import yfinance as yf
+    
+    # Colors
+    _CYAN = "#00ffff"
+    _GREEN = "#00ff88"
+    _RED = "#ff3355"
+    _YELLOW = "#ffdd00"
+    _TEXT = "#e0e0ff"
+    _DIM = "#4a4a6a"
+    _BG2 = "#0a0a1e"
+    
+    st.markdown(
+        f"<div style='color:{_CYAN};font-size:0.75rem;text-transform:uppercase;"
+        f"letter-spacing:0.1em;margin:16px 0 8px 0;border-top:1px solid rgba(0,255,255,0.1);"
+        f"padding-top:12px;'>SL / TP KALKYLATOR — {strategy.upper()}</div>",
+        unsafe_allow_html=True,
+    )
+    
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        calc_ticker = st.text_input("Ticker", value="VOLV-B.ST", key=f"sltp_ticker_{strategy}")
+    with c2:
+        capital = st.number_input("Kapital (SEK)", value=100000, step=10000, key=f"sltp_cap_{strategy}")
+    with c3:
+        risk_pct = st.number_input("Risk %", value=5.0, min_value=0.5, max_value=10.0, step=0.5, key=f"sltp_risk_{strategy}")
+    
+    if st.button("BERÄKNA", key=f"sltp_calc_{strategy}", use_container_width=True):
+        try:
+            tk = yf.Ticker(calc_ticker.strip())
+            df = tk.history(period="3mo", auto_adjust=True)
+            if df.index.tz is not None:
+                df.index = df.index.tz_localize(None)
+            
+            if df.empty or len(df) < 20:
+                st.error("Kunde inte hämta data")
+                return
+            
+            close = df["Close"].astype(float)
+            high = df["High"].astype(float)
+            low = df["Low"].astype(float)
+            
+            price = float(close.iloc[-1])
+            
+            # ATR 14
+            import pandas as _pd
+            tr = _pd.concat([high - low, abs(high - close.shift(1)), abs(low - close.shift(1))], axis=1).max(axis=1)
+            atr = float(tr.rolling(14).mean().iloc[-1])
+            half_atr = atr / 2
+            
+            # EMAs
+            ema10 = float(close.ewm(span=10).mean().iloc[-1])
+            ema20 = float(close.ewm(span=20).mean().iloc[-1])
+            ema50 = float(close.ewm(span=50).mean().iloc[-1])
+            
+            # Kijun-sen (26-period high+low / 2)
+            kijun = float((high.rolling(26).max() + low.rolling(26).min()).iloc[-1] / 2)
+            
+            # SL
+            sl_atr = price - half_atr
+            sl_kijun = kijun  # Kijun as trailing
+            
+            if strategy == "swing":
+                sl = max(sl_atr, sl_kijun)  # Use the tighter of the two
+                sl_method = f"½ ATR ({sl_atr:.2f}) / Kijun ({sl_kijun:.2f}) → tightest"
+                trail = f"Kijun-sen trail ({kijun:.2f}) + EMA 10 ({ema10:.2f})"
+            else:  # ovtlyr
+                sl = sl_atr
+                sl_method = f"½ ATR = {half_atr:.2f} under entry"
+                trail = f"EMA 10 trail ({ema10:.2f})"
+            
+            sl_distance = price - sl
+            
+            # R:R targets
+            tp_2r = price + sl_distance * 2
+            tp_3r = price + sl_distance * 3
+            
+            # Position size
+            risk_amount = capital * (risk_pct / 100)
+            shares = int(risk_amount / sl_distance) if sl_distance > 0 else 0
+            position_value = shares * price
+            position_pct = (position_value / capital * 100) if capital > 0 else 0
+            
+            # Display
+            r1, r2 = st.columns(2)
+            
+            with r1:
+                st.markdown(
+                    f'<div style="background:{_BG2};border:2px solid rgba(255,51,85,0.3);border-radius:8px;padding:14px;">'
+                    f'<div style="color:{_RED};font-weight:700;font-size:0.85rem;margin-bottom:8px;">STOP LOSS</div>'
+                    f'<div style="color:{_TEXT};font-size:1.2rem;font-weight:700;">{sl:.2f}</div>'
+                    f'<div style="color:{_DIM};font-size:0.68rem;margin-top:4px;">{sl_method}</div>'
+                    f'<div style="color:{_RED};font-size:0.75rem;margin-top:6px;">Risk: {sl_distance:.2f} ({sl_distance/price*100:.1f}%)</div>'
+                    f'<div style="color:{_DIM};font-size:0.65rem;margin-top:8px;">Trailing: {trail}</div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+            
+            with r2:
+                st.markdown(
+                    f'<div style="background:{_BG2};border:2px solid rgba(0,255,136,0.3);border-radius:8px;padding:14px;">'
+                    f'<div style="color:{_GREEN};font-weight:700;font-size:0.85rem;margin-bottom:8px;">TARGETS (R:R)</div>'
+                    f'<div style="color:{_TEXT};font-size:0.85rem;">2R: <span style="color:{_GREEN};font-weight:700;">{tp_2r:.2f}</span> (+{(tp_2r/price-1)*100:.1f}%)</div>'
+                    f'<div style="color:{_TEXT};font-size:0.85rem;">3R: <span style="color:{_GREEN};font-weight:700;">{tp_3r:.2f}</span> (+{(tp_3r/price-1)*100:.1f}%)</div>'
+                    f'<div style="color:{_DIM};font-size:0.65rem;margin-top:6px;">Obs: Trailing stop (ej fast TP) enl. strategi</div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+            
+            # Position sizing
+            st.markdown(
+                f'<div style="background:{_BG2};border:2px solid rgba(0,255,255,0.2);border-radius:8px;padding:14px;margin-top:8px;">'
+                f'<div style="color:{_CYAN};font-weight:700;font-size:0.85rem;margin-bottom:8px;">POSITION SIZING</div>'
+                f'<div style="display:flex;justify-content:space-between;">'
+                f'<div><span style="color:{_DIM};font-size:0.7rem;">Aktier</span><br>'
+                f'<span style="color:{_TEXT};font-size:1.1rem;font-weight:700;">{shares}</span></div>'
+                f'<div><span style="color:{_DIM};font-size:0.7rem;">Position</span><br>'
+                f'<span style="color:{_TEXT};font-size:1.1rem;font-weight:700;">{position_value:,.0f} SEK</span></div>'
+                f'<div><span style="color:{_DIM};font-size:0.7rem;">% av kapital</span><br>'
+                f'<span style="color:{_YELLOW};font-size:1.1rem;font-weight:700;">{position_pct:.1f}%</span></div>'
+                f'<div><span style="color:{_DIM};font-size:0.7rem;">Risk belopp</span><br>'
+                f'<span style="color:{_RED};font-size:1.1rem;font-weight:700;">{risk_amount:,.0f} SEK</span></div>'
+                f'</div>'
+                f'<div style="color:{_DIM};font-size:0.62rem;margin-top:8px;">'
+                f'ATR(14): {atr:.2f} | ½ ATR: {half_atr:.2f} | EMA10: {ema10:.2f} | EMA20: {ema20:.2f} | Kijun: {kijun:.2f}'
+                f'</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+            
+        except Exception as e:
+            st.error(f"Fel: {e}")
+
+
+# =============================================================================
 # TAB 3 — REGIME MONITOR
 # =============================================================================
 
@@ -2006,6 +2157,9 @@ def tab_regime():
         gate_html += f'<div style="color:{gc};font-size:0.8rem;font-weight:700;">{passed}/{total_gates} GATES</div>'
         st.markdown(gate_html, unsafe_allow_html=True)
 
+    # ── SL/TP Calculator ─────────────────────────────────────────────────────
+    _render_sl_tp_calculator("swing")
+
 
 # =============================================================================
 # MAIN APP
@@ -2244,6 +2398,36 @@ def _render_ovtlyr_backtest_ui():
 # =============================================================================
 
 def main():
+    # ── Login gate ─────────────────────────────────────────────────────
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
+    
+    if not st.session_state.authenticated:
+        st.markdown(
+            "<div style='text-align:center;padding:60px 0;'>"
+            "<h1 style='color:#00ffff;letter-spacing:0.15em;'>🐺 SWEWOLF PANEL</h1>"
+            "<p style='color:#4a4a6a;'>Lidbeck Edition</p>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        
+        col_l, col_m, col_r = st.columns([1, 1, 1])
+        with col_m:
+            password = st.text_input("Lösenord", type="password", key="login_pw")
+            if st.button("LOGGA IN", use_container_width=True, key="login_btn"):
+                # Check password from Streamlit secrets or use default
+                try:
+                    correct_pw = st.secrets.get("SWEWOLF_PASSWORD", "wolf2026")
+                except Exception:
+                    correct_pw = "wolf2026"
+                
+                if password == correct_pw:
+                    st.session_state.authenticated = True
+                    st.rerun()
+                else:
+                    st.error("Fel lösenord")
+        return  # Don't render anything else
+    
     inject_css()
     wolf_banner()
 

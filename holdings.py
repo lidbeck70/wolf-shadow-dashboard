@@ -31,8 +31,8 @@ DIM = "#4a4a6a"
 
 # Portfolio config
 PORTFOLIOS = {
-    "swing": {"name": "Swing Portfolio", "max": 2, "color": CYAN, "strategy": "Swing"},
-    "ovtlyr": {"name": "OVTLYR Portfolio", "max": 2, "color": MAGENTA, "strategy": "OVTLYR"},
+    "swing": {"name": "Swing Portfolio", "max": 5, "color": CYAN, "strategy": "Swing"},
+    "ovtlyr": {"name": "OVTLYR Portfolio", "max": 5, "color": MAGENTA, "strategy": "OVTLYR"},
     "long": {"name": "Long Portfolio", "max": 10, "color": GREEN, "strategy": "Long"},
 }
 
@@ -57,17 +57,48 @@ except ImportError:
     _CAGR_OK = False
 
 
-# ── Session state helpers ─────────────────────────────────────────────
+# ── Persistent storage (JSON file) ────────────────────────────────────
+
+import json
+import os
+
+_HOLDINGS_DIR = os.path.dirname(os.path.abspath(__file__))
+_HOLDINGS_FILE = os.path.join(_HOLDINGS_DIR, ".holdings_data.json")
+
+
+def _load_from_disk() -> dict:
+    """Load all portfolios from JSON file."""
+    if os.path.exists(_HOLDINGS_FILE):
+        try:
+            with open(_HOLDINGS_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
+def _save_to_disk(all_holdings: dict):
+    """Save all portfolios to JSON file."""
+    try:
+        with open(_HOLDINGS_FILE, "w") as f:
+            json.dump(all_holdings, f, indent=2)
+    except Exception as e:
+        logger.warning("Failed to save holdings: %s", e)
+
 
 def _get_holdings(portfolio_key: str) -> List[dict]:
     key = f"holdings_{portfolio_key}"
     if key not in st.session_state:
-        st.session_state[key] = []
+        disk_data = _load_from_disk()
+        st.session_state[key] = disk_data.get(portfolio_key, [])
     return st.session_state[key]
 
 
 def _set_holdings(portfolio_key: str, holdings: List[dict]):
     st.session_state[f"holdings_{portfolio_key}"] = holdings
+    all_data = _load_from_disk()
+    all_data[portfolio_key] = holdings
+    _save_to_disk(all_data)
 
 
 def _add_holding(portfolio_key: str, ticker: str, entry_price: float = 0, sector: str = "Unknown"):

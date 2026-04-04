@@ -65,9 +65,9 @@ SWING_RULES: list[dict] = [
     },
     {
         "number": 8,
-        "text": "Max 1% risk per trade",
-        "explanation": "SL baseras på struktur, aldrig procent.",
-        "panel_guide": "OVTLYR REGIME → ATR i Volatility-kortet. Formel: Antal aktier = (Kapital × 1%) ÷ (½ ATR).",
+        "text": "Max 5% risk per trade",
+        "explanation": "SL baseras på struktur. Max 5% av kapital per trade.",
+        "panel_guide": "OVTLYR REGIME → SL/TP-rutan visar exakt position size. Formel: Antal aktier = (Kapital × 5%) ÷ (½ ATR).",
     },
     {
         "number": 9,
