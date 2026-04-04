@@ -292,34 +292,30 @@ def render_ovtlyr_page() -> None:
         unsafe_allow_html=True,
     )
 
-    # ── Sidebar ───────────────────────────────────────────────────────
-    with st.sidebar:
-        st.markdown(
-            f'<div style="color:{CYAN}; font-size:1.1rem; font-weight:700; '
-            f'letter-spacing:0.1em; margin-bottom:12px;">⬡ OVTLYR</div>',
-            unsafe_allow_html=True,
-        )
-
+    # ── Ticker selector (in main area, not sidebar) ─────────────
+    ctrl1, ctrl2, ctrl3, ctrl4 = st.columns([2, 1.5, 1, 1])
+    with ctrl1:
         ticker_input = st.text_input(
-            "Ticker", value=DEFAULT_TICKER, key="ovtlyr_ticker"
+            "TICKER", value=DEFAULT_TICKER, key="ovtlyr_ticker"
         ).strip().upper()
-
+    with ctrl2:
         quick_pick = st.selectbox(
-            "Quick pick", ["— custom —"] + COMMON_TICKERS, key="ovtlyr_quick"
+            "QUICK PICK", ["— custom —"] + COMMON_TICKERS, key="ovtlyr_quick"
         )
-        if quick_pick != "— custom —":
-            ticker = quick_pick
-        else:
-            ticker = ticker_input if ticker_input else DEFAULT_TICKER
-
+    with ctrl3:
         period = st.selectbox(
-            "Period", ["6mo", "1y", "2y"], index=2, key="ovtlyr_period"
+            "PERIOD", ["6mo", "1y", "2y"], index=2, key="ovtlyr_period"
         )
-
-        st.markdown("---")
-        refresh = st.button("↺ Refresh", key="ovtlyr_refresh", use_container_width=True)
+    with ctrl4:
+        st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+        refresh = st.button("↺ ANALYSERA", key="ovtlyr_refresh", use_container_width=True)
         if refresh:
             st.cache_data.clear()
+
+    if quick_pick != "— custom —":
+        ticker = quick_pick
+    else:
+        ticker = ticker_input if ticker_input else DEFAULT_TICKER
 
     # ── Data load ─────────────────────────────────────────────────────
     with st.spinner(f"Loading {ticker}…"):
