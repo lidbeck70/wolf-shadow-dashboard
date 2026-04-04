@@ -114,6 +114,27 @@ try:
     LONG_REGIME_AVAILABLE = True
 except ImportError:
     LONG_REGIME_AVAILABLE = False
+
+# Sector ETF → Display name mapping
+SECTOR_ETF_NAMES = {
+    "XLE": "XLE Energy",
+    "XLB": "XLB Materials",
+    "XLF": "XLF Financials",
+    "XLK": "XLK Technology",
+    "XLV": "XLV Healthcare",
+    "XLI": "XLI Industrials",
+    "XLY": "XLY Consumer Disc",
+    "XLP": "XLP Consumer Staples",
+    "XLRE": "XLRE Real Estate",
+    "XLU": "XLU Utilities",
+    "XLC": "XLC Communication",
+}
+SECTOR_ETF_LIST = list(SECTOR_ETF_NAMES.values())
+
+def _etf_from_display(display_name: str) -> str:
+    """Convert 'XLE Energy' back to 'XLE'."""
+    return display_name.split(" ")[0] if display_name else "XLE"
+
 import plotly.express as px
 from plotly.subplots import make_subplots
 import streamlit as st
@@ -761,7 +782,9 @@ def tab_screener():
         screener_preset = st.selectbox(
             "PRESET",
             ["Auto-detect", "Universal",
-             "XLE", "XLB", "XLF", "XLK", "XLV", "XLI", "XLY", "XLP", "XLRE", "XLU", "XLC",
+             "XLE Energy", "XLB Materials", "XLF Financials", "XLK Technology",
+             "XLV Healthcare", "XLI Industrials", "XLY Consumer Disc",
+             "XLP Consumer Staples", "XLRE Real Estate", "XLU Utilities", "XLC Communication",
              "OMX Stockholm", "OMX Copenhagen", "Oslo OSEBX", "OMX Helsinki",
              "OXY", "GOLD", "NEM", "XOM", "GLD"],
             key="screener_preset",
@@ -987,17 +1010,20 @@ def tab_backtest():
         )
 
     with col3:
-        sector_etf = st.selectbox(
+        sector_etf_display = st.selectbox(
             "SECTOR ETF (REGIME)",
-            ["XLE", "XLB", "XLF", "XLK", "XLV", "XLI", "XLY", "XLP", "XLRE", "XLU", "XLC"],
+            SECTOR_ETF_LIST,
             key="bt_sector",
         )
+        sector_etf = _etf_from_display(sector_etf_display)
 
     with col4:
         bt_preset = st.selectbox(
             "PRESET",
             ["Auto-detect", "Universal",
-             "XLE", "XLB", "XLF", "XLK", "XLV", "XLI", "XLY", "XLP", "XLRE", "XLU", "XLC",
+             "XLE Energy", "XLB Materials", "XLF Financials", "XLK Technology",
+             "XLV Healthcare", "XLI Industrials", "XLY Consumer Disc",
+             "XLP Consumer Staples", "XLRE Real Estate", "XLU Utilities", "XLC Communication",
              "OMX Stockholm", "OMX Copenhagen", "Oslo OSEBX", "OMX Helsinki",
              "OXY", "GOLD", "NEM", "XOM", "GLD"],
             key="bt_preset",
@@ -1501,11 +1527,12 @@ def tab_regime():
     with ctrl1:
         watch_ticker = st.text_input("STOCK TICKER", value="XOM", key="reg_ticker").strip().upper()
     with ctrl2:
-        watch_sector = st.selectbox(
+        watch_sector_display = st.selectbox(
             "SECTOR ETF",
-            ["XLE", "XLB", "XLF", "XLK", "XLV", "XLI", "XLY", "XLP", "XLRE", "XLU", "XLC"],
+            SECTOR_ETF_LIST,
             key="reg_sector",
         )
+        watch_sector = _etf_from_display(watch_sector_display)
     with ctrl3:
         st.markdown("<br>", unsafe_allow_html=True)
         refresh_btn = st.button("🔄 REFRESH REGIME", key="reg_refresh", use_container_width=True)
