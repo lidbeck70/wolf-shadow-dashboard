@@ -936,7 +936,7 @@ try:
                 return None
             df = pd.DataFrame(instruments)
             # Keep only useful columns
-            keep_cols = ["insId", "ticker", "name", "marketId", "sectorId"]
+            keep_cols = ["insId", "ticker", "name", "marketId", "sectorId", "countryId"]
             existing = [c for c in keep_cols if c in df.columns]
             return df[existing]
         except Exception as exc:
@@ -965,6 +965,47 @@ try:
         except Exception:
             return None
 
+
+    @_st.cache_data(ttl=86400, show_spinner=False)
+    def get_global_instruments() -> Optional[pd.DataFrame]:
+        """
+        Fetch ALL global instruments from Börsdata Pro+ API.
+        Endpoint: /instruments/global — returns ~15,775 international instruments.
+        Cached for 24h via Streamlit.
+        """
+        try:
+            resp = requests.get(
+                f"{BASE_URL}/instruments/global",
+                params={"authKey": "3bbf0620da0f41dc963659e2118e1366"},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            instruments = data.get("instruments", [])
+            if not instruments:
+                return None
+            df = pd.DataFrame(instruments)
+            keep_cols = ["insId", "ticker", "name", "marketId", "sectorId", "countryId"]
+            existing = [c for c in keep_cols if c in df.columns]
+            return df[existing]
+        except Exception as exc:
+            logger.warning("get_global_instruments failed: %s", exc)
+            return None
+
+    @_st.cache_data(ttl=86400, show_spinner=False)
+    def get_complete_instrument_universe() -> Optional[pd.DataFrame]:
+        """Get ALL instruments: Nordic + Global combined (~17,495 total)."""
+        try:
+            nordic = get_all_instruments()
+            global_df = get_global_instruments()
+            frames = [f for f in [nordic, global_df] if f is not None and not f.empty]
+            if not frames:
+                return None
+            combined = pd.concat(frames, ignore_index=True).drop_duplicates(subset=["insId"])
+            return combined
+        except Exception as exc:
+            logger.warning("get_complete_instrument_universe failed: %s", exc)
+            return None
 
     # Nordic market suffix mapping for yfinance
     _MARKET_SUFFIX = {
@@ -1000,6 +1041,12 @@ try:
 except ImportError:
     # No Streamlit — provide non-cached stubs
     def get_all_instruments() -> Optional[pd.DataFrame]:
+        return None
+
+    def get_global_instruments() -> Optional[pd.DataFrame]:
+        return None
+
+    def get_complete_instrument_universe() -> Optional[pd.DataFrame]:
         return None
 
     def get_instruments_by_market(market_ids: List[int]) -> Optional[pd.DataFrame]:

@@ -101,9 +101,9 @@ try:
 except ImportError:
     OVTLYR_SCREENER_AVAILABLE = False
 
-# Ticker Universe (international markets)
+# Ticker Universe (Borsdata Pro+ API: Nordic + Global = 17,495 instruments)
 try:
-    from ticker_universe import REGIONS as TU_REGIONS, get_tickers_for_regions
+    from ticker_universe import COUNTRY_REGIONS as TU_REGIONS, get_tickers_for_regions
     TICKER_UNIVERSE_AVAILABLE = True
 except ImportError:
     TU_REGIONS = {}
@@ -810,10 +810,10 @@ def tab_screener():
         st.markdown("<br>", unsafe_allow_html=True)
         run_btn = st.button("⚡ SCAN", key="screener_run", use_container_width=True)
 
-    # International markets multiselect
+    # International markets multiselect (Borsdata Pro+ global)
     try:
         if TICKER_UNIVERSE_AVAILABLE and TU_REGIONS:
-            intl_options = [k for k in TU_REGIONS.keys() if k != "Norden (Börsdata)"]
+            intl_options = [k for k in TU_REGIONS.keys() if k != "Norden"]
             selected_intl = st.multiselect(
                 "Internationella marknader (extra)",
                 intl_options,
@@ -821,8 +821,7 @@ def tab_screener():
                 key="screener_markets",
             )
             if selected_intl:
-                intl_keys = [TU_REGIONS[lbl] for lbl in selected_intl]
-                intl_tickers = get_tickers_for_regions(intl_keys)
+                intl_tickers = get_tickers_for_regions(selected_intl)
                 st.caption(f"+{len(intl_tickers)} internationella aktier")
             else:
                 intl_tickers = []
@@ -2290,21 +2289,20 @@ def _render_ovtlyr_screener_ui():
             unsafe_allow_html=True,
         )
 
-        # Market multiselect (replaces old Universe dropdown)
+        # Market multiselect (Borsdata Pro+ global regions)
         if TICKER_UNIVERSE_AVAILABLE and TU_REGIONS:
             region_options = list(TU_REGIONS.keys())
-            selected_labels = st.multiselect(
+            selected_regions = st.multiselect(
                 "Marknader",
                 region_options,
-                default=["Norden (Börsdata)"],
+                default=["Norden"],
                 key="ovtlyr_screener_markets",
             )
-            selected_keys = [TU_REGIONS[lbl] for lbl in selected_labels]
-            universe_tickers = get_tickers_for_regions(selected_keys)
+            universe_tickers = get_tickers_for_regions(selected_regions)
             st.caption(f"{len(universe_tickers)} aktier i universumet")
         else:
             universe_tickers = None  # fallback to old behaviour
-            selected_keys = []
+            selected_regions = []
 
         col1, col2 = st.columns(2)
         with col1:
