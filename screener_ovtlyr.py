@@ -296,23 +296,43 @@ def run_ovtlyr_screener(
     universe: str = "Nordic",
     min_volume: int = 100_000,
     period: str = "1y",
+    ticker_list: Optional[tuple] = None,
 ) -> pd.DataFrame:
     """
     Run the full OVTLYR screener on a universe of tickers.
+
+    Args:
+        universe: Legacy universe string ("Nordic", "US", "Canada", "All")
+                  or "custom" when ticker_list is provided.
+        min_volume: Minimum average 20-day volume filter.
+        period: yfinance download period (default "1y").
+        ticker_list: Explicit list of yfinance tickers. When provided,
+                     overrides the universe parameter.
 
     Returns DataFrame with columns:
       Ticker, Name, Sector, Country,
       Trend, Momentum, Volatility, Volume, ADX,
       Composite (z-score weighted), Signal, Rank
     """
-    if universe == "Nordic":
-        tickers_meta = _build_nordic_universe()
-    else:
-        tickers_meta = UNIVERSES.get(universe, _FALLBACK_NORDIC)
-    if not tickers_meta:
-        return pd.DataFrame()
+    try:
+        if ticker_list is not None and len(ticker_list) > 0:
+            # New path: explicit ticker list from ticker_universe
+            tickers_meta = {
+                t: {"name": t.split(".")[0], "sector": "Unknown", "country": "Intl"}
+                for t in ticker_list
+            }
+        elif universe == "Nordic":
+            tickers_meta = _build_nordic_universe()
+        else:
+            tickers_meta = UNIVERSES.get(universe, _FALLBACK_NORDIC)
 
-    tickers = list(tickers_meta.keys())
+        if not tickers_meta:
+            return pd.DataFrame()
+
+        tickers = list(tickers_meta.keys())
+    except Exception as e:
+        logger.warning("run_ovtlyr_screener universe build error: %s", e)
+        return pd.DataFrame()
 
     # Batch download
     try:

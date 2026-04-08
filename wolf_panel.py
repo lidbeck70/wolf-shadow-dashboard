@@ -101,6 +101,14 @@ try:
 except ImportError:
     OVTLYR_SCREENER_AVAILABLE = False
 
+# Ticker Universe (international markets)
+try:
+    from ticker_universe import REGIONS as TU_REGIONS, get_tickers_for_regions
+    TICKER_UNIVERSE_AVAILABLE = True
+except ImportError:
+    TU_REGIONS = {}
+    TICKER_UNIVERSE_AVAILABLE = False
+
 # Unified backtest engine
 try:
     from backtest_engine import run_batch_backtest, run_backtest
@@ -802,6 +810,27 @@ def tab_screener():
         st.markdown("<br>", unsafe_allow_html=True)
         run_btn = st.button("⚡ SCAN", key="screener_run", use_container_width=True)
 
+    # International markets multiselect
+    try:
+        if TICKER_UNIVERSE_AVAILABLE and TU_REGIONS:
+            intl_options = [k for k in TU_REGIONS.keys() if k != "Norden (Börsdata)"]
+            selected_intl = st.multiselect(
+                "Internationella marknader (extra)",
+                intl_options,
+                default=[],
+                key="screener_markets",
+            )
+            if selected_intl:
+                intl_keys = [TU_REGIONS[lbl] for lbl in selected_intl]
+                intl_tickers = get_tickers_for_regions(intl_keys)
+                st.caption(f"+{len(intl_tickers)} internationella aktier")
+            else:
+                intl_tickers = []
+        else:
+            intl_tickers = []
+    except Exception:
+        intl_tickers = []
+
     st.markdown("---")
 
     # ── Status / Legend ───────────────────────────────────────────────────────
@@ -822,6 +851,10 @@ def tab_screener():
         try:
             from wolf_shadow_screener import run_screener, MARKETS
 
+            # Inject international tickers if selected
+            if intl_tickers:
+                MARKETS["intl_expanded"] = {t: t.split(".")[0] for t in intl_tickers}
+
             market_map = {
                 "All": None,
                 "Commodity": ["commodity"],
@@ -837,6 +870,11 @@ def tab_screener():
                 "Junior Miners": ["junior_miners"],
             }
             selected_markets = market_map[market_opt]
+            # If international tickers selected, add them to market list
+            if intl_tickers and selected_markets is not None:
+                selected_markets = selected_markets + ["intl_expanded"]
+            elif intl_tickers and selected_markets is None:
+                pass  # "All" already scans everything including intl_expanded
 
             with st.spinner("🐺 WOLF IS HUNTING... scanning markets..."):
                 df_results = run_screener(markets=selected_markets, min_score=min_score)
@@ -2243,93 +2281,112 @@ def tab_screener_consolidated():
 
 def _render_ovtlyr_screener_ui():
     """OVTLYR Screener with z-score weighted scoring."""
-    st.markdown(
-        "<h2 style='color:#00ffff;letter-spacing:0.1em;'>"
-        "OVTLYR SCREENER</h2>"
-        "<p style='color:#4a4a6a;font-size:0.7rem;'>Z-score normalized · "
-        "Weighted composite · Trend 30% + Momentum 25% + Vol 15% + Volume 15% + ADX 15%</p>",
-        unsafe_allow_html=True,
-    )
+    try:
+        st.markdown(
+            "<h2 style='color:#00ffff;letter-spacing:0.1em;'>"
+            "OVTLYR SCREENER</h2>"
+            "<p style='color:#4a4a6a;font-size:0.7rem;'>Z-score normalized · "
+            "Weighted composite · Trend 30% + Momentum 25% + Vol 15% + Volume 15% + ADX 15%</p>",
+            unsafe_allow_html=True,
+        )
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        universe = st.selectbox("Universe", ["Nordic", "US", "Canada", "All"], key="ovtlyr_univ")
-    with col2:
-        min_vol = st.number_input("Min Avg Volume", value=100_000, step=50_000, key="ovtlyr_minvol")
-    with col3:
-        top_n = st.number_input("Top N for Test", value=10, min_value=3, max_value=50, key="ovtlyr_topn")
+        # Market multiselect (replaces old Universe dropdown)
+        if TICKER_UNIVERSE_AVAILABLE and TU_REGIONS:
+            region_options = list(TU_REGIONS.keys())
+            selected_labels = st.multiselect(
+                "Marknader",
+                region_options,
+                default=["Norden (Börsdata)"],
+                key="ovtlyr_screener_markets",
+            )
+            selected_keys = [TU_REGIONS[lbl] for lbl in selected_labels]
+            universe_tickers = get_tickers_for_regions(selected_keys)
+            st.caption(f"{len(universe_tickers)} aktier i universumet")
+        else:
+            universe_tickers = None  # fallback to old behaviour
+            selected_keys = []
 
-    col_scan, col_test = st.columns(2)
-    with col_scan:
-        scan_clicked = st.button("↻  SCAN", key="ovtlyr_scan", use_container_width=True)
-    with col_test:
-        test_clicked = st.button("⚡ TEST TOP N", key="ovtlyr_test_topn", use_container_width=True)
+        col1, col2 = st.columns(2)
+        with col1:
+            min_vol = st.number_input("Min Avg Volume", value=100_000, step=50_000, key="ovtlyr_minvol")
+        with col2:
+            top_n = st.number_input("Top N for Test", value=10, min_value=3, max_value=50, key="ovtlyr_topn")
 
-    if scan_clicked or test_clicked:
-        if not OVTLYR_SCREENER_AVAILABLE:
-            st.error("OVTLYR Screener module not found.")
-            return
+        col_scan, col_test = st.columns(2)
+        with col_scan:
+            scan_clicked = st.button("↻  SCAN", key="ovtlyr_scan", use_container_width=True)
+        with col_test:
+            test_clicked = st.button("⚡ TEST TOP N", key="ovtlyr_test_topn", use_container_width=True)
 
-        with st.spinner("🐺 Scanning universe..."):
-            if universe == "All":
-                dfs = []
-                for u in ["Nordic", "US", "Canada"]:
-                    df = run_ovtlyr_screener(u, min_vol)
-                    if not df.empty:
-                        dfs.append(df)
-                results = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
-                if not results.empty:
-                    results = results.sort_values("Composite", ascending=False).reset_index(drop=True)
-                    results["Rank"] = range(1, len(results) + 1)
-            else:
-                results = run_ovtlyr_screener(universe, min_vol)
+        if scan_clicked or test_clicked:
+            if not OVTLYR_SCREENER_AVAILABLE:
+                st.error("OVTLYR Screener module not found.")
+                return
 
-        if results.empty:
-            st.warning("No results. Try a different universe or lower the volume filter.")
-            return
+            if universe_tickers is not None and not universe_tickers:
+                st.warning("Välj minst en marknad.")
+                return
 
-        # Store in session state
-        st.session_state["ovtlyr_results"] = results
+            with st.spinner("🐺 Scanning universe..."):
+                if universe_tickers is not None:
+                    # New path: pass explicit ticker list (tuple for cache)
+                    results = run_ovtlyr_screener(
+                        universe="custom",
+                        min_volume=min_vol,
+                        ticker_list=tuple(universe_tickers),
+                    )
+                else:
+                    # Fallback: old behaviour with string universe
+                    results = run_ovtlyr_screener("Nordic", min_vol)
 
-        # KPI cards
-        total = len(results)
-        strong_buy = len(results[results["Signal"] == "STRONG BUY"])
-        buy = len(results[results["Signal"] == "BUY"])
-        hold = len(results[results["Signal"] == "HOLD"])
-        sell = len(results[results["Signal"] == "SELL"])
+            if results.empty:
+                st.warning("No results. Try a different universe or lower the volume filter.")
+                return
 
-        k1, k2, k3, k4, k5 = st.columns(5)
-        k1.metric("Scanned", total)
-        k2.metric("STRONG BUY", strong_buy)
-        k3.metric("BUY", buy)
-        k4.metric("HOLD", hold)
-        k5.metric("SELL", sell)
+            # Store in session state
+            st.session_state["ovtlyr_results"] = results
 
-        # Color styling
-        def _signal_color(val):
-            colors = {"STRONG BUY": "color:#00ffff", "BUY": "color:#00ff88",
-                      "HOLD": "color:#ffdd00", "SELL": "color:#ff3355"}
-            return colors.get(val, "")
+            # KPI cards
+            total = len(results)
+            strong_buy = len(results[results["Signal"] == "STRONG BUY"])
+            buy = len(results[results["Signal"] == "BUY"])
+            hold = len(results[results["Signal"] == "HOLD"])
+            sell = len(results[results["Signal"] == "SELL"])
 
-        styled = results.style
-        _map = styled.map if hasattr(styled, "map") else styled.applymap
-        styled = _map(_signal_color, subset=["Signal"])
-        st.dataframe(styled, use_container_width=True, hide_index=True,
-                     height=min(600, 38 + 35 * len(results)))
+            k1, k2, k3, k4, k5 = st.columns(5)
+            k1.metric("Scanned", total)
+            k2.metric("STRONG BUY", strong_buy)
+            k3.metric("BUY", buy)
+            k4.metric("HOLD", hold)
+            k5.metric("SELL", sell)
 
-        # Test Top N
-        if test_clicked:
-            top_tickers = results.head(int(top_n))["Ticker"].tolist()
-            st.session_state["test_topn_tickers"] = top_tickers
-            st.session_state["test_topn_mode"] = "ovtlyr"
-            st.session_state["auto_run_backtest"] = True
-            st.success(f"Top {len(top_tickers)} tickers queued for backtest: {', '.join(top_tickers)}")
-            st.info("→ Switch to the BACKTEST tab to see results.")
+            # Color styling
+            def _signal_color(val):
+                colors = {"STRONG BUY": "color:#00ffff", "BUY": "color:#00ff88",
+                          "HOLD": "color:#ffdd00", "SELL": "color:#ff3355"}
+                return colors.get(val, "")
 
-    elif "ovtlyr_results" in st.session_state:
-        results = st.session_state["ovtlyr_results"]
-        st.dataframe(results, use_container_width=True, hide_index=True,
-                     height=min(600, 38 + 35 * len(results)))
+            styled = results.style
+            _map = styled.map if hasattr(styled, "map") else styled.applymap
+            styled = _map(_signal_color, subset=["Signal"])
+            st.dataframe(styled, use_container_width=True, hide_index=True,
+                         height=min(600, 38 + 35 * len(results)))
+
+            # Test Top N
+            if test_clicked:
+                top_tickers = results.head(int(top_n))["Ticker"].tolist()
+                st.session_state["test_topn_tickers"] = top_tickers
+                st.session_state["test_topn_mode"] = "ovtlyr"
+                st.session_state["auto_run_backtest"] = True
+                st.success(f"Top {len(top_tickers)} tickers queued for backtest: {', '.join(top_tickers)}")
+                st.info("→ Switch to the BACKTEST tab to see results.")
+
+        elif "ovtlyr_results" in st.session_state:
+            results = st.session_state["ovtlyr_results"]
+            st.dataframe(results, use_container_width=True, hide_index=True,
+                         height=min(600, 38 + 35 * len(results)))
+    except Exception as e:
+        st.error(f"OVTLYR Screener error: {e}")
 
 
 # =============================================================================
