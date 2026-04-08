@@ -905,3 +905,108 @@ def get_api() -> BorsdataAPI:
     if _instance is None:
         _instance = BorsdataAPI()
     return _instance
+
+
+# ---------------------------------------------------------------------------
+# Streamlit-cached instrument helpers (Task 3: Börsdata Ticker Expansion)
+# ---------------------------------------------------------------------------
+
+import pandas as pd
+
+try:
+    import streamlit as _st
+
+    @_st.cache_data(ttl=86400, show_spinner=False)
+    def get_all_instruments() -> Optional[pd.DataFrame]:
+        """
+        Fetch all instruments from Börsdata API.
+        Cached for 24h via Streamlit. Returns DataFrame with columns:
+        ticker, name, marketId, sectorId, insId
+        """
+        try:
+            resp = requests.get(
+                f"{BASE_URL}/instruments",
+                params={"authKey": "3bbf0620da0f41dc963659e2118e1366"},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            instruments = data.get("instruments", [])
+            if not instruments:
+                return None
+            df = pd.DataFrame(instruments)
+            # Keep only useful columns
+            keep_cols = ["insId", "ticker", "name", "marketId", "sectorId"]
+            existing = [c for c in keep_cols if c in df.columns]
+            return df[existing]
+        except Exception as exc:
+            logger.warning("get_all_instruments failed: %s", exc)
+            return None
+
+
+    def get_instruments_by_market(market_ids: List[int]) -> Optional[pd.DataFrame]:
+        """Filter instruments by market IDs."""
+        try:
+            df = get_all_instruments()
+            if df is None or df.empty:
+                return None
+            return df[df["marketId"].isin(market_ids)]
+        except Exception:
+            return None
+
+
+    def get_instruments_by_sector(sector_ids: List[int]) -> Optional[pd.DataFrame]:
+        """Filter instruments by sector IDs."""
+        try:
+            df = get_all_instruments()
+            if df is None or df.empty:
+                return None
+            return df[df["sectorId"].isin(sector_ids)]
+        except Exception:
+            return None
+
+
+    # Nordic market suffix mapping for yfinance
+    _MARKET_SUFFIX = {
+        1: ".ST",    # Sweden Large Cap
+        18: ".ST",   # Sweden Mid Cap
+        19: ".ST",   # Sweden Small Cap
+        4: ".OL",    # Norway (OSE)
+        5: ".HE",    # Finland (HEL)
+        6: ".CO",    # Denmark (CSE)
+    }
+
+    @_st.cache_data(ttl=86400, show_spinner=False)
+    def _get_nordic_tickers() -> List[str]:
+        """Get all Nordic tickers from Börsdata with yfinance suffixes."""
+        try:
+            nordic_market_ids = [1, 4, 5, 6, 18, 19]
+            df = get_all_instruments()
+            if df is None or df.empty:
+                return []
+            nordic = df[df["marketId"].isin(nordic_market_ids)]
+            tickers = []
+            for _, row in nordic.iterrows():
+                t = row.get("ticker", "")
+                mid = row.get("marketId", 1)
+                if t:
+                    suffix = _MARKET_SUFFIX.get(mid, ".ST")
+                    tickers.append(f"{t}{suffix}")
+            return sorted(set(tickers))
+        except Exception as exc:
+            logger.warning("_get_nordic_tickers failed: %s", exc)
+            return []
+
+except ImportError:
+    # No Streamlit — provide non-cached stubs
+    def get_all_instruments() -> Optional[pd.DataFrame]:
+        return None
+
+    def get_instruments_by_market(market_ids: List[int]) -> Optional[pd.DataFrame]:
+        return None
+
+    def get_instruments_by_sector(sector_ids: List[int]) -> Optional[pd.DataFrame]:
+        return None
+
+    def _get_nordic_tickers() -> List[str]:
+        return []

@@ -12,7 +12,9 @@ Holdings persist in Streamlit session_state.
 
 import streamlit as st
 import pandas as pd
+import numpy as np
 import yfinance as yf
+import plotly.graph_objects as go
 import logging
 from typing import Dict, List, Optional
 
@@ -434,6 +436,127 @@ def _render_portfolio(portfolio_key: str):
         )
 
 
+# ── Correlation Matrix ────────────────────────────────────────────────
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _fetch_returns_for_correlation(tickers: tuple, period: str = "6mo") -> pd.DataFrame:
+    """Fetch daily returns for a list of tickers. Returns DataFrame of returns."""
+    try:
+        data = yf.download(list(tickers), period=period, auto_adjust=True, progress=False)
+        if data.empty:
+            return pd.DataFrame()
+        if isinstance(data.columns, pd.MultiIndex):
+            close = data["Close"]
+        else:
+            close = data[["Close"]]
+            close.columns = [tickers[0]]
+        returns = close.pct_change().dropna()
+        # Keep only last 90 trading days
+        if len(returns) > 90:
+            returns = returns.tail(90)
+        return returns
+    except Exception:
+        return pd.DataFrame()
+
+
+def _render_correlation_matrix(all_holdings: list):
+    """
+    Render a correlation heatmap for all active holdings.
+    all_holdings: list of dicts with keys: ticker, strategy (swing/ovtlyr/long)
+    """
+    try:
+        if len(all_holdings) < 2:
+            st.info("Lägg till minst 2 innehav för att se korrelation.")
+            return
+
+        tickers = [h["ticker"] for h in all_holdings]
+        strategy_map = {h["ticker"]: h["strategy"] for h in all_holdings}
+
+        # Fetch returns
+        returns_df = _fetch_returns_for_correlation(tuple(tickers))
+        if returns_df.empty or len(returns_df.columns) < 2:
+            st.warning("Korrelationsmatris: Kunde inte hämta tillräckligt med data.")
+            return
+
+        # Filter to tickers with valid data
+        valid_tickers = [t for t in tickers if t in returns_df.columns]
+        if len(valid_tickers) < 2:
+            st.warning("Korrelationsmatris: Mindre än 2 ticker med data.")
+            return
+
+        returns_df = returns_df[valid_tickers]
+        corr = returns_df.corr()
+
+        # Color labels by strategy
+        strategy_colors = {"swing": CYAN, "ovtlyr": MAGENTA, "long": GREEN}
+        tick_colors = [strategy_colors.get(strategy_map.get(t, ""), DIM) for t in valid_tickers]
+
+        # Build heatmap
+        fig = go.Figure(data=go.Heatmap(
+            z=corr.values,
+            x=valid_tickers,
+            y=valid_tickers,
+            colorscale=[
+                [0.0, "rgba(0,255,136,0.9)"],
+                [0.5, "rgba(255,255,255,0.9)"],
+                [1.0, "rgba(255,51,85,0.9)"],
+            ],
+            zmin=-1,
+            zmax=1,
+            text=[[f"{v:.2f}" for v in row] for row in corr.values],
+            texttemplate="%{text}",
+            textfont={"size": 11, "color": "rgba(224,224,255,0.9)"},
+            hovertemplate="<b>%{x}</b> ↔ <b>%{y}</b><br>Korrelation: %{z:.3f}<extra></extra>",
+            showscale=True,
+            colorbar=dict(
+                title="Korr",
+                titlefont=dict(color=DIM),
+                tickfont=dict(color=DIM),
+            ),
+        ))
+
+        fig.update_layout(
+            title=dict(
+                text="PORTFÖLJKORRELATION — 90d daglig avkastning",
+                font=dict(color=CYAN, size=14),
+            ),
+            paper_bgcolor=BG,
+            plot_bgcolor=BG,
+            font=dict(color=TEXT),
+            xaxis=dict(
+                tickfont=dict(color=CYAN, size=10),
+                gridcolor="rgba(0,255,255,0.1)",
+            ),
+            yaxis=dict(
+                tickfont=dict(color=CYAN, size=10),
+                gridcolor="rgba(0,255,255,0.1)",
+                autorange="reversed",
+            ),
+            height=max(350, 60 * len(valid_tickers)),
+            margin=dict(l=80, r=40, t=50, b=80),
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Warnings for high correlations
+        warned = set()
+        for i in range(len(valid_tickers)):
+            for j in range(i + 1, len(valid_tickers)):
+                c = corr.iloc[i, j]
+                pair = (valid_tickers[i], valid_tickers[j])
+                if pair in warned:
+                    continue
+                if c > 0.85:
+                    st.error(f"🔴 Extremt hög korrelation: {pair[0]}↔{pair[1]} ({c:.2f}) — överlappande risk")
+                    warned.add(pair)
+                elif c > 0.7:
+                    st.warning(f"⚠️ Hög korrelation: {pair[0]}↔{pair[1]} ({c:.2f})")
+                    warned.add(pair)
+
+    except Exception as e:
+        st.warning(f"Korrelationsmatris: {e}")
+
+
 # ── Main render ───────────────────────────────────────────────────────
 
 def render_holdings_page():
@@ -467,3 +590,16 @@ def render_holdings_page():
     _render_portfolio("ovtlyr")
     st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
     _render_portfolio("long")
+
+    # ── Correlation Matrix ────────────────────────────────────────────
+    all_holdings = []
+    for h in swing_h:
+        all_holdings.append({"ticker": h["ticker"], "strategy": "swing"})
+    for h in ovtlyr_h:
+        all_holdings.append({"ticker": h["ticker"], "strategy": "ovtlyr"})
+    for h in long_h:
+        all_holdings.append({"ticker": h["ticker"], "strategy": "long"})
+
+    st.markdown("<hr style='border-color:rgba(0,255,255,0.15);margin:24px 0;'/>", unsafe_allow_html=True)
+    st.markdown(f"<div style='color:{CYAN};font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;font-weight:700;margin-bottom:12px;'>PORTFÖLJKORRELATION</div>", unsafe_allow_html=True)
+    _render_correlation_matrix(all_holdings)

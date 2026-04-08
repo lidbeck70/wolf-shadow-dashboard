@@ -21,21 +21,22 @@ logger = logging.getLogger(__name__)
 
 # Try Börsdata first
 try:
-    from borsdata_api import get_api, BorsdataAPI
+    from borsdata_api import get_api, BorsdataAPI, _get_nordic_tickers
     _HAS_BORSDATA = True
 except ImportError:
     try:
-        from dashboard.borsdata_api import get_api, BorsdataAPI
+        from dashboard.borsdata_api import get_api, BorsdataAPI, _get_nordic_tickers
         _HAS_BORSDATA = True
     except ImportError:
         _HAS_BORSDATA = False
+        _get_nordic_tickers = None
 
 # ── Ticker universes ──────────────────────────────────────────────────
-# Import from existing modules
+# Import from existing modules (used as fallback)
 try:
-    from cagr.cagr_loader import NORDIC_TICKERS
+    from cagr.cagr_loader import NORDIC_TICKERS as _FALLBACK_NORDIC
 except ImportError:
-    NORDIC_TICKERS = {}
+    _FALLBACK_NORDIC = {}
 
 try:
     from heatmap.heatmap_streamlit import US_TICKERS, CANADA_TICKERS
@@ -43,8 +44,25 @@ except ImportError:
     US_TICKERS = {}
     CANADA_TICKERS = {}
 
+
+def _build_nordic_universe() -> Dict[str, dict]:
+    """Build Nordic universe from Börsdata API with fallback to hardcoded list."""
+    try:
+        if _get_nordic_tickers is not None:
+            dynamic_tickers = _get_nordic_tickers()
+            if dynamic_tickers:
+                # Build a dict compatible with the existing universe format
+                return {t: {"name": t.split(".")[0], "sector": "Unknown", "country": "Nordic"} for t in dynamic_tickers}
+    except Exception:
+        pass
+    return _FALLBACK_NORDIC
+
+
+# Backwards-compatible alias
+NORDIC_TICKERS = _FALLBACK_NORDIC
+
 UNIVERSES = {
-    "Nordic": NORDIC_TICKERS,
+    "Nordic": None,  # Resolved dynamically in run_ovtlyr_screener
     "US": US_TICKERS,
     "Canada": CANADA_TICKERS,
 }
@@ -287,7 +305,10 @@ def run_ovtlyr_screener(
       Trend, Momentum, Volatility, Volume, ADX,
       Composite (z-score weighted), Signal, Rank
     """
-    tickers_meta = UNIVERSES.get(universe, NORDIC_TICKERS)
+    if universe == "Nordic":
+        tickers_meta = _build_nordic_universe()
+    else:
+        tickers_meta = UNIVERSES.get(universe, _FALLBACK_NORDIC)
     if not tickers_meta:
         return pd.DataFrame()
 

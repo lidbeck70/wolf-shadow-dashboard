@@ -1695,6 +1695,51 @@ def tab_regime():
         st.markdown("<br>", unsafe_allow_html=True)
         refresh_btn = st.button("🔄 REFRESH REGIME", key="reg_refresh", use_container_width=True)
 
+    # ── Benchmark Selector ─────────────────────────────────────────────────
+    _BENCHMARK_OPTIONS = {
+        "SPY — S&P 500": "SPY",
+        "OMX Nordic 40": "^OMXN40",
+        "Brent Crude": "BZ=F",
+        "Guld": "GC=F",
+        "Silver": "SI=F",
+    }
+    selected_bm_label = st.selectbox(
+        "Benchmark",
+        list(_BENCHMARK_OPTIONS.keys()),
+        index=0,
+        key="benchmark_swing",
+    )
+    benchmark_ticker = _BENCHMARK_OPTIONS[selected_bm_label]
+
+    # Relative Strength indicator
+    try:
+        bm_data = yf.download(benchmark_ticker, period="3mo", auto_adjust=True, progress=False)
+        stk_data = yf.download(watch_ticker, period="3mo", auto_adjust=True, progress=False)
+        if isinstance(bm_data.columns, pd.MultiIndex):
+            bm_data.columns = bm_data.columns.get_level_values(0)
+        if isinstance(stk_data.columns, pd.MultiIndex):
+            stk_data.columns = stk_data.columns.get_level_values(0)
+        if not bm_data.empty and not stk_data.empty and len(bm_data) >= 20 and len(stk_data) >= 20:
+            stk_ret = float(stk_data["Close"].iloc[-1] / stk_data["Close"].iloc[-20])
+            bm_ret = float(bm_data["Close"].iloc[-1] / bm_data["Close"].iloc[-20])
+            if bm_ret > 0:
+                rs = stk_ret / bm_ret
+                if rs > 1.05:
+                    rs_icon, rs_color = "🟢", "#00ff88"
+                elif rs >= 0.95:
+                    rs_icon, rs_color = "🟡", "#ffdd00"
+                else:
+                    rs_icon, rs_color = "🔴", "#ff3355"
+                st.markdown(
+                    f"<div style='padding:4px 0;'>"
+                    f"<span style='font-size:0.85rem;'>{rs_icon}</span> "
+                    f"<span style='color:{rs_color};font-size:0.85rem;font-weight:700;'>"
+                    f"RS: {rs - 1:+.1%} vs {selected_bm_label}</span></div>",
+                    unsafe_allow_html=True,
+                )
+    except Exception:
+        pass
+
     st.markdown("---")
 
     # Session state for regime data

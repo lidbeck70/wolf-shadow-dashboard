@@ -323,6 +323,52 @@ def render_ovtlyr_page() -> None:
     else:
         ticker = ticker_input if ticker_input else DEFAULT_TICKER
 
+    # ── Benchmark Selector ─────────────────────────────────────────────
+    _BENCHMARK_OPTIONS = {
+        "SPY — S&P 500": "SPY",
+        "OMX Nordic 40": "^OMXN40",
+        "Brent Crude": "BZ=F",
+        "Guld": "GC=F",
+        "Silver": "SI=F",
+    }
+    selected_bm_label = st.selectbox(
+        "Benchmark",
+        list(_BENCHMARK_OPTIONS.keys()),
+        index=0,
+        key="benchmark_ovtlyr",
+    )
+    benchmark_ticker_bm = _BENCHMARK_OPTIONS[selected_bm_label]
+
+    # Relative Strength indicator
+    try:
+        import yfinance as _yf_bm
+        bm_data = _yf_bm.download(benchmark_ticker_bm, period="3mo", auto_adjust=True, progress=False)
+        stk_data_rs = _yf_bm.download(ticker, period="3mo", auto_adjust=True, progress=False)
+        if isinstance(bm_data.columns, pd.MultiIndex):
+            bm_data.columns = bm_data.columns.get_level_values(0)
+        if isinstance(stk_data_rs.columns, pd.MultiIndex):
+            stk_data_rs.columns = stk_data_rs.columns.get_level_values(0)
+        if not bm_data.empty and not stk_data_rs.empty and len(bm_data) >= 20 and len(stk_data_rs) >= 20:
+            _stk_ret = float(stk_data_rs["Close"].iloc[-1] / stk_data_rs["Close"].iloc[-20])
+            _bm_ret = float(bm_data["Close"].iloc[-1] / bm_data["Close"].iloc[-20])
+            if _bm_ret > 0:
+                _rs = _stk_ret / _bm_ret
+                if _rs > 1.05:
+                    _rs_icon, _rs_color = "🟢", GREEN
+                elif _rs >= 0.95:
+                    _rs_icon, _rs_color = "🟡", YELLOW
+                else:
+                    _rs_icon, _rs_color = "🔴", RED
+                st.markdown(
+                    f"<div style='padding:4px 0;'>"
+                    f"<span style='font-size:0.85rem;'>{_rs_icon}</span> "
+                    f"<span style='color:{_rs_color};font-size:0.85rem;font-weight:700;'>"
+                    f"RS: {_rs - 1:+.1%} vs {selected_bm_label}</span></div>",
+                    unsafe_allow_html=True,
+                )
+    except Exception:
+        pass
+
     # ── Data load ─────────────────────────────────────────────────────
     with st.spinner(f"Loading {ticker}…"):
         try:

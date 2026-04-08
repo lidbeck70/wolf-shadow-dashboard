@@ -342,6 +342,47 @@ def render_long_regime_monitor():
         st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
         refresh = st.button("↻ ANALYSERA", key="long_regime_refresh", use_container_width=True)
 
+    # ── Benchmark Selector ─────────────────────────────────────────────
+    _BENCHMARK_OPTIONS = {
+        "SPY — S&P 500": "SPY",
+        "OMX Nordic 40": "^OMXN40",
+        "Brent Crude": "BZ=F",
+        "Guld": "GC=F",
+        "Silver": "SI=F",
+    }
+    selected_bm_label = st.selectbox(
+        "Benchmark",
+        list(_BENCHMARK_OPTIONS.keys()),
+        index=0,
+        key="benchmark_long",
+    )
+    benchmark_ticker = _BENCHMARK_OPTIONS[selected_bm_label]
+
+    # Relative Strength indicator
+    try:
+        bm_data = yf.Ticker(benchmark_ticker).history(period="3mo", auto_adjust=True)
+        stk_data_rs = yf.Ticker(ticker).history(period="3mo", auto_adjust=True)
+        if not bm_data.empty and not stk_data_rs.empty and len(bm_data) >= 20 and len(stk_data_rs) >= 20:
+            stk_ret = float(stk_data_rs["Close"].iloc[-1] / stk_data_rs["Close"].iloc[-20])
+            bm_ret = float(bm_data["Close"].iloc[-1] / bm_data["Close"].iloc[-20])
+            if bm_ret > 0:
+                rs = stk_ret / bm_ret
+                if rs > 1.05:
+                    rs_icon, rs_color = "🟢", GREEN
+                elif rs >= 0.95:
+                    rs_icon, rs_color = "🟡", YELLOW
+                else:
+                    rs_icon, rs_color = "🔴", RED
+                st.markdown(
+                    f"<div style='padding:4px 0;'>"
+                    f"<span style='font-size:0.85rem;'>{rs_icon}</span> "
+                    f"<span style='color:{rs_color};font-size:0.85rem;font-weight:700;'>"
+                    f"RS: {rs - 1:+.1%} vs {selected_bm_label}</span></div>",
+                    unsafe_allow_html=True,
+                )
+    except Exception:
+        pass
+
     # Auto-detect sector from ticker metadata
     meta = all_tickers.get(ticker, {})
     sector = meta.get("sector", sector_override)
