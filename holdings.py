@@ -59,48 +59,67 @@ except ImportError:
     _CAGR_OK = False
 
 
-# ── Persistent storage (JSON file) ────────────────────────────────────
+# ── Persistent storage (Gist + local JSON fallback) ──────────────────
 
 import json
 import os
+
+try:
+    from gist_storage import load_holdings as _gist_load, save_holdings as _gist_save
+    _HAS_GIST = True
+except ImportError:
+    _HAS_GIST = False
 
 _HOLDINGS_DIR = os.path.dirname(os.path.abspath(__file__))
 _HOLDINGS_FILE = os.path.join(_HOLDINGS_DIR, ".holdings_data.json")
 
 
-def _load_from_disk() -> dict:
-    """Load all portfolios from JSON file."""
-    if os.path.exists(_HOLDINGS_FILE):
-        try:
-            with open(_HOLDINGS_FILE, "r") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return {}
-
-
-def _save_to_disk(all_holdings: dict):
-    """Save all portfolios to JSON file."""
+def _load_all() -> dict:
+    """Load all portfolios via gist_storage (preferred) or local file."""
+    if _HAS_GIST:
+        return _gist_load()
+    # Legacy local-only fallback
+    if "holdings_data" in st.session_state:
+        return st.session_state["holdings_data"]
     try:
-        with open(_HOLDINGS_FILE, "w") as f:
-            json.dump(all_holdings, f, indent=2)
-    except Exception as e:
-        logger.warning("Failed to save holdings: %s", e)
+        if os.path.exists(_HOLDINGS_FILE):
+            with open(_HOLDINGS_FILE, "r") as f:
+                data = json.load(f)
+                st.session_state["holdings_data"] = data
+                return data
+    except Exception:
+        pass
+    data = {"swing": [], "ovtlyr": [], "long": []}
+    st.session_state["holdings_data"] = data
+    return data
+
+
+def _save_all(all_holdings: dict):
+    """Save all portfolios via gist_storage (preferred) or local file."""
+    if _HAS_GIST:
+        _gist_save(all_holdings)
+    else:
+        st.session_state["holdings_data"] = all_holdings
+        try:
+            with open(_HOLDINGS_FILE, "w") as f:
+                json.dump(all_holdings, f, indent=2)
+        except Exception as e:
+            logger.warning("Failed to save holdings: %s", e)
 
 
 def _get_holdings(portfolio_key: str) -> List[dict]:
     key = f"holdings_{portfolio_key}"
     if key not in st.session_state:
-        disk_data = _load_from_disk()
-        st.session_state[key] = disk_data.get(portfolio_key, [])
+        all_data = _load_all()
+        st.session_state[key] = all_data.get(portfolio_key, [])
     return st.session_state[key]
 
 
 def _set_holdings(portfolio_key: str, holdings: List[dict]):
     st.session_state[f"holdings_{portfolio_key}"] = holdings
-    all_data = _load_from_disk()
+    all_data = _load_all()
     all_data[portfolio_key] = holdings
-    _save_to_disk(all_data)
+    _save_all(all_data)
 
 
 def _add_holding(portfolio_key: str, ticker: str, entry_price: float = 0, sector: str = "Unknown"):
@@ -569,6 +588,17 @@ def render_holdings_page():
         f"</div>",
         unsafe_allow_html=True,
     )
+
+    # Cloud storage status indicator
+    _cloud_token = None
+    try:
+        _cloud_token = st.secrets.get("GITHUB_TOKEN", None)
+    except Exception:
+        pass
+    if _cloud_token:
+        st.caption("☁️ Cloud-lagring aktiv — innehav sparas permanent")
+    else:
+        st.caption("⚠️ Lokal lagring — innehav försvinner vid omstart. Lägg till GITHUB_TOKEN i secrets.")
 
     # Summary KPI row
     swing_h = _get_holdings("swing")
