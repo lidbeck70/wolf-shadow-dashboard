@@ -1,55 +1,71 @@
 """
 gist_storage.py — Persistent holdings storage via GitHub Gist.
-Falls back to local JSON if no GitHub token is configured.
+Falls back to local JSON if gist is unreachable.
+
+READ:  No auth needed (gist is accessible by URL).
+WRITE: Requires GITHUB_TOKEN in Streamlit secrets.
 """
 import json
 import os
-import streamlit as st
 import requests
+import streamlit as st
 from typing import Optional
 
 GIST_ID = "50348cb5b9e325c8ae91439763d5f144"
 GIST_FILENAME = "holdings_init.json"
 GIST_API_URL = f"https://api.github.com/gists/{GIST_ID}"
 LOCAL_FALLBACK = ".holdings_data.json"
+_EMPTY = {"swing": [], "ovtlyr": [], "long": []}
 
 
 def _get_github_token() -> Optional[str]:
-    """Get GitHub token from Streamlit secrets."""
+    """Get GitHub token from Streamlit secrets (multiple access methods)."""
     try:
-        return st.secrets.get("GITHUB_TOKEN", None)
+        token = st.secrets.get("GITHUB_TOKEN", None)
+        if token:
+            return str(token).strip()
     except Exception:
-        return None
+        pass
+    try:
+        token = st.secrets["GITHUB_TOKEN"]
+        if token:
+            return str(token).strip()
+    except Exception:
+        pass
+    return None
+
+
+def _auth_header(token: str) -> dict:
+    """Build Authorization header — Bearer for fine-grained PATs, token for classic."""
+    prefix = "Bearer" if token.startswith("github_pat_") else "token"
+    return {
+        "Authorization": f"{prefix} {token}",
+        "Accept": "application/vnd.github.v3+json",
+    }
 
 
 def load_holdings() -> dict:
     """
-    Load holdings from GitHub Gist.
-    Fallback chain: Gist → local JSON file → empty default.
-    Also caches in session_state for fast repeated reads.
+    Load holdings. Priority: session_state > Gist > local file > empty.
+    Gist READ works without auth.
     """
-    # Fast path: already loaded this session
     if "holdings_data" in st.session_state:
         return st.session_state["holdings_data"]
 
     data = None
 
-    # Try GitHub Gist first
-    token = _get_github_token()
-    if token:
-        try:
-            headers = {
-                "Authorization": f"Bearer {token}",
-                "Accept": "application/vnd.github.v3+json",
-            }
-            r = requests.get(GIST_API_URL, headers=headers, timeout=10)
-            if r.status_code == 200:
-                gist = r.json()
-                content = gist.get("files", {}).get(GIST_FILENAME, {}).get("content", "")
-                if content:
-                    data = json.loads(content)
-        except Exception:
-            pass
+    # Try gist (no auth needed for reading)
+    try:
+        r = requests.get(GIST_API_URL, timeout=10)
+        if r.status_code == 200:
+            gist = r.json()
+            content = gist.get("files", {}).get(GIST_FILENAME, {}).get("content", "")
+            if content:
+                parsed = json.loads(content)
+                if any(parsed.get(k) for k in ("swing", "ovtlyr", "long")):
+                    data = parsed
+    except Exception:
+        pass
 
     # Fallback to local file
     if data is None:
@@ -60,11 +76,9 @@ def load_holdings() -> dict:
         except Exception:
             pass
 
-    # Default empty structure
     if data is None:
-        data = {"swing": [], "ovtlyr": [], "long": []}
+        data = dict(_EMPTY)
 
-    # Ensure all keys exist
     for key in ("swing", "ovtlyr", "long"):
         if key not in data:
             data[key] = []
@@ -75,29 +89,23 @@ def load_holdings() -> dict:
 
 def save_holdings(data: dict) -> bool:
     """
-    Save holdings to GitHub Gist + local file + session_state.
-    Returns True if gist save succeeded.
+    Save holdings to Gist + local file + session_state.
+    Returns True if gist write succeeded.
     """
-    # Always update session_state immediately
     st.session_state["holdings_data"] = data
 
-    # Always save local fallback
     try:
         with open(LOCAL_FALLBACK, "w") as f:
             json.dump(data, f, indent=2, default=str)
     except Exception:
         pass
 
-    # Save to GitHub Gist
     token = _get_github_token()
     if not token:
         return False
 
     try:
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.github.v3+json",
-        }
+        headers = _auth_header(token)
         payload = {
             "files": {
                 GIST_FILENAME: {
@@ -109,3 +117,19 @@ def save_holdings(data: dict) -> bool:
         return r.status_code == 200
     except Exception:
         return False
+
+
+def get_storage_status() -> str:
+    """Return storage status string for UI display."""
+    token = _get_github_token()
+    if token:
+        try:
+            headers = _auth_header(token)
+            r = requests.get(GIST_API_URL, headers=headers, timeout=5)
+            if r.status_code == 200:
+                return "cloud_ok"
+            else:
+                return f"cloud_error_{r.status_code}"
+        except Exception as e:
+            return f"cloud_error_{e}"
+    return "local_only"

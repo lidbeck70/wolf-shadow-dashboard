@@ -590,15 +590,17 @@ def render_holdings_page():
     )
 
     # Cloud storage status indicator
-    _cloud_token = None
     try:
-        _cloud_token = st.secrets.get("GITHUB_TOKEN", None)
-    except Exception:
-        pass
-    if _cloud_token:
-        st.caption("☁️ Cloud-lagring aktiv — innehav sparas permanent")
-    else:
-        st.caption("⚠️ Lokal lagring — innehav försvinner vid omstart. Lägg till GITHUB_TOKEN i secrets.")
+        from gist_storage import get_storage_status
+        _status = get_storage_status()
+        if _status == "cloud_ok":
+            st.caption("Cloud-lagring aktiv -- innehav sparas permanent")
+        elif _status == "local_only":
+            st.caption("Lokal lagring -- lagg till GITHUB_TOKEN i secrets for permanent lagring")
+        else:
+            st.caption(f"Cloud-lagring: {_status}")
+    except Exception as _e:
+        st.caption(f"Lagringsstatus: {_e}")
 
     # Summary KPI row
     swing_h = _get_holdings("swing")
