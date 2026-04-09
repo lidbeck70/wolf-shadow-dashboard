@@ -528,8 +528,7 @@ def _render_correlation_matrix(all_holdings: list):
             hovertemplate="<b>%{x}</b> ↔ <b>%{y}</b><br>Korrelation: %{z:.3f}<extra></extra>",
             showscale=True,
             colorbar=dict(
-                title="Korr",
-                title=dict(font=dict(color=DIM)),
+                title=dict(text="Korr", font=dict(color=DIM)),
                 tickfont=dict(color=DIM),
             ),
         ))
