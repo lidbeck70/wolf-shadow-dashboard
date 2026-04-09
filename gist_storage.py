@@ -39,7 +39,7 @@ def load_holdings() -> dict:
     if token:
         try:
             headers = {
-                "Authorization": f"token {token}",
+                "Authorization": f"Bearer {token}",
                 "Accept": "application/vnd.github.v3+json",
             }
             r = requests.get(GIST_API_URL, headers=headers, timeout=10)
@@ -95,7 +95,7 @@ def save_holdings(data: dict) -> bool:
 
     try:
         headers = {
-            "Authorization": f"token {token}",
+            "Authorization": f"Bearer {token}",
             "Accept": "application/vnd.github.v3+json",
         }
         payload = {
