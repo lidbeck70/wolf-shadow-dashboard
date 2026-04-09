@@ -529,7 +529,7 @@ def _render_correlation_matrix(all_holdings: list):
             showscale=True,
             colorbar=dict(
                 title="Korr",
-                titlefont=dict(color=DIM),
+                title=dict(font=dict(color=DIM)),
                 tickfont=dict(color=DIM),
             ),
         ))
