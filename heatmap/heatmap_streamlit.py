@@ -237,7 +237,7 @@ def _inject_css() -> None:
 # Data layer
 # ---------------------------------------------------------------------------
 
-@st.cache_data(ttl=1800, show_spinner=False, max_entries=10)
+@st.cache_data(ttl=1800, show_spinner=False)
 def _fetch_heatmap_data(tickers_tuple: tuple) -> pd.DataFrame:
     """
     Fetch 1 month of price data for all tickers and compute:

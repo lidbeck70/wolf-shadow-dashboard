@@ -201,18 +201,18 @@ def _inject_css() -> None:
 # Cached data fetchers
 # ---------------------------------------------------------------------------
 
-@st.cache_data(ttl=3600, show_spinner=False, max_entries=10)
+@st.cache_data(ttl=3600, show_spinner=False)
 def _cached_fetch_price_data(tickers: tuple, period: str = "2y") -> dict:
     """Cache wrapper — tickers must be a hashable tuple."""
     return fetch_price_data(list(tickers), period=period)
 
 
-@st.cache_data(ttl=3600, show_spinner=False, max_entries=10)
+@st.cache_data(ttl=3600, show_spinner=False)
 def _cached_fetch_fundamentals(ticker: str) -> dict:
     return fetch_fundamentals(ticker)
 
 
-@st.cache_data(ttl=3600, show_spinner=False, max_entries=10)
+@st.cache_data(ttl=3600, show_spinner=False)
 def _cached_fetch_insider(ticker: str):
     return fetch_insider_transactions(ticker)
 

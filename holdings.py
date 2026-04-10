@@ -151,7 +151,7 @@ def _remove_holding(portfolio_key: str, ticker: str):
 
 # ── Live data & signals ───────────────────────────────────────────────
 
-@st.cache_data(ttl=900, show_spinner=False, max_entries=30)
+@st.cache_data(ttl=900, show_spinner=False)
 def _fetch_live_price(ticker: str, period: str = "6mo") -> dict:
     try:
         tk = yf.Ticker(ticker)
@@ -457,7 +457,7 @@ def _render_portfolio(portfolio_key: str):
 
 # ── Correlation Matrix ────────────────────────────────────────────────
 
-@st.cache_data(ttl=3600, show_spinner=False, max_entries=5)
+@st.cache_data(ttl=3600, show_spinner=False)
 def _fetch_returns_for_correlation(tickers: tuple, period: str = "6mo") -> pd.DataFrame:
     """Fetch daily returns for a list of tickers. Returns DataFrame of returns."""
     try:

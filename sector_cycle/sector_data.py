@@ -83,7 +83,7 @@ def _compute_trend_state(close: pd.Series, ema50: pd.Series, ema200: pd.Series) 
 # Core data fetch
 # ---------------------------------------------------------------------------
 
-@st.cache_data(ttl=3600, show_spinner=False, max_entries=10)
+@st.cache_data(ttl=3600, show_spinner=False)
 def fetch_regime_data(tickers: List[str], period: str = "1y") -> Dict[str, pd.DataFrame]:
     """
     Download OHLCV for each ticker and attach EMA50, EMA200, trend_state.
@@ -142,7 +142,7 @@ def fetch_regime_data(tickers: List[str], period: str = "1y") -> Dict[str, pd.Da
 # Sector summary builder
 # ---------------------------------------------------------------------------
 
-@st.cache_data(ttl=3600, show_spinner=False, max_entries=10)
+@st.cache_data(ttl=3600, show_spinner=False)
 def compute_sector_summary() -> pd.DataFrame:
     """
     Build a summary DataFrame for all instruments.

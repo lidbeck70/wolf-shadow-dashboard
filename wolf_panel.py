@@ -830,13 +830,6 @@ def tab_screener():
     except Exception:
         intl_tickers = []
 
-    max_tickers_swing = st.number_input(
-        "Max antal tickers",
-        value=100, min_value=10, max_value=500, step=50,
-        key="max_tickers_swing",
-        help="Begransar antalet tickers som analyseras (minnesoptimering)",
-    )
-
     st.markdown("---")
 
     # ── Status / Legend ───────────────────────────────────────────────────────
@@ -856,14 +849,6 @@ def tab_screener():
     if run_btn:
         try:
             from wolf_shadow_screener import run_screener, MARKETS
-
-            # Truncate international tickers to user-set limit
-            try:
-                if intl_tickers and len(intl_tickers) > max_tickers_swing:
-                    intl_tickers = intl_tickers[:max_tickers_swing]
-                    st.caption(f"Begransat till {max_tickers_swing} tickers (minnesoptimering)")
-            except Exception:
-                pass
 
             # Inject international tickers if selected
             if intl_tickers:
@@ -2319,17 +2304,10 @@ def _render_ovtlyr_screener_ui():
             universe_tickers = None  # fallback to old behaviour
             selected_regions = []
 
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
         with col1:
             min_vol = st.number_input("Min Avg Volume", value=100_000, step=50_000, key="ovtlyr_minvol")
         with col2:
-            max_tickers_ovtlyr = st.number_input(
-                "Max antal tickers",
-                value=100, min_value=10, max_value=500, step=50,
-                key="max_tickers_ovtlyr",
-                help="Begransar antalet tickers som analyseras (minnesoptimering)",
-            )
-        with col3:
             top_n = st.number_input("Top N for Test", value=10, min_value=3, max_value=50, key="ovtlyr_topn")
 
         col_scan, col_test = st.columns(2)
@@ -2346,14 +2324,6 @@ def _render_ovtlyr_screener_ui():
             if universe_tickers is not None and not universe_tickers:
                 st.warning("Välj minst en marknad.")
                 return
-
-            # Truncate ticker list to user-set limit
-            try:
-                if universe_tickers is not None and len(universe_tickers) > max_tickers_ovtlyr:
-                    universe_tickers = universe_tickers[:max_tickers_ovtlyr]
-                    st.caption(f"Begransat till {max_tickers_ovtlyr} tickers (minnesoptimering)")
-            except Exception:
-                pass
 
             with st.spinner("🐺 Scanning universe..."):
                 if universe_tickers is not None:

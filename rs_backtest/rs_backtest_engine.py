@@ -108,7 +108,7 @@ def _max_drawdown(equity: pd.Series) -> float:
 # ---------------------------------------------------------------------------
 
 
-@st.cache_data(ttl=3600, max_entries=10)
+@st.cache_data(ttl=3600)
 def compute_rs_rankings(tickers: tuple, period: str = "7mo") -> dict:
     """Compute 6-month relative strength for all tickers.
 

@@ -145,7 +145,7 @@ _CARD_CSS = (
 #  Cached data fetch helpers
 # ------------------------------------------------------------------ #
 
-@st.cache_data(ttl=1800, show_spinner=False, max_entries=20)
+@st.cache_data(ttl=1800, show_spinner=False)
 def _load_ohlcv(ticker: str, period: str) -> pd.DataFrame:
     """Fetch OHLCV data. Falls back to yfinance if Borsdata unavailable."""
     if _HAS_BORSDATA:
@@ -163,7 +163,7 @@ def _load_ohlcv(ticker: str, period: str) -> pd.DataFrame:
         raise RuntimeError(f"Could not fetch OHLCV for {ticker}: {exc}") from exc
 
 
-@st.cache_data(ttl=1800, show_spinner=False, max_entries=20)
+@st.cache_data(ttl=1800, show_spinner=False)
 def _load_sentiment() -> dict:
     if compute_sentiment is not None:
         return compute_sentiment({}, {}, {}, {})
@@ -171,7 +171,7 @@ def _load_sentiment() -> dict:
     return {"score": 50, "label": "Neutral"}
 
 
-@st.cache_data(ttl=1800, show_spinner=False, max_entries=20)
+@st.cache_data(ttl=1800, show_spinner=False)
 def _load_sector_breadth() -> dict:
     """Return sector breadth as {sector_name: {state, change, weight}} for pie/heatmap."""
     if compute_breadth is not None:
@@ -256,7 +256,7 @@ def _indicator_card(title: str, lines: list[tuple[str, str, str]], color: str) -
     )
 
 
-@st.cache_data(ttl=1800, show_spinner=False, max_entries=20)
+@st.cache_data(ttl=1800, show_spinner=False)
 def _fetch_etf_data_for_bull_list():
     import yfinance as yf
     etf_tickers = ["XLE", "XLF", "XLK", "XLV", "XLI", "XLB", "XLC", "XLY", "XLP", "XLU", "XLRE"]

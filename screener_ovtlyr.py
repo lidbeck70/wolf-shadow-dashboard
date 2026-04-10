@@ -19,10 +19,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# ── Memory safety constants ──────────────────────────────────────────
-MAX_SCREENER_TICKERS = 150   # Streamlit Cloud memory safety
-BATCH_SIZE = 50              # tickers per yf.download() batch
-
 # Try Börsdata first
 try:
     from borsdata_api import get_api, BorsdataAPI, _get_nordic_tickers
@@ -295,34 +291,7 @@ def _zscore_normalize(values: pd.Series) -> pd.Series:
     return normalized.clip(0, 100)
 
 
-def _batch_download(tickers: list, period: str = "1y") -> dict:
-    """Download ticker data in batches to limit peak memory usage."""
-    all_data = {}
-    for i in range(0, len(tickers), BATCH_SIZE):
-        batch = tickers[i:i + BATCH_SIZE]
-        try:
-            raw = yf.download(batch, period=period, auto_adjust=True, threads=True, progress=False)
-            if raw is None or raw.empty:
-                continue
-            if isinstance(raw.columns, pd.MultiIndex):
-                for ticker in batch:
-                    try:
-                        df = raw.xs(ticker, level=1, axis=1).dropna()
-                        if not df.empty and len(df) >= 20:
-                            all_data[ticker] = df
-                    except (KeyError, ValueError):
-                        pass
-            elif len(batch) == 1:
-                if not raw.empty and len(raw) >= 20:
-                    if isinstance(raw.columns, pd.MultiIndex):
-                        raw.columns = [c[0] for c in raw.columns]
-                    all_data[batch[0]] = raw
-        except Exception:
-            pass
-    return all_data
-
-
-@st.cache_data(ttl=1800, show_spinner=False, max_entries=5)
+@st.cache_data(ttl=1800, show_spinner=False)
 def run_ovtlyr_screener(
     universe: str = "Nordic",
     min_volume: int = 100_000,
@@ -361,34 +330,32 @@ def run_ovtlyr_screener(
             return pd.DataFrame()
 
         tickers = list(tickers_meta.keys())
-
-        # Cap tickers for memory safety
-        if len(tickers) > MAX_SCREENER_TICKERS:
-            tickers = tickers[:MAX_SCREENER_TICKERS]
     except Exception as e:
         logger.warning("run_ovtlyr_screener universe build error: %s", e)
         return pd.DataFrame()
 
-    # Batched download (memory-safe)
+    # Batch download
     try:
-        all_data = _batch_download(tickers, period)
+        raw = yf.download(tickers, period=period, auto_adjust=True, threads=True)
     except Exception:
-        all_data = {}
+        raw = None
 
     results = []
     for ticker in tickers:
         meta = tickers_meta.get(ticker, {})
         try:
-            if ticker in all_data:
-                df = all_data[ticker]
-            else:
-                try:
-                    tk = yf.Ticker(ticker)
-                    df = tk.history(period=period, auto_adjust=True)
-                except Exception:
+            if raw is not None and not raw.empty:
+                if isinstance(raw.columns, pd.MultiIndex):
+                    df = raw.xs(ticker, level=1, axis=1).dropna()
+                elif len(tickers) == 1:
+                    df = raw.dropna()
+                else:
                     continue
+            else:
+                tk = yf.Ticker(ticker)
+                df = tk.history(period=period, auto_adjust=True)
 
-            if df is None or df.empty or len(df) < 50:
+            if df.empty or len(df) < 50:
                 continue
 
             # Check minimum volume
