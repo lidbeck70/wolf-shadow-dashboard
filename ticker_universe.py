@@ -166,7 +166,7 @@ REGION_TICKERS = {
 
 # ── Public functions ─────────────────────────────────────────────────────
 
-@st.cache_data(ttl=86400, show_spinner=False)
+@st.cache_data(ttl=86400, show_spinner=False, max_entries=1)
 def get_nordic_tickers() -> list:
     """Get all Nordic tickers from Borsdata API with yfinance suffixes."""
     try:
@@ -186,7 +186,7 @@ def get_nordic_tickers() -> list:
     return []
 
 
-@st.cache_data(ttl=86400, show_spinner=False)
+@st.cache_data(ttl=86400, show_spinner=False, max_entries=10)
 def _get_api_tickers_for_country_ids(country_ids_tuple: tuple) -> list:
     """Fetch tickers from Borsdata API for a set of countryIds.
 

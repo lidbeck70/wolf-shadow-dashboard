@@ -168,7 +168,7 @@ COMPONENT_FUNCS = {
 }
 
 
-@st.cache_data(ttl=1800)
+@st.cache_data(ttl=1800, max_entries=5)
 def compute_fear_greed() -> dict:
     """
     Compute the synthetic Fear & Greed index.
@@ -212,7 +212,7 @@ def get_retail_flow() -> dict:
     }
 
 
-@st.cache_data(ttl=1800)
+@st.cache_data(ttl=1800, max_entries=5)
 def get_fear_greed_history(days: int = 60) -> pd.DataFrame:
     """
     Build a rolling Fear & Greed trend using VIX as proxy for the last `days` trading days.

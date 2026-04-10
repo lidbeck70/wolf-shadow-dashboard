@@ -191,7 +191,7 @@ def _build_trend_ticker_registry() -> dict:
     return registry
 
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=1800, show_spinner=False, max_entries=10)
 def _compute_rs_rankings(tickers: tuple) -> dict:
     """
     Compute 6-month relative strength (momentum) for all tickers.

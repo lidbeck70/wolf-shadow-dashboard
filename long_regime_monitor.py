@@ -51,7 +51,7 @@ except ImportError:
 
 # ── Data fetching ─────────────────────────────────────────────────────
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=1800, show_spinner=False, max_entries=20)
 def _fetch_ticker_data(ticker: str, period: str = "2y") -> pd.DataFrame:
     try:
         tk = yf.Ticker(ticker)
@@ -63,12 +63,12 @@ def _fetch_ticker_data(ticker: str, period: str = "2y") -> pd.DataFrame:
         return pd.DataFrame()
 
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=1800, show_spinner=False, max_entries=20)
 def _fetch_spy_data() -> pd.DataFrame:
     return _fetch_ticker_data("SPY", "1y")
 
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=1800, show_spinner=False, max_entries=20)
 def _compute_fear_greed() -> dict:
     """Simple Fear & Greed from VIX + market breadth."""
     try:

@@ -13,7 +13,7 @@ from typing import Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False, max_entries=10)
 def fetch_backtest_data(ticker: str, years: int = 3) -> pd.DataFrame:
     """Fetch OHLCV data for backtesting."""
     try:

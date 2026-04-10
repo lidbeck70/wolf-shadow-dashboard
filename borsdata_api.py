@@ -916,7 +916,7 @@ import pandas as pd
 try:
     import streamlit as _st
 
-    @_st.cache_data(ttl=86400, show_spinner=False)
+    @_st.cache_data(ttl=86400, show_spinner=False, max_entries=5)
     def get_all_instruments() -> Optional[pd.DataFrame]:
         """
         Fetch all instruments from Börsdata API.
@@ -966,7 +966,7 @@ try:
             return None
 
 
-    @_st.cache_data(ttl=86400, show_spinner=False)
+    @_st.cache_data(ttl=86400, show_spinner=False, max_entries=5)
     def get_global_instruments() -> Optional[pd.DataFrame]:
         """
         Fetch ALL global instruments from Börsdata Pro+ API.
@@ -992,7 +992,7 @@ try:
             logger.warning("get_global_instruments failed: %s", exc)
             return None
 
-    @_st.cache_data(ttl=86400, show_spinner=False)
+    @_st.cache_data(ttl=86400, show_spinner=False, max_entries=5)
     def get_complete_instrument_universe() -> Optional[pd.DataFrame]:
         """Get ALL instruments: Nordic + Global combined (~17,495 total)."""
         try:
@@ -1017,7 +1017,7 @@ try:
         6: ".CO",    # Denmark (CSE)
     }
 
-    @_st.cache_data(ttl=86400, show_spinner=False)
+    @_st.cache_data(ttl=86400, show_spinner=False, max_entries=5)
     def _get_nordic_tickers() -> List[str]:
         """Get all Nordic tickers from Börsdata with yfinance suffixes."""
         try:
