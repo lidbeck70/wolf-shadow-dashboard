@@ -2211,7 +2211,7 @@ def tab_regime():
         height=230,
     )
 
-    # ── Swing Trading Gates (11 rules) ────────────────────────────────────────────────────────────────────
+    # ── Wolf Trading Gates (11 rules) ────────────────────────────────────────────────────────────────────
     st.markdown(
         "<div style='color:#00ffff;font-size:0.7rem;text-transform:uppercase;"
         "letter-spacing:0.1em;margin:20px 0 8px 0;border-top:1px solid rgba(0,255,255,0.1);"
@@ -2279,7 +2279,7 @@ def _tab_not_found(module_name: str, folder: str):
 # =============================================================================
 
 def tab_screener_consolidated():
-    """Unified Screener tab with dropdown: Swing / Long / OVTLYR."""
+    """Unified Screener tab with dropdown: Wolf / Alpha / Viking."""
     mode = st.selectbox(
         "SCREENER MODE",
         ["Wolf Screener", "Alpha Screener", "Viking Screener"],
@@ -2304,7 +2304,7 @@ def _render_ovtlyr_screener_ui():
     try:
         st.markdown(
             "<h2 style='color:#00ffff;letter-spacing:0.1em;'>"
-            "OVTLYR SCREENER</h2>"
+            "VIKING SCREENER</h2>"
             "<p style='color:#4a4a6a;font-size:0.7rem;'>Z-score normalized · "
             "Weighted composite · Trend 30% + Momentum 25% + Vol 15% + Volume 15% + ADX 15%</p>",
             unsafe_allow_html=True,
@@ -2413,7 +2413,7 @@ def _render_ovtlyr_screener_ui():
 # =============================================================================
 
 def tab_backtest_consolidated():
-    """Unified Backtest tab with dropdown: Swing / Long / OVTLYR."""
+    """Unified Backtest tab with dropdown: Wolf / Alpha / Viking."""
     mode = st.selectbox(
         "BACKTEST MODE",
         ["Wolf", "Alpha", "Viking", "RS Sector"],
@@ -2443,7 +2443,7 @@ def _render_ovtlyr_backtest_ui():
     """OVTLYR backtest with Test Top N integration."""
     st.markdown(
         "<h2 style='color:#00ffff;letter-spacing:0.1em;'>"
-        "OVTLYR BACKTEST</h2>"
+        "VIKING BACKTEST</h2>"
         "<p style='color:#4a4a6a;font-size:0.7rem;'>EMA 10/20 crossover + ADX filter + Volume confirmation</p>",
         unsafe_allow_html=True,
     )

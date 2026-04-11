@@ -130,7 +130,7 @@ LONGTERM_RULES: list[dict] = [
         "number": 7,
         "text": "Sälj vid sektor + breadth crossover",
         "explanation": "Sektor OCH marknadsbreadd vänder ner = sälj sektorpositioner.",
-        "panel_guide": "SECTOR & REGIME → Sektorhjulet: om sektor byter från grön till röd. VIKING REGIME → OVTLYR NINE sektorpoäng under 30.",
+        "panel_guide": "SECTOR & REGIME → Sektorhjulet: om sektor byter från grön till röd. VIKING REGIME → VIKING NINE sektorpoäng under 30.",
     },
     {
         "number": 8,
@@ -148,14 +148,14 @@ LONGTERM_RULES: list[dict] = [
         "number": 10,
         "text": "Analysera alltid historiska nedgångar",
         "explanation": "Avgör om fallet är brus eller strukturellt.",
-        "panel_guide": "VIKING REGIME → Drawdowns sub-tab klassificerar nedgångar. BACKTEST → Long mode: historisk prestation med drawdown-analys.",
+        "panel_guide": "VIKING REGIME → Drawdowns sub-tab klassificerar nedgångar. BACKTEST → Alpha mode: historisk prestation med drawdown-analys.",
     },
 ]
 
 OVTLYR_ENTRY_RULES: list[dict] = [
     {"number": 1, "text": "Market Trend: SPY 10EMA > 20EMA, Price > 50EMA", "explanation": "Bullish = buy zone. Bearish = inga trades.",
      "panel_guide": "VIKING REGIME → Trend-kort visar 'Direction: Bullish/Bearish'. Regime-badge = GRÖN krävs."},
-    {"number": 2, "text": "Market Signal: Köpsignal på $SPY", "explanation": "OVTLYR overlay måste vara grön.",
+    {"number": 2, "text": "Market Signal: Köpsignal på $SPY", "explanation": "Viking overlay måste vara grön.",
      "panel_guide": "VIKING REGIME → Välj SPY som ticker. Long-term signal = 'BUY'. Regime = GRÖN."},
     {"number": 3, "text": "Market Breadth: Bull List bullish crossover", "explanation": "Måste matcha market trend.",
      "panel_guide": "VIKING REGIME → Bull List % gauge (Advanced Analysis). Under 25 + vänder upp = bästa entry. Över 75 + vänder ner = stopp."},
@@ -163,7 +163,7 @@ OVTLYR_ENTRY_RULES: list[dict] = [
      "panel_guide": "SECTOR & REGIME → Sektorhjulet: sektorn måste vara grön. Trend Distribution: sektorn i 'Uptrend'."},
     {"number": 5, "text": "Sector Fear & Greed: Stigande", "explanation": "Sektorsentiment måste förbättras.",
      "panel_guide": "SENTIMENT → F&G-gauge stigande. VIKING REGIME → Sentiment-kort: score stigande (jämför med förra veckan)."},
-    {"number": 6, "text": "Stock Signal: Köp", "explanation": "OVTLYR signal måste visa Buy.",
+    {"number": 6, "text": "Stock Signal: Köp", "explanation": "Viking signal måste visa Buy.",
      "panel_guide": "VIKING REGIME → Long-term signal badge visar 'BUY' (grön). Score > 60 krävs."},
     {"number": 7, "text": "Stock Trend: 10EMA/20EMA, Price > 50EMA", "explanation": "Alla EMA:er alignade.",
      "panel_guide": "VIKING REGIME → Grafen: vit (10) > orange (20) > gul (50). Alla stigande. Pris ovanför alla tre."},
@@ -190,7 +190,7 @@ OVTLYR_EXIT_RULES: list[dict] = [
      "panel_guide": "VIKING REGIME → Grafen: jämför dagens stängning med gårdagens lägsta. Stänger under = exit."},
     {"number": 7, "text": "Sektor + Market breadth crossover", "explanation": "Sälj alla trades i den sektorn.",
      "panel_guide": "SECTOR & REGIME → Om sektorn byter från grön till röd, OCH Bull List % vänder ner = sälj alla positioner i sektorn."},
-    {"number": 8, "text": "Stock Sell signal", "explanation": "OVTLYR signal flippar till Sell.",
+    {"number": 8, "text": "Stock Sell signal", "explanation": "Viking signal flippar till Sell.",
      "panel_guide": "VIKING REGIME → Long-term signal badge byter till 'SELL' (röd) eller 'REDUCE' (magenta)."},
     {"number": 9, "text": "Fear & Greed target hit", "explanation": "Beror på var du köpte: 0-50 = exit vid 63. 50-75 = 10p spread. 75+ = 5p spread.",
      "panel_guide": "SENTIMENT → F&G-gauge. Notera ditt entry-F&G-värde. Räkna target: entry + spread. Exit när target nås."},
@@ -262,12 +262,12 @@ def render_rules_page() -> None:
         unsafe_allow_html=True,
     )
 
-    # ── Swing + Long side by side ─────────────────────────────────────
+    # ── Wolf + Alpha side by side ─────────────────────────────────────
     left_col, right_col = st.columns([1, 1])
 
     with left_col:
         st.markdown(
-            _section_header_html("Swing Trading", "11 regler — kortsiktig taktik + Ichimoku exit", _CYAN),
+            _section_header_html("Wolf Trading", "11 regler — kortsiktig taktik + Ichimoku exit", _CYAN),
             unsafe_allow_html=True,
         )
         st.markdown("".join(_rule_card_html(r, _CYAN) for r in SWING_RULES), unsafe_allow_html=True)
@@ -279,11 +279,11 @@ def render_rules_page() -> None:
         )
         st.markdown("".join(_rule_card_html(r, _GREEN) for r in LONGTERM_RULES), unsafe_allow_html=True)
 
-    # ── OVTLYR Golden Ticket ──────────────────────────────────────────
+    # ── Viking Golden Ticket ──────────────────────────────────────────
     st.markdown("<hr style='border-color:rgba(0,255,255,0.13);margin:30px 0;'/>", unsafe_allow_html=True)
     st.markdown(
         f"<div style='text-align:center;margin-bottom:20px;'>"
-        f"<h2 style='color:{_BLUE};letter-spacing:0.15em;'>OVTLYR GOLDEN TICKET</h2>"
+        f"<h2 style='color:{_BLUE};letter-spacing:0.15em;'>VIKING GOLDEN TICKET</h2>"
         f"<p style='color:{_DIM};font-size:0.75rem;'>WHERE OUTLIERS WIN</p>"
         f"</div>",
         unsafe_allow_html=True,
@@ -291,10 +291,10 @@ def render_rules_page() -> None:
 
     oc1, oc2, oc3 = st.columns([1, 1, 0.6])
     with oc1:
-        st.markdown(_section_header_html("Open (Long)", "10 entry-regler", _BLUE), unsafe_allow_html=True)
+        st.markdown(_section_header_html("Open (Alpha)", "10 entry-regler", _BLUE), unsafe_allow_html=True)
         st.markdown("".join(_rule_card_html(r, _BLUE) for r in OVTLYR_ENTRY_RULES), unsafe_allow_html=True)
     with oc2:
-        st.markdown(_section_header_html("Close (Long)", "10 exit-regler", _RED), unsafe_allow_html=True)
+        st.markdown(_section_header_html("Close (Alpha)", "10 exit-regler", _RED), unsafe_allow_html=True)
         st.markdown("".join(_rule_card_html(r, _RED) for r in OVTLYR_EXIT_RULES), unsafe_allow_html=True)
     with oc3:
         st.markdown(_section_header_html("Mindset", "3 gyllene regler", _YELLOW), unsafe_allow_html=True)
@@ -320,20 +320,20 @@ def render_rules_page() -> None:
 
     guide_data = [
         ("SCREENER", "Wolf Screener / Alpha Screener / Viking Screener",
-         "Swing: Regime Score + volymbekräftelse. Long: 20-poängs fundamental. OVTLYR: Z-score composite."),
-        ("BACKTEST", "Swing / Long / OVTLYR / RS Sector",
+         "Wolf: Regime Score + volymbekräftelse. Alpha: 20-poängs fundamental. Viking: Z-score composite."),
+        ("BACKTEST", "Wolf / Alpha / Viking / RS Sector",
          "Verifiera strategi historiskt. Test Top N: skicka screener-resultat till backtest."),
-        ("WOLF REGIME", "Swing #1, #9, #11",
+        ("WOLF REGIME", "Wolf #1, #9, #11",
          "4-lagers regime (Market + Sector + Stock + Ichimoku). Kijun-nivå för trailing stop. Entry/exit gates."),
-        ("ALPHA REGIME", "Lång #1-7",
+        ("ALPHA REGIME", "Alpha #1-7",
          "Alla 10 regler som live gates. GRÖN/ORANGE/RÖD badge. X/10 gates passed. EMA-nivåer + F&G + drawdown."),
-        ("VIKING REGIME", "Swing #2-8, #11 | Lång #1-5 | OVTLYR alla",
+        ("VIKING REGIME", "Wolf #2-8, #11 | Alpha #1-5 | Viking alla",
          "Prisgraf + EMA 10/20/50/200 + Order Blocks. Trend/Volatility/Sentiment/Momentum-kort. Oscillator Direction."),
-        ("SECTOR & REGIME", "Swing #1 | Lång #4, #7 | OVTLYR #4",
+        ("SECTOR & REGIME", "Wolf #1 | Alpha #4, #7 | Viking #4",
          "Sektorhjul grön/gul/röd. Global index-regime. Risk-On/Off."),
-        ("SENTIMENT", "Lång #5 | OVTLYR #5, #9",
+        ("SENTIMENT", "Alpha #5 | Viking #5, #9",
          "Fear & Greed gauge 0-100. Under 60 = OK köpa. Över 60 = vänta."),
-        ("HEATMAP", "Lång #4, #8",
+        ("HEATMAP", "Alpha #4, #8",
          "Performance per sektor/land. 1D/5D/1M. Identifiera starka/svaga sektorer."),
         ("RULES", "Alla regelverk",
          "Denna sida. Läs före varje handelsdag. Inga avvikelser."),
