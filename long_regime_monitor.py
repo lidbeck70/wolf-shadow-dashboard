@@ -1,6 +1,6 @@
 """
 long_regime_monitor.py
-Long Regime Monitor — Shows all parameters required for a long position.
+Alpha Regime Monitor — Shows all parameters required for a long position.
 
 Displays the user's 10 long-term rules as live gates with real-time data:
   1. Green regime (OVTLYR NINE / composite score)
@@ -306,11 +306,11 @@ def _regime_badge(color: str) -> str:
 
 
 def render_long_regime_monitor():
-    """Full Long Regime Monitor page."""
+    """Full Alpha Regime Monitor page."""
 
     st.markdown(
         f"<h2 style='color:{GREEN};letter-spacing:0.1em;'>"
-        f"LONG REGIME MONITOR</h2>"
+        f"ALPHA REGIME MONITOR</h2>"
         f"<p style='color:{DIM};font-size:0.7rem;letter-spacing:0.08em;'>"
         f"Alla 10 regler — live status — visar om du får ta en lång position</p>",
         unsafe_allow_html=True,

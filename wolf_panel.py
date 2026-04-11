@@ -116,7 +116,7 @@ try:
 except ImportError:
     BACKTEST_ENGINE_AVAILABLE = False
 
-# Long Regime Monitor
+# Alpha Regime Monitor
 try:
     from long_regime_monitor import render_long_regime_monitor
     LONG_REGIME_AVAILABLE = True
@@ -558,12 +558,33 @@ def inject_css():
 
 
 def wolf_banner():
-    st.markdown("""
-    <div class="wolf-banner">
-        <h1>Nordic Alpha Systems</h1>
-        <p>Born of Wolves, Made for Markets &nbsp;|&nbsp; Trading & Investing</p>
-    </div>
-    """, unsafe_allow_html=True)
+    try:
+        import base64, os
+        _banner_path = os.path.join(os.path.dirname(__file__), "assets", "banner.jpg")
+        if os.path.exists(_banner_path):
+            with open(_banner_path, "rb") as _bf:
+                _banner_b64 = base64.b64encode(_bf.read()).decode()
+            st.markdown(
+                f"<div style='text-align:center;margin:-1rem -1rem 1rem -1rem;padding:0;'>"
+                f"<img src='data:image/jpeg;base64,{_banner_b64}' "
+                f"style='width:100%;max-height:200px;object-fit:cover;border-radius:0 0 8px 8px;'/>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown("""
+            <div class="wolf-banner">
+                <h1>Nordic Alpha Systems</h1>
+                <p>Born of Wolves, Made for Markets &nbsp;|&nbsp; Trading & Investing</p>
+            </div>
+            """, unsafe_allow_html=True)
+    except Exception:
+        st.markdown("""
+        <div class="wolf-banner">
+            <h1>Nordic Alpha Systems</h1>
+            <p>Born of Wolves, Made for Markets</p>
+        </div>
+        """, unsafe_allow_html=True)
 
 
 def section_title(text):
@@ -2205,9 +2226,9 @@ def tab_regime():
         swing_gates = [
             {"rule": "1. Trendriktning",       "passed": total >= 50,    "value": f"Score: {total}/125"},
             {"rule": "2. Ej konsolidering",     "passed": True,           "value": "Manuell check"},
-            {"rule": "3. Key level (OB)",        "passed": True,           "value": "Se OVTLYR REGIME"},
+            {"rule": "3. Key level (OB)",        "passed": True,           "value": "Se VIKING REGIME"},
             {"rule": "4. Pullback entry",        "passed": True,           "value": "Manuell check"},
-            {"rule": "5. Candle trigger",        "passed": True,           "value": "Se OVTLYR REGIME"},
+            {"rule": "5. Candle trigger",        "passed": True,           "value": "Se VIKING REGIME"},
             {"rule": "6. Volymbekräftelse",      "passed": True,           "value": "Manuell check"},
             {"rule": "7. R:R ≥ 1:2",             "passed": True,           "value": "Beräkna SL/TP"},
             {"rule": "8. Max 1% risk",           "passed": True,           "value": "Position sizing"},
@@ -2558,9 +2579,9 @@ def main():
         "  SCREENER  ",
         "  BACKTEST  ",
         "  HOLDINGS  ",
-        "  SWING REGIME  ",
-        "  LONG REGIME  ",
-        "  OVTLYR REGIME  ",
+        "  WOLF REGIME  ",
+        "  ALPHA REGIME  ",
+        "  VIKING REGIME  ",
         "  SECTOR & REGIME  ",
         "  SENTIMENT  ",
         "  HEATMAP  ",
@@ -2588,7 +2609,7 @@ def main():
         if LONG_REGIME_AVAILABLE:
             render_long_regime_monitor()
         else:
-            _tab_not_found("Long Regime Monitor", "long_regime_monitor")
+            _tab_not_found("Alpha Regime Monitor", "long_regime_monitor")
 
     with tab_ovtlyr:
         if OVTLYR_AVAILABLE:
