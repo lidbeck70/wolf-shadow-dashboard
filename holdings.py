@@ -2,9 +2,9 @@
 holdings.py — Portfolio Holdings Manager
 
 Three portfolios tied to three strategies:
-  - Swing Portfolio (max 5 holdings)
-  - OVTLYR Portfolio (max 5 holdings)
-  - Long Portfolio (max 10 holdings)
+  - Wolf Portfolio (max 5 holdings)
+  - Viking Portfolio (max 5 holdings)
+  - Alpha Portfolio (max 10 holdings)
 
 Each holding gets live signals from its strategy's scoring system.
 Holdings persist in Streamlit session_state.
@@ -33,9 +33,9 @@ DIM = "#4a4a6a"
 
 # Portfolio config
 PORTFOLIOS = {
-    "swing": {"name": "Swing Portfolio", "max": 5, "color": CYAN, "strategy": "Swing"},
-    "ovtlyr": {"name": "OVTLYR Portfolio", "max": 5, "color": MAGENTA, "strategy": "OVTLYR"},
-    "long": {"name": "Long Portfolio", "max": 10, "color": GREEN, "strategy": "Long"},
+    "swing": {"name": "Wolf Portfolio", "max": 5, "color": CYAN, "strategy": "Wolf"},
+    "ovtlyr": {"name": "Viking Portfolio", "max": 5, "color": MAGENTA, "strategy": "Viking"},
+    "long": {"name": "Alpha Portfolio", "max": 10, "color": GREEN, "strategy": "Alpha"},
 }
 
 # Signal imports (with fallbacks)
@@ -609,9 +609,9 @@ def render_holdings_page():
 
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Totalt innehav", total)
-    k2.metric("Swing", f"{len(swing_h)}/5")
-    k3.metric("OVTLYR", f"{len(ovtlyr_h)}/5")
-    k4.metric("Long", f"{len(long_h)}/10")
+    k2.metric("Wolf", f"{len(swing_h)}/5")
+    k3.metric("Viking", f"{len(ovtlyr_h)}/5")
+    k4.metric("Alpha", f"{len(long_h)}/10")
 
     st.markdown("<hr style='border-color:rgba(0,255,255,0.1);margin:12px 0;'/>", unsafe_allow_html=True)
 

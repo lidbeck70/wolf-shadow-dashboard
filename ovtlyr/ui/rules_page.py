@@ -136,13 +136,13 @@ LONGTERM_RULES: list[dict] = [
         "number": 8,
         "text": "Max 20-25% per sektor",
         "explanation": "Riskkontroll på portföljnivå.",
-        "panel_guide": "SCREENER → Long Screener: sortera efter sektor. Räkna: hur mycket äger du redan i samma sektor? Max 25%.",
+        "panel_guide": "SCREENER → Alpha Screener: sortera efter sektor. Räkna: hur mycket äger du redan i samma sektor? Max 25%.",
     },
     {
         "number": 9,
         "text": "Max 10% per aktie",
         "explanation": "Ingen enskild position får dominera.",
-        "panel_guide": "SCREENER → Long Screener: STRONG BUY = allokera 10%. BUY = allokera 7%. Aldrig mer oavsett hur bra det ser ut.",
+        "panel_guide": "SCREENER → Alpha Screener: STRONG BUY = allokera 10%. BUY = allokera 7%. Aldrig mer oavsett hur bra det ser ut.",
     },
     {
         "number": 10,
@@ -319,7 +319,7 @@ def render_rules_page() -> None:
     )
 
     guide_data = [
-        ("SCREENER", "Swing Screener / Long Screener / OVTLYR Screener",
+        ("SCREENER", "Wolf Screener / Alpha Screener / Viking Screener",
          "Swing: Regime Score + volymbekräftelse. Long: 20-poängs fundamental. OVTLYR: Z-score composite."),
         ("BACKTEST", "Swing / Long / OVTLYR / RS Sector",
          "Verifiera strategi historiskt. Test Top N: skicka screener-resultat till backtest."),

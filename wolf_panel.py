@@ -94,7 +94,7 @@ try:
 except ImportError:
     RULES_AVAILABLE = False
 
-# OVTLYR Screener
+# Viking Screener
 try:
     from screener_ovtlyr import run_ovtlyr_screener
     OVTLYR_SCREENER_AVAILABLE = True
@@ -1588,12 +1588,12 @@ def _render_sl_tp_calculator(strategy: str = "swing"):
     """
     SL/TP calculator based on strategy rules.
     
-    Swing strategy:
+    Wolf strategy:
       SL = Entry - ½ ATR (Kijun trail as dynamic)
       TP = not fixed (trailing), but R:R minimum 1:2 shown
       Position size = (Capital × 5%) / (½ ATR)
     
-    OVTLYR strategy:
+    Viking strategy:
       SL = Entry - ½ ATR 
       TP = 10 EMA trailing (no fixed target)
       Position size = (Capital × 5%) / (½ ATR)
@@ -2282,25 +2282,25 @@ def tab_screener_consolidated():
     """Unified Screener tab with dropdown: Swing / Long / OVTLYR."""
     mode = st.selectbox(
         "SCREENER MODE",
-        ["Swing Screener", "Long Screener", "OVTLYR Screener"],
+        ["Wolf Screener", "Alpha Screener", "Viking Screener"],
         key="screener_mode_select",
     )
 
-    if mode == "Swing Screener":
+    if mode == "Wolf Screener":
         tab_screener()  # Existing swing screener — UNTOUCHED
 
-    elif mode == "Long Screener":
+    elif mode == "Alpha Screener":
         if CAGR_AVAILABLE:
             render_cagr_page()  # Existing long screener — UNTOUCHED
         else:
-            _tab_not_found("Long Screener", "cagr")
+            _tab_not_found("Alpha Screener", "cagr")
 
-    elif mode == "OVTLYR Screener":
+    elif mode == "Viking Screener":
         _render_ovtlyr_screener_ui()
 
 
 def _render_ovtlyr_screener_ui():
-    """OVTLYR Screener with z-score weighted scoring."""
+    """Viking Screener with z-score weighted scoring."""
     try:
         st.markdown(
             "<h2 style='color:#00ffff;letter-spacing:0.1em;'>"
@@ -2339,7 +2339,7 @@ def _render_ovtlyr_screener_ui():
 
         if scan_clicked or test_clicked:
             if not OVTLYR_SCREENER_AVAILABLE:
-                st.error("OVTLYR Screener module not found.")
+                st.error("Viking Screener module not found.")
                 return
 
             if universe_tickers is not None and not universe_tickers:
@@ -2405,7 +2405,7 @@ def _render_ovtlyr_screener_ui():
             st.dataframe(results, use_container_width=True, hide_index=True,
                          height=min(600, 38 + 35 * len(results)))
     except Exception as e:
-        st.error(f"OVTLYR Screener error: {e}")
+        st.error(f"Viking Screener error: {e}")
 
 
 # =============================================================================
@@ -2416,14 +2416,14 @@ def tab_backtest_consolidated():
     """Unified Backtest tab with dropdown: Swing / Long / OVTLYR."""
     mode = st.selectbox(
         "BACKTEST MODE",
-        ["Swing", "Long", "OVTLYR", "RS Sector"],
+        ["Wolf", "Alpha", "Viking", "RS Sector"],
         key="backtest_mode_select",
     )
 
-    if mode == "Swing":
+    if mode == "Wolf":
         tab_backtest()  # Existing backtest — UNTOUCHED
 
-    elif mode == "Long":
+    elif mode == "Alpha":
         if LONG_TREND_AVAILABLE:
             render_long_trend_page()  # Existing long-term trend — UNTOUCHED
         else:
@@ -2435,7 +2435,7 @@ def tab_backtest_consolidated():
         else:
             _tab_not_found("RS Backtest", "rs_backtest")
 
-    elif mode == "OVTLYR":
+    elif mode == "Viking":
         _render_ovtlyr_backtest_ui()
 
 
