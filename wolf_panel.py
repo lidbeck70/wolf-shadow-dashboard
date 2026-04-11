@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-SweWolf Panel — Lidbeck Edition v2.0
+Nordic Alpha Systems — Trading & Investing
 ====================================
 Cyberpunk dark-theme dashboard for Nordic swing trading intelligence.
 
@@ -159,7 +159,7 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 st.set_page_config(
     layout="wide",
-    page_title="SweWolf Panel — Lidbeck Edition",
+    page_title="Nordic Alpha Systems",
     page_icon="🐺",
 )
 
@@ -168,7 +168,7 @@ st.markdown(
     """
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="SweWolf">
+    <meta name="apple-mobile-web-app-title" content="Nordic Alpha">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
     <meta name="theme-color" content="#050510">
     <link rel="apple-touch-icon" href="https://em-content.zobj.net/source/apple/391/wolf_1f43a.png">
@@ -560,8 +560,8 @@ def inject_css():
 def wolf_banner():
     st.markdown("""
     <div class="wolf-banner">
-        <h1>🐺 SweWolf Panel</h1>
-        <p>Lidbeck Edition &nbsp;|&nbsp; Nordic Swing Trading Intelligence &nbsp;|&nbsp; Multi-Layer Analysis</p>
+        <h1>Nordic Alpha Systems</h1>
+        <p>Born of Wolves, Made for Markets &nbsp;|&nbsp; Trading & Investing</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -2503,13 +2503,36 @@ def main():
         st.session_state.authenticated = False
     
     if not st.session_state.authenticated:
-        st.markdown(
-            "<div style='text-align:center;padding:60px 0;'>"
-            "<h1 style='color:#00ffff;letter-spacing:0.15em;'>🐺 SWEWOLF PANEL</h1>"
-            "<p style='color:#4a4a6a;'>Lidbeck Edition</p>"
-            "</div>",
-            unsafe_allow_html=True,
-        )
+        _logo_col1, _logo_col2, _logo_col3 = st.columns([1, 2, 1])
+        with _logo_col2:
+            try:
+                import base64, os
+                _logo_path = os.path.join(os.path.dirname(__file__), "assets", "logo.jpeg")
+                if os.path.exists(_logo_path):
+                    with open(_logo_path, "rb") as _lf:
+                        _logo_b64 = base64.b64encode(_lf.read()).decode()
+                    st.markdown(
+                        f"<div style='text-align:center;padding:30px 0 10px 0;'>"
+                        f"<img src='data:image/jpeg;base64,{_logo_b64}' "
+                        f"style='max-width:380px;width:100%;border-radius:12px;'/>"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.markdown(
+                        "<div style='text-align:center;padding:40px 0;'>"
+                        "<h1 style='color:#00ffff;letter-spacing:0.15em;'>NORDIC ALPHA SYSTEMS</h1>"
+                        "<p style='color:#c9a84c;'>Born of Wolves, Made for Markets</p>"
+                        "</div>",
+                        unsafe_allow_html=True,
+                    )
+            except Exception:
+                st.markdown(
+                    "<div style='text-align:center;padding:40px 0;'>"
+                    "<h1 style='color:#00ffff;letter-spacing:0.15em;'>NORDIC ALPHA SYSTEMS</h1>"
+                    "</div>",
+                    unsafe_allow_html=True,
+                )
         
         col_l, col_m, col_r = st.columns([1, 1, 1])
         with col_m:

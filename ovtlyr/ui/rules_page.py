@@ -1,6 +1,6 @@
 """
 Rules page — clean cyberpunk-styled display of all trading rules.
-Every rule has a PANEL guide showing exactly which SweWolf tab to use.
+Every rule has a PANEL guide showing exactly which Nordic Alpha tab to use.
 Updated for the consolidated 9-tab layout.
 """
 
@@ -79,7 +79,7 @@ SWING_RULES: list[dict] = [
         "number": 10,
         "text": "Max två förluster per dag",
         "explanation": "Stoppa dagen direkt efter två minus.",
-        "panel_guide": "Egen disciplin. Två förluster = stäng plattformen. SweWolf analyserar — du handlar nästa dag.",
+        "panel_guide": "Egen disciplin. Två förluster = stäng plattformen. Nordic Alpha analyserar — du handlar nästa dag.",
     },
     {
         "number": 11,
@@ -200,7 +200,7 @@ OVTLYR_EXIT_RULES: list[dict] = [
 
 OVTLYR_MINDSET: list[dict] = [
     {"number": 1, "text": "Det finns INGA FÖRVÄNTNINGAR på utfallet", "explanation": "Handla planen, inte prediktionen.",
-     "panel_guide": "Alla flikar i SweWolf visar DATA, inte åsikter. Följ signalerna — känn ingenting."},
+     "panel_guide": "Alla flikar i Nordic Alpha visar DATA, inte åsikter. Följ signalerna — känn ingenting."},
     {"number": 2, "text": "Det finns INGA VINSTMÅL", "explanation": "Låt exit-signalerna göra sitt jobb.",
      "panel_guide": "Sätt aldrig en TP-order baserat på känsla. Använd trailing stop (EMA 10) eller exit-signal."},
     {"number": 3, "text": "Jag har bara en plan att ta mig ur", "explanation": "Planen ÄR din edge. Exekveringen är allt.",
@@ -224,7 +224,7 @@ def _rule_card_html(rule: dict, color: str) -> str:
             f"<div style='color:{_CYAN};font-size:0.62rem;margin-top:5px;"
             f"padding:5px 8px;background:rgba(0,255,255,0.05);border-radius:3px;"
             f"border-left:2px solid rgba(0,255,255,0.2);'>"
-            f"<b>SWEWOLF:</b> {guide}</div>"
+            f"<b>NORDIC ALPHA:</b> {guide}</div>"
         )
 
     return (
@@ -256,7 +256,7 @@ def render_rules_page() -> None:
         f"<div style='text-align:center;padding:20px 0 10px 0;'>"
         f"<h1 style='color:{_CYAN};letter-spacing:0.15em;margin:0;'>TRADING RULES</h1>"
         f"<p style='color:{_DIM};font-size:0.75rem;letter-spacing:0.12em;'>"
-        f"Varje regel har en <span style='color:{_CYAN};'>SWEWOLF</span>-guide "
+        f"Varje regel har en <span style='color:{_CYAN};'>NORDIC ALPHA</span>-guide "
         f"som visar exakt vilken flik och vad du ska titta på.</p>"
         f"</div>",
         unsafe_allow_html=True,
@@ -312,7 +312,7 @@ def render_rules_page() -> None:
     st.markdown("<hr style='border-color:rgba(0,255,255,0.13);margin:20px 0;'/>", unsafe_allow_html=True)
     st.markdown(
         f"<div style='text-align:center;margin-bottom:16px;'>"
-        f"<h2 style='color:{_MAGENTA};letter-spacing:0.12em;'>SWEWOLF — FLIKGUIDE</h2>"
+        f"<h2 style='color:{_MAGENTA};letter-spacing:0.12em;'>NORDIC ALPHA — FLIKGUIDE</h2>"
         f"<p style='color:{_DIM};font-size:0.7rem;'>Vilken flik kontrollerar vilken regel?</p>"
         f"</div>",
         unsafe_allow_html=True,

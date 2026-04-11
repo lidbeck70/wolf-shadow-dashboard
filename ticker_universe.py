@@ -1,5 +1,5 @@
 """
-ticker_universe.py — Complete ticker universe for SweWolf Panel
+ticker_universe.py — Complete ticker universe for Nordic Alpha Systems
 All tickers from Borsdata Pro+ API (Nordic + Global = 17,495 instruments).
 Hardcoded fallback lists for when API is unavailable.
 """
