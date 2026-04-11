@@ -567,7 +567,7 @@ def wolf_banner():
             st.markdown(
                 f"<div style='text-align:center;margin:-1rem -1rem 1rem -1rem;padding:0;'>"
                 f"<img src='data:image/jpeg;base64,{_banner_b64}' "
-                f"style='width:100%;max-height:200px;object-fit:cover;border-radius:0 0 8px 8px;'/>"
+                f"style='width:100%;height:auto;border-radius:0 0 8px 8px;'/>"
                 f"</div>",
                 unsafe_allow_html=True,
             )
