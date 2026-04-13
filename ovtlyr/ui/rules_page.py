@@ -261,6 +261,7 @@ def render_rules_page() -> None:
         f"</div>",
         unsafe_allow_html=True,
     )
+    st.caption("Reglerna visas även direkt i varje regime-flik under 'Regler'-sektionen.")
 
     # ── Wolf + Alpha side by side ─────────────────────────────────────
     left_col, right_col = st.columns([1, 1])
@@ -274,7 +275,7 @@ def render_rules_page() -> None:
 
     with right_col:
         st.markdown(
-            _section_header_html("Långsiktig Trend / Regim", "10 regler — strategisk position", _GREEN),
+            _section_header_html("Alpha Trend / Regim", "10 regler — strategisk position", _GREEN),
             unsafe_allow_html=True,
         )
         st.markdown("".join(_rule_card_html(r, _GREEN) for r in LONGTERM_RULES), unsafe_allow_html=True)
@@ -357,3 +358,31 @@ def render_rules_page() -> None:
         )
     guide_html += "</table>"
     st.markdown(guide_html, unsafe_allow_html=True)
+
+
+# ------------------------------------------------------------------ #
+#  Inline rules helper — renders a collapsible rules section
+# ------------------------------------------------------------------ #
+
+def render_inline_rules(strategy: str) -> None:
+    """Render a collapsible rules section for a given strategy.
+
+    strategy: 'wolf', 'viking', or 'alpha'
+    """
+    try:
+        _STRATEGY_MAP = {
+            "wolf": ("Wolf Trading", SWING_RULES, _CYAN),
+            "alpha": ("Alpha Trend", LONGTERM_RULES, _GREEN),
+            "viking": ("Viking Golden Ticket", OVTLYR_ENTRY_RULES + OVTLYR_EXIT_RULES, _BLUE),
+        }
+        config = _STRATEGY_MAP.get(strategy.lower())
+        if not config:
+            return
+        label, rules, color = config
+        with st.expander(f"Regler — {label}", expanded=False):
+            st.markdown(
+                "".join(_rule_card_html(r, color) for r in rules),
+                unsafe_allow_html=True,
+            )
+    except Exception:
+        pass

@@ -48,6 +48,14 @@ except ImportError:
     SECTOR_CONFIG = {}
     score_label = lambda x: ("NEUTRAL", YELLOW)
 
+# Ticker universe for market selector
+try:
+    from ticker_universe import COUNTRY_REGIONS as TU_REGIONS, get_tickers_for_regions
+    _TU_AVAILABLE = True
+except ImportError:
+    TU_REGIONS = {}
+    _TU_AVAILABLE = False
+
 
 # ── Data fetching ─────────────────────────────────────────────────────
 
@@ -315,6 +323,20 @@ def render_long_regime_monitor():
         f"Alla 10 regler — live status — visar om du får ta en lång position</p>",
         unsafe_allow_html=True,
     )
+
+    # Market selector
+    try:
+        if _TU_AVAILABLE and TU_REGIONS:
+            region_options = list(TU_REGIONS.keys())
+            selected_regions = st.multiselect(
+                "Marknader",
+                region_options,
+                default=["Norden"],
+                key="alpha_regime_markets",
+            )
+            st.caption(f"Vald marknad: {', '.join(selected_regions) if selected_regions else 'Ingen'}")
+    except Exception:
+        pass
 
     # Ticker selector
     all_tickers = {**NORDIC_TICKERS, **load_etf_tickers()}

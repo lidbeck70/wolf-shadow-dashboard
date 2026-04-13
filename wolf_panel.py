@@ -101,6 +101,15 @@ try:
 except ImportError:
     RETAIL_SENTIMENT_AVAILABLE = False
 
+# Inline rules helper for regime tabs
+try:
+    from ovtlyr.ui.rules_page import render_inline_rules
+except ImportError:
+    try:
+        from rules_page import render_inline_rules
+    except ImportError:
+        render_inline_rules = None
+
 # Viking Screener
 try:
     from screener_ovtlyr import run_ovtlyr_screener
@@ -838,21 +847,19 @@ def tab_screener():
         st.markdown("<br>", unsafe_allow_html=True)
         run_btn = st.button("⚡ SCAN", key="screener_run", use_container_width=True)
 
-    # International markets multiselect (Borsdata Pro+ global)
+    # Market multiselect (full regions — same pattern as Viking Screener)
     try:
         if TICKER_UNIVERSE_AVAILABLE and TU_REGIONS:
-            intl_options = [k for k in TU_REGIONS.keys() if k != "Norden"]
-            selected_intl = st.multiselect(
-                "Internationella marknader (extra)",
-                intl_options,
-                default=[],
-                key="screener_markets",
+            region_options = list(TU_REGIONS.keys())
+            selected_regions_wolf = st.multiselect(
+                "Marknader",
+                region_options,
+                default=["Norden"],
+                key="wolf_screener_markets",
             )
-            if selected_intl:
-                intl_tickers = get_tickers_for_regions(selected_intl)
-                st.caption(f"+{len(intl_tickers)} internationella aktier")
-            else:
-                intl_tickers = []
+            universe_tickers_wolf = get_tickers_for_regions(selected_regions_wolf)
+            st.caption(f"{len(universe_tickers_wolf)} aktier i universumet")
+            intl_tickers = [t for t in universe_tickers_wolf if not any(t.endswith(s) for s in [".ST", ".OL", ".CO", ".HE"])]
         else:
             intl_tickers = []
     except Exception:
@@ -2297,6 +2304,17 @@ def tab_screener_consolidated():
         tab_screener()  # Existing swing screener — UNTOUCHED
 
     elif mode == "Alpha Screener":
+        try:
+            if TICKER_UNIVERSE_AVAILABLE and TU_REGIONS:
+                region_options = list(TU_REGIONS.keys())
+                st.multiselect(
+                    "Marknader",
+                    region_options,
+                    default=["Norden"],
+                    key="alpha_screener_markets",
+                )
+        except Exception:
+            pass
         if CAGR_AVAILABLE:
             render_cagr_page()  # Existing long screener — UNTOUCHED
         else:
@@ -2431,6 +2449,17 @@ def tab_backtest_consolidated():
         tab_backtest()  # Existing backtest — UNTOUCHED
 
     elif mode == "Alpha":
+        try:
+            if TICKER_UNIVERSE_AVAILABLE and TU_REGIONS:
+                region_options = list(TU_REGIONS.keys())
+                st.multiselect(
+                    "Marknader",
+                    region_options,
+                    default=["Norden"],
+                    key="alpha_backtest_markets",
+                )
+        except Exception:
+            pass
         if LONG_TREND_AVAILABLE:
             render_long_trend_page()  # Existing long-term trend — UNTOUCHED
         else:
@@ -2612,18 +2641,33 @@ def main():
 
     with tab_swing_regime:
         tab_regime()  # Existing swing regime monitor — UNTOUCHED
+        try:
+            if render_inline_rules:
+                render_inline_rules("wolf")
+        except Exception:
+            pass
 
     with tab_long_regime:
         if LONG_REGIME_AVAILABLE:
             render_long_regime_monitor()
         else:
             _tab_not_found("Alpha Regime Monitor", "long_regime_monitor")
+        try:
+            if render_inline_rules:
+                render_inline_rules("alpha")
+        except Exception:
+            pass
 
     with tab_ovtlyr:
         if OVTLYR_AVAILABLE:
             render_ovtlyr_page()
         else:
             _tab_not_found("OVTLYR", "ovtlyr")
+        try:
+            if render_inline_rules:
+                render_inline_rules("viking")
+        except Exception:
+            pass
 
     with tab6:
         if SECTOR_CYCLE_AVAILABLE:
