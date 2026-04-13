@@ -94,6 +94,13 @@ try:
 except ImportError:
     RULES_AVAILABLE = False
 
+# Retail Sentiment module
+try:
+    from retail_sentiment import render_retail_sentiment_page
+    RETAIL_SENTIMENT_AVAILABLE = True
+except ImportError:
+    RETAIL_SENTIMENT_AVAILABLE = False
+
 # Viking Screener
 try:
     from screener_ovtlyr import run_ovtlyr_screener
@@ -2585,10 +2592,11 @@ def main():
         "  SECTOR & REGIME  ",
         "  SENTIMENT  ",
         "  HEATMAP  ",
+        "  RETAIL SENTIMENT  ",
         "  RULES  ",
     ]
     (tab1, tab2, tab_holdings, tab_swing_regime, tab_long_regime, tab_ovtlyr,
-     tab6, tab7, tab8, tab_rules) = st.tabs(tab_labels)
+     tab6, tab7, tab8, tab_retail, tab_rules) = st.tabs(tab_labels)
 
     with tab1:
         tab_screener_consolidated()
@@ -2634,6 +2642,12 @@ def main():
             render_heatmap_page()
         else:
             _tab_not_found("Heatmap", "heatmap")
+
+    with tab_retail:
+        if RETAIL_SENTIMENT_AVAILABLE:
+            render_retail_sentiment_page()
+        else:
+            _tab_not_found("Retail Sentiment", "retail_sentiment")
 
     with tab_rules:
         if RULES_AVAILABLE:
