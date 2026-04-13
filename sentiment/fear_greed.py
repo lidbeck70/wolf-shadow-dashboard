@@ -46,15 +46,15 @@ def _fetch_close(ticker: str, period: str = "1y") -> pd.Series:
 def _score_label_color(score: float) -> tuple[str, str]:
     """Return (label, hex_color) for a 0-100 fear/greed score."""
     if score < 25:
-        return "Extreme Fear", "#ff3355"
+        return "Extreme Fear", "#c44545"
     elif score < 45:
-        return "Fear", "#ff8800"
+        return "Fear", "#d4943a"
     elif score < 55:
-        return "Neutral", "#ffdd00"
+        return "Neutral", "#d4943a"
     elif score < 75:
-        return "Greed", "#88dd00"
+        return "Greed", "#2d8a4e"
     else:
-        return "Extreme Greed", "#00ff88"
+        return "Extreme Greed", "#2d8a4e"
 
 
 # ---------------------------------------------------------------------------

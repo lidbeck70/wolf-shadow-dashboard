@@ -1,6 +1,6 @@
 """
 RS Momentum Backtest — Streamlit Page
-Cyberpunk theme: EMA crossover strategy with RS pre-filtering across 11 US sector ETFs.
+Nordic Gold theme: EMA crossover strategy with RS pre-filtering across 11 US sector ETFs.
 """
 
 import streamlit as st
@@ -12,17 +12,17 @@ from plotly.subplots import make_subplots
 from .rs_backtest_engine import run_rs_sector_backtest, SECTOR_MAP
 
 # ---------------------------------------------------------------------------
-# Cyberpunk color palette
+# Nordic Gold color palette
 # ---------------------------------------------------------------------------
-BG = "#050510"
-BG2 = "#0a0a1e"
-CYAN = "#00ffff"
-MAGENTA = "#ff00ff"
-GREEN = "#00ff88"
-RED = "#ff3355"
-YELLOW = "#ffdd00"
-TEXT = "#e0e0ff"
-DIM = "#4a4a6a"
+BG = "#0c0c12"
+BG2 = "#14141e"
+CYAN = "#c9a84c"
+MAGENTA = "#8b7340"
+GREEN = "#2d8a4e"
+RED = "#c44545"
+YELLOW = "#d4943a"
+TEXT = "#e8e4dc"
+DIM = "#8a8578"
 
 PLOTLY_BASE = dict(
     template="plotly_dark",
@@ -32,17 +32,17 @@ PLOTLY_BASE = dict(
 
 # Sector line colours (cycle for equity curves)
 SECTOR_COLORS = [
-    "rgba(0,255,255,1)",
-    "rgba(255,0,255,1)",
-    "rgba(0,255,136,1)",
-    "rgba(255,51,85,1)",
-    "rgba(255,221,0,1)",
-    "rgba(100,180,255,1)",
-    "rgba(255,140,0,1)",
-    "rgba(180,100,255,1)",
-    "rgba(0,200,150,1)",
-    "rgba(255,100,100,1)",
-    "rgba(150,255,100,1)",
+    "rgba(201,168,76,1)",
+    "rgba(139,115,64,1)",
+    "rgba(45,138,78,1)",
+    "rgba(196,69,69,1)",
+    "rgba(212,148,58,1)",
+    "rgba(201,168,76,0.7)",
+    "rgba(212,148,58,0.7)",
+    "rgba(139,115,64,0.7)",
+    "rgba(45,138,78,0.7)",
+    "rgba(196,69,69,0.7)",
+    "rgba(45,138,78,0.5)",
 ]
 
 # ---------------------------------------------------------------------------
@@ -118,7 +118,7 @@ def _kpi_card(label: str, value: str, color: str = CYAN) -> None:
 
 
 def _style_sector_df(df: pd.DataFrame):
-    """Apply cyberpunk colour coding to sector summary table."""
+    """Apply Nordic Gold colour coding to sector summary table."""
 
     def color_win_rate(val):
         try:
@@ -202,7 +202,7 @@ def _render_sector_comparison(display_df: pd.DataFrame) -> None:
         name="Win Rate (%)",
         x=sectors,
         y=win_rates,
-        marker_color=f"rgba(0,255,255,0.75)",
+        marker_color=f"rgba(201,168,76,0.75)",
         marker_line_color=CYAN,
         marker_line_width=1,
         text=[f"{v:.1f}%" for v in win_rates],
@@ -214,7 +214,7 @@ def _render_sector_comparison(display_df: pd.DataFrame) -> None:
         name="Profit Factor",
         x=sectors,
         y=profit_factors,
-        marker_color=f"rgba(255,0,255,0.75)",
+        marker_color=f"rgba(139,115,64,0.75)",
         marker_line_color=MAGENTA,
         marker_line_width=1,
         text=[f"{v:.2f}" for v in profit_factors],
@@ -225,7 +225,7 @@ def _render_sector_comparison(display_df: pd.DataFrame) -> None:
 
     # Reference lines
     fig.add_hline(
-        y=50, line_dash="dash", line_color=f"rgba(0,255,255,0.35)",
+        y=50, line_dash="dash", line_color=f"rgba(201,168,76,0.35)",
         annotation_text="50% WR target", annotation_font_color=CYAN,
         annotation_position="top right",
     )
@@ -237,7 +237,7 @@ def _render_sector_comparison(display_df: pd.DataFrame) -> None:
             title="Win Rate (%)",
             title_font_color=CYAN,
             tickfont_color=DIM,
-            gridcolor=f"rgba(74,74,106,0.3)",
+            gridcolor=f"rgba(138,133,120,0.3)",
             range=[0, max(win_rates + [60]) * 1.25 if win_rates else 80],
         ),
         yaxis2=dict(
@@ -246,10 +246,10 @@ def _render_sector_comparison(display_df: pd.DataFrame) -> None:
             tickfont_color=DIM,
             overlaying="y",
             side="right",
-            gridcolor=f"rgba(255,0,255,0.1)",
+            gridcolor=f"rgba(139,115,64,0.1)",
             range=[0, max(profit_factors + [2]) * 1.35 if profit_factors else 3],
         ),
-        xaxis=dict(tickfont_color=TEXT, gridcolor=f"rgba(74,74,106,0.15)"),
+        xaxis=dict(tickfont_color=TEXT, gridcolor=f"rgba(138,133,120,0.15)"),
         legend=dict(font_color=TEXT, bgcolor=BG2, bordercolor=DIM),
         margin=dict(t=40, b=60, l=60, r=80),
         height=420,
@@ -261,7 +261,7 @@ def _render_sector_comparison(display_df: pd.DataFrame) -> None:
         x0=-0.5, x1=len(sectors) - 0.5,
         y0=1.0, y1=1.0,
         yref="y2",
-        line=dict(color=f"rgba(255,0,255,0.35)", dash="dash"),
+        line=dict(color=f"rgba(139,115,64,0.35)", dash="dash"),
     )
 
     st.plotly_chart(fig, use_container_width=True)
@@ -291,7 +291,7 @@ def _render_top_performers(all_results: dict) -> None:
     top10 = perf_df.head(10).reset_index(drop=True)
 
     colors = [
-        f"rgba(0,255,136,0.8)" if v >= 0 else f"rgba(255,51,85,0.8)"
+        f"rgba(45,138,78,0.8)" if v >= 0 else f"rgba(196,69,69,0.8)"
         for v in top10["Total Return %"]
     ]
 
@@ -301,7 +301,7 @@ def _render_top_performers(all_results: dict) -> None:
         orientation="h",
         marker_color=colors,
         marker_line_color=[
-            f"rgba(0,255,136,1)" if v >= 0 else f"rgba(255,51,85,1)"
+            f"rgba(45,138,78,1)" if v >= 0 else f"rgba(196,69,69,1)"
             for v in top10["Total Return %"]
         ],
         marker_line_width=1,
@@ -321,7 +321,7 @@ def _render_top_performers(all_results: dict) -> None:
             title="Total Return (%)",
             title_font_color=DIM,
             tickfont_color=DIM,
-            gridcolor=f"rgba(74,74,106,0.3)",
+            gridcolor=f"rgba(138,133,120,0.3)",
             range=[-max_abs * 0.1, max_abs * 1.35],
         ),
         yaxis=dict(tickfont_color=TEXT, autorange="reversed"),
@@ -331,7 +331,7 @@ def _render_top_performers(all_results: dict) -> None:
     )
 
     # Zero reference line
-    fig.add_vline(x=0, line_color=f"rgba(224,224,255,0.25)", line_width=1)
+    fig.add_vline(x=0, line_color=f"rgba(232,228,220,0.25)", line_width=1)
 
     st.plotly_chart(fig, use_container_width=True)
 
@@ -427,7 +427,7 @@ def _render_equity_curves(all_results: dict) -> None:
         ))
 
     # Baseline
-    fig.add_hline(y=100, line_dash="dot", line_color=f"rgba(224,224,255,0.2)", line_width=1)
+    fig.add_hline(y=100, line_dash="dot", line_color=f"rgba(232,228,220,0.2)", line_width=1)
 
     fig.update_layout(
         **PLOTLY_BASE,
@@ -435,13 +435,13 @@ def _render_equity_curves(all_results: dict) -> None:
             title="Date",
             title_font_color=DIM,
             tickfont_color=DIM,
-            gridcolor=f"rgba(74,74,106,0.2)",
+            gridcolor=f"rgba(138,133,120,0.2)",
         ),
         yaxis=dict(
             title="Equity (normalised to 100)",
             title_font_color=DIM,
             tickfont_color=DIM,
-            gridcolor=f"rgba(74,74,106,0.2)",
+            gridcolor=f"rgba(138,133,120,0.2)",
         ),
         legend=dict(font_color=TEXT, bgcolor=BG2, bordercolor=DIM, orientation="v"),
         margin=dict(t=40, b=60, l=70, r=160),
@@ -522,7 +522,7 @@ def render_rs_backtest_page() -> None:
             unsafe_allow_html=True,
         )
 
-    st.markdown("<hr style='border-color:#1a1a3a;'>", unsafe_allow_html=True)
+    st.markdown("<hr style='border-color:#1a1a22;'>", unsafe_allow_html=True)
     run_btn = st.button(
         "▶  RUN BACKTEST",
         use_container_width=True,

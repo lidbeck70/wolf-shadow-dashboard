@@ -1,21 +1,28 @@
 """
-Cyberpunk color constants and helper functions for the OVTLYR dashboard.
+Nordic Gold color constants and helper functions for the OVTLYR dashboard.
 
 All rgba() strings use the format rgba(r,g,b,a) — never 8-digit hex.
 """
 
 # ------------------------------------------------------------------ #
-#  Base palette
+#  Base palette — Nordic Gold
 # ------------------------------------------------------------------ #
-BG       = "#050510"   # main background
-BG2      = "#0a0a1e"   # card / panel background
-CYAN     = "#00ffff"   # accent — swing signals, headers
-MAGENTA  = "#ff00ff"   # accent — REDUCE signal, special alerts
-GREEN    = "#00ff88"   # bullish / buy / good
-RED      = "#ff3355"   # bearish / sell / danger
-YELLOW   = "#ffdd00"   # warning / hold / orange regime
-TEXT     = "#e0e0ff"   # primary text
-DIM      = "#4a4a6a"   # secondary / muted text
+BG       = "#0c0c12"   # main background — warm dark
+BG2      = "#14141e"   # card / panel background
+CYAN     = "#c9a84c"   # PRIMARY ACCENT — gold (replaces cyan everywhere)
+MAGENTA  = "#8b7340"   # SECONDARY ACCENT — bronze (replaces magenta)
+GREEN    = "#2d8a4e"   # bullish / buy — deep forest green
+RED      = "#c44545"   # bearish / sell — deep red
+YELLOW   = "#d4943a"   # warning / hold — warm amber
+TEXT     = "#e8e4dc"   # primary text — warm white
+DIM      = "#8a8578"   # secondary / muted text — warm gray
+
+# Additional Nordic Gold palette
+GOLD     = "#c9a84c"   # same as CYAN — for explicit gold references
+BRONZE   = "#8b7340"   # same as MAGENTA
+GOLD_DIM = "#5a4f32"   # muted gold for borders
+TEXT_FAINT = "#5a5750" # very muted text
+SURFACE  = "#181820"   # slightly lighter surface for hover/active
 
 # ------------------------------------------------------------------ #
 #  Semantic maps
@@ -91,7 +98,7 @@ def ob_color(ob_type: str, alpha: float = 0.3) -> str:
 
     Returns
     -------
-    str — e.g. "rgba(0,255,136,0.3)"
+    str — e.g. "rgba(45,138,78,0.3)"
 
     Note: Always returns rgba() — never 8-digit hex.
     """
@@ -99,11 +106,11 @@ def ob_color(ob_type: str, alpha: float = 0.3) -> str:
     alpha = max(0.0, min(1.0, alpha))
 
     if ob_type == "bullish":
-        return f"rgba(0,255,136,{alpha})"      # green with alpha
+        return f"rgba(45,138,78,{alpha})"      # forest green with alpha
     elif ob_type == "bearish":
-        return f"rgba(255,51,85,{alpha})"      # red with alpha
+        return f"rgba(196,69,69,{alpha})"      # deep red with alpha
     else:
-        return f"rgba(74,74,106,{alpha})"      # DIM with alpha for unknown/invalidated
+        return f"rgba(138,133,120,{alpha})"    # warm gray for unknown/invalidated
 
 
 def signal_badge_css(signal: str) -> str:

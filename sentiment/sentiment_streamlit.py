@@ -15,16 +15,16 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Theme constants
 # ---------------------------------------------------------------------------
-BG       = "#050510"
-BG2      = "#0a0a1e"
-CYAN     = "#00ffff"
-MAGENTA  = "#ff00ff"
-GREEN    = "#00ff88"
-RED      = "#ff3355"
-YELLOW   = "#ffdd00"
-TEXT     = "#e0e0ff"
-DIM      = "#4a4a6a"
-ORANGE   = "#ff8800"
+BG       = "#0c0c12"
+BG2      = "#14141e"
+CYAN     = "#c9a84c"
+MAGENTA  = "#8b7340"
+GREEN    = "#2d8a4e"
+RED      = "#c44545"
+YELLOW   = "#d4943a"
+TEXT     = "#e8e4dc"
+DIM      = "#8a8578"
+ORANGE   = "#d4943a"
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -131,11 +131,11 @@ def _render_gauge(score: float, label: str, color: str) -> None:
             "bgcolor": BG2,
             "borderwidth": 0,
             "steps": [
-                {"range": [0,   25], "color": "rgba(255,51,85,0.18)"},
-                {"range": [25,  45], "color": "rgba(255,136,0,0.15)"},
-                {"range": [45,  55], "color": "rgba(255,221,0,0.13)"},
-                {"range": [55,  75], "color": "rgba(136,221,0,0.15)"},
-                {"range": [75, 100], "color": "rgba(0,255,136,0.18)"},
+                {"range": [0,   25], "color": "rgba(196,69,69,0.18)"},
+                {"range": [25,  45], "color": "rgba(212,148,58,0.15)"},
+                {"range": [45,  55], "color": "rgba(212,148,58,0.13)"},
+                {"range": [55,  75], "color": "rgba(45,138,78,0.15)"},
+                {"range": [75, 100], "color": "rgba(45,138,78,0.18)"},
             ],
             "threshold": {
                 "line": {"color": CYAN, "width": 3},
@@ -233,11 +233,11 @@ def _render_history_chart(df: "pd.DataFrame") -> None:
     # Horizontal fill bands (zone backgrounds)
     x_range = [df["date"].min(), df["date"].max()]
 
-    fig.add_hrect(y0=0,  y1=25,  fillcolor="rgba(255,51,85,0.10)",   line_width=0, layer="below")
-    fig.add_hrect(y0=25, y1=45,  fillcolor="rgba(255,136,0,0.08)",   line_width=0, layer="below")
-    fig.add_hrect(y0=45, y1=55,  fillcolor="rgba(255,221,0,0.07)",   line_width=0, layer="below")
-    fig.add_hrect(y0=55, y1=75,  fillcolor="rgba(136,221,0,0.08)",   line_width=0, layer="below")
-    fig.add_hrect(y0=75, y1=100, fillcolor="rgba(0,255,136,0.10)",   line_width=0, layer="below")
+    fig.add_hrect(y0=0,  y1=25,  fillcolor="rgba(196,69,69,0.10)",   line_width=0, layer="below")
+    fig.add_hrect(y0=25, y1=45,  fillcolor="rgba(212,148,58,0.08)",   line_width=0, layer="below")
+    fig.add_hrect(y0=45, y1=55,  fillcolor="rgba(212,148,58,0.07)",   line_width=0, layer="below")
+    fig.add_hrect(y0=55, y1=75,  fillcolor="rgba(45,138,78,0.08)",   line_width=0, layer="below")
+    fig.add_hrect(y0=75, y1=100, fillcolor="rgba(45,138,78,0.10)",   line_width=0, layer="below")
 
     # Zone label annotations
     zone_labels = [
@@ -267,11 +267,11 @@ def _render_history_chart(df: "pd.DataFrame") -> None:
         name="F&G Proxy",
         line={"color": CYAN, "width": 2.5, "shape": "spline"},
         fill="tozeroy",
-        fillcolor="rgba(0,255,255,0.07)",
+        fillcolor="rgba(201,168,76,0.07)",
     ))
 
     # Horizontal reference lines
-    for level, clr in [(25, "rgba(255,51,85,0.4)"), (50, "rgba(255,221,0,0.35)"), (75, "rgba(0,255,136,0.4)")]:
+    for level, clr in [(25, "rgba(196,69,69,0.4)"), (50, "rgba(212,148,58,0.35)"), (75, "rgba(45,138,78,0.4)")]:
         fig.add_hline(
             y=level,
             line_dash="dot",
@@ -288,14 +288,14 @@ def _render_history_chart(df: "pd.DataFrame") -> None:
         margin={"t": 20, "b": 40, "l": 50, "r": 20},
         xaxis={
             "showgrid": True,
-            "gridcolor": "rgba(74,74,106,0.3)",
+            "gridcolor": "rgba(138,133,120,0.3)",
             "tickfont": {"size": 10, "color": DIM},
             "title": "",
         },
         yaxis={
             "range": [0, 100],
             "showgrid": True,
-            "gridcolor": "rgba(74,74,106,0.3)",
+            "gridcolor": "rgba(138,133,120,0.3)",
             "tickfont": {"size": 10, "color": DIM},
             "title": {"text": "Score", "font": {"size": 11, "color": DIM}},
         },
@@ -329,7 +329,7 @@ def _render_retail_flow() -> None:
     </div>
     <div style="
         display:inline-block;
-        background:rgba(74,74,106,0.25);
+        background:rgba(138,133,120,0.25);
         border:1px solid {DIM};
         color:{DIM};
         font-size:0.78rem;
@@ -344,7 +344,7 @@ def _render_retail_flow() -> None:
     mock_labels = ["Mon", "Tue", "Wed", "Thu", "Fri"]
     mock_values = [+1.2, -0.8, +2.1, -1.5, +0.6]
     bar_colors = [
-        f"rgba(74,74,106,0.6)" for _ in mock_values
+        f"rgba(138,133,120,0.6)" for _ in mock_values
     ]
 
     fig = go.Figure(go.Bar(
@@ -368,7 +368,7 @@ def _render_retail_flow() -> None:
         y=0,
         text="DEMO DATA — NOT REAL",
         showarrow=False,
-        font={"size": 22, "color": "rgba(74,74,106,0.25)", "family": "Courier New"},
+        font={"size": 22, "color": "rgba(138,133,120,0.25)", "family": "Courier New"},
         textangle=-20,
         xref="x",
         yref="y",
@@ -387,7 +387,7 @@ def _render_retail_flow() -> None:
         },
         yaxis={
             "showgrid": True,
-            "gridcolor": "rgba(74,74,106,0.2)",
+            "gridcolor": "rgba(138,133,120,0.2)",
             "tickfont": {"size": 10, "color": DIM},
             "title": {"text": "Net Flow ($B)", "font": {"size": 10, "color": DIM}},
             "zeroline": False,
@@ -457,7 +457,7 @@ def render_sentiment_page() -> None:
         letter-spacing:0.2em;
         text-transform:uppercase;
         margin:0;
-        text-shadow:0 0 18px rgba(0,255,255,0.5);
+        text-shadow:0 0 18px rgba(201,168,76,0.5);
     ">SENTIMENT &amp; FLOW</h1>
     <p style="color:{DIM};font-size:0.78rem;margin:4px 0 0 0;letter-spacing:0.1em;">
         Synthetic Fear &amp; Greed · Retail Flow (placeholder) · Real-time via yfinance
@@ -479,21 +479,21 @@ def render_sentiment_page() -> None:
     # -----------------------------------------------------------------------
     _render_gauge(score, label, color)
 
-    st.markdown("<hr style='border:1px solid rgba(74,74,106,0.4);margin:6px 0 6px 0;'>", unsafe_allow_html=True)
+    st.markdown("<hr style='border:1px solid rgba(138,133,120,0.4);margin:6px 0 6px 0;'>", unsafe_allow_html=True)
 
     # -----------------------------------------------------------------------
     # Section 2: Component Breakdown
     # -----------------------------------------------------------------------
     _render_components(components)
 
-    st.markdown("<hr style='border:1px solid rgba(74,74,106,0.4);margin:6px 0 6px 0;'>", unsafe_allow_html=True)
+    st.markdown("<hr style='border:1px solid rgba(138,133,120,0.4);margin:6px 0 6px 0;'>", unsafe_allow_html=True)
 
     # -----------------------------------------------------------------------
     # Section 3: History trend
     # -----------------------------------------------------------------------
     _render_history()
 
-    st.markdown("<hr style='border:1px solid rgba(74,74,106,0.4);margin:6px 0 6px 0;'>", unsafe_allow_html=True)
+    st.markdown("<hr style='border:1px solid rgba(138,133,120,0.4);margin:6px 0 6px 0;'>", unsafe_allow_html=True)
 
     # -----------------------------------------------------------------------
     # Section 4: Retail Flow (placeholder)

@@ -24,16 +24,16 @@ from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
-# Cyberpunk theme
-BG = "#050510"
-BG2 = "#0a0a1e"
-CYAN = "#00ffff"
-MAGENTA = "#ff00ff"
-GREEN = "#00ff88"
-RED = "#ff3355"
-YELLOW = "#ffdd00"
-TEXT = "#e0e0ff"
-DIM = "#4a4a6a"
+# Nordic Gold theme
+BG = "#0c0c12"
+BG2 = "#14141e"
+CYAN = "#c9a84c"
+MAGENTA = "#8b7340"
+GREEN = "#2d8a4e"
+RED = "#c44545"
+YELLOW = "#d4943a"
+TEXT = "#e8e4dc"
+DIM = "#8a8578"
 
 # Try imports
 try:
@@ -473,7 +473,7 @@ def render_long_regime_monitor():
         )
         st.caption("Drawdown")
 
-    st.markdown("<hr style='border-color:rgba(0,255,255,0.1);margin:16px 0;'/>", unsafe_allow_html=True)
+    st.markdown("<hr style='border-color:rgba(201,168,76,0.1);margin:16px 0;'/>", unsafe_allow_html=True)
 
     # ── Verdict ─────────────────────────────────────────────────────
     all_pass = all(g["passed"] for g in gates[:7])  # First 7 are hard gates

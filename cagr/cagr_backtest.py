@@ -1170,14 +1170,14 @@ class CAGRBacktester:
 # Streamlit rendering — Cyberpunk theme
 # ---------------------------------------------------------------------------
 
-_BG    = "#050510"
-_BG2   = "#0a0a1e"
-_CYAN  = "#00ffff"
-_MAG   = "#ff00ff"
-_GREEN = "#00ff88"
-_YEL   = "#ffdd00"
-_RED   = "#ff3355"
-_TEXT  = "#e0e0ff"
+_BG    = "#0c0c12"
+_BG2   = "#14141e"
+_CYAN  = "#c9a84c"
+_MAG   = "#8b7340"
+_GREEN = "#2d8a4e"
+_YEL   = "#d4943a"
+_RED   = "#c44545"
+_TEXT  = "#e8e4dc"
 
 # Signal → colour mapping for display
 _SIGNAL_COLORS = {
@@ -1244,7 +1244,7 @@ def _render_equity_chart(equity_df: pd.DataFrame, title: str = "Equity Curve") -
         name="Portfolio",
         line=dict(color=_CYAN, width=2),
         fill="tozeroy",
-        fillcolor="rgba(0,255,255,0.06)",
+        fillcolor="rgba(201,168,76,0.06)",
     ))
     fig.update_layout(
         title=dict(text=title, font=dict(color=_CYAN, size=16)),
@@ -1274,7 +1274,7 @@ def _render_drawdown_chart(equity_df: pd.DataFrame) -> None:
         name="Drawdown %",
         line=dict(color=_RED, width=1.5),
         fill="tozeroy",
-        fillcolor="rgba(255,51,85,0.12)",
+        fillcolor="rgba(196,69,69,0.12)",
     ))
     fig.update_layout(
         title=dict(text="Drawdown %", font=dict(color=_RED, size=14)),
@@ -1370,11 +1370,11 @@ def _render_signal_distribution_chart(scored_df: pd.DataFrame) -> None:
 def _style_signal(val: str) -> str:
     """Return CSS style string for a signal value cell."""
     color_map = {
-        SIGNAL_STRONG_BUY:  (_GREEN,  "rgba(0,255,136,0.15)"),
-        SIGNAL_BUY:         (_CYAN,   "rgba(0,255,255,0.12)"),
-        SIGNAL_HOLD:        (_YEL,    "rgba(255,221,0,0.10)"),
-        SIGNAL_SELL:        (_RED,    "rgba(255,51,85,0.12)"),
-        SIGNAL_STRONG_SELL: (_MAG,    "rgba(255,0,255,0.12)"),
+        SIGNAL_STRONG_BUY:  (_GREEN,  "rgba(45,138,78,0.15)"),
+        SIGNAL_BUY:         (_CYAN,   "rgba(201,168,76,0.12)"),
+        SIGNAL_HOLD:        (_YEL,    "rgba(212,148,58,0.10)"),
+        SIGNAL_SELL:        (_RED,    "rgba(196,69,69,0.12)"),
+        SIGNAL_STRONG_SELL: (_MAG,    "rgba(139,115,64,0.12)"),
     }
     fg, bg = color_map.get(val, (_TEXT, "transparent"))
     return f"color: {fg}; background: {bg}; font-weight: 700;"
@@ -1535,7 +1535,7 @@ def render_backtest_section() -> None:
     # ── Accept / Reject banner ────────────────────────────────────────
     if passed:
         st.markdown(
-            f"""<div style="background:rgba(0,255,136,0.15);border:2px solid {_GREEN};
+            f"""<div style="background:rgba(45,138,78,0.15);border:2px solid {_GREEN};
                             border-radius:8px;padding:12px;text-align:center;
                             color:{_GREEN};font-weight:700;font-size:1.1rem;">
                 ✅ STRATEGY PASSES ALL ACCEPT CRITERIA
@@ -1545,7 +1545,7 @@ def render_backtest_section() -> None:
     else:
         failure_text = " | ".join(failures)
         st.markdown(
-            f"""<div style="background:rgba(255,51,85,0.15);border:2px solid {_RED};
+            f"""<div style="background:rgba(196,69,69,0.15);border:2px solid {_RED};
                             border-radius:8px;padding:12px;text-align:center;
                             color:{_RED};font-weight:700;">
                 ❌ STRATEGY FAILS — {failure_text}

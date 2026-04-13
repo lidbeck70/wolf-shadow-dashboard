@@ -6,15 +6,15 @@ Updated for the consolidated 9-tab layout.
 
 import streamlit as st
 
-_BG2     = "#0a0a1e"
-_CYAN    = "#00ffff"
-_GREEN   = "#00ff88"
-_MAGENTA = "#ff00ff"
-_RED     = "#ff3355"
-_YELLOW  = "#ffdd00"
-_BLUE    = "#00aaff"
-_TEXT    = "#e0e0ff"
-_DIM     = "#4a4a6a"
+_BG2     = "#14141e"
+_CYAN    = "#c9a84c"
+_GREEN   = "#2d8a4e"
+_MAGENTA = "#8b7340"
+_RED     = "#c44545"
+_YELLOW  = "#d4943a"
+_BLUE    = "#c9a84c"
+_TEXT    = "#e8e4dc"
+_DIM     = "#8a8578"
 
 # ------------------------------------------------------------------ #
 #  Rule data — updated panel guides for 9-tab layout
@@ -222,8 +222,8 @@ def _rule_card_html(rule: dict, color: str) -> str:
     if guide:
         guide_html = (
             f"<div style='color:{_CYAN};font-size:0.62rem;margin-top:5px;"
-            f"padding:5px 8px;background:rgba(0,255,255,0.05);border-radius:3px;"
-            f"border-left:2px solid rgba(0,255,255,0.2);'>"
+            f"padding:5px 8px;background:rgba(201,168,76,0.05);border-radius:3px;"
+            f"border-left:2px solid rgba(201,168,76,0.2);'>"
             f"<b>NORDIC ALPHA:</b> {guide}</div>"
         )
 
@@ -281,7 +281,7 @@ def render_rules_page() -> None:
         st.markdown("".join(_rule_card_html(r, _GREEN) for r in LONGTERM_RULES), unsafe_allow_html=True)
 
     # ── Viking Golden Ticket ──────────────────────────────────────────
-    st.markdown("<hr style='border-color:rgba(0,255,255,0.13);margin:30px 0;'/>", unsafe_allow_html=True)
+    st.markdown("<hr style='border-color:rgba(201,168,76,0.13);margin:30px 0;'/>", unsafe_allow_html=True)
     st.markdown(
         f"<div style='text-align:center;margin-bottom:20px;'>"
         f"<h2 style='color:{_BLUE};letter-spacing:0.15em;'>VIKING GOLDEN TICKET</h2>"
@@ -310,7 +310,7 @@ def render_rules_page() -> None:
     )
 
     # ── Panel guide table ─────────────────────────────────────────────
-    st.markdown("<hr style='border-color:rgba(0,255,255,0.13);margin:20px 0;'/>", unsafe_allow_html=True)
+    st.markdown("<hr style='border-color:rgba(201,168,76,0.13);margin:20px 0;'/>", unsafe_allow_html=True)
     st.markdown(
         f"<div style='text-align:center;margin-bottom:16px;'>"
         f"<h2 style='color:{_MAGENTA};letter-spacing:0.12em;'>NORDIC ALPHA — FLIKGUIDE</h2>"
@@ -342,7 +342,7 @@ def render_rules_page() -> None:
 
     guide_html = "<table style='width:100%;border-collapse:collapse;'>"
     guide_html += (
-        f"<tr style='border-bottom:1px solid rgba(0,255,255,0.15);'>"
+        f"<tr style='border-bottom:1px solid rgba(201,168,76,0.15);'>"
         f"<th style='text-align:left;color:{_CYAN};font-size:0.75rem;padding:8px;'>FLIK</th>"
         f"<th style='text-align:left;color:{_CYAN};font-size:0.75rem;padding:8px;'>KONTROLLERAR</th>"
         f"<th style='text-align:left;color:{_CYAN};font-size:0.75rem;padding:8px;'>HUR DU ANVÄNDER DEN</th>"
@@ -350,7 +350,7 @@ def render_rules_page() -> None:
     )
     for tab, rules, usage in guide_data:
         guide_html += (
-            f"<tr style='border-bottom:1px solid rgba(74,74,106,0.2);'>"
+            f"<tr style='border-bottom:1px solid rgba(138,133,120,0.2);'>"
             f"<td style='color:{_TEXT};font-size:0.8rem;padding:6px 8px;font-weight:700;'>{tab}</td>"
             f"<td style='color:{_YELLOW};font-size:0.72rem;padding:6px 8px;'>{rules}</td>"
             f"<td style='color:{_DIM};font-size:0.72rem;padding:6px 8px;'>{usage}</td>"

@@ -20,16 +20,16 @@ from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-# Cyberpunk theme
-BG = "#050510"
-BG2 = "#0a0a1e"
-CYAN = "#00ffff"
-MAGENTA = "#ff00ff"
-GREEN = "#00ff88"
-RED = "#ff3355"
-YELLOW = "#ffdd00"
-TEXT = "#e0e0ff"
-DIM = "#4a4a6a"
+# Nordic Gold theme
+BG = "#0c0c12"
+BG2 = "#14141e"
+CYAN = "#c9a84c"
+MAGENTA = "#8b7340"
+GREEN = "#2d8a4e"
+RED = "#c44545"
+YELLOW = "#d4943a"
+TEXT = "#e8e4dc"
+DIM = "#8a8578"
 
 # Portfolio config
 PORTFOLIOS = {
@@ -447,7 +447,7 @@ def _render_portfolio(portfolio_key: str):
         avg_pnl = total_pnl / count
         pnl_color = GREEN if avg_pnl > 0 else RED
         st.markdown(
-            f"<div style='text-align:right;padding:8px 0;border-top:1px solid rgba(0,255,255,0.1);margin-top:8px;'>"
+            f"<div style='text-align:right;padding:8px 0;border-top:1px solid rgba(201,168,76,0.1);margin-top:8px;'>"
             f"<span style='color:{DIM};font-size:0.75rem;'>Snitt P&L: </span>"
             f"<span style='color:{pnl_color};font-size:0.9rem;font-weight:700;'>{avg_pnl:+.1f}%</span>"
             f"</div>",
@@ -516,15 +516,15 @@ def _render_correlation_matrix(all_holdings: list):
             x=valid_tickers,
             y=valid_tickers,
             colorscale=[
-                [0.0, "rgba(0,255,136,0.9)"],
+                [0.0, "rgba(45,138,78,0.9)"],
                 [0.5, "rgba(255,255,255,0.9)"],
-                [1.0, "rgba(255,51,85,0.9)"],
+                [1.0, "rgba(196,69,69,0.9)"],
             ],
             zmin=-1,
             zmax=1,
             text=[[f"{v:.2f}" for v in row] for row in corr.values],
             texttemplate="%{text}",
-            textfont={"size": 11, "color": "rgba(224,224,255,0.9)"},
+            textfont={"size": 11, "color": "rgba(232,228,220,0.9)"},
             hovertemplate="<b>%{x}</b> ↔ <b>%{y}</b><br>Korrelation: %{z:.3f}<extra></extra>",
             showscale=True,
             colorbar=dict(
@@ -543,11 +543,11 @@ def _render_correlation_matrix(all_holdings: list):
             font=dict(color=TEXT),
             xaxis=dict(
                 tickfont=dict(color=CYAN, size=10),
-                gridcolor="rgba(0,255,255,0.1)",
+                gridcolor="rgba(201,168,76,0.1)",
             ),
             yaxis=dict(
                 tickfont=dict(color=CYAN, size=10),
-                gridcolor="rgba(0,255,255,0.1)",
+                gridcolor="rgba(201,168,76,0.1)",
                 autorange="reversed",
             ),
             height=max(350, 60 * len(valid_tickers)),
@@ -613,7 +613,7 @@ def render_holdings_page():
     k3.metric("Viking", f"{len(ovtlyr_h)}/5")
     k4.metric("Alpha", f"{len(long_h)}/10")
 
-    st.markdown("<hr style='border-color:rgba(0,255,255,0.1);margin:12px 0;'/>", unsafe_allow_html=True)
+    st.markdown("<hr style='border-color:rgba(201,168,76,0.1);margin:12px 0;'/>", unsafe_allow_html=True)
 
     # Three portfolios
     _render_portfolio("swing")
@@ -631,6 +631,6 @@ def render_holdings_page():
     for h in long_h:
         all_holdings.append({"ticker": h["ticker"], "strategy": "long"})
 
-    st.markdown("<hr style='border-color:rgba(0,255,255,0.15);margin:24px 0;'/>", unsafe_allow_html=True)
+    st.markdown("<hr style='border-color:rgba(201,168,76,0.15);margin:24px 0;'/>", unsafe_allow_html=True)
     st.markdown(f"<div style='color:{CYAN};font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;font-weight:700;margin-bottom:12px;'>PORTFÖLJKORRELATION</div>", unsafe_allow_html=True)
     _render_correlation_matrix(all_holdings)

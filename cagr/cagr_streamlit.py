@@ -2,7 +2,7 @@
 cagr_streamlit.py
 CAGR Strategy module — Streamlit page for Wolf Panel.
 
-Cyberpunk theme: #050510 background, #00ffff cyan, #ff00ff magenta.
+Nordic Gold theme: #0c0c12 background, #c9a84c gold, #8b7340 bronze.
 Entry point: render_cagr_page()
 
 Supports two data modes:
@@ -51,15 +51,15 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Theme constants
 # ---------------------------------------------------------------------------
-BG       = "#050510"
-BG2      = "#0a0a1e"
-CYAN     = "#00ffff"
-MAGENTA  = "#ff00ff"
-GREEN    = "#00ff88"
-YELLOW   = "#ffdd00"
-RED      = "#ff3355"
-TEXT     = "#e0e0ff"
-DIM      = "#4a4a6a"
+BG       = "#0c0c12"
+BG2      = "#14141e"
+CYAN     = "#c9a84c"
+MAGENTA  = "#8b7340"
+GREEN    = "#2d8a4e"
+YELLOW   = "#d4943a"
+RED      = "#c44545"
+TEXT     = "#e8e4dc"
+DIM      = "#8a8578"
 
 PLOTLY_TEMPLATE = "plotly_dark"
 
@@ -71,7 +71,7 @@ def _inject_css() -> None:
     st.markdown(
         f"""
         <style>
-        /* ── Wolf Panel CAGR – Cyberpunk CSS ── */
+        /* ── Wolf Panel CAGR – Nordic Gold CSS ── */
         html, body, .stApp {{
             background-color: {BG};
             color: {TEXT};
@@ -88,17 +88,17 @@ def _inject_css() -> None:
         /* Sidebar */
         [data-testid="stSidebar"] {{
             background-color: {BG2};
-            border-right: 1px solid rgba(0,255,255,0.2);
+            border-right: 1px solid rgba(201,168,76,0.2);
         }}
 
         /* KPI cards */
         .kpi-card {{
-            background: linear-gradient(135deg, {BG2}, #0d0d30);
-            border: 1px solid rgba(0,255,255,0.27);
+            background: linear-gradient(135deg, {BG2}, #1a1a28);
+            border: 1px solid rgba(201,168,76,0.27);
             border-radius: 8px;
             padding: 16px 20px;
             text-align: center;
-            box-shadow: 0 0 16px rgba(0,255,255,0.13);
+            box-shadow: 0 0 16px rgba(201,168,76,0.13);
         }}
         .kpi-card .kpi-value {{
             font-size: 2.2rem;
@@ -135,19 +135,19 @@ def _inject_css() -> None:
             text-transform: uppercase;
         }}
         .data-badge-borsdata {{
-            background: rgba(0,255,136,0.15);
+            background: rgba(45,138,78,0.15);
             color: {GREEN};
-            border: 1px solid rgba(0,255,136,0.3);
+            border: 1px solid rgba(45,138,78,0.3);
         }}
         .data-badge-yfinance {{
-            background: rgba(255,221,0,0.15);
+            background: rgba(212,148,58,0.15);
             color: {YELLOW};
-            border: 1px solid rgba(255,221,0,0.3);
+            border: 1px solid rgba(212,148,58,0.3);
         }}
 
         /* Scan button */
         .stButton > button {{
-            background: linear-gradient(90deg, rgba(0,255,255,0.2), rgba(255,0,255,0.2));
+            background: linear-gradient(90deg, rgba(201,168,76,0.2), rgba(139,115,64,0.2));
             border: 1px solid {CYAN};
             color: {CYAN};
             font-family: 'JetBrains Mono', monospace;
@@ -156,13 +156,13 @@ def _inject_css() -> None:
             transition: all 0.2s;
         }}
         .stButton > button:hover {{
-            background: linear-gradient(90deg, rgba(0,255,255,0.4), rgba(255,0,255,0.4));
-            box-shadow: 0 0 20px rgba(0,255,255,0.33);
+            background: linear-gradient(90deg, rgba(201,168,76,0.4), rgba(139,115,64,0.4));
+            box-shadow: 0 0 20px rgba(201,168,76,0.33);
         }}
 
         /* Dividers */
         hr {{
-            border-color: rgba(0,255,255,0.13);
+            border-color: rgba(201,168,76,0.13);
         }}
 
         /* Progress bar / spinner */
@@ -172,7 +172,7 @@ def _inject_css() -> None:
 
         /* Expanders */
         [data-testid="stExpander"] {{
-            border: 1px solid rgba(0,255,255,0.13) !important;
+            border: 1px solid rgba(201,168,76,0.13) !important;
             background-color: {BG2} !important;
         }}
 
@@ -188,7 +188,7 @@ def _inject_css() -> None:
         ::-webkit-scrollbar {{ width: 6px; }}
         ::-webkit-scrollbar-track {{ background: {BG}; }}
         ::-webkit-scrollbar-thumb {{
-            background: rgba(0,255,255,0.27);
+            background: rgba(201,168,76,0.27);
             border-radius: 3px;
         }}
         </style>
@@ -394,8 +394,8 @@ def _build_price_chart(df: pd.DataFrame, ticker: str) -> Optional[go.Figure]:
                 name="OHLC",
                 increasing_line_color=GREEN,
                 decreasing_line_color=RED,
-                increasing_fillcolor="rgba(0,255,136,0.33)",
-                decreasing_fillcolor="rgba(255,51,85,0.33)",
+                increasing_fillcolor="rgba(45,138,78,0.33)",
+                decreasing_fillcolor="rgba(196,69,69,0.33)",
             )
         )
     else:
@@ -438,11 +438,11 @@ def _build_price_chart(df: pd.DataFrame, ticker: str) -> Optional[go.Figure]:
         title=dict(text=f"{ticker} — 1 Year", font=dict(color=CYAN, size=14)),
         xaxis=dict(
             showgrid=True,
-            gridcolor="rgba(0,255,255,0.08)",
+            gridcolor="rgba(201,168,76,0.08)",
             color=DIM,
             rangeslider=dict(visible=False),
         ),
-        yaxis=dict(showgrid=True, gridcolor="rgba(0,255,255,0.08)", color=DIM),
+        yaxis=dict(showgrid=True, gridcolor="rgba(201,168,76,0.08)", color=DIM),
         legend=dict(
             font=dict(color=TEXT, size=11),
             bgcolor="rgba(0,0,0,0)",
@@ -473,7 +473,7 @@ def _build_rsi_chart(df: pd.DataFrame) -> Optional[go.Figure]:
             name="RSI(14)",
             line=dict(color=CYAN, width=1.5),
             fill="tozeroy",
-            fillcolor="rgba(0,255,255,0.08)",
+            fillcolor="rgba(201,168,76,0.08)",
         )
     )
     for level, color, label in [(70, RED, "OB"), (50, DIM, "Mid"), (30, GREEN, "OS")]:
@@ -490,7 +490,7 @@ def _build_rsi_chart(df: pd.DataFrame) -> Optional[go.Figure]:
         plot_bgcolor=BG,
         title=dict(text="RSI (14)", font=dict(color=CYAN, size=12)),
         xaxis=dict(showgrid=False, color=DIM),
-        yaxis=dict(range=[0, 100], showgrid=True, gridcolor="rgba(0,255,255,0.06)", color=DIM),
+        yaxis=dict(range=[0, 100], showgrid=True, gridcolor="rgba(201,168,76,0.06)", color=DIM),
         height=160,
         margin=dict(l=40, r=20, t=30, b=20),
         showlegend=False,
@@ -560,7 +560,7 @@ def _cycle_sidebar_controls(sectors: list) -> Dict[str, dict]:
 def _score_bar(score: int, max_score: int, color: str = CYAN) -> str:
     pct = int(100 * score / max(max_score, 1))
     return (
-        f'<div style="background:{BG};border:1px solid rgba(0,255,255,0.2);border-radius:4px;'
+        f'<div style="background:{BG};border:1px solid rgba(201,168,76,0.2);border-radius:4px;'
         f'height:8px;width:100%;overflow:hidden;">'
         f'<div style="background:{color};height:100%;width:{pct}%;'
         f'box-shadow:0 0 6px {color};"></div></div>'
@@ -752,7 +752,7 @@ def _render_header() -> None:
                 &nbsp;&nbsp;{badge}
             </div>
         </div>
-        <hr style='border-color:rgba(0,255,255,0.13);margin-bottom:20px;'/>
+        <hr style='border-color:rgba(201,168,76,0.13);margin-bottom:20px;'/>
         """,
         unsafe_allow_html=True,
     )
@@ -994,7 +994,7 @@ def render_cagr_page() -> None:
     styled = styled.set_properties(**{
         "background-color": BG2,
         "color": TEXT,
-        "border-color": "rgba(0,255,255,0.13)",
+        "border-color": "rgba(201,168,76,0.13)",
     })
 
     st.dataframe(
@@ -1050,7 +1050,7 @@ def render_cagr_page() -> None:
     # ── Detail expanders ───────────────────────────────────────────────────
     st.markdown(
         f"<div style='color:{CYAN};font-size:0.7rem;text-transform:uppercase;"
-        f"letter-spacing:0.1em;margin:24px 0 8px 0;border-top:1px solid rgba(0,255,255,0.13);"
+        f"letter-spacing:0.1em;margin:24px 0 8px 0;border-top:1px solid rgba(201,168,76,0.13);"
         f"padding-top:16px;'>Detailed Analysis (click to expand)</div>",
         unsafe_allow_html=True,
     )

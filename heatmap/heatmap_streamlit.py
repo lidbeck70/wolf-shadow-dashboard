@@ -2,7 +2,7 @@
 heatmap_streamlit.py
 Performance Heatmap module — Streamlit page for Wolf Panel.
 
-Cyberpunk theme: #050510 background, #00ffff cyan, #ff00ff magenta.
+Nordic Gold theme: #0c0c12 background, #c9a84c gold, #8b7340 bronze.
 Entry point: render_heatmap_page()
 
 Sections:
@@ -110,15 +110,15 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Theme constants
 # ---------------------------------------------------------------------------
-BG      = "#050510"
-BG2     = "#0a0a1e"
-CYAN    = "#00ffff"
-MAGENTA = "#ff00ff"
-GREEN   = "#00ff88"
-RED     = "#ff3355"
-YELLOW  = "#ffdd00"
-TEXT    = "#e0e0ff"
-DIM     = "#4a4a6a"
+BG      = "#0c0c12"
+BG2     = "#14141e"
+CYAN    = "#c9a84c"
+MAGENTA = "#8b7340"
+GREEN   = "#2d8a4e"
+RED     = "#c44545"
+YELLOW  = "#d4943a"
+TEXT    = "#e8e4dc"
+DIM     = "#8a8578"
 
 PLOTLY_TEMPLATE = "plotly_dark"
 
@@ -130,7 +130,7 @@ def _inject_css() -> None:
     st.markdown(
         f"""
         <style>
-        /* ── Wolf Panel Heatmap – Cyberpunk CSS ── */
+        /* ── Wolf Panel Heatmap – Nordic Gold CSS ── */
         html, body, .stApp {{
             background-color: {BG};
             color: {TEXT};
@@ -145,17 +145,17 @@ def _inject_css() -> None:
 
         [data-testid="stSidebar"] {{
             background-color: {BG2};
-            border-right: 1px solid rgba(0,255,255,0.2);
+            border-right: 1px solid rgba(201,168,76,0.2);
         }}
 
         /* KPI cards */
         .kpi-card {{
-            background: linear-gradient(135deg, {BG2}, #0d0d30);
-            border: 1px solid rgba(0,255,255,0.27);
+            background: linear-gradient(135deg, {BG2}, #1a1a28);
+            border: 1px solid rgba(201,168,76,0.27);
             border-radius: 8px;
             padding: 16px 20px;
             text-align: center;
-            box-shadow: 0 0 16px rgba(0,255,255,0.13);
+            box-shadow: 0 0 16px rgba(201,168,76,0.13);
             margin-bottom: 8px;
         }}
         .kpi-card .kpi-value {{
@@ -180,7 +180,7 @@ def _inject_css() -> None:
             font-size: 0.75rem;
             text-transform: uppercase;
             letter-spacing: 0.12em;
-            border-bottom: 1px solid rgba(0,255,255,0.2);
+            border-bottom: 1px solid rgba(201,168,76,0.2);
             padding-bottom: 6px;
             margin: 24px 0 12px 0;
         }}
@@ -195,7 +195,7 @@ def _inject_css() -> None:
 
         /* Buttons */
         .stButton > button {{
-            background: linear-gradient(90deg, rgba(0,255,255,0.2), rgba(255,0,255,0.2));
+            background: linear-gradient(90deg, rgba(201,168,76,0.2), rgba(139,115,64,0.2));
             border: 1px solid {CYAN};
             color: {CYAN};
             font-family: 'JetBrains Mono', monospace;
@@ -204,12 +204,12 @@ def _inject_css() -> None:
             transition: all 0.2s;
         }}
         .stButton > button:hover {{
-            background: linear-gradient(90deg, rgba(0,255,255,0.4), rgba(255,0,255,0.4));
-            box-shadow: 0 0 20px rgba(0,255,255,0.33);
+            background: linear-gradient(90deg, rgba(201,168,76,0.4), rgba(139,115,64,0.4));
+            box-shadow: 0 0 20px rgba(201,168,76,0.33);
         }}
 
         hr {{
-            border-color: rgba(0,255,255,0.13);
+            border-color: rgba(201,168,76,0.13);
         }}
 
         .stProgress > div > div {{
@@ -217,14 +217,14 @@ def _inject_css() -> None:
         }}
 
         [data-testid="stExpander"] {{
-            border: 1px solid rgba(0,255,255,0.13) !important;
+            border: 1px solid rgba(201,168,76,0.13) !important;
             background-color: {BG2} !important;
         }}
 
         ::-webkit-scrollbar {{ width: 6px; }}
         ::-webkit-scrollbar-track {{ background: {BG}; }}
         ::-webkit-scrollbar-thumb {{
-            background: rgba(0,255,255,0.27);
+            background: rgba(201,168,76,0.27);
             border-radius: 3px;
         }}
         </style>
@@ -570,13 +570,13 @@ def _render_treemap(df: pd.DataFrame, timeframe: str) -> None:
     def _val_to_rgba(norm: float) -> str:
         """Interpolate through red → near-black → green."""
         if norm < 0.5:
-            # red (#ff3355) → dark (#1a1a2e)
+            # red (#c44545) → dark (#1a1a2e)
             t = norm / 0.5
             r = int(255 + t * (26  - 255))
             g = int(51  + t * (26  - 51))
             b = int(85  + t * (46  - 85))
         else:
-            # dark (#1a1a2e) → green (#00ff88)
+            # dark (#1a1a2e) → green (#2d8a4e)
             t = (norm - 0.5) / 0.5
             r = int(26  + t * (0   - 26))
             g = int(26  + t * (255 - 26))
@@ -695,7 +695,7 @@ def _render_table(df: pd.DataFrame, sort_by: str) -> None:
     styled = styled.set_properties(**{
         "background-color": BG2,
         "color": TEXT,
-        "border-color": "rgba(0,255,255,0.13)",
+        "border-color": "rgba(201,168,76,0.13)",
     })
     styled = styled.format({
         "1D %": lambda x: f"{x:+.2f}%",
@@ -745,7 +745,7 @@ def _render_movers(df: pd.DataFrame, timeframe: str) -> None:
             labels_top = top10["ticker"].tolist()
             vals_top   = top10[ret_col].tolist()
             bar_colors_top = [
-                f"rgba(0,255,136,{max(0.4, min(1.0, abs(v) / 10))})"
+                f"rgba(45,138,78,{max(0.4, min(1.0, abs(v) / 10))})"
                 for v in vals_top
             ]
             fig_top = go.Figure(
@@ -771,9 +771,9 @@ def _render_movers(df: pd.DataFrame, timeframe: str) -> None:
                 margin=dict(l=8, r=60, t=10, b=10),
                 xaxis=dict(
                     color=DIM,
-                    gridcolor="rgba(0,255,255,0.07)",
+                    gridcolor="rgba(201,168,76,0.07)",
                     zeroline=True,
-                    zerolinecolor="rgba(0,255,255,0.2)",
+                    zerolinecolor="rgba(201,168,76,0.2)",
                     tickformat="+.1f",
                 ),
                 yaxis=dict(
@@ -799,7 +799,7 @@ def _render_movers(df: pd.DataFrame, timeframe: str) -> None:
             labels_bot = bottom10["ticker"].tolist()
             vals_bot   = bottom10[ret_col].tolist()
             bar_colors_bot = [
-                f"rgba(255,51,85,{max(0.4, min(1.0, abs(v) / 10))})"
+                f"rgba(196,69,69,{max(0.4, min(1.0, abs(v) / 10))})"
                 for v in vals_bot
             ]
             fig_bot = go.Figure(
@@ -825,9 +825,9 @@ def _render_movers(df: pd.DataFrame, timeframe: str) -> None:
                 margin=dict(l=8, r=60, t=10, b=10),
                 xaxis=dict(
                     color=DIM,
-                    gridcolor="rgba(255,51,85,0.07)",
+                    gridcolor="rgba(196,69,69,0.07)",
                     zeroline=True,
-                    zerolinecolor="rgba(255,51,85,0.2)",
+                    zerolinecolor="rgba(196,69,69,0.2)",
                     tickformat="+.1f",
                 ),
                 yaxis=dict(
@@ -893,7 +893,7 @@ def _render_header() -> None:
                 NORDIC STOCKS &amp; UCITS ETFs — REAL-TIME PRICE PERFORMANCE
             </div>
         </div>
-        <hr style='border-color:rgba(0,255,255,0.13);margin-bottom:16px;'/>
+        <hr style='border-color:rgba(201,168,76,0.13);margin-bottom:16px;'/>
         """,
         unsafe_allow_html=True,
     )

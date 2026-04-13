@@ -33,11 +33,11 @@ from typing import Literal
 SignalType = Literal["STRONG BUY", "BUY", "HOLD", "SELL", "STRONG SELL"]
 
 SIGNAL_COLORS: dict[str, str] = {
-    "STRONG BUY":  "#00ffff",   # cyan
-    "BUY":         "#00ff88",   # neon green
-    "HOLD":        "#ffdd00",   # gold / yellow
-    "SELL":        "#ff3355",   # neon red
-    "STRONG SELL": "#ff00ff",   # magenta
+    "STRONG BUY":  "#c9a84c",   # gold
+    "BUY":         "#2d8a4e",   # forest green
+    "HOLD":        "#d4943a",   # warm amber
+    "SELL":        "#c44545",   # deep red
+    "STRONG SELL": "#8b7340",   # bronze
 }
 
 SIGNAL_EMOJI: dict[str, str] = {

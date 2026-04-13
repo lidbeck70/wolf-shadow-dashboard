@@ -8,14 +8,14 @@ import requests
 from datetime import datetime
 
 # ── Constants ────────────────────────────────────────────────────────────
-CYAN = "#00ffff"
-MAGENTA = "#ff00ff"
-BG = "#050510"
-BG2 = "#0a0a1e"
-TEXT = "#ccddff"
-DIM = "#4a4a6a"
-GREEN = "#00ff88"
-RED = "#ff3355"
+CYAN = "#c9a84c"
+MAGENTA = "#8b7340"
+BG = "#0c0c12"
+BG2 = "#14141e"
+TEXT = "#e8e4dc"
+DIM = "#8a8578"
+GREEN = "#2d8a4e"
+RED = "#c44545"
 GOLD = "#c9a84c"
 
 
@@ -213,7 +213,7 @@ def render_retail_sentiment_page() -> None:
             for ticker in sorted(overlap):
                 mentions = wsb_df.loc[wsb_df["ticker"] == ticker, "mentions"].iloc[0] if "mentions" in wsb_df.columns else "?"
                 st.markdown(
-                    f"<div style='background:{BG2};border:2px solid rgba(255,0,255,0.3);"
+                    f"<div style='background:{BG2};border:2px solid rgba(139,115,64,0.3);"
                     f"border-radius:8px;padding:10px;margin:6px 0;'>"
                     f"<span style='color:{MAGENTA};font-weight:700;font-size:1rem;'>{ticker}</span>"
                     f" — <span style='color:{TEXT};'>Reddit Top 10 + Yahoo Trending</span>"

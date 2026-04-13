@@ -3,7 +3,7 @@ Plotly chart functions for the OVTLYR dashboard.
 
 Design rules:
 - template="plotly_dark" on all figures
-- paper_bgcolor="#0a0a1e", plot_bgcolor="#050510"
+- paper_bgcolor="#14141e", plot_bgcolor="#0c0c12"
 - All transparent fills use rgba() — NEVER 8-digit hex
 - Order block zones use fig.add_shape(type="rect")
 """
@@ -14,18 +14,18 @@ import pandas as pd
 import numpy as np
 from typing import Optional, List
 
-# Cyberpunk palette
-_BG       = "#050510"
-_BG2      = "#0a0a1e"
-_CYAN     = "#00ffff"
-_MAGENTA  = "#ff00ff"
-_GREEN    = "#00ff88"
-_RED      = "#ff3355"
-_YELLOW   = "#ffdd00"
-_WHITE    = "#ffffff"
-_ORANGE   = "#ff8800"
-_TEXT     = "#e0e0ff"
-_DIM      = "#4a4a6a"
+# Nordic Gold palette
+_BG       = "#0c0c12"
+_BG2      = "#14141e"
+_CYAN     = "#c9a84c"
+_MAGENTA  = "#8b7340"
+_GREEN    = "#2d8a4e"
+_RED      = "#c44545"
+_YELLOW   = "#d4943a"
+_WHITE    = "#e8e4dc"
+_ORANGE   = "#d4943a"
+_TEXT     = "#e8e4dc"
+_DIM      = "#8a8578"
 
 _PLOTLY_BASE = dict(
     template="plotly_dark",
@@ -120,8 +120,8 @@ def build_price_chart(
             name="Price",
             increasing_line_color=_GREEN,
             decreasing_line_color=_RED,
-            increasing_fillcolor="rgba(0,255,136,0.7)",
-            decreasing_fillcolor="rgba(255,51,85,0.7)",
+            increasing_fillcolor="rgba(45,138,78,0.7)",
+            decreasing_fillcolor="rgba(196,69,69,0.7)",
         ),
         row=1, col=1,
     )
@@ -206,12 +206,12 @@ def build_price_chart(
             alpha_fill, alpha_line = 0.18, 0.45
 
         if ob_type == "bullish":
-            fill_color = f"rgba(0,255,136,{alpha_fill})"
-            line_color = f"rgba(0,255,136,{alpha_line})"
+            fill_color = f"rgba(45,138,78,{alpha_fill})"
+            line_color = f"rgba(45,138,78,{alpha_line})"
             label_color = _GREEN
         else:
-            fill_color = f"rgba(255,51,85,{alpha_fill})"
-            line_color = f"rgba(255,51,85,{alpha_line})"
+            fill_color = f"rgba(196,69,69,{alpha_fill})"
+            line_color = f"rgba(196,69,69,{alpha_line})"
             label_color = _RED
 
         fig.add_shape(
@@ -230,7 +230,7 @@ def build_price_chart(
     if "Volume" in df.columns:
         up_mask = df["Close"] >= df["Open"]
         bar_colors = [
-            "rgba(0,255,136,0.45)" if up else "rgba(255,51,85,0.45)"
+            "rgba(45,138,78,0.45)" if up else "rgba(196,69,69,0.45)"
             for up in up_mask
         ]
         fig.add_trace(
@@ -253,8 +253,8 @@ def build_price_chart(
         ),
         height=520,
     )
-    fig.update_xaxes(showgrid=True, gridcolor="rgba(74,74,106,0.2)", zeroline=False)
-    fig.update_yaxes(showgrid=True, gridcolor="rgba(74,74,106,0.2)", zeroline=False)
+    fig.update_xaxes(showgrid=True, gridcolor="rgba(138,133,120,0.2)", zeroline=False)
+    fig.update_yaxes(showgrid=True, gridcolor="rgba(138,133,120,0.2)", zeroline=False)
 
     return fig
 
@@ -291,11 +291,11 @@ def build_sentiment_gauge(score: int, label: str = "Fear & Greed") -> go.Figure:
             bgcolor=_BG,
             borderwidth=0,
             steps=[
-                dict(range=[0, 25],  color="rgba(255,51,85,0.25)"),
-                dict(range=[25, 45], color="rgba(255,221,0,0.15)"),
-                dict(range=[45, 55], color="rgba(224,224,255,0.08)"),
-                dict(range=[55, 75], color="rgba(255,221,0,0.15)"),
-                dict(range=[75, 100],color="rgba(255,51,85,0.25)"),
+                dict(range=[0, 25],  color="rgba(196,69,69,0.25)"),
+                dict(range=[25, 45], color="rgba(212,148,58,0.15)"),
+                dict(range=[45, 55], color="rgba(232,228,220,0.08)"),
+                dict(range=[55, 75], color="rgba(212,148,58,0.15)"),
+                dict(range=[75, 100],color="rgba(196,69,69,0.25)"),
             ],
             threshold=dict(line=dict(color=_CYAN, width=2), thickness=0.75, value=score),
         ),
@@ -358,7 +358,7 @@ def build_heatmap(breadth_data: dict) -> go.Figure:
     fig = go.Figure(go.Heatmap(
         z=z_grid, text=text_grid, texttemplate="%{text}",
         textfont=dict(size=11, color=_TEXT),
-        colorscale=[[0.0, "rgba(255,51,85,0.6)"], [0.5, "rgba(255,221,0,0.4)"], [1.0, "rgba(0,255,136,0.6)"]],
+        colorscale=[[0.0, "rgba(196,69,69,0.6)"], [0.5, "rgba(212,148,58,0.4)"], [1.0, "rgba(45,138,78,0.6)"]],
         zmin=-1, zmax=1, showscale=False, xgap=3, ygap=3,
     ))
     fig.update_layout(**_PLOTLY_BASE, height=max(160, nrows * 80),
@@ -389,9 +389,9 @@ def build_risk_gauge(risk_score: int) -> go.Figure:
             axis=dict(range=[0, 100], tickfont=dict(size=9, color=_DIM)),
             bar=dict(color=needle_color, thickness=0.3), bgcolor=_BG, borderwidth=0,
             steps=[
-                dict(range=[0, 33],  color="rgba(0,255,136,0.15)"),
-                dict(range=[33, 66], color="rgba(255,221,0,0.15)"),
-                dict(range=[66, 100],color="rgba(255,51,85,0.20)"),
+                dict(range=[0, 33],  color="rgba(45,138,78,0.15)"),
+                dict(range=[33, 66], color="rgba(212,148,58,0.15)"),
+                dict(range=[66, 100],color="rgba(196,69,69,0.20)"),
             ],
         ),
     ))
@@ -427,16 +427,16 @@ def build_momentum_chart(df: pd.DataFrame, momentum_data: dict) -> go.Figure:
     rsi_color = _RED if rsi_current >= ob_level else (_GREEN if rsi_current <= os_level else _CYAN)
 
     fig = go.Figure()
-    fig.add_hrect(y0=ob_level, y1=100, fillcolor="rgba(255,51,85,0.07)", line_width=0)
-    fig.add_hrect(y0=0, y1=os_level, fillcolor="rgba(0,255,136,0.07)", line_width=0)
-    fig.add_hline(y=ob_level, line_color="rgba(255,51,85,0.4)", line_dash="dot", line_width=1)
-    fig.add_hline(y=os_level, line_color="rgba(0,255,136,0.4)", line_dash="dot", line_width=1)
-    fig.add_hline(y=50, line_color="rgba(74,74,106,0.5)", line_dash="dot", line_width=1)
+    fig.add_hrect(y0=ob_level, y1=100, fillcolor="rgba(196,69,69,0.07)", line_width=0)
+    fig.add_hrect(y0=0, y1=os_level, fillcolor="rgba(45,138,78,0.07)", line_width=0)
+    fig.add_hline(y=ob_level, line_color="rgba(196,69,69,0.4)", line_dash="dot", line_width=1)
+    fig.add_hline(y=os_level, line_color="rgba(45,138,78,0.4)", line_dash="dot", line_width=1)
+    fig.add_hline(y=50, line_color="rgba(138,133,120,0.5)", line_dash="dot", line_width=1)
 
     fig.add_trace(go.Scatter(
         x=df["Date"], y=rsi_arr, name="RSI 14",
         line=dict(color=rsi_color, width=1.6),
-        fill="tozeroy", fillcolor="rgba(0,255,255,0.04)",
+        fill="tozeroy", fillcolor="rgba(201,168,76,0.04)",
     ))
     fig.update_layout(
         **_PLOTLY_BASE, height=220,
@@ -466,11 +466,11 @@ def build_volatility_histogram(vol_hist: dict) -> go.Figure:
     colors = []
     for b in bins:
         if b > 0:
-            colors.append("rgba(0,255,136,0.7)")
+            colors.append("rgba(45,138,78,0.7)")
         elif b < 0:
-            colors.append("rgba(255,51,85,0.7)")
+            colors.append("rgba(196,69,69,0.7)")
         else:
-            colors.append("rgba(74,74,106,0.7)")
+            colors.append("rgba(138,133,120,0.7)")
 
     fig = go.Figure(go.Bar(
         x=bins, y=counts,
@@ -487,8 +487,8 @@ def build_volatility_histogram(vol_hist: dict) -> go.Figure:
             text=f"Volatility Distribution — {classification}",
             font=dict(color=class_color, size=13),
         ),
-        xaxis=dict(title="Daily Return %", tickfont=dict(size=10, color=_DIM), gridcolor="rgba(74,74,106,0.2)"),
-        yaxis=dict(title="Days", tickfont=dict(size=10, color=_DIM), gridcolor="rgba(74,74,106,0.2)"),
+        xaxis=dict(title="Daily Return %", tickfont=dict(size=10, color=_DIM), gridcolor="rgba(138,133,120,0.2)"),
+        yaxis=dict(title="Days", tickfont=dict(size=10, color=_DIM), gridcolor="rgba(138,133,120,0.2)"),
         height=220,
         margin=dict(l=40, r=16, t=36, b=32),
         showlegend=False,
@@ -502,7 +502,7 @@ def build_volatility_histogram(vol_hist: dict) -> go.Figure:
     )
 
     # Vertical line at zero
-    fig.add_vline(x=0, line_color="rgba(224,224,255,0.3)", line_dash="dot", line_width=1)
+    fig.add_vline(x=0, line_color="rgba(232,228,220,0.3)", line_dash="dot", line_width=1)
 
     return fig
 
@@ -520,24 +520,24 @@ def build_oscillator_direction(osc: dict) -> go.Figure:
     direction = osc.get("direction", "Flat")
     days = osc.get("days_in_direction", 0)
     timing = osc.get("timing", "Flat")
-    timing_color = osc.get("timing_color", "rgba(74,74,106,0.9)")
+    timing_color = osc.get("timing_color", "rgba(138,133,120,0.9)")
     signal = osc.get("signal", "WAIT")
 
     fig = go.Figure()
 
     # OB/OS zones
-    fig.add_hrect(y0=70, y1=100, fillcolor="rgba(255,51,85,0.07)", line_width=0)
-    fig.add_hrect(y0=0, y1=30, fillcolor="rgba(0,255,136,0.07)", line_width=0)
-    fig.add_hline(y=70, line_color="rgba(255,51,85,0.3)", line_dash="dot", line_width=1)
-    fig.add_hline(y=30, line_color="rgba(0,255,136,0.3)", line_dash="dot", line_width=1)
-    fig.add_hline(y=50, line_color="rgba(74,74,106,0.4)", line_dash="dot", line_width=1)
+    fig.add_hrect(y0=70, y1=100, fillcolor="rgba(196,69,69,0.07)", line_width=0)
+    fig.add_hrect(y0=0, y1=30, fillcolor="rgba(45,138,78,0.07)", line_width=0)
+    fig.add_hline(y=70, line_color="rgba(196,69,69,0.3)", line_dash="dot", line_width=1)
+    fig.add_hline(y=30, line_color="rgba(45,138,78,0.3)", line_dash="dot", line_width=1)
+    fig.add_hline(y=50, line_color="rgba(138,133,120,0.4)", line_dash="dot", line_width=1)
 
     # RSI line
     line_color = _GREEN if direction == "Rising" else (_RED if direction == "Falling" else _DIM)
     fig.add_trace(go.Scatter(
         y=rsi_series, mode="lines", name="RSI",
         line=dict(color=line_color, width=2),
-        fill="tozeroy", fillcolor="rgba(0,255,255,0.03)",
+        fill="tozeroy", fillcolor="rgba(201,168,76,0.03)",
     ))
 
     # Direction arrow annotation
@@ -605,10 +605,10 @@ def build_bull_list_gauge(bl: dict) -> go.Figure:
             bar=dict(color=bar_color, thickness=0.3),
             bgcolor=_BG, borderwidth=0,
             steps=[
-                dict(range=[0, 25], color="rgba(0,255,136,0.15)"),   # Extreme fear = green (opportunity)
-                dict(range=[25, 50], color="rgba(255,221,0,0.10)"),
-                dict(range=[50, 75], color="rgba(255,221,0,0.10)"),
-                dict(range=[75, 100], color="rgba(255,51,85,0.15)"),  # Extreme greed = red (danger)
+                dict(range=[0, 25], color="rgba(45,138,78,0.15)"),   # Extreme fear = green (opportunity)
+                dict(range=[25, 50], color="rgba(212,148,58,0.10)"),
+                dict(range=[50, 75], color="rgba(212,148,58,0.10)"),
+                dict(range=[75, 100], color="rgba(196,69,69,0.15)"),  # Extreme greed = red (danger)
             ],
             threshold=dict(line=dict(color=_CYAN, width=2), thickness=0.75, value=bull_pct),
         ),

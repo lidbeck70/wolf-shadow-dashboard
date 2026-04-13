@@ -186,7 +186,7 @@ st.markdown(
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Nordic Alpha">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-    <meta name="theme-color" content="#050510">
+    <meta name="theme-color" content="#0c0c12">
     <link rel="apple-touch-icon" href="https://em-content.zobj.net/source/apple/391/wolf_1f43a.png">
     """,
     unsafe_allow_html=True,
@@ -204,38 +204,38 @@ html, body, [class*="css"] {
 
 /* ── Background ──────────────────────────────────────────────── */
 .stApp {
-    background-color: #050510;
+    background-color: #0c0c12;
     background-image:
-        radial-gradient(ellipse at 20% 20%, rgba(0, 255, 255, 0.04) 0%, transparent 60%),
-        radial-gradient(ellipse at 80% 80%, rgba(255, 0, 255, 0.04) 0%, transparent 60%),
+        radial-gradient(ellipse at 20% 20%, rgba(201,168,76, 0.04) 0%, transparent 60%),
+        radial-gradient(ellipse at 80% 80%, rgba(139,115,64, 0.04) 0%, transparent 60%),
         repeating-linear-gradient(
-            0deg, transparent, transparent 39px, rgba(0,255,255,0.03) 40px
+            0deg, transparent, transparent 39px, rgba(201,168,76,0.03) 40px
         ),
         repeating-linear-gradient(
-            90deg, transparent, transparent 39px, rgba(0,255,255,0.03) 40px
+            90deg, transparent, transparent 39px, rgba(201,168,76,0.03) 40px
         );
 }
 
 /* ── Sidebar ─────────────────────────────────────────────────── */
 [data-testid="stSidebar"] {
-    background-color: #07071a;
-    border-right: 1px solid rgba(0,255,255,0.15);
+    background-color: #10101a;
+    border-right: 1px solid rgba(201,168,76,0.15);
 }
 
 /* ── Tab styling ─────────────────────────────────────────────── */
 .stTabs [data-baseweb="tab-list"] {
-    background-color: #07071a;
-    border-bottom: 2px solid rgba(0,255,255,0.2);
+    background-color: #10101a;
+    border-bottom: 2px solid rgba(201,168,76,0.2);
     gap: 4px;
     padding: 0 8px;
 }
 
 .stTabs [data-baseweb="tab"] {
     background-color: transparent;
-    border: 1px solid rgba(0,255,255,0.15);
+    border: 1px solid rgba(201,168,76,0.15);
     border-bottom: none;
     border-radius: 6px 6px 0 0;
-    color: rgba(0,255,255,0.5);
+    color: rgba(201,168,76,0.5);
     font-family: 'Courier New', monospace;
     font-weight: 700;
     font-size: 13px;
@@ -246,22 +246,22 @@ html, body, [class*="css"] {
 }
 
 .stTabs [aria-selected="true"] {
-    background: linear-gradient(180deg, rgba(0,255,255,0.12) 0%, transparent 100%);
-    border: 1px solid #00ffff;
+    background: linear-gradient(180deg, rgba(201,168,76,0.12) 0%, transparent 100%);
+    border: 1px solid #c9a84c;
     border-bottom: none;
-    color: #00ffff;
-    text-shadow: 0 0 10px #00ffff, 0 0 20px rgba(0,255,255,0.5);
+    color: #c9a84c;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
 }
 
 .stTabs [data-baseweb="tab"]:hover {
-    color: #00ffff;
-    border-color: rgba(0,255,255,0.4);
+    color: #c9a84c;
+    border-color: rgba(201,168,76,0.4);
 }
 
 /* ── Metric cards ────────────────────────────────────────────── */
 [data-testid="stMetric"] {
-    background: linear-gradient(135deg, rgba(0,255,255,0.06) 0%, rgba(255,0,255,0.03) 100%);
-    border: 1px solid rgba(0,255,255,0.2);
+    background: linear-gradient(135deg, rgba(201,168,76,0.06) 0%, rgba(139,115,64,0.03) 100%);
+    border: 1px solid rgba(201,168,76,0.2);
     border-radius: 8px;
     padding: 16px;
     position: relative;
@@ -273,21 +273,21 @@ html, body, [class*="css"] {
     position: absolute;
     top: 0; left: 0; right: 0;
     height: 2px;
-    background: linear-gradient(90deg, #00ffff, #ff00ff);
+    background: linear-gradient(90deg, #c9a84c, #8b7340);
 }
 
 [data-testid="stMetricLabel"] {
-    color: rgba(0,255,255,0.6) !important;
+    color: rgba(201,168,76,0.6) !important;
     font-size: 11px !important;
     letter-spacing: 2px !important;
     text-transform: uppercase !important;
 }
 
 [data-testid="stMetricValue"] {
-    color: #00ffff !important;
+    color: #c9a84c !important;
     font-size: 28px !important;
     font-weight: 700 !important;
-    text-shadow: 0 0 12px rgba(0,255,255,0.5);
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
 }
 
 [data-testid="stMetricDelta"] > div {
@@ -296,10 +296,10 @@ html, body, [class*="css"] {
 
 /* ── Buttons ─────────────────────────────────────────────────── */
 .stButton > button {
-    background: linear-gradient(135deg, rgba(0,255,255,0.15) 0%, rgba(255,0,255,0.1) 100%);
-    border: 1px solid #00ffff;
+    background: linear-gradient(135deg, rgba(201,168,76,0.15) 0%, rgba(139,115,64,0.1) 100%);
+    border: 1px solid #c9a84c;
     border-radius: 4px;
-    color: #00ffff;
+    color: #c9a84c;
     font-family: 'Courier New', monospace;
     font-weight: 700;
     font-size: 13px;
@@ -307,83 +307,83 @@ html, body, [class*="css"] {
     text-transform: uppercase;
     padding: 12px 32px;
     transition: all 0.2s ease;
-    box-shadow: 0 0 12px rgba(0,255,255,0.2), inset 0 0 12px rgba(0,255,255,0.05);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
 }
 
 .stButton > button:hover {
-    background: linear-gradient(135deg, rgba(0,255,255,0.25) 0%, rgba(255,0,255,0.2) 100%);
-    border-color: #ff00ff;
-    color: #ff00ff;
-    box-shadow: 0 0 20px rgba(255,0,255,0.4), 0 0 40px rgba(0,255,255,0.2);
-    text-shadow: 0 0 8px #ff00ff;
+    background: linear-gradient(135deg, rgba(201,168,76,0.25) 0%, rgba(139,115,64,0.2) 100%);
+    border-color: #8b7340;
+    color: #8b7340;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
 }
 
 .stButton > button:active {
-    box-shadow: 0 0 30px rgba(255,0,255,0.6);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
 }
 
 /* ── Inputs ──────────────────────────────────────────────────── */
 .stSelectbox > div > div,
 .stTextInput > div > div > input,
 .stNumberInput > div > div > input {
-    background-color: #0a0a1f !important;
-    border: 1px solid rgba(0,255,255,0.25) !important;
+    background-color: #14141e !important;
+    border: 1px solid rgba(201,168,76,0.25) !important;
     border-radius: 4px !important;
-    color: #00ffff !important;
+    color: #c9a84c !important;
     font-family: 'Courier New', monospace !important;
 }
 
 .stSelectbox > div > div:focus,
 .stTextInput > div > div > input:focus {
-    border-color: #00ffff !important;
-    box-shadow: 0 0 8px rgba(0,255,255,0.3) !important;
+    border-color: #c9a84c !important;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3) !important;
 }
 
 /* ── Slider ──────────────────────────────────────────────────── */
 .stSlider > div > div > div > div {
-    background: linear-gradient(90deg, #00ffff, #ff00ff) !important;
+    background: linear-gradient(90deg, #c9a84c, #8b7340) !important;
 }
 
 .stSlider [data-baseweb="slider"] [role="slider"] {
-    background-color: #00ffff !important;
-    box-shadow: 0 0 10px rgba(0,255,255,0.7) !important;
+    background-color: #c9a84c !important;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3) !important;
 }
 
 /* ── DataFrames / tables ─────────────────────────────────────── */
 .stDataFrame {
-    border: 1px solid rgba(0,255,255,0.15) !important;
+    border: 1px solid rgba(201,168,76,0.15) !important;
     border-radius: 6px !important;
 }
 
 /* ── Headers ─────────────────────────────────────────────────── */
 h1, h2, h3 {
-    color: #00ffff !important;
-    text-shadow: 0 0 20px rgba(0,255,255,0.4);
+    color: #c9a84c !important;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
     letter-spacing: 3px;
 }
 
 /* ── Progress bar ────────────────────────────────────────────── */
 .stProgress > div > div > div > div {
-    background: linear-gradient(90deg, #00ffff, #ff00ff);
+    background: linear-gradient(90deg, #c9a84c, #8b7340);
 }
 
 /* ── Alerts/info ─────────────────────────────────────────────── */
 .stAlert {
-    background-color: rgba(0,255,255,0.07) !important;
-    border: 1px solid rgba(0,255,255,0.25) !important;
-    color: #00ffff !important;
+    background-color: rgba(201,168,76,0.07) !important;
+    border: 1px solid rgba(201,168,76,0.25) !important;
+    color: #c9a84c !important;
 }
 
 /* ── Dividers ────────────────────────────────────────────────── */
 hr {
-    border-color: rgba(0,255,255,0.15) !important;
+    border-color: rgba(201,168,76,0.15) !important;
 }
 
 /* ── Custom banner ───────────────────────────────────────────── */
 .wolf-banner {
-    background: linear-gradient(135deg, #07071a 0%, #0a0020 50%, #07071a 100%);
-    border: 1px solid rgba(0,255,255,0.2);
-    border-top: 3px solid #00ffff;
+    background: linear-gradient(135deg, #10101a 0%, #12101e 50%, #10101a 100%);
+    border: 1px solid rgba(201,168,76,0.2);
+    border-top: 3px solid #c9a84c;
     border-radius: 8px;
     padding: 20px 32px;
     margin-bottom: 24px;
@@ -396,7 +396,7 @@ hr {
     position: absolute;
     bottom: 0; left: 0; right: 0;
     height: 1px;
-    background: linear-gradient(90deg, transparent, #ff00ff, transparent);
+    background: linear-gradient(90deg, transparent, #8b7340, transparent);
 }
 
 .wolf-banner h1 {
@@ -404,7 +404,7 @@ hr {
     font-weight: 900 !important;
     margin: 0 0 4px 0 !important;
     padding: 0 !important;
-    background: linear-gradient(90deg, #00ffff, #ff00ff);
+    background: linear-gradient(90deg, #c9a84c, #8b7340);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -413,7 +413,7 @@ hr {
 }
 
 .wolf-banner p {
-    color: rgba(0,255,255,0.5);
+    color: rgba(201,168,76,0.5);
     font-size: 11px;
     letter-spacing: 4px;
     margin: 0;
@@ -421,18 +421,18 @@ hr {
 }
 
 /* ── Score badges ────────────────────────────────────────────── */
-.score-green  { color: #00ff88; font-weight: 700; text-shadow: 0 0 8px rgba(0,255,136,0.5); }
-.score-yellow { color: #ffdd00; font-weight: 700; text-shadow: 0 0 8px rgba(255,221,0,0.5); }
-.score-red    { color: #ff3366; font-weight: 700; text-shadow: 0 0 8px rgba(255,51,102,0.5); }
-.entry-yes    { color: #00ff88; font-weight: 700; letter-spacing: 1px; }
-.entry-no     { color: rgba(255,255,255,0.25); }
+.score-green  { color: #2d8a4e; font-weight: 700; }
+.score-yellow { color: #d4943a; font-weight: 700; }
+.score-red    { color: #c44545; font-weight: 700; }
+.entry-yes    { color: #2d8a4e; font-weight: 700; letter-spacing: 1px; }
+.entry-no     { color: rgba(232,228,220,0.25); }
 
 /* ── Regime gauge label ──────────────────────────────────────── */
 .regime-score {
     font-size: 72px;
     font-weight: 900;
     text-align: center;
-    background: linear-gradient(180deg, #00ffff, #ff00ff);
+    background: linear-gradient(180deg, #c9a84c, #8b7340);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -445,7 +445,7 @@ hr {
     letter-spacing: 4px;
     text-transform: uppercase;
     text-align: center;
-    color: rgba(0,255,255,0.5);
+    color: rgba(201,168,76,0.5);
     margin-top: 4px;
 }
 
@@ -454,32 +454,31 @@ hr {
     font-size: 11px;
     letter-spacing: 4px;
     text-transform: uppercase;
-    color: rgba(0,255,255,0.4);
-    border-bottom: 1px solid rgba(0,255,255,0.1);
+    color: rgba(201,168,76,0.4);
+    border-bottom: 1px solid rgba(201,168,76,0.1);
     padding-bottom: 6px;
     margin-bottom: 16px;
 }
 
 /* ── Status pill ─────────────────────────────────────────────── */
 .status-active {
-    background: rgba(0,255,136,0.15);
-    border: 1px solid #00ff88;
+    background: rgba(45,138,78,0.15);
+    border: 1px solid #2d8a4e;
     border-radius: 20px;
-    color: #00ff88;
+    color: #2d8a4e;
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 2px;
     padding: 4px 14px;
     text-transform: uppercase;
     display: inline-block;
-    text-shadow: 0 0 8px rgba(0,255,136,0.5);
 }
 
 .status-inactive {
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(232,228,220,0.05);
+    border: 1px solid rgba(232,228,220,0.15);
     border-radius: 20px;
-    color: rgba(255,255,255,0.3);
+    color: rgba(232,228,220,0.3);
     font-size: 11px;
     letter-spacing: 2px;
     padding: 4px 14px;
@@ -548,18 +547,18 @@ hr {
 # ─── Plotly dark template ─────────────────────────────────────────────────────
 PLOTLY_LAYOUT = dict(
     template="plotly_dark",
-    paper_bgcolor="rgba(5,5,16,0)",
-    plot_bgcolor="rgba(5,5,16,0)",
-    font=dict(family="Courier New, monospace", color="#00ffff", size=11),
+    paper_bgcolor="rgba(12,12,18,0)",
+    plot_bgcolor="rgba(12,12,18,0)",
+    font=dict(family="Courier New, monospace", color="#c9a84c", size=11),
     xaxis=dict(
-        gridcolor="rgba(0,255,255,0.08)",
-        zerolinecolor="rgba(0,255,255,0.15)",
-        tickfont=dict(color="rgba(0,255,255,0.6)"),
+        gridcolor="rgba(201,168,76,0.08)",
+        zerolinecolor="rgba(201,168,76,0.15)",
+        tickfont=dict(color="rgba(201,168,76,0.6)"),
     ),
     yaxis=dict(
-        gridcolor="rgba(0,255,255,0.08)",
-        zerolinecolor="rgba(0,255,255,0.15)",
-        tickfont=dict(color="rgba(0,255,255,0.6)"),
+        gridcolor="rgba(201,168,76,0.08)",
+        zerolinecolor="rgba(201,168,76,0.15)",
+        tickfont=dict(color="rgba(201,168,76,0.6)"),
     ),
     margin=dict(l=50, r=20, t=50, b=40),
 )
@@ -634,8 +633,8 @@ def build_equity_chart(eq_df, ticker):
     fig.add_trace(go.Scatter(
         x=eq_df.index, y=eq_df["equity"],
         fill="tozeroy",
-        fillcolor="rgba(0,255,255,0.05)",
-        line=dict(color="#00ffff", width=1.5),
+        fillcolor="rgba(201,168,76,0.05)",
+        line=dict(color="#c9a84c", width=1.5),
         name="Equity",
         hovertemplate="<b>%{x}</b><br>$%{y:,.0f}<extra></extra>",
     ))
@@ -643,14 +642,14 @@ def build_equity_chart(eq_df, ticker):
     # Initial capital line
     fig.add_hline(
         y=100000,
-        line=dict(color="rgba(255,0,255,0.4)", width=1, dash="dot"),
+        line=dict(color="rgba(139,115,64,0.4)", width=1, dash="dot"),
         annotation_text="Initial $100k",
-        annotation_font=dict(color="rgba(255,0,255,0.6)", size=10),
+        annotation_font=dict(color="rgba(139,115,64,0.6)", size=10),
     )
 
     fig.update_layout(
         **PLOTLY_LAYOUT,
-        title=dict(text=f"EQUITY CURVE — {ticker}", font=dict(size=13, color="#00ffff")),
+        title=dict(text=f"EQUITY CURVE — {ticker}", font=dict(size=13, color="#c9a84c")),
         height=320,
         showlegend=False,
     )
@@ -664,8 +663,8 @@ def build_drawdown_chart(dd_series):
         x=dd_series.index,
         y=dd_series.values * 100,
         fill="tozeroy",
-        fillcolor="rgba(255,0,255,0.12)",
-        line=dict(color="#ff00ff", width=1.5),
+        fillcolor="rgba(139,115,64,0.12)",
+        line=dict(color="#8b7340", width=1.5),
         name="Drawdown %",
         hovertemplate="<b>%{x}</b><br>%{y:.2f}%<extra></extra>",
     ))
@@ -673,7 +672,7 @@ def build_drawdown_chart(dd_series):
     yaxis_base = PLOTLY_LAYOUT.get("yaxis", {})
     fig.update_layout(
         **layout_copy,
-        title=dict(text="DRAWDOWN %", font=dict(size=13, color="#ff00ff")),
+        title=dict(text="DRAWDOWN %", font=dict(size=13, color="#8b7340")),
         height=220,
         yaxis=dict(**yaxis_base, ticksuffix="%"),
         showlegend=False,
@@ -715,16 +714,16 @@ def build_monthly_heatmap(returns_series, eq_df):
         colorscale=[
             [0.0,  "#ff0044"],
             [0.35, "#4d0022"],
-            [0.5,  "#0a0a1f"],
+            [0.5,  "#14141e"],
             [0.65, "#003322"],
-            [1.0,  "#00ff88"],
+            [1.0,  "#2d8a4e"],
         ],
         zmid=0,
         zmin=-10,
         zmax=10,
         showscale=True,
         colorbar=dict(
-            tickfont=dict(color="rgba(0,255,255,0.6)", size=10),
+            tickfont=dict(color="rgba(201,168,76,0.6)", size=10),
             ticksuffix="%",
             outlinewidth=0,
         ),
@@ -734,7 +733,7 @@ def build_monthly_heatmap(returns_series, eq_df):
     layout_copy2 = {k: v for k, v in PLOTLY_LAYOUT.items() if k not in ("yaxis", "xaxis")}
     fig.update_layout(
         **layout_copy2,
-        title=dict(text="MONTHLY RETURNS HEATMAP", font=dict(size=13, color="#00ffff")),
+        title=dict(text="MONTHLY RETURNS HEATMAP", font=dict(size=13, color="#c9a84c")),
         height=max(180, len(y_labels) * 35 + 80),
         xaxis=dict(**PLOTLY_LAYOUT.get("xaxis", {}), side="bottom"),
         yaxis=dict(**PLOTLY_LAYOUT.get("yaxis", {}), autorange="reversed"),
@@ -744,48 +743,48 @@ def build_monthly_heatmap(returns_series, eq_df):
 
 def build_gauge(value, max_val, label, color_cyan=True):
     """Plotly gauge/indicator."""
-    bar_color = "rgba(0,255,255,0.9)" if color_cyan else "rgba(255,0,255,0.9)"
-    bg_color = "rgba(0,255,255,0.08)" if color_cyan else "rgba(255,0,255,0.08)"
+    bar_color = "rgba(201,168,76,0.9)" if color_cyan else "rgba(139,115,64,0.9)"
+    bg_color = "rgba(201,168,76,0.08)" if color_cyan else "rgba(139,115,64,0.08)"
 
     pct = value / max_val
     green_thresh = 0.67 * max_val
     yellow_thresh = 0.4 * max_val
 
     if value >= green_thresh:
-        bar_color = "rgba(0,255,136,0.9)"
+        bar_color = "rgba(45,138,78,0.9)"
     elif value >= yellow_thresh:
-        bar_color = "rgba(255,221,0,0.9)"
+        bar_color = "rgba(212,148,58,0.9)"
     else:
-        bar_color = "rgba(255,51,102,0.9)"
+        bar_color = "rgba(196,69,69,0.9)"
 
     fig = go.Figure(go.Indicator(
         mode="gauge+number",
         value=value,
         number=dict(
-            font=dict(family="Courier New", color="#00ffff", size=28),
+            font=dict(family="Courier New", color="#c9a84c", size=28),
             suffix=f"/{max_val}",
         ),
         title=dict(
             text=label,
-            font=dict(family="Courier New", color="rgba(0,255,255,0.6)", size=11),
+            font=dict(family="Courier New", color="rgba(201,168,76,0.6)", size=11),
         ),
         gauge=dict(
             axis=dict(
                 range=[0, max_val],
-                tickfont=dict(color="rgba(0,255,255,0.5)", size=9),
-                tickcolor="rgba(0,255,255,0.3)",
+                tickfont=dict(color="rgba(201,168,76,0.5)", size=9),
+                tickcolor="rgba(201,168,76,0.3)",
             ),
             bar=dict(color=bar_color, thickness=0.25),
             bgcolor=bg_color,
             borderwidth=1,
-            bordercolor="rgba(0,255,255,0.2)",
+            bordercolor="rgba(201,168,76,0.2)",
             steps=[
-                dict(range=[0, yellow_thresh], color="rgba(255,51,102,0.07)"),
-                dict(range=[yellow_thresh, green_thresh], color="rgba(255,221,0,0.07)"),
-                dict(range=[green_thresh, max_val], color="rgba(0,255,136,0.07)"),
+                dict(range=[0, yellow_thresh], color="rgba(196,69,69,0.07)"),
+                dict(range=[yellow_thresh, green_thresh], color="rgba(212,148,58,0.07)"),
+                dict(range=[green_thresh, max_val], color="rgba(45,138,78,0.07)"),
             ],
             threshold=dict(
-                line=dict(color="#ff00ff", width=2),
+                line=dict(color="#8b7340", width=2),
                 thickness=0.6,
                 value=green_thresh,
             ),
@@ -871,8 +870,8 @@ def tab_screener():
     lcol, rcol = st.columns([3, 1])
     with rcol:
         st.markdown("""
-        <div style="border:1px solid rgba(0,255,255,0.15);border-radius:6px;padding:12px;font-size:11px;letter-spacing:1px;">
-            <div style="color:rgba(0,255,255,0.5);letter-spacing:3px;margin-bottom:8px;">SCORE LEGEND</div>
+        <div style="border:1px solid rgba(201,168,76,0.15);border-radius:6px;padding:12px;font-size:11px;letter-spacing:1px;">
+            <div style="color:rgba(201,168,76,0.5);letter-spacing:3px;margin-bottom:8px;">SCORE LEGEND</div>
             <div><span class="score-green">■</span> &nbsp;STRONG &nbsp;&ge; 70</div>
             <div><span class="score-yellow">■</span> &nbsp;MODERATE &nbsp;&ge; 50</div>
             <div><span class="score-red">■</span> &nbsp;WEAK &nbsp;&lt; 50</div>
@@ -954,27 +953,27 @@ def tab_screener():
             total = row["Total Score"]
             is_entry = row["Entry Signal"] == "YES"
             if is_entry:
-                bg = "background-color: rgba(0,255,136,0.12)"
+                bg = "background-color: rgba(45,138,78,0.12)"
             elif total >= 70:
-                bg = "background-color: rgba(0,255,136,0.06)"
+                bg = "background-color: rgba(45,138,78,0.06)"
             elif total >= 50:
-                bg = "background-color: rgba(255,221,0,0.05)"
+                bg = "background-color: rgba(212,148,58,0.05)"
             else:
-                bg = "background-color: rgba(255,51,102,0.04)"
+                bg = "background-color: rgba(196,69,69,0.04)"
             return [bg] * len(row)
 
         def style_score_cell(val):
             if val >= 70:
-                return "color: #00ff88; font-weight: bold"
+                return "color: #2d8a4e; font-weight: bold"
             elif val >= 50:
-                return "color: #ffdd00; font-weight: bold"
+                return "color: #d4943a; font-weight: bold"
             else:
-                return "color: #ff3366; font-weight: bold"
+                return "color: #c44545; font-weight: bold"
 
         def style_entry_cell(val):
             if val == "YES":
-                return "color: #00ff88; font-weight: bold"
-            return "color: rgba(255,255,255,0.3)"
+                return "color: #2d8a4e; font-weight: bold"
+            return "color: rgba(232,228,220,0.3)"
 
         _styler = df_display.style
         _map_fn = _styler.map if hasattr(_styler, "map") else _styler.applymap
@@ -1024,16 +1023,16 @@ def tab_screener():
             st.dataframe(
                 entry_display.style
                 .set_properties(**{
-                    "background-color": "rgba(0,255,136,0.08)",
-                    "color": "#00ff88",
+                    "background-color": "rgba(45,138,78,0.08)",
+                    "color": "#2d8a4e",
                     "font-family": "Courier New, monospace",
                     "font-size": "12px",
                 })
                 .set_table_styles([{
                     "selector": "thead th",
                     "props": [
-                        ("background-color", "#07071a"),
-                        ("color", "rgba(0,255,255,0.6)"),
+                        ("background-color", "#10101a"),
+                        ("color", "rgba(201,168,76,0.6)"),
                         ("font-size", "10px"),
                         ("letter-spacing", "2px"),
                     ]
@@ -1047,15 +1046,15 @@ def tab_screener():
         <div style="
             text-align:center;
             padding:80px 20px;
-            border:1px dashed rgba(0,255,255,0.15);
+            border:1px dashed rgba(201,168,76,0.15);
             border-radius:8px;
             margin-top:20px;
         ">
             <div style="font-size:48px;margin-bottom:16px;">🐺</div>
-            <div style="color:rgba(0,255,255,0.5);letter-spacing:4px;font-size:14px;margin-bottom:8px;">
+            <div style="color:rgba(201,168,76,0.5);letter-spacing:4px;font-size:14px;margin-bottom:8px;">
                 READY TO HUNT
             </div>
-            <div style="color:rgba(0,255,255,0.3);font-size:11px;letter-spacing:2px;">
+            <div style="color:rgba(201,168,76,0.3);font-size:11px;letter-spacing:2px;">
                 SELECT MARKET · SET MIN SCORE · CLICK SCAN
             </div>
         </div>
@@ -1559,9 +1558,9 @@ def tab_backtest():
             def style_trades(row):
                 if "pnl" in row.index:
                     if row["pnl"] > 0:
-                        return ["background-color: rgba(0,255,136,0.07); color: #00ff88"] * len(row)
+                        return ["background-color: rgba(45,138,78,0.07); color: #2d8a4e"] * len(row)
                     else:
-                        return ["background-color: rgba(255,51,102,0.07); color: #ff6688"] * len(row)
+                        return ["background-color: rgba(196,69,69,0.07); color: #ff6688"] * len(row)
                 return [""] * len(row)
 
             st.dataframe(
@@ -1579,15 +1578,15 @@ def tab_backtest():
         <div style="
             text-align:center;
             padding:80px 20px;
-            border:1px dashed rgba(255,0,255,0.15);
+            border:1px dashed rgba(139,115,64,0.15);
             border-radius:8px;
             margin-top:20px;
         ">
             <div style="font-size:48px;margin-bottom:16px;">📊</div>
-            <div style="color:rgba(255,0,255,0.5);letter-spacing:4px;font-size:14px;margin-bottom:8px;">
+            <div style="color:rgba(139,115,64,0.5);letter-spacing:4px;font-size:14px;margin-bottom:8px;">
                 AWAITING COMMAND
             </div>
-            <div style="color:rgba(255,0,255,0.3);font-size:11px;letter-spacing:2px;">
+            <div style="color:rgba(139,115,64,0.3);font-size:11px;letter-spacing:2px;">
                 ENTER TICKER · SELECT PERIOD · RUN BACKTEST
             </div>
         </div>
@@ -1615,17 +1614,17 @@ def _render_sl_tp_calculator(strategy: str = "swing"):
     import yfinance as yf
     
     # Colors
-    _CYAN = "#00ffff"
-    _GREEN = "#00ff88"
-    _RED = "#ff3355"
-    _YELLOW = "#ffdd00"
-    _TEXT = "#e0e0ff"
-    _DIM = "#4a4a6a"
-    _BG2 = "#0a0a1e"
+    _CYAN = "#c9a84c"
+    _GREEN = "#2d8a4e"
+    _RED = "#c44545"
+    _YELLOW = "#d4943a"
+    _TEXT = "#e8e4dc"
+    _DIM = "#8a8578"
+    _BG2 = "#14141e"
     
     st.markdown(
         f"<div style='color:{_CYAN};font-size:0.75rem;text-transform:uppercase;"
-        f"letter-spacing:0.1em;margin:16px 0 8px 0;border-top:1px solid rgba(0,255,255,0.1);"
+        f"letter-spacing:0.1em;margin:16px 0 8px 0;border-top:1px solid rgba(201,168,76,0.1);"
         f"padding-top:12px;'>SL / TP KALKYLATOR — {strategy.upper()}</div>",
         unsafe_allow_html=True,
     )
@@ -1699,7 +1698,7 @@ def _render_sl_tp_calculator(strategy: str = "swing"):
             
             with r1:
                 st.markdown(
-                    f'<div style="background:{_BG2};border:2px solid rgba(255,51,85,0.3);border-radius:8px;padding:14px;">'
+                    f'<div style="background:{_BG2};border:2px solid rgba(196,69,69,0.3);border-radius:8px;padding:14px;">'
                     f'<div style="color:{_RED};font-weight:700;font-size:0.85rem;margin-bottom:8px;">STOP LOSS</div>'
                     f'<div style="color:{_TEXT};font-size:1.2rem;font-weight:700;">{sl:.2f}</div>'
                     f'<div style="color:{_DIM};font-size:0.68rem;margin-top:4px;">{sl_method}</div>'
@@ -1711,7 +1710,7 @@ def _render_sl_tp_calculator(strategy: str = "swing"):
             
             with r2:
                 st.markdown(
-                    f'<div style="background:{_BG2};border:2px solid rgba(0,255,136,0.3);border-radius:8px;padding:14px;">'
+                    f'<div style="background:{_BG2};border:2px solid rgba(45,138,78,0.3);border-radius:8px;padding:14px;">'
                     f'<div style="color:{_GREEN};font-weight:700;font-size:0.85rem;margin-bottom:8px;">TARGETS (R:R)</div>'
                     f'<div style="color:{_TEXT};font-size:0.85rem;">2R: <span style="color:{_GREEN};font-weight:700;">{tp_2r:.2f}</span> (+{(tp_2r/price-1)*100:.1f}%)</div>'
                     f'<div style="color:{_TEXT};font-size:0.85rem;">3R: <span style="color:{_GREEN};font-weight:700;">{tp_3r:.2f}</span> (+{(tp_3r/price-1)*100:.1f}%)</div>'
@@ -1722,7 +1721,7 @@ def _render_sl_tp_calculator(strategy: str = "swing"):
             
             # Position sizing
             st.markdown(
-                f'<div style="background:{_BG2};border:2px solid rgba(0,255,255,0.2);border-radius:8px;padding:14px;margin-top:8px;">'
+                f'<div style="background:{_BG2};border:2px solid rgba(201,168,76,0.2);border-radius:8px;padding:14px;margin-top:8px;">'
                 f'<div style="color:{_CYAN};font-weight:700;font-size:0.85rem;margin-bottom:8px;">POSITION SIZING</div>'
                 f'<div style="display:flex;justify-content:space-between;">'
                 f'<div><span style="color:{_DIM};font-size:0.7rem;">Aktier</span><br>'
@@ -1797,11 +1796,11 @@ def tab_regime():
             if bm_ret > 0:
                 rs = stk_ret / bm_ret
                 if rs > 1.05:
-                    rs_icon, rs_color = "🟢", "#00ff88"
+                    rs_icon, rs_color = "🟢", "#2d8a4e"
                 elif rs >= 0.95:
-                    rs_icon, rs_color = "🟡", "#ffdd00"
+                    rs_icon, rs_color = "🟡", "#d4943a"
                 else:
-                    rs_icon, rs_color = "🔴", "#ff3355"
+                    rs_icon, rs_color = "🔴", "#c44545"
                 st.markdown(
                     f"<div style='padding:4px 0;'>"
                     f"<span style='font-size:0.85rem;'>{rs_icon}</span> "
@@ -2068,23 +2067,23 @@ def tab_regime():
     total = data["total"]
     if total >= 85:
         regime_label = "BULL REGIME"
-        regime_color = "#00ff88"
+        regime_color = "#2d8a4e"
     elif total >= 65:
         regime_label = "MODERATE BULL"
-        regime_color = "#ffdd00"
+        regime_color = "#d4943a"
     elif total >= 45:
         regime_label = "NEUTRAL"
-        regime_color = "#ff9900"
+        regime_color = "#d4943a"
     else:
         regime_label = "BEAR / AVOID"
-        regime_color = "#ff3366"
+        regime_color = "#c44545"
 
     score_col, gauge_col = st.columns([1, 3])
 
     with score_col:
         st.markdown(f"""
         <div style="
-            background: linear-gradient(135deg, rgba(0,255,255,0.06) 0%, rgba(255,0,255,0.03) 100%);
+            background: linear-gradient(135deg, rgba(201,168,76,0.06) 0%, rgba(139,115,64,0.03) 100%);
             border: 1px solid {regime_color};
             border-radius: 12px;
             padding: 32px 16px;
@@ -2094,9 +2093,9 @@ def tab_regime():
         ">
             <div style="
                 position: absolute; top: 0; left: 0; right: 0; height: 3px;
-                background: linear-gradient(90deg, #00ffff, #ff00ff);
+                background: linear-gradient(90deg, #c9a84c, #8b7340);
             "></div>
-            <div style="font-size:11px;letter-spacing:4px;color:rgba(0,255,255,0.5);margin-bottom:8px;">
+            <div style="font-size:11px;letter-spacing:4px;color:rgba(201,168,76,0.5);margin-bottom:8px;">
                 REGIME SCORE
             </div>
             <div style="
@@ -2104,10 +2103,10 @@ def tab_regime():
                 font-weight: 900;
                 line-height: 1;
                 color: {regime_color};
-                text-shadow: 0 0 30px {regime_color}80, 0 0 60px {regime_color}30;
+                text-shadow: 0 1px 2px rgba(0,0,0,0.3);
                 font-family: 'Courier New', monospace;
             ">{total}</div>
-            <div style="font-size:11px;letter-spacing:3px;color:rgba(0,255,255,0.4);margin-top:4px;">
+            <div style="font-size:11px;letter-spacing:3px;color:rgba(201,168,76,0.4);margin-top:4px;">
                 / 125 MAX
             </div>
             <div style="margin-top:16px;">
@@ -2120,13 +2119,13 @@ def tab_regime():
                     font-weight: 700;
                     letter-spacing: 3px;
                     padding: 5px 16px;
-                    text-shadow: 0 0 8px {regime_color}80;
+                    text-shadow: none;
                 ">{regime_label}</span>
             </div>
             <div style="
                 margin-top: 20px;
                 font-size: 10px;
-                color: rgba(0,255,255,0.3);
+                color: rgba(201,168,76,0.3);
                 letter-spacing: 2px;
             ">
                 {watch_ticker} &nbsp;·&nbsp; {data['timestamp']}
@@ -2256,13 +2255,13 @@ def tab_regime():
 
         # -- Determine trend direction --
         if _chk_stack:
-            _trend_dir, _trend_clr = "BULL", "#00ff88"
+            _trend_dir, _trend_clr = "BULL", "#2d8a4e"
         elif _chk_close > _chk_ema50:
-            _trend_dir, _trend_clr = "NEUTRAL-BULL", "#ffdd00"
+            _trend_dir, _trend_clr = "NEUTRAL-BULL", "#d4943a"
         elif _chk_close > _chk_ema200:
-            _trend_dir, _trend_clr = "NEUTRAL", "#ff9900"
+            _trend_dir, _trend_clr = "NEUTRAL", "#d4943a"
         else:
-            _trend_dir, _trend_clr = "BEAR", "#ff3355"
+            _trend_dir, _trend_clr = "BEAR", "#c44545"
 
         _stack_icon = "✓" if _chk_stack else "✗"
 
@@ -2372,8 +2371,8 @@ def tab_regime():
 
         # ── CHECKLIST HEADER ──
         st.markdown(
-            "<div style='color:#ff00ff;font-size:0.7rem;text-transform:uppercase;"
-            "letter-spacing:0.1em;margin:20px 0 8px 0;border-top:1px solid rgba(255,0,255,0.15);"
+            "<div style='color:#8b7340;font-size:0.7rem;text-transform:uppercase;"
+            "letter-spacing:0.1em;margin:20px 0 8px 0;border-top:1px solid rgba(139,115,64,0.15);"
             "padding-top:12px;'>WOLF ENTRY CHECKLIST</div>",
             unsafe_allow_html=True,
         )
@@ -2381,13 +2380,13 @@ def tab_regime():
         # ── Row 1: TREND | VOLATILITET | MOMENTUM ──
         _ec1, _ec2, _ec3 = st.columns(3)
 
-        def _checklist_card(title, lines, border_color="#00ffff"):
+        def _checklist_card(title, lines, border_color="#c9a84c"):
             content = "".join(
-                f"<div style='font-size:0.72rem;color:#e0e0ff;padding:1px 0;'>{ln}</div>"
+                f"<div style='font-size:0.72rem;color:#e8e4dc;padding:1px 0;'>{ln}</div>"
                 for ln in lines
             )
             return (
-                f"<div style='background:#0a0a1e;border:1px solid {border_color};"
+                f"<div style='background:#14141e;border:1px solid {border_color};"
                 f"border-radius:6px;padding:10px 12px;'>"
                 f"<div style='color:{border_color};font-size:0.65rem;font-weight:700;"
                 f"letter-spacing:0.08em;margin-bottom:6px;'>{title}</div>"
@@ -2397,7 +2396,7 @@ def tab_regime():
         with _ec1:
             st.markdown(_checklist_card("TREND", [
                 f"Direction: <span style='color:{_trend_clr};font-weight:700;'>{_trend_dir}</span>",
-                f"EMA Stack: <span style='color:{('#00ff88' if _chk_stack else '#ff3355')};'>{_stack_icon}</span>",
+                f"EMA Stack: <span style='color:{('#2d8a4e' if _chk_stack else '#c44545')};'>{_stack_icon}</span>",
                 f"EMA10: <b>{_chk_ema10:.2f}</b>",
                 f"EMA20: <b>{_chk_ema21:.2f}</b>",
                 f"EMA50: <b>{_chk_ema50:.2f}</b>",
@@ -2410,10 +2409,10 @@ def tab_regime():
                 f"Hist Vol: <b>{_hist_vol:.0f}%</b>",
                 f"ATR ratio: <b>{_atr_ratio:.2f}x</b>",
                 f"Risk: <b>{_risk_score}/100</b>",
-            ], border_color="#ff00ff"), unsafe_allow_html=True)
+            ], border_color="#8b7340"), unsafe_allow_html=True)
 
         with _ec3:
-            _vol_clr = "#00ff88" if _vol_ratio >= 1.0 else "#ff3355"
+            _vol_clr = "#2d8a4e" if _vol_ratio >= 1.0 else "#c44545"
             st.markdown(_checklist_card("MOMENTUM", [
                 f"RSI: <b>{_chk_rsi:.1f}</b> ({_rsi_state})",
                 f"Vol ratio: <span style='color:{_vol_clr};font-weight:700;'>{_vol_ratio:.2f}x</span>",
@@ -2430,8 +2429,8 @@ def tab_regime():
                     _cp_icon = "⬆" if "Bull" in _cp_name or "Hammer" in _cp_name else "⬇"
                     _cpat_lines.append(f"{_cp_icon} {_cp_name}")
             else:
-                _cpat_lines.append("<span style='color:#4a4a6a;'>Inga mönster detekterade</span>")
-            st.markdown(_checklist_card("CANDLESTICK", _cpat_lines, border_color="#ffdd00"), unsafe_allow_html=True)
+                _cpat_lines.append("<span style='color:#8a8578;'>Inga mönster detekterade</span>")
+            st.markdown(_checklist_card("CANDLESTICK", _cpat_lines, border_color="#d4943a"), unsafe_allow_html=True)
 
         with _ec5:
             _ob_lines = [
@@ -2441,10 +2440,10 @@ def tab_regime():
                 + (f" (närmaste: {_nearest_bear_ob:.2f})" if _nearest_bear_ob else ""),
             ]
             if _has_nearby_ob:
-                _ob_lines.append("<span style='color:#00ff88;font-weight:700;'>OB inom 3% av pris ✓</span>")
+                _ob_lines.append("<span style='color:#2d8a4e;font-weight:700;'>OB inom 3% av pris ✓</span>")
             else:
-                _ob_lines.append("<span style='color:#4a4a6a;'>Ingen OB inom 3%</span>")
-            st.markdown(_checklist_card("ORDER BLOCKS", _ob_lines, border_color="#00aaff"), unsafe_allow_html=True)
+                _ob_lines.append("<span style='color:#8a8578;'>Ingen OB inom 3%</span>")
+            st.markdown(_checklist_card("ORDER BLOCKS", _ob_lines, border_color="#c9a84c"), unsafe_allow_html=True)
 
         st.markdown("<br>", unsafe_allow_html=True)
 
@@ -2453,8 +2452,8 @@ def tab_regime():
 
     # ── Wolf Trading Gates (11 rules) ────────────────────────────────────────────────────────────────────
     st.markdown(
-        "<div style='color:#00ffff;font-size:0.7rem;text-transform:uppercase;"
-        "letter-spacing:0.1em;margin:20px 0 8px 0;border-top:1px solid rgba(0,255,255,0.1);"
+        "<div style='color:#c9a84c;font-size:0.7rem;text-transform:uppercase;"
+        "letter-spacing:0.1em;margin:20px 0 8px 0;border-top:1px solid rgba(201,168,76,0.1);"
         "padding-top:12px;'>SWING TRADING GATES — 11 REGLER</div>",
         unsafe_allow_html=True,
     )
@@ -2550,18 +2549,18 @@ def tab_regime():
     if swing_gates:
         passed = sum(1 for g in swing_gates if g["passed"])
         total_gates = len(swing_gates)
-        gc = "#00ff88" if passed >= 8 else ("#ffdd00" if passed >= 5 else "#ff3355")
+        gc = "#2d8a4e" if passed >= 8 else ("#d4943a" if passed >= 5 else "#c44545")
 
         gate_html = f'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">'
         for g in swing_gates:
-            c = "#00ff88" if g["passed"] else "#ff3355"
+            c = "#2d8a4e" if g["passed"] else "#c44545"
             icon = "✓" if g["passed"] else "✗"
             gate_html += (
-                f'<div style="background:#0a0a1e;border:1px solid {c};border-radius:4px;'
+                f'<div style="background:#14141e;border:1px solid {c};border-radius:4px;'
                 f'padding:3px 8px;font-size:0.65rem;">'
                 f'<span style="color:{c};font-weight:700;">{icon}</span> '
-                f'<span style="color:#e0e0ff;">{g["rule"]}</span> '
-                f'<span style="color:#4a4a6a;">({g["value"]})</span>'
+                f'<span style="color:#e8e4dc;">{g["rule"]}</span> '
+                f'<span style="color:#8a8578;">({g["value"]})</span>'
                 f'</div>'
             )
         gate_html += f'</div>'
@@ -2622,9 +2621,9 @@ def _render_ovtlyr_screener_ui():
     """Viking Screener with z-score weighted scoring."""
     try:
         st.markdown(
-            "<h2 style='color:#00ffff;letter-spacing:0.1em;'>"
+            "<h2 style='color:#c9a84c;letter-spacing:0.1em;'>"
             "VIKING SCREENER</h2>"
-            "<p style='color:#4a4a6a;font-size:0.7rem;'>Z-score normalized · "
+            "<p style='color:#8a8578;font-size:0.7rem;'>Z-score normalized · "
             "Weighted composite · Trend 30% + Momentum 25% + Vol 15% + Volume 15% + ADX 15%</p>",
             unsafe_allow_html=True,
         )
@@ -2700,8 +2699,8 @@ def _render_ovtlyr_screener_ui():
 
             # Color styling
             def _signal_color(val):
-                colors = {"STRONG BUY": "color:#00ffff", "BUY": "color:#00ff88",
-                          "HOLD": "color:#ffdd00", "SELL": "color:#ff3355"}
+                colors = {"STRONG BUY": "color:#c9a84c", "BUY": "color:#2d8a4e",
+                          "HOLD": "color:#d4943a", "SELL": "color:#c44545"}
                 return colors.get(val, "")
 
             styled = results.style
@@ -2772,9 +2771,9 @@ def tab_backtest_consolidated():
 def _render_ovtlyr_backtest_ui():
     """OVTLYR backtest with Test Top N integration."""
     st.markdown(
-        "<h2 style='color:#00ffff;letter-spacing:0.1em;'>"
+        "<h2 style='color:#c9a84c;letter-spacing:0.1em;'>"
         "VIKING BACKTEST</h2>"
-        "<p style='color:#4a4a6a;font-size:0.7rem;'>EMA 10/20 crossover + ADX filter + Volume confirmation</p>",
+        "<p style='color:#8a8578;font-size:0.7rem;'>EMA 10/20 crossover + ADX filter + Volume confirmation</p>",
         unsafe_allow_html=True,
     )
 
@@ -2823,7 +2822,7 @@ def _render_ovtlyr_backtest_ui():
         def _ret_color(val):
             try:
                 v = float(val)
-                return "color:#00ff88" if v > 0 else "color:#ff3355"
+                return "color:#2d8a4e" if v > 0 else "color:#c44545"
             except (TypeError, ValueError):
                 return ""
 
@@ -2872,7 +2871,7 @@ def main():
                 else:
                     st.markdown(
                         "<div style='text-align:center;padding:40px 0;'>"
-                        "<h1 style='color:#00ffff;letter-spacing:0.15em;'>NORDIC ALPHA SYSTEMS</h1>"
+                        "<h1 style='color:#c9a84c;letter-spacing:0.15em;'>NORDIC ALPHA SYSTEMS</h1>"
                         "<p style='color:#c9a84c;'>Born of Wolves, Made for Markets</p>"
                         "</div>",
                         unsafe_allow_html=True,
@@ -2880,7 +2879,7 @@ def main():
             except Exception:
                 st.markdown(
                     "<div style='text-align:center;padding:40px 0;'>"
-                    "<h1 style='color:#00ffff;letter-spacing:0.15em;'>NORDIC ALPHA SYSTEMS</h1>"
+                    "<h1 style='color:#c9a84c;letter-spacing:0.15em;'>NORDIC ALPHA SYSTEMS</h1>"
                     "</div>",
                     unsafe_allow_html=True,
                 )

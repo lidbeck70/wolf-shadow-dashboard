@@ -26,15 +26,15 @@ from .sector_data import (
 # Theme constants
 # ---------------------------------------------------------------------------
 
-BG      = "#050510"
-BG2     = "#0a0a1e"
-CYAN    = "#00ffff"
-MAGENTA = "#ff00ff"
-GREEN   = "#00ff88"
-RED     = "#ff3355"
-YELLOW  = "#ffdd00"
-TEXT    = "#e0e0ff"
-DIM     = "#4a4a6a"
+BG      = "#0c0c12"
+BG2     = "#14141e"
+CYAN    = "#c9a84c"
+MAGENTA = "#8b7340"
+GREEN   = "#2d8a4e"
+RED     = "#c44545"
+YELLOW  = "#d4943a"
+TEXT    = "#e8e4dc"
+DIM     = "#8a8578"
 
 PLOTLY_LAYOUT_DEFAULTS = dict(
     template="plotly_dark",
@@ -163,7 +163,7 @@ def _sparkline_fig(data: list) -> go.Figure:
         return fig
 
     vals = np.array(data, dtype=float)
-    color = "rgba(0,255,136,0.9)" if vals[-1] >= vals[0] else "rgba(255,51,85,0.9)"
+    color = "rgba(45,138,78,0.9)" if vals[-1] >= vals[0] else "rgba(196,69,69,0.9)"
 
     fig = go.Figure(
         go.Scatter(
@@ -204,11 +204,11 @@ def _pct_html(val: float) -> str:
 
 def _trend_badge_html(trend: str) -> str:
     if trend == TREND_UP:
-        bg, fg = "rgba(0,255,136,0.15)", GREEN
+        bg, fg = "rgba(45,138,78,0.15)", GREEN
     elif trend == TREND_DOWN:
-        bg, fg = "rgba(255,51,85,0.15)", RED
+        bg, fg = "rgba(196,69,69,0.15)", RED
     else:
-        bg, fg = "rgba(255,221,0,0.15)", YELLOW
+        bg, fg = "rgba(212,148,58,0.15)", YELLOW
     return (
         f'<span class="trend-badge" '
         f'style="background:{bg};color:{fg};border:1px solid {fg};">'
@@ -381,7 +381,7 @@ def _render_sector_table(summary: pd.DataFrame) -> None:
             },
             {
                 "selector": "tbody tr:hover",
-                "props": [("background-color", "rgba(0,255,255,0.04)")],
+                "props": [("background-color", "rgba(201,168,76,0.04)")],
             },
             {
                 "selector": "tbody tr",
@@ -412,17 +412,17 @@ def _render_regime_summary(summary: pd.DataFrame) -> None:
     if bullish_sectors > 7 and uptrend_indices > 4:
         regime_label = "RISK-ON"
         regime_color = GREEN
-        regime_bg    = "rgba(0,255,136,0.12)"
+        regime_bg    = "rgba(45,138,78,0.12)"
         regime_border = GREEN
     elif bullish_sectors < 4 or uptrend_indices < 2:
         regime_label = "RISK-OFF"
         regime_color = RED
-        regime_bg    = "rgba(255,51,85,0.12)"
+        regime_bg    = "rgba(196,69,69,0.12)"
         regime_border = RED
     else:
         regime_label = "CAUTIOUS"
         regime_color = YELLOW
-        regime_bg    = "rgba(255,221,0,0.12)"
+        regime_bg    = "rgba(212,148,58,0.12)"
         regime_border = YELLOW
 
     # Build regime bar chart (sector uptrend count, index uptrend count)
@@ -445,17 +445,17 @@ def _render_regime_summary(summary: pd.DataFrame) -> None:
     ))
 
     # Threshold reference lines
-    bar_fig.add_hline(y=7,  line=dict(color="rgba(0,255,136,0.4)",  width=1, dash="dot"),  annotation_text="Risk-On (sectors)", annotation_font=dict(color=GREEN, size=9, family="monospace"))
-    bar_fig.add_hline(y=4,  line=dict(color="rgba(255,51,85,0.4)",  width=1, dash="dot"),  annotation_text="Risk-Off (sectors)", annotation_font=dict(color=RED,   size=9, family="monospace"), annotation_position="bottom right")
-    bar_fig.add_hline(y=4,  line=dict(color="rgba(0,255,136,0.4)",  width=1, dash="dot"))
-    bar_fig.add_hline(y=2,  line=dict(color="rgba(255,51,85,0.4)",  width=1, dash="dot"))
+    bar_fig.add_hline(y=7,  line=dict(color="rgba(45,138,78,0.4)",  width=1, dash="dot"),  annotation_text="Risk-On (sectors)", annotation_font=dict(color=GREEN, size=9, family="monospace"))
+    bar_fig.add_hline(y=4,  line=dict(color="rgba(196,69,69,0.4)",  width=1, dash="dot"),  annotation_text="Risk-Off (sectors)", annotation_font=dict(color=RED,   size=9, family="monospace"), annotation_position="bottom right")
+    bar_fig.add_hline(y=4,  line=dict(color="rgba(45,138,78,0.4)",  width=1, dash="dot"))
+    bar_fig.add_hline(y=2,  line=dict(color="rgba(196,69,69,0.4)",  width=1, dash="dot"))
 
     bar_fig.update_layout(
         **PLOTLY_LAYOUT_DEFAULTS,
         height=220,
         yaxis=dict(
             range=[0, max(total_sectors, total_indices) + 2],
-            gridcolor=f"rgba(74,74,106,0.3)",
+            gridcolor=f"rgba(138,133,120,0.3)",
             tickfont=dict(family="monospace", size=9, color=DIM),
         ),
         xaxis=dict(tickfont=dict(family="monospace", size=10, color=TEXT)),
@@ -529,7 +529,7 @@ def _render_trend_distribution(summary: pd.DataFrame) -> None:
         x=up_counts,
         y=categories,
         orientation="h",
-        marker=dict(color="rgba(0,255,136,0.8)", line=dict(color="rgba(0,255,136,0.4)", width=1)),
+        marker=dict(color="rgba(45,138,78,0.8)", line=dict(color="rgba(45,138,78,0.4)", width=1)),
         text=[f"{v}" for v in up_counts],
         textposition="inside",
         insidetextanchor="middle",
@@ -540,7 +540,7 @@ def _render_trend_distribution(summary: pd.DataFrame) -> None:
         x=neu_counts,
         y=categories,
         orientation="h",
-        marker=dict(color="rgba(255,221,0,0.75)", line=dict(color="rgba(255,221,0,0.3)", width=1)),
+        marker=dict(color="rgba(212,148,58,0.75)", line=dict(color="rgba(212,148,58,0.3)", width=1)),
         text=[f"{v}" for v in neu_counts],
         textposition="inside",
         insidetextanchor="middle",
@@ -551,7 +551,7 @@ def _render_trend_distribution(summary: pd.DataFrame) -> None:
         x=dn_counts,
         y=categories,
         orientation="h",
-        marker=dict(color="rgba(255,51,85,0.8)", line=dict(color="rgba(255,51,85,0.4)", width=1)),
+        marker=dict(color="rgba(196,69,69,0.8)", line=dict(color="rgba(196,69,69,0.4)", width=1)),
         text=[f"{v}" for v in dn_counts],
         textposition="inside",
         insidetextanchor="middle",
@@ -572,7 +572,7 @@ def _render_trend_distribution(summary: pd.DataFrame) -> None:
             bgcolor="rgba(0,0,0,0)",
         ),
         xaxis=dict(
-            gridcolor="rgba(74,74,106,0.3)",
+            gridcolor="rgba(138,133,120,0.3)",
             tickfont=dict(family="monospace", size=9, color=DIM),
         ),
         yaxis=dict(

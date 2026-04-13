@@ -247,36 +247,36 @@ def _compute_rs_rankings(tickers: tuple) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Cyberpunk theme constants
+# Nordic Gold theme constants
 # ---------------------------------------------------------------------------
-BG = "#050510"
-BG2 = "#0a0a1e"
-CYAN = "#00ffff"
-MAGENTA = "#ff00ff"
-GREEN = "#00ff88"
-RED = "#ff3355"
-YELLOW = "#ffdd00"
-TEXT = "#e0e0ff"
-DIM = "#4a4a6a"
+BG = "#0c0c12"
+BG2 = "#14141e"
+CYAN = "#c9a84c"
+MAGENTA = "#8b7340"
+GREEN = "#2d8a4e"
+RED = "#c44545"
+YELLOW = "#d4943a"
+TEXT = "#e8e4dc"
+DIM = "#8a8578"
 
 # rgba versions for Plotly
-CYAN_RGBA = "rgba(0,255,255,1)"
-MAGENTA_RGBA = "rgba(255,0,255,1)"
-GREEN_RGBA = "rgba(0,255,136,1)"
-RED_RGBA = "rgba(255,51,85,1)"
-YELLOW_RGBA = "rgba(255,221,0,1)"
-RED_ZONE_RGBA = "rgba(255,51,85,0.12)"
-RED_ZONE_LINE_RGBA = "rgba(255,51,85,0.35)"
-TEXT_RGBA = "rgba(224,224,255,1)"
-DIM_RGBA = "rgba(74,74,106,1)"
-PRICE_RGBA = "rgba(0,255,255,0.8)"
+CYAN_RGBA = "rgba(201,168,76,1)"
+MAGENTA_RGBA = "rgba(139,115,64,1)"
+GREEN_RGBA = "rgba(45,138,78,1)"
+RED_RGBA = "rgba(196,69,69,1)"
+YELLOW_RGBA = "rgba(212,148,58,1)"
+RED_ZONE_RGBA = "rgba(196,69,69,0.12)"
+RED_ZONE_LINE_RGBA = "rgba(196,69,69,0.35)"
+TEXT_RGBA = "rgba(232,228,220,1)"
+DIM_RGBA = "rgba(138,133,120,1)"
+PRICE_RGBA = "rgba(201,168,76,0.8)"
 
 # ---------------------------------------------------------------------------
 # Styling helpers
 # ---------------------------------------------------------------------------
 
 def _badge(text: str, color: str) -> str:
-    """Return an HTML badge with cyberpunk styling."""
+    """Return an HTML badge with Nordic Gold styling."""
     return (
         f'<span style="'
         f'background:transparent;'
@@ -465,12 +465,12 @@ def _build_price_chart(
             font=dict(color=TEXT, family="monospace", size=11),
         ),
         xaxis=dict(
-            gridcolor=f"rgba(74,74,106,0.3)",
+            gridcolor=f"rgba(138,133,120,0.3)",
             tickfont=dict(color=DIM, family="monospace"),
             rangeslider=dict(visible=False),
         ),
         yaxis=dict(
-            gridcolor=f"rgba(74,74,106,0.3)",
+            gridcolor=f"rgba(138,133,120,0.3)",
             tickfont=dict(color=DIM, family="monospace"),
         ),
         hovermode="x unified",
@@ -513,12 +513,12 @@ def _render_drawdown_table(drawdowns: list) -> None:
     classification_colors = {
         "Noise/Temporary": "#1a3a1a",
         "Fundamental Deterioration": "#3a1a1a",
-        "Macro/Geopolitical": "#1a1a3a",
+        "Macro/Geopolitical": "#1a1a22",
         "Sector-Wide": "#2a2a1a",
     }
 
     def _style_classification(val: str) -> str:
-        bg = classification_colors.get(val, "#0a0a1e")
+        bg = classification_colors.get(val, "#14141e")
         return f"background-color: {bg}; color: {TEXT}; font-family: monospace;"
 
     def _style_drop(val: str) -> str:
@@ -553,7 +553,7 @@ def _render_drawdown_table(drawdowns: list) -> None:
                 ("border-bottom", f"1px solid {DIM}"),
             ]},
             {"selector": "td", "props": [
-                ("border-bottom", f"1px solid rgba(74,74,106,0.3)"),
+                ("border-bottom", f"1px solid rgba(138,133,120,0.3)"),
             ]},
         ])
     )
@@ -609,7 +609,7 @@ def _render_cycle_bar(current_phase: str) -> None:
         if i == current_idx:
             bar_colors.append(_cycle_color(phase))
         else:
-            bar_colors.append("rgba(74,74,106,0.3)")
+            bar_colors.append("rgba(138,133,120,0.3)")
 
     fig = go.Figure()
 
@@ -798,7 +798,7 @@ def _render_backtest(backtest: pd.DataFrame) -> None:
                 ("border-bottom", f"1px solid {DIM}"),
             ]},
             {"selector": "td", "props": [
-                ("border-bottom", f"1px solid rgba(74,74,106,0.3)"),
+                ("border-bottom", f"1px solid rgba(138,133,120,0.3)"),
             ]},
         ])
     )

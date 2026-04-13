@@ -140,15 +140,15 @@ CYCLE_DESCRIPTIONS: Dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 SCORE_LABELS = {
-    0: ("BEARISH",  "#ff3355"),
-    1: ("NEUTRAL",  "#ffdd00"),
-    2: ("BULLISH",  "#00ff88"),
-    3: ("STRONG",   "#00ffff"),
+    0: ("BEARISH",  "#c44545"),
+    1: ("NEUTRAL",  "#d4943a"),
+    2: ("BULLISH",  "#2d8a4e"),
+    3: ("STRONG",   "#c9a84c"),
 }
 
 def score_label(score: int) -> tuple:
     """Return (label, color) for a cycle score 0-3."""
-    return SCORE_LABELS.get(max(0, min(3, score)), ("NEUTRAL", "#ffdd00"))
+    return SCORE_LABELS.get(max(0, min(3, score)), ("NEUTRAL", "#d4943a"))
 
 
 # ---------------------------------------------------------------------------
