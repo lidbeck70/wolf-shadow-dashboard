@@ -1990,6 +1990,11 @@ def tab_regime():
                         "sl_level":    sl_level,
                         "tp1_2R":      tp1,
                         "tp2_3R":      tp2,
+                        "ema10":       e10_last,
+                        "ema21":       e21_last,
+                        "ema50":       e50_last,
+                        "ema200":      e200_last,
+                        "kijun":       kj,
                     }
 
                 # ── Fetch data ────────────────────────────────────────────────
@@ -2017,6 +2022,12 @@ def tab_regime():
                 atr_val     = stk_result["atr"]        if stk_result else 0
                 adx_val_reg = stk_result["adx"]        if stk_result else 0
 
+                ema10_val  = stk_result["ema10"]  if stk_result else 0
+                ema21_val  = stk_result["ema21"]  if stk_result else 0
+                ema50_val  = stk_result["ema50"]  if stk_result else 0
+                ema200_val = stk_result["ema200"] if stk_result else 0
+                kijun_val  = stk_result["kijun"]  if stk_result else 0
+
                 st.session_state.regime_data = {
                     "mkt_score":   mkt_score,
                     "sec_score":   sec_score,
@@ -2034,8 +2045,14 @@ def tab_regime():
                     "tp1":         tp1,
                     "tp2":         tp2,
                     "atr":         atr_val,
+                    "ema10":       ema10_val,
+                    "ema21":       ema21_val,
+                    "ema50":       ema50_val,
+                    "ema200":      ema200_val,
+                    "kijun":       kijun_val,
                     "timestamp":   datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 }
+                st.session_state.regime_stock_df = stock_df
                 st.session_state.regime_ticker = watch_ticker
 
             except Exception as e:
@@ -2225,6 +2242,215 @@ def tab_regime():
         height=230,
     )
 
+    # ── WOLF ENTRY CHECKLIST ──────────────────────────────────────────────────
+    try:
+        _chk_close  = data["close"]
+        _chk_rsi    = data["rsi"]
+        _chk_atr    = data["atr"]
+        _chk_ema10  = data.get("ema10", 0)
+        _chk_ema21  = data.get("ema21", 0)
+        _chk_ema50  = data.get("ema50", 0)
+        _chk_ema200 = data.get("ema200", 0)
+        _chk_kijun  = data.get("kijun", 0)
+        _chk_stack  = data["ema_stack"]
+
+        # -- Determine trend direction --
+        if _chk_stack:
+            _trend_dir, _trend_clr = "BULL", "#00ff88"
+        elif _chk_close > _chk_ema50:
+            _trend_dir, _trend_clr = "NEUTRAL-BULL", "#ffdd00"
+        elif _chk_close > _chk_ema200:
+            _trend_dir, _trend_clr = "NEUTRAL", "#ff9900"
+        else:
+            _trend_dir, _trend_clr = "BEAR", "#ff3355"
+
+        _stack_icon = "✓" if _chk_stack else "✗"
+
+        # -- RSI state --
+        if _chk_rsi > 70:
+            _rsi_state = "OVERBOUGHT"
+        elif _chk_rsi < 30:
+            _rsi_state = "OVERSOLD"
+        elif 40 <= _chk_rsi <= 60:
+            _rsi_state = "NEUTRAL"
+        else:
+            _rsi_state = "ACTIVE"
+
+        # -- Volume ratio --
+        _stk_df = st.session_state.get("regime_stock_df")
+        _vol_ratio = 0.0
+        if _stk_df is not None and len(_stk_df) >= 20:
+            _vol_avg = _stk_df["Volume"].rolling(20).mean().iloc[-1]
+            if _vol_avg > 0:
+                _vol_ratio = float(_stk_df["Volume"].iloc[-1] / _vol_avg)
+
+        # -- Historical volatility (20d annualized) --
+        _hist_vol = 0.0
+        if _stk_df is not None and len(_stk_df) >= 21:
+            _log_ret = np.log(_stk_df["Close"] / _stk_df["Close"].shift(1)).dropna()
+            if len(_log_ret) >= 20:
+                _hist_vol = float(_log_ret.tail(20).std() * np.sqrt(252) * 100)
+
+        # -- ATR ratio (current ATR vs 50d avg ATR) --
+        _atr_ratio = 1.0
+        if _stk_df is not None and len(_stk_df) >= 64:
+            _high, _low, _cls = _stk_df["High"], _stk_df["Low"], _stk_df["Close"]
+            _tr = pd.concat([_high - _low, (_high - _cls.shift()).abs(), (_low - _cls.shift()).abs()], axis=1).max(axis=1)
+            _atr_series = _tr.ewm(com=13, adjust=False).mean()
+            _atr_avg_50 = _atr_series.tail(50).mean()
+            if _atr_avg_50 > 0:
+                _atr_ratio = float(_atr_series.iloc[-1] / _atr_avg_50)
+
+        # -- Simple order blocks --
+        _bull_obs, _bear_obs = [], []
+        if _stk_df is not None and len(_stk_df) >= 50:
+            _ob_atr = _chk_atr if _chk_atr > 0 else 1.0
+            _ob_recent = _stk_df.tail(100) if len(_stk_df) >= 100 else _stk_df
+            for _obi in range(2, len(_ob_recent)):
+                _ob_c = _ob_recent.iloc[_obi]
+                _ob_p = _ob_recent.iloc[_obi - 1]
+                _ob_body = abs(float(_ob_c["Close"]) - float(_ob_c["Open"]))
+                if (float(_ob_c["Close"]) > float(_ob_c["Open"])
+                        and _ob_body > _ob_atr * 1.5
+                        and float(_ob_p["Close"]) < float(_ob_p["Open"])):
+                    _bull_obs.append(float(_ob_c["Low"]))
+                if (float(_ob_c["Close"]) < float(_ob_c["Open"])
+                        and _ob_body > _ob_atr * 1.5
+                        and float(_ob_p["Close"]) > float(_ob_p["Open"])):
+                    _bear_obs.append(float(_ob_c["High"]))
+            _bull_obs = _bull_obs[-5:]
+            _bear_obs = _bear_obs[-5:]
+
+        _nearest_bull_ob = min(_bull_obs, key=lambda x: abs(x - _chk_close)) if _bull_obs else None
+        _nearest_bear_ob = min(_bear_obs, key=lambda x: abs(x - _chk_close)) if _bear_obs else None
+        _has_nearby_ob = False
+        if _nearest_bull_ob and abs(_nearest_bull_ob - _chk_close) / _chk_close < 0.03:
+            _has_nearby_ob = True
+        if _nearest_bear_ob and abs(_nearest_bear_ob - _chk_close) / _chk_close < 0.03:
+            _has_nearby_ob = True
+
+        # -- Simple candlestick patterns --
+        _candle_patterns = []
+        if _stk_df is not None and len(_stk_df) >= 3:
+            _cc = _stk_df.iloc[-1]
+            _cp = _stk_df.iloc[-2]
+            _cbody = float(_cc["Close"]) - float(_cc["Open"])
+            _crange = float(_cc["High"]) - float(_cc["Low"])
+            if _crange > 0:
+                _lower_wick = min(float(_cc["Open"]), float(_cc["Close"])) - float(_cc["Low"])
+                if _lower_wick > abs(_cbody) * 2 and _cbody > 0:
+                    _candle_patterns.append("Hammer (Bull)")
+                if (float(_cp["Close"]) < float(_cp["Open"])
+                        and float(_cc["Close"]) > float(_cc["Open"])
+                        and float(_cc["Close"]) > float(_cp["Open"])
+                        and float(_cc["Open"]) < float(_cp["Close"])):
+                    _candle_patterns.append("Bullish Engulfing")
+                if (float(_cp["Close"]) > float(_cp["Open"])
+                        and float(_cc["Close"]) < float(_cc["Open"])
+                        and float(_cc["Close"]) < float(_cp["Open"])
+                        and float(_cc["Open"]) > float(_cp["Close"])):
+                    _candle_patterns.append("Bearish Engulfing")
+                if abs(_cbody) < _crange * 0.1:
+                    _candle_patterns.append("Doji")
+
+        # -- Computed gate variables --
+        _is_consolidating = (35 < _chk_rsi < 65) and (_atr_ratio < 0.7)
+        _ema10_dist = abs(_chk_close - _chk_ema10) / _chk_close * 100 if _chk_close > 0 else 99
+        _ema21_dist = abs(_chk_close - _chk_ema21) / _chk_close * 100 if _chk_close > 0 else 99
+        _is_pullback = (min(_ema10_dist, _ema21_dist) < 2.0) and (_chk_close > _chk_ema50)
+        _has_candle = len(_candle_patterns) > 0
+        _pattern_name = ", ".join(_candle_patterns) if _candle_patterns else "Inget mönster"
+        _half_atr = _chk_atr * 0.5
+        _sl_pct = (_half_atr / _chk_close * 100) if _chk_close > 0 else 0
+        _rr_ratio = 0.0
+        if _nearest_bear_ob and _half_atr > 0:
+            _target_dist = abs(_nearest_bear_ob - _chk_close)
+            _rr_ratio = _target_dist / _half_atr
+
+        # -- Risk score (0-100) --
+        _risk_score = min(100, int((_hist_vol / 50) * 100)) if _hist_vol > 0 else 50
+
+        # ── CHECKLIST HEADER ──
+        st.markdown(
+            "<div style='color:#ff00ff;font-size:0.7rem;text-transform:uppercase;"
+            "letter-spacing:0.1em;margin:20px 0 8px 0;border-top:1px solid rgba(255,0,255,0.15);"
+            "padding-top:12px;'>WOLF ENTRY CHECKLIST</div>",
+            unsafe_allow_html=True,
+        )
+
+        # ── Row 1: TREND | VOLATILITET | MOMENTUM ──
+        _ec1, _ec2, _ec3 = st.columns(3)
+
+        def _checklist_card(title, lines, border_color="#00ffff"):
+            content = "".join(
+                f"<div style='font-size:0.72rem;color:#e0e0ff;padding:1px 0;'>{ln}</div>"
+                for ln in lines
+            )
+            return (
+                f"<div style='background:#0a0a1e;border:1px solid {border_color};"
+                f"border-radius:6px;padding:10px 12px;'>"
+                f"<div style='color:{border_color};font-size:0.65rem;font-weight:700;"
+                f"letter-spacing:0.08em;margin-bottom:6px;'>{title}</div>"
+                f"{content}</div>"
+            )
+
+        with _ec1:
+            st.markdown(_checklist_card("TREND", [
+                f"Direction: <span style='color:{_trend_clr};font-weight:700;'>{_trend_dir}</span>",
+                f"EMA Stack: <span style='color:{('#00ff88' if _chk_stack else '#ff3355')};'>{_stack_icon}</span>",
+                f"EMA10: <b>{_chk_ema10:.2f}</b>",
+                f"EMA20: <b>{_chk_ema21:.2f}</b>",
+                f"EMA50: <b>{_chk_ema50:.2f}</b>",
+                f"EMA200: <b>{_chk_ema200:.2f}</b>",
+            ]), unsafe_allow_html=True)
+
+        with _ec2:
+            st.markdown(_checklist_card("VOLATILITET", [
+                f"ATR 14: <b>{_chk_atr:.2f}</b>",
+                f"Hist Vol: <b>{_hist_vol:.0f}%</b>",
+                f"ATR ratio: <b>{_atr_ratio:.2f}x</b>",
+                f"Risk: <b>{_risk_score}/100</b>",
+            ], border_color="#ff00ff"), unsafe_allow_html=True)
+
+        with _ec3:
+            _vol_clr = "#00ff88" if _vol_ratio >= 1.0 else "#ff3355"
+            st.markdown(_checklist_card("MOMENTUM", [
+                f"RSI: <b>{_chk_rsi:.1f}</b> ({_rsi_state})",
+                f"Vol ratio: <span style='color:{_vol_clr};font-weight:700;'>{_vol_ratio:.2f}x</span>",
+                f"ADX: <b>{data.get('adx', 0):.1f}</b>",
+            ]), unsafe_allow_html=True)
+
+        # ── Row 2: CANDLESTICK | ORDER BLOCKS ──
+        _ec4, _ec5 = st.columns(2)
+
+        with _ec4:
+            _cpat_lines = []
+            if _candle_patterns:
+                for _cp_name in _candle_patterns:
+                    _cp_icon = "⬆" if "Bull" in _cp_name or "Hammer" in _cp_name else "⬇"
+                    _cpat_lines.append(f"{_cp_icon} {_cp_name}")
+            else:
+                _cpat_lines.append("<span style='color:#4a4a6a;'>Inga mönster detekterade</span>")
+            st.markdown(_checklist_card("CANDLESTICK", _cpat_lines, border_color="#ffdd00"), unsafe_allow_html=True)
+
+        with _ec5:
+            _ob_lines = [
+                f"Bullish OBs: <b>{len(_bull_obs)}</b>"
+                + (f" (närmaste: {_nearest_bull_ob:.2f})" if _nearest_bull_ob else ""),
+                f"Bearish OBs: <b>{len(_bear_obs)}</b>"
+                + (f" (närmaste: {_nearest_bear_ob:.2f})" if _nearest_bear_ob else ""),
+            ]
+            if _has_nearby_ob:
+                _ob_lines.append("<span style='color:#00ff88;font-weight:700;'>OB inom 3% av pris ✓</span>")
+            else:
+                _ob_lines.append("<span style='color:#4a4a6a;'>Ingen OB inom 3%</span>")
+            st.markdown(_checklist_card("ORDER BLOCKS", _ob_lines, border_color="#00aaff"), unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+    except Exception:
+        pass
+
     # ── Wolf Trading Gates (11 rules) ────────────────────────────────────────────────────────────────────
     st.markdown(
         "<div style='color:#00ffff;font-size:0.7rem;text-transform:uppercase;"
@@ -2233,25 +2459,93 @@ def tab_regime():
         unsafe_allow_html=True,
     )
 
-    # Build gates from available regime data
-    # We use the variables already computed in this function
+    # Build gates from available regime data — now with REAL computed pass/fail
     swing_gates = []
     try:
+        # Safely get checklist values (may not exist if checklist block failed)
+        _g_rsi        = data["rsi"]
+        _g_atr        = data["atr"]
+        _g_close      = data["close"]
+        _g_ema10      = data.get("ema10", 0)
+        _g_ema21      = data.get("ema21", 0)
+        _g_kijun      = data.get("kijun", 0)
+        _g_consol     = (35 < _g_rsi < 65)
+        _g_atr_low    = False
+        try:
+            _g_atr_low = _atr_ratio < 0.7  # noqa: F821
+        except NameError:
+            pass
+        _g_is_consol  = _g_consol and _g_atr_low
+
+        _g_nearby_ob  = False
+        try:
+            _g_nearby_ob = _has_nearby_ob  # noqa: F821
+        except NameError:
+            pass
+
+        _g_nearest_ob_val = 0.0
+        try:
+            if _nearest_bull_ob:  # noqa: F821
+                _g_nearest_ob_val = _nearest_bull_ob
+            elif _nearest_bear_ob:  # noqa: F821
+                _g_nearest_ob_val = _nearest_bear_ob
+        except NameError:
+            pass
+
+        _g_ema10_dist = abs(_g_close - _g_ema10) / _g_close * 100 if _g_close > 0 else 99
+        _g_ema21_dist = abs(_g_close - _g_ema21) / _g_close * 100 if _g_close > 0 else 99
+        _g_is_pullback = (min(_g_ema10_dist, _g_ema21_dist) < 2.0) and (_g_close > data.get("ema50", 0))
+
+        _g_has_candle = False
+        _g_pattern_name = "Inget mönster"
+        try:
+            _g_has_candle = _has_candle  # noqa: F821
+            _g_pattern_name = _pattern_name  # noqa: F821
+        except NameError:
+            pass
+
+        _g_vol_ratio = 0.0
+        try:
+            _g_vol_ratio = _vol_ratio  # noqa: F821
+        except NameError:
+            pass
+
+        _g_half_atr = _g_atr * 0.5
+        _g_sl_pct = (_g_half_atr / _g_close * 100) if _g_close > 0 else 0
+
+        _g_rr = 0.0
+        try:
+            _g_rr = _rr_ratio  # noqa: F821
+        except NameError:
+            pass
+
+        swing_gates = [
+            {"rule": "1. Trendriktning",       "passed": total >= 50,           "value": f"Score: {total}/125"},
+            {"rule": "2. Ej konsolidering",     "passed": not _g_is_consol,      "value": f"RSI: {_g_rsi:.0f}"},
+            {"rule": "3. Key level (OB)",        "passed": _g_nearby_ob,          "value": f"Närmaste OB: {_g_nearest_ob_val:.2f}" if _g_nearby_ob else "Ingen OB nära"},
+            {"rule": "4. Pullback entry",        "passed": _g_is_pullback,        "value": f"Avstånd EMA10: {_g_ema10_dist:.1f}%"},
+            {"rule": "5. Candle trigger",        "passed": _g_has_candle,         "value": _g_pattern_name},
+            {"rule": "6. Volymbekräftelse",      "passed": _g_vol_ratio >= 1.0,   "value": f"Vol ratio: {_g_vol_ratio:.1f}x"},
+            {"rule": "7. R:R ≥ 1:2",             "passed": _g_rr >= 2.0,          "value": f"R:R 1:{_g_rr:.1f}"},
+            {"rule": "8. Max 1% risk",           "passed": True,                  "value": f"SL dist: {_g_half_atr:.2f} ({_g_sl_pct:.1f}%)"},
+            {"rule": "9. SL → BE efter HH",     "passed": True,                  "value": "Post-entry regel"},
+            {"rule": "10. Max 2 förluster/dag", "passed": True,                  "value": "Disciplin"},
+            {"rule": "11. Kijun trail + ½ATR", "passed": True,                  "value": f"Kijun: {_g_kijun:.2f}, EMA10: {_g_ema10:.2f}"},
+        ]
+    except Exception:
         swing_gates = [
             {"rule": "1. Trendriktning",       "passed": total >= 50,    "value": f"Score: {total}/125"},
-            {"rule": "2. Ej konsolidering",     "passed": True,           "value": "Manuell check"},
-            {"rule": "3. Key level (OB)",        "passed": True,           "value": "Se VIKING REGIME"},
-            {"rule": "4. Pullback entry",        "passed": True,           "value": "Manuell check"},
-            {"rule": "5. Candle trigger",        "passed": True,           "value": "Se VIKING REGIME"},
-            {"rule": "6. Volymbekräftelse",      "passed": True,           "value": "Manuell check"},
-            {"rule": "7. R:R ≥ 1:2",             "passed": True,           "value": "Beräkna SL/TP"},
+            {"rule": "2. Ej konsolidering",     "passed": True,           "value": "Data ej tillgänglig"},
+            {"rule": "3. Key level (OB)",        "passed": True,           "value": "Data ej tillgänglig"},
+            {"rule": "4. Pullback entry",        "passed": True,           "value": "Data ej tillgänglig"},
+            {"rule": "5. Candle trigger",        "passed": True,           "value": "Data ej tillgänglig"},
+            {"rule": "6. Volymbekräftelse",      "passed": True,           "value": "Data ej tillgänglig"},
+            {"rule": "7. R:R ≥ 1:2",             "passed": True,           "value": "Data ej tillgänglig"},
             {"rule": "8. Max 1% risk",           "passed": True,           "value": "Position sizing"},
             {"rule": "9. SL → BE efter HH",     "passed": True,           "value": "Post-entry"},
             {"rule": "10. Max 2 förluster/dag", "passed": True,           "value": "Disciplin"},
             {"rule": "11. Kijun trail + ½ATR", "passed": True,           "value": "Exit-regel"},
         ]
-    except Exception:
-        pass
 
     if swing_gates:
         passed = sum(1 for g in swing_gates if g["passed"])
