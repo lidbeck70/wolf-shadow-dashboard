@@ -321,7 +321,7 @@ def render_rules_page() -> None:
 
     guide_data = [
         ("SCREENER", "Wolf / Alpha / Viking Screener",
-         "Wolf: Regime Score + volymbekräftelse. Alpha: 20-poängs fundamental + globala marknader (US/CA/UK/EU). Viking: Z-score composite. Alla tre har marknadsväljare."),
+         "Wolf: Regime Score + volymbekräftelse. Alpha: 20-poängs fundamental + globala marknader. Viking: Z-score composite + Vikings Nine + F&G + OC + Signal Tracking + Retail Score. Alla tre har marknadsväljare."),
         ("BACKTEST", "Wolf / Alpha / Viking / RS Sector",
          "Verifiera strategi historiskt. Test Top N: skicka screener-resultat till backtest. Alpha Backtest har marknadsväljare."),
         ("HOLDINGS", "Wolf / Viking / Alpha Portfolio",
@@ -330,8 +330,8 @@ def render_rules_page() -> None:
          "4-lagers regime + Entry Checklist (Trend/Volatilitet/Momentum/Candlestick/OB). Alla 11 gates med auto-pass/fail. SL/TP-kalkylator. Benchmark RS. Regler i flikbotten."),
         ("ALPHA REGIME", "Alpha #1-10 + globala marknader",
          "Alla 10 regler som live gates. GRÖN/ORANGE/RÖD badge. EMA-nivåer + F&G + drawdown. Marknadsväljare för alla regioner. Regler i flikbotten."),
-        ("VIKING REGIME", "Viking alla + Alpha #1-5",
-         "Prisgraf + EMA 10/20/50/200 + Order Blocks. Trend/Volatility/Sentiment/Momentum-kort. Oscillator Direction. SL/TP-kalkylator. Benchmark RS. Regler i flikbotten."),
+        ("VIKING REGIME", "Viking alla + Vikings Nine + F&G + OC",
+         "Prisgraf + EMA 10/20/50/200 + Order Blocks. Trend/Volatility/Sentiment/Momentum-kort. Vikings Nine (9/9 checklist). Per-ticker Fear & Greed. Overhead Clusters (M1/M2). SL/TP-kalkylator. Benchmark RS. Regler i flikbotten."),
         ("SECTOR & REGIME", "Wolf #1 | Alpha #4, #7 | Viking #4",
          "Sektorhjul grön/gul/röd. Global index-regime. Risk-On/Off."),
         ("SENTIMENT", "Alpha #5 | Viking #5, #9",

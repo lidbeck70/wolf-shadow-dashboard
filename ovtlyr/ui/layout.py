@@ -859,6 +859,228 @@ def render_ovtlyr_page() -> None:
             unsafe_allow_html=True,
         )
 
+    # ── Vikings Nine / Fear & Greed / Overhead Clusters ────────────────────
+    try:
+        import numpy as np
+
+        _vn_close = df["Close"].astype(float)
+        _vn_volume = df["Volume"].astype(float)
+        _vn_price = float(_vn_close.iloc[-1])
+
+        # ── Vikings Nine (9 factors) ──────────────────────────────────────
+        _vn_factors: list[tuple[str, bool]] = []
+
+        # 1. EMA Stack
+        _vn_ema10 = float(_vn_close.ewm(span=10, adjust=False).mean().iloc[-1])
+        _vn_ema20 = float(_vn_close.ewm(span=20, adjust=False).mean().iloc[-1])
+        _vn_factors.append(("EMA Stack (P > E10 > E20)", _vn_price > _vn_ema10 > _vn_ema20))
+
+        # 2. MACD Bullish
+        _vn_macd_fast = _vn_close.ewm(span=12, adjust=False).mean()
+        _vn_macd_slow = _vn_close.ewm(span=26, adjust=False).mean()
+        _vn_macd_line = _vn_macd_fast - _vn_macd_slow
+        _vn_macd_signal = _vn_macd_line.ewm(span=9, adjust=False).mean()
+        _vn_macd_hist = float((_vn_macd_line - _vn_macd_signal).iloc[-1])
+        _vn_factors.append(("MACD Bullish (hist > 0)", _vn_macd_hist > 0))
+
+        # 3. RSI Sweet Spot
+        _vn_rsi_delta = _vn_close.diff()
+        _vn_rsi_gain = _vn_rsi_delta.clip(lower=0).rolling(14).mean()
+        _vn_rsi_loss = (-_vn_rsi_delta.clip(upper=0)).rolling(14).mean()
+        _vn_rsi_rs = _vn_rsi_gain / _vn_rsi_loss.replace(0, float("nan"))
+        _vn_rsi_val = float((100 - (100 / (1 + _vn_rsi_rs))).fillna(50).iloc[-1])
+        _vn_factors.append(("RSI Sweet Spot (45-70)", 45 < _vn_rsi_val < 70))
+
+        # 4. Price Up (5d + 20d)
+        _vn_price_up = False
+        if len(_vn_close) >= 20:
+            _vn_chg5 = _vn_price / float(_vn_close.iloc[-5]) - 1
+            _vn_chg20 = _vn_price / float(_vn_close.iloc[-20]) - 1
+            _vn_price_up = _vn_chg5 > 0 and _vn_chg20 > 0
+        _vn_factors.append(("Price Up (5d + 20d)", _vn_price_up))
+
+        # 5. Volume > 1.2x
+        _vn_vol_sma = float(_vn_volume.rolling(20).mean().iloc[-1])
+        _vn_vol_ratio = float(_vn_volume.iloc[-1]) / max(1.0, _vn_vol_sma)
+        _vn_factors.append(("Volume > 1.2x avg", _vn_vol_ratio > 1.2))
+
+        # 6. Volume Up-Day
+        _vn_is_up_day = float(df["Close"].iloc[-1]) > float(df["Open"].iloc[-1])
+        _vn_factors.append(("Vol Up-Day (green candle)", _vn_vol_ratio > 1.0 and _vn_is_up_day))
+
+        # 7. Low ATR
+        _vn_atr = float((df["High"].astype(float) - df["Low"].astype(float)).rolling(14).mean().iloc[-1])
+        _vn_atr_pct = _vn_atr / _vn_price * 100 if _vn_price > 0 else 999
+        _vn_factors.append(("Low ATR (< 3.5%)", _vn_atr_pct < 3.5))
+
+        # 8. Retail Hot (skip if unavailable)
+        _vn_retail_score = 0.0
+        try:
+            _vn_retail_mod = None
+            for _pfx in ("screener_ovtlyr", "ovtlyr.screener_ovtlyr"):
+                try:
+                    _vn_retail_mod = __import__(_pfx, fromlist=["_get_retail_score"])
+                    break
+                except ImportError:
+                    pass
+            if _vn_retail_mod and hasattr(_vn_retail_mod, "_get_retail_score"):
+                _vn_retail_score = _vn_retail_mod._get_retail_score(ticker)
+        except Exception:
+            pass
+        _vn_factors.append(("Retail Hot (score > 60)", _vn_retail_score > 60))
+
+        # 9. F&G Greed — compute per-ticker Fear & Greed inline
+        _fg_score = 50.0
+        try:
+            _fg_s = 0.0
+            _fg_vol_sma = float(_vn_volume.rolling(20).mean().iloc[-1])
+            _fg_vol_std = float(_vn_volume.rolling(20).std().iloc[-1])
+            _fg_vol_z = (float(_vn_volume.iloc[-1]) - _fg_vol_sma) / max(1.0, _fg_vol_std)
+            _fg_vol_z = max(-3, min(3, _fg_vol_z))
+            _fg_s += (_fg_vol_z + 3) / 6 * 20
+            _fg_s += (_vn_rsi_val / 100) * 20
+            _fg_ma20 = float(_vn_close.rolling(20).mean().iloc[-1])
+            _fg_dev = (_vn_price - _fg_ma20) / _fg_ma20 if _fg_ma20 > 0 else 0
+            _fg_s += max(0, min(20, (_fg_dev + 0.05) / 0.10 * 20))
+            _fg_atr_fast = float((df["High"].astype(float) - df["Low"].astype(float)).rolling(5).mean().iloc[-1])
+            _fg_atr_slow = float((df["High"].astype(float) - df["Low"].astype(float)).rolling(20).mean().iloc[-1])
+            _fg_vol_r = _fg_atr_fast / max(0.001, _fg_atr_slow)
+            _fg_s += max(0, min(20, (1.5 - _fg_vol_r) / 1.0 * 20))
+            _fg_up_days = int((_vn_close.diff().tail(20) > 0).sum())
+            _fg_s += (_fg_up_days / 20) * 20
+            _fg_score = round(max(0, min(100, _fg_s)), 1)
+        except Exception:
+            _fg_score = 50.0
+
+        _vn_factors.append(("F&G Greed (score > 50)", _fg_score > 50))
+
+        _vn_passed = sum(1 for _, p in _vn_factors if p)
+
+        # ── Overhead Clusters ─────────────────────────────────────────────
+        _oc_status = "-"
+        _oc_label = ""
+        _oc_color = DIM
+        _oc_nearest = None
+        try:
+            _oc_lookback = min(60, len(df))
+            _oc_recent = df.tail(_oc_lookback)
+            _oc_close = _oc_recent["Close"].astype(float)
+            _oc_vol = _oc_recent["Volume"].astype(float)
+            _oc_price = float(_oc_close.iloc[-1])
+            _oc_bins = np.linspace(float(_oc_close.min()), float(_oc_close.max()), 21)
+            _oc_profile = []
+            for _i in range(len(_oc_bins) - 1):
+                _mask = (_oc_close >= _oc_bins[_i]) & (_oc_close < _oc_bins[_i + 1])
+                _bin_vol = float(_oc_vol[_mask].sum())
+                _bin_center = (_oc_bins[_i] + _oc_bins[_i + 1]) / 2
+                _oc_profile.append({"price": _bin_center, "volume": _bin_vol})
+            _oc_total_vol = sum(v["volume"] for v in _oc_profile)
+            _oc_threshold = _oc_total_vol / 20 * 1.5
+            _oc_overhead = [v for v in _oc_profile if v["price"] > _oc_price and v["volume"] > _oc_threshold]
+            if not _oc_overhead:
+                _oc_status = "M2"
+                _oc_label = "Fri väg — ingen overhead supply"
+                _oc_color = GREEN
+            elif _oc_overhead[0]["price"] < _oc_price * 1.03:
+                _oc_status = "M1"
+                _oc_label = "Tungt motstånd ovanför"
+                _oc_color = RED
+                _oc_nearest = _oc_overhead[0]["price"]
+            else:
+                _oc_status = "M1+"
+                _oc_label = "Avlägset motstånd"
+                _oc_color = YELLOW
+                _oc_nearest = _oc_overhead[0]["price"]
+        except Exception:
+            _oc_status = "-"
+            _oc_label = "Kunde inte beräkna"
+            _oc_color = DIM
+
+        # ── F&G label / color ─────────────────────────────────────────────
+        if _fg_score < 25:
+            _fg_label, _fg_color = "Extreme Fear", RED
+        elif _fg_score < 45:
+            _fg_label, _fg_color = "Fear", YELLOW
+        elif _fg_score <= 55:
+            _fg_label, _fg_color = "Neutral", DIM
+        elif _fg_score <= 75:
+            _fg_label, _fg_color = "Greed", GREEN
+        else:
+            _fg_label, _fg_color = "Extreme Greed", CYAN
+
+        # ── Render 3 cards in a row ───────────────────────────────────────
+        st.markdown(
+            f"<div style='color:{CYAN};font-size:0.7rem;text-transform:uppercase;"
+            f"letter-spacing:0.1em;margin:16px 0 8px 0;border-top:1px solid rgba(201,168,76,0.2);"
+            f"padding-top:12px;'>VIKING SCREENER — NINE · F&G · OVERHEAD</div>",
+            unsafe_allow_html=True,
+        )
+
+        _vs_c1, _vs_c2, _vs_c3 = st.columns(3)
+
+        # ── Card 1: Viking's Nine ─────────────────────────────────────────
+        with _vs_c1:
+            _vn_score_color = GREEN if _vn_passed >= 7 else (YELLOW if _vn_passed >= 4 else RED)
+            _vn_lines = ""
+            for _fname, _fpassed in _vn_factors:
+                _ficon = "✓" if _fpassed else "✗"
+                _fc = GREEN if _fpassed else RED
+                _vn_lines += (
+                    f'<div style="display:flex;justify-content:space-between;margin:2px 0;">'
+                    f'<span style="color:{DIM};font-size:0.72rem;">{_fname}</span>'
+                    f'<span style="color:{_fc};font-size:0.72rem;font-weight:700;">{_ficon}</span>'
+                    f'</div>'
+                )
+            st.markdown(
+                f'<div style="{_CARD_CSS.format(color=_vn_score_color)}">'
+                f'<div style="color:{_vn_score_color};font-size:0.78rem;font-weight:700;'
+                f'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">'
+                f"VIKING'S NINE: {_vn_passed}/9</div>"
+                f'{_vn_lines}'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+        # ── Card 2: Fear & Greed ──────────────────────────────────────────
+        with _vs_c2:
+            st.markdown(
+                f'<div style="{_CARD_CSS.format(color=_fg_color)}">'
+                f'<div style="color:{DIM};font-size:0.72rem;text-transform:uppercase;'
+                f'letter-spacing:0.08em;">PER-TICKER FEAR & GREED</div>'
+                f'<div style="color:{_fg_color};font-size:2.2rem;font-weight:700;margin:6px 0;">'
+                f'{_fg_score:.0f}<span style="font-size:0.9rem;color:{DIM};">/100</span></div>'
+                f'<div style="color:{_fg_color};font-size:0.85rem;font-weight:600;">{_fg_label}</div>'
+                f'<div style="color:{DIM};font-size:0.65rem;margin-top:6px;">'
+                f'RSI: {_vn_rsi_val:.0f} · Vol Z: {_fg_vol_z:+.1f} · Up days: {_fg_up_days}/20</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+        # ── Card 3: Overhead Clusters ─────────────────────────────────────
+        with _vs_c3:
+            _oc_extra = ""
+            if _oc_nearest is not None:
+                _oc_extra = (
+                    f'<div style="color:{DIM};font-size:0.72rem;margin-top:6px;">'
+                    f'Nearest resistance: <span style="color:{_oc_color};font-weight:600;">'
+                    f'{_oc_nearest:.2f}</span>'
+                    f' ({(_oc_nearest / _vn_price - 1) * 100:+.1f}%)</div>'
+                )
+            st.markdown(
+                f'<div style="{_CARD_CSS.format(color=_oc_color)}">'
+                f'<div style="color:{DIM};font-size:0.72rem;text-transform:uppercase;'
+                f'letter-spacing:0.08em;">OVERHEAD CLUSTERS</div>'
+                f'<div style="color:{_oc_color};font-size:2.2rem;font-weight:700;margin:6px 0;">'
+                f'{_oc_status}</div>'
+                f'<div style="color:{_oc_color};font-size:0.85rem;font-weight:600;">{_oc_label}</div>'
+                f'{_oc_extra}'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+    except Exception as _vs_err:
+        st.warning(f"Viking Screener cards error: {_vs_err}")
+
     # ── SL/TP Calculator ─────────────────────────────────────────────────────
     try:
         st.markdown(
