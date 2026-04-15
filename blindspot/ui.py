@@ -210,7 +210,8 @@ def render_blindspot_page() -> None:
 
     if sector_rows:
         sector_df = pd.DataFrame(sector_rows)
-        styler_s = sector_df.style.map(_color_opportunity, subset=["Avg Opportunity", "Best"])
+        fmt_s = {"Avg Opportunity": "{:.1f}", "Best": "{:.1f}"}
+        styler_s = sector_df.style.format(fmt_s, na_rep="-").map(_color_opportunity, subset=["Avg Opportunity", "Best"])
         st.dataframe(styler_s, use_container_width=True, hide_index=True)
 
     # ── Section 4: VALUE TRAP WARNINGS ────────────────────────────────
