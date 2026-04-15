@@ -153,6 +153,13 @@ try:
 except ImportError:
     HOLDINGS_AVAILABLE = False
 
+# Trade Journal
+try:
+    from trade_journal import render_trade_journal_page
+    JOURNAL_AVAILABLE = True
+except ImportError:
+    JOURNAL_AVAILABLE = False
+
 # Sector ETF → Display name mapping
 SECTOR_ETF_NAMES = {
     "XLE": "XLE Energy",
@@ -2992,6 +2999,7 @@ def main():
         "  SCREENER  ",
         "  BACKTEST  ",
         "  HOLDINGS  ",
+        "  TRADE JOURNAL  ",
         "  WOLF REGIME  ",
         "  ALPHA REGIME  ",
         "  VIKING REGIME  ",
@@ -3002,7 +3010,7 @@ def main():
         "  ODIN'S BLINDSPOT  ",
         "  RULES  ",
     ]
-    (tab1, tab2, tab_holdings, tab_swing_regime, tab_long_regime, tab_ovtlyr,
+    (tab1, tab2, tab_holdings, tab_journal, tab_swing_regime, tab_long_regime, tab_ovtlyr,
      tab6, tab7, tab8, tab_retail, tab_blindspot, tab_rules) = st.tabs(tab_labels)
 
     with tab1:
@@ -3016,6 +3024,12 @@ def main():
             render_holdings_page()
         else:
             _tab_not_found("Holdings", "holdings")
+
+    with tab_journal:
+        if JOURNAL_AVAILABLE:
+            render_trade_journal_page()
+        else:
+            _tab_not_found("Trade Journal", "trade_journal")
 
     with tab_swing_regime:
         tab_regime()  # Existing swing regime monitor — UNTOUCHED
