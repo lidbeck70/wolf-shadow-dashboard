@@ -2574,8 +2574,96 @@ def tab_regime():
         gate_html += f'<div style="color:{gc};font-size:0.8rem;font-weight:700;">{passed}/{total_gates} GATES</div>'
         st.markdown(gate_html, unsafe_allow_html=True)
 
-    # ── SL/TP Calculator ─────────────────────────────────────────────────────
-    _render_sl_tp_calculator("swing")
+    # ── SL/TP Calculator (same layout as Viking Regime) ────────────────────
+    try:
+        _sltp_df = st.session_state.get("regime_stock_df")
+        if _sltp_df is not None and not _sltp_df.empty and len(_sltp_df) >= 20:
+            _CYAN_SL = "#c9a84c"
+            _GREEN_SL = "#2d8a4e"
+            _RED_SL = "#c44545"
+            _TEXT_SL = "#e8e4dc"
+            _DIM_SL = "#8a8578"
+            _BG2_SL = "#14141e"
+
+            st.markdown(
+                f"<div style='color:{_CYAN_SL};font-size:0.85rem;text-transform:uppercase;"
+                f"letter-spacing:0.1em;margin:20px 0 10px 0;border-top:2px solid rgba(201,168,76,0.2);"
+                f"padding-top:14px;font-weight:700;'>SL / TP KALKYLATOR — WOLF</div>",
+                unsafe_allow_html=True,
+            )
+
+            _close_sl = pd.to_numeric(_sltp_df["Close"], errors="coerce")
+            _high_sl = pd.to_numeric(_sltp_df["High"], errors="coerce")
+            _low_sl = pd.to_numeric(_sltp_df["Low"], errors="coerce")
+            _price_sl = float(_close_sl.dropna().iloc[-1])
+
+            _tr_sl = pd.concat([
+                _high_sl - _low_sl,
+                abs(_high_sl - _close_sl.shift(1)),
+                abs(_low_sl - _close_sl.shift(1)),
+            ], axis=1).max(axis=1)
+            _atr_sl = float(_tr_sl.rolling(14).mean().dropna().iloc[-1])
+            _half_atr_sl = _atr_sl / 2
+            _ema10_sl = float(_close_sl.ewm(span=10).mean().iloc[-1])
+            _kijun_sl = float((_high_sl.rolling(26).max() + _low_sl.rolling(26).min()).iloc[-1] / 2)
+
+            _sl_atr = _price_sl - _half_atr_sl
+            _sl_val = max(_sl_atr, _kijun_sl)
+            _sl_dist_sl = _price_sl - _sl_val
+            _tp_2r_sl = _price_sl + _sl_dist_sl * 2
+            _tp_3r_sl = _price_sl + _sl_dist_sl * 3
+
+            _sltp_c1, _sltp_c2 = st.columns(2)
+            with _sltp_c1:
+                _cap_wolf = st.number_input(
+                    "Kapital (SEK)", value=100000, step=10000,
+                    key="sltp_cap_wolf_inline",
+                )
+            with _sltp_c2:
+                _risk_wolf = st.number_input(
+                    "Risk %", value=5.0, min_value=0.5, max_value=10.0,
+                    step=0.5, key="sltp_risk_wolf_inline",
+                )
+
+            _risk_amt_sl = _cap_wolf * (_risk_wolf / 100)
+            _shares_sl = int(_risk_amt_sl / _sl_dist_sl) if _sl_dist_sl > 0 else 0
+            _pos_val_sl = _shares_sl * _price_sl
+            _pos_pct_sl = (_pos_val_sl / _cap_wolf * 100) if _cap_wolf > 0 else 0
+
+            _sc1, _sc2, _sc3 = st.columns(3)
+            with _sc1:
+                st.markdown(
+                    f'<div style="background:{_BG2_SL};border:2px solid rgba(196,69,69,0.3);border-radius:8px;padding:12px;">'
+                    f'<div style="color:{_RED_SL};font-weight:700;font-size:0.8rem;">STOP LOSS</div>'
+                    f'<div style="color:{_TEXT_SL};font-size:1.1rem;font-weight:700;">{_sl_val:.2f}</div>'
+                    f'<div style="color:{_DIM_SL};font-size:0.65rem;">½ ATR = {_half_atr_sl:.2f}</div>'
+                    f'<div style="color:{_RED_SL};font-size:0.72rem;">Risk: {_sl_dist_sl:.2f} ({_sl_dist_sl/_price_sl*100:.1f}%)</div>'
+                    f'<div style="color:{_DIM_SL};font-size:0.6rem;margin-top:4px;">Trail: Kijun ({_kijun_sl:.2f}) / EMA10 ({_ema10_sl:.2f})</div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+            with _sc2:
+                st.markdown(
+                    f'<div style="background:{_BG2_SL};border:2px solid rgba(45,138,78,0.3);border-radius:8px;padding:12px;">'
+                    f'<div style="color:{_GREEN_SL};font-weight:700;font-size:0.8rem;">TARGETS</div>'
+                    f'<div style="color:{_TEXT_SL};font-size:0.85rem;">2R: <b style="color:{_GREEN_SL};">{_tp_2r_sl:.2f}</b> (+{(_tp_2r_sl/_price_sl-1)*100:.1f}%)</div>'
+                    f'<div style="color:{_TEXT_SL};font-size:0.85rem;">3R: <b style="color:{_GREEN_SL};">{_tp_3r_sl:.2f}</b> (+{(_tp_3r_sl/_price_sl-1)*100:.1f}%)</div>'
+                    f'<div style="color:{_DIM_SL};font-size:0.6rem;margin-top:4px;">Trailing stop — ej fast TP</div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+            with _sc3:
+                st.markdown(
+                    f'<div style="background:{_BG2_SL};border:2px solid rgba(201,168,76,0.2);border-radius:8px;padding:12px;">'
+                    f'<div style="color:{_CYAN_SL};font-weight:700;font-size:0.8rem;">POSITION</div>'
+                    f'<div style="color:{_TEXT_SL};font-size:0.85rem;">{_shares_sl} aktier</div>'
+                    f'<div style="color:{_TEXT_SL};font-size:0.85rem;">{_pos_val_sl:,.0f} SEK ({_pos_pct_sl:.1f}%)</div>'
+                    f'<div style="color:{_RED_SL};font-size:0.72rem;">Risk: {_risk_amt_sl:,.0f} SEK</div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+    except Exception:
+        pass
 
 
 # =============================================================================
