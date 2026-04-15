@@ -622,6 +622,23 @@ def render_holdings_page():
     st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
     _render_portfolio("long")
 
+    # ── Risk Dashboard ─────────────────────────────────────────────
+    st.markdown("<hr style='border-color:rgba(201,168,76,0.15);margin:24px 0;'/>", unsafe_allow_html=True)
+    holdings_data = {"swing": swing_h, "ovtlyr": ovtlyr_h, "long": long_h}
+    try:
+        from risk_dashboard import render_risk_dashboard
+        render_risk_dashboard(holdings_data)
+    except Exception:
+        pass
+
+    # ── Earnings Calendar ──────────────────────────────────────────
+    st.markdown("<hr style='border-color:rgba(201,168,76,0.15);margin:24px 0;'/>", unsafe_allow_html=True)
+    try:
+        from earnings_calendar import render_earnings_calendar
+        render_earnings_calendar(holdings_data)
+    except Exception:
+        pass
+
     # ── Correlation Matrix ────────────────────────────────────────────
     all_holdings = []
     for h in swing_h:
