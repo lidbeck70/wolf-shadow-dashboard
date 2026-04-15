@@ -33,10 +33,37 @@ def reddit_score(reddit_result: SourceResult, ticker: str) -> tuple:
 
 
 def twitter_score(twitter_result: SourceResult, ticker: str) -> tuple:
-    """Score based on Twitter/X sentiment (currently placeholder).
+    """Score based on StockTwits sentiment (replaces Twitter placeholder).
     Returns (score: 0-100, confidence: 0-1).
+
+    Score formula:
+    - bull_ratio component (50% weight): bull_ratio * 100
+    - watchlist_popularity component (20% weight): log(watchlist_count) normalized
+    - message_volume component (30% weight): message_count / 30 * 100 (30 = max per request)
     """
-    return 0.0, 0.0
+    from retail_sentiment.sources.twitter import fetch_ticker_sentiment
+    import math
+
+    data = fetch_ticker_sentiment(ticker)
+    confidence = data.get("confidence", 0.0)
+
+    if confidence == 0.0:
+        return 0.0, 0.0
+
+    # Bull ratio: 0-100 (50% of score)
+    bull_component = data["bull_ratio"] * 100
+
+    # Watchlist popularity: log scale, 0-100 (20% of score)
+    wl = data.get("watchlist_count", 0)
+    # log(1000) ~= 6.9, log(1000000) ~= 13.8 — normalize to 0-100
+    wl_component = min(100, max(0, (math.log1p(wl) / 14) * 100))
+
+    # Message volume: how active is the discussion (30% of score)
+    vol_component = min(100, data["message_count"] / 30 * 100)
+
+    score = 0.5 * bull_component + 0.2 * wl_component + 0.3 * vol_component
+
+    return round(min(100, max(0, score)), 1), confidence
 
 
 def retail_flow_score(volume_data: dict, options_data: dict) -> tuple:

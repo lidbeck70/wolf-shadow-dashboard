@@ -287,7 +287,7 @@ def render_retail_sentiment_page() -> None:
     source_status = []
     source_names = {
         "reddit": "Reddit (ApeWisdom)",
-        "twitter": "Twitter/X (Placeholder)",
+        "twitter": "StockTwits",
         "yahoo": "Yahoo Trending",
         "volume": "Volume (yfinance)",
         "options": "Options (EODHD)",
@@ -395,7 +395,7 @@ def render_retail_sentiment_page() -> None:
     ts = result.get("timestamp", "")
     st.markdown(
         f"<div style='color:{DIM};font-size:0.65rem;text-align:center;margin-top:24px;'>"
-        f"Uppdateras var 15:e minut · Kallor: ApeWisdom, Yahoo Finance, yfinance, EODHD"
+        f"Uppdateras var 15:e minut · Kallor: ApeWisdom, StockTwits, Yahoo Finance, yfinance, EODHD"
         f" · Senast: {ts[:19] if ts else 'N/A'}"
         f"</div>",
         unsafe_allow_html=True,

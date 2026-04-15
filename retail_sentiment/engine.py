@@ -36,7 +36,7 @@ def _fetch_all_sources(tickers: list) -> dict:
         return "reddit", fetch_reddit()
 
     def _fetch_twitter():
-        return "twitter", fetch_twitter()
+        return "twitter", fetch_twitter()  # StockTwits via backward-compat alias
 
     def _fetch_yahoo():
         return "yahoo", fetch_yahoo_trending()
