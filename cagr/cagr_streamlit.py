@@ -24,11 +24,13 @@ import streamlit as st
 from .cagr_loader import (
     load_nordic_tickers,
     load_etf_tickers,
+    load_global_tickers,
     fetch_price_data,
     fetch_fundamentals,
     fetch_fundamentals_batch_fast,
     fetch_insider_transactions,
     get_data_source,
+    MAX_ALPHA_TICKERS,
 )
 from .cagr_fundamentals import score_fundamentals
 from .cagr_cycle import (
@@ -748,7 +750,7 @@ def _render_header() -> None:
                 LONG SCREENER
             </h1>
             <div style='color:{DIM};font-size:0.7rem;letter-spacing:0.15em;margin-top:4px;'>
-                NORDIC STOCKS &amp; UCITS ETFs — 20-POINT FUNDAMENTAL · 7-POINT TECHNICAL · 5-LEVEL SIGNALS
+                NORDIC &amp; GLOBAL STOCKS · UCITS ETFs — 20-POINT FUNDAMENTAL · 7-POINT TECHNICAL · 5-LEVEL SIGNALS
                 &nbsp;&nbsp;{badge}
             </div>
         </div>
@@ -817,14 +819,37 @@ def render_cagr_page() -> None:
     with ctrl_row1[0]:
         market_choice = st.selectbox(
             "Market",
-            options=["All", "Nordic Stocks", "UCITS ETFs"],
+            options=[
+                "All Nordic", "Nordic Stocks", "UCITS ETFs",
+                "USA", "Kanada", "England", "Tyskland", "Frankrike",
+                "Alla marknader",
+            ],
             index=0,
             key="cagr_market",
         )
+
+    # Dynamic country options based on market choice
+    _INTL_COUNTRY_MAP = {
+        "USA": ["All", "USA"],
+        "Kanada": ["All", "Canada"],
+        "England": ["All", "UK"],
+        "Tyskland": ["All", "Germany"],
+        "Frankrike": ["All", "France"],
+    }
+    if market_choice in _INTL_COUNTRY_MAP:
+        country_options = _INTL_COUNTRY_MAP[market_choice]
+    elif market_choice == "Alla marknader":
+        country_options = [
+            "All", "Sweden", "Norway", "Denmark", "Finland",
+            "USA", "Canada", "UK", "Germany", "France",
+        ]
+    else:
+        country_options = ["All", "Sweden", "Norway", "Denmark", "Finland"]
+
     with ctrl_row1[1]:
         country_choice = st.selectbox(
             "Country",
-            options=["All", "Sweden", "Norway", "Denmark", "Finland"],
+            options=country_options,
             index=0,
             key="cagr_country",
         )
@@ -866,17 +891,46 @@ def render_cagr_page() -> None:
     nordic_tickers = load_nordic_tickers()
     etf_tickers    = load_etf_tickers()
 
-    if market_choice == "Nordic Stocks":
-        tickers_meta = nordic_tickers
-    elif market_choice == "UCITS ETFs":
-        tickers_meta = {
-            k: {**v, "sector": "ETF"} for k, v in etf_tickers.items()
-        }
-    else:
-        tickers_meta = {
-            **nordic_tickers,
-            **{k: {**v, "sector": "ETF"} for k, v in etf_tickers.items()},
-        }
+    # Region key mapping for international markets
+    _REGION_MAP = {
+        "USA": ("USA",),
+        "Kanada": ("Kanada",),
+        "England": ("England",),
+        "Tyskland": ("Tyskland",),
+        "Frankrike": ("Frankrike",),
+    }
+
+    try:
+        if market_choice in _REGION_MAP:
+            tickers_meta = load_global_tickers(_REGION_MAP[market_choice])
+        elif market_choice == "Alla marknader":
+            tickers_meta = {**nordic_tickers, **etf_tickers}
+            try:
+                global_tickers = load_global_tickers()
+                tickers_meta.update(global_tickers)
+            except Exception:
+                pass
+        elif market_choice == "All Nordic":
+            tickers_meta = {
+                **nordic_tickers,
+                **{k: {**v, "sector": "ETF"} for k, v in etf_tickers.items()},
+            }
+        elif market_choice == "Nordic Stocks":
+            tickers_meta = nordic_tickers
+        elif market_choice == "UCITS ETFs":
+            tickers_meta = {
+                k: {**v, "sector": "ETF"} for k, v in etf_tickers.items()
+            }
+        else:
+            tickers_meta = {**nordic_tickers, **etf_tickers}
+    except Exception:
+        tickers_meta = {**nordic_tickers, **etf_tickers}
+
+    # Memory safety: cap large ticker sets
+    if len(tickers_meta) > MAX_ALPHA_TICKERS:
+        keys = sorted(tickers_meta.keys())[:MAX_ALPHA_TICKERS]
+        tickers_meta = {k: tickers_meta[k] for k in keys}
+        st.caption(f"Begransat till {MAX_ALPHA_TICKERS} tickers (minnesoptimering)")
 
     if country_choice != "All" and market_choice != "UCITS ETFs":
         tickers_meta = {
@@ -945,7 +999,7 @@ def render_cagr_page() -> None:
             f"<div style='text-align:center;padding:40px;'>"
             f"<div style='color:{CYAN};font-size:1.5rem;margin-bottom:8px;'>🐺</div>"
             f"<div style='color:{TEXT};font-size:0.9rem;margin-bottom:4px;'>Tryck <b>SCAN</b> i sidebaren för att ladda instrument</div>"
-            f"<div style='color:{DIM};font-size:0.7rem;'>Visar alla 65 nordiska aktier + ETFs med 20-poängs fundamentalscoring</div>"
+            f"<div style='color:{DIM};font-size:0.7rem;'>Nordiska + internationella aktier &amp; ETFs med 20-poängs fundamentalscoring</div>"
             f"<div style='color:{DIM};font-size:0.65rem;margin-top:12px;'>Signal: STRONG BUY · BUY · HOLD · SELL · STRONG SELL</div>"
             "</div>",
             unsafe_allow_html=True,

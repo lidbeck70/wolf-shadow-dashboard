@@ -432,6 +432,94 @@ def load_all_tickers() -> Dict[str, dict]:
 
 
 # ---------------------------------------------------------------------------
+# International ticker loading via ticker_universe
+# ---------------------------------------------------------------------------
+
+# Memory safety limit for large markets
+MAX_ALPHA_TICKERS = 200
+
+
+def _build_ticker_meta(ticker_list: list) -> Dict[str, dict]:
+    """Convert a list of ticker strings into a metadata dict.
+
+    Determines country/exchange from the yfinance suffix.
+    Returns dict in the same format as NORDIC_TICKERS.
+    """
+    result: Dict[str, dict] = {}
+    for t in ticker_list:
+        if t.endswith(".ST"):
+            country, exchange = "Sweden", "OMXS"
+        elif t.endswith(".OL"):
+            country, exchange = "Norway", "OSE"
+        elif t.endswith(".CO"):
+            country, exchange = "Denmark", "CSE"
+        elif t.endswith(".HE"):
+            country, exchange = "Finland", "HEL"
+        elif t.endswith(".TO") or t.endswith(".V") or t.endswith(".CN"):
+            country, exchange = "Canada", "TSX"
+        elif t.endswith(".L"):
+            country, exchange = "UK", "LSE"
+        elif t.endswith(".DE"):
+            country, exchange = "Germany", "XETRA"
+        elif t.endswith(".PA"):
+            country, exchange = "France", "EPA"
+        elif t.endswith(".MC"):
+            country, exchange = "Spain", "BME"
+        elif t.endswith(".MI"):
+            country, exchange = "Italy", "BIT"
+        elif t.endswith(".LS"):
+            country, exchange = "Portugal", "ELI"
+        elif t.endswith(".SW"):
+            country, exchange = "Switzerland", "SIX"
+        elif t.endswith(".BR"):
+            country, exchange = "Belgium", "EBR"
+        elif t.endswith(".AS"):
+            country, exchange = "Netherlands", "AEX"
+        elif t.endswith(".WA"):
+            country, exchange = "Poland", "GPW"
+        elif t.endswith(".TL"):
+            country, exchange = "Baltics", "NASDAQ Baltic"
+        else:
+            country, exchange = "USA", "NYSE/NASDAQ"
+
+        result[t] = {
+            "name": t.split(".")[0],
+            "country": country,
+            "sector": "Unknown",
+            "exchange": exchange,
+        }
+    return result
+
+
+@_cache(ttl=86400)
+def load_global_tickers(region_keys: tuple = None) -> Dict[str, dict]:
+    """Load tickers from ticker_universe module for given regions.
+
+    Returns dict in the same format as NORDIC_TICKERS:
+      {ticker: {name, country, sector, exchange}}.
+    Falls back to empty dict if ticker_universe unavailable.
+
+    Parameters: region_keys must be a tuple (hashable for caching).
+    """
+    try:
+        from ticker_universe import get_tickers_for_regions, COUNTRY_REGIONS
+    except ImportError:
+        return {}
+
+    try:
+        if region_keys is None:
+            keys = list(COUNTRY_REGIONS.keys())
+        else:
+            keys = list(region_keys)
+
+        tickers = get_tickers_for_regions(keys)
+        return _build_ticker_meta(tickers)
+    except Exception as exc:
+        logger.warning("load_global_tickers failed: %s", exc)
+        return {}
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 

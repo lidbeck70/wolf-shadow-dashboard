@@ -2604,17 +2604,6 @@ def tab_screener_consolidated():
         tab_screener()  # Existing swing screener — UNTOUCHED
 
     elif mode == "Alpha Screener":
-        try:
-            if TICKER_UNIVERSE_AVAILABLE and TU_REGIONS:
-                region_options = list(TU_REGIONS.keys())
-                st.multiselect(
-                    "Marknader",
-                    region_options,
-                    default=["Norden"],
-                    key="alpha_screener_markets",
-                )
-        except Exception:
-            pass
         if CAGR_AVAILABLE:
             render_cagr_page()  # Existing long screener — UNTOUCHED
         else:
