@@ -324,20 +324,8 @@ def render_long_regime_monitor():
         unsafe_allow_html=True,
     )
 
-    # Market selector
-    selected_regions = ["Norden"]
-    try:
-        if _TU_AVAILABLE and TU_REGIONS:
-            region_options = list(TU_REGIONS.keys())
-            selected_regions = st.multiselect(
-                "Marknader",
-                region_options,
-                default=["Norden"],
-                key="alpha_regime_markets",
-            )
-            st.caption(f"Vald marknad: {', '.join(selected_regions) if selected_regions else 'Ingen'}")
-    except Exception:
-        pass
+    # No market selector needed — free text ticker input accepts any ticker
+    selected_regions = []
 
     # Ticker selector — free text input + dropdown suggestions
     all_tickers = {**NORDIC_TICKERS, **load_etf_tickers()}
