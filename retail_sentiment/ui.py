@@ -76,7 +76,17 @@ def _style_composite_df(df: pd.DataFrame) -> pd.io.formats.style.Styler:
             return f"color: {RED}"
         return f"color: {DIM}"
 
-    styler = df.style
+    # Number formatting — max 2 decimals
+    fmt = {}
+    for col in df.columns:
+        if col in ("Composite", "Reddit", "Flow", "Yahoo", "Hype"):
+            fmt[col] = "{:.1f}"
+        elif col in ("Change %",):
+            fmt[col] = "{:.2f}"
+        elif col in ("Vol Ratio",):
+            fmt[col] = "{:.2f}"
+
+    styler = df.style.format(fmt, na_rep="-")
     if "Composite" in df.columns:
         styler = styler.map(_color_score, subset=["Composite"])
     if "Change %" in df.columns:

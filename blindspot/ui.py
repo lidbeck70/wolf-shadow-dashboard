@@ -160,7 +160,21 @@ def render_blindspot_page() -> None:
         except (ValueError, TypeError):
             return f"color: {DIM}"
 
-    styler = df.style
+    # Number formatting — clean decimals
+    fmt = {}
+    for col in df.columns:
+        if col in ("Opportunity", "Hat", "Strength"):
+            fmt[col] = "{:.1f}"
+        elif col in ("Perf 6m %", "Perf 12m %"):
+            fmt[col] = "{:.1f}"
+        elif col == "Close":
+            fmt[col] = "{:.2f}"
+        elif col == "Confidence":
+            fmt[col] = "{:.2f}"
+        elif col in ("Necessity", "Catalyst"):
+            fmt[col] = "{:.0f}"
+
+    styler = df.style.format(fmt, na_rep="-")
     if "Opportunity" in df.columns:
         styler = styler.map(_color_opportunity, subset=["Opportunity"])
     if "Hat" in df.columns:
