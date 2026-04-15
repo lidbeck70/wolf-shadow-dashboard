@@ -349,3 +349,100 @@ def render_blindspot_page() -> None:
         f"</div>",
         unsafe_allow_html=True,
     )
+
+    # ── How it works (collapsible guide) ────────────────────────────────────
+    _render_blindspot_guide()
+
+
+def _render_blindspot_guide():
+    """Collapsible guide explaining how Odin's Blindspot works."""
+    try:
+        with st.expander("Hur Odin's Blindspot fungerar", expanded=False):
+            st.markdown(
+                f"""
+<div style="color:{TEXT};line-height:1.7;font-size:0.85rem;">
+
+<h3 style="color:{GOLD};margin-top:0;">Koncept</h3>
+<p>Odin's Blindspot hittar aktier som marknaden hatar eller ignorerar, men som ar
+nodvandiga for civilisationens infrastruktur och har stark ekonomi. Nar dessa bolag
+borjar visa tidiga tecken pa vanding — da uppstar en asymmetrisk mojlighet.</p>
+
+<h3 style="color:{GOLD};">De fyra dimensionerna</h3>
+
+<p><b style="color:{RED};">1. Hat Score (0-100)</b><br/>
+Mater hur hatad/ignorerad aktien ar. Hog score = mer hatad. Bygger pa 9 komponenter:</p>
+<ul>
+<li><b>SMA200-avstand</b> (max 25p) — Ju langre under 200-dagars snitt, desto mer hatad</li>
+<li><b>SMA50-avstand</b> (max 10p) — Under 50-dagars snitt</li>
+<li><b>52-veckors low</b> (max 15p) — Narhet till arslaget</li>
+<li><b>6/12 manaders performance</b> (max 10p) — Negativ prisutveckling</li>
+<li><b>Volym-torka</b> (max 10p) — Ingen bryr sig (lag volym vs snitt)</li>
+<li><b>Reddit-tystnad</b> (max 10p) — Inga mentions pa WallStreetBets</li>
+<li><b>StockTwits-negativitet</b> (max 10p) — Negativt sentiment</li>
+<li><b>Retail-apati</b> (max 10p) — Lag retail flow</li>
+</ul>
+
+<p><b style="color:{GOLD};">2. Necessity Score (0-100)</b><br/>
+Hur kritisk ar sektorn for samhallet? Fem nivaer:</p>
+<ul>
+<li><b style="color:{GOLD};">100 — Civilisationskritiskt:</b> Uran, olja/gas, koppar, stal, godsel, shipping, kraft, vatten, forsvar</li>
+<li><b>80 — Kritisk infrastruktur:</b> Halvledare, sjukvard, adelmetaller, jarnvag</li>
+<li><b>60 — Viktig samhallsnytta:</b> Telekom, energilagring, forsakring</li>
+<li><b>30 — Bekvamlighet:</b> Fastigheter, fintech, detaljhandel</li>
+<li><b style="color:{DIM};">0 — Icke-nodvandigt:</b> SaaS, gaming, sociala medier, lyx</li>
+</ul>
+<p>Bolag kan ha manuella overrides (t.ex. CCJ = Uran = 100).</p>
+
+<p><b style="color:{GREEN};">3. Strength Score (0-100)</b><br/>
+Fundamental ekonomisk styrka. Sex komponenter:</p>
+<ul>
+<li><b>Free Cash Flow 3 ar</b> (max 30p) — Positivt alla 3 ar = 30p</li>
+<li><b>EBITDA-marginal</b> (max 15p) — Hog marginal = stark lonsamhet</li>
+<li><b>FCF Yield</b> (max 15p) — Kassaflode relativt foretagsvarde</li>
+<li><b>Debt/Equity</b> (max 20p) — Lag skuldsattning = starkare</li>
+<li><b>Omsattningstillvaxt</b> (max 15p) — 3-ars CAGR</li>
+<li><b>EV/EBITDA bonus</b> (max 5p) — Under 10x = undervarderad</li>
+</ul>
+
+<p><b style="color:#d4943a;">4. Catalyst Score (0-20 bonus)</b><br/>
+Tidiga tecken pa vanding — skyddar mot value traps:</p>
+<ul>
+<li><b>Pris over SMA50</b> (+8p) — Aktien har borjat vanda</li>
+<li><b>SMA50 lutar uppat</b> (+6p) — Trenden vander</li>
+<li><b>Volym okar</b> (+6p) — Intresse atervander (z-score > 1.0)</li>
+</ul>
+
+<h3 style="color:{GOLD};">Opportunity Score — Formeln</h3>
+<p style="font-family:monospace;background:{BG2};padding:10px;border-radius:6px;border:1px solid rgba(201,168,76,0.15);">
+Opportunity = Hat x (Necessity / 100) x (Strength / 100) + Catalyst-bonus
+</p>
+<p>Catalyst-bonus skalas med Hat Score — catalyst spelar bara roll om aktien faktiskt ar hatad.</p>
+<p>Necessity har ett golv pa 20 — ingen aktie nollstalls helt, men civilisationskritiska dominerar.</p>
+
+<h3 style="color:{GOLD};">Flaggor</h3>
+<ul>
+<li><b style="color:{RED};">Value Trap Risk</b> — Hat > 60 men Catalyst = 0. Aktien sjunker utan tecken pa botten.</li>
+<li><b style="color:{GREEN};">Potential Reversal</b> — Hat > 60 och Catalyst >= 10. Marknaden borjar vakna — timing-signal.</li>
+<li><b style="color:#d4943a;">Low Confidence</b> — Under 50% datatakning. Behover manuell granskning.</li>
+</ul>
+
+<h3 style="color:{GOLD};">Confidence-system</h3>
+<p>Varje datakalla returnerar ett confidence-varde (0-1). Kallor som saknar data (t.ex. EODHD utan nyckel)
+far confidence = 0 och viktas bort automatiskt. Nordiska aktier utan optionsdata far lagre confidence
+men ett meningsfullt score baserat pa tillgangliga kallor.</p>
+
+<h3 style="color:{GOLD};">Sa anvander du det</h3>
+<ol>
+<li>Sortera pa <b>Opportunity Score</b> — hogst forst</li>
+<li>Kontrollera <b>flaggor</b> — undvik Value Trap Risk utan egen analys</li>
+<li>Fokusera pa <b>Potential Reversal</b> — dar ar timing-signalen</li>
+<li>Verifiera i <b>Wolf/Viking/Alpha Regime</b> innan du tar en position</li>
+<li>Anvand <b>SL/TP-kalkylatorn</b> i regime-fliken for position sizing</li>
+</ol>
+
+</div>
+""",
+                unsafe_allow_html=True,
+            )
+    except Exception:
+        pass
