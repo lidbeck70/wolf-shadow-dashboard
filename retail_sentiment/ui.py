@@ -129,13 +129,13 @@ def render_retail_sentiment_page() -> None:
         rows.append({
             "Ticker": r.ticker,
             "Market": r.market,
-            "Composite": r.scores.get("composite", 0.0),
-            "Reddit": r.scores.get("reddit", 0.0),
-            "Flow": r.scores.get("retail_flow", 0.0),
-            "Yahoo": r.scores.get("yahoo", 0.0),
-            "Hype": r.scores.get("hype_overlap", 0.0),
-            "Change %": r.metadata.get("price_change_pct", 0.0),
-            "Vol Ratio": r.metadata.get("volume_ratio", 0.0),
+            "Composite": round(r.scores.get("composite", 0.0), 1),
+            "Reddit": round(r.scores.get("reddit", 0.0), 1),
+            "Flow": round(r.scores.get("retail_flow", 0.0), 1),
+            "Yahoo": round(r.scores.get("yahoo", 0.0), 1),
+            "Hype": round(r.scores.get("hype_overlap", 0.0), 1),
+            "Change %": round(r.metadata.get("price_change_pct", 0.0), 2),
+            "Vol Ratio": round(r.metadata.get("volume_ratio", 0.0), 2),
             "Confidence": _confidence_label(avg_conf),
             "Sources": len(r.data_sources_available),
         })
@@ -272,9 +272,9 @@ def render_retail_sentiment_page() -> None:
                 f"border-radius:8px;padding:10px;margin:6px 0;'>"
                 f"<span style='color:{BRONZE};font-weight:700;font-size:1rem;'>{r.ticker}</span>"
                 f" — <span style='color:{TEXT};'>{source_text}</span>"
-                f" · <span style='color:{DIM};'>Hype: {hype_score}</span>"
+                f" · <span style='color:{DIM};'>Hype: {hype_score:.0f}</span>"
                 f" · <span style='color:{DIM};'>{mentions} naemningar</span>"
-                f" · <span style='color:{DIM};'>Vol: {vol_ratio}x</span>"
+                f" · <span style='color:{DIM};'>Vol: {vol_ratio:.2f}x</span>"
                 f"</div>",
                 unsafe_allow_html=True,
             )
