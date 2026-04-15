@@ -325,6 +325,7 @@ def render_long_regime_monitor():
     )
 
     # Market selector
+    selected_regions = ["Norden"]
     try:
         if _TU_AVAILABLE and TU_REGIONS:
             region_options = list(TU_REGIONS.keys())
@@ -338,8 +339,19 @@ def render_long_regime_monitor():
     except Exception:
         pass
 
-    # Ticker selector
+    # Ticker selector — free text input + dropdown suggestions
     all_tickers = {**NORDIC_TICKERS, **load_etf_tickers()}
+    # Add tickers from selected regions if available
+    try:
+        if selected_regions:
+            from ticker_universe import get_tickers_for_regions
+            region_tickers = get_tickers_for_regions(selected_regions)
+            for t in region_tickers:
+                if t not in all_tickers:
+                    all_tickers[t] = {"name": t.split(".")[0], "country": "Global", "sector": "Unknown"}
+    except Exception:
+        pass
+
     ticker_options = {
         f"{v.get('name', k)} ({k})": k
         for k, v in sorted(all_tickers.items(), key=lambda x: x[1].get("name", x[0]))
@@ -347,12 +359,13 @@ def render_long_regime_monitor():
 
     col1, col2, col3 = st.columns([2, 1, 1])
     with col1:
-        selected = st.selectbox(
-            "Aktie / ETF",
-            list(ticker_options.keys()),
-            key="long_regime_ticker",
-        )
-        ticker = ticker_options.get(selected, "VOLV-B.ST")
+        # Free text input for any ticker
+        ticker_input = st.text_input(
+            "Ticker (skriv valfri ticker, t.ex. AAPL, EQNR.OL, CCJ)",
+            value="VOLV-B.ST",
+            key="long_regime_ticker_input",
+        ).strip().upper()
+        ticker = ticker_input if ticker_input else "VOLV-B.ST"
     with col2:
         sector_override = st.selectbox(
             "Sektor",
