@@ -86,9 +86,9 @@ def render_blindspot_page() -> None:
                 f"{report.ticker}</div>"
                 f"<div style='color:{DIM};font-size:0.7rem;'>{report.sector}</div>"
                 f"<div style='color:{opp_color};font-size:1.8rem;font-weight:700;"
-                f"margin:6px 0;'>{report.opportunity_score}</div>"
+                f"margin:6px 0;'>{report.opportunity_score:.1f}</div>"
                 f"<div style='font-size:0.65rem;color:{DIM};'>"
-                f"Hat {report.hat_score} · Str {report.strength_score} · Cat {report.catalyst_score}"
+                f"Hat {report.hat_score:.0f} · Str {report.strength_score:.0f} · Cat {report.catalyst_score:.0f}"
                 f"</div>"
                 f"<div style='font-size:0.65rem;margin-top:4px;'>{flag_html}</div>"
                 f"</div>",
@@ -103,14 +103,14 @@ def render_blindspot_page() -> None:
         rows.append({
             "Ticker": r.ticker,
             "Sector": r.sector,
-            "Opportunity": r.opportunity_score,
-            "Hat": r.hat_score,
-            "Necessity": r.necessity_score,
-            "Strength": r.strength_score,
-            "Catalyst": r.catalyst_score,
-            "Close": r.close,
-            "Perf 6m %": r.perf_6m,
-            "Perf 12m %": r.perf_12m,
+            "Opportunity": round(r.opportunity_score, 1),
+            "Hat": round(r.hat_score, 1),
+            "Necessity": int(r.necessity_score),
+            "Strength": round(r.strength_score, 1),
+            "Catalyst": int(r.catalyst_score),
+            "Close": round(r.close, 2),
+            "Perf 6m %": round(r.perf_6m, 1),
+            "Perf 12m %": round(r.perf_12m, 1),
             "Confidence": round(r.overall_confidence, 2),
         })
 
@@ -209,11 +209,11 @@ def render_blindspot_page() -> None:
             trap_rows.append({
                 "Ticker": r.ticker,
                 "Sector": r.sector,
-                "Hat": r.hat_score,
-                "Strength": r.strength_score,
-                "Catalyst": r.catalyst_score,
-                "Opportunity": r.opportunity_score,
-                "Perf 12m %": r.perf_12m,
+                "Hat": round(r.hat_score, 1),
+                "Strength": round(r.strength_score, 1),
+                "Catalyst": int(r.catalyst_score),
+                "Opportunity": round(r.opportunity_score, 1),
+                "Perf 12m %": round(r.perf_12m, 1),
             })
         trap_df = pd.DataFrame(trap_rows)
         st.dataframe(trap_df, use_container_width=True, hide_index=True)
@@ -231,9 +231,9 @@ def render_blindspot_page() -> None:
             rev_rows.append({
                 "Ticker": r.ticker,
                 "Sector": r.sector,
-                "Hat": r.hat_score,
-                "Catalyst": r.catalyst_score,
-                "Opportunity": r.opportunity_score,
+                "Hat": round(r.hat_score, 1),
+                "Catalyst": int(r.catalyst_score),
+                "Opportunity": round(r.opportunity_score, 1),
                 "Price > SMA50": r.catalyst_breakdown.get("price_above_sma50", 0) > 0,
                 "SMA50 Rising": r.catalyst_breakdown.get("sma50_slope_positive", 0) > 0,
                 "Vol Surge": r.catalyst_breakdown.get("vol_surge", 0) > 0,
