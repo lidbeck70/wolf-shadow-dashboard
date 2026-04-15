@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 import streamlit as st
+from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 import logging
 
@@ -22,6 +23,13 @@ logger = logging.getLogger(__name__)
 # ── Memory safety constants ──────────────────────────────────────────
 MAX_SCREENER_TICKERS = 150   # Streamlit Cloud memory safety
 BATCH_SIZE = 50              # tickers per yf.download() batch
+
+# ── Retail sentiment integration ─────────────────────────────────────
+try:
+    from retail_sentiment.engine import build_single_report
+    _HAS_RETAIL = True
+except ImportError:
+    _HAS_RETAIL = False
 
 # Try Börsdata first
 try:
@@ -256,6 +264,213 @@ def _score_adx(df: pd.DataFrame) -> float:
         return 10  # No trend / consolidation
 
 
+# ── Per-Ticker Fear & Greed (0-100) ──────────────────────────────────
+
+def _score_fear_greed(df: pd.DataFrame) -> float:
+    """Per-ticker Fear & Greed index (0=extreme fear, 100=extreme greed)."""
+    try:
+        close = df["Close"]
+        volume = df["Volume"]
+        high = df["High"]
+        low = df["Low"]
+
+        score = 0
+
+        # 1. Volume Z-score (20p) — high volume = greed
+        vol_sma = volume.rolling(20).mean().iloc[-1]
+        vol_std = volume.rolling(20).std().iloc[-1]
+        vol_z = (volume.iloc[-1] - vol_sma) / max(1, vol_std)
+        vol_z_clamped = max(-3, min(3, vol_z))
+        score += (vol_z_clamped + 3) / 6 * 20
+
+        # 2. RSI deviation from 50 (20p) — RSI > 50 = greed
+        rsi_val = _rsi(close, 14).iloc[-1]
+        score += (rsi_val / 100) * 20
+
+        # 3. Price vs MA20 (20p) — above MA20 = greed
+        ma20 = close.rolling(20).mean().iloc[-1]
+        price_dev = (close.iloc[-1] - ma20) / ma20
+        dev_score = max(0, min(20, (price_dev + 0.05) / 0.10 * 20))
+        score += dev_score
+
+        # 4. Volatility shift (20p) — expanding vol = fear, contracting = greed
+        atr_fast = ((high - low).rolling(5).mean()).iloc[-1]
+        atr_slow = ((high - low).rolling(20).mean()).iloc[-1]
+        vol_ratio = atr_fast / max(0.001, atr_slow)
+        vol_shift = max(0, min(20, (1.5 - vol_ratio) / 1.0 * 20))
+        score += vol_shift
+
+        # 5. Breadth proxy: % of last 20 days that closed up (20p)
+        up_days = (close.diff().tail(20) > 0).sum()
+        score += (up_days / 20) * 20
+
+        return round(max(0, min(100, score)), 1)
+    except Exception as e:
+        logger.warning("_score_fear_greed error: %s", e)
+        return 50.0
+
+
+# ── Viking's Nine (0-9) ─────────────────────────────────────────────
+
+def _vikings_nine(df: pd.DataFrame, retail_score: float = 0, fg_score: float = 50) -> Tuple[int, List[str]]:
+    """Returns (score 0-9, list of passed factor names)."""
+    try:
+        close = df["Close"]
+        volume = df["Volume"]
+
+        factors = []
+
+        # Trend (2)
+        ema10 = _ema(close, 10).iloc[-1]
+        ema20 = _ema(close, 20).iloc[-1]
+        price = close.iloc[-1]
+
+        if price > ema10 > ema20:
+            factors.append("EMA Stack")
+
+        _, _, macd_hist = _macd(close)
+        if macd_hist.iloc[-1] > 0:
+            factors.append("MACD Bull")
+
+        # Momentum (2)
+        rsi_val = _rsi(close, 14).iloc[-1]
+        if 45 < rsi_val < 70:
+            factors.append("RSI Sweet")
+
+        if len(close) >= 20:
+            chg_5d = close.iloc[-1] / close.iloc[-5] - 1
+            chg_20d = close.iloc[-1] / close.iloc[-20] - 1
+            if chg_5d > 0 and chg_20d > 0:
+                factors.append("Price Up")
+
+        # Volume (2)
+        vol_sma = volume.rolling(20).mean().iloc[-1]
+        vol_ratio = volume.iloc[-1] / max(1, vol_sma)
+        if vol_ratio > 1.2:
+            factors.append("Vol > 1.2x")
+
+        is_up_day = close.iloc[-1] > df["Open"].iloc[-1]
+        if vol_ratio > 1.0 and is_up_day:
+            factors.append("Vol Up-Day")
+
+        # Volatility (1)
+        atr = ((df["High"] - df["Low"]).rolling(14).mean()).iloc[-1]
+        atr_pct = atr / price * 100
+        if atr_pct < 3.5:
+            factors.append("Low ATR")
+
+        # Sentiment (2)
+        if retail_score > 60:
+            factors.append("Retail Hot")
+        if fg_score > 50:
+            factors.append("F&G Greed")
+
+        return len(factors), factors
+    except Exception as e:
+        logger.warning("_vikings_nine error: %s", e)
+        return 0, []
+
+
+# ── Signal Start Date + Return ───────────────────────────────────────
+
+def _signal_tracking(ticker: str, composite_score: float, close_price: float) -> dict:
+    """Track signal start and compute return since signal."""
+    try:
+        key = f"signal_start_{ticker}"
+
+        if composite_score >= 60:
+            if key not in st.session_state:
+                st.session_state[key] = {
+                    "date": datetime.now().strftime("%Y-%m-%d"),
+                    "price": close_price,
+                }
+
+            start = st.session_state[key]
+            signal_return = (close_price / start["price"] - 1) * 100
+            return {
+                "signal_date": start["date"],
+                "signal_return": round(signal_return, 1),
+            }
+        else:
+            # Score dropped below threshold — reset
+            if key in st.session_state:
+                del st.session_state[key]
+            return {"signal_date": "-", "signal_return": None}
+    except Exception as e:
+        logger.warning("_signal_tracking error: %s", e)
+        return {"signal_date": "-", "signal_return": None}
+
+
+# ── OC Model (Overhead Clusters) ────────────────────────────────────
+
+def _overhead_clusters(df: pd.DataFrame, lookback: int = 60, num_bins: int = 20) -> dict:
+    """
+    Build volume profile and detect overhead supply.
+    Returns OC status (M1=under resistance, M2=broken through) and key levels.
+    """
+    try:
+        recent = df.tail(lookback)
+        close = recent["Close"]
+        volume = recent["Volume"]
+        price_now = close.iloc[-1]
+
+        # Build volume profile: bin prices and sum volume per bin
+        price_min = close.min()
+        price_max = close.max()
+        bins = np.linspace(price_min, price_max, num_bins + 1)
+
+        vol_profile = []
+        for i in range(len(bins) - 1):
+            mask = (close >= bins[i]) & (close < bins[i + 1])
+            bin_vol = volume[mask].sum()
+            bin_center = (bins[i] + bins[i + 1]) / 2
+            vol_profile.append({"price": bin_center, "volume": bin_vol})
+
+        # Find High Volume Nodes (HVN) above current price
+        total_vol = sum(v["volume"] for v in vol_profile)
+        overhead_nodes = [
+            v for v in vol_profile
+            if v["price"] > price_now and v["volume"] > total_vol / num_bins * 1.5
+        ]
+
+        # OC Status
+        if not overhead_nodes:
+            oc_status = "M2"   # No significant overhead supply — breakout mode
+            oc_score = 100
+        elif overhead_nodes[0]["price"] < price_now * 1.03:
+            oc_status = "M1"   # Heavy resistance just above
+            oc_score = 30
+        else:
+            oc_status = "M1+"  # Resistance exists but not immediate
+            oc_score = 60
+
+        nearest_resistance = overhead_nodes[0]["price"] if overhead_nodes else None
+
+        return {
+            "oc_status": oc_status,
+            "oc_score": oc_score,
+            "overhead_nodes": len(overhead_nodes),
+            "nearest_resistance": nearest_resistance,
+        }
+    except Exception as e:
+        logger.warning("_overhead_clusters error: %s", e)
+        return {"oc_status": "-", "oc_score": 50, "overhead_nodes": 0, "nearest_resistance": None}
+
+
+# ── Retail score helper ──────────────────────────────────────────────
+
+@st.cache_data(ttl=3600, show_spinner=False, max_entries=200)
+def _get_retail_score(ticker: str) -> float:
+    """Fetch retail sentiment score for a single ticker (cached)."""
+    try:
+        if not _HAS_RETAIL:
+            return 0.0
+        report = build_single_report(ticker)
+        return float(report.get("composite_score", 0))
+    except Exception:
+        return 0.0
+
+
 # ── Composite scoring with z-score normalization ──────────────────────
 
 WEIGHTS = {
@@ -400,14 +615,45 @@ def run_ovtlyr_screener(
             if scores is None:
                 continue
 
+            close_price = float(df["Close"].iloc[-1])
+
+            # ── New OVTLYR columns ──────────────────────────
+            # Retail score
+            try:
+                retail_score = _get_retail_score(ticker) if _HAS_RETAIL else 0.0
+            except Exception:
+                retail_score = 0.0
+
+            # Fear & Greed
+            try:
+                fg_score = _score_fear_greed(df)
+            except Exception:
+                fg_score = 50.0
+
+            # Viking's Nine
+            try:
+                v9_count, v9_factors = _vikings_nine(df, retail_score, fg_score)
+            except Exception:
+                v9_count, v9_factors = 0, []
+
+            # Overhead Clusters
+            try:
+                oc_result = _overhead_clusters(df)
+            except Exception:
+                oc_result = {"oc_status": "-", "oc_score": 50, "overhead_nodes": 0, "nearest_resistance": None}
+
             results.append({
                 "Ticker": ticker,
                 "Name": meta.get("name", ticker),
                 "Sector": meta.get("sector", "Unknown"),
                 "Country": meta.get("country", "Unknown"),
                 **scores,
-                "_close": float(df["Close"].iloc[-1]),
+                "_close": close_price,
                 "_avg_vol": float(avg_vol),
+                "F&G": fg_score,
+                "V9": f"{v9_count}/9",
+                "OC": oc_result["oc_status"],
+                "Retail": retail_score if _HAS_RETAIL else "-",
             })
         except Exception as e:
             logger.warning("Screener error for %s: %s", ticker, e)
@@ -439,6 +685,20 @@ def run_ovtlyr_screener(
         lambda x: "STRONG BUY" if x >= 75 else ("BUY" if x >= 60 else ("HOLD" if x >= 40 else "SELL"))
     )
 
+    # ── Signal tracking (depends on Composite) ─────────────────────
+    signal_dates = []
+    signal_rets = []
+    for _, row in df_results.iterrows():
+        try:
+            sig = _signal_tracking(row["Ticker"], row["Composite"], row["_close"])
+            signal_dates.append(sig["signal_date"])
+            signal_rets.append(sig["signal_return"])
+        except Exception:
+            signal_dates.append("-")
+            signal_rets.append(None)
+    df_results["Signal Date"] = signal_dates
+    df_results["Signal Ret %"] = signal_rets
+
     # Round display columns
     for col in ["trend", "momentum", "volatility", "volume", "adx", "Composite"]:
         df_results[col] = df_results[col].round(1)
@@ -451,5 +711,6 @@ def run_ovtlyr_screener(
         "Rank", "Ticker", "Name", "Sector", "Country",
         "trend", "momentum", "volatility", "volume", "adx",
         "Composite", "Signal",
+        "F&G", "V9", "OC", "Signal Date", "Signal Ret %", "Retail",
     ]
     return df_results[display_cols]
