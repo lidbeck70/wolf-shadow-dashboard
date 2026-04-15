@@ -101,6 +101,13 @@ try:
 except ImportError:
     RETAIL_SENTIMENT_AVAILABLE = False
 
+# Odin's Blindspot Index
+try:
+    from blindspot import render_blindspot_page
+    BLINDSPOT_AVAILABLE = True
+except ImportError:
+    BLINDSPOT_AVAILABLE = False
+
 # Inline rules helper for regime tabs
 try:
     from ovtlyr.ui.rules_page import render_inline_rules
@@ -2915,10 +2922,11 @@ def main():
         "  SENTIMENT  ",
         "  HEATMAP  ",
         "  RETAIL SENTIMENT  ",
+        "  ODIN'S BLINDSPOT  ",
         "  RULES  ",
     ]
     (tab1, tab2, tab_holdings, tab_swing_regime, tab_long_regime, tab_ovtlyr,
-     tab6, tab7, tab8, tab_retail, tab_rules) = st.tabs(tab_labels)
+     tab6, tab7, tab8, tab_retail, tab_blindspot, tab_rules) = st.tabs(tab_labels)
 
     with tab1:
         tab_screener_consolidated()
@@ -2985,6 +2993,12 @@ def main():
             render_retail_sentiment_page()
         else:
             _tab_not_found("Retail Sentiment", "retail_sentiment")
+
+    with tab_blindspot:
+        if BLINDSPOT_AVAILABLE:
+            render_blindspot_page()
+        else:
+            _tab_not_found("Odin's Blindspot Index", "blindspot")
 
     with tab_rules:
         if RULES_AVAILABLE:
