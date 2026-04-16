@@ -16,22 +16,48 @@ STOCKTWITS_BASE = "https://api.stocktwits.com/api/2/streams/symbol"
 def fetch_stocktwits() -> SourceResult:
     """Fetch StockTwits trending/overview data.
     Returns a SourceResult with trending symbols data.
+    Includes retry logic and fallback to per-ticker fetch.
     """
+    import time
+
+    # Try trending endpoint with 1 retry
+    for attempt in range(2):
+        try:
+            r = requests.get(
+                f"{STOCKTWITS_BASE}/trending.json",
+                timeout=10,
+                headers={"User-Agent": "NordicAlpha/1.0"},
+            )
+            if r.status_code == 200:
+                data = r.json()
+                return SourceResult(
+                    data={"trending": data},
+                    confidence=1.0,
+                    source="stocktwits",
+                )
+            elif r.status_code == 429 and attempt == 0:
+                logger.info("StockTwits trending rate-limited, retrying in 2s...")
+                time.sleep(2)
+                continue
+        except Exception as e:
+            logger.warning("StockTwits trending fetch attempt %d failed: %s", attempt + 1, e)
+            if attempt == 0:
+                time.sleep(2)
+                continue
+
+    # Fallback: try a known ticker to verify API is up
     try:
-        r = requests.get(
-            f"{STOCKTWITS_BASE}/trending.json",
-            timeout=10,
-            headers={"User-Agent": "NordicAlpha/1.0"},
-        )
-        if r.status_code == 200:
-            data = r.json()
+        test = fetch_ticker_sentiment("SPY")
+        if test.get("confidence", 0) > 0:
+            logger.info("StockTwits trending failed but per-ticker API works — degraded mode")
             return SourceResult(
-                data={"trending": data},
-                confidence=1.0,
+                data={"fallback": True},
+                confidence=0.5,
                 source="stocktwits",
             )
     except Exception as e:
-        logger.warning("StockTwits trending fetch failed: %s", e)
+        logger.warning("StockTwits fallback fetch also failed: %s", e)
+
     return SourceResult(data={}, confidence=0.0, source="stocktwits")
 
 

@@ -130,63 +130,73 @@ def save_journal(trades: list) -> bool:
 # ---------------------------------------------------------------------------
 def _compute_kpis(df: pd.DataFrame) -> dict:
     """Compute summary KPIs from trades DataFrame."""
-    if df.empty:
-        return {
-            "total": 0, "win_rate": 0.0, "avg_rr": 0.0,
-            "profit_factor": 0.0, "best": 0.0, "worst": 0.0,
-            "streak": "0", "total_pnl": 0.0,
-        }
-
-    wins = df[df["pnl_pct"] > 0]
-    losses = df[df["pnl_pct"] <= 0]
-    total = len(df)
-    win_rate = (len(wins) / total * 100) if total > 0 else 0.0
-    avg_rr = df["r_multiple"].mean() if "r_multiple" in df.columns else 0.0
-    gross_wins = wins["pnl_amount"].sum() if not wins.empty else 0.0
-    gross_losses = abs(losses["pnl_amount"].sum()) if not losses.empty else 0.0
-    profit_factor = (gross_wins / gross_losses) if gross_losses > 0 else gross_wins
-    best = df["pnl_pct"].max()
-    worst = df["pnl_pct"].min()
-    total_pnl = df["pnl_amount"].sum()
-
-    # Current streak
-    sorted_trades = df.sort_values("exit_date", ascending=False)
-    streak_count = 0
-    streak_type = None
-    for _, row in sorted_trades.iterrows():
-        is_win = row["pnl_pct"] > 0
-        if streak_type is None:
-            streak_type = is_win
-        if is_win == streak_type:
-            streak_count += 1
-        else:
-            break
-    streak_label = f"{streak_count}W" if streak_type else f"{streak_count}L"
-
-    return {
-        "total": total,
-        "win_rate": round(win_rate, 1),
-        "avg_rr": round(avg_rr, 2),
-        "profit_factor": round(profit_factor, 2),
-        "best": round(best, 2),
-        "worst": round(worst, 2),
-        "streak": streak_label,
-        "total_pnl": round(total_pnl, 2),
+    _empty_kpis = {
+        "total": 0, "win_rate": 0.0, "avg_rr": 0.0,
+        "profit_factor": 0.0, "best": 0.0, "worst": 0.0,
+        "streak": "0", "total_pnl": 0.0,
     }
+    if df.empty or "pnl_pct" not in df.columns:
+        return _empty_kpis
+
+    try:
+        wins = df[df["pnl_pct"] > 0]
+        losses = df[df["pnl_pct"] <= 0]
+        total = len(df)
+        win_rate = (len(wins) / total * 100) if total > 0 else 0.0
+        avg_rr = df["r_multiple"].mean() if "r_multiple" in df.columns else 0.0
+        gross_wins = wins["pnl_amount"].sum() if not wins.empty else 0.0
+        gross_losses = abs(losses["pnl_amount"].sum()) if not losses.empty else 0.0
+        profit_factor = (gross_wins / gross_losses) if gross_losses > 0 else gross_wins
+        best = df["pnl_pct"].max()
+        worst = df["pnl_pct"].min()
+        total_pnl = df["pnl_amount"].sum()
+
+        # Current streak
+        sorted_trades = df.sort_values("exit_date", ascending=False)
+        streak_count = 0
+        streak_type = None
+        for _, row in sorted_trades.iterrows():
+            is_win = row["pnl_pct"] > 0
+            if streak_type is None:
+                streak_type = is_win
+            if is_win == streak_type:
+                streak_count += 1
+            else:
+                break
+        streak_label = f"{streak_count}W" if streak_type else f"{streak_count}L"
+
+        return {
+            "total": total,
+            "win_rate": round(win_rate, 1),
+            "avg_rr": round(avg_rr, 2),
+            "profit_factor": round(profit_factor, 2),
+            "best": round(best, 2),
+            "worst": round(worst, 2),
+            "streak": streak_label,
+            "total_pnl": round(total_pnl, 2),
+        }
+    except Exception:
+        return _empty_kpis
 
 
 def _strategy_stats(df: pd.DataFrame, strategy: str) -> dict:
     """Stats for a single strategy."""
-    sub = df[df["strategy"].str.lower() == strategy.lower()]
-    if sub.empty:
-        return {"trades": 0, "win_rate": 0.0, "avg_r": 0.0, "total_pnl": 0.0}
-    wins = sub[sub["pnl_pct"] > 0]
-    return {
-        "trades": len(sub),
-        "win_rate": round(len(wins) / len(sub) * 100, 1),
-        "avg_r": round(sub["r_multiple"].mean(), 2),
-        "total_pnl": round(sub["pnl_amount"].sum(), 2),
-    }
+    _empty = {"trades": 0, "win_rate": 0.0, "avg_r": 0.0, "total_pnl": 0.0}
+    if df.empty or "strategy" not in df.columns:
+        return _empty
+    try:
+        sub = df[df["strategy"].str.lower() == strategy.lower()]
+        if sub.empty:
+            return _empty
+        wins = sub[sub["pnl_pct"] > 0] if "pnl_pct" in sub.columns else pd.DataFrame()
+        return {
+            "trades": len(sub),
+            "win_rate": round(len(wins) / len(sub) * 100, 1),
+            "avg_r": round(sub["r_multiple"].mean(), 2) if "r_multiple" in sub.columns else 0.0,
+            "total_pnl": round(sub["pnl_amount"].sum(), 2) if "pnl_amount" in sub.columns else 0.0,
+        }
+    except Exception:
+        return _empty
 
 
 # ---------------------------------------------------------------------------
@@ -194,6 +204,8 @@ def _strategy_stats(df: pd.DataFrame, strategy: str) -> dict:
 # ---------------------------------------------------------------------------
 def _build_equity_curve(df: pd.DataFrame) -> go.Figure:
     """Cumulative P&L line chart — gold on dark."""
+    if df.empty or "exit_date" not in df.columns or "pnl_amount" not in df.columns:
+        raise ValueError("Insufficient data for equity curve")
     sorted_df = df.sort_values("exit_date").copy()
     sorted_df["cum_pnl"] = sorted_df["pnl_amount"].cumsum()
 
@@ -223,6 +235,8 @@ def _build_equity_curve(df: pd.DataFrame) -> go.Figure:
 
 def _build_monthly_bar(df: pd.DataFrame) -> go.Figure:
     """Monthly P&L bar chart."""
+    if df.empty or "exit_date" not in df.columns or "pnl_amount" not in df.columns:
+        raise ValueError("Insufficient data for monthly chart")
     df_copy = df.copy()
     df_copy["month"] = pd.to_datetime(df_copy["exit_date"]).dt.to_period("M").astype(str)
     monthly = df_copy.groupby("month")["pnl_amount"].sum().reset_index()
@@ -340,7 +354,7 @@ def render_trade_journal_page():
         # ------------------------------------------------------------------
         # 2. EQUITY CURVE + MONTHLY PERFORMANCE
         # ------------------------------------------------------------------
-        if not df.empty and "exit_date" in df.columns:
+        if not df.empty and "exit_date" in df.columns and "pnl_amount" in df.columns:
             col_eq, col_mo = st.columns(2)
             with col_eq:
                 st.markdown(

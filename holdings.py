@@ -122,7 +122,7 @@ def _set_holdings(portfolio_key: str, holdings: List[dict]):
     _save_all(all_data)
 
 
-def _add_holding(portfolio_key: str, ticker: str, entry_price: float = 0, sector: str = "Unknown"):
+def _add_holding(portfolio_key: str, ticker: str, entry_price: float = 0, sector: str = "Unknown", shares: int = 0):
     holdings = _get_holdings(portfolio_key)
     cfg = PORTFOLIOS[portfolio_key]
 
@@ -134,10 +134,13 @@ def _add_holding(portfolio_key: str, ticker: str, entry_price: float = 0, sector
         st.warning(f"{ticker.upper()} finns redan i portföljen.")
         return False
 
+    from datetime import datetime
     holdings.append({
         "ticker": ticker.upper(),
         "entry_price": entry_price,
+        "shares": shares,
         "sector": sector,
+        "added": datetime.now().strftime("%Y-%m-%d"),
     })
     _set_holdings(portfolio_key, holdings)
     return True
@@ -306,66 +309,92 @@ def _compute_long_signal(df: pd.DataFrame, sector: str = "Unknown") -> dict:
 
 def _holding_card(holding: dict, live: dict, signal: dict, portfolio_key: str) -> None:
     """Render a single holding card."""
-    ticker = holding["ticker"]
-    entry = holding.get("entry_price", 0)
-    price = live.get("price", 0)
-    change = live.get("change_1d", 0)
-    sig = signal.get("signal", "N/A")
-    sig_color = signal.get("color", DIM)
-    detail = signal.get("detail", "")
+    try:
+        ticker = holding["ticker"]
+        entry = holding.get("entry_price", 0)
+        shares = holding.get("shares", 0)  # backward compat
+        price = live.get("price", 0)
+        change = live.get("change_1d", 0)
+        sig = signal.get("signal", "N/A")
+        sig_color = signal.get("color", DIM)
+        detail = signal.get("detail", "")
 
-    # P&L
-    if entry > 0 and price > 0:
-        pnl = (price / entry - 1) * 100
-        pnl_color = GREEN if pnl > 0 else RED
-        pnl_text = f"{pnl:+.1f}%"
-    else:
-        pnl_color = DIM
-        pnl_text = "—"
+        # P&L percentage
+        if entry > 0 and price > 0:
+            pnl = (price / entry - 1) * 100
+            pnl_color = GREEN if pnl > 0 else RED
+            pnl_text = f"{pnl:+.1f}%"
+        else:
+            pnl = 0
+            pnl_color = DIM
+            pnl_text = "—"
 
-    change_color = GREEN if change > 0 else RED
+        # Absolute P&L and position value (only if shares > 0)
+        if shares > 0 and entry > 0 and price > 0:
+            abs_pnl = (price - entry) * shares
+            abs_pnl_text = f"{abs_pnl:+,.0f} SEK"
+            pos_value = shares * price
+            pos_text = f"{pos_value:,.0f}"
+        else:
+            abs_pnl_text = ""
+            pos_text = "—"
 
-    col1, col2, col3, col4, col5 = st.columns([2, 1.5, 1.5, 1.5, 0.5])
+        change_color = GREEN if change > 0 else RED
 
-    with col1:
-        st.markdown(
-            f"<div style='padding:4px 0;'>"
-            f"<span style='color:{TEXT};font-size:1rem;font-weight:700;'>{ticker}</span>"
-            f"<span style='color:{DIM};font-size:0.7rem;margin-left:8px;'>{holding.get('sector', '')}</span>"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
+        col1, col2, col3, col4, col5, col6 = st.columns([1.8, 1.2, 1, 1.2, 1.3, 0.5])
 
-    with col2:
-        st.markdown(
-            f"<div style='text-align:right;padding:4px 0;'>"
-            f"<span style='color:{TEXT};font-size:0.9rem;'>{price:.2f}</span>"
-            f" <span style='color:{change_color};font-size:0.75rem;'>({change:+.1f}%)</span>"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
+        with col1:
+            shares_label = f" · {shares} st" if shares > 0 else ""
+            st.markdown(
+                f"<div style='padding:4px 0;'>"
+                f"<span style='color:{TEXT};font-size:1rem;font-weight:700;'>{ticker}</span>"
+                f"<span style='color:{DIM};font-size:0.7rem;margin-left:8px;'>{holding.get('sector', '')}{shares_label}</span>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
 
-    with col3:
-        st.markdown(
-            f"<div style='text-align:center;padding:4px 0;'>"
-            f"<span style='color:{pnl_color};font-size:0.95rem;font-weight:700;'>{pnl_text}</span>"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
+        with col2:
+            st.markdown(
+                f"<div style='text-align:right;padding:4px 0;'>"
+                f"<span style='color:{TEXT};font-size:0.9rem;'>{price:.2f}</span>"
+                f" <span style='color:{change_color};font-size:0.75rem;'>({change:+.1f}%)</span>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
 
-    with col4:
-        st.markdown(
-            f"<div style='text-align:center;padding:4px 0;'>"
-            f"<span style='color:{sig_color};font-size:0.85rem;font-weight:700;'>{sig}</span>"
-            f"<div style='color:{DIM};font-size:0.6rem;'>{detail}</div>"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
+        with col3:
+            st.markdown(
+                f"<div style='text-align:center;padding:4px 0;'>"
+                f"<span style='color:{TEXT};font-size:0.85rem;'>{pos_text}</span>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
 
-    with col5:
-        if st.button("✕", key=f"rm_{portfolio_key}_{ticker}", help=f"Ta bort {ticker}"):
-            _remove_holding(portfolio_key, ticker)
-            st.rerun()
+        with col4:
+            pnl_extra = f"<div style='color:{pnl_color};font-size:0.65rem;'>{abs_pnl_text}</div>" if abs_pnl_text else ""
+            st.markdown(
+                f"<div style='text-align:center;padding:4px 0;'>"
+                f"<span style='color:{pnl_color};font-size:0.95rem;font-weight:700;'>{pnl_text}</span>"
+                f"{pnl_extra}"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+        with col5:
+            st.markdown(
+                f"<div style='text-align:center;padding:4px 0;'>"
+                f"<span style='color:{sig_color};font-size:0.85rem;font-weight:700;'>{sig}</span>"
+                f"<div style='color:{DIM};font-size:0.6rem;'>{detail}</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+        with col6:
+            if st.button("✕", key=f"rm_{portfolio_key}_{ticker}", help=f"Ta bort {ticker}"):
+                _remove_holding(portfolio_key, ticker)
+                st.rerun()
+    except Exception as e:
+        st.warning(f"Fel vid visning av {holding.get('ticker', '?')}: {e}")
 
 
 def _render_portfolio(portfolio_key: str):
@@ -386,18 +415,20 @@ def _render_portfolio(portfolio_key: str):
 
     # Add holding form
     with st.expander(f"Lägg till i {cfg['name']}", expanded=len(holdings) == 0):
-        ac1, ac2, ac3, ac4 = st.columns([2, 1.5, 1.5, 1])
+        ac1, ac2, ac3, ac4, ac5 = st.columns([2, 1.2, 1, 1.2, 0.8])
         with ac1:
             new_ticker = st.text_input("Ticker", key=f"add_ticker_{portfolio_key}", placeholder="VOLV-B.ST").strip().upper()
         with ac2:
             new_entry = st.number_input("Entry-pris (valfritt)", value=0.0, min_value=0.0, step=0.01, key=f"add_entry_{portfolio_key}")
         with ac3:
-            new_sector = st.text_input("Sektor", value="Unknown", key=f"add_sector_{portfolio_key}")
+            new_shares = st.number_input("Antal aktier", value=0, min_value=0, step=1, key=f"add_shares_{portfolio_key}")
         with ac4:
+            new_sector = st.text_input("Sektor", value="Unknown", key=f"add_sector_{portfolio_key}")
+        with ac5:
             st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
             if st.button("+ LÄGG TILL", key=f"add_btn_{portfolio_key}", use_container_width=True):
                 if new_ticker:
-                    if _add_holding(portfolio_key, new_ticker, new_entry, new_sector):
+                    if _add_holding(portfolio_key, new_ticker, new_entry, new_sector, new_shares):
                         st.rerun()
 
     if not holdings:
@@ -409,12 +440,13 @@ def _render_portfolio(portfolio_key: str):
         return
 
     # Header row
-    h1, h2, h3, h4, h5 = st.columns([2, 1.5, 1.5, 1.5, 0.5])
+    h1, h2, h3, h4, h5, h6 = st.columns([1.8, 1.2, 1, 1.2, 1.3, 0.5])
     h1.markdown(f"<span style='color:{DIM};font-size:0.7rem;'>TICKER</span>", unsafe_allow_html=True)
     h2.markdown(f"<span style='color:{DIM};font-size:0.7rem;text-align:right;display:block;'>PRIS (1D%)</span>", unsafe_allow_html=True)
-    h3.markdown(f"<span style='color:{DIM};font-size:0.7rem;text-align:center;display:block;'>P&L</span>", unsafe_allow_html=True)
-    h4.markdown(f"<span style='color:{DIM};font-size:0.7rem;text-align:center;display:block;'>SIGNAL</span>", unsafe_allow_html=True)
-    h5.markdown(f"<span style='color:{DIM};font-size:0.7rem;'></span>", unsafe_allow_html=True)
+    h3.markdown(f"<span style='color:{DIM};font-size:0.7rem;text-align:center;display:block;'>VÄRDE</span>", unsafe_allow_html=True)
+    h4.markdown(f"<span style='color:{DIM};font-size:0.7rem;text-align:center;display:block;'>P&L</span>", unsafe_allow_html=True)
+    h5.markdown(f"<span style='color:{DIM};font-size:0.7rem;text-align:center;display:block;'>SIGNAL</span>", unsafe_allow_html=True)
+    h6.markdown(f"<span style='color:{DIM};font-size:0.7rem;'></span>", unsafe_allow_html=True)
 
     # Holdings with live signals
     for holding in holdings:
@@ -435,24 +467,37 @@ def _render_portfolio(portfolio_key: str):
         _holding_card(holding, live, signal, portfolio_key)
 
     # Portfolio summary
-    total_pnl = 0
-    count = 0
-    for h in holdings:
-        live = _fetch_live_price(h["ticker"], period=fetch_period)
-        if h.get("entry_price", 0) > 0 and live["price"] > 0:
-            total_pnl += (live["price"] / h["entry_price"] - 1) * 100
-            count += 1
+    try:
+        total_pnl = 0
+        total_abs_pnl = 0
+        total_value = 0
+        count = 0
+        for h in holdings:
+            live = _fetch_live_price(h["ticker"], period=fetch_period)
+            if h.get("entry_price", 0) > 0 and live["price"] > 0:
+                total_pnl += (live["price"] / h["entry_price"] - 1) * 100
+                count += 1
+                shares = h.get("shares", 0)
+                if shares > 0:
+                    total_abs_pnl += (live["price"] - h["entry_price"]) * shares
+                    total_value += live["price"] * shares
 
-    if count > 0:
-        avg_pnl = total_pnl / count
-        pnl_color = GREEN if avg_pnl > 0 else RED
-        st.markdown(
-            f"<div style='text-align:right;padding:8px 0;border-top:1px solid rgba(201,168,76,0.1);margin-top:8px;'>"
-            f"<span style='color:{DIM};font-size:0.75rem;'>Snitt P&L: </span>"
-            f"<span style='color:{pnl_color};font-size:0.9rem;font-weight:700;'>{avg_pnl:+.1f}%</span>"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
+        if count > 0:
+            avg_pnl = total_pnl / count
+            pnl_color = GREEN if avg_pnl > 0 else RED
+            abs_pnl_color = GREEN if total_abs_pnl >= 0 else RED
+            value_text = f"<span style='color:{DIM};font-size:0.75rem;margin-right:16px;'>Värde: </span><span style='color:{CYAN};font-size:0.9rem;font-weight:700;'>{total_value:,.0f} SEK</span>" if total_value > 0 else ""
+            abs_text = f"<span style='color:{DIM};font-size:0.75rem;margin-right:16px;'>  P&L: </span><span style='color:{abs_pnl_color};font-size:0.9rem;font-weight:700;'>{total_abs_pnl:+,.0f} SEK</span>" if total_value > 0 else ""
+            st.markdown(
+                f"<div style='text-align:right;padding:8px 0;border-top:1px solid rgba(201,168,76,0.1);margin-top:8px;'>"
+                f"{value_text}{abs_text}"
+                f"<span style='color:{DIM};font-size:0.75rem;margin-left:16px;'>Snitt P&L: </span>"
+                f"<span style='color:{pnl_color};font-size:0.9rem;font-weight:700;'>{avg_pnl:+.1f}%</span>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+    except Exception:
+        pass
 
 
 # ── Correlation Matrix ────────────────────────────────────────────────
