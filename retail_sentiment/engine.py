@@ -36,16 +36,21 @@ def _fetch_all_sources(tickers: list) -> dict:
         return "reddit", fetch_reddit()
 
     def _fetch_twitter():
-        result = fetch_twitter()  # StockTwits via backward-compat alias
-        # If trending failed, try per-ticker to verify API works
-        if result.confidence == 0:
-            try:
-                from retail_sentiment.sources.twitter import fetch_ticker_sentiment
-                test = fetch_ticker_sentiment("SPY")
-                if test.get("confidence", 0) > 0:
-                    result = SourceResult(data={"fallback": True}, confidence=0.5, source="twitter")
-            except Exception:
-                pass
+        result = fetch_twitter()  # StockTwits trending via backward-compat alias
+        # Always verify with per-ticker fetch — more reliable than trending
+        try:
+            from retail_sentiment.sources.twitter import fetch_ticker_sentiment
+            test_ticker = tickers[0] if tickers else "SPY"
+            test = fetch_ticker_sentiment(test_ticker)
+            per_conf = test.get("confidence", 0)
+            if per_conf > result.confidence:
+                result = SourceResult(
+                    data={"per_ticker": True, "message_count": test.get("message_count", 0)},
+                    confidence=per_conf,
+                    source="twitter",
+                )
+        except Exception:
+            pass
         return "twitter", result
 
     def _fetch_yahoo():
