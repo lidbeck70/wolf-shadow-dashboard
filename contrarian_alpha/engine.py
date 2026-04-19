@@ -81,8 +81,8 @@ class PipelineConfig:
     """Runtime configuration for run_pipeline()."""
 
     # Universe
-    market_ids: list[int] = field(default_factory=lambda: [1, 4, 5, 6, 18, 19])
-    # 1=SE Large, 18=SE Mid, 19=SE Small, 4=NO, 5=FI, 6=DK
+    market_ids: list[int] = field(default_factory=lambda: [1, 4, 5, 6, 11, 12, 18, 19])
+    # 1=SE Large, 18=SE Mid, 19=SE Small, 4=NO, 5=FI, 6=DK, 11=US, 12=CA
     include_global: bool   = False   # Requires Börsdata Pro+ global licence
     manual_tickers: list[str] = field(default_factory=list)  # override / supplement
 
@@ -208,11 +208,13 @@ _MARKET_SUFFIX: dict[int, str] = {
     4:  ".OL",   # Norway
     5:  ".HE",   # Finland
     6:  ".CO",   # Denmark
+    11: "",      # US (no suffix)
+    12: ".TO",   # Canada TSX
 }
 
 _MARKET_NAME: dict[int, str] = {
     1: "SE Large", 18: "SE Mid", 19: "SE Small",
-    4: "NO", 5: "FI", 6: "DK",
+    4: "NO", 5: "FI", 6: "DK", 11: "US", 12: "CA",
 }
 
 # yfinance sector/industry → Börsdata-compatible name for necessity lookup
