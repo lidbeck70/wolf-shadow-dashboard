@@ -5,11 +5,11 @@ Streamlit page for Long-Term Trend & Drawdown analysis.
 Entry point: render_long_trend_page()
 
 Sections:
-  1. Price chart with EMA50/EMA200, drawdown zones, Rick Rule markers
+  1. Price chart with EMA50/EMA200, drawdown zones, Nordic Contrarian markers
   2. Drawdown analysis table
   3. Drawdown summary box
-  4. "Where Are We Now?" — trend phase, cycle position, Rick Rule verdict
-  5. Rick Rule backtest summary
+  4. "Where Are We Now?" — trend phase, cycle position, Nordic Contrarian verdict
+  5. Nordic Contrarian backtest summary
 """
 
 from __future__ import annotations
@@ -359,7 +359,7 @@ def _build_price_chart(
       - EMA50 (yellow dotted)
       - EMA200 (magenta solid)
       - Drawdown zones (red shaded)
-      - Rick Rule buy (green △) / sell (red ▽) markers
+      - Nordic Contrarian buy (green △) / sell (red ▽) markers
     """
     fig = go.Figure()
 
@@ -413,7 +413,7 @@ def _build_price_chart(
             ),
         )
 
-    # ── Rick Rule BUY markers (green △) ──────────────────────────────────
+    # ── Nordic Contrarian BUY markers (green △) ──────────────────────────────────
     if not buy_signals.empty:
         # Align buy prices to df close on that date (or nearest)
         buy_dates = buy_signals["Date"].values
@@ -432,7 +432,7 @@ def _build_price_chart(
             hovertemplate="<b>BUY</b><br>%{x|%Y-%m-%d}<br>%{y:.2f}<extra></extra>",
         ))
 
-    # ── Rick Rule SELL markers (red ▽) ───────────────────────────────────
+    # ── Nordic Contrarian SELL markers (red ▽) ───────────────────────────────────
     if not sell_signals.empty:
         sell_dates = sell_signals["Date"].values
         sell_prices = sell_signals["Price"].values
@@ -656,12 +656,12 @@ def _render_cycle_bar(current_phase: str) -> None:
 def _render_where_are_we(
     trend_phase: str,
     cycle_position: str,
-    rick_verdict: str,
+    nordic_verdict: str,
 ) -> None:
     """Render the 'Where Are We Now?' panel."""
     tc = _trend_color(trend_phase)
     cc = _cycle_color(cycle_position)
-    vc = _verdict_color(rick_verdict)
+    vc = _verdict_color(nordic_verdict)
 
     col1, col2, col3 = st.columns(3)
 
@@ -695,8 +695,8 @@ def _render_where_are_we(
             f'background:{BG2};border:1px solid {vc}44;border-top:2px solid {vc};'
             f'border-radius:6px;padding:16px;text-align:center;">'
             f'<div style="color:{DIM};font-size:0.7rem;font-family:monospace;'
-            f'text-transform:uppercase;letter-spacing:2px;">Rick Rule Verdict</div>'
-            f'<div style="margin-top:8px;">{_badge(rick_verdict, vc)}</div>'
+            f'text-transform:uppercase;letter-spacing:2px;">Nordic Contrarian Verdict</div>'
+            f'<div style="margin-top:8px;">{_badge(nordic_verdict, vc)}</div>'
             f'</div>',
             unsafe_allow_html=True,
         )
@@ -706,13 +706,13 @@ def _render_where_are_we(
 
 
 # ---------------------------------------------------------------------------
-# Section 5: Rick Rule backtest
+# Section 5: Nordic Contrarian backtest
 # ---------------------------------------------------------------------------
 
 def _render_backtest(backtest: pd.DataFrame) -> None:
-    """Render the Rick Rule backtest trades table and total return."""
+    """Render the Nordic Contrarian backtest trades table and total return."""
     if backtest.empty:
-        st.info("No completed Rick Rule trades in this period.")
+        st.info("No completed Nordic Contrarian trades in this period.")
         return
 
     # Compute total return from last SELL row
@@ -731,7 +731,7 @@ def _render_backtest(backtest: pd.DataFrame) -> None:
         f'display:flex;justify-content:space-between;align-items:center;">'
         f'<div>'
         f'<span style="color:{DIM};font-size:0.75rem;font-family:monospace;'
-        f'text-transform:uppercase;letter-spacing:1px;">Total Return (Rick Rule Strategy)</span><br>'
+        f'text-transform:uppercase;letter-spacing:1px;">Total Return (Nordic Contrarian Strategy)</span><br>'
         f'<span style="color:{tr_color};font-size:1.6rem;font-family:monospace;'
         f'font-weight:700;">{sign}{total_return:.1f}%</span>'
         f'</div>'
@@ -868,7 +868,7 @@ def render_long_trend_page() -> None:
     )
     st.markdown(
         f'<p style="color:{DIM};font-family:monospace;font-size:0.8rem;'
-        f'margin-bottom:24px;">EMA cross strategy · Rick Rule signals · Cycle position</p>',
+        f'margin-bottom:24px;">EMA cross strategy · Nordic Contrarian signals · Cycle position</p>',
         unsafe_allow_html=True,
     )
 
@@ -988,7 +988,7 @@ def render_long_trend_page() -> None:
     backtest = analysis["backtest"]
     trend_phase = analysis["trend_phase"]
     cycle_position = analysis["cycle_position"]
-    rick_verdict = analysis["rick_verdict"]
+    nordic_verdict = analysis["nordic_verdict"]
     drawdown_summary = analysis["drawdown_summary"]
 
     if df.empty:
@@ -1016,7 +1016,7 @@ def render_long_trend_page() -> None:
         st.markdown(_metric_box(f"Total Return ({period})", f"{sign}{total_return_pct:.1f}%", tr_clr), unsafe_allow_html=True)
 
     # ── Section 1: Price chart ─────────────────────────────────────────────
-    _section_heading("Price Chart", f"EMA crossover · Drawdown zones · Rick Rule signals")
+    _section_heading("Price Chart", f"EMA crossover · Drawdown zones · Nordic Contrarian signals")
     fig = _build_price_chart(df, drawdowns, buy_signals, sell_signals, ticker)
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": True})
 
@@ -1034,8 +1034,8 @@ def render_long_trend_page() -> None:
     st.markdown("<div style='margin-top:8px;'></div>", unsafe_allow_html=True)
 
     # ── Section 4: Where Are We Now? ───────────────────────────────────────
-    _section_heading("Where Are We Now?", "Trend phase · Cycle position · Rick Rule verdict")
-    _render_where_are_we(trend_phase, cycle_position, rick_verdict)
+    _section_heading("Where Are We Now?", "Trend phase · Cycle position · Nordic Contrarian verdict")
+    _render_where_are_we(trend_phase, cycle_position, nordic_verdict)
 
     # Description of current cycle phase
     cycle_descriptions = {
@@ -1059,9 +1059,9 @@ def render_long_trend_page() -> None:
             unsafe_allow_html=True,
         )
 
-    # ── Section 5: Rick Rule backtest ─────────────────────────────────────
+    # ── Section 5: Nordic Contrarian backtest ─────────────────────────────────────
     _section_heading(
-        "Rick Rule Strategy Backtest",
+        "Nordic Contrarian Strategy Backtest",
         "Simulated buy/sell based on EMA200 crossover + fundamentals",
     )
     _render_backtest(backtest)

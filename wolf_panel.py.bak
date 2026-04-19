@@ -20,14 +20,11 @@ warnings.filterwarnings("ignore")
 DASHBOARD_DIR = os.path.dirname(os.path.abspath(__file__))
 WORKSPACE_DIR = os.path.dirname(DASHBOARD_DIR)
 
-WOLFPANEL_DIR = os.path.join(WORKSPACE_DIR, "wolfpanel")
-
 for p in [
     DASHBOARD_DIR,
     os.path.join(WORKSPACE_DIR, "screener"),
     os.path.join(WORKSPACE_DIR, "backtester"),
     WORKSPACE_DIR,
-    WOLFPANEL_DIR,
 ]:
     if os.path.isdir(p) and p not in sys.path:
         sys.path.insert(0, p)
@@ -148,13 +145,6 @@ try:
 except ImportError:
     JOURNAL_AVAILABLE = False
 
-# Contrarian Alpha Screener
-try:
-    from contrarian_alpha.ui import render_contrarian_alpha_page
-    CONTRARIAN_ALPHA_AVAILABLE = True
-except ImportError:
-    CONTRARIAN_ALPHA_AVAILABLE = False
-
 
 # =============================================================================
 # MAIN APP
@@ -171,7 +161,6 @@ def main():
         "  HOME  ",
         "  SCREENER  ",
         "  BACKTEST  ",
-        "  CONTRARIAN ALPHA  ",
         "  HOLDINGS  ",
         "  TRADE JOURNAL  ",
         "  WOLF REGIME  ",
@@ -186,8 +175,7 @@ def main():
         "  ALERTS  ",
         "  STRATEGIES  ",
     ]
-    (tab_home_page, tab1, tab2, tab_contrarian,
-     tab_holdings, tab_journal,
+    (tab_home_page, tab1, tab2, tab_holdings, tab_journal,
      tab_swing_regime, tab_long_regime, tab_ovtlyr,
      tab6, tab7, tab8, tab_retail, tab_blindspot, tab_rules,
      tab_alerts_page, tab_strat_overview) = st.tabs(tab_labels)
@@ -200,12 +188,6 @@ def main():
 
     with tab2:
         tab_backtest_consolidated()
-
-    with tab_contrarian:
-        if CONTRARIAN_ALPHA_AVAILABLE:
-            render_contrarian_alpha_page()
-        else:
-            tab_not_found("Contrarian Alpha", "contrarian_alpha")
 
     with tab_holdings:
         if HOLDINGS_AVAILABLE:

@@ -9,7 +9,7 @@ Features:
   - Drawdown classification using fundamental data (Börsdata or yfinance)
   - Trend phase classification (Bullish / Neutral / Bearish)
   - Cycle position classifier (7 phases)
-  - Rick Rule buy/sell signal generation
+  - Nordic Contrarian buy/sell signal generation
 """
 
 from __future__ import annotations
@@ -662,7 +662,7 @@ def classify_cycle_position(df: pd.DataFrame) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Rick Rule buy/sell signal generation
+# Nordic Contrarian buy/sell signal generation
 # ---------------------------------------------------------------------------
 def _check_fundamentals_intact(ticker: str, ins_id: Optional[int] = None) -> bool:
     """
@@ -691,13 +691,13 @@ def _check_fundamentals_intact(ticker: str, ins_id: Optional[int] = None) -> boo
         return True  # Assume intact if data unavailable
 
 
-def generate_rick_rule_signals(
+def generate_nordic_signals(
     df: pd.DataFrame,
     ticker: str,
     ins_id: Optional[int] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Generate Rick Rule BUY and SELL signals.
+    Generate Nordic Contrarian BUY and SELL signals.
 
     BUY criteria:
       - Confirmed uptrend: price > EMA200 AND EMA50 > EMA200
@@ -754,15 +754,15 @@ def generate_rick_rule_signals(
 
 
 # ---------------------------------------------------------------------------
-# Rick Rule backtest
+# Nordic Contrarian backtest
 # ---------------------------------------------------------------------------
-def backtest_rick_rule(
+def backtest_nordic_strategy(
     df: pd.DataFrame,
     buy_signals: pd.DataFrame,
     sell_signals: pd.DataFrame,
 ) -> pd.DataFrame:
     """
-    Simulate Rick Rule buy/sell trades and compute returns.
+    Simulate Nordic Contrarian buy/sell trades and compute returns.
 
     Returns DataFrame with columns:
       Action, Date, Price, Return_pct, Cumulative_Return
@@ -821,8 +821,8 @@ def run_long_trend_analysis(ticker: str, period: str = "10y") -> dict:
     Returns a dict with keys:
       df              - enriched price DataFrame (Close, EMA50, EMA200, RSI14, Volume_MA20)
       drawdowns       - list of drawdown dicts (classified)
-      buy_signals     - DataFrame of Rick Rule BUY signals
-      sell_signals    - DataFrame of Rick Rule SELL signals
+      buy_signals     - DataFrame of Nordic Contrarian BUY signals
+      sell_signals    - DataFrame of Nordic Contrarian SELL signals
       backtest        - DataFrame of backtest trades
       trend_phase     - str: "Bullish" / "Neutral" / "Bearish"
       cycle_position  - str: one of 7 cycle phases
@@ -838,7 +838,7 @@ def run_long_trend_analysis(ticker: str, period: str = "10y") -> dict:
         "backtest": pd.DataFrame(columns=["Action", "Date", "Price", "Return_pct", "Cumulative_Return"]),
         "trend_phase": "Neutral",
         "cycle_position": "Recovery",
-        "rick_verdict": "HOLD",
+        "nordic_verdict": "HOLD",
         "drawdown_summary": {"noise_pct": 0, "fundamental_pct": 0, "macro_pct": 0, "sector_pct": 0},
         "error": None,
     }
@@ -912,12 +912,12 @@ def run_long_trend_analysis(ticker: str, period: str = "10y") -> dict:
     # 9. Cycle position
     result["cycle_position"] = classify_cycle_position(df)
 
-    # 10. Rick Rule signals
-    buy_signals, sell_signals = generate_rick_rule_signals(df, ticker, ins_id)
+    # 10. Nordic Contrarian signals
+    buy_signals, sell_signals = generate_nordic_signals(df, ticker, ins_id)
     result["buy_signals"] = buy_signals
     result["sell_signals"] = sell_signals
 
-    # 11. Rick Rule verdict (current)
+    # 11. Nordic Contrarian verdict (current)
     if not last_valid.empty:
         last_row = last_valid.iloc[-1]
         price = float(last_row["Close"])
@@ -936,14 +936,14 @@ def run_long_trend_analysis(ticker: str, period: str = "10y") -> dict:
                 break
 
         if price > ema200 and ema50 > ema200 and fundamentals_intact:
-            result["rick_verdict"] = "BUY zone"
+            result["nordic_verdict"] = "BUY zone"
         elif below_streak >= 10:
-            result["rick_verdict"] = "SELL zone"
+            result["nordic_verdict"] = "SELL zone"
         else:
-            result["rick_verdict"] = "HOLD"
+            result["nordic_verdict"] = "HOLD"
 
     # 12. Backtest
-    result["backtest"] = backtest_rick_rule(df, buy_signals, sell_signals)
+    result["backtest"] = backtest_nordic_strategy(df, buy_signals, sell_signals)
 
     return result
 

@@ -715,13 +715,43 @@ def score_sector(sector_df):
 # DATA FETCHING
 # =============================================================================
 
-def fetch_data(tickers, period="1y", interval="1d"):
-    """Fetch OHLCV data for multiple tickers."""
+def fetch_data(tickers, period="1y", interval="1d", pre_fetched=None):
+    """
+    Fetch OHLCV data for multiple tickers.
+
+    Parameters
+    ----------
+    tickers     : dict {ticker: name}
+    period      : yfinance period string
+    interval    : bar interval
+    pre_fetched : optional dict {ticker: DataFrame} from Börsdata batch fetch.
+                  Tickers present here are used directly; only missing tickers
+                  fall back to yfinance.
+    """
     print(f"  Fetching data for {len(tickers)} tickers...")
     data = {}
     ticker_list = list(tickers.keys())
 
-    # Batch download
+    # --- Use pre-fetched Börsdata data where available ---------------------
+    if pre_fetched:
+        yf_needed = []
+        for ticker in ticker_list:
+            if ticker in pre_fetched:
+                df = pre_fetched[ticker]
+                if df is not None and not df.empty and len(df) >= 50:
+                    data[ticker] = df
+                else:
+                    yf_needed.append(ticker)
+            else:
+                yf_needed.append(ticker)
+        print(f"  Pre-fetched: {len(data)} tickers; yfinance needed: {len(yf_needed)}")
+        if not yf_needed:
+            print(f"  Got data for {len(data)}/{len(tickers)} tickers")
+            return data
+        # Fall through to yfinance for the remainder
+        ticker_list = yf_needed
+
+    # --- yfinance batch download ------------------------------------------
     try:
         raw = yf.download(ticker_list, period=period, interval=interval,
                           group_by="ticker", progress=False, threads=True)
@@ -756,8 +786,18 @@ def fetch_data(tickers, period="1y", interval="1d"):
 # MAIN SCREENER
 # =============================================================================
 
-def run_screener(markets=None, min_score=0):
-    """Run the full screener."""
+def run_screener(markets=None, min_score=0, pre_fetched=None):
+    """
+    Run the full screener.
+
+    Parameters
+    ----------
+    markets     : list of market keys to scan, or None for all
+    min_score   : minimum total regime score to include in results
+    pre_fetched : optional dict {ticker: DataFrame} from BDClient.get_price_history_batch().
+                  When provided, these DataFrames are used directly and yfinance is only
+                  called for tickers absent from the dict.
+    """
     if markets is None:
         markets = list(MARKETS.keys())
 
@@ -768,7 +808,7 @@ def run_screener(markets=None, min_score=0):
 
     # 1. Fetch SPY for market regime
     print("\n[1/4] Market Regime (SPY)...")
-    spy_data = fetch_data({"SPY": "S&P 500 ETF"}, period="1y")
+    spy_data = fetch_data({"SPY": "S&P 500 ETF"}, period="1y", pre_fetched=pre_fetched)
     spy_df = spy_data.get("SPY")
     market_score = score_market_regime(spy_df)
     print(f"  Market Score: {market_score}/30")
@@ -776,7 +816,11 @@ def run_screener(markets=None, min_score=0):
     # 2. Fetch sector ETFs
     print("\n[2/4] Sector ETFs...")
     sector_etfs = {v: k for k, v in SECTOR_MAP.items()}
-    sector_data = fetch_data({etf: name for etf, name in sector_etfs.items()}, period="1y")
+    sector_data = fetch_data(
+        {etf: name for etf, name in sector_etfs.items()},
+        period="1y",
+        pre_fetched=pre_fetched,
+    )
     sector_scores = {}
     for etf, df in sector_data.items():
         sector_scores[etf] = score_sector(df)
@@ -794,7 +838,7 @@ def run_screener(markets=None, min_score=0):
         tickers = MARKETS[market_name]
         print(f"\n[3/4] Scanning {market_name.upper()} ({len(tickers)} tickers)...")
 
-        stock_data = fetch_data(tickers, period="1y")
+        stock_data = fetch_data(tickers, period="1y", pre_fetched=pre_fetched)
 
         for ticker, df in stock_data.items():
             result = score_stock(df)
