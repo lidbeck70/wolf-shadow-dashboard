@@ -383,6 +383,11 @@ def render_ovtlyr_page() -> None:
 
     # Normalise column names
     df.columns = [str(c).strip() for c in df.columns]
+    # If Date is in index, reset it to column
+    if "Date" not in df.columns and df.index.name and df.index.name.lower() == "date":
+        df = df.reset_index()
+    elif "Date" not in df.columns and df.index.name:
+        df = df.reset_index().rename(columns={df.index.name: "Date"})
     for col in ("Date", "Open", "High", "Low", "Close", "Volume"):
         if col not in df.columns:
             # Try case-insensitive match
