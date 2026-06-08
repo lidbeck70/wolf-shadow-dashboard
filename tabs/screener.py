@@ -86,8 +86,8 @@ def tab_screener():
     lcol, rcol = st.columns([3, 1])
     with rcol:
         st.markdown("""
-        <div style="border:1px solid rgba(201,168,76,0.15);border-radius:6px;padding:12px;font-size:11px;letter-spacing:1px;">
-            <div style="color:rgba(201,168,76,0.5);letter-spacing:3px;margin-bottom:8px;">SCORE LEGEND</div>
+        <div style="border:1px solid rgba(0,229,255,0.15);border-radius:6px;padding:12px;font-size:11px;letter-spacing:1px;">
+            <div style="color:rgba(0,229,255,0.5);letter-spacing:3px;margin-bottom:8px;">SCORE LEGEND</div>
             <div><span class="score-green">■</span> &nbsp;STRONG &nbsp;&ge; 70</div>
             <div><span class="score-yellow">■</span> &nbsp;MODERATE &nbsp;&ge; 50</div>
             <div><span class="score-red">■</span> &nbsp;WEAK &nbsp;&lt; 50</div>
@@ -387,7 +387,7 @@ def tab_screener():
                     "selector": "thead th",
                     "props": [
                         ("background-color", "#10101a"),
-                        ("color", "rgba(201,168,76,0.6)"),
+                        ("color", "rgba(0,229,255,0.6)"),
                         ("font-size", "10px"),
                         ("letter-spacing", "2px"),
                     ]
@@ -400,15 +400,15 @@ def tab_screener():
         <div style="
             text-align:center;
             padding:80px 20px;
-            border:1px dashed rgba(201,168,76,0.15);
+            border:1px dashed rgba(0,229,255,0.15);
             border-radius:8px;
             margin-top:20px;
         ">
             <div style="font-size:48px;margin-bottom:16px;">🐺</div>
-            <div style="color:rgba(201,168,76,0.5);letter-spacing:4px;font-size:14px;margin-bottom:8px;">
+            <div style="color:rgba(0,229,255,0.5);letter-spacing:4px;font-size:14px;margin-bottom:8px;">
                 READY TO HUNT
             </div>
-            <div style="color:rgba(201,168,76,0.3);font-size:11px;letter-spacing:2px;">
+            <div style="color:rgba(0,229,255,0.3);font-size:11px;letter-spacing:2px;">
                 SELECT MARKET · SET MIN SCORE · CLICK SCAN
             </div>
         </div>
@@ -419,7 +419,7 @@ def _render_ovtlyr_screener_ui():
     """Viking Screener with z-score weighted scoring."""
     try:
         st.markdown(
-            "<h2 style='color:#c9a84c;letter-spacing:0.1em;'>"
+            "<h2 style='color:#00E5FF;letter-spacing:0.1em;'>"
             "VIKING SCREENER</h2>"
             "<p style='color:#8a8578;font-size:0.7rem;'>Z-score normalized · "
             "Weighted composite · Trend 30% + Momentum 25% + Vol 15% + Volume 15% + ADX 15%</p>",
@@ -491,7 +491,7 @@ def _render_ovtlyr_screener_ui():
             k5.metric("SELL", sell)
 
             def _signal_color(val):
-                colors = {"STRONG BUY": "color:#c9a84c", "BUY": "color:#2d8a4e",
+                colors = {"STRONG BUY": "color:#00E5FF", "BUY": "color:#2d8a4e",
                           "HOLD": "color:#d4943a", "SELL": "color:#c44545"}
                 return colors.get(val, "")
 

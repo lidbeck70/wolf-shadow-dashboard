@@ -80,7 +80,7 @@ def render_blindspot_page() -> None:
             flag_html = _flag_badges(report.flags)
 
             st.markdown(
-                f"<div style='background:{BG2};border:1px solid rgba(201,168,76,0.2);"
+                f"<div style='background:{BG2};border:1px solid rgba(0,229,255,0.2);"
                 f"border-radius:8px;padding:12px;text-align:center;'>"
                 f"<div style='color:{GOLD};font-weight:700;font-size:1.1rem;'>"
                 f"{report.ticker}</div>"
@@ -335,13 +335,13 @@ def render_blindspot_page() -> None:
                     plot_bgcolor="rgba(12,12,18,0)",
                     font=dict(family="Courier New, monospace", color=GOLD, size=11),
                     xaxis=dict(
-                        gridcolor="rgba(201,168,76,0.08)",
-                        zerolinecolor="rgba(201,168,76,0.15)",
+                        gridcolor="rgba(0,229,255,0.08)",
+                        zerolinecolor="rgba(0,229,255,0.15)",
                     ),
                     yaxis=dict(
                         title="Opportunity Score",
-                        gridcolor="rgba(201,168,76,0.08)",
-                        zerolinecolor="rgba(201,168,76,0.15)",
+                        gridcolor="rgba(0,229,255,0.08)",
+                        zerolinecolor="rgba(0,229,255,0.15)",
                     ),
                     margin=dict(l=50, r=20, t=50, b=40),
                     legend=dict(font=dict(color=TEXT, size=10)),
@@ -428,7 +428,7 @@ Tidiga tecken pa vanding — skyddar mot value traps:</p>
 </ul>
 
 <h3 style="color:{GOLD};">Opportunity Score — Formeln</h3>
-<p style="font-family:monospace;background:{BG2};padding:10px;border-radius:6px;border:1px solid rgba(201,168,76,0.15);">
+<p style="font-family:monospace;background:{BG2};padding:10px;border-radius:6px;border:1px solid rgba(0,229,255,0.15);">
 Opportunity = Hat x (Necessity / 100) x (Strength / 100) + Catalyst-bonus
 </p>
 <p>Catalyst-bonus skalas med Hat Score — catalyst spelar bara roll om aktien faktiskt ar hatad.</p>

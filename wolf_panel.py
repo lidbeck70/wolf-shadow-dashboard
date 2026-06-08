@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Nordic Alpha Systems — Trading & Investing
-====================================
-Cyberpunk dark-theme dashboard for Nordic swing trading intelligence.
+Nordic Arc Systems — Trading & Investing
+=========================================
+Mission Control dashboard for Nordic swing trading intelligence.
 
 Run:
     streamlit run wolf_panel.py
@@ -48,10 +48,10 @@ st.markdown(
     """
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Nordic Alpha">
+    <meta name="apple-mobile-web-app-title" content="Nordic Arc">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
     <meta name="theme-color" content="#05070A">
-    <link rel="apple-touch-icon" href="https://em-content.zobj.net/source/apple/391/wolf_1f43a.png">
+    <link rel="apple-touch-icon" href="https://em-content.zobj.net/source/apple/391/trident_1f531.png">
     """,
     unsafe_allow_html=True,
 )
@@ -59,7 +59,7 @@ st.markdown(
 # ---------------------------------------------------------------------------
 # LOCAL MODULE IMPORTS
 # ---------------------------------------------------------------------------
-from ui.css import wolf_banner, tab_not_found
+from ui.css import tab_not_found
 from ui.theme import inject_css, render_header, render_footer
 from auth import render_login_gate
 from tabs.home import tab_home
@@ -176,134 +176,145 @@ def main():
 
     tab_labels = [
         "  🏠 HOME  ",
-        "  🔱 ARC SCREENER  ",
-        "  ⚡ CONTRARIAN ALPHA  ",
-        "  🔄 MARKET CYCLE  ",
-        "  🐺 WOLF REGIME  ",
-        "  📈 ALPHA REGIME  ",
-        "  ⚔️ VIKING REGIME  ",
-        "  🌐 FLOW DIVERGENCE  ",
-        "  👁 ODIN'S BLINDSPOT  ",
-        "  📡 SENTIMENT  ",
-        "  🛒 RETAIL PULSE  ",
-        "  📊 HEATMAP  ",
-        "  💼 HOLDINGS  ",
-        "  📓 TRADE JOURNAL  ",
-        "  ⚙️ BACKTEST  ",
-        "  📋 RULES  ",
+        "  🔱 SIGNALS  ",
+        "  📡 REGIME  ",
+        "  👁 INTELLIGENCE  ",
+        "  💼 PORTFOLIO  ",
         "  🔔 ALERTS  ",
-        "  🧬 ARC STRATEGIES  ",
+        "  📋 RULES  ",
+        "  🧬 STRATEGIES  ",
     ]
-    (tab_home_page, tab1, tab_contrarian, tab_market_cycle,
-     tab_swing_regime, tab_long_regime, tab_ovtlyr,
-     tab6, tab_blindspot, tab7, tab_retail, tab8,
-     tab_holdings, tab_journal, tab2,
-     tab_rules, tab_alerts_page, tab_strat_overview) = st.tabs(tab_labels)
+    (tab_home_page, tab_signals, tab_regime_main,
+     tab_intelligence, tab_portfolio,
+     tab_alerts_page, tab_rules,
+     tab_strat_overview) = st.tabs(tab_labels)
 
+    # ── HOME ─────────────────────────────────────────────────────────────────
     with tab_home_page:
         tab_home()
 
-    with tab1:
-        tab_screener_consolidated()
+    # ── SIGNALS ──────────────────────────────────────────────────────────────
+    with tab_signals:
+        sub = st.radio(
+            "", ["Arc Screener", "Contrarian Alpha", "Market Cycle"],
+            horizontal=True, key="sub_signals",
+        )
+        st.markdown("---")
+        if sub == "Arc Screener":
+            tab_screener_consolidated()
+        elif sub == "Contrarian Alpha":
+            if CONTRARIAN_ALPHA_AVAILABLE:
+                render_contrarian_alpha_page()
+            else:
+                tab_not_found("Contrarian Alpha", "contrarian_alpha")
+        elif sub == "Market Cycle":
+            if MARKET_CYCLE_AVAILABLE:
+                render_market_cycle_page()
+            else:
+                tab_not_found("Market Cycle Engine", "tabs/market_cycle")
 
-    with tab2:
-        tab_backtest_consolidated()
+    # ── REGIME ───────────────────────────────────────────────────────────────
+    with tab_regime_main:
+        sub = st.radio(
+            "", ["Wolf Regime", "Alpha Regime", "Viking Regime", "Flow Divergence"],
+            horizontal=True, key="sub_regime",
+        )
+        st.markdown("---")
+        if sub == "Wolf Regime":
+            tab_regime()
+            try:
+                if render_inline_rules:
+                    render_inline_rules("wolf")
+            except Exception:
+                pass
+        elif sub == "Alpha Regime":
+            if LONG_REGIME_AVAILABLE:
+                render_long_regime_monitor()
+            else:
+                tab_not_found("Alpha Regime Monitor", "long_regime_monitor")
+            try:
+                if render_inline_rules:
+                    render_inline_rules("alpha")
+            except Exception:
+                pass
+        elif sub == "Viking Regime":
+            if OVTLYR_AVAILABLE:
+                render_ovtlyr_page()
+            else:
+                tab_not_found("OVTLYR", "ovtlyr")
+            try:
+                if render_inline_rules:
+                    render_inline_rules("viking")
+            except Exception:
+                pass
+        elif sub == "Flow Divergence":
+            if SECTOR_CYCLE_AVAILABLE:
+                render_sector_cycle_page()
+            else:
+                tab_not_found("Sector & Global Regime", "sector_cycle")
 
-    with tab_contrarian:
-        if CONTRARIAN_ALPHA_AVAILABLE:
-            render_contrarian_alpha_page()
-        else:
-            tab_not_found("Contrarian Alpha", "contrarian_alpha")
+    # ── INTELLIGENCE ─────────────────────────────────────────────────────────
+    with tab_intelligence:
+        sub = st.radio(
+            "", ["Odin's Blindspot", "Sentiment", "Retail Pulse", "Heatmap"],
+            horizontal=True, key="sub_intel",
+        )
+        st.markdown("---")
+        if sub == "Odin's Blindspot":
+            if BLINDSPOT_AVAILABLE:
+                render_blindspot_page()
+            else:
+                tab_not_found("Odin's Blindspot Index", "blindspot")
+        elif sub == "Sentiment":
+            if SENTIMENT_AVAILABLE:
+                render_sentiment_page()
+            else:
+                tab_not_found("Sentiment & Flow", "sentiment")
+        elif sub == "Retail Pulse":
+            if RETAIL_SENTIMENT_AVAILABLE:
+                render_retail_sentiment_page()
+            else:
+                tab_not_found("Retail Sentiment", "retail_sentiment")
+        elif sub == "Heatmap":
+            if HEATMAP_AVAILABLE:
+                render_heatmap_page()
+            else:
+                tab_not_found("Heatmap", "heatmap")
 
-    with tab_holdings:
-        if HOLDINGS_AVAILABLE:
-            render_holdings_page()
-        else:
-            tab_not_found("Holdings", "holdings")
+    # ── PORTFOLIO ─────────────────────────────────────────────────────────────
+    with tab_portfolio:
+        sub = st.radio(
+            "", ["Holdings", "Trade Journal", "Backtest"],
+            horizontal=True, key="sub_portfolio",
+        )
+        st.markdown("---")
+        if sub == "Holdings":
+            if HOLDINGS_AVAILABLE:
+                render_holdings_page()
+            else:
+                tab_not_found("Holdings", "holdings")
+        elif sub == "Trade Journal":
+            if JOURNAL_AVAILABLE:
+                render_trade_journal_page()
+            else:
+                tab_not_found("Trade Journal", "trade_journal")
+        elif sub == "Backtest":
+            tab_backtest_consolidated()
 
-    with tab_journal:
-        if JOURNAL_AVAILABLE:
-            render_trade_journal_page()
-        else:
-            tab_not_found("Trade Journal", "trade_journal")
+    # ── ALERTS ───────────────────────────────────────────────────────────────
+    with tab_alerts_page:
+        tab_alerts()
 
-    with tab_swing_regime:
-        tab_regime()
-        try:
-            if render_inline_rules:
-                render_inline_rules("wolf")
-        except Exception:
-            pass
-
-    with tab_long_regime:
-        if LONG_REGIME_AVAILABLE:
-            render_long_regime_monitor()
-        else:
-            tab_not_found("Alpha Regime Monitor", "long_regime_monitor")
-        try:
-            if render_inline_rules:
-                render_inline_rules("alpha")
-        except Exception:
-            pass
-
-    with tab_ovtlyr:
-        if OVTLYR_AVAILABLE:
-            render_ovtlyr_page()
-        else:
-            tab_not_found("OVTLYR", "ovtlyr")
-        try:
-            if render_inline_rules:
-                render_inline_rules("viking")
-        except Exception:
-            pass
-
-    with tab6:
-        if SECTOR_CYCLE_AVAILABLE:
-            render_sector_cycle_page()
-        else:
-            tab_not_found("Sector & Global Regime", "sector_cycle")
-
-    with tab7:
-        if SENTIMENT_AVAILABLE:
-            render_sentiment_page()
-        else:
-            tab_not_found("Sentiment & Flow", "sentiment")
-
-    with tab8:
-        if HEATMAP_AVAILABLE:
-            render_heatmap_page()
-        else:
-            tab_not_found("Heatmap", "heatmap")
-
-    with tab_retail:
-        if RETAIL_SENTIMENT_AVAILABLE:
-            render_retail_sentiment_page()
-        else:
-            tab_not_found("Retail Sentiment", "retail_sentiment")
-
-    with tab_blindspot:
-        if BLINDSPOT_AVAILABLE:
-            render_blindspot_page()
-        else:
-            tab_not_found("Odin's Blindspot Index", "blindspot")
-
+    # ── RULES ────────────────────────────────────────────────────────────────
     with tab_rules:
         if RULES_AVAILABLE:
             render_rules_page()
         else:
             tab_not_found("Rules", "ovtlyr/ui")
 
-    with tab_alerts_page:
-        tab_alerts()
-
+    # ── STRATEGIES ───────────────────────────────────────────────────────────
     with tab_strat_overview:
         tab_strategy_overview()
-
-    with tab_market_cycle:
-        if MARKET_CYCLE_AVAILABLE:
-            render_market_cycle_page()
-        else:
-            tab_not_found("Market Cycle Engine", "tabs/market_cycle")
 
     render_footer()
 

@@ -226,7 +226,7 @@ SENTIMENT_PLUGIN: dict = {
         "+ Volatility(20%) + Volume(15%) + Breadth(15%). "
         "Derived entirely from OHLCV data."
     ),
-    "color":        "#c9a84c",
+    "color":        "#00E5FF",
     "compute_score":  compute_score,
     "compute_signal": compute_signal,
 }

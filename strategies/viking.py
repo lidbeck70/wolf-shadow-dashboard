@@ -314,7 +314,7 @@ STRATEGY: dict = {
         "Market(40%) + Sector(30%) + Stock(30%) layers. BUY >= 70, SELL < 40, "
         "½-ATR stop-loss, EMA10 trailing exit."
     ),
-    "color":            "#8b7340",
+    "color":            "#00A8BF",
     "params":           DEFAULT_PARAMS,
     "entry_fn":         entry_fn,
     "exit_fn":          exit_fn,

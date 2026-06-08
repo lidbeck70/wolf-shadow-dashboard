@@ -17,8 +17,8 @@ except ImportError:
 # ---------------------------------------------------------------------------
 BG       = "#0c0c12"
 BG2      = "#14141e"
-CYAN     = "#c9a84c"
-MAGENTA  = "#8b7340"
+CYAN     = "#00E5FF"
+MAGENTA  = "#00A8BF"
 GREEN    = "#2d8a4e"
 RED      = "#c44545"
 YELLOW   = "#d4943a"
@@ -267,7 +267,7 @@ def _render_history_chart(df: "pd.DataFrame") -> None:
         name="F&G Proxy",
         line={"color": CYAN, "width": 2.5, "shape": "spline"},
         fill="tozeroy",
-        fillcolor="rgba(201,168,76,0.07)",
+        fillcolor="rgba(0,229,255,0.07)",
     ))
 
     # Horizontal reference lines
@@ -457,7 +457,7 @@ def render_sentiment_page() -> None:
         letter-spacing:0.2em;
         text-transform:uppercase;
         margin:0;
-        text-shadow:0 0 18px rgba(201,168,76,0.5);
+        text-shadow:0 0 18px rgba(0,229,255,0.5);
     ">SENTIMENT &amp; FLOW</h1>
     <p style="color:{DIM};font-size:0.78rem;margin:4px 0 0 0;letter-spacing:0.1em;">
         Synthetic Fear &amp; Greed · Retail Flow (placeholder) · Real-time via yfinance

@@ -7,16 +7,16 @@ PLOTLY_LAYOUT = dict(
     template="plotly_dark",
     paper_bgcolor="rgba(12,12,18,0)",
     plot_bgcolor="rgba(12,12,18,0)",
-    font=dict(family="Courier New, monospace", color="#c9a84c", size=11),
+    font=dict(family="Courier New, monospace", color="#00E5FF", size=11),
     xaxis=dict(
-        gridcolor="rgba(201,168,76,0.08)",
-        zerolinecolor="rgba(201,168,76,0.15)",
-        tickfont=dict(color="rgba(201,168,76,0.6)"),
+        gridcolor="rgba(0,229,255,0.08)",
+        zerolinecolor="rgba(0,229,255,0.15)",
+        tickfont=dict(color="rgba(0,229,255,0.6)"),
     ),
     yaxis=dict(
-        gridcolor="rgba(201,168,76,0.08)",
-        zerolinecolor="rgba(201,168,76,0.15)",
-        tickfont=dict(color="rgba(201,168,76,0.6)"),
+        gridcolor="rgba(0,229,255,0.08)",
+        zerolinecolor="rgba(0,229,255,0.15)",
+        tickfont=dict(color="rgba(0,229,255,0.6)"),
     ),
     margin=dict(l=50, r=20, t=50, b=40),
 )
@@ -28,8 +28,8 @@ def build_equity_chart(eq_df, ticker):
     fig.add_trace(go.Scatter(
         x=eq_df.index, y=eq_df["equity"],
         fill="tozeroy",
-        fillcolor="rgba(201,168,76,0.05)",
-        line=dict(color="#c9a84c", width=1.5),
+        fillcolor="rgba(0,229,255,0.05)",
+        line=dict(color="#00E5FF", width=1.5),
         name="Equity",
         hovertemplate="<b>%{x}</b><br>$%{y:,.0f}<extra></extra>",
     ))
@@ -43,7 +43,7 @@ def build_equity_chart(eq_df, ticker):
 
     fig.update_layout(
         **PLOTLY_LAYOUT,
-        title=dict(text=f"EQUITY CURVE — {ticker}", font=dict(size=13, color="#c9a84c")),
+        title=dict(text=f"EQUITY CURVE — {ticker}", font=dict(size=13, color="#00E5FF")),
         height=320,
         showlegend=False,
     )
@@ -57,7 +57,7 @@ def build_drawdown_chart(dd_series):
         y=dd_series.values * 100,
         fill="tozeroy",
         fillcolor="rgba(139,115,64,0.12)",
-        line=dict(color="#8b7340", width=1.5),
+        line=dict(color="#00A8BF", width=1.5),
         name="Drawdown %",
         hovertemplate="<b>%{x}</b><br>%{y:.2f}%<extra></extra>",
     ))
@@ -65,7 +65,7 @@ def build_drawdown_chart(dd_series):
     yaxis_base = PLOTLY_LAYOUT.get("yaxis", {})
     fig.update_layout(
         **layout_copy,
-        title=dict(text="DRAWDOWN %", font=dict(size=13, color="#8b7340")),
+        title=dict(text="DRAWDOWN %", font=dict(size=13, color="#00A8BF")),
         height=220,
         yaxis=dict(**yaxis_base, ticksuffix="%"),
         showlegend=False,
@@ -114,7 +114,7 @@ def build_monthly_heatmap(returns_series, eq_df):
         zmax=10,
         showscale=True,
         colorbar=dict(
-            tickfont=dict(color="rgba(201,168,76,0.6)", size=10),
+            tickfont=dict(color="rgba(0,229,255,0.6)", size=10),
             ticksuffix="%",
             outlinewidth=0,
         ),
@@ -124,7 +124,7 @@ def build_monthly_heatmap(returns_series, eq_df):
     layout_copy2 = {k: v for k, v in PLOTLY_LAYOUT.items() if k not in ("yaxis", "xaxis")}
     fig.update_layout(
         **layout_copy2,
-        title=dict(text="MONTHLY RETURNS HEATMAP", font=dict(size=13, color="#c9a84c")),
+        title=dict(text="MONTHLY RETURNS HEATMAP", font=dict(size=13, color="#00E5FF")),
         height=max(180, len(y_labels) * 35 + 80),
         xaxis=dict(**PLOTLY_LAYOUT.get("xaxis", {}), side="bottom"),
         yaxis=dict(**PLOTLY_LAYOUT.get("yaxis", {}), autorange="reversed"),
@@ -133,8 +133,8 @@ def build_monthly_heatmap(returns_series, eq_df):
 
 
 def build_gauge(value, max_val, label, color_cyan=True):
-    bar_color = "rgba(201,168,76,0.9)" if color_cyan else "rgba(139,115,64,0.9)"
-    bg_color = "rgba(201,168,76,0.08)" if color_cyan else "rgba(139,115,64,0.08)"
+    bar_color = "rgba(0,229,255,0.9)" if color_cyan else "rgba(139,115,64,0.9)"
+    bg_color = "rgba(0,229,255,0.08)" if color_cyan else "rgba(139,115,64,0.08)"
 
     green_thresh = 0.67 * max_val
     yellow_thresh = 0.4 * max_val
@@ -150,30 +150,30 @@ def build_gauge(value, max_val, label, color_cyan=True):
         mode="gauge+number",
         value=value,
         number=dict(
-            font=dict(family="Courier New", color="#c9a84c", size=28),
+            font=dict(family="Courier New", color="#00E5FF", size=28),
             suffix=f"/{max_val}",
         ),
         title=dict(
             text=label,
-            font=dict(family="Courier New", color="rgba(201,168,76,0.6)", size=11),
+            font=dict(family="Courier New", color="rgba(0,229,255,0.6)", size=11),
         ),
         gauge=dict(
             axis=dict(
                 range=[0, max_val],
-                tickfont=dict(color="rgba(201,168,76,0.5)", size=9),
-                tickcolor="rgba(201,168,76,0.3)",
+                tickfont=dict(color="rgba(0,229,255,0.5)", size=9),
+                tickcolor="rgba(0,229,255,0.3)",
             ),
             bar=dict(color=bar_color, thickness=0.25),
             bgcolor=bg_color,
             borderwidth=1,
-            bordercolor="rgba(201,168,76,0.2)",
+            bordercolor="rgba(0,229,255,0.2)",
             steps=[
                 dict(range=[0, yellow_thresh], color="rgba(196,69,69,0.07)"),
                 dict(range=[yellow_thresh, green_thresh], color="rgba(212,148,58,0.07)"),
                 dict(range=[green_thresh, max_val], color="rgba(45,138,78,0.07)"),
             ],
             threshold=dict(
-                line=dict(color="#8b7340", width=2),
+                line=dict(color="#00A8BF", width=2),
                 thickness=0.6,
                 value=green_thresh,
             ),

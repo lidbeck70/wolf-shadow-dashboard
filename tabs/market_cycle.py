@@ -183,7 +183,7 @@ def _build_timeline(history: list[dict]) -> go.Figure:
             ticktext=ticktext,
             tickfont=dict(size=9, color=_DIM),
             showgrid=True,
-            gridcolor="rgba(201,168,76,0.06)",
+            gridcolor="rgba(0,229,255,0.06)",
             range=[-0.6, len(PHASE_ORDER) - 0.4],
         ),
         showlegend=False,

@@ -41,7 +41,7 @@ except ImportError:
 
 def _render_sl_tp_calculator(strategy: str = "swing"):
     """SL/TP calculator based on strategy rules."""
-    _CYAN = "#c9a84c"
+    _CYAN = "#00E5FF"
     _GREEN = "#2d8a4e"
     _RED = "#c44545"
     _YELLOW = "#d4943a"
@@ -51,7 +51,7 @@ def _render_sl_tp_calculator(strategy: str = "swing"):
 
     st.markdown(
         f"<div style='color:{_CYAN};font-size:0.75rem;text-transform:uppercase;"
-        f"letter-spacing:0.1em;margin:16px 0 8px 0;border-top:1px solid rgba(201,168,76,0.1);"
+        f"letter-spacing:0.1em;margin:16px 0 8px 0;border-top:1px solid rgba(0,229,255,0.1);"
         f"padding-top:12px;'>SL / TP KALKYLATOR — {strategy.upper()}</div>",
         unsafe_allow_html=True,
     )
@@ -142,7 +142,7 @@ def _render_sl_tp_calculator(strategy: str = "swing"):
                 )
 
             st.markdown(
-                f'<div style="background:{_BG2};border:2px solid rgba(201,168,76,0.2);border-radius:8px;padding:14px;margin-top:8px;">'
+                f'<div style="background:{_BG2};border:2px solid rgba(0,229,255,0.2);border-radius:8px;padding:14px;margin-top:8px;">'
                 f'<div style="color:{_CYAN};font-weight:700;font-size:0.85rem;margin-bottom:8px;">POSITION SIZING</div>'
                 f'<div style="display:flex;justify-content:space-between;">'
                 f'<div><span style="color:{_DIM};font-size:0.7rem;">Aktier</span><br>'
@@ -711,7 +711,7 @@ def tab_backtest():
                 st.markdown("<br>", unsafe_allow_html=True)
                 section_title(f"Current Sentiment — {ticker_input}")
 
-                _CYAN = "#c9a84c"
+                _CYAN = "#00E5FF"
                 _GREEN = "#2d8a4e"
                 _RED = "#c44545"
                 _DIM = "#8a8578"
@@ -733,7 +733,7 @@ def tab_backtest():
                 _agg_color = _bias_color(_agg_bias)
 
                 st.markdown(
-                    f'<div style="background:{_BG2};border:1px solid rgba(201,168,76,0.2);'
+                    f'<div style="background:{_BG2};border:1px solid rgba(0,229,255,0.2);'
                     f'border-radius:8px;padding:12px 16px;margin-bottom:12px;">'
                     f'<span style="color:{_DIM};font-size:0.7rem;text-transform:uppercase;letter-spacing:0.1em;">Aggregate</span>'
                     f'<span style="float:right;color:{_agg_color};font-weight:700;">{_agg_bias.upper()}</span>'
@@ -807,7 +807,7 @@ def tab_backtest():
 def _render_ovtlyr_backtest_ui():
     """OVTLYR backtest with Test Top N integration."""
     st.markdown(
-        "<h2 style='color:#c9a84c;letter-spacing:0.1em;'>"
+        "<h2 style='color:#00E5FF;letter-spacing:0.1em;'>"
         "VIKING BACKTEST</h2>"
         "<p style='color:#8a8578;font-size:0.7rem;'>EMA 10/20 crossover + ADX filter + Volume confirmation</p>",
         unsafe_allow_html=True,

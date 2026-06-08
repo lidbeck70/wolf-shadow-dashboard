@@ -1172,8 +1172,8 @@ class CAGRBacktester:
 
 _BG    = "#0c0c12"
 _BG2   = "#14141e"
-_CYAN  = "#c9a84c"
-_MAG   = "#8b7340"
+_CYAN  = "#00E5FF"
+_MAG   = "#00A8BF"
 _GREEN = "#2d8a4e"
 _YEL   = "#d4943a"
 _RED   = "#c44545"
@@ -1244,7 +1244,7 @@ def _render_equity_chart(equity_df: pd.DataFrame, title: str = "Equity Curve") -
         name="Portfolio",
         line=dict(color=_CYAN, width=2),
         fill="tozeroy",
-        fillcolor="rgba(201,168,76,0.06)",
+        fillcolor="rgba(0,229,255,0.06)",
     ))
     fig.update_layout(
         title=dict(text=title, font=dict(color=_CYAN, size=16)),
@@ -1371,7 +1371,7 @@ def _style_signal(val: str) -> str:
     """Return CSS style string for a signal value cell."""
     color_map = {
         SIGNAL_STRONG_BUY:  (_GREEN,  "rgba(45,138,78,0.15)"),
-        SIGNAL_BUY:         (_CYAN,   "rgba(201,168,76,0.12)"),
+        SIGNAL_BUY:         (_CYAN,   "rgba(0,229,255,0.12)"),
         SIGNAL_HOLD:        (_YEL,    "rgba(212,148,58,0.10)"),
         SIGNAL_SELL:        (_RED,    "rgba(196,69,69,0.12)"),
         SIGNAL_STRONG_SELL: (_MAG,    "rgba(139,115,64,0.12)"),

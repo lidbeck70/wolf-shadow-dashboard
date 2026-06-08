@@ -2,7 +2,7 @@
 heatmap_streamlit.py
 Performance Heatmap module — Streamlit page for Wolf Panel.
 
-Nordic Gold theme: #0c0c12 background, #c9a84c gold, #8b7340 bronze.
+Nordic Gold theme: #0c0c12 background, #00E5FF gold, #00A8BF bronze.
 Entry point: render_heatmap_page()
 
 Sections:
@@ -112,8 +112,8 @@ except ImportError:
 # ---------------------------------------------------------------------------
 BG      = "#0c0c12"
 BG2     = "#14141e"
-CYAN    = "#c9a84c"
-MAGENTA = "#8b7340"
+CYAN    = "#00E5FF"
+MAGENTA = "#00A8BF"
 GREEN   = "#2d8a4e"
 RED     = "#c44545"
 YELLOW  = "#d4943a"
@@ -145,17 +145,17 @@ def _inject_css() -> None:
 
         [data-testid="stSidebar"] {{
             background-color: {BG2};
-            border-right: 1px solid rgba(201,168,76,0.2);
+            border-right: 1px solid rgba(0,229,255,0.2);
         }}
 
         /* KPI cards */
         .kpi-card {{
             background: linear-gradient(135deg, {BG2}, #1a1a28);
-            border: 1px solid rgba(201,168,76,0.27);
+            border: 1px solid rgba(0,229,255,0.27);
             border-radius: 8px;
             padding: 16px 20px;
             text-align: center;
-            box-shadow: 0 0 16px rgba(201,168,76,0.13);
+            box-shadow: 0 0 16px rgba(0,229,255,0.13);
             margin-bottom: 8px;
         }}
         .kpi-card .kpi-value {{
@@ -180,7 +180,7 @@ def _inject_css() -> None:
             font-size: 0.75rem;
             text-transform: uppercase;
             letter-spacing: 0.12em;
-            border-bottom: 1px solid rgba(201,168,76,0.2);
+            border-bottom: 1px solid rgba(0,229,255,0.2);
             padding-bottom: 6px;
             margin: 24px 0 12px 0;
         }}
@@ -195,7 +195,7 @@ def _inject_css() -> None:
 
         /* Buttons */
         .stButton > button {{
-            background: linear-gradient(90deg, rgba(201,168,76,0.2), rgba(139,115,64,0.2));
+            background: linear-gradient(90deg, rgba(0,229,255,0.2), rgba(139,115,64,0.2));
             border: 1px solid {CYAN};
             color: {CYAN};
             font-family: 'JetBrains Mono', monospace;
@@ -204,12 +204,12 @@ def _inject_css() -> None:
             transition: all 0.2s;
         }}
         .stButton > button:hover {{
-            background: linear-gradient(90deg, rgba(201,168,76,0.4), rgba(139,115,64,0.4));
-            box-shadow: 0 0 20px rgba(201,168,76,0.33);
+            background: linear-gradient(90deg, rgba(0,229,255,0.4), rgba(139,115,64,0.4));
+            box-shadow: 0 0 20px rgba(0,229,255,0.33);
         }}
 
         hr {{
-            border-color: rgba(201,168,76,0.13);
+            border-color: rgba(0,229,255,0.13);
         }}
 
         .stProgress > div > div {{
@@ -217,14 +217,14 @@ def _inject_css() -> None:
         }}
 
         [data-testid="stExpander"] {{
-            border: 1px solid rgba(201,168,76,0.13) !important;
+            border: 1px solid rgba(0,229,255,0.13) !important;
             background-color: {BG2} !important;
         }}
 
         ::-webkit-scrollbar {{ width: 6px; }}
         ::-webkit-scrollbar-track {{ background: {BG}; }}
         ::-webkit-scrollbar-thumb {{
-            background: rgba(201,168,76,0.27);
+            background: rgba(0,229,255,0.27);
             border-radius: 3px;
         }}
         </style>
@@ -695,7 +695,7 @@ def _render_table(df: pd.DataFrame, sort_by: str) -> None:
     styled = styled.set_properties(**{
         "background-color": BG2,
         "color": TEXT,
-        "border-color": "rgba(201,168,76,0.13)",
+        "border-color": "rgba(0,229,255,0.13)",
     })
     styled = styled.format({
         "1D %": lambda x: f"{x:+.2f}%",
@@ -771,9 +771,9 @@ def _render_movers(df: pd.DataFrame, timeframe: str) -> None:
                 margin=dict(l=8, r=60, t=10, b=10),
                 xaxis=dict(
                     color=DIM,
-                    gridcolor="rgba(201,168,76,0.07)",
+                    gridcolor="rgba(0,229,255,0.07)",
                     zeroline=True,
-                    zerolinecolor="rgba(201,168,76,0.2)",
+                    zerolinecolor="rgba(0,229,255,0.2)",
                     tickformat="+.1f",
                 ),
                 yaxis=dict(
@@ -893,7 +893,7 @@ def _render_header() -> None:
                 NORDIC STOCKS &amp; UCITS ETFs — REAL-TIME PRICE PERFORMANCE
             </div>
         </div>
-        <hr style='border-color:rgba(201,168,76,0.13);margin-bottom:16px;'/>
+        <hr style='border-color:rgba(0,229,255,0.13);margin-bottom:16px;'/>
         """,
         unsafe_allow_html=True,
     )

@@ -368,13 +368,13 @@ def render_retail_sentiment_page() -> None:
                     plot_bgcolor="rgba(12,12,18,0)",
                     font=dict(family="Courier New, monospace", color=GOLD, size=11),
                     xaxis=dict(
-                        gridcolor="rgba(201,168,76,0.08)",
-                        zerolinecolor="rgba(201,168,76,0.15)",
+                        gridcolor="rgba(0,229,255,0.08)",
+                        zerolinecolor="rgba(0,229,255,0.15)",
                     ),
                     yaxis=dict(
                         title="Composite Score",
-                        gridcolor="rgba(201,168,76,0.08)",
-                        zerolinecolor="rgba(201,168,76,0.15)",
+                        gridcolor="rgba(0,229,255,0.08)",
+                        zerolinecolor="rgba(0,229,255,0.15)",
                         range=[0, 100],
                     ),
                     margin=dict(l=50, r=20, t=50, b=40),

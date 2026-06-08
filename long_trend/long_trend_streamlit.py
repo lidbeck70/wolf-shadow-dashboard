@@ -251,8 +251,8 @@ def _compute_rs_rankings(tickers: tuple) -> dict:
 # ---------------------------------------------------------------------------
 BG = "#0c0c12"
 BG2 = "#14141e"
-CYAN = "#c9a84c"
-MAGENTA = "#8b7340"
+CYAN = "#00E5FF"
+MAGENTA = "#00A8BF"
 GREEN = "#2d8a4e"
 RED = "#c44545"
 YELLOW = "#d4943a"
@@ -260,7 +260,7 @@ TEXT = "#e8e4dc"
 DIM = "#8a8578"
 
 # rgba versions for Plotly
-CYAN_RGBA = "rgba(201,168,76,1)"
+CYAN_RGBA = "rgba(0,229,255,1)"
 MAGENTA_RGBA = "rgba(139,115,64,1)"
 GREEN_RGBA = "rgba(45,138,78,1)"
 RED_RGBA = "rgba(196,69,69,1)"
@@ -269,7 +269,7 @@ RED_ZONE_RGBA = "rgba(196,69,69,0.12)"
 RED_ZONE_LINE_RGBA = "rgba(196,69,69,0.35)"
 TEXT_RGBA = "rgba(232,228,220,1)"
 DIM_RGBA = "rgba(138,133,120,1)"
-PRICE_RGBA = "rgba(201,168,76,0.8)"
+PRICE_RGBA = "rgba(0,229,255,0.8)"
 
 # ---------------------------------------------------------------------------
 # Styling helpers

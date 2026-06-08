@@ -329,7 +329,7 @@ def tab_regime():
     with score_col:
         st.markdown(f"""
         <div style="
-            background: linear-gradient(135deg, rgba(201,168,76,0.06) 0%, rgba(139,115,64,0.03) 100%);
+            background: linear-gradient(135deg, rgba(0,229,255,0.06) 0%, rgba(139,115,64,0.03) 100%);
             border: 1px solid {regime_color};
             border-radius: 12px;
             padding: 32px 16px;
@@ -339,9 +339,9 @@ def tab_regime():
         ">
             <div style="
                 position: absolute; top: 0; left: 0; right: 0; height: 3px;
-                background: linear-gradient(90deg, #c9a84c, #8b7340);
+                background: linear-gradient(90deg, #00E5FF, #00A8BF);
             "></div>
-            <div style="font-size:11px;letter-spacing:4px;color:rgba(201,168,76,0.5);margin-bottom:8px;">
+            <div style="font-size:11px;letter-spacing:4px;color:rgba(0,229,255,0.5);margin-bottom:8px;">
                 REGIME SCORE
             </div>
             <div style="
@@ -352,7 +352,7 @@ def tab_regime():
                 text-shadow: 0 1px 2px rgba(0,0,0,0.3);
                 font-family: 'Courier New', monospace;
             ">{total}</div>
-            <div style="font-size:11px;letter-spacing:3px;color:rgba(201,168,76,0.4);margin-top:4px;">
+            <div style="font-size:11px;letter-spacing:3px;color:rgba(0,229,255,0.4);margin-top:4px;">
                 / 125 MAX
             </div>
             <div style="margin-top:16px;">
@@ -371,7 +371,7 @@ def tab_regime():
             <div style="
                 margin-top: 20px;
                 font-size: 10px;
-                color: rgba(201,168,76,0.3);
+                color: rgba(0,229,255,0.3);
                 letter-spacing: 2px;
             ">
                 {watch_ticker} &nbsp;·&nbsp; {data['timestamp']}
@@ -601,7 +601,7 @@ def tab_regime():
         _risk_score = min(100, int((_hist_vol / 50) * 100)) if _hist_vol > 0 else 50
 
         st.markdown(
-            "<div style='color:#8b7340;font-size:0.7rem;text-transform:uppercase;"
+            "<div style='color:#00A8BF;font-size:0.7rem;text-transform:uppercase;"
             "letter-spacing:0.1em;margin:20px 0 8px 0;border-top:1px solid rgba(139,115,64,0.15);"
             "padding-top:12px;'>WOLF ENTRY CHECKLIST</div>",
             unsafe_allow_html=True,
@@ -609,7 +609,7 @@ def tab_regime():
 
         _ec1, _ec2, _ec3 = st.columns(3)
 
-        def _checklist_card(title, lines, border_color="#c9a84c"):
+        def _checklist_card(title, lines, border_color="#00E5FF"):
             content = "".join(
                 f"<div style='font-size:0.72rem;color:#e8e4dc;padding:1px 0;'>{ln}</div>"
                 for ln in lines
@@ -638,7 +638,7 @@ def tab_regime():
                 f"Hist Vol: <b>{_hist_vol:.0f}%</b>",
                 f"ATR ratio: <b>{_atr_ratio:.2f}x</b>",
                 f"Risk: <b>{_risk_score}/100</b>",
-            ], border_color="#8b7340"), unsafe_allow_html=True)
+            ], border_color="#00A8BF"), unsafe_allow_html=True)
 
         with _ec3:
             _vol_clr = "#2d8a4e" if _vol_ratio >= 1.0 else "#c44545"
@@ -671,7 +671,7 @@ def tab_regime():
                 _ob_lines.append("<span style='color:#2d8a4e;font-weight:700;'>OB inom 3% av pris ✓</span>")
             else:
                 _ob_lines.append("<span style='color:#8a8578;'>Ingen OB inom 3%</span>")
-            st.markdown(_checklist_card("ORDER BLOCKS", _ob_lines, border_color="#c9a84c"), unsafe_allow_html=True)
+            st.markdown(_checklist_card("ORDER BLOCKS", _ob_lines, border_color="#00E5FF"), unsafe_allow_html=True)
 
         st.markdown("<br>", unsafe_allow_html=True)
 
@@ -680,8 +680,8 @@ def tab_regime():
 
     # ── Wolf Trading Gates (11 rules) ────────────────────────────────────────
     st.markdown(
-        "<div style='color:#c9a84c;font-size:0.7rem;text-transform:uppercase;"
-        "letter-spacing:0.1em;margin:20px 0 8px 0;border-top:1px solid rgba(201,168,76,0.1);"
+        "<div style='color:#00E5FF;font-size:0.7rem;text-transform:uppercase;"
+        "letter-spacing:0.1em;margin:20px 0 8px 0;border-top:1px solid rgba(0,229,255,0.1);"
         "padding-top:12px;'>SWING TRADING GATES — 11 REGLER</div>",
         unsafe_allow_html=True,
     )
@@ -797,7 +797,7 @@ def tab_regime():
     try:
         _sltp_df = st.session_state.get("regime_stock_df")
         if _sltp_df is not None and not _sltp_df.empty and len(_sltp_df) >= 20:
-            _CYAN_SL = "#c9a84c"
+            _CYAN_SL = "#00E5FF"
             _GREEN_SL = "#2d8a4e"
             _RED_SL = "#c44545"
             _TEXT_SL = "#e8e4dc"
@@ -806,7 +806,7 @@ def tab_regime():
 
             st.markdown(
                 f"<div style='color:{_CYAN_SL};font-size:0.85rem;text-transform:uppercase;"
-                f"letter-spacing:0.1em;margin:20px 0 10px 0;border-top:2px solid rgba(201,168,76,0.2);"
+                f"letter-spacing:0.1em;margin:20px 0 10px 0;border-top:2px solid rgba(0,229,255,0.2);"
                 f"padding-top:14px;font-weight:700;'>SL / TP KALKYLATOR — WOLF</div>",
                 unsafe_allow_html=True,
             )
@@ -873,7 +873,7 @@ def tab_regime():
                 )
             with _sc3:
                 st.markdown(
-                    f'<div style="background:{_BG2_SL};border:2px solid rgba(201,168,76,0.2);border-radius:8px;padding:12px;">'
+                    f'<div style="background:{_BG2_SL};border:2px solid rgba(0,229,255,0.2);border-radius:8px;padding:12px;">'
                     f'<div style="color:{_CYAN_SL};font-weight:700;font-size:0.8rem;">POSITION</div>'
                     f'<div style="color:{_TEXT_SL};font-size:0.85rem;">{_shares_sl} aktier</div>'
                     f'<div style="color:{_TEXT_SL};font-size:0.85rem;">{_pos_val_sl:,.0f} SEK ({_pos_pct_sl:.1f}%)</div>'

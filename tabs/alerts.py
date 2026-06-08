@@ -19,7 +19,7 @@ import streamlit as st
 from ui.theme import inject_css, section_title, card as _theme_card, PALETTE as _PAL
 
 # ── Palette (matches project-wide cyberpunk theme) ──────────────────────────
-_CYAN   = "#c9a84c"
+_CYAN   = "#00E5FF"
 _GREEN  = "#2d8a4e"
 _RED    = "#c44545"
 _YELLOW = "#d4943a"
@@ -28,7 +28,7 @@ _TEXT   = "#e8e4dc"
 _BG     = "#0c0c12"
 _BG2    = "#14141e"
 _BG3    = "#1a1a28"
-_BORDER = "rgba(201,168,76,0.15)"
+_BORDER = "rgba(0,229,255,0.15)"
 
 _ALL_CHANNELS = ["discord", "email", "webhook"]
 

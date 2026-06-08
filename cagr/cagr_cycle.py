@@ -143,7 +143,7 @@ SCORE_LABELS = {
     0: ("BEARISH",  "#c44545"),
     1: ("NEUTRAL",  "#d4943a"),
     2: ("BULLISH",  "#2d8a4e"),
-    3: ("STRONG",   "#c9a84c"),
+    3: ("STRONG",   "#00E5FF"),
 }
 
 def score_label(score: int) -> tuple:

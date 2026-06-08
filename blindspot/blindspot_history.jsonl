@@ -1,0 +1,46 @@
+{"timestamp": "2026-06-08T13:38:48.098349", "ticker": "CCJ", "opportunity": 24.4, "hat": 40.0, "strength": 55.0, "catalyst": 6.0, "necessity": 100, "sector": "Uranium"}
+{"timestamp": "2026-06-08T13:38:48.099479", "ticker": "UEC", "opportunity": 14.4, "hat": 55.5, "strength": 20.0, "catalyst": 6.0, "necessity": 100, "sector": "Uranium"}
+{"timestamp": "2026-06-08T13:38:48.100491", "ticker": "DNN", "opportunity": 0.0, "hat": 50.2, "strength": 0, "catalyst": 0.0, "necessity": 100, "sector": "Uranium"}
+{"timestamp": "2026-06-08T13:38:48.101054", "ticker": "NXE", "opportunity": 6.9, "hat": 43.2, "strength": 16.0, "catalyst": 0.0, "necessity": 100, "sector": "Uranium"}
+{"timestamp": "2026-06-08T13:38:48.101868", "ticker": "UUUU", "opportunity": 18.4, "hat": 68.0, "strength": 27.0, "catalyst": 0.0, "necessity": 100, "sector": "Uranium"}
+{"timestamp": "2026-06-08T13:38:48.102465", "ticker": "LEU", "opportunity": 10.1, "hat": 87.4, "strength": 11.5, "catalyst": 0.0, "necessity": 100, "sector": "Uranium"}
+{"timestamp": "2026-06-08T13:38:48.103010", "ticker": "OXY", "opportunity": 21.4, "hat": 36.3, "strength": 59.0, "catalyst": 0.0, "necessity": 100, "sector": "Oil & Gas"}
+{"timestamp": "2026-06-08T13:38:48.103550", "ticker": "DVN", "opportunity": 20.8, "hat": 38.8, "strength": 53.6, "catalyst": 0.0, "necessity": 100, "sector": "Oil & Gas"}
+{"timestamp": "2026-06-08T13:38:48.104259", "ticker": "EQNR.OL", "opportunity": 18.4, "hat": 34.7, "strength": 47.0, "catalyst": 6.0, "necessity": 100, "sector": "Oil & Gas"}
+{"timestamp": "2026-06-08T13:38:48.105086", "ticker": "CVE", "opportunity": 25.6, "hat": 35.0, "strength": 59.2, "catalyst": 14.0, "necessity": 100, "sector": "Oil & Gas"}
+{"timestamp": "2026-06-08T13:38:48.105586", "ticker": "SU", "opportunity": 30.2, "hat": 36.2, "strength": 77.4, "catalyst": 6.0, "necessity": 100, "sector": "Oil & Gas"}
+{"timestamp": "2026-06-08T13:38:48.106175", "ticker": "PBR", "opportunity": 26.4, "hat": 42.4, "strength": 62.3, "catalyst": 0.0, "necessity": 100, "sector": "Oil & Gas"}
+{"timestamp": "2026-06-08T13:38:48.106689", "ticker": "FCX", "opportunity": 20.7, "hat": 35.0, "strength": 56.3, "catalyst": 14.0, "necessity": 80, "sector": "Copper"}
+{"timestamp": "2026-06-08T13:38:48.107249", "ticker": "SCCO", "opportunity": 20.3, "hat": 36.9, "strength": 61.4, "catalyst": 6.0, "necessity": 80, "sector": "Copper"}
+{"timestamp": "2026-06-08T13:38:48.107661", "ticker": "TECK", "opportunity": 18.6, "hat": 35.0, "strength": 49.0, "catalyst": 14.0, "necessity": 80, "sector": "Metals & Mining"}
+{"timestamp": "2026-06-08T13:38:48.108139", "ticker": "BOL.ST", "opportunity": 22.6, "hat": 35.0, "strength": 70.8, "catalyst": 8.0, "necessity": 80, "sector": "Metals & Mining"}
+{"timestamp": "2026-06-08T13:38:48.108530", "ticker": "CLF", "opportunity": 8.6, "hat": 35.0, "strength": 13.2, "catalyst": 14.0, "necessity": 80, "sector": "Steel"}
+{"timestamp": "2026-06-08T13:38:48.109024", "ticker": "X", "opportunity": 0.0, "hat": 0.0, "strength": 5.0, "catalyst": 0.0, "necessity": 80, "sector": "Steel"}
+{"timestamp": "2026-06-08T13:38:48.109405", "ticker": "NUE", "opportunity": 15.9, "hat": 35.0, "strength": 39.2, "catalyst": 14.0, "necessity": 80, "sector": "Steel"}
+{"timestamp": "2026-06-08T13:38:48.110000", "ticker": "SSAB-A.ST", "opportunity": 13.4, "hat": 35.0, "strength": 30.2, "catalyst": 14.0, "necessity": 80, "sector": "Steel"}
+{"timestamp": "2026-06-08T13:38:48.110521", "ticker": "MOS", "opportunity": 27.6, "hat": 72.9, "strength": 37.8, "catalyst": 0.0, "necessity": 100, "sector": "Fertilizers"}
+{"timestamp": "2026-06-08T13:38:48.110998", "ticker": "NTR", "opportunity": 24.9, "hat": 40.1, "strength": 62.1, "catalyst": 0.0, "necessity": 100, "sector": "Fertilizers"}
+{"timestamp": "2026-06-08T13:38:48.111514", "ticker": "CF", "opportunity": 29.4, "hat": 40.3, "strength": 72.9, "catalyst": 0.0, "necessity": 100, "sector": "Fertilizers"}
+{"timestamp": "2026-06-08T13:38:48.111980", "ticker": "YARA.OL", "opportunity": 0.0, "hat": 0.0, "strength": 5.0, "catalyst": 0.0, "necessity": 100, "sector": "Fertilizers"}
+{"timestamp": "2026-06-08T13:38:48.112456", "ticker": "GOGL", "opportunity": 0.0, "hat": 0.0, "strength": 5.0, "catalyst": 0.0, "necessity": 80, "sector": "Shipping"}
+{"timestamp": "2026-06-08T13:38:48.112922", "ticker": "SBLK", "opportunity": 26.0, "hat": 35.0, "strength": 75.5, "catalyst": 14.0, "necessity": 80, "sector": "Shipping"}
+{"timestamp": "2026-06-08T13:38:48.113478", "ticker": "DAC", "opportunity": 22.7, "hat": 35.0, "strength": 63.7, "catalyst": 14.0, "necessity": 80, "sector": "Shipping"}
+{"timestamp": "2026-06-08T13:38:48.113875", "ticker": "CEG", "opportunity": 35.9, "hat": 87.0, "strength": 41.3, "catalyst": 0.0, "necessity": 100, "sector": "Nuclear Power"}
+{"timestamp": "2026-06-08T13:38:48.114381", "ticker": "VST", "opportunity": 31.9, "hat": 67.2, "strength": 47.4, "catalyst": 0.0, "necessity": 100, "sector": "Power"}
+{"timestamp": "2026-06-08T13:38:48.114763", "ticker": "NRG", "opportunity": 28.7, "hat": 80.9, "strength": 35.5, "catalyst": 0.0, "necessity": 100, "sector": "Power"}
+{"timestamp": "2026-06-08T13:38:48.115247", "ticker": "LMT", "opportunity": 8.3, "hat": 40.7, "strength": 25.5, "catalyst": 0.0, "necessity": 80, "sector": "Defense"}
+{"timestamp": "2026-06-08T13:38:48.115658", "ticker": "RTX", "opportunity": 13.1, "hat": 35.3, "strength": 46.4, "catalyst": 0.0, "necessity": 80, "sector": "Defense"}
+{"timestamp": "2026-06-08T13:38:48.116082", "ticker": "NOC", "opportunity": 19.7, "hat": 61.8, "strength": 39.9, "catalyst": 0.0, "necessity": 80, "sector": "Defense"}
+{"timestamp": "2026-06-08T13:38:48.116550", "ticker": "SAAB-B.ST", "opportunity": 22.6, "hat": 52.3, "strength": 54.0, "catalyst": 0.0, "necessity": 80, "sector": "Defense"}
+{"timestamp": "2026-06-08T13:38:48.117048", "ticker": "INTC", "opportunity": 9.7, "hat": 28.0, "strength": 34.6, "catalyst": 14.0, "necessity": 60, "sector": "Semiconductors"}
+{"timestamp": "2026-06-08T13:38:48.117466", "ticker": "MU", "opportunity": 13.3, "hat": 25.0, "strength": 65.4, "catalyst": 14.0, "necessity": 60, "sector": "Semiconductors"}
+{"timestamp": "2026-06-08T13:38:48.117941", "ticker": "TXN", "opportunity": 16.8, "hat": 35.0, "strength": 56.6, "catalyst": 14.0, "necessity": 60, "sector": "Semiconductors"}
+{"timestamp": "2026-06-08T13:38:48.118373", "ticker": "ASML", "opportunity": 17.9, "hat": 35.0, "strength": 61.7, "catalyst": 14.0, "necessity": 60, "sector": "Semiconductor Equipment"}
+{"timestamp": "2026-06-08T13:38:48.118736", "ticker": "VMC", "opportunity": 21.2, "hat": 47.7, "strength": 48.1, "catalyst": 6.0, "necessity": 80, "sector": "Construction Materials"}
+{"timestamp": "2026-06-08T13:38:48.119193", "ticker": "MLM", "opportunity": 30.5, "hat": 57.6, "strength": 58.6, "catalyst": 6.0, "necessity": 80, "sector": "Construction Materials"}
+{"timestamp": "2026-06-08T13:38:48.119694", "ticker": "URI", "opportunity": 16.8, "hat": 35.0, "strength": 42.5, "catalyst": 14.0, "necessity": 80, "sector": "Equipment Rental"}
+{"timestamp": "2026-06-08T13:38:48.120161", "ticker": "ADM", "opportunity": 18.8, "hat": 35.0, "strength": 39.7, "catalyst": 14.0, "necessity": 100, "sector": "Agriculture"}
+{"timestamp": "2026-06-08T13:38:48.120690", "ticker": "BG", "opportunity": 14.8, "hat": 35.0, "strength": 28.4, "catalyst": 14.0, "necessity": 100, "sector": "Agriculture"}
+{"timestamp": "2026-06-08T13:38:48.121258", "ticker": "VOLV-B.ST", "opportunity": 15.4, "hat": 35.0, "strength": 37.6, "catalyst": 14.0, "necessity": 80, "sector": "Heavy Machinery"}
+{"timestamp": "2026-06-08T13:38:48.121733", "ticker": "NHY.OL", "opportunity": 22.4, "hat": 35.0, "strength": 62.6, "catalyst": 14.0, "necessity": 80, "sector": "Aluminum"}
+{"timestamp": "2026-06-08T13:38:48.122256", "ticker": "AKER.OL", "opportunity": 14.1, "hat": 35.0, "strength": 43.8, "catalyst": 14.0, "necessity": 60, "sector": "Industrial Conglomerate"}

@@ -17,8 +17,8 @@ from typing import Optional, List
 # Nordic Gold palette
 _BG       = "#0c0c12"
 _BG2      = "#14141e"
-_CYAN     = "#c9a84c"
-_MAGENTA  = "#8b7340"
+_CYAN     = "#00E5FF"
+_MAGENTA  = "#00A8BF"
 _GREEN    = "#2d8a4e"
 _RED      = "#c44545"
 _YELLOW   = "#d4943a"
@@ -436,7 +436,7 @@ def build_momentum_chart(df: pd.DataFrame, momentum_data: dict) -> go.Figure:
     fig.add_trace(go.Scatter(
         x=df["Date"], y=rsi_arr, name="RSI 14",
         line=dict(color=rsi_color, width=1.6),
-        fill="tozeroy", fillcolor="rgba(201,168,76,0.04)",
+        fill="tozeroy", fillcolor="rgba(0,229,255,0.04)",
     ))
     fig.update_layout(
         **_PLOTLY_BASE, height=220,
@@ -537,7 +537,7 @@ def build_oscillator_direction(osc: dict) -> go.Figure:
     fig.add_trace(go.Scatter(
         y=rsi_series, mode="lines", name="RSI",
         line=dict(color=line_color, width=2),
-        fill="tozeroy", fillcolor="rgba(201,168,76,0.03)",
+        fill="tozeroy", fillcolor="rgba(0,229,255,0.03)",
     ))
 
     # Direction arrow annotation

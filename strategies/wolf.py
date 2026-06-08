@@ -330,7 +330,7 @@ STRATEGY: dict = {
         "EMA10>21>50>200 stack entry, RSI 45–70, ADX filter, "
         "ATR stop-loss, Kijun+EMA10 trailing exit."
     ),
-    "color":            "#c9a84c",
+    "color":            "#00E5FF",
     "params":           DEFAULT_PARAMS,
     "entry_fn":         entry_fn,
     "exit_fn":          exit_fn,

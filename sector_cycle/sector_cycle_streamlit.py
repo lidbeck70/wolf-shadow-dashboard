@@ -28,8 +28,8 @@ from .sector_data import (
 
 BG      = "#0c0c12"
 BG2     = "#14141e"
-CYAN    = "#c9a84c"
-MAGENTA = "#8b7340"
+CYAN    = "#00E5FF"
+MAGENTA = "#00A8BF"
 GREEN   = "#2d8a4e"
 RED     = "#c44545"
 YELLOW  = "#d4943a"
@@ -381,7 +381,7 @@ def _render_sector_table(summary: pd.DataFrame) -> None:
             },
             {
                 "selector": "tbody tr:hover",
-                "props": [("background-color", "rgba(201,168,76,0.04)")],
+                "props": [("background-color", "rgba(0,229,255,0.04)")],
             },
             {
                 "selector": "tbody tr",

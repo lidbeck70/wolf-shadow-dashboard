@@ -1016,7 +1016,7 @@ def render_ovtlyr_page() -> None:
         # ── Render 3 cards in a row ───────────────────────────────────────
         st.markdown(
             f"<div style='color:{CYAN};font-size:0.7rem;text-transform:uppercase;"
-            f"letter-spacing:0.1em;margin:16px 0 8px 0;border-top:1px solid rgba(201,168,76,0.2);"
+            f"letter-spacing:0.1em;margin:16px 0 8px 0;border-top:1px solid rgba(0,229,255,0.2);"
             f"padding-top:12px;'>VIKING SCREENER — NINE · F&G · OVERHEAD</div>",
             unsafe_allow_html=True,
         )

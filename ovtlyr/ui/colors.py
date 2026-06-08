@@ -9,8 +9,8 @@ All rgba() strings use the format rgba(r,g,b,a) — never 8-digit hex.
 # ------------------------------------------------------------------ #
 BG       = "#0c0c12"   # main background — warm dark
 BG2      = "#14141e"   # card / panel background
-CYAN     = "#c9a84c"   # PRIMARY ACCENT — gold (replaces cyan everywhere)
-MAGENTA  = "#8b7340"   # SECONDARY ACCENT — bronze (replaces magenta)
+CYAN     = "#00E5FF"   # PRIMARY ACCENT — gold (replaces cyan everywhere)
+MAGENTA  = "#00A8BF"   # SECONDARY ACCENT — bronze (replaces magenta)
 GREEN    = "#2d8a4e"   # bullish / buy — deep forest green
 RED      = "#c44545"   # bearish / sell — deep red
 YELLOW   = "#d4943a"   # warning / hold — warm amber
@@ -18,8 +18,8 @@ TEXT     = "#e8e4dc"   # primary text — warm white
 DIM      = "#8a8578"   # secondary / muted text — warm gray
 
 # Additional Nordic Gold palette
-GOLD     = "#c9a84c"   # same as CYAN — for explicit gold references
-BRONZE   = "#8b7340"   # same as MAGENTA
+GOLD     = "#00E5FF"   # same as CYAN — for explicit gold references
+BRONZE   = "#00A8BF"   # same as MAGENTA
 GOLD_DIM = "#5a4f32"   # muted gold for borders
 TEXT_FAINT = "#5a5750" # very muted text
 SURFACE  = "#181820"   # slightly lighter surface for hover/active

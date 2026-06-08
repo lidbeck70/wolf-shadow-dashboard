@@ -284,7 +284,7 @@ SENTIMENT_PLUGIN: dict = {
         "EMA Momentum Skew(20%). Identifies call vs put pressure without "
         "requiring a live options feed."
     ),
-    "color":        "#8b7340",
+    "color":        "#00A8BF",
     "compute_score":  compute_score,
     "compute_signal": compute_signal,
 }

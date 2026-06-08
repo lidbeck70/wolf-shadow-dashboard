@@ -19,7 +19,7 @@ _TEXT   = "#e8e4dc"
 _DIM    = "#8a8578"
 _GREEN  = "#2d8a4e"
 _RED    = "#c44545"
-_CYAN   = "#c9a84c"
+_CYAN   = "#00E5FF"
 _YELLOW = "#d4943a"
 
 # ── Per-strategy static metadata (derived from module docstrings) ─────────────
@@ -101,7 +101,7 @@ def _h(tag: str, text: str, style: str = "") -> str:
 
 
 def _pill(text: str, bg: str = "rgba(255,255,255,0.06)",
-          color: str = _CYAN, border: str = "rgba(201,168,76,0.25)") -> str:
+          color: str = _CYAN, border: str = "rgba(0,229,255,0.25)") -> str:
     return (
         f'<span style="background:{bg};border:1px solid {border};border-radius:4px;'
         f'padding:2px 8px;font-size:0.68rem;color:{color};white-space:nowrap;">'
@@ -132,7 +132,7 @@ def _bullet_list(items: list[str], bullet_color: str = _CYAN) -> str:
     return rows
 
 
-def _divider(color: str = "rgba(201,168,76,0.12)") -> str:
+def _divider(color: str = "rgba(0,229,255,0.12)") -> str:
     return f'<hr style="border:none;border-top:1px solid {color};margin:12px 0;">'
 
 

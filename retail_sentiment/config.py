@@ -25,8 +25,8 @@ CACHE_TTL = 900  # 15 minutes
 # Nordic Gold palette
 BG = "#0c0c12"
 BG2 = "#14141e"
-GOLD = "#c9a84c"
-BRONZE = "#8b7340"
+GOLD = "#00E5FF"
+BRONZE = "#00A8BF"
 GREEN = "#2d8a4e"
 RED = "#c44545"
 TEXT = "#e8e4dc"

@@ -74,7 +74,7 @@ MARKET_CYCLE_RULES: dict[str, dict] = {
     "BELIEF": {
         "description": "Strong trend conviction; broad participation and increasing volume",
         "emoji": "💪",
-        "color": "#c9a84c",
+        "color": "#00E5FF",
         "weight": 1.0,
         "conditions": [
             {"field": "rsi",             "op": "between", "value": [58, 74]},

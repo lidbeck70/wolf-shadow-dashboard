@@ -2,7 +2,7 @@
 cagr_streamlit.py
 CAGR Strategy module — Streamlit page for Wolf Panel.
 
-Nordic Gold theme: #0c0c12 background, #c9a84c gold, #8b7340 bronze.
+Nordic Gold theme: #0c0c12 background, #00E5FF gold, #00A8BF bronze.
 Entry point: render_cagr_page()
 
 Supports two data modes:
@@ -55,8 +55,8 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 BG       = "#0c0c12"
 BG2      = "#14141e"
-CYAN     = "#c9a84c"
-MAGENTA  = "#8b7340"
+CYAN     = "#00E5FF"
+MAGENTA  = "#00A8BF"
 GREEN    = "#2d8a4e"
 YELLOW   = "#d4943a"
 RED      = "#c44545"
@@ -90,17 +90,17 @@ def _inject_css() -> None:
         /* Sidebar */
         [data-testid="stSidebar"] {{
             background-color: {BG2};
-            border-right: 1px solid rgba(201,168,76,0.2);
+            border-right: 1px solid rgba(0,229,255,0.2);
         }}
 
         /* KPI cards */
         .kpi-card {{
             background: linear-gradient(135deg, {BG2}, #1a1a28);
-            border: 1px solid rgba(201,168,76,0.27);
+            border: 1px solid rgba(0,229,255,0.27);
             border-radius: 8px;
             padding: 16px 20px;
             text-align: center;
-            box-shadow: 0 0 16px rgba(201,168,76,0.13);
+            box-shadow: 0 0 16px rgba(0,229,255,0.13);
         }}
         .kpi-card .kpi-value {{
             font-size: 2.2rem;
@@ -149,7 +149,7 @@ def _inject_css() -> None:
 
         /* Scan button */
         .stButton > button {{
-            background: linear-gradient(90deg, rgba(201,168,76,0.2), rgba(139,115,64,0.2));
+            background: linear-gradient(90deg, rgba(0,229,255,0.2), rgba(139,115,64,0.2));
             border: 1px solid {CYAN};
             color: {CYAN};
             font-family: 'JetBrains Mono', monospace;
@@ -158,13 +158,13 @@ def _inject_css() -> None:
             transition: all 0.2s;
         }}
         .stButton > button:hover {{
-            background: linear-gradient(90deg, rgba(201,168,76,0.4), rgba(139,115,64,0.4));
-            box-shadow: 0 0 20px rgba(201,168,76,0.33);
+            background: linear-gradient(90deg, rgba(0,229,255,0.4), rgba(139,115,64,0.4));
+            box-shadow: 0 0 20px rgba(0,229,255,0.33);
         }}
 
         /* Dividers */
         hr {{
-            border-color: rgba(201,168,76,0.13);
+            border-color: rgba(0,229,255,0.13);
         }}
 
         /* Progress bar / spinner */
@@ -174,7 +174,7 @@ def _inject_css() -> None:
 
         /* Expanders */
         [data-testid="stExpander"] {{
-            border: 1px solid rgba(201,168,76,0.13) !important;
+            border: 1px solid rgba(0,229,255,0.13) !important;
             background-color: {BG2} !important;
         }}
 
@@ -190,7 +190,7 @@ def _inject_css() -> None:
         ::-webkit-scrollbar {{ width: 6px; }}
         ::-webkit-scrollbar-track {{ background: {BG}; }}
         ::-webkit-scrollbar-thumb {{
-            background: rgba(201,168,76,0.27);
+            background: rgba(0,229,255,0.27);
             border-radius: 3px;
         }}
         </style>
@@ -440,11 +440,11 @@ def _build_price_chart(df: pd.DataFrame, ticker: str) -> Optional[go.Figure]:
         title=dict(text=f"{ticker} — 1 Year", font=dict(color=CYAN, size=14)),
         xaxis=dict(
             showgrid=True,
-            gridcolor="rgba(201,168,76,0.08)",
+            gridcolor="rgba(0,229,255,0.08)",
             color=DIM,
             rangeslider=dict(visible=False),
         ),
-        yaxis=dict(showgrid=True, gridcolor="rgba(201,168,76,0.08)", color=DIM),
+        yaxis=dict(showgrid=True, gridcolor="rgba(0,229,255,0.08)", color=DIM),
         legend=dict(
             font=dict(color=TEXT, size=11),
             bgcolor="rgba(0,0,0,0)",
@@ -475,7 +475,7 @@ def _build_rsi_chart(df: pd.DataFrame) -> Optional[go.Figure]:
             name="RSI(14)",
             line=dict(color=CYAN, width=1.5),
             fill="tozeroy",
-            fillcolor="rgba(201,168,76,0.08)",
+            fillcolor="rgba(0,229,255,0.08)",
         )
     )
     for level, color, label in [(70, RED, "OB"), (50, DIM, "Mid"), (30, GREEN, "OS")]:
@@ -492,7 +492,7 @@ def _build_rsi_chart(df: pd.DataFrame) -> Optional[go.Figure]:
         plot_bgcolor=BG,
         title=dict(text="RSI (14)", font=dict(color=CYAN, size=12)),
         xaxis=dict(showgrid=False, color=DIM),
-        yaxis=dict(range=[0, 100], showgrid=True, gridcolor="rgba(201,168,76,0.06)", color=DIM),
+        yaxis=dict(range=[0, 100], showgrid=True, gridcolor="rgba(0,229,255,0.06)", color=DIM),
         height=160,
         margin=dict(l=40, r=20, t=30, b=20),
         showlegend=False,
@@ -562,7 +562,7 @@ def _cycle_sidebar_controls(sectors: list) -> Dict[str, dict]:
 def _score_bar(score: int, max_score: int, color: str = CYAN) -> str:
     pct = int(100 * score / max(max_score, 1))
     return (
-        f'<div style="background:{BG};border:1px solid rgba(201,168,76,0.2);border-radius:4px;'
+        f'<div style="background:{BG};border:1px solid rgba(0,229,255,0.2);border-radius:4px;'
         f'height:8px;width:100%;overflow:hidden;">'
         f'<div style="background:{color};height:100%;width:{pct}%;'
         f'box-shadow:0 0 6px {color};"></div></div>'
@@ -754,7 +754,7 @@ def _render_header() -> None:
                 &nbsp;&nbsp;{badge}
             </div>
         </div>
-        <hr style='border-color:rgba(201,168,76,0.13);margin-bottom:20px;'/>
+        <hr style='border-color:rgba(0,229,255,0.13);margin-bottom:20px;'/>
         """,
         unsafe_allow_html=True,
     )
@@ -1048,7 +1048,7 @@ def render_cagr_page() -> None:
     styled = styled.set_properties(**{
         "background-color": BG2,
         "color": TEXT,
-        "border-color": "rgba(201,168,76,0.13)",
+        "border-color": "rgba(0,229,255,0.13)",
     })
 
     st.dataframe(
@@ -1104,7 +1104,7 @@ def render_cagr_page() -> None:
     # ── Detail expanders ───────────────────────────────────────────────────
     st.markdown(
         f"<div style='color:{CYAN};font-size:0.7rem;text-transform:uppercase;"
-        f"letter-spacing:0.1em;margin:24px 0 8px 0;border-top:1px solid rgba(201,168,76,0.13);"
+        f"letter-spacing:0.1em;margin:24px 0 8px 0;border-top:1px solid rgba(0,229,255,0.13);"
         f"padding-top:16px;'>Detailed Analysis (click to expand)</div>",
         unsafe_allow_html=True,
     )
