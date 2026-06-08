@@ -50,9 +50,14 @@ _REGIME_COLOR = {"green": "#2d8a4e", "orange": "#d4943a", "red": "#c44545",
 
 # ─── Market presets ───────────────────────────────────────────────────────────
 
+try:
+    from borsdata_api import ALL_NORDIC_MARKETS as _ALL_NORDIC
+except ImportError:
+    _ALL_NORDIC = [1, 2, 3, 4, 5, 6, 7, 8, 9, 14, 15, 16, 18, 19]
+
 _MARKETS = {
-    "Norden":   {"market_ids": [1, 18, 19, 4, 5, 6], "include_global": False},
-    "Global":   {"market_ids": [1, 18, 19, 4, 5, 6], "include_global": True},
+    "Norden":   {"market_ids": list(_ALL_NORDIC), "include_global": False},
+    "Global":   {"market_ids": list(_ALL_NORDIC), "include_global": True},
     "US":       {"market_ids": [], "include_global": False,
                  "manual_tickers": [
                      "FCX","NEM","GOLD","WPM","UUUU","CCJ","XOM","CVX",

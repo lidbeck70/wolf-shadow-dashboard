@@ -67,10 +67,11 @@ try:
     for _bd_path in _candidates:
         if _bd_path.exists() and str(_bd_path) not in sys.path:
             sys.path.insert(0, str(_bd_path))
-    from borsdata_api import BorsdataAPI, KPI
+    from borsdata_api import BorsdataAPI, KPI, ALL_NORDIC_MARKETS
     _BORSDATA_AVAILABLE = True
 except ImportError:
     _BORSDATA_AVAILABLE = False
+    ALL_NORDIC_MARKETS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 14, 15, 16, 18, 19]
     logger.warning("borsdata_api not found — universe will be limited to manual tickers")
 
 
@@ -81,8 +82,8 @@ class PipelineConfig:
     """Runtime configuration for run_pipeline()."""
 
     # Universe
-    market_ids: list[int] = field(default_factory=lambda: [1, 4, 5, 6, 11, 12, 18, 19])
-    # 1=SE Large, 18=SE Mid, 19=SE Small, 4=NO, 5=FI, 6=DK, 11=US, 12=CA
+    market_ids: list[int] = field(default_factory=lambda: list(ALL_NORDIC_MARKETS))
+    # All Nordic: SE Large/Mid/Small/First North/Spotlight/NGM, NO, FI, DK, all exchanges
     include_global: bool   = False   # Requires Börsdata Pro+ global licence
     manual_tickers: list[str] = field(default_factory=list)  # override / supplement
 
@@ -203,19 +204,37 @@ class PipelineResult:
 # ─── Market suffix map (Börsdata marketId → yfinance suffix) ──────────────────
 
 _MARKET_SUFFIX: dict[int, str] = {
-    1:  ".ST",   # Sweden Large Cap
-    18: ".ST",   # Sweden Mid Cap
-    19: ".ST",   # Sweden Small Cap
-    4:  ".OL",   # Norway
-    5:  ".HE",   # Finland
-    6:  ".CO",   # Denmark
+    # Sweden
+    1:  ".ST",   # Large Cap
+    2:  ".ST",   # Mid Cap
+    3:  ".ST",   # Small Cap
+    7:  ".ST",   # First North
+    8:  ".ST",   # Spotlight
+    9:  ".ST",   # NGM
+    18: ".ST",   # Mid Cap (alt ID)
+    19: ".ST",   # Small Cap (alt ID)
+    # Norway
+    4:  ".OL",   # Oslo Børs
+    14: ".OL",   # Euronext Growth
+    # Finland
+    5:  ".HE",   # Helsinki
+    16: ".HE",   # First North
+    # Denmark
+    6:  ".CO",   # Copenhagen
+    15: ".CO",   # First North
+    # Global
     11: "",      # US (no suffix)
     12: ".TO",   # Canada TSX
 }
 
 _MARKET_NAME: dict[int, str] = {
-    1: "SE Large", 18: "SE Mid", 19: "SE Small",
-    4: "NO", 5: "FI", 6: "DK", 11: "US", 12: "CA",
+    1:  "SE Large",       2:  "SE Mid",         3:  "SE Small",
+    7:  "SE First North", 8:  "SE Spotlight",    9:  "SE NGM",
+    18: "SE Mid",         19: "SE Small",
+    4:  "NO",             14: "NO Euronext",
+    5:  "FI",             16: "FI First North",
+    6:  "DK",             15: "DK First North",
+    11: "US",             12: "CA",
 }
 
 # yfinance sector/industry → Börsdata-compatible name for necessity lookup

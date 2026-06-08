@@ -43,6 +43,25 @@ BASE_URL = "https://apiservice.borsdata.se/v1"
 _RATE_WINDOW = 10.0     # seconds
 _RATE_MAX_CALLS = 90     # slightly below the hard 100 limit
 
+# All tradable Nordic market IDs from the Börsdata /instruments endpoint.
+# Use this constant everywhere instead of hardcoding partial lists.
+ALL_NORDIC_MARKETS: list[int] = [
+    1,   # Sweden Large Cap
+    2,   # Sweden Mid Cap
+    3,   # Sweden Small Cap
+    4,   # Norway Oslo Børs
+    5,   # Finland Helsinki
+    6,   # Denmark Copenhagen
+    7,   # Sweden First North
+    8,   # Sweden Spotlight
+    9,   # Sweden NGM
+    14,  # Norway Euronext Growth
+    15,  # Denmark First North
+    16,  # Finland First North
+    18,  # Sweden Mid Cap (alternate ID)
+    19,  # Sweden Small Cap (alternate ID)
+]
+
 
 # ---------------------------------------------------------------------------
 # KPI ID reference  (most useful — full list at wiki/Kpi-Screener-List)
@@ -1044,7 +1063,7 @@ try:
     def _get_nordic_tickers() -> List[str]:
         """Get all Nordic tickers from Börsdata with yfinance suffixes."""
         try:
-            nordic_market_ids = [1, 4, 5, 6, 18, 19]
+            nordic_market_ids = ALL_NORDIC_MARKETS
             df = get_all_instruments()
             if df is None or df.empty:
                 return []
