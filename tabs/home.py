@@ -1,10 +1,9 @@
 """
 tabs/home.py
 ============
-Home tab — dashboard overview for Nordic Alpha Systems.
+Home tab — Mission Control layout for Nordic Arc Systems.
 
-Shows: system status, active strategies summary, recent alerts,
-quick-access navigation cards, and market pulse (Thor-Index).
+Shows: system pulse, four navigation zones, and recent alerts.
 """
 
 from __future__ import annotations
@@ -12,143 +11,134 @@ from __future__ import annotations
 import streamlit as st
 from datetime import datetime
 
-from ui.theme import inject_css, section_title, card as _card, PALETTE as _P
+from ui.theme import inject_css, section_title, PALETTE as _P
 
-_BG2   = _P["bg2"]
-_BG3   = _P["bg3"]
-_GOLD  = _P["gold"]
 _DIM   = _P["text_dim"]
 _TEXT  = _P["text"]
-_GREEN = _P["green"]
-_RED   = _P["red"]
-_AMBER = _P["amber"]
+
+_CYAN   = "#00E5FF"
+_PURPLE = "#B400FF"
+_EMBER  = "#FF6B3D"
+_GREEN2 = "#2d8a4e"
 
 
-# ── HTML helpers ──────────────────────────────────────────────────────────────
+# ── Color logic ───────────────────────────────────────────────────────────────
 
-def _pill(text: str, color: str = _GOLD, bg: str = "rgba(0,229,255,0.08)") -> str:
+def _status_color(status: str) -> str:
+    s = status.upper()
+    if any(k in s for k in ("BULL", "OPTIMISM", "BELIEF", "HOPE")):
+        return _GREEN2
+    if any(k in s for k in ("BEAR", "PANIC", "CAPITULATION")):
+        return _EMBER
+    return _EMBER
+
+
+# ── HTML builders ─────────────────────────────────────────────────────────────
+
+def _pulse_card(label: str, value: str, color: str) -> str:
     return (
-        f'<span style="background:{bg};border:1px solid {color}44;'
-        f'border-radius:4px;padding:2px 8px;font-size:0.67rem;'
-        f'color:{color};white-space:nowrap;">{text}</span>'
-    )
-
-
-def _stat_tile(label: str, value: str, color: str = _GOLD, sub: str = "") -> str:
-    return (
-        f'<div style="color:{_DIM};font-size:0.62rem;text-transform:uppercase;'
-        f'letter-spacing:0.12em;margin-bottom:4px;">{label}</div>'
-        f'<div style="color:{color};font-size:1.15rem;font-weight:700;">{value}</div>'
-        + (f'<div style="color:{_DIM};font-size:0.68rem;margin-top:3px;">{sub}</div>' if sub else "")
-    )
-
-
-def _nav_card(icon: str, title: str, desc: str, color: str = _GOLD) -> str:
-    return (
-        f'<div style="text-align:center;padding:6px 0;">'
-        f'  <div style="font-size:1.6rem;margin-bottom:6px;">{icon}</div>'
-        f'  <div style="color:{color};font-size:0.8rem;font-weight:700;'
-        f'  letter-spacing:0.05em;margin-bottom:4px;">{title}</div>'
-        f'  <div style="color:{_DIM};font-size:0.68rem;line-height:1.4;">{desc}</div>'
+        f'<div style="background:#1A1F25;border:1px solid rgba(255,255,255,0.06);'
+        f'border-left:3px solid {color};border-radius:8px;padding:14px 16px;">'
+        f'<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;'
+        f'color:{_DIM};margin-bottom:6px;">{label}</div>'
+        f'<div style="font-size:16px;font-weight:700;color:{color};">{value}</div>'
         f'</div>'
     )
 
 
-# ── Strategy status summary ───────────────────────────────────────────────────
-
-def _render_strategy_pulse() -> None:
-    section_title("Strategy Pulse", "⚡")
-
-    try:
-        from strategies.registry import STRATEGIES
-    except Exception:
-        st.warning("Strategy registry unavailable.")
-        return
-
-    cols = st.columns(len(STRATEGIES))
-    for col, (name, strat) in zip(cols, STRATEGIES.items()):
-        color       = strat.get("color", _GOLD)
-        alerts_on   = strat.get("alerts_enabled", False)
-        plugins     = strat.get("sentiment_plugins", [])
-        channels    = strat.get("alert_channels", [])
-        alert_dot   = f'<span style="color:{_GREEN};">●</span>' if alerts_on else f'<span style="color:{_DIM};">○</span>'
-
-        with col:
-            _card(
-                content=(
-                    f'<div style="color:{color};font-size:0.9rem;font-weight:700;'
-                    f'letter-spacing:0.06em;margin-bottom:8px;">{name}</div>'
-                    f'<div style="color:{_DIM};font-size:0.68rem;margin-bottom:6px;">'
-                    f'{alert_dot}&nbsp;Alerts '
-                    + ("ON" if alerts_on else "OFF")
-                    + f'&nbsp;&nbsp;·&nbsp;&nbsp;{len(plugins)} plugin{"s" if len(plugins) != 1 else ""}'
-                    + f'</div>'
-                    + (
-                        f'<div style="font-size:0.65rem;color:{_DIM};">'
-                        + "&nbsp;".join(
-                            f'<span style="background:{color}11;border:1px solid {color}33;'
-                            f'border-radius:3px;padding:1px 6px;color:{color};">{p}</span>'
-                            for p in plugins
-                        )
-                        + '</div>'
-                        if plugins else ""
-                    )
-                ),
-                border_color=f"{color}44",
-                accent_color=color,
-                padding="14px 16px",
-            )
-
-
-# ── Thor-Index (market pulse composite) ──────────────────────────────────────
-
-def _render_thor_index() -> None:
-    section_title("Thor-Index", "⚡")
-
-    st.markdown(
-        f'<p style="color:{_DIM};font-size:0.76rem;margin:-8px 0 14px;">'
-        f'Nordic market composite — breadth, momentum, and regime signals aggregated '
-        f'across the Wolf, Alpha, and Viking strategy layers.</p>',
-        unsafe_allow_html=True,
+def _zone_label(text: str, color: str) -> str:
+    return (
+        f'<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;'
+        f'color:{color};border-left:2px solid {color};padding-left:8px;'
+        f'margin-bottom:12px;">{text}</div>'
     )
 
-    # Read from session state if available (set by regime/sector tabs)
-    thor = st.session_state.get("thor_index", None)
 
-    if thor is None:
-        _card(
-            content=(
-                f'<div style="color:{_DIM};font-size:0.78rem;text-align:center;padding:12px 0;">'
-                f'Thor-Index not yet computed.<br>'
-                f'<span style="font-size:0.68rem;">Run a scan in the SCREENER or VIKING REGIME tab '
-                f'to populate the index.</span>'
-                f'</div>'
-            ),
-            border_color=_P["border"],
-            padding="16px",
-        )
-        return
+def _nav_card(title: str, desc: str, color: str) -> str:
+    return (
+        f'<div style="background:#1A1F25;border:1px solid rgba(255,255,255,0.06);'
+        f'border-left:2px solid {color};border-radius:8px;padding:14px;">'
+        f'<div style="font-size:13px;font-weight:700;color:#E8EDF2;margin-bottom:4px;">{title}</div>'
+        f'<div style="font-size:11px;color:#6B7280;line-height:1.5;">{desc}</div>'
+        f'</div>'
+    )
 
-    score       = int(thor.get("score", 0))
-    label       = thor.get("label", "NEUTRAL")
-    trend       = thor.get("trend", "—")
-    breadth     = thor.get("breadth", "—")
-    momentum    = thor.get("momentum", "—")
-    updated     = thor.get("updated", "—")
 
-    color = _GREEN if score >= 65 else (_RED if score <= 35 else _AMBER)
+# ── System Pulse ──────────────────────────────────────────────────────────────
 
-    c1, c2, c3, c4 = st.columns(4)
+def _render_system_pulse() -> None:
+    wolf   = st.session_state.get("wolf_regime_status", "UNKNOWN")
+    viking = st.session_state.get("viking_regime_status", "UNKNOWN")
+    cycle  = st.session_state.get("market_cycle_phase", "UNKNOWN")
+
+    c1, c2, c3 = st.columns(3)
     with c1:
-        _card(_stat_tile("THOR-INDEX", f"{score}/100", color, label),
-              border_color=f"{color}44", accent_color=color, padding="14px 16px")
+        st.markdown(_pulse_card("Wolf Regime", wolf, _status_color(wolf)), unsafe_allow_html=True)
     with c2:
-        _card(_stat_tile("TREND", trend, _GOLD), padding="14px 16px")
+        st.markdown(_pulse_card("Viking Regime", viking, _status_color(viking)), unsafe_allow_html=True)
     with c3:
-        _card(_stat_tile("BREADTH", breadth, _GOLD), padding="14px 16px")
-    with c4:
-        _card(_stat_tile("MOMENTUM", momentum, _GOLD, f"Updated {updated}"),
-              padding="14px 16px")
+        st.markdown(_pulse_card("Market Cycle Phase", cycle, _status_color(cycle)), unsafe_allow_html=True)
+
+
+# ── Navigation Zones ──────────────────────────────────────────────────────────
+
+def _render_zones() -> None:
+    # ZONE 1 — SIGNAL
+    st.markdown(_zone_label("SIGNAL — HITTA KANDIDATER", _CYAN), unsafe_allow_html=True)
+    z1 = st.columns(3)
+    zone1 = [
+        ("Arc Screener",     "Skanna nordiska + US-aktier mot alla strategier"),
+        ("Contrarian Alpha", "Hatade, nödvändiga bolag med stark balansräkning"),
+        ("Market Cycle",     "14-fas psykologicykel för valfri ticker"),
+    ]
+    for col, (title, desc) in zip(z1, zone1):
+        with col:
+            st.markdown(_nav_card(title, desc, _CYAN), unsafe_allow_html=True)
+
+    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+
+    # ZONE 2 — REGIME
+    st.markdown(_zone_label("REGIME — FÖRSTÅ MARKNADEN", _PURPLE), unsafe_allow_html=True)
+    z2 = st.columns(4)
+    zone2 = [
+        ("Wolf Regime",     "EMA-stack för swing-trades"),
+        ("Alpha Regime",    "Långsiktigt positionscykel"),
+        ("Viking Regime",   "OVTLYR NINE + order blocks"),
+        ("Flow Divergence", "Global sektorsbredd och makrocykel"),
+    ]
+    for col, (title, desc) in zip(z2, zone2):
+        with col:
+            st.markdown(_nav_card(title, desc, _PURPLE), unsafe_allow_html=True)
+
+    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+
+    # ZONE 3 — INTELLIGENCE
+    st.markdown(_zone_label("INTELLIGENCE — TOLKA SIGNALERNA", _EMBER), unsafe_allow_html=True)
+    z3 = st.columns(4)
+    zone3 = [
+        ("Odin's Blindspot", "Contrarian sektorintelligens"),
+        ("Sentiment",        "Fear, greed och kapitalflöden"),
+        ("Retail Pulse",     "Reddit, StockTwits, retail-flöde"),
+        ("Heatmap",          "Visuell marknadsvy"),
+    ]
+    for col, (title, desc) in zip(z3, zone3):
+        with col:
+            st.markdown(_nav_card(title, desc, _EMBER), unsafe_allow_html=True)
+
+    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+
+    # ZONE 4 — PORTFOLIO
+    st.markdown(_zone_label("PORTFOLIO — HANTERA POSITIONER", _GREEN2), unsafe_allow_html=True)
+    z4 = st.columns(4)
+    zone4 = [
+        ("Holdings",      "Positioner och riskexponering"),
+        ("Trade Journal", "Logga trades och granska P&L"),
+        ("Backtest",      "Historisk signalvalidering"),
+        ("Alerts",        "Konfigurera och hantera notifieringar"),
+    ]
+    for col, (title, desc) in zip(z4, zone4):
+        with col:
+            st.markdown(_nav_card(title, desc, _GREEN2), unsafe_allow_html=True)
 
 
 # ── Recent alerts ─────────────────────────────────────────────────────────────
@@ -162,24 +152,25 @@ def _render_recent_alerts(n: int = 5) -> None:
         ALERT_LOG = []
 
     if not ALERT_LOG:
-        _card(
-            f'<div style="color:{_DIM};font-size:0.76rem;text-align:center;padding:8px 0;">'
+        st.markdown(
+            f'<div style="background:#1A1F25;border:1px solid rgba(255,255,255,0.06);'
+            f'border-radius:8px;padding:16px;color:{_DIM};font-size:0.76rem;text-align:center;">'
             f'No alerts fired yet.</div>',
-            padding="14px 16px",
+            unsafe_allow_html=True,
         )
         return
 
     for entry in reversed(ALERT_LOG[-n:]):
-        ts      = entry.get("timestamp", "")
-        msg     = entry.get("message", "")
-        chans   = entry.get("channels", [])
-        meta    = entry.get("metadata", {}) or {}
-        sig     = meta.get("signal", "")
+        ts    = entry.get("timestamp", "")
+        msg   = entry.get("message", "")
+        chans = entry.get("channels", [])
+        meta  = entry.get("metadata", {}) or {}
+        sig   = meta.get("signal", "")
 
         sig_color = {
-            "BUY":    _GREEN,
-            "SELL":   _RED,
-            "REDUCE": _AMBER,
+            "BUY":    _GREEN2,
+            "SELL":   _EMBER,
+            "REDUCE": _EMBER,
         }.get(sig, _DIM)
 
         chan_pills = "&nbsp;".join(
@@ -188,109 +179,42 @@ def _render_recent_alerts(n: int = 5) -> None:
             for c in chans
         )
 
-        _card(
-            content=(
-                f'<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
-                f'  <div style="flex:1;min-width:0;">'
-                f'    <div style="color:{_TEXT};font-size:0.76rem;margin-bottom:4px;">{msg}</div>'
-                f'    <div>{chan_pills}</div>'
-                f'  </div>'
-                f'  <div style="text-align:right;flex-shrink:0;margin-left:12px;">'
-                + (f'<div style="color:{sig_color};font-size:0.7rem;font-weight:700;'
-                   f'margin-bottom:4px;">{sig}</div>' if sig else "")
-                + f'<div style="color:{_DIM};font-size:0.63rem;">{ts[:16] if ts else ""}</div>'
-                f'  </div>'
-                f'</div>'
-            ),
-            padding="10px 14px",
-            margin_bottom="6px",
+        st.markdown(
+            f'<div style="background:#1A1F25;border:1px solid rgba(255,255,255,0.06);'
+            f'border-radius:8px;padding:10px 14px;margin-bottom:6px;">'
+            f'<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
+            f'  <div style="flex:1;min-width:0;">'
+            f'    <div style="color:{_TEXT};font-size:0.76rem;margin-bottom:4px;">{msg}</div>'
+            f'    <div>{chan_pills}</div>'
+            f'  </div>'
+            f'  <div style="text-align:right;flex-shrink:0;margin-left:12px;">'
+            + (f'<div style="color:{sig_color};font-size:0.7rem;font-weight:700;'
+               f'margin-bottom:4px;">{sig}</div>' if sig else "")
+            + f'<div style="color:{_DIM};font-size:0.63rem;">{ts[:16] if ts else ""}</div>'
+            f'  </div>'
+            f'</div></div>',
+            unsafe_allow_html=True,
         )
-
-
-# ── Quick-nav cards ───────────────────────────────────────────────────────────
-
-def _render_quick_nav() -> None:
-    section_title("Quick Access", "🗺")
-
-    nav_items = [
-        ("🔱", "ARC SCREENER",       "Scan equities across all Arc strategies"),
-        ("⚡", "CONTRARIAN ALPHA",   "Undervalued, hated, necessary sector stocks"),
-        ("🔄", "MARKET CYCLE",       "14-phase psychology cycle detector"),
-        ("🐺", "WOLF REGIME",        "EMA-stack regime for swing setups"),
-        ("⚔️", "VIKING REGIME",      "OVTLYR NINE score + order-block overlay"),
-        ("📈", "ALPHA REGIME",       "Long-term cycle monitor for positions"),
-        ("🌐", "FLOW DIVERGENCE",    "Global sector breadth and macro cycle"),
-        ("👁",  "ODIN'S BLINDSPOT",  "Contrarian sector intelligence"),
-        ("💼", "HOLDINGS",           "Portfolio positions and risk exposure"),
-        ("📓", "TRADE JOURNAL",      "Log trades, review P&L, tag patterns"),
-    ]
-
-    cols = st.columns(5)
-    for i, (icon, title, desc) in enumerate(nav_items):
-        with cols[i % 5]:
-            _card(
-                _nav_card(icon, title, desc),
-                padding="14px 12px",
-                margin_bottom="8px",
-            )
-
-
-# ── System status ─────────────────────────────────────────────────────────────
-
-def _render_system_status() -> None:
-    section_title("System Status", "⚙")
-
-    import os
-
-    checks = [
-        ("Börsdata API",   bool(os.environ.get("BORSDATA_API_KEY")),   "BD_API_KEY set"),
-        ("Discord Alerts", bool(os.environ.get("DISCORD_WEBHOOK_URL")), "DISCORD_WEBHOOK_URL set"),
-        ("Email Alerts",   bool(os.environ.get("EMAIL_FROM")),          "EMAIL_FROM set"),
-        ("Webhook Alerts", bool(os.environ.get("ALERT_WEBHOOK_URL")),   "ALERT_WEBHOOK_URL set"),
-    ]
-
-    cols = st.columns(len(checks))
-    for col, (label, ok, hint) in zip(cols, checks):
-        dot   = f'<span style="color:{_GREEN};">●</span>' if ok else f'<span style="color:{_RED};">●</span>'
-        state = "CONNECTED" if ok else "NOT SET"
-        color = _GREEN if ok else _RED
-        with col:
-            _card(
-                f'<div style="color:{_DIM};font-size:0.62rem;text-transform:uppercase;'
-                f'letter-spacing:0.1em;margin-bottom:4px;">{label}</div>'
-                f'<div style="font-size:0.9rem;">{dot}&nbsp;'
-                f'<span style="color:{color};font-size:0.8rem;font-weight:700;">{state}</span></div>'
-                f'<div style="color:{_DIM};font-size:0.62rem;margin-top:4px;">{hint}</div>',
-                padding="12px 14px",
-                margin_bottom="8px",
-            )
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────
 
 def tab_home() -> None:
     inject_css()
-    section_title("Dashboard Overview", "🐺")
+    section_title("Mission Control", "🔱")
 
     st.markdown(
         f'<p style="color:{_DIM};font-size:0.8rem;margin:-8px 0 20px;">'
-        f'Nordic Arc Systems — See What the Market Can\'t.&nbsp;&nbsp;'
+        f'Nordic Arc Systems — See What the Market Can’t.  '
         f'<span style="font-size:0.72rem;">{datetime.now().strftime("%A %d %B %Y")}</span></p>',
         unsafe_allow_html=True,
     )
 
-    _render_strategy_pulse()
+    section_title("System Pulse", "📡")
+    _render_system_pulse()
     st.markdown("<br>", unsafe_allow_html=True)
 
-    _render_thor_index()
+    _render_zones()
     st.markdown("<br>", unsafe_allow_html=True)
 
-    left, right = st.columns([2, 1])
-
-    with left:
-        _render_quick_nav()
-
-    with right:
-        _render_recent_alerts()
-        st.markdown("<br>", unsafe_allow_html=True)
-        _render_system_status()
+    _render_recent_alerts()
