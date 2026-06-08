@@ -26,7 +26,6 @@ _PLOTLY_LAYOUT = dict(
     paper_bgcolor=_BG,
     plot_bgcolor=_BG,
     font=dict(color=_TEXT, family="Courier New"),
-    margin=dict(l=24, r=24, t=40, b=24),
 )
 
 
