@@ -334,6 +334,16 @@ def render_market_cycle_page() -> None:
             f"Could not fetch data for **{ticker}** ({period}). "
             "Check the ticker symbol and try again."
         )
+        st.info(
+            "**Ticker format tips:**\n"
+            "- US stocks: `SPY`, `AAPL`, `XOM`\n"
+            "- Swedish stocks: `ERIC-B.ST`, `VOLV-B.ST`\n"
+            "- Norwegian stocks: `EQNR.OL`\n"
+            "- OMXS30 index: `^OMX`\n"
+            "- S&P 500 index: `^GSPC`\n"
+            "- Gold: `GLD` or `GC=F`\n"
+            "- Oil: `CL=F`"
+        )
         return
 
     indicators = data["indicators"]
