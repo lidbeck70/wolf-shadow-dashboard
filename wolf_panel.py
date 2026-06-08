@@ -40,7 +40,7 @@ import streamlit as st
 st.set_page_config(
     layout="wide",
     page_title="Nordic Arc Systems",
-    page_icon="🔺",
+    page_icon="🔱",
 )
 
 # PWA / Mobile meta tags for iPad home screen

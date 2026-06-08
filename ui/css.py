@@ -105,6 +105,7 @@ code, pre, .stCode, [class*="monospace"] {
     color: #00E5FF !important;
     font-size: 28px !important;
     font-weight: 700 !important;
+    font-family: 'JetBrains Mono', monospace !important;
     text-shadow: 0 1px 2px rgba(0,0,0,0.3);
 }
 
@@ -129,9 +130,11 @@ code, pre, .stCode, [class*="monospace"] {
 }
 
 .stButton > button:hover {
+    background: linear-gradient(135deg, rgba(0,229,255,0.25) 0%, rgba(0,168,191,0.2) 100%);
     border-color: #00E5FF !important;
-    box-shadow: 0 0 12px rgba(0,229,255,0.4) !important;
     color: #00E5FF !important;
+    box-shadow: 0 0 12px rgba(0,229,255,0.4) !important;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
 }
 
 .stButton > button:active {
@@ -167,15 +170,13 @@ code, pre, .stCode, [class*="monospace"] {
 
 /* ── DataFrames / tables ─────────────────────────────────────── */
 .stDataFrame {
-    border: 1px solid rgba(180,0,255,0.25) !important;
+    border: 1px solid rgba(0,229,255,0.15) !important;
     border-radius: 6px !important;
-    box-shadow: 0 0 8px rgba(180,0,255,0.1) !important;
 }
 
 /* ── Headers ─────────────────────────────────────────────────── */
 h1, h2, h3 {
     color: #00E5FF !important;
-    font-family: 'Space Grotesk', sans-serif !important;
     text-shadow: 0 1px 2px rgba(0,0,0,0.3);
     letter-spacing: 3px;
 }
@@ -199,7 +200,7 @@ hr {
 
 /* ── Custom banner ───────────────────────────────────────────── */
 .wolf-banner {
-    background: linear-gradient(135deg, #0D1117 0%, #0D1117 50%, #0D1117 100%);
+    background: linear-gradient(135deg, #0D1117 0%, #080D14 50%, #0D1117 100%);
     border: 1px solid rgba(0,229,255,0.2);
     border-top: 3px solid #00E5FF;
     border-radius: 8px;
@@ -240,8 +241,8 @@ hr {
 
 /* ── Score badges ────────────────────────────────────────────── */
 .score-green  { color: #2d8a4e; font-weight: 700; }
-.score-yellow { color: #FF6B3D; font-weight: 700; }
-.score-red    { color: #FF6B3D; font-weight: 700; }
+.score-yellow { color: #d4943a; font-weight: 700; }
+.score-red    { color: #c44545; font-weight: 700; }
 .entry-yes    { color: #2d8a4e; font-weight: 700; letter-spacing: 1px; }
 .entry-no     { color: rgba(232,228,220,0.25); }
 
@@ -256,6 +257,7 @@ hr {
     background-clip: text;
     line-height: 1;
     text-shadow: none;
+    font-family: 'JetBrains Mono', monospace;
 }
 
 .regime-label {
@@ -302,6 +304,13 @@ hr {
     padding: 4px 14px;
     text-transform: uppercase;
     display: inline-block;
+}
+
+/* ── Cards / Aurora borders ──────────────────────────────────── */
+.arc-card {
+    border: 1px solid rgba(180,0,255,0.25);
+    box-shadow: 0 0 8px rgba(180,0,255,0.1);
+    border-radius: 8px;
 }
 
 /* ── iPad & Mobile Responsive ─────────────────────────────────── */
