@@ -41,7 +41,7 @@ def _confidence_label(conf: float) -> str:
     return "N/A"
 
 
-def _style_composite_df(df: pd.DataFrame) -> pd.io.formats.style.Styler:
+def _style_composite_df(df: pd.DataFrame) -> "pd.io.formats.style.Styler":
     """Apply Nordic Gold styling to the composite score dataframe."""
 
     def _color_score(val):
