@@ -23,11 +23,19 @@ _DIM  = _P["text_dim"]
 _TEXT = _P["text"]
 
 _PLOTLY_LAYOUT = dict(
-    paper_bgcolor="#0c0c12",
-    plot_bgcolor="#0c0c12",
+    paper_bgcolor=_BG,
+    plot_bgcolor=_BG,
     font=dict(color=_TEXT, family="Courier New"),
     margin=dict(l=24, r=24, t=40, b=24),
 )
+
+
+def _hex_alpha(color: str, alpha_hex: str) -> str:
+    """Convert a 6-digit hex color + 2-digit hex alpha to rgba() for Plotly compatibility."""
+    h = color.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    a = round(int(alpha_hex, 16) / 255, 3)
+    return f"rgba({r},{g},{b},{a})"
 
 # ── Gauge ─────────────────────────────────────────────────────────────────────
 
@@ -41,7 +49,7 @@ def _build_gauge(phase: str, confidence: float) -> go.Figure:
         cfg = MARKET_CYCLE_RULES[name]
         lo, hi = i * step_size, (i + 1) * step_size
         alpha = "cc" if name == phase else "28"
-        steps.append({"range": [lo, hi], "color": cfg["color"] + alpha})
+        steps.append({"range": [lo, hi], "color": _hex_alpha(cfg["color"], alpha)})
 
     cfg = MARKET_CYCLE_RULES[phase]
     label = phase.replace("_", " ")
@@ -84,7 +92,7 @@ def _build_score_chart(phase_scores: dict) -> go.Figure:
     phases = list(phase_scores.keys())
     scores = [phase_scores[p] for p in phases]
     colors = [
-        MARKET_CYCLE_RULES[p]["color"] + ("ff" if scores[i] == max(scores) else "88")
+        _hex_alpha(MARKET_CYCLE_RULES[p]["color"], "ff" if scores[i] == max(scores) else "88")
         for i, p in enumerate(phases)
     ]
     labels = [p.replace("_", " ") for p in phases]
@@ -137,7 +145,7 @@ def _build_timeline(history: list[dict]) -> go.Figure:
         cfg = MARKET_CYCLE_RULES[phase]
         fig.add_hrect(
             y0=i - 0.5, y1=i + 0.5,
-            fillcolor=cfg["color"] + "18",
+            fillcolor=_hex_alpha(cfg["color"], "18"),
             line_width=0,
         )
 
