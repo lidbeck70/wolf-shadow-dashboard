@@ -316,7 +316,7 @@ def _render_control_panel() -> tuple[dict, bool]:
     """
     _section_title("KONTROLLPANEL", "⚙️")
 
-    c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
+    c1, c2, c3, c4, c5 = st.columns([2, 1.6, 2, 2, 1])
 
     with c1:
         market = st.selectbox(
@@ -327,9 +327,21 @@ def _render_control_panel() -> tuple[dict, bool]:
             help="Väljer vilka börser som scannas.",
         )
 
+    with c2:
+        mode = st.selectbox(
+            "Modus",
+            options=["quality", "deep_contrarian"],
+            format_func=lambda x: "Quality" if x == "quality" else "Deep Contrarian",
+            key="ca_mode",
+            help=(
+                "Quality — ROIC>15%, Quality-vikt 30%, Hat-vikt 20%.\n"
+                "Deep Contrarian — ROIC>10%, Hat-vikt 30%, Quality-vikt 20%."
+            ),
+        )
+
     custom_tickers: list[str] = []
     if market == "Custom":
-        with c2:
+        with c3:
             raw = st.text_area(
                 "Tickers (kommaseparerade)",
                 height=68,
@@ -338,10 +350,10 @@ def _render_control_panel() -> tuple[dict, bool]:
             )
             custom_tickers = [t.strip().upper() for t in raw.split(",") if t.strip()]
 
-    with c3:
+    with c4:
         top_n = st.slider("Visa topp-N", 5, 50, 20, key="ca_top_n")
 
-    with c4:
+    with c5:
         st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
         run_now = st.button("🔍 Kör scan", type="primary", width='stretch',
                             key="ca_run_btn")
@@ -365,6 +377,7 @@ def _render_control_panel() -> tuple[dict, bool]:
     if market == "Custom":
         preset["manual_tickers"] = custom_tickers
     preset["top_n"] = top_n
+    preset["mode"] = mode
     return preset, run_now
 
 
@@ -376,16 +389,18 @@ def _render_cache_status() -> None:
         status = gist_storage_status()
 
         ttls = {"fundamentals": TTL_FUNDAMENTALS, "price": TTL_PRICE,
-                "sentiment": TTL_SENTIMENT, "regime": TTL_REGIME}
+                "sentiment": TTL_SENTIMENT, "regime": TTL_REGIME,
+                "insider": TTL_PRICE}
         labels = {
             "fundamentals": "Fundamentals (24h)",
             "price":        "Prisdata (1h)",
             "sentiment":    "Sentiment (6h)",
             "regime":       "Viking Regime (1h)",
+            "insider":      "Insider (1h)",
         }
         cols = st.columns(len(stats))
         for col, (name, stat) in zip(cols, stats.items()):
-            ttl_h = ttls[name] // 3600
+            ttl_h = ttls.get(name, 1) // 3600
             col.metric(labels[name], f"{stat['size']} poster", f"TTL {ttl_h}h")
 
         gist_icon = "☁️ Gist OK" if status == "cloud_ok" else (
@@ -516,10 +531,11 @@ def _render_results_table(pipeline_result) -> str | None:
             '  <div class="ca-empty-title">Inga bolag klarar filtren just nu</div>'
             '  <div class="ca-empty-sub">— det är ett korrekt svar, inte ett fel.</div>'
             '  <div class="ca-empty-hint">'
-            '    Alla bolag i universumet är antingen för älskade (Hat &lt; 45), '
-            '    för låg nödvändighet (Necessity &lt; 60) eller har ett svagt '
-            '    balansräkning. Prova ett bredare universum eller vänta tills '
-            '    marknaden roterar bort från dessa sektorer.'
+            '    Alla bolag är antingen för älskade (Hat &lt; 45), för låg '
+            '    nödvändighet (Necessity &lt; 60), svag balansräkning eller '
+            '    klarar inte ROIC-gransen för valt modus. '
+            '    Prova Deep Contrarian-modus (lägre ROIC-krav) eller ett '
+            '    bredare universum.'
             '  </div>'
             '</div>',
             unsafe_allow_html=True,
@@ -537,7 +553,8 @@ def _render_results_table(pipeline_result) -> str | None:
         '<th>Composite</th>'
         '<th>Necessity</th>'
         '<th>Hat</th>'
-        '<th>Strength</th>'
+        '<th>Quality</th>'
+        '<th>Value</th>'
         '<th>Catalyst</th>'
         '<th>Viking</th>'
         '<th>Flaggor</th>'
@@ -560,7 +577,8 @@ def _render_results_table(pipeline_result) -> str | None:
             f"**#{r.rank}**  &nbsp; `{r.ticker}` &nbsp; — &nbsp; {r.name}  "
             f"&nbsp;&nbsp; **{r.composite_score:.1f}**  "
             f"| N {r.necessity_score:.0f} · H {r.hat_score:.0f} "
-            f"· S {r.strength_score:.0f} · C {r.catalyst_score:.0f}  "
+            f"· Q {r.quality_score:.0f} · V {r.value_score:.0f} "
+            f"· C {r.catalyst_score:.0f}  "
             f"&nbsp; {flag_str}"
         )
 
@@ -569,7 +587,8 @@ def _render_results_table(pipeline_result) -> str | None:
             f"#{r.rank}  {r.ticker} — {r.name}  │  "
             f"Score {r.composite_score:.1f}  │  "
             f"N {r.necessity_score:.0f} · H {r.hat_score:.0f} "
-            f"· S {r.strength_score:.0f} · C {r.catalyst_score:.0f}  "
+            f"· Q {r.quality_score:.0f} · V {r.value_score:.0f} "
+            f"· C {r.catalyst_score:.0f}  "
             f"{flag_str}"
         )
 
@@ -655,20 +674,28 @@ def _render_detail_card(r) -> None:
 
 
 def _render_breakdown_chart(r) -> None:
-    """Plotly horisontellt stapeldiagram med sub-score bidrag."""
+    """Plotly horisontellt stapeldiagram med sub-score bidrag (5-pelare)."""
     try:
         import plotly.graph_objects as go
     except ImportError:
         st.info("Plotly krävs för breakdown-diagram (pip install plotly).")
         return
 
-    # Komponenter: (label, raw_score, weight, max_contribution)
+    # Mode-baserade vikter (läs från session_state, fallback = quality)
+    mode = st.session_state.get("ca_mode", "quality")
+    if mode == "deep_contrarian":
+        wmap = {"necessity": 0.15, "hate": 0.30, "quality": 0.20, "value": 0.20, "catalyst": 0.15}
+    else:
+        wmap = {"necessity": 0.15, "hate": 0.20, "quality": 0.30, "value": 0.20, "catalyst": 0.15}
+
+    # Komponenter: (label, raw_score, weight, max_contribution, color)
     components = [
-        ("Necessity",  r.necessity_score,  0.25, 25.0, P["gold"]),
-        ("Hat",        r.hat_score,        0.25, 25.0, P["amber"]),
-        ("Strength",   r.strength_score,   0.30, 30.0, P["green"]),
-        ("Catalyst",   r.catalyst_score,   0.15, 15.0, P["ice_blue"]),
-        ("Viking",     r.viking_bonus_raw, 0.05,  5.0, P["silver"]),
+        ("Necessity",  r.necessity_score,  wmap["necessity"], wmap["necessity"] * 100, P["gold"]),
+        ("Hat",        r.hat_score,        wmap["hate"],      wmap["hate"] * 100,      P["amber"]),
+        ("Quality",    r.quality_score,    wmap["quality"],   wmap["quality"] * 100,   P["green"]),
+        ("Value",      r.value_score,      wmap["value"],     wmap["value"] * 100,     P["ice_blue"]),
+        ("Catalyst",   r.catalyst_score,   wmap["catalyst"],  wmap["catalyst"] * 100,  P["silver"]),
+        ("Viking",     r.viking_bonus_raw, 0.05,              5.0,                     P["gold_dim"]),
     ]
 
     labels       = [c[0] for c in components]
@@ -718,7 +745,7 @@ def _render_breakdown_chart(r) -> None:
         paper_bgcolor=P["bg"],
         font=dict(family="Courier New", color=P["text"], size=11),
         margin=dict(l=10, r=10, t=10, b=10),
-        height=220,
+        height=260,
         showlegend=False,
         xaxis=dict(
             range=[0, 105],
@@ -732,17 +759,29 @@ def _render_breakdown_chart(r) -> None:
     st.plotly_chart(fig, width='stretch', config={"displayModeBar": False})
 
     # Gate-sammanfattning under diagrammet
+    gate_checks: list[tuple[str, bool]] = []
+
     if r.strength_result:
         gates = r.strength_result.gate_results
-        gate_icons = {
-            "fcf_positive":          ("FCF > 0",       gates.get("fcf_positive", False)),
-            "ebitda_margin_positive":("EBITDA > 0%",   gates.get("ebitda_margin_positive", False)),
-            "debt_equity_low":       ("D/E < 0.6",     gates.get("debt_equity_low", False)),
-            "altman_z_ok":           ("Altman Z > 1.8",gates.get("altman_z_ok", False)),
-            "equity_positive":       ("Equity > 0",    gates.get("equity_positive", False)),
-        }
+        gate_checks += [
+            ("FCF > 0",        gates.get("fcf_positive",          False)),
+            ("EBITDA > 0%",    gates.get("ebitda_margin_positive", False)),
+            ("D/E < 0.6",      gates.get("debt_equity_low",        False)),
+            ("Altman Z > 1.8", gates.get("altman_z_ok",            False)),
+            ("Equity > 0",     gates.get("equity_positive",        False)),
+        ]
+
+    # ROIC gate
+    qr = getattr(r, "quality_result", None)
+    if qr is not None and qr.roic is not None:
+        _mode = st.session_state.get("ca_mode", "quality")
+        _gate_pct = "15%" if _mode == "quality" else "10%"
+        _roic_pass = qr.passes_gate_quality if _mode == "quality" else qr.passes_gate_deep
+        gate_checks.append((f"ROIC > {_gate_pct}", _roic_pass))
+
+    if gate_checks:
         parts = []
-        for _, (label, passed) in gate_icons.items():
+        for label, passed in gate_checks:
             ico = f'<span style="color:{P["green"]}">✓</span>' if passed else \
                   f'<span style="color:{P["red"]}">✗</span>'
             parts.append(f'{ico} <span style="color:{P["text_dim"]}">{label}</span>')
@@ -755,26 +794,43 @@ def _render_breakdown_chart(r) -> None:
 
 
 def _render_metrics_grid(r) -> None:
-    """3-kolumns nyckeltalsgrid under Viking-badge."""
+    """3-kolumns nyckeltalsgrid under Viking-badge (Quality-Contrarian 5-pelare)."""
 
     # SMA200-avvikelse
     sma200_dev = None
     if r.sma200 and r.close and r.sma200 > 0:
         sma200_dev = (r.close - r.sma200) / r.sma200 * 100
 
+    # P/FCF discount vs own history (from value_result)
+    vr = getattr(r, "value_result", None)
+    pfcf_disc = getattr(vr, "p_fcf_discount", None) if vr else None
+    pfcf_sub = f"disc {pfcf_disc:+.0f}% vs hist" if pfcf_disc is not None else "multipel"
+
+    # Quality sub-result extras
+    qr = getattr(r, "quality_result", None)
+    roic_val = getattr(r, "roic", None)
+
     metrics = [
-        ("FCF",         _fmt(r.fcf_m, ".0f"),        "MSEK (TTM)"),
+        ("ROIC %",      _fmt(roic_val, ".1f"),        "Avkastning på inv.kap"),
+        ("P/FCF",       _fmt(r.p_fcf, ".1f"),         pfcf_sub),
+        ("EV/EBITDA",   _fmt(r.ev_ebitda, ".1f"),     "Multipel"),
+        ("FCF",         _fmt(r.fcf_m, ".0f"),         "MSEK (TTM)"),
         ("D/E",         _fmt(r.debt_equity, ".2f"),   "Skuld/Eget kapital"),
         ("EBITDA %",    _fmt(r.ebitda_pct, ".1f"),    "Marginal %"),
-        ("EV/EBITDA",   _fmt(r.ev_ebitda, ".1f"),     "Multipel"),
         ("SMA200 dev",  _fmt(sma200_dev, "+.1f"),     "% från SMA200"),
         ("Altman Z",    _fmt(r.altman_z, ".2f"),      ">2.99 safe"),
     ]
 
-    # Färgkoda SMA200
+    # Färgkoda
     def _metric_val_color(label: str, val_str: str) -> str:
         if val_str == "—":
             return P["text_dim"]
+        if label == "ROIC %":
+            try:
+                v = float(val_str)
+                return P["green"] if v >= 15 else P["amber"] if v >= 10 else P["red"]
+            except ValueError:
+                return P["text"]
         if label == "SMA200 dev":
             try:
                 v = float(val_str.replace("+", ""))
@@ -855,7 +911,7 @@ def render_contrarian_alpha_page() -> None:
         f'</div>'
         f'<p style="font-family:\'Courier New\',monospace;font-size:10px;'
         f'letter-spacing:0.12em;color:{P["text_dim"]};margin:4px 0 20px 0">'
-        f'Necessity · Hate · Strength · Catalyst · Viking Regime</p>',
+        f'Necessity · Hate · Quality · Value · Catalyst · Viking Regime</p>',
         unsafe_allow_html=True,
     )
 

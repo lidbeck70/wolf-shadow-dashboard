@@ -707,6 +707,33 @@ class BorsdataAPI:
 
         return results
 
+    # ─── Insider transactions ──────────────────────────────────────────────
+
+    def get_insider_transactions(self, ins_id: int) -> List[dict]:
+        """
+        Fetch insider transactions for an instrument.
+
+        Calls GET /insiders/{insId}.  Returns a list of transaction dicts.
+        Common fields (field names vary by API version):
+          verificationDate / date  — transaction date string
+          transactionType          — "buy" / "sell" / "köp" / "sälj" etc.
+          numberOfShares / shares  — number of shares traded
+          ownershipChange / ownershipPct — ownership percentage after transaction
+          name, roleName           — insider identity
+
+        Returns empty list when the endpoint is unavailable (400/403) or
+        when the instrument has no recorded insider transactions.
+        """
+        try:
+            data = self._get(f"/insiders/{ins_id}")
+            for key in ("insiders", "insider", "transactions"):
+                if key in data and data[key]:
+                    return data[key]
+            return []
+        except Exception as e:
+            logger.debug("get_insider_transactions(%d) failed: %s", ins_id, e)
+            return []
+
     # ─── Convenience: Multi-KPI snapshot ──────────────────────────────────
 
     def get_fundamentals_snapshot(self, ins_id: int) -> dict:

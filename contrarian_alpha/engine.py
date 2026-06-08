@@ -36,13 +36,28 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# ─── Composite weights (must sum to 1.0) ─────────────────────────────────────
+# ─── Composite weights ────────────────────────────────────────────────────────
+# 5-pillar mode-based weights (necessity + hate + quality + value + catalyst = 1.0)
+# Viking bonus is an additive flat term on top (+5p when regime is green).
 
-W_NECESSITY = 0.25
-W_HAT       = 0.25
-W_STRENGTH  = 0.30
-W_CATALYST  = 0.15
-W_VIKING    = 0.05   # VikingBonus: 100 if green else 0  →  max 5p contribution
+_WEIGHTS: dict[str, dict[str, float]] = {
+    "quality": {
+        "necessity": 0.15,
+        "hate":      0.20,
+        "quality":   0.30,
+        "value":     0.20,
+        "catalyst":  0.15,
+    },
+    "deep_contrarian": {
+        "necessity": 0.15,
+        "hate":      0.30,
+        "quality":   0.20,
+        "value":     0.20,
+        "catalyst":  0.15,
+    },
+}
+
+W_VIKING = 0.05   # VikingBonus: 100 if green else 0  →  flat +5p contribution
 
 # ─── Gate thresholds ─────────────────────────────────────────────────────────
 
@@ -51,8 +66,13 @@ from contrarian_alpha.hate      import HAT_THRESHOLD, calculate_hate_score, Hate
 from contrarian_alpha.hate      import fetch_analyst_data, fetch_short_data
 from contrarian_alpha.strength  import calculate_strength_score, StrengthResult
 from contrarian_alpha.catalyst  import (
-    calculate_catalyst_score, CatalystResult, compute_regime_color
+    calculate_catalyst_score, CatalystResult, compute_regime_color, fetch_insider_data,
 )
+from contrarian_alpha.quality   import (
+    calculate_quality_score, QualityResult,
+    GATE_ROIC_QUALITY, GATE_ROIC_DEEP,
+)
+from contrarian_alpha.value     import calculate_value_score, ValueResult
 
 # Börsdata – optional (degrades gracefully when no API key)
 try:
@@ -80,6 +100,11 @@ except ImportError:
 @dataclass
 class PipelineConfig:
     """Runtime configuration for run_pipeline()."""
+
+    # Scoring mode — controls pillar weights and quality ROIC gate
+    # "quality"         → ROIC>15%, quality weight=30%, hate weight=20%
+    # "deep_contrarian" → ROIC>10%, quality weight=20%, hate weight=30%
+    mode: str = "quality"
 
     # Universe
     market_ids: list[int] = field(default_factory=lambda: list(ALL_NORDIC_MARKETS))
@@ -130,14 +155,18 @@ class ContrairianAlphaResult:
     hat_score:        float = 0.0
     strength_score:   float = 0.0
     catalyst_score:   float = 0.0
+    quality_score:    float = 0.0
+    value_score:      float = 0.0
     viking_bonus_raw: float = 0.0  # 100 or 0
-    viking_bonus_pts: float = 0.0  # contribution = raw * W_VIKING
+    viking_bonus_pts: float = 0.0  # flat +5p when green
 
     # Rich sub-results (for UI drilldown)
     necessity_entry:  NecessityEntry | None    = None
     strength_result:  StrengthResult | None    = None
     hate_result:      HateResult | None        = None
     catalyst_result:  CatalystResult | None    = None
+    quality_result:   "QualityResult | None"   = None
+    value_result:     "ValueResult | None"     = None
 
     # Pipeline flags
     eliminated:           bool       = False
@@ -160,6 +189,8 @@ class ContrairianAlphaResult:
     ev_ebitda:    float | None = None
     altman_z:       float | None = None
     avg_volume_20d: float | None = None   # for LOW_LIQUIDITY flag in flags.py
+    roic:           float | None = None   # ROIC % (Quality model)
+    p_fcf:          float | None = None   # P/FCF multiple (Value model)
 
     # Meta
     data_confidence: float = 0.0
@@ -285,6 +316,9 @@ def _compute_price_metrics(df) -> dict:
         sma50  = float(close.tail(50).mean()) if len(close) >= 50 else current_close
         sma200 = float(close.tail(200).mean()) if len(close) >= 200 else current_close
 
+        # Average close over all available history (used for cycle position detection)
+        avg_price_5y = float(close.mean()) if len(close) >= 20 else None
+
         # 52-week range
         high = df["High"].dropna()
         low  = df["Low"].dropna()
@@ -324,6 +358,7 @@ def _compute_price_metrics(df) -> dict:
             "std_volume_20d": std_vol_20d,
             "sma50_slope":    round(sma50_slope, 6),
             "close_history":  close_history,
+            "avg_price_5y":   round(avg_price_5y, 4) if avg_price_5y is not None else None,
             "confidence":     1.0 if len(close) >= 200 else 0.7,
         }
     except Exception as e:
@@ -376,7 +411,7 @@ def _fetch_price_df(ticker: str, ins_id: int | None, api) -> object:
                 _prev_level = _yf_log.level
                 _yf_log.setLevel(_std_logging.CRITICAL)
                 try:
-                    raw = yf.Ticker(ticker).history(period="1y", auto_adjust=True, progress=False)
+                    raw = yf.Ticker(ticker).history(period="5y", auto_adjust=True, progress=False)
                 finally:
                     _yf_log.setLevel(_prev_level)
                 if raw is not None and not raw.empty:
@@ -466,6 +501,126 @@ def _build_fundamentals_dict(snapshot: dict, reports: list[dict] | None = None) 
             fund["fcf"] = fcf_hist[0]   # use actual TTM
 
     return fund
+
+
+# ─── Quality / Value data builders ───────────────────────────────────────────
+
+def _fetch_kpi_history(ins_id: int, kpi_id: int, api) -> list[float]:
+    """
+    Return newest-first list of annual KPI float values for one instrument.
+    Uses fundamentals TTLCache (24 h).  Returns [] on any failure.
+    """
+    _cset = None
+    _ckey = None
+    try:
+        from contrarian_alpha.cache import get_fundamentals as _cget, set_fundamentals as _cset
+        _ckey = f"kpi_hist:{ins_id}:{kpi_id}"
+        hit = _cget(_ckey)
+        if hit is not None:
+            return hit
+    except Exception:
+        pass
+    try:
+        raw = api.get_kpi_history(ins_id, kpi_id, "year", "mean")
+        # Börsdata returns oldest-first → reverse for newest-first
+        vals = [float(r["v"]) for r in raw if r.get("v") is not None]
+        vals.reverse()
+        if _cset and _ckey:
+            try:
+                _cset(_ckey, vals)
+            except Exception:
+                pass
+        return vals
+    except Exception as e:
+        logger.debug("_fetch_kpi_history(%s, kpi=%s) failed: %s", ins_id, kpi_id, e)
+        return []
+
+
+def _build_quality_data(fund_snap: dict, ins_id: int | None, api) -> dict:
+    """
+    Assemble quality_data dict for calculate_quality_score().
+    Current values come from the batch snapshot (fractions → converted to %).
+    History is fetched per-instrument (only for survivors, cached 24 h).
+    """
+    data: dict = {}
+
+    # Current values (snapshot stores % KPIs as fractions → multiply by 100)
+    roic_frac = fund_snap.get("roic")
+    if roic_frac is not None:
+        data["roic"] = roic_frac * 100
+
+    gm_frac = fund_snap.get("gross_margin")
+    if gm_frac is not None:
+        data["gross_margin"] = gm_frac * 100
+
+    om_frac = fund_snap.get("operating_margin")
+    if om_frac is not None:
+        data["operating_margin"] = om_frac * 100
+
+    # revenue_growth from screener is the YoY growth rate as fraction
+    rev_g = fund_snap.get("revenue_growth")
+    if rev_g is not None:
+        data["revenue_growth_5y"] = rev_g   # sign only matters for gate (>0 = positive)
+
+    if ins_id is None or api is None:
+        return data
+
+    # ROIC history (KPI 37) — raw values are already in %, no conversion
+    roic_hist = _fetch_kpi_history(ins_id, KPI["roic"], api)
+    if roic_hist:
+        data["roic_history"] = roic_hist
+
+    # ROCE (KPI 36) — fetch from history, use most recent as current
+    roce_hist = _fetch_kpi_history(ins_id, KPI["roc"], api)
+    if roce_hist:
+        data["roce"] = roce_hist[0]   # most recent ROCE %
+
+    # Gross margin history (KPI 28) — raw % values
+    gm_hist = _fetch_kpi_history(ins_id, KPI["gross_margin"], api)
+    if gm_hist:
+        data["gross_margin_history"] = gm_hist
+        if "gross_margin" not in data:
+            data["gross_margin"] = gm_hist[0]
+
+    # Operating margin history (KPI 29) — raw % values
+    om_hist = _fetch_kpi_history(ins_id, KPI["operating_margin"], api)
+    if om_hist:
+        data["op_margin_history"] = om_hist
+        if "operating_margin" not in data:
+            data["operating_margin"] = om_hist[0]
+
+    return data
+
+
+def _build_value_data(fund_snap: dict, ins_id: int | None, api) -> dict:
+    """
+    Assemble value_data dict for calculate_value_score().
+    P/FCF and EV/EBITDA are raw multiples (divisor=1 in snapshot).
+    """
+    data: dict = {}
+
+    p_fcf = fund_snap.get("p_fcf")
+    if p_fcf is not None:
+        data["p_fcf"] = p_fcf
+
+    ev_e = fund_snap.get("ev_ebitda")
+    if ev_e is not None:
+        data["ev_ebitda"] = ev_e
+
+    if ins_id is None or api is None:
+        return data
+
+    # P/FCF history (KPI 76) — raw multiples, no conversion
+    pfcf_hist = _fetch_kpi_history(ins_id, KPI["p_fcf"], api)
+    if pfcf_hist:
+        data["p_fcf_history"] = pfcf_hist
+
+    # EV/EBITDA history (KPI 11) — raw multiples
+    ev_hist = _fetch_kpi_history(ins_id, KPI["ev_ebitda"], api)
+    if ev_hist:
+        data["ev_ebitda_history"] = ev_hist
+
+    return data
 
 
 # ─── Single-ticker pipeline ───────────────────────────────────────────────────
@@ -620,13 +775,54 @@ def _run_single_ticker(
     # Append strength flags (non-gate)
     result.all_flags.extend(strength_result.flags)
 
+    # ── 3.5. QUALITY GATE ────────────────────────────────────────────────────
+
+    quality_data   = _build_quality_data(fund_snap, ins_id, api)
+    value_data     = _build_value_data(fund_snap, ins_id, api)
+
+    quality_result = calculate_quality_score(quality_data)
+    value_result   = calculate_value_score(value_data)
+
+    result.quality_score  = quality_result.score
+    result.value_score    = value_result.score
+    result.quality_result = quality_result
+    result.value_result   = value_result
+    result.roic           = quality_result.roic
+    result.p_fcf          = value_result.p_fcf
+    result.all_flags.extend(quality_result.flags)
+    result.all_flags.extend([f for f in value_result.flags if f not in result.all_flags])
+
+    # Mode-dependent ROIC gate (only applied when ROIC data is available)
+    roic_gate_pass = (
+        quality_result.passes_gate_quality
+        if config.mode == "quality"
+        else quality_result.passes_gate_deep
+    )
+    if quality_result.roic is not None and not roic_gate_pass:
+        gate_pct = "15%" if config.mode == "quality" else "10%"
+        result.eliminated       = True
+        result.elimination_stage  = "QUALITY_GATE"
+        result.elimination_reason = (
+            f"ROIC {quality_result.roic:.1f}% < {gate_pct} gate [{config.mode} mode]"
+        )
+        return result
+
     # ── 4. COMPOSITE SCORING ─────────────────────────────────────────────────
+
+    # Insider data for catalyst enrichment (fetched per-survivor, cached 1 h)
+    insider_dict: dict | None = None
+    if ins_id is not None:
+        try:
+            insider_dict = fetch_insider_data(ins_id, api)
+        except Exception as e:
+            logger.debug("insider_data failed for %s: %s", ticker, e)
 
     # Catalyst (also computes Viking Regime)
     catalyst_result = calculate_catalyst_score(
         price_data    = price_dict,
         ticker        = ticker,
         df            = price_df if (price_df is not None and not price_df.empty) else None,
+        insider_data  = insider_dict,
     )
     result.catalyst_score  = catalyst_result.score
     result.catalyst_result = catalyst_result
@@ -646,13 +842,15 @@ def _run_single_ticker(
     result.hate_result = hate_result_enriched
     result.all_flags.extend([f for f in hate_result_enriched.flags if f not in result.all_flags])
 
-    # Composite formula
+    # 5-pillar composite (mode-based weights) + Viking flat bonus
+    w = _WEIGHTS.get(config.mode, _WEIGHTS["quality"])
     result.composite_score = round(
-        result.necessity_score * W_NECESSITY
-        + result.hat_score     * W_HAT
-        + result.strength_score * W_STRENGTH
-        + result.catalyst_score * W_CATALYST
-        + viking_raw            * W_VIKING,
+        result.necessity_score * w["necessity"]
+        + result.hat_score     * w["hate"]
+        + result.quality_score * w["quality"]
+        + result.value_score   * w["value"]
+        + result.catalyst_score * w["catalyst"]
+        + viking_raw            * W_VIKING,   # flat +5p when regime green
         2,
     )
 
@@ -919,6 +1117,10 @@ def run_pipeline(config: PipelineConfig | None = None) -> PipelineResult:
             elif stage == "BALANCE_SHEET":
                 necessity_passed += 1
                 hate_passed += 1
+            elif stage == "QUALITY_GATE":
+                necessity_passed += 1
+                hate_passed += 1
+                bs_passed += 1
         else:
             necessity_passed += 1
             hate_passed += 1
@@ -968,13 +1170,17 @@ if __name__ == "__main__":
     from contrarian_alpha.strength   import STRENGTH_COMPOSITE_WEIGHT
     from contrarian_alpha.catalyst   import CATALYST_COMPOSITE_WEIGHT
 
-    print(f"\n{'═'*70}")
-    print("  CONTRARIAN ALPHA SCREENER — ENGINE SMOKE TEST")
-    print(f"{'═'*70}")
-    print(f"  Composite weights: N={W_NECESSITY} H={W_HAT} S={W_STRENGTH} "
-          f"C={W_CATALYST} V={W_VIKING}  (sum={W_NECESSITY+W_HAT+W_STRENGTH+W_CATALYST+W_VIKING})")
+    print(f"\n{'='*70}")
+    print("  CONTRARIAN ALPHA SCREENER — ENGINE SMOKE TEST (5-pillar model)")
+    print(f"{'='*70}")
+    for mode_name, ww in _WEIGHTS.items():
+        wsum = sum(ww.values())
+        print(f"  [{mode_name}] N={ww['necessity']} H={ww['hate']} "
+              f"Q={ww['quality']} V={ww['value']} C={ww['catalyst']}  "
+              f"(sum={wsum:.2f})  + Viking flat {W_VIKING}")
     print(f"  Gates: Necessity>={NECESSITY_THRESHOLD}  Hat>={HAT_THRESHOLD}  "
-          f"BS=[FCF>0, D/E<0.6, EBITDA>0, Equity>0]")
+          f"BS=[FCF>0, D/E<0.6, EBITDA>0, Equity>0]  "
+          f"Quality=[ROIC>15% quality / >10% deep_contrarian]")
     print(f"{'─'*70}")
 
     # Run with manual tickers only (no Börsdata needed)
@@ -993,15 +1199,15 @@ if __name__ == "__main__":
     print(f"  Pass rates: {pr.pass_rates}")
     print(f"\n  TOP {len(pr.results)} RESULTS:")
     print(f"  {'#':>3}  {'Ticker':<8}  {'Composite':>9}  "
-          f"{'N':>5}  {'H':>5}  {'S':>5}  {'C':>5}  {'V':>5}  Flags")
-    print(f"  {'─'*3}  {'─'*8}  {'─'*9}  {'─'*5}  {'─'*5}  {'─'*5}  {'─'*5}  {'─'*5}")
+          f"{'N':>5}  {'H':>5}  {'Qual':>5}  {'Val':>5}  {'Cat':>5}  {'Vik':>5}  Flags")
+    print(f"  {'─'*3}  {'─'*8}  {'─'*9}  {'─'*5}  {'─'*5}  {'─'*5}  {'─'*5}  {'─'*5}  {'─'*5}")
     for r in pr.results:
         v_str = "GREEN" if r.viking_bonus_raw > 0 else "    -"
         flag_str = ",".join(r.all_flags[:2]) if r.all_flags else ""
         print(f"  {r.rank:>3}  {r.ticker:<8}  {r.composite_score:>9.2f}  "
               f"{r.necessity_score:>5.0f}  {r.hat_score:>5.1f}  "
-              f"{r.strength_score:>5.1f}  {r.catalyst_score:>5.1f}  "
-              f"{v_str:>5}  {flag_str}")
+              f"{r.quality_score:>5.1f}  {r.value_score:>5.1f}  "
+              f"{r.catalyst_score:>5.1f}  {v_str:>5}  {flag_str}")
 
     if pr.eliminated:
         print(f"\n  ELIMINATED ({len(pr.eliminated)}):")

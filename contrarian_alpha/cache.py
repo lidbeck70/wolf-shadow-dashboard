@@ -83,6 +83,7 @@ _fundamentals: TTLCache = TTLCache(TTL_FUNDAMENTALS)
 _price:        TTLCache = TTLCache(TTL_PRICE)
 _sentiment:    TTLCache = TTLCache(TTL_SENTIMENT)
 _regime:       TTLCache = TTLCache(TTL_REGIME)
+_insider:      TTLCache = TTLCache(TTL_PRICE)      # 1 h — insider transactions
 
 # ─── Delisted-ticker blacklist (session-scoped, never expires) ─────────────────
 _DELISTED_BLACKLIST: set[str] = set()
@@ -104,6 +105,7 @@ _BUCKETS: dict[str, TTLCache] = {
     "price":        _price,
     "sentiment":    _sentiment,
     "regime":       _regime,
+    "insider":      _insider,
 }
 
 # ─── Public accessor helpers ─────────────────────────────────────────────────
@@ -131,6 +133,12 @@ def get_regime(key: str) -> Optional[Any]:
 
 def set_regime(key: str, value: Any) -> None:
     _regime.set(key, value)
+
+def get_insider(key: str) -> Optional[Any]:
+    return _insider.get(key)
+
+def set_insider(key: str, value: Any) -> None:
+    _insider.set(key, value)
 
 
 def clear_all() -> None:

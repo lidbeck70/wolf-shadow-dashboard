@@ -4,14 +4,15 @@ hate.py — Hat Score (0-100) for Contrarian Alpha Screener.
 Measures how hated / neglected / sold-off a stock is.
 Higher score = more contrarian opportunity. Threshold: HAT_THRESHOLD = 45.
 
-7 components (weights sum to 100):
-  1. Price vs SMA200          max 20p  (below SMA200 = institution-abandoned)
-  2. 52-week low proximity    max 15p  (near 52w low = max pain)
+8 components (weights sum to 100):
+  1. Price vs SMA200          max 15p  (below SMA200 = institution-abandoned)
+  2. 52-week low proximity    max 12p  (near 52w low = max pain)
   3. Retail sentiment silence max  5p  (StockTwits volume drought = forgotten)
-  4. Analyst downgrades 90d  max 15p  (recent cuts = Wall St. hate)
+  4. Analyst downgrades 90d  max 12p  (recent cuts = Wall St. hate)
   5. Short interest (EODHD)  max 15p  (high float short % = active hate)
   6. Sector rotation outflow max 10p  (sector lagging market = nobody wants it)
-  7. StockTwits bear ratio   max 20p  (retail bears dominant = sentiment floor)
+  7. StockTwits bear ratio   max 16p  (retail bears dominant = sentiment floor)
+  8. Cycle position (5y avg) max 15p  (distance below 5-year price avg = trough depth)
 
 Adapted from blindspot/scoring/hat.py + retail_sentiment/sources/twitter.py.
 
@@ -26,6 +27,7 @@ Input dicts (all optional, use None/empty dict when unavailable):
     sma200         float  200-day SMA
     high_52w       float  52-week high
     low_52w        float  52-week low
+    avg_price_5y   float  Average closing price over 5 years (optional; from extended fetch)
 
   sentiment_data:  (from retail_sentiment/sources/twitter.fetch_ticker_sentiment)
     message_count  int    Number of StockTwits messages in feed
@@ -66,13 +68,14 @@ VALUE_TRAP_STRENGTH_MAX = 50    # ...combined with strength below this → Value
 
 # ─── Component max points (must sum to 100) ───────────────────────────────────
 
-_MAX_SMA200     = 20
-_MAX_52W_LOW    = 15
+_MAX_SMA200     = 15
+_MAX_52W_LOW    = 12
 _MAX_RETAIL_SIL =  5
-_MAX_ANALYST    = 15
+_MAX_ANALYST    = 12
 _MAX_SHORT      = 15
 _MAX_SECTOR     = 10
-_MAX_BEAR_RATIO = 20
+_MAX_BEAR_RATIO = 16
+_MAX_CYCLE      = 15   # distance below 5-year average price — trough depth
 
 # ─── Result model ────────────────────────────────────────────────────────────
 
@@ -291,6 +294,39 @@ def _score_stocktwits_bear(sentiment_data: dict | None) -> tuple[float, bool]:
     return round(pts, 1), True
 
 
+def _score_cycle_position(price_data: dict) -> tuple[float, bool]:
+    """
+    Distance below 5-year average price: max 15p.
+    Returns (points, has_real_data).
+
+    Captures multi-year cycle compression beyond short-term pullbacks.
+    A stock trading 30-50% below its 5-year average is likely in a
+    sector trough — the core contrarian opportunity.
+
+    Input: price_data["avg_price_5y"] — mean closing price over 5 years
+           price_data["close"]        — current close (always present)
+
+    > 40% below 5y avg → 15p  (deep trough)
+    > 30% below        → 12p
+    > 20% below        →  8p
+    > 10% below        →  4p
+    ≤ 10% below or above → 0p
+    """
+    close  = price_data.get("close", 0.0)
+    avg_5y = price_data.get("avg_price_5y")
+
+    if not avg_5y or avg_5y <= 0 or close <= 0:
+        return 5.0, False   # moderate default — multi-year data not available
+
+    pct_below = (avg_5y - close) / avg_5y * 100
+
+    if pct_below > 40:    return 15.0, True
+    elif pct_below > 30:  return 12.0, True
+    elif pct_below > 20:  return  8.0, True
+    elif pct_below > 10:  return  4.0, True
+    else:                  return  0.0, True
+
+
 # ─── Value Trap flag ─────────────────────────────────────────────────────────
 
 def _check_value_trap(hat_score: float, strength_score: float | None) -> bool:
@@ -315,6 +351,7 @@ def calculate_hate_score(
 
     Args:
         price_data:     Required. close, sma200, high_52w, low_52w.
+                        Optional: avg_price_5y for cycle position component.
         sentiment_data: Optional. StockTwits bear_ratio, message_count, confidence.
         analyst_data:   Optional. downgrades_90d, upgrades_90d, consensus.
         short_data:     Optional. short_float_pct from EODHD.
@@ -340,16 +377,19 @@ def calculate_hate_score(
     short_pts,    short_real    = _score_short_interest(short_data)
     sector_pts,   sector_real   = _score_sector_outflow(sector_data)
     bear_pts,     bear_real     = _score_stocktwits_bear(sentiment_data)
+    cycle_pts,    cycle_real    = _score_cycle_position(price_data)
 
     total = _clamp(
-        sma_pts + low_pts + sil_pts + analyst_pts + short_pts + sector_pts + bear_pts,
+        sma_pts + low_pts + sil_pts + analyst_pts + short_pts
+        + sector_pts + bear_pts + cycle_pts,
         0.0, 100.0,
     )
     total = round(total, 1)
 
-    # Confidence: fraction of components backed by real data
-    real_count  = sum([sma_real, low_real, sil_real, analyst_real, short_real, sector_real, bear_real])
-    confidence  = round(real_count / 7, 2)
+    # Confidence: fraction of components backed by real data (8 components)
+    real_count = sum([sma_real, low_real, sil_real, analyst_real,
+                      short_real, sector_real, bear_real, cycle_real])
+    confidence = round(real_count / 8, 2)
 
     breakdown = {
         "sma200_gap":        round(sma_pts, 1),
@@ -359,6 +399,7 @@ def calculate_hate_score(
         "short_interest":    round(short_pts, 1),
         "sector_outflow":    round(sector_pts, 1),
         "stocktwits_bear":   round(bear_pts, 1),
+        "cycle_position":    round(cycle_pts, 1),
     }
 
     flags: list[str] = []
@@ -366,6 +407,7 @@ def calculate_hate_score(
     if not analyst_real: flags.append("ANALYST_DATA_MISSING")
     if not short_real:  flags.append("SHORT_DATA_MISSING")
     if not sector_real: flags.append("SECTOR_DATA_MISSING")
+    if not cycle_real:  flags.append("CYCLE_DATA_MISSING")
 
     if _check_value_trap(total, strength_score):
         flags.append("POTENTIAL_VALUE_TRAP")
