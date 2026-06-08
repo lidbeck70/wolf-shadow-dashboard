@@ -30,6 +30,7 @@ def _compute_from_df(df: pd.DataFrame) -> dict:
 
     # Require at least Close
     if "Close" not in df.columns:
+        print(f"No Close column. Available: {df.columns.tolist()}")
         return {}
 
     close = df["Close"].dropna()
@@ -128,57 +129,70 @@ def _compute_from_df(df: pd.DataFrame) -> dict:
 
 def compute_indicators(ticker: str, period: str = "1y") -> dict:
     """Download OHLCV for ticker/period and return computed indicator dict."""
+    import traceback
+    import yfinance as _yf_mod
+    print(f"yfinance version: {_yf_mod.__version__}")
+
     if not ticker or not ticker.strip():
         return {}
+
     try:
         ticker_clean = ticker.strip().upper()
-        df = yf.download(
-            ticker_clean,
-            period=period,
-            auto_adjust=True,
-            progress=False,
-            show_errors=False,
-            multi_level_index=False,
-        )
-        if df is None or df.empty:
-            # Try without multi_level_index kwarg (older yfinance)
+
+        try:
+            df = yf.download(
+                ticker_clean,
+                period=period,
+                auto_adjust=True,
+                progress=False,
+                show_errors=False,
+                multi_level_index=False,
+            )
+            if df is None or df.empty:
+                print(f"Empty df for {ticker_clean} (multi_level_index=False), period={period} — retrying without kwarg")
+                df = yf.download(
+                    ticker_clean,
+                    period=period,
+                    auto_adjust=True,
+                    progress=False,
+                )
+        except TypeError:
+            print(f"multi_level_index kwarg not supported — falling back for {ticker_clean}")
             df = yf.download(
                 ticker_clean,
                 period=period,
                 auto_adjust=True,
                 progress=False,
             )
-    except TypeError:
-        # multi_level_index not supported in this yfinance version
-        try:
-            df = yf.download(
-                ticker.strip().upper(),
-                period=period,
-                auto_adjust=True,
-                progress=False,
-            )
-        except Exception:
-            return {}
-    except Exception:
-        return {}
 
-    if df is None or df.empty:
-        return {}
+        print(f"Downloaded {ticker_clean}: shape={df.shape}, columns={df.columns.tolist()}")
 
-    # Flatten MultiIndex if present
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-
-    # Some yfinance versions return ticker as second level
-    if "Close" not in df.columns:
-        # Try to find Close column case-insensitively
-        close_cols = [c for c in df.columns if str(c).lower() == "close"]
-        if close_cols:
-            df = df.rename(columns={close_cols[0]: "Close"})
-        else:
+        if df is None or df.empty:
+            print(f"Empty df for {ticker_clean}, period={period}")
             return {}
 
-    return _compute_from_df(df)
+        # Flatten MultiIndex if present
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+            print(f"After MultiIndex flatten: columns={df.columns.tolist()}")
+
+        # Some yfinance versions return ticker as second level
+        if "Close" not in df.columns:
+            print(f"No Close column. Available: {df.columns.tolist()}")
+            close_cols = [c for c in df.columns if str(c).lower() == "close"]
+            if close_cols:
+                df = df.rename(columns={close_cols[0]: "Close"})
+                print(f"Renamed '{close_cols[0]}' -> 'Close'")
+            else:
+                print(f"Cannot find Close column for {ticker_clean} — returning empty")
+                return {}
+
+        return _compute_from_df(df)
+
+    except Exception as exc:
+        print(f"compute_indicators ERROR for {ticker}: {exc}")
+        print(traceback.format_exc())
+        return {}
 
 
 def download_ohlcv(ticker: str, period: str = "2y") -> pd.DataFrame:
