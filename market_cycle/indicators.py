@@ -131,15 +131,53 @@ def compute_indicators(ticker: str, period: str = "1y") -> dict:
     if not ticker or not ticker.strip():
         return {}
     try:
+        ticker_clean = ticker.strip().upper()
         df = yf.download(
-            ticker.strip().upper(),
+            ticker_clean,
             period=period,
             auto_adjust=True,
             progress=False,
             show_errors=False,
+            multi_level_index=False,
         )
+        if df is None or df.empty:
+            # Try without multi_level_index kwarg (older yfinance)
+            df = yf.download(
+                ticker_clean,
+                period=period,
+                auto_adjust=True,
+                progress=False,
+            )
+    except TypeError:
+        # multi_level_index not supported in this yfinance version
+        try:
+            df = yf.download(
+                ticker.strip().upper(),
+                period=period,
+                auto_adjust=True,
+                progress=False,
+            )
+        except Exception:
+            return {}
     except Exception:
         return {}
+
+    if df is None or df.empty:
+        return {}
+
+    # Flatten MultiIndex if present
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
+    # Some yfinance versions return ticker as second level
+    if "Close" not in df.columns:
+        # Try to find Close column case-insensitively
+        close_cols = [c for c in df.columns if str(c).lower() == "close"]
+        if close_cols:
+            df = df.rename(columns={close_cols[0]: "Close"})
+        else:
+            return {}
+
     return _compute_from_df(df)
 
 
@@ -154,9 +192,25 @@ def download_ohlcv(ticker: str, period: str = "2y") -> pd.DataFrame:
             auto_adjust=True,
             progress=False,
             show_errors=False,
+            multi_level_index=False,
         )
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-        return df
+    except TypeError:
+        try:
+            df = yf.download(
+                ticker.strip().upper(),
+                period=period,
+                auto_adjust=True,
+                progress=False,
+            )
+        except Exception:
+            return pd.DataFrame()
     except Exception:
         return pd.DataFrame()
+
+    if df is None or df.empty:
+        return pd.DataFrame()
+
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
+    return df
