@@ -175,31 +175,30 @@ def main():
     render_header()
 
     tab_labels = [
-        "  HOME  ",
-        "  AURORA CONTRARIAN  ",
-        "  BACKTEST  ",
-        "  CONTRARIAN ALPHA  ",
-        "  HOLDINGS  ",
-        "  TRADE JOURNAL  ",
-        "  WOLF REGIME  ",
-        "  ALPHA REGIME  ",
-        "  VIKING REGIME  ",
-        "  FLOW DIVERGENCE  ",
-        "  SENTIMENT  ",
-        "  HEATMAP  ",
-        "  RETAIL SENTIMENT  ",
-        "  ODIN'S BLINDSPOT  ",
-        "  RULES  ",
-        "  ALERTS  ",
-        "  ARC MOMENTUM  ",
+        "  🏠 HOME  ",
+        "  🔱 ARC SCREENER  ",
+        "  ⚡ CONTRARIAN ALPHA  ",
         "  🔄 MARKET CYCLE  ",
+        "  🐺 WOLF REGIME  ",
+        "  📈 ALPHA REGIME  ",
+        "  ⚔️ VIKING REGIME  ",
+        "  🌐 FLOW DIVERGENCE  ",
+        "  👁 ODIN'S BLINDSPOT  ",
+        "  📡 SENTIMENT  ",
+        "  🛒 RETAIL PULSE  ",
+        "  📊 HEATMAP  ",
+        "  💼 HOLDINGS  ",
+        "  📓 TRADE JOURNAL  ",
+        "  ⚙️ BACKTEST  ",
+        "  📋 RULES  ",
+        "  🔔 ALERTS  ",
+        "  🧬 ARC STRATEGIES  ",
     ]
-    (tab_home_page, tab1, tab2, tab_contrarian,
-     tab_holdings, tab_journal,
+    (tab_home_page, tab1, tab_contrarian, tab_market_cycle,
      tab_swing_regime, tab_long_regime, tab_ovtlyr,
-     tab6, tab7, tab8, tab_retail, tab_blindspot, tab_rules,
-     tab_alerts_page, tab_strat_overview,
-     tab_market_cycle) = st.tabs(tab_labels)
+     tab6, tab_blindspot, tab7, tab_retail, tab8,
+     tab_holdings, tab_journal, tab2,
+     tab_rules, tab_alerts_page, tab_strat_overview) = st.tabs(tab_labels)
 
     with tab_home_page:
         tab_home()
