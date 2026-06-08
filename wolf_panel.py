@@ -155,6 +155,13 @@ try:
 except ImportError:
     CONTRARIAN_ALPHA_AVAILABLE = False
 
+# Market Cycle Engine
+try:
+    from tabs.market_cycle import render_market_cycle_page
+    MARKET_CYCLE_AVAILABLE = True
+except ImportError:
+    MARKET_CYCLE_AVAILABLE = False
+
 
 # =============================================================================
 # MAIN APP
@@ -185,12 +192,14 @@ def main():
         "  RULES  ",
         "  ALERTS  ",
         "  STRATEGIES  ",
+        "  🔄 MARKET CYCLE  ",
     ]
     (tab_home_page, tab1, tab2, tab_contrarian,
      tab_holdings, tab_journal,
      tab_swing_regime, tab_long_regime, tab_ovtlyr,
      tab6, tab7, tab8, tab_retail, tab_blindspot, tab_rules,
-     tab_alerts_page, tab_strat_overview) = st.tabs(tab_labels)
+     tab_alerts_page, tab_strat_overview,
+     tab_market_cycle) = st.tabs(tab_labels)
 
     with tab_home_page:
         tab_home()
@@ -290,6 +299,12 @@ def main():
 
     with tab_strat_overview:
         tab_strategy_overview()
+
+    with tab_market_cycle:
+        if MARKET_CYCLE_AVAILABLE:
+            render_market_cycle_page()
+        else:
+            tab_not_found("Market Cycle Engine", "tabs/market_cycle")
 
     render_footer()
 
