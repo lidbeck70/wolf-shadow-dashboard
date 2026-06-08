@@ -1,0 +1,39 @@
+Du arbetar i projektet wolf-shadow-dashboard. Fixa tre kända problem:
+
+PROBLEM 1 — Delisted tickers i Contrarian Alpha Screener
+Många tickers returnerar "possibly delisted; no price data found" från yfinance. 
+Hitta alla ställen i contrarian_alpha/ där yfinance-data hämtas och lägg till:
+- Tyst filtrering: om yfinance returnerar tom DataFrame eller kastar exception, skippa tickern utan att logga till stderr
+- Lägg till en intern blacklist-cache så samma ticker inte försöks igen under samma session
+- Visa i UI hur många tickers som skippades (t.ex. "Skipped 12 delisted tickers")
+
+PROBLEM 2 — Börsdata KPI 400-fel i screener
+Följande KPI-ID:n returnerar 400 Bad Request:
+- revenue_growth: ID 94
+- earnings_growth: ID 97  
+- earnings_stability: ID 174
+- fcf_stability: ID 179
+- f_score: ID 167
+- magic_formula: ID 163
+- rs_rank: ID 192
+
+Hitta var dessa KPI-ID:n används i koden (troligen i borsdata_api.py eller tabs/screener.py).
+Gör följande:
+1. Läs Börsdata API-dokumentationen om möjligt, annars:
+2. Lägg till try/except runt varje KPI-anrop så att 400-fel inte kraschar screener
+3. Om ett KPI misslyckas, sätt värdet till None och fortsätt
+4. Logga bara en gång per session, inte vid varje anrop
+
+PROBLEM 3 — use_container_width deprecation
+Streamlit varnar för att use_container_width kommer tas bort efter 2025-12-31.
+Ersätt ALLA förekomster av:
+- use_container_width=True  →  width='stretch' (i st.plotly_chart, st.image, st.dataframe etc.)
+- use_container_width=False →  width='content'
+
+OBS: use_container_width fungerar fortfarande i st.columns() och st.tabs() — ändra INTE dessa.
+Kontrollera alla filer i: tabs/, ui/, contrarian_alpha/, market_cycle/, ovtlyr/, retail_sentiment/, blindspot/
+
+Efter alla fixes:
+git add .
+git commit -m "Fix: delisted ticker filter, Börsdata KPI errors, use_container_width deprecation"
+git push origin main

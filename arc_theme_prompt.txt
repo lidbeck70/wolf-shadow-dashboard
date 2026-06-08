@@ -1,0 +1,117 @@
+Du arbetar i wolf-shadow-dashboard för Nordic Arc Systems. Läs CLAUDE.md först.
+
+UPPGIFT: Implementera Nordic Arc Systems full theme overhaul.
+
+VIKTIGT: Gör INGA ändringar i strategi-logik, signals, regime-logik, holdings, eller screener-logik.
+
+=== STEG 1: ui/theme.py ===
+
+Uppdatera PALETTE till:
+```python
+PALETTE: dict = {
+    # Backgrounds
+    "bg":           "#05070A",
+    "bg2":          "#1A1F25",
+    "bg3":          "#0D1117",
+    "surface":      "#0D1117",
+
+    # Arc Cyan (ersätter gold som primär accent)
+    "gold":         "#00E5FF",
+    "gold_dim":     "#00A8BF",
+    "gold_muted":   "rgba(0,229,255,0.40)",
+    "gold_faint":   "rgba(0,229,255,0.10)",
+
+    # Aurora Purple (ersätter silver)
+    "silver":       "#B400FF",
+    "ice_blue":     "#8A00CC",
+    "ice_faint":    "rgba(180,0,255,0.12)",
+
+    # Contrarian Ember
+    "green":        "#2d8a4e",
+    "red":          "#FF6B3D",
+    "amber":        "#FF6B3D",
+    "text":         "#E8EDF2",
+    "text_dim":     "#6B7280",
+
+    # Borders
+    "border":       "rgba(0,229,255,0.15)",
+    "border_hi":    "rgba(0,229,255,0.35)",
+    "border_ice":   "rgba(180,0,255,0.20)",
+}
+```
+
+Uppdatera render_header() så den:
+1. Laddar banner från assets/banner.jpg (befintlig logik men ny bild heter banner.jpg)
+2. Visar "NORDIC ARC SYSTEMS" som titel med "ARC" i #00E5FF
+3. Visar slogan "See What the Market Can't." i kursiv
+4. Om ingen banner-bild hittas, visa en SVG-fallback med triangel+öga i Arc Cyan
+
+Uppdatera render_footer() till:
+- Slogan: "See What the Market Can't." i kursiv, ljusgrå
+- Varumärke: Nordic Arc Systems
+
+=== STEG 2: ui/css.py ===
+
+Uppdatera CYBERPUNK_CSS:
+
+1. Lägg till Google Fonts import överst i <style>:
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=Inter+Tight:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap');
+
+2. Byt font-family i html, body till: 'Inter Tight', sans-serif
+3. Rubriker (h1,h2,h3,.stMarkdown h1,.stMarkdown h2,.stMarkdown h3): font-family: 'Space Grotesk', sans-serif
+4. Monospace/numbers: font-family: 'JetBrains Mono', monospace
+
+5. Byt background-color på .stApp till #05070A
+6. Byt grid-linjerna (repeating-linear-gradient) från rgba(201,168,76,0.03) till rgba(26,31,37,0.8) — tätare grid
+7. Lägg till aurora gradient overlay:
+   radial-gradient(ellipse at 15% 40%, rgba(0,229,255,0.04) 0%, transparent 50%),
+   radial-gradient(ellipse at 85% 40%, rgba(180,0,255,0.04) 0%, transparent 50%),
+
+8. Byt alla förekomster av:
+   - #0c0c12 → #05070A
+   - #14141e → #1A1F25
+   - #10101a → #0D1117
+   - #1a1a28 → #1A1F25
+   - rgba(201,168,76, → rgba(0,229,255,
+   - #c9a84c → #00E5FF
+   - #8b7340 → #00A8BF
+
+9. Knappar: lägg till cyan glow på hover:
+   .stButton > button:hover {
+       border-color: #00E5FF !important;
+       box-shadow: 0 0 12px rgba(0,229,255,0.4) !important;
+       color: #00E5FF !important;
+   }
+
+10. Cards/borders: byt till aurora purple:
+    border: 1px solid rgba(180,0,255,0.25)
+    box-shadow: 0 0 8px rgba(180,0,255,0.1)
+
+=== STEG 3: wolf_panel.py ===
+
+1. Byt page_title till "Nordic Arc Systems"
+2. Byt page_icon till "🔱"
+3. I tab_labels, byt:
+   - "  SCREENER  " → "  AURORA CONTRARIAN  "
+   - "  SECTOR & REGIME  " → "  FLOW DIVERGENCE  "
+   - "  STRATEGIES  " → "  ARC MOMENTUM  "
+   Behåll ALLA andra tabs exakt som de är.
+
+=== STEG 4: assets/ ===
+
+Kopiera den nya banner-bilden (Copilot_20260608_150304.png) till assets/banner.jpg
+OBS: Bilden finns i projektroten eller i uploads — leta efter den och kopiera.
+Om filen inte hittas, hoppa över detta steg utan att krascha.
+
+=== STEG 5: Git ===
+
+git add ui/theme.py ui/css.py wolf_panel.py assets/
+git commit -m "Applied Nordic Arc Systems full theme overhaul"
+git push origin main
+
+=== EFTER IMPLEMENTATION ===
+
+Lista exakt:
+1. Vilka filer som ändrades
+2. Key CSS changes (before → after)
+3. Bekräfta att inga strategi-filer rördes
