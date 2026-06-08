@@ -314,7 +314,7 @@ def render_ovtlyr_page() -> None:
         )
     with ctrl4:
         st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
-        refresh = st.button("↺ ANALYSERA", key="ovtlyr_refresh", use_container_width=True)
+        refresh = st.button("↺ ANALYSERA", key="ovtlyr_refresh", width='stretch')
         if refresh:
             st.cache_data.clear()
 
@@ -724,7 +724,7 @@ def render_ovtlyr_page() -> None:
     with mid_left:
         try:
             fig_price = build_price_chart(df.copy(), trend, orderblocks, volume_data)
-            st.plotly_chart(fig_price, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig_price, width='stretch', config={"displayModeBar": False})
         except Exception as exc:
             st.error(f"Price chart error: {exc}")
 
@@ -803,7 +803,7 @@ def render_ovtlyr_page() -> None:
         # Risk gauge (compact)
         try:
             fig_risk = build_risk_gauge(int(volatility.get("risk_score", 50)))
-            st.plotly_chart(fig_risk, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig_risk, width='stretch', config={"displayModeBar": False})
         except Exception:
             pass
 
@@ -1198,7 +1198,7 @@ def render_ovtlyr_page() -> None:
         if vol_histogram:
             try:
                 fig_vh = build_volatility_histogram(vol_histogram)
-                st.plotly_chart(fig_vh, use_container_width=True, key="vol_hist")
+                st.plotly_chart(fig_vh, width='stretch', key="vol_hist")
                 # Stats below
                 st.markdown(
                     f"<div style='font-size:0.68rem;color:{DIM};text-align:center;'>"
@@ -1218,7 +1218,7 @@ def render_ovtlyr_page() -> None:
         if oscillator:
             try:
                 fig_osc = build_oscillator_direction(oscillator)
-                st.plotly_chart(fig_osc, use_container_width=True, key="osc_dir")
+                st.plotly_chart(fig_osc, width='stretch', key="osc_dir")
                 # Timing badge
                 timing = oscillator.get("timing", "")
                 tc = oscillator.get("timing_color", "rgba(74,74,106,0.9)")
@@ -1241,7 +1241,7 @@ def render_ovtlyr_page() -> None:
         if bull_list:
             try:
                 fig_bl = build_bull_list_gauge(bull_list)
-                st.plotly_chart(fig_bl, use_container_width=True, key="bull_list")
+                st.plotly_chart(fig_bl, width='stretch', key="bull_list")
             except Exception:
                 st.info("Bull List %: chart error")
         else:
@@ -1279,7 +1279,7 @@ def render_ovtlyr_page() -> None:
                 return [f"background-color:{color}"] * len(row)
 
             styled_ob = ob_df.style.apply(_ob_row_style, axis=1)
-            st.dataframe(styled_ob, use_container_width=True, hide_index=True)
+            st.dataframe(styled_ob, width='stretch', hide_index=True)
         else:
             st.info("No order blocks detected.")
 
@@ -1290,13 +1290,13 @@ def render_ovtlyr_page() -> None:
             with bcol1:
                 try:
                     fig_pie = build_sector_pie(breadth_data)
-                    st.plotly_chart(fig_pie, use_container_width=True, config={"displayModeBar": False})
+                    st.plotly_chart(fig_pie, width='stretch', config={"displayModeBar": False})
                 except Exception as exc:
                     st.error(f"Sector pie error: {exc}")
             with bcol2:
                 try:
                     fig_hm = build_heatmap(breadth_data)
-                    st.plotly_chart(fig_hm, use_container_width=True, config={"displayModeBar": False})
+                    st.plotly_chart(fig_hm, width='stretch', config={"displayModeBar": False})
                 except Exception as exc:
                     st.error(f"Heatmap error: {exc}")
         else:
@@ -1356,7 +1356,7 @@ def render_ovtlyr_page() -> None:
                     return ""
 
                 styled_dd = dd_df.style.map(_dd_style, subset=["Max Drop %"])
-                st.dataframe(styled_dd, use_container_width=True, hide_index=True)
+                st.dataframe(styled_dd, width='stretch', hide_index=True)
             else:
                 st.info("No significant drawdowns (> 5%) detected in the selected period.")
         except Exception as exc:
@@ -1430,7 +1430,7 @@ def render_ovtlyr_page() -> None:
                     return [f"background-color:{color}"] * len(row)
                 st.dataframe(
                     gates_df.style.apply(_gate_style, axis=1),
-                    use_container_width=True,
+                    width='stretch',
                     hide_index=True,
                 )
 
@@ -1478,7 +1478,7 @@ def render_ovtlyr_page() -> None:
                     return [f"background-color:{color}"] * len(row)
                 st.dataframe(
                     swg_gates_df.style.apply(_swg_gate_style, axis=1),
-                    use_container_width=True,
+                    width='stretch',
                     hide_index=True,
                 )
 

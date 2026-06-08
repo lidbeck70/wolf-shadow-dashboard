@@ -84,6 +84,21 @@ _price:        TTLCache = TTLCache(TTL_PRICE)
 _sentiment:    TTLCache = TTLCache(TTL_SENTIMENT)
 _regime:       TTLCache = TTLCache(TTL_REGIME)
 
+# ─── Delisted-ticker blacklist (session-scoped, never expires) ─────────────────
+_DELISTED_BLACKLIST: set[str] = set()
+
+
+def is_delisted(ticker: str) -> bool:
+    return ticker in _DELISTED_BLACKLIST
+
+
+def mark_delisted(ticker: str) -> None:
+    _DELISTED_BLACKLIST.add(ticker)
+
+
+def delisted_count() -> int:
+    return len(_DELISTED_BLACKLIST)
+
 _BUCKETS: dict[str, TTLCache] = {
     "fundamentals": _fundamentals,
     "price":        _price,
@@ -170,18 +185,29 @@ try:
         Streamlit-cached price-metric dict (1 h TTL).
         Fetches via yfinance and runs _compute_price_metrics.
         """
+        if is_delisted(ticker):
+            return {}
         try:
             import yfinance as yf
+            import logging as _logging
             import pandas as pd
             from contrarian_alpha.engine import _compute_price_metrics
 
-            df = yf.Ticker(ticker).history(period=period, auto_adjust=True)
+            _yf_log = _logging.getLogger("yfinance")
+            _prev = _yf_log.level
+            _yf_log.setLevel(_logging.CRITICAL)
+            try:
+                df = yf.Ticker(ticker).history(period=period, auto_adjust=True, progress=False)
+            finally:
+                _yf_log.setLevel(_prev)
             if df is None or df.empty:
+                mark_delisted(ticker)
                 return {}
             df.index  = df.index.tz_localize(None) if hasattr(df.index, "tz") and df.index.tz else df.index
             df.columns = [c.capitalize() for c in df.columns]
             return _compute_price_metrics(df)
         except Exception as e:
+            mark_delisted(ticker)
             logger.debug("cached_price_metrics failed for %s: %s", ticker, e)
             return {}
 
@@ -227,20 +253,31 @@ except ImportError:
         return result
 
     def cached_price_metrics(ticker: str, period: str = "1y") -> dict:
+        if is_delisted(ticker):
+            return {}
         cached = get_price(f"price:{ticker}")
         if cached is not None:
             return cached
         try:
             import yfinance as yf
+            import logging as _logging
             from contrarian_alpha.engine import _compute_price_metrics
-            df = yf.Ticker(ticker).history(period=period, auto_adjust=True)
+            _yf_log = _logging.getLogger("yfinance")
+            _prev = _yf_log.level
+            _yf_log.setLevel(_logging.CRITICAL)
+            try:
+                df = yf.Ticker(ticker).history(period=period, auto_adjust=True, progress=False)
+            finally:
+                _yf_log.setLevel(_prev)
             if df is None or df.empty:
+                mark_delisted(ticker)
                 return {}
             df.columns = [c.capitalize() for c in df.columns]
             result = _compute_price_metrics(df)
             set_price(f"price:{ticker}", result)
             return result
         except Exception:
+            mark_delisted(ticker)
             return {}
 
 

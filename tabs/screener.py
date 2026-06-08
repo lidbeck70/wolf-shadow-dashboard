@@ -62,7 +62,7 @@ def tab_screener():
 
     with col4:
         st.markdown("<br>", unsafe_allow_html=True)
-        run_btn = st.button("⚡ SCAN", key="screener_run", use_container_width=True)
+        run_btn = st.button("⚡ SCAN", key="screener_run", width='stretch')
 
     try:
         if _TICKER_UNIVERSE_AVAILABLE and _TU_REGIONS:
@@ -340,7 +340,7 @@ def tab_screener():
 
         st.dataframe(
             styled_df,
-            use_container_width=True,
+            width='stretch',
             hide_index=True,
             height=min(600, 40 + len(df_display) * 35),
             column_config={
@@ -392,7 +392,7 @@ def tab_screener():
                         ("letter-spacing", "2px"),
                     ]
                 }]),
-                use_container_width=True,
+                width='stretch',
                 hide_index=True,
             )
     else:
@@ -448,9 +448,9 @@ def _render_ovtlyr_screener_ui():
 
         col_scan, col_test = st.columns(2)
         with col_scan:
-            scan_clicked = st.button("↻  SCAN", key="ovtlyr_scan", use_container_width=True)
+            scan_clicked = st.button("↻  SCAN", key="ovtlyr_scan", width='stretch')
         with col_test:
-            test_clicked = st.button("⚡ TEST TOP N", key="ovtlyr_test_topn", use_container_width=True)
+            test_clicked = st.button("⚡ TEST TOP N", key="ovtlyr_test_topn", width='stretch')
 
         if scan_clicked or test_clicked:
             if not _OVTLYR_SCREENER_AVAILABLE:
@@ -498,7 +498,7 @@ def _render_ovtlyr_screener_ui():
             styled = results.style
             _map = styled.map if hasattr(styled, "map") else styled.applymap
             styled = _map(_signal_color, subset=["Signal"])
-            st.dataframe(styled, use_container_width=True, hide_index=True,
+            st.dataframe(styled, width='stretch', hide_index=True,
                          height=min(600, 38 + 35 * len(results)))
 
             if test_clicked:
@@ -511,7 +511,7 @@ def _render_ovtlyr_screener_ui():
 
         elif "ovtlyr_results" in st.session_state:
             results = st.session_state["ovtlyr_results"]
-            st.dataframe(results, use_container_width=True, hide_index=True,
+            st.dataframe(results, width='stretch', hide_index=True,
                          height=min(600, 38 + 35 * len(results)))
     except Exception as e:
         st.error(f"Viking Screener error: {e}")

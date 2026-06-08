@@ -319,7 +319,7 @@ def render_market_cycle_page() -> None:
                                     "6mo": "6 Months", "1y": "1 Year", "2y": "2 Years"}[x],
         )
     with ctrl_c3:
-        run = st.button("Analyse", use_container_width=True, key="mc_run")
+        run = st.button("Analyse", width='stretch', key="mc_run")
 
     if not ticker:
         st.info("Enter a ticker symbol to begin.")
@@ -350,7 +350,7 @@ def render_market_cycle_page() -> None:
     with gauge_col:
         st.plotly_chart(
             _build_gauge(phase, confidence),
-            use_container_width=True,
+            width='stretch',
             config={"displayModeBar": False},
         )
 
@@ -402,7 +402,7 @@ def render_market_cycle_page() -> None:
     section_title("Phase Scores (all 14 phases)", "📊")
     st.plotly_chart(
         _build_score_chart(phase_scores),
-        use_container_width=True,
+        width='stretch',
         config={"displayModeBar": False},
     )
 
@@ -425,7 +425,7 @@ def render_market_cycle_page() -> None:
         if timeline_fig:
             st.plotly_chart(
                 timeline_fig,
-                use_container_width=True,
+                width='stretch',
                 config={"displayModeBar": False},
             )
     else:

@@ -64,7 +64,7 @@ def _render_sl_tp_calculator(strategy: str = "swing"):
     with c3:
         risk_pct = st.number_input("Risk %", value=5.0, min_value=0.5, max_value=10.0, step=0.5, key=f"sltp_risk_{strategy}")
 
-    if st.button("BERÄKNA", key=f"sltp_calc_{strategy}", use_container_width=True):
+    if st.button("BERÄKNA", key=f"sltp_calc_{strategy}", width='stretch'):
         try:
             _ticker_clean = calc_ticker.strip()
             df = bd.get_price_history(_ticker_clean, period="3m")
@@ -203,7 +203,7 @@ def tab_backtest():
             help="Select parameter preset or Auto-detect based on ticker",
         )
 
-    run_btn = st.button("▶ RUN BACKTEST", key="bt_run", use_container_width=False)
+    run_btn = st.button("▶ RUN BACKTEST", key="bt_run", width='content')
     st.markdown("---")
 
     if run_btn:
@@ -615,14 +615,14 @@ def tab_backtest():
 
         section_title("Equity & Drawdown")
         st.plotly_chart(build_equity_chart(eq_df, ticker_input),
-                        use_container_width=True, config={"displayModeBar": False})
+                        width='stretch', config={"displayModeBar": False})
         st.plotly_chart(build_drawdown_chart(dd_ser),
-                        use_container_width=True, config={"displayModeBar": False})
+                        width='stretch', config={"displayModeBar": False})
 
         section_title("Monthly Returns")
         if len(returns) > 20:
             st.plotly_chart(build_monthly_heatmap(returns, eq_df),
-                            use_container_width=True, config={"displayModeBar": False})
+                            width='stretch', config={"displayModeBar": False})
         else:
             st.info("Insufficient data for monthly heatmap.")
 
@@ -655,7 +655,7 @@ def tab_backtest():
 
         st.dataframe(
             criteria_df.style.apply(color_criteria, axis=1),
-            use_container_width=True,
+            width='stretch',
             hide_index=True,
             height=280,
         )
@@ -690,7 +690,7 @@ def tab_backtest():
                     "font-family": "Courier New, monospace",
                     "font-size": "11px",
                 }),
-                use_container_width=True,
+                width='stretch',
                 hide_index=True,
                 height=350,
             )
@@ -779,7 +779,7 @@ def tab_backtest():
                 if _comps_all:
                     with st.expander("Component breakdown", expanded=False):
                         _comp_rows = [{"Component": k, "Score": round(v, 1)} for k, v in _comps_all.items()]
-                        st.dataframe(pd.DataFrame(_comp_rows), hide_index=True, use_container_width=True)
+                        st.dataframe(pd.DataFrame(_comp_rows), hide_index=True, width='stretch')
 
         except Exception:
             pass  # sentiment display is optional — never break backtest
@@ -827,7 +827,7 @@ def _render_ovtlyr_backtest_ui():
     with col2:
         years = st.selectbox("Period", [1, 2, 3, 5], index=2, key="ovtlyr_bt_years")
 
-    run_bt = st.button("▶  RUN BACKTEST", key="ovtlyr_bt_run", use_container_width=True)
+    run_bt = st.button("▶  RUN BACKTEST", key="ovtlyr_bt_run", width='stretch')
 
     if run_bt or auto_run:
         if not _BACKTEST_ENGINE_AVAILABLE:
@@ -864,7 +864,7 @@ def _render_ovtlyr_backtest_ui():
         for col in ["Total Return %", "CAGR %", "Max DD %", "Avg Return %"]:
             if col in summary.columns:
                 styled = _map(_ret_color, subset=[col])
-        st.dataframe(styled, use_container_width=True, hide_index=True)
+        st.dataframe(styled, width='stretch', hide_index=True)
 
         with st.expander("Individual Trades", expanded=False):
             for ticker in tickers[:5]:
@@ -872,7 +872,7 @@ def _render_ovtlyr_backtest_ui():
                 trades = bt.get("trades", [])
                 if trades:
                     st.markdown(f"**{ticker}** — {len(trades)} trades")
-                    st.dataframe(pd.DataFrame(trades), use_container_width=True, hide_index=True)
+                    st.dataframe(pd.DataFrame(trades), width='stretch', hide_index=True)
 
 
 def tab_backtest_consolidated():

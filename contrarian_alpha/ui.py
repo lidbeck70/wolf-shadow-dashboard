@@ -338,7 +338,7 @@ def _render_control_panel() -> tuple[dict, bool]:
 
     with c4:
         st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-        run_now = st.button("🔍 Kör scan", type="primary", use_container_width=True,
+        run_now = st.button("🔍 Kör scan", type="primary", width='stretch',
                             key="ca_run_btn")
 
     # Tidpunkt och stats
@@ -464,7 +464,7 @@ def _get_or_run_pipeline(config_kwargs: dict, run_now: bool):
 
     ts = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     st.session_state["ca_last_run_ts"] = ts
-    st.session_state["ca_last_stats"] = {
+    _stats = {
         "Universum":   result.universe_count,
         "Necessity ✓": result.necessity_passed,
         "Hate ✓":      result.hate_passed,
@@ -472,6 +472,9 @@ def _get_or_run_pipeline(config_kwargs: dict, run_now: bool):
         "Rankade":     result.composite_ranked,
         "Tid":         f"{result.run_duration_s:.1f}s",
     }
+    if getattr(result, "delisted_skipped", 0) > 0:
+        _stats["Delistade skip"] = result.delisted_skipped
+    st.session_state["ca_last_stats"] = _stats
 
     # Persist to Gist (non-blocking best-effort)
     try:
@@ -721,7 +724,7 @@ def _render_breakdown_chart(r) -> None:
         yaxis=dict(tickfont=dict(size=11), autorange="reversed"),
     )
 
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(fig, width='stretch', config={"displayModeBar": False})
 
     # Gate-sammanfattning under diagrammet
     if r.strength_result:

@@ -186,6 +186,7 @@ class PipelineResult:
     composite_ranked: int
     run_duration_s:   float
     config:           PipelineConfig
+    delisted_skipped: int = 0
 
     @property
     def pass_rates(self) -> dict[str, str]:
@@ -343,14 +344,31 @@ def _fetch_price_df(ticker: str, ins_id: int | None, api) -> object:
     # yfinance fallback
     if df is None:
         try:
-            import yfinance as yf
-            raw = yf.Ticker(ticker).history(period="1y", auto_adjust=True)
-            if raw is not None and not raw.empty:
-                raw.index  = raw.index.tz_localize(None) if hasattr(raw.index, "tz") and raw.index.tz else raw.index
-                raw.columns = [c.capitalize() for c in raw.columns]
-                df = raw
-        except Exception as e:
-            logger.debug("yfinance price failed for %s: %s", ticker, e)
+            from contrarian_alpha.cache import is_delisted, mark_delisted
+        except Exception:
+            is_delisted = lambda t: False
+            mark_delisted = lambda t: None
+
+        if not is_delisted(ticker):
+            try:
+                import yfinance as yf
+                import logging as _std_logging
+                _yf_log = _std_logging.getLogger("yfinance")
+                _prev_level = _yf_log.level
+                _yf_log.setLevel(_std_logging.CRITICAL)
+                try:
+                    raw = yf.Ticker(ticker).history(period="1y", auto_adjust=True, progress=False)
+                finally:
+                    _yf_log.setLevel(_prev_level)
+                if raw is not None and not raw.empty:
+                    raw.index  = raw.index.tz_localize(None) if hasattr(raw.index, "tz") and raw.index.tz else raw.index
+                    raw.columns = [c.capitalize() for c in raw.columns]
+                    df = raw
+                else:
+                    mark_delisted(ticker)
+            except Exception as e:
+                mark_delisted(ticker)
+                logger.debug("yfinance price failed for %s: %s", ticker, e)
 
     result = df if df is not None else pd.DataFrame()
     if set_price is not None and _cache_key and not result.empty:
@@ -804,6 +822,18 @@ def run_pipeline(config: PipelineConfig | None = None) -> PipelineResult:
             fund_snapshots[None] = {}
 
     # ── Per-ticker: fetch price data in parallel ───────────────────────────────
+    try:
+        from contrarian_alpha.cache import is_delisted as _is_delisted, delisted_count as _delisted_count
+        _universe_tickers = frozenset(u["ticker"] for u in universe)
+        _pre_run_in_universe = sum(1 for t in _universe_tickers if _is_delisted(t))
+        _pre_run_total = _delisted_count()
+    except Exception:
+        _is_delisted = lambda t: False
+        _delisted_count = lambda: 0
+        _universe_tickers = frozenset()
+        _pre_run_in_universe = 0
+        _pre_run_total = 0
+
     def _fetch_price_task(u: dict):
         return u["ticker"], u["ins_id"], _fetch_price_df(u["ticker"], u["ins_id"], api)
 
@@ -818,6 +848,8 @@ def run_pipeline(config: PipelineConfig | None = None) -> PipelineResult:
                 u = futures[fut]
                 logger.debug("Price fetch failed for %s: %s", u["ticker"], e)
                 price_data[u["ticker"]] = None
+
+    delisted_skipped = _pre_run_in_universe + (_delisted_count() - _pre_run_total)
 
     # ── Pipeline: run per ticker ───────────────────────────────────────────────
     passing:   list[ContrairianAlphaResult] = []
@@ -900,6 +932,7 @@ def run_pipeline(config: PipelineConfig | None = None) -> PipelineResult:
         composite_ranked = len(passing),
         run_duration_s   = duration,
         config           = config,
+        delisted_skipped = delisted_skipped,
     )
 
 

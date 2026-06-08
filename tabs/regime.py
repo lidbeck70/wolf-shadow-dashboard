@@ -24,7 +24,7 @@ def tab_regime():
         watch_sector = etf_from_display(watch_sector_display)
     with ctrl3:
         st.markdown("<br>", unsafe_allow_html=True)
-        refresh_btn = st.button("🔄 REFRESH REGIME", key="reg_refresh", use_container_width=True)
+        refresh_btn = st.button("🔄 REFRESH REGIME", key="reg_refresh", width='stretch')
 
     _BENCHMARK_OPTIONS = {
         "SPY — S&P 500": "SPY",
@@ -382,13 +382,13 @@ def tab_regime():
     with gauge_col:
         g1, g2, g3, g4 = st.columns(4)
         g1.plotly_chart(build_gauge(data["mkt_score"],  30, "MARKET (SPY)", color_cyan=True),
-                        use_container_width=True, config={"displayModeBar": False})
+                        width='stretch', config={"displayModeBar": False})
         g2.plotly_chart(build_gauge(data["sec_score"],  30, f"SECTOR ({watch_sector})", color_cyan=False),
-                        use_container_width=True, config={"displayModeBar": False})
+                        width='stretch', config={"displayModeBar": False})
         g3.plotly_chart(build_gauge(data["stk_score"],  50, f"STOCK ({watch_ticker})", color_cyan=True),
-                        use_container_width=True, config={"displayModeBar": False})
+                        width='stretch', config={"displayModeBar": False})
         g4.plotly_chart(build_gauge(data["ichi_score"], 15, "ICHIMOKU", color_cyan=False),
-                        use_container_width=True, config={"displayModeBar": False})
+                        width='stretch', config={"displayModeBar": False})
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -476,7 +476,7 @@ def tab_regime():
 
     st.dataframe(
         display_df.style.apply(color_bd, axis=1),
-        use_container_width=True,
+        width='stretch',
         hide_index=True,
         height=230,
     )

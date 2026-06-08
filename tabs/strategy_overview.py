@@ -273,7 +273,7 @@ def _render_strategy_card(display_name: str, strat: dict) -> None:
             if st.button(
                 "📡 Screener",
                 key=f"ov_screener_{key}",
-                use_container_width=True,
+                width='stretch',
                 help="Open this strategy in the Screener tab",
             ):
                 st.session_state["overview_goto_tab"]     = "screener"
@@ -284,7 +284,7 @@ def _render_strategy_card(display_name: str, strat: dict) -> None:
             if st.button(
                 "📊 Backtest",
                 key=f"ov_backtest_{key}",
-                use_container_width=True,
+                width='stretch',
                 help="Open this strategy in the Backtest tab",
             ):
                 st.session_state["overview_goto_tab"]     = "backtest"
@@ -294,7 +294,7 @@ def _render_strategy_card(display_name: str, strat: dict) -> None:
         if st.button(
             "🔔 Alert Settings",
             key=f"ov_alerts_{key}",
-            use_container_width=True,
+            width='stretch',
             help="Open this strategy's alert configuration",
         ):
             st.session_state["overview_goto_tab"]     = "alerts"

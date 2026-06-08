@@ -152,7 +152,7 @@ def render_retail_sentiment_page() -> None:
 
     comp_df = pd.DataFrame(rows)
     styled = _style_composite_df(comp_df)
-    st.dataframe(styled, use_container_width=True, hide_index=True, height=450)
+    st.dataframe(styled, width='stretch', hide_index=True, height=450)
 
     # ── Section 2: REDDIT TRENDING ──────────────────────────────────────
     _section_header("REDDIT — MEST NAEMNDA AKTIER (24h)", BRONZE)
@@ -182,7 +182,7 @@ def render_retail_sentiment_page() -> None:
             reddit_df = reddit_df.rename(columns={k: v for k, v in rename_map.items() if k in reddit_df.columns})
             if "rank_24h_ago" in reddit_df.columns:
                 reddit_df = reddit_df.drop(columns=["rank_24h_ago"])
-            st.dataframe(reddit_df, use_container_width=True, hide_index=True)
+            st.dataframe(reddit_df, width='stretch', hide_index=True)
         else:
             st.info("Kunde inte hamta Reddit-data just nu.")
     else:
@@ -216,7 +216,7 @@ def render_retail_sentiment_page() -> None:
         )
         if gainers:
             gdf = pd.DataFrame(gainers[:10])
-            st.dataframe(gdf, use_container_width=True, hide_index=True)
+            st.dataframe(gdf, width='stretch', hide_index=True)
         else:
             st.caption("Ingen data")
 
@@ -228,7 +228,7 @@ def render_retail_sentiment_page() -> None:
         )
         if losers:
             ldf = pd.DataFrame(losers[:10])
-            st.dataframe(ldf, use_container_width=True, hide_index=True)
+            st.dataframe(ldf, width='stretch', hide_index=True)
         else:
             st.caption("Ingen data")
 
@@ -251,7 +251,7 @@ def render_retail_sentiment_page() -> None:
     if anomalies:
         anomalies.sort(key=lambda x: x["Vol Ratio"], reverse=True)
         adf = pd.DataFrame(anomalies)
-        st.dataframe(adf, use_container_width=True, hide_index=True)
+        st.dataframe(adf, width='stretch', hide_index=True)
     else:
         st.caption("Inga volymanomolier detekterade (volym ratio > 2.0x)")
 
@@ -330,7 +330,7 @@ def render_retail_sentiment_page() -> None:
         return f"color: {RED}; font-weight: 700"
 
     styled_status = status_df.style.map(_color_status, subset=["Status"])
-    st.dataframe(styled_status, use_container_width=True, hide_index=True)
+    st.dataframe(styled_status, width='stretch', hide_index=True)
 
     # ── Section 7: HISTORY ──────────────────────────────────────────────
     _section_header("COMPOSITE SCORE HISTORY", BRONZE)
@@ -381,7 +381,7 @@ def render_retail_sentiment_page() -> None:
                     legend=dict(font=dict(color=TEXT, size=10)),
                     height=350,
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
             else:
                 st.caption("Historikdata saknar ratt kolumner.")
         except ImportError:

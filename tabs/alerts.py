@@ -239,7 +239,7 @@ def _render_test_alert(send_fn) -> None:
     send_btn = st.button(
         "▶ SEND TEST ALERT",
         key="al_send_test",
-        use_container_width=True,
+        width='stretch',
     )
 
     if send_btn:

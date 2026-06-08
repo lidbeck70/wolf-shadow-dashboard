@@ -185,7 +185,7 @@ def render_blindspot_page() -> None:
     if "Confidence" in df.columns:
         styler = styler.map(_color_confidence, subset=["Confidence"])
 
-    st.dataframe(styler, use_container_width=True, hide_index=True, height=500)
+    st.dataframe(styler, width='stretch', hide_index=True, height=500)
 
     # ── Section 3: SECTOR VIEW ────────────────────────────────────────
     _section_header("SECTOR BREAKDOWN", BRONZE)
@@ -212,7 +212,7 @@ def render_blindspot_page() -> None:
         sector_df = pd.DataFrame(sector_rows)
         fmt_s = {"Avg Opportunity": "{:.1f}", "Best": "{:.1f}"}
         styler_s = sector_df.style.format(fmt_s, na_rep="-").map(_color_opportunity, subset=["Avg Opportunity", "Best"])
-        st.dataframe(styler_s, use_container_width=True, hide_index=True)
+        st.dataframe(styler_s, width='stretch', hide_index=True)
 
     # ── Section 4: VALUE TRAP WARNINGS ────────────────────────────────
     _section_header("VALUE TRAP WARNINGS", RED)
@@ -231,7 +231,7 @@ def render_blindspot_page() -> None:
                 "Perf 12m %": round(r.perf_12m, 1),
             })
         trap_df = pd.DataFrame(trap_rows)
-        st.dataframe(trap_df, use_container_width=True, hide_index=True)
+        st.dataframe(trap_df, width='stretch', hide_index=True)
         st.caption("High hat score but zero catalyst — potential value traps. Hated for a reason?")
     else:
         st.caption("No value trap warnings detected.")
@@ -254,7 +254,7 @@ def render_blindspot_page() -> None:
                 "Vol Surge": r.catalyst_breakdown.get("vol_surge", 0) > 0,
             })
         rev_df = pd.DataFrame(rev_rows)
-        st.dataframe(rev_df, use_container_width=True, hide_index=True)
+        st.dataframe(rev_df, width='stretch', hide_index=True)
         st.caption("Hated stocks showing early signs of turnaround.")
     else:
         st.caption("No potential reversals detected.")
@@ -299,7 +299,7 @@ def render_blindspot_page() -> None:
         return f"color: {RED}; font-weight: 700"
 
     styled_conf = conf_df.style.map(_color_status, subset=["Status"])
-    st.dataframe(styled_conf, use_container_width=True, hide_index=True)
+    st.dataframe(styled_conf, width='stretch', hide_index=True)
 
     # ── Section 7: HISTORY ────────────────────────────────────────────
     _section_header("OPPORTUNITY SCORE HISTORY", BRONZE)
@@ -347,7 +347,7 @@ def render_blindspot_page() -> None:
                     legend=dict(font=dict(color=TEXT, size=10)),
                     height=350,
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
             else:
                 st.caption("Historikdata saknar ratt kolumner.")
         except ImportError:

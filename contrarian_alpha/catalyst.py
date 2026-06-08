@@ -311,8 +311,22 @@ def get_viking_regime(
             _rkey = None
 
         try:
+            from contrarian_alpha.cache import is_delisted
+            if is_delisted(ticker):
+                return False, "unknown", None
+        except Exception:
+            pass
+
+        try:
             import yfinance as yf
-            df_fetched = yf.Ticker(ticker).history(period="1y", auto_adjust=True)
+            import logging as _logging
+            _yf_log = _logging.getLogger("yfinance")
+            _prev = _yf_log.level
+            _yf_log.setLevel(_logging.CRITICAL)
+            try:
+                df_fetched = yf.Ticker(ticker).history(period="1y", auto_adjust=True, progress=False)
+            finally:
+                _yf_log.setLevel(_prev)
             if df_fetched is not None and not df_fetched.empty:
                 df_fetched.columns = [c.capitalize() for c in df_fetched.columns]
                 color = compute_regime_color(df_fetched)

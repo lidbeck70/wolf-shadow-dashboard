@@ -30,6 +30,9 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+# KPIs that have returned 400 Bad Request — log once, then stay silent
+_KPI_ERROR_LOGGED: set[str] = set()
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -755,7 +758,12 @@ class BorsdataAPI:
                 else:
                     snapshot[key] = None
             except Exception as exc:
-                logger.debug("KPI %s (id=%d) failed for ins %d: %s", key, kpi_id, ins_id, exc)
+                if key not in _KPI_ERROR_LOGGED:
+                    logger.warning(
+                        "KPI %s (id=%d) failed — skipping for this session: %s",
+                        key, kpi_id, exc,
+                    )
+                    _KPI_ERROR_LOGGED.add(key)
                 snapshot[key] = None
 
         return snapshot
@@ -819,7 +827,12 @@ class BorsdataAPI:
                         else:
                             snapshots[iid][key] = None
             except Exception as exc:
-                logger.warning("Screener KPI %s failed: %s", key, exc)
+                if key not in _KPI_ERROR_LOGGED:
+                    logger.warning(
+                        "Screener KPI %s (id=%d) failed — skipping for this session: %s",
+                        key, kpi_id, exc,
+                    )
+                    _KPI_ERROR_LOGGED.add(key)
                 for iid in ins_ids:
                     snapshots[iid].setdefault(key, None)
 
