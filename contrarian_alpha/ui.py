@@ -472,8 +472,8 @@ def _get_or_run_pipeline(config_kwargs: dict, run_now: bool):
         "Rankade":     result.composite_ranked,
         "Tid":         f"{result.run_duration_s:.1f}s",
     }
-    if getattr(result, "delisted_skipped", 0) > 0:
-        _stats["Delistade skip"] = result.delisted_skipped
+    if getattr(result, "delisted_count", 0) > 0:
+        _stats["Delistade skip"] = result.delisted_count
     st.session_state["ca_last_stats"] = _stats
 
     # Persist to Gist (non-blocking best-effort)

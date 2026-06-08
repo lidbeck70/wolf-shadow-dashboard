@@ -186,7 +186,7 @@ class PipelineResult:
     composite_ranked: int
     run_duration_s:   float
     config:           PipelineConfig
-    delisted_skipped: int = 0
+    delisted_count:   int = 0  # tickers skipped because yfinance returned no price data
 
     @property
     def pass_rates(self) -> dict[str, str]:
@@ -932,7 +932,7 @@ def run_pipeline(config: PipelineConfig | None = None) -> PipelineResult:
         composite_ranked = len(passing),
         run_duration_s   = duration,
         config           = config,
-        delisted_skipped = delisted_skipped,
+        delisted_count   = delisted_skipped,
     )
 
 

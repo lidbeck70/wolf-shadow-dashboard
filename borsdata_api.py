@@ -302,6 +302,16 @@ class BorsdataAPI:
                     self._limiter.acquire()
                     continue
 
+                if resp.status_code == 400:
+                    if path not in _KPI_ERROR_LOGGED:
+                        _KPI_ERROR_LOGGED.add(path)
+                        logger.warning(
+                            "Börsdata 400 Bad Request for %s — endpoint likely not in licence (suppressing future warnings)",
+                            path,
+                        )
+                    self._cache.set(cache_key, {})
+                    return {}
+
                 if resp.status_code >= 500:
                     wait = 2 ** attempt
                     logger.warning("%d server error, retry in %d s", resp.status_code, wait)
