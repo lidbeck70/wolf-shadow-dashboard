@@ -1,0 +1,39 @@
+Du arbetar i projektet wolf-shadow-dashboard — en Streamlit-baserad trading-panel för Nordic Alpha Systems.
+
+Börja med att läsa wolf_panel.py och tabs/home.py för att förstå flik-arkitekturen. Läs sedan ui/theme.py för att förstå branding och stilmönster.
+
+Bygg en komplett Market Cycle Engine baserad på den klassiska psykologicykeln med 14 faser.
+
+STEG 1: Skapa mappen market_cycle/ med följande filer:
+
+market_cycle/__init__.py — tom init
+
+market_cycle/indicators.py — funktion compute_indicators(ticker, period) som hämtar OHLCV via yfinance och returnerar dict med: ma50, ma200, rsi, macd, macd_signal, atr, volume_avg20, price_vs_ma50, price_vs_ma200, volume_vs_avg20, momentum_30, momentum_60, momentum_90, drawdown_90. Hantera edge cases: färre än 200 candles, NaN, saknad volym, tom input.
+
+market_cycle/rules.py — MARKET_CYCLE_RULES som Python-dict med 14 faser: DISBELIEF, HOPE, OPTIMISM, BELIEF, THRILL, EUPHORIA, COMPLACENCY, ANXIETY, DENIAL, PANIC, CAPITULATION, ANGER, DEPRESSION, DISBELIEF_NEW. Varje fas har: conditions (list of dicts med field/op/value), weight (float), description (str), emoji (str), color (hex-sträng). Gör reglerna realistiska och distinktiva per fas.
+
+market_cycle/engine.py — funktion detect_market_cycle(indicators: dict) som utvärderar alla faser mot indikatorerna och returnerar: phase (str), confidence (float 0-100), phase_scores (dict med score per fas), matched_rules (dict med matched och unmatched per regel för vinnande fas).
+
+market_cycle/cache.py — cached_market_cycle_analysis(ticker, period) med @st.cache_data TTL=3600 som anropar indicators.py och engine.py.
+
+STEG 2: Skapa tabs/market_cycle.py med Streamlit UI:
+- Använd inject_css() och section_title() från ui/theme.py
+- Bakgrundsfärg #0c0c12, accent #c9a84c (guld), kort-bakgrund #14141e
+- Ticker-input och timeframe-väljare (1mo/3mo/6mo/1y/2y)
+- Stor Plotly gauge-visualisering av aktuell fas med fasens färg och emoji
+- Confidence-indikator via st.metric eller st.progress
+- Tabell med alla 14 fasers scores sorterade fallande
+- Matched/unmatched rules-breakdown för vinnande fas
+- Historisk tidslinje: kör rullande fönster på 90 datapunkter och visa fas över tid som Plotly-linjegraf
+
+STEG 3: Integrera i wolf_panel.py:
+- Importera render_market_cycle_page från tabs/market_cycle
+- Lägg till "🔄 MARKET CYCLE" som ny flik i tab-listan
+- Följ exakt samma mönster som övriga flikar i filen
+
+STEG 4: Kontrollera requirements.txt — lägg till plotly om det saknas.
+
+STEG 5: När allt är klart, kör:
+git add .
+git commit -m "Add Market Cycle Engine with 14-phase psychology cycle"
+git push origin main
