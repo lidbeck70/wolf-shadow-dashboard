@@ -39,8 +39,8 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 st.set_page_config(
     layout="wide",
-    page_title="Nordic Alpha Systems",
-    page_icon="🐺",
+    page_title="Nordic Arc Systems",
+    page_icon="🔺",
 )
 
 # PWA / Mobile meta tags for iPad home screen
@@ -50,7 +50,7 @@ st.markdown(
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Nordic Alpha">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-    <meta name="theme-color" content="#0c0c12">
+    <meta name="theme-color" content="#05070A">
     <link rel="apple-touch-icon" href="https://em-content.zobj.net/source/apple/391/wolf_1f43a.png">
     """,
     unsafe_allow_html=True,
@@ -176,7 +176,7 @@ def main():
 
     tab_labels = [
         "  HOME  ",
-        "  SCREENER  ",
+        "  AURORA CONTRARIAN  ",
         "  BACKTEST  ",
         "  CONTRARIAN ALPHA  ",
         "  HOLDINGS  ",
@@ -184,14 +184,14 @@ def main():
         "  WOLF REGIME  ",
         "  ALPHA REGIME  ",
         "  VIKING REGIME  ",
-        "  SECTOR & REGIME  ",
+        "  FLOW DIVERGENCE  ",
         "  SENTIMENT  ",
         "  HEATMAP  ",
         "  RETAIL SENTIMENT  ",
         "  ODIN'S BLINDSPOT  ",
         "  RULES  ",
         "  ALERTS  ",
-        "  STRATEGIES  ",
+        "  ARC MOMENTUM  ",
         "  🔄 MARKET CYCLE  ",
     ]
     (tab_home_page, tab1, tab2, tab_contrarian,

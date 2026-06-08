@@ -1,7 +1,7 @@
 """
 ui/theme.py
 ===========
-Global branding and UI helpers for Nordic Alpha Systems.
+Global branding and UI helpers for Nordic Arc Systems.
 
 This module is the single source of truth for colours, typography, and
 reusable layout primitives.  Import from here instead of ui.css so that
@@ -11,9 +11,9 @@ Public API
 ----------
     PALETTE          — colour dict
     inject_css()     — injects the full CYBERPUNK_CSS stylesheet
-    render_header()  — branded page header (wolf icon + tagline)
+    render_header()  — branded page header (Arc icon + tagline)
     render_footer()  — slim branded footer
-    section_title()  — gold uppercase section label
+    section_title()  — cyan uppercase section label
     card()           — styled content card rendered via st.markdown
 """
 
@@ -35,33 +35,33 @@ from ui.css import inject_css, color_score, color_entry, tab_not_found  # noqa: 
 
 PALETTE: dict = {
     # Backgrounds
-    "bg":           "#0c0c12",
-    "bg2":          "#14141e",
-    "bg3":          "#1a1a28",
-    "surface":      "#10101a",
+    "bg":           "#05070A",
+    "bg2":          "#1A1F25",
+    "bg3":          "#0D1117",
+    "surface":      "#0D1117",
 
-    # Brand gold
-    "gold":         "#c9a84c",
-    "gold_dim":     "#8b7340",
-    "gold_muted":   "rgba(201,168,76,0.40)",
-    "gold_faint":   "rgba(201,168,76,0.12)",
+    # Arc Cyan (replaces gold as primary accent)
+    "gold":         "#00E5FF",
+    "gold_dim":     "#00A8BF",
+    "gold_muted":   "rgba(0,229,255,0.40)",
+    "gold_faint":   "rgba(0,229,255,0.10)",
 
-    # Ice-blue / silver accents
-    "silver":       "#b8c4d0",
-    "ice_blue":     "#a0b4c8",
-    "ice_faint":    "rgba(160,180,200,0.15)",
+    # Aurora Purple (replaces silver)
+    "silver":       "#B400FF",
+    "ice_blue":     "#8A00CC",
+    "ice_faint":    "rgba(180,0,255,0.12)",
 
-    # Semantic
+    # Contrarian Ember
     "green":        "#2d8a4e",
-    "red":          "#c44545",
-    "amber":        "#d4943a",
-    "text":         "#e8e4dc",
-    "text_dim":     "#8a8578",
+    "red":          "#FF6B3D",
+    "amber":        "#FF6B3D",
+    "text":         "#E8EDF2",
+    "text_dim":     "#6B7280",
 
     # Borders
-    "border":       "rgba(201,168,76,0.15)",
-    "border_hi":    "rgba(201,168,76,0.35)",
-    "border_ice":   "rgba(160,180,200,0.20)",
+    "border":       "rgba(0,229,255,0.15)",
+    "border_hi":    "rgba(0,229,255,0.35)",
+    "border_ice":   "rgba(180,0,255,0.20)",
 }
 
 _P = PALETTE  # shorthand used internally
@@ -71,14 +71,7 @@ _P = PALETTE  # shorthand used internally
 # ---------------------------------------------------------------------------
 
 def section_title(text: str, icon: str = "") -> None:
-    """
-    Render a gold uppercase section label with a thin underline.
-
-    Parameters
-    ----------
-    text : Section label text.
-    icon : Optional emoji/character prepended to the text.
-    """
+    """Render a cyan uppercase section label with a thin underline."""
     prefix = f"{icon}&nbsp;&nbsp;" if icon else ""
     st.markdown(
         f'<p style="font-size:11px;letter-spacing:4px;text-transform:uppercase;'
@@ -101,19 +94,7 @@ def card(
     padding: str = "16px 18px",
     margin_bottom: str = "12px",
 ) -> None:
-    """
-    Render an HTML content block styled as a card.
-
-    Parameters
-    ----------
-    content       : Inner HTML string.
-    title         : Optional card title rendered above content in gold.
-    border_color  : Full border colour (defaults to palette border).
-    accent_color  : If set, draws a 3-px left stripe in this colour.
-    bg            : Card background (defaults to palette bg2).
-    padding       : CSS padding.
-    margin_bottom : Space below the card.
-    """
+    """Render an HTML content block styled as a card."""
     _bc = border_color or _P["border"]
     _bg = bg or _P["bg2"]
     _left = (
@@ -134,6 +115,19 @@ def card(
 
 
 # ---------------------------------------------------------------------------
+# SVG icon — triangle with eye (Arc Cyan)
+# ---------------------------------------------------------------------------
+
+_SVG_ICON = (
+    '<svg width="48" height="48" viewBox="0 0 48 48" fill="none" '
+    'xmlns="http://www.w3.org/2000/svg">'
+    '<polygon points="24,4 44,44 4,44" fill="none" stroke="#00E5FF" stroke-width="2"/>'
+    '<ellipse cx="24" cy="32" rx="6" ry="4" fill="none" stroke="#00E5FF" stroke-width="1.5"/>'
+    '<circle cx="24" cy="32" r="2" fill="#00E5FF"/>'
+    '</svg>'
+)
+
+# ---------------------------------------------------------------------------
 # render_header — full branded page header
 # ---------------------------------------------------------------------------
 
@@ -143,7 +137,7 @@ _HEADER_CSS = f"""
     background: linear-gradient(
         135deg,
         {_P["surface"]}  0%,
-        #121020          50%,
+        #080D14          50%,
         {_P["surface"]}  100%
     );
     border: 1px solid {_P["border"]};
@@ -160,10 +154,10 @@ _HEADER_CSS = f"""
     inset: 0;
     background:
         repeating-linear-gradient(
-            90deg, transparent, transparent 39px, rgba(201,168,76,0.025) 40px
+            90deg, transparent, transparent 39px, rgba(0,229,255,0.025) 40px
         ),
         repeating-linear-gradient(
-            0deg,  transparent, transparent 39px, rgba(201,168,76,0.025) 40px
+            0deg,  transparent, transparent 39px, rgba(0,229,255,0.025) 40px
         );
     pointer-events: none;
 }}
@@ -184,31 +178,32 @@ _HEADER_CSS = f"""
 .nas-wolf {{
     font-size: 2.4rem;
     line-height: 1;
-    filter: drop-shadow(0 0 8px rgba(201,168,76,0.5));
+    filter: drop-shadow(0 0 8px rgba(0,229,255,0.5));
 }}
 .nas-wordmark {{
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 4px;
 }}
 .nas-title {{
-    font-family: 'Courier New', monospace;
+    font-family: 'Space Grotesk', 'Courier New', monospace;
     font-size: 1.5rem;
     font-weight: 900;
     letter-spacing: 0.25em;
     text-transform: uppercase;
-    background: linear-gradient(90deg, {_P["gold"]}, {_P["gold_dim"]});
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: {_P["text"]};
     line-height: 1.1;
 }}
+.nas-arc-accent {{
+    color: {_P["gold"]};
+    text-shadow: 0 0 12px rgba(0,229,255,0.6);
+}}
 .nas-tagline {{
-    font-family: 'Courier New', monospace;
-    font-size: 0.65rem;
-    letter-spacing: 0.35em;
-    text-transform: uppercase;
-    color: {_P["gold_muted"]};
+    font-family: 'Inter Tight', 'Courier New', monospace;
+    font-size: 0.78rem;
+    letter-spacing: 0.05em;
+    color: {_P["text_dim"]};
+    font-style: italic;
 }}
 .nas-badges {{
     margin-left: auto;
@@ -220,7 +215,7 @@ _HEADER_CSS = f"""
     z-index: 1;
 }}
 .nas-badge {{
-    font-family: 'Courier New', monospace;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
     font-size: 0.6rem;
     letter-spacing: 0.15em;
     padding: 2px 10px;
@@ -239,9 +234,8 @@ def render_header() -> None:
     Render the branded page header.
 
     Shows the banner image from assets/banner.jpg when present;
-    falls back to the HTML wolf-icon header with tagline.
+    falls back to the SVG triangle+eye header with tagline.
     """
-    # Try banner image first (existing behaviour)
     try:
         _banner_path = os.path.join(
             os.path.dirname(os.path.dirname(__file__)), "assets", "banner.jpg"
@@ -260,15 +254,17 @@ def render_header() -> None:
     except Exception:
         pass
 
-    # HTML wolf header fallback
+    # SVG triangle+eye fallback header
     st.markdown(_HEADER_CSS, unsafe_allow_html=True)
     st.markdown(
         '<div class="nas-header">'
         '  <div class="nas-brand">'
-        '    <div class="nas-wolf">🐺</div>'
+        f'    <div class="nas-wolf">{_SVG_ICON}</div>'
         '    <div class="nas-wordmark">'
-        '      <div class="nas-title">Nordic Alpha Systems</div>'
-        '      <div class="nas-tagline">Born of Wolves, Made for Markets</div>'
+        '      <div class="nas-title">'
+        '        NORDIC <span class="nas-arc-accent">ARC</span> SYSTEMS'
+        '      </div>'
+        "      <div class=\"nas-tagline\"><em>See What the Market Can't.</em></div>"
         '    </div>'
         '    <div class="nas-badges">'
         '      <div class="nas-badge">SWING · POSITION · REGIME</div>'
@@ -293,17 +289,14 @@ _FOOTER_HTML = (
     f'display:flex;justify-content:space-between;align-items:center;'
     f'flex-wrap:wrap;gap:8px;'
     f'">'
-    # Left: wolf + tagline
     f'<div style="display:flex;align-items:center;gap:8px;">'
-    f'  <span style="font-size:1rem;filter:drop-shadow(0 0 4px rgba(201,168,76,0.4));">🐺</span>'
-    f'  <span style="font-family:\'Courier New\',monospace;font-size:0.62rem;'
-    f'  letter-spacing:0.2em;text-transform:uppercase;color:{_P["gold_muted"]};">'
-    f'  Born of Wolves, Made for Markets</span>'
+    f'  <span style="font-family:\'Inter Tight\',sans-serif;font-size:0.72rem;'
+    f'  font-style:italic;color:{_P["text_dim"]};">'
+    f"  See What the Market Can't.</span>"
     f'</div>'
-    # Right: copyright
-    f'<div style="font-family:\'Courier New\',monospace;font-size:0.58rem;'
+    f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:0.58rem;'
     f'letter-spacing:0.1em;color:{_P["text_dim"]};">'
-    f'Nordic Alpha Systems &nbsp;©&nbsp;2025'
+    f'Nordic Arc Systems &nbsp;&copy;&nbsp;2025'
     f'</div>'
     f'</div>'
 )

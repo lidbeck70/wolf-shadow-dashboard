@@ -4,46 +4,57 @@ import streamlit as st
 
 CYBERPUNK_CSS = """
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=Inter+Tight:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap');
+
 /* ── Global Reset ────────────────────────────────────────────── */
 html, body, [class*="css"] {
-    font-family: 'Courier New', Courier, monospace;
+    font-family: 'Inter Tight', sans-serif;
+}
+
+h1, h2, h3,
+.stMarkdown h1, .stMarkdown h2, .stMarkdown h3 {
+    font-family: 'Space Grotesk', sans-serif;
+}
+
+code, pre, .stCode, [class*="monospace"] {
+    font-family: 'JetBrains Mono', monospace;
 }
 
 /* ── Background ──────────────────────────────────────────────── */
 .stApp {
-    background-color: #0c0c12;
+    background-color: #05070A;
     background-image:
-        radial-gradient(ellipse at 20% 20%, rgba(201,168,76, 0.04) 0%, transparent 60%),
-        radial-gradient(ellipse at 80% 80%, rgba(139,115,64, 0.04) 0%, transparent 60%),
+        radial-gradient(ellipse at 15% 40%, rgba(0,229,255,0.04) 0%, transparent 50%),
+        radial-gradient(ellipse at 85% 40%, rgba(180,0,255,0.04) 0%, transparent 50%),
         repeating-linear-gradient(
-            0deg, transparent, transparent 39px, rgba(201,168,76,0.03) 40px
+            0deg, transparent, transparent 39px, rgba(26,31,37,0.8) 40px
         ),
         repeating-linear-gradient(
-            90deg, transparent, transparent 39px, rgba(201,168,76,0.03) 40px
+            90deg, transparent, transparent 39px, rgba(26,31,37,0.8) 40px
         );
 }
 
 /* ── Sidebar ─────────────────────────────────────────────────── */
 [data-testid="stSidebar"] {
-    background-color: #10101a;
-    border-right: 1px solid rgba(201,168,76,0.15);
+    background-color: #0D1117;
+    border-right: 1px solid rgba(0,229,255,0.15);
 }
 
 /* ── Tab styling ─────────────────────────────────────────────── */
 .stTabs [data-baseweb="tab-list"] {
-    background-color: #10101a;
-    border-bottom: 2px solid rgba(201,168,76,0.2);
+    background-color: #0D1117;
+    border-bottom: 2px solid rgba(0,229,255,0.2);
     gap: 4px;
     padding: 0 8px;
 }
 
 .stTabs [data-baseweb="tab"] {
     background-color: transparent;
-    border: 1px solid rgba(201,168,76,0.15);
+    border: 1px solid rgba(0,229,255,0.15);
     border-bottom: none;
     border-radius: 6px 6px 0 0;
-    color: rgba(201,168,76,0.5);
-    font-family: 'Courier New', monospace;
+    color: rgba(0,229,255,0.5);
+    font-family: 'Space Grotesk', sans-serif;
     font-weight: 700;
     font-size: 13px;
     letter-spacing: 2px;
@@ -53,22 +64,22 @@ html, body, [class*="css"] {
 }
 
 .stTabs [aria-selected="true"] {
-    background: linear-gradient(180deg, rgba(201,168,76,0.12) 0%, transparent 100%);
-    border: 1px solid #c9a84c;
+    background: linear-gradient(180deg, rgba(0,229,255,0.12) 0%, transparent 100%);
+    border: 1px solid #00E5FF;
     border-bottom: none;
-    color: #c9a84c;
+    color: #00E5FF;
     text-shadow: 0 1px 2px rgba(0,0,0,0.3);
 }
 
 .stTabs [data-baseweb="tab"]:hover {
-    color: #c9a84c;
-    border-color: rgba(201,168,76,0.4);
+    color: #00E5FF;
+    border-color: rgba(0,229,255,0.4);
 }
 
 /* ── Metric cards ────────────────────────────────────────────── */
 [data-testid="stMetric"] {
-    background: linear-gradient(135deg, rgba(201,168,76,0.06) 0%, rgba(139,115,64,0.03) 100%);
-    border: 1px solid rgba(201,168,76,0.2);
+    background: linear-gradient(135deg, rgba(0,229,255,0.06) 0%, rgba(0,168,191,0.03) 100%);
+    border: 1px solid rgba(0,229,255,0.2);
     border-radius: 8px;
     padding: 16px;
     position: relative;
@@ -80,18 +91,18 @@ html, body, [class*="css"] {
     position: absolute;
     top: 0; left: 0; right: 0;
     height: 2px;
-    background: linear-gradient(90deg, #c9a84c, #8b7340);
+    background: linear-gradient(90deg, #00E5FF, #00A8BF);
 }
 
 [data-testid="stMetricLabel"] {
-    color: rgba(201,168,76,0.6) !important;
+    color: rgba(0,229,255,0.6) !important;
     font-size: 11px !important;
     letter-spacing: 2px !important;
     text-transform: uppercase !important;
 }
 
 [data-testid="stMetricValue"] {
-    color: #c9a84c !important;
+    color: #00E5FF !important;
     font-size: 28px !important;
     font-weight: 700 !important;
     text-shadow: 0 1px 2px rgba(0,0,0,0.3);
@@ -103,11 +114,11 @@ html, body, [class*="css"] {
 
 /* ── Buttons ─────────────────────────────────────────────────── */
 .stButton > button {
-    background: linear-gradient(135deg, rgba(201,168,76,0.15) 0%, rgba(139,115,64,0.1) 100%);
-    border: 1px solid #c9a84c;
+    background: linear-gradient(135deg, rgba(0,229,255,0.15) 0%, rgba(0,168,191,0.1) 100%);
+    border: 1px solid #00E5FF;
     border-radius: 4px;
-    color: #c9a84c;
-    font-family: 'Courier New', monospace;
+    color: #00E5FF;
+    font-family: 'Space Grotesk', sans-serif;
     font-weight: 700;
     font-size: 13px;
     letter-spacing: 3px;
@@ -118,11 +129,9 @@ html, body, [class*="css"] {
 }
 
 .stButton > button:hover {
-    background: linear-gradient(135deg, rgba(201,168,76,0.25) 0%, rgba(139,115,64,0.2) 100%);
-    border-color: #8b7340;
-    color: #8b7340;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    border-color: #00E5FF !important;
+    box-shadow: 0 0 12px rgba(0,229,255,0.4) !important;
+    color: #00E5FF !important;
 }
 
 .stButton > button:active {
@@ -133,64 +142,66 @@ html, body, [class*="css"] {
 .stSelectbox > div > div,
 .stTextInput > div > div > input,
 .stNumberInput > div > div > input {
-    background-color: #14141e !important;
-    border: 1px solid rgba(201,168,76,0.25) !important;
+    background-color: #1A1F25 !important;
+    border: 1px solid rgba(0,229,255,0.25) !important;
     border-radius: 4px !important;
-    color: #c9a84c !important;
-    font-family: 'Courier New', monospace !important;
+    color: #00E5FF !important;
+    font-family: 'JetBrains Mono', monospace !important;
 }
 
 .stSelectbox > div > div:focus,
 .stTextInput > div > div > input:focus {
-    border-color: #c9a84c !important;
+    border-color: #00E5FF !important;
     box-shadow: 0 2px 6px rgba(0,0,0,0.3) !important;
 }
 
 /* ── Slider ──────────────────────────────────────────────────── */
 .stSlider > div > div > div > div {
-    background: linear-gradient(90deg, #c9a84c, #8b7340) !important;
+    background: linear-gradient(90deg, #00E5FF, #00A8BF) !important;
 }
 
 .stSlider [data-baseweb="slider"] [role="slider"] {
-    background-color: #c9a84c !important;
+    background-color: #00E5FF !important;
     box-shadow: 0 2px 6px rgba(0,0,0,0.3) !important;
 }
 
 /* ── DataFrames / tables ─────────────────────────────────────── */
 .stDataFrame {
-    border: 1px solid rgba(201,168,76,0.15) !important;
+    border: 1px solid rgba(180,0,255,0.25) !important;
     border-radius: 6px !important;
+    box-shadow: 0 0 8px rgba(180,0,255,0.1) !important;
 }
 
 /* ── Headers ─────────────────────────────────────────────────── */
 h1, h2, h3 {
-    color: #c9a84c !important;
+    color: #00E5FF !important;
+    font-family: 'Space Grotesk', sans-serif !important;
     text-shadow: 0 1px 2px rgba(0,0,0,0.3);
     letter-spacing: 3px;
 }
 
 /* ── Progress bar ────────────────────────────────────────────── */
 .stProgress > div > div > div > div {
-    background: linear-gradient(90deg, #c9a84c, #8b7340);
+    background: linear-gradient(90deg, #00E5FF, #00A8BF);
 }
 
 /* ── Alerts/info ─────────────────────────────────────────────── */
 .stAlert {
-    background-color: rgba(201,168,76,0.07) !important;
-    border: 1px solid rgba(201,168,76,0.25) !important;
-    color: #c9a84c !important;
+    background-color: rgba(0,229,255,0.07) !important;
+    border: 1px solid rgba(0,229,255,0.25) !important;
+    color: #00E5FF !important;
 }
 
 /* ── Dividers ────────────────────────────────────────────────── */
 hr {
-    border-color: rgba(201,168,76,0.15) !important;
+    border-color: rgba(0,229,255,0.15) !important;
 }
 
 /* ── Custom banner ───────────────────────────────────────────── */
 .wolf-banner {
-    background: linear-gradient(135deg, #10101a 0%, #12101e 50%, #10101a 100%);
-    border: 1px solid rgba(201,168,76,0.2);
-    border-top: 3px solid #c9a84c;
+    background: linear-gradient(135deg, #0D1117 0%, #0D1117 50%, #0D1117 100%);
+    border: 1px solid rgba(0,229,255,0.2);
+    border-top: 3px solid #00E5FF;
     border-radius: 8px;
     padding: 20px 32px;
     margin-bottom: 24px;
@@ -203,7 +214,7 @@ hr {
     position: absolute;
     bottom: 0; left: 0; right: 0;
     height: 1px;
-    background: linear-gradient(90deg, transparent, #8b7340, transparent);
+    background: linear-gradient(90deg, transparent, #00A8BF, transparent);
 }
 
 .wolf-banner h1 {
@@ -211,7 +222,7 @@ hr {
     font-weight: 900 !important;
     margin: 0 0 4px 0 !important;
     padding: 0 !important;
-    background: linear-gradient(90deg, #c9a84c, #8b7340);
+    background: linear-gradient(90deg, #00E5FF, #00A8BF);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -220,7 +231,7 @@ hr {
 }
 
 .wolf-banner p {
-    color: rgba(201,168,76,0.5);
+    color: rgba(0,229,255,0.5);
     font-size: 11px;
     letter-spacing: 4px;
     margin: 0;
@@ -229,8 +240,8 @@ hr {
 
 /* ── Score badges ────────────────────────────────────────────── */
 .score-green  { color: #2d8a4e; font-weight: 700; }
-.score-yellow { color: #d4943a; font-weight: 700; }
-.score-red    { color: #c44545; font-weight: 700; }
+.score-yellow { color: #FF6B3D; font-weight: 700; }
+.score-red    { color: #FF6B3D; font-weight: 700; }
 .entry-yes    { color: #2d8a4e; font-weight: 700; letter-spacing: 1px; }
 .entry-no     { color: rgba(232,228,220,0.25); }
 
@@ -239,7 +250,7 @@ hr {
     font-size: 72px;
     font-weight: 900;
     text-align: center;
-    background: linear-gradient(180deg, #c9a84c, #8b7340);
+    background: linear-gradient(180deg, #00E5FF, #00A8BF);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -252,7 +263,7 @@ hr {
     letter-spacing: 4px;
     text-transform: uppercase;
     text-align: center;
-    color: rgba(201,168,76,0.5);
+    color: rgba(0,229,255,0.5);
     margin-top: 4px;
 }
 
@@ -261,8 +272,8 @@ hr {
     font-size: 11px;
     letter-spacing: 4px;
     text-transform: uppercase;
-    color: rgba(201,168,76,0.4);
-    border-bottom: 1px solid rgba(201,168,76,0.1);
+    color: rgba(0,229,255,0.4);
+    border-bottom: 1px solid rgba(0,229,255,0.1);
     padding-bottom: 6px;
     margin-bottom: 16px;
 }
@@ -372,15 +383,15 @@ def wolf_banner():
         else:
             st.markdown("""
             <div class="wolf-banner">
-                <h1>Nordic Alpha Systems</h1>
-                <p>Born of Wolves, Made for Markets &nbsp;|&nbsp; Trading & Investing</p>
+                <h1>Nordic Arc Systems</h1>
+                <p>See What the Market Can't. &nbsp;|&nbsp; Trading & Investing</p>
             </div>
             """, unsafe_allow_html=True)
     except Exception:
         st.markdown("""
         <div class="wolf-banner">
-            <h1>Nordic Alpha Systems</h1>
-            <p>Born of Wolves, Made for Markets</p>
+            <h1>Nordic Arc Systems</h1>
+            <p>See What the Market Can't.</p>
         </div>
         """, unsafe_allow_html=True)
 
