@@ -26,7 +26,7 @@ _AMBER = _P["amber"]
 
 # ── HTML helpers ──────────────────────────────────────────────────────────────
 
-def _pill(text: str, color: str = _GOLD, bg: str = "rgba(201,168,76,0.08)") -> str:
+def _pill(text: str, color: str = _GOLD, bg: str = "rgba(0,229,255,0.08)") -> str:
     return (
         f'<span style="background:{bg};border:1px solid {color}44;'
         f'border-radius:4px;padding:2px 8px;font-size:0.67rem;'
@@ -213,16 +213,16 @@ def _render_quick_nav() -> None:
     section_title("Quick Access", "🗺")
 
     nav_items = [
-        ("📡", "Screener",        "Scan Nordic + US equities across all strategies"),
-        ("📊", "Backtest",        "Replay strategy signals on historical price data"),
-        ("💼", "Holdings",        "Portfolio positions, risk exposure, earnings calendar"),
-        ("📓", "Trade Journal",   "Log trades, review P&L, tag patterns"),
-        ("🐺", "Wolf Regime",     "EMA-stack regime monitor for swing setups"),
-        ("🦅", "Alpha Regime",    "Long-term cycle monitor for position setups"),
-        ("⚔", "Viking Regime",   "OVTLYR NINE score + order-block overlay"),
-        ("🌍", "Sector & Regime", "Global sector breadth and macro cycle"),
-        ("🔔", "Alerts",          "Configure alert channels and view alert history"),
-        ("📋", "Strategies",      "Entry/exit rules and risk model for every strategy"),
+        ("🔱", "ARC SCREENER",       "Scan equities across all Arc strategies"),
+        ("⚡", "CONTRARIAN ALPHA",   "Undervalued, hated, necessary sector stocks"),
+        ("🔄", "MARKET CYCLE",       "14-phase psychology cycle detector"),
+        ("🐺", "WOLF REGIME",        "EMA-stack regime for swing setups"),
+        ("⚔️", "VIKING REGIME",      "OVTLYR NINE score + order-block overlay"),
+        ("📈", "ALPHA REGIME",       "Long-term cycle monitor for positions"),
+        ("🌐", "FLOW DIVERGENCE",    "Global sector breadth and macro cycle"),
+        ("👁",  "ODIN'S BLINDSPOT",  "Contrarian sector intelligence"),
+        ("💼", "HOLDINGS",           "Portfolio positions and risk exposure"),
+        ("📓", "TRADE JOURNAL",      "Log trades, review P&L, tag patterns"),
     ]
 
     cols = st.columns(5)
@@ -274,7 +274,7 @@ def tab_home() -> None:
 
     st.markdown(
         f'<p style="color:{_DIM};font-size:0.8rem;margin:-8px 0 20px;">'
-        f'Nordic Alpha Systems — Born of Wolves, Made for Markets.&nbsp;&nbsp;'
+        f'Nordic Arc Systems — See What the Market Can\'t.&nbsp;&nbsp;'
         f'<span style="font-size:0.72rem;">{datetime.now().strftime("%A %d %B %Y")}</span></p>',
         unsafe_allow_html=True,
     )
