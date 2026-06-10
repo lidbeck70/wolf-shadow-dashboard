@@ -55,6 +55,18 @@ from alpha_regime.contrarian_signals import (
     ContrairianStageResult,
 )
 
+# ── Commodity ratios (optional) ───────────────────────────────────────────────
+_COMMODITY_OK = False
+try:
+    from alpha_regime.commodity_ratios import (
+        fetch_all_ratios   as _fetch_ratios,
+        detect_exposure    as _detect_exposure,
+        EXPOSURE_TO_RATIO  as _EXPOSURE_TO_RATIO,
+    )
+    _COMMODITY_OK = True
+except ImportError:
+    pass
+
 
 # ── Result dataclass ─────────────────────────────────────────────────────────
 
@@ -82,6 +94,13 @@ class RegimeResult:
 
     # Contrarian mode
     contrarian: Optional[ContrairianStageResult] = None
+
+    # Contrarian: commodity ratios + price context
+    commodity_ratios: dict = field(default_factory=dict)
+    detected_exposure: Optional[str] = None   # ratio key, e.g. "gold_silver"
+    branch_name: Optional[str] = None         # Börsdata branch/sector name
+    price_3m_low: Optional[float] = None      # ticker's 3-month low (for next-trigger box)
+    price_6m_low: Optional[float] = None      # ticker's 3–6 month low
 
     # Metadata
     pe: Optional[float] = None
@@ -214,6 +233,19 @@ def _fetch_fundamentals(ticker: str) -> dict:
 
         if quality_data:
             result["quality_data"] = quality_data
+
+        # Branch/sector name for commodity exposure auto-detection
+        try:
+            instruments = api.get_instruments()
+            for inst in instruments:
+                if inst.get("insId") == ins_id:
+                    bn = inst.get("branchName") or inst.get("sectorName") or ""
+                    if bn:
+                        result["branch_name"] = str(bn)
+                    break
+        except Exception:
+            pass
+
         return result
     except Exception as exc:
         logger.warning("_fetch_fundamentals(%s) failed: %s", ticker, exc)
@@ -350,5 +382,33 @@ def run_regime_analysis(
             sentiment_score=result.sentiment_score,
             cycle_confidence=result.market_confidence,
         )
+
+        # 3m / 6m price lows for next-trigger box
+        try:
+            _cv = close.values
+            _n63  = min(63,  len(_cv))
+            _n126 = min(126, len(_cv))
+            result.price_3m_low = float(np.min(_cv[-_n63:]))
+            if _n126 > _n63:
+                result.price_6m_low = float(np.min(_cv[-_n126:-_n63]))
+        except Exception:
+            pass
+
+        # Commodity ratio rubber band
+        result.branch_name = fund.get("branch_name")
+        if _COMMODITY_OK and result.contrarian is not None:
+            try:
+                result.commodity_ratios = _fetch_ratios()
+                raw_exp = _detect_exposure(result.branch_name)
+                result.detected_exposure = _EXPOSURE_TO_RATIO.get(raw_exp) if raw_exp else None
+                if result.detected_exposure:
+                    _ratio = result.commodity_ratios.get(result.detected_exposure)
+                    if _ratio and _ratio.status == "RUBBER_BAND_STRETCHED":
+                        result.contrarian.rationale.append(
+                            f"Rubber Band: {_ratio.label} at {_ratio.percentile:.0f}th percentile"
+                            f" — {_ratio.denominator_label} historically stretched cheap"
+                        )
+            except Exception as exc:
+                logger.debug("commodity_ratios: %s", exc)
 
     return result
