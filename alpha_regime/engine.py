@@ -59,9 +59,10 @@ from alpha_regime.contrarian_signals import (
 _COMMODITY_OK = False
 try:
     from alpha_regime.commodity_ratios import (
-        fetch_all_ratios   as _fetch_ratios,
-        detect_exposure    as _detect_exposure,
-        EXPOSURE_TO_RATIO  as _EXPOSURE_TO_RATIO,
+        fetch_all_ratios    as _fetch_ratios,
+        detect_exposure     as _detect_exposure,
+        EXPOSURE_TO_RATIO   as _EXPOSURE_TO_RATIO,
+        fetch_context_gauges as _fetch_context_gauges,
     )
     _COMMODITY_OK = True
 except ImportError:
@@ -101,6 +102,10 @@ class RegimeResult:
     branch_name: Optional[str] = None         # Börsdata branch/sector name
     price_3m_low: Optional[float] = None      # ticker's 3-month low (for next-trigger box)
     price_6m_low: Optional[float] = None      # ticker's 3–6 month low
+
+    # CONTEXT ONLY — never feeds the ACCUMULATE/DISTRIBUTE confirmation count.
+    # Currency (SEK/NOK) trends lack mean reversion and must never act as contrarian buy signals.
+    context_gauges: dict = field(default_factory=dict)
 
     # Metadata
     pe: Optional[float] = None
@@ -399,6 +404,7 @@ def run_regime_analysis(
         if _COMMODITY_OK and result.contrarian is not None:
             try:
                 result.commodity_ratios = _fetch_ratios()
+                result.context_gauges   = _fetch_context_gauges()
                 raw_exp = _detect_exposure(result.branch_name)
                 # detected_exposure is now a list of ratio keys (or None)
                 result.detected_exposure = _EXPOSURE_TO_RATIO.get(raw_exp) if raw_exp else None

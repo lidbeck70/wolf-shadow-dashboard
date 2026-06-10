@@ -304,3 +304,96 @@ def detect_exposure(branch_name: Optional[str]) -> Optional[str]:
         if any(kw in text for kw in keywords):
             return exposure
     return None
+
+
+# ── Gold context gauges (Gold/USD, Gold/SEK, Gold/NOK) ───────────────────────
+# CONTEXT ONLY — these gauges must NEVER feed the ACCUMULATE/DISTRIBUTE
+# confirmation count. Currency trends have no mean reversion; using FX-adjusted
+# gold prices as a contrarian buy signal would be methodologically wrong.
+
+@dataclass
+class ContextGaugeSpec:
+    key: str
+    label: str
+    currency: str
+    primary_price: str    # "GC=F"
+    fallback_price: str   # "GLD"
+    fx_ticker: str        # "" for USD; "USDSEK=X" / "USDNOK=X" for local currency
+
+
+@dataclass
+class ContextGaugeResult:
+    key: str
+    label: str
+    currency: str
+    current: float = 0.0
+    percentile: float = 0.0
+    zscore: float = 0.0
+    sparkline_dates: list = field(default_factory=list)
+    sparkline_values: list = field(default_factory=list)
+    # DATA_GAP | DYRT | HÖGT | NEUTRALT | LÅGT | BILLIGT
+    status: str = "DATA_GAP"
+    error: Optional[str] = None
+
+
+_CONTEXT_GAUGE_SPECS: list[ContextGaugeSpec] = [
+    ContextGaugeSpec("gold_usd", "Gold / USD", "USD", "GC=F", "GLD", ""),
+    ContextGaugeSpec("gold_sek", "Gold / SEK", "SEK", "GC=F", "GLD", "USDSEK=X"),
+    ContextGaugeSpec("gold_nok", "Gold / NOK", "NOK", "GC=F", "GLD", "USDNOK=X"),
+]
+
+
+def _compute_context_gauge(spec: ContextGaugeSpec) -> ContextGaugeResult:
+    base = ContextGaugeResult(key=spec.key, label=spec.label, currency=spec.currency)
+
+    price_s = _download_close(spec.primary_price)
+    if price_s.empty:
+        price_s = _download_close(spec.fallback_price)
+    if price_s.empty:
+        base.error = f"No price data for {spec.key} (tried {spec.primary_price} + {spec.fallback_price})"
+        return base
+
+    if spec.fx_ticker:
+        fx_s = _download_close(spec.fx_ticker)
+        if fx_s.empty:
+            base.error = f"FX data unavailable for {spec.fx_ticker} — {spec.key} skipped"
+            return base
+        combined = pd.concat({"p": price_s, "fx": fx_s}, axis=1).dropna()
+        if len(combined) < 100:
+            base.error = f"Insufficient aligned history for {spec.key} ({len(combined)} days)"
+            return base
+        series = combined["p"] * combined["fx"]
+    else:
+        series = price_s.dropna()
+
+    if len(series) < 100:
+        base.error = f"Insufficient history for {spec.key} ({len(series)} days)"
+        return base
+
+    arr = series.values.astype(float)
+    current = float(arr[-1])
+    pct = _percentile_of(arr, current)
+    mean, std = float(arr.mean()), float(arr.std())
+    zscore = round((current - mean) / std, 2) if std > 0 else 0.0
+
+    series_w = series.resample("W").last().dropna()
+    base.current = round(current, 2)
+    base.percentile = round(pct, 1)
+    base.zscore = zscore
+    base.status = _leg_label(pct)   # DYRT / HÖGT / NEUTRALT / LÅGT / BILLIGT
+    base.sparkline_dates = [str(d.date()) for d in series_w.index]
+    base.sparkline_values = [round(float(v), 2) for v in series_w.values]
+    base.error = None
+    return base
+
+
+@_cache_6h
+def fetch_context_gauges() -> dict:
+    """
+    Fetch Gold/USD, Gold/SEK, Gold/NOK context gauges. Cached 6h.
+
+    CONTEXT ONLY — never feed the ACCUMULATE/DISTRIBUTE confirmation count.
+    Currency (SEK/NOK) trends lack mean reversion and must never act as
+    contrarian buy signals.
+    """
+    return {spec.key: _compute_context_gauge(spec) for spec in _CONTEXT_GAUGE_SPECS}

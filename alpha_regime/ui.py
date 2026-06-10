@@ -789,6 +789,137 @@ def _render_action_box(r: RegimeResult) -> None:
     )
 
 
+# ── Gold context gauges ───────────────────────────────────────────────────────
+
+_CTX_LABEL_COLORS = {
+    "DYRT":     "#cc3333",
+    "HÖGT":     "#c9a84c",
+    "NEUTRALT": "#8899aa",
+    "LÅGT":     "#607080",
+    "BILLIGT":  "#1aaa5a",
+}
+
+
+def _render_context_gauges(r: RegimeResult) -> None:
+    """
+    Render Gold/USD, Gold/SEK, Gold/NOK as context gauges.
+
+    CONTEXT ONLY — never feeds ACCUMULATE/DISTRIBUTE confirmation count.
+    """
+    gauges = r.context_gauges
+    if not gauges:
+        return
+
+    st.markdown(
+        '<p style="color:#607080;font-weight:600;font-size:0.9rem;margin:20px 0 4px;">'
+        'Guld – kontextmätare (inte köp/sälj-signal)</p>',
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "Visar hur mycket av en guldrörelse som är valutadriven för svenska/norska investerare. "
+        "Dessa mätare är INTE köp- eller säljsignaler — valutarörelser saknar medareversionstendenser."
+    )
+
+    usd_g = gauges.get("gold_usd")
+    sek_g = gauges.get("gold_sek")
+    nok_g = gauges.get("gold_nok")
+
+    cols = st.columns(3)
+    for col, g in zip(cols, [usd_g, sek_g, nok_g]):
+        if g is None or g.status == "DATA_GAP":
+            with col:
+                err = g.error if g else "okänd"
+                lbl = g.currency if g else "?"
+                st.caption(f"Gold/{lbl}: data saknas — {err}")
+            continue
+
+        lbl_color = _CTX_LABEL_COLORS.get(g.status, "#8899aa")
+        z_color = "#1aaa5a" if g.zscore > 1.5 else ("#cc3333" if g.zscore < -1.5 else "#8899aa")
+        pct = g.percentile
+
+        with col:
+            st.markdown(
+                f'<div style="font-weight:700;color:#e8e4dc;margin-bottom:4px;">{g.label}</div>',
+                unsafe_allow_html=True,
+            )
+            # Percentile gauge bar — no CHEAP ZONE annotation (context only)
+            st.markdown(
+                f"""<div style="position:relative;background:#1a2030;border-radius:6px;
+                    height:20px;overflow:hidden;">
+                  <div style="position:absolute;left:0;width:{pct:.1f}%;top:0;bottom:0;
+                      background:linear-gradient(to right,#2a3545,{lbl_color}55);"></div>
+                  <div style="position:absolute;left:{pct:.1f}%;top:2px;bottom:2px;width:3px;
+                      background:#ffffff;border-radius:2px;transform:translateX(-50%);"></div>
+                  <span style="position:absolute;left:4px;top:50%;transform:translateY(-50%);
+                      font-size:0.55rem;color:#6677aa;">0</span>
+                  <span style="position:absolute;right:4px;top:50%;transform:translateY(-50%);
+                      font-size:0.55rem;color:#6677aa;">100</span>
+                </div>""",
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                f'<div style="display:flex;justify-content:space-between;'
+                f'font-size:0.75rem;margin-top:4px;">'
+                f'<span style="color:{lbl_color};font-weight:700;">'
+                f'{g.status} ({pct:.0f}:e pct)</span>'
+                f'<span style="color:{z_color};">{g.zscore:+.2f}σ</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+            st.caption(f"{g.currency}: {g.current:,.0f}")
+
+            if g.sparkline_dates and g.sparkline_values:
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=g.sparkline_dates,
+                    y=g.sparkline_values,
+                    mode="lines",
+                    line=dict(color=lbl_color, width=1.2),
+                    fill="tozeroy",
+                    fillcolor=f"rgba({_hex_to_rgb(lbl_color)},0.06)",
+                    name=g.label,
+                ))
+                fig.update_layout(
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="#0D1117",
+                    font=dict(color="#aabbcc", size=8),
+                    xaxis=dict(gridcolor="rgba(138,133,120,0.08)", title="",
+                               showticklabels=False),
+                    yaxis=dict(gridcolor="rgba(138,133,120,0.08)", title=""),
+                    margin=dict(l=36, r=8, t=2, b=4),
+                    height=80,
+                    showlegend=False,
+                )
+                st.plotly_chart(fig, use_container_width=True, key=f"ctx_spark_{g.key}")
+
+    # Comparison summary: is the move currency-driven?
+    if (usd_g and usd_g.status != "DATA_GAP"):
+        diffs = []
+        for g in [sek_g, nok_g]:
+            if g and g.status != "DATA_GAP":
+                diffs.append(g.percentile - usd_g.percentile)
+        if diffs:
+            avg_diff = sum(diffs) / len(diffs)
+            if avg_diff >= 5.0:
+                msg = ("⚠️ Uppgången är delvis valutadriven (svag krona/krone) "
+                       "— priset stiger mer i SEK/NOK än i USD.")
+                msg_color = "#c9a84c"
+            elif avg_diff <= -5.0:
+                msg = ("✅ Uppgången är bred — guld stiger mer i USD än i lokal valuta. "
+                       "Inte en ren valutaeffekt.")
+                msg_color = "#1aaa5a"
+            else:
+                msg = ("ℹ️ Bred styrka — rörelsen är likvärdig i USD, SEK och NOK. "
+                       "Inte bara en valutaeffekt.")
+                msg_color = "#8899aa"
+            st.markdown(
+                f'<div style="font-size:0.82rem;color:{msg_color};margin-top:8px;'
+                f'padding:8px 12px;background:#0d1117;border-radius:5px;'
+                f'border:1px solid #2a3040;">{msg}</div>',
+                unsafe_allow_html=True,
+            )
+
+
 # ── Mode renderers ────────────────────────────────────────────────────────────
 
 def _render_quality_mode(r: RegimeResult) -> None:
@@ -844,7 +975,10 @@ def _render_contrarian_mode(r: RegimeResult, exposure_override=None) -> None:
     _render_rubber_band_gauge(r, exposure_override)
     _render_custom_ratio_builder()
 
-    # 4. Checklist
+    # 4. Gold context gauges (currency-driven move detection — CONTEXT ONLY)
+    _render_context_gauges(r)
+
+    # 5. Checklist
     if c.rationale:
         st.markdown(
             '<p style="color:#c9a84c;font-weight:600;margin-bottom:4px;">Checklist</p>',
@@ -855,7 +989,7 @@ def _render_contrarian_mode(r: RegimeResult, exposure_override=None) -> None:
     if c.sentiment_note:
         st.caption(c.sentiment_note)
 
-    # 5. Market context + cycle strip
+    # 6. Market context + cycle strip
     _render_market_context(r)
     st.markdown("**14-Phase Cycle Position**")
     _render_cycle_strip(r.market_phase)
