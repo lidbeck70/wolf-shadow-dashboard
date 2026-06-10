@@ -715,6 +715,127 @@ def score_sector(sector_df):
 # DATA FETCHING
 # =============================================================================
 
+def _prefilter_wolf(tickers_dict: dict, pre_fetched: dict | None) -> dict:
+    """
+    Coarse pre-filter for Wolf scanner using pre-fetched Börsdata data.
+    Drops tickers where:
+      - avg daily turnover (close * volume, 20 d) < 5 MSEK equivalent
+      - price < SMA200  (skipped if < 200 bars available)
+    Tickers absent from pre_fetched are kept and passed to yfinance.
+    """
+    if not pre_fetched:
+        return tickers_dict
+    MIN_TURNOVER = 5_000_000
+    kept = {}
+    for ticker, name in tickers_dict.items():
+        df = pre_fetched.get(ticker)
+        if df is None or df.empty or len(df) < 20:
+            kept[ticker] = name  # no pre-fetched data — keep, let score_stock decide
+            continue
+        close = df["Close"] if "Close" in df.columns else None
+        if close is None or close.empty:
+            kept[ticker] = name
+            continue
+        # Turnover filter
+        if "Volume" in df.columns:
+            avg_turnover = (close * df["Volume"]).tail(20).mean()
+            if pd.notna(avg_turnover) and float(avg_turnover) < MIN_TURNOVER:
+                continue
+        # SMA200 filter
+        if len(close) >= 200:
+            sma200 = close.rolling(200).mean().iloc[-1]
+            if pd.notna(sma200) and float(close.iloc[-1]) < float(sma200):
+                continue
+        kept[ticker] = name
+    return kept
+
+
+def _add_wolf_ranking_cols(df_results: pd.DataFrame, price_data: dict) -> pd.DataFrame:
+    """
+    Add composite ranking columns to Wolf results.
+    RS_score (40%) · HighProx (30%) · VolTrend (30%) → Rank_Composite + Rank.
+    """
+    if df_results.empty:
+        return df_results
+
+    # Build index benchmark 3-month returns
+    _INDEX_BENCH: dict = {}
+    for idx_ticker, suffixes in [
+        ("^OMX",    [".ST"]),
+        ("^OSEBX",  [".OL"]),
+        ("^OMXC20", [".CO"]),
+        ("^OMXHPI", [".HE"]),
+        ("SPY",     [""]),
+    ]:
+        idx_df = price_data.get(idx_ticker)
+        if idx_df is None:
+            try:
+                import yfinance as _yf
+                idx_df = _yf.download(idx_ticker, period="1y", progress=False, auto_adjust=True)
+            except Exception:
+                pass
+        if idx_df is not None and not idx_df.empty and len(idx_df) >= 63:
+            ret = float(idx_df["Close"].iloc[-1] / idx_df["Close"].iloc[-63] - 1)
+            for suf in suffixes:
+                _INDEX_BENCH[suf] = ret
+
+    rs_scores, high_prox, vol_trend = [], [], []
+
+    for _, row in df_results.iterrows():
+        ticker = row["Ticker"]
+        df = price_data.get(ticker)
+
+        if df is None or df.empty or len(df) < 20:
+            rs_scores.append(50.0); high_prox.append(50.0); vol_trend.append(50.0)
+            continue
+
+        close = df["Close"]
+
+        # RS score
+        if len(close) >= 63:
+            tkr_ret = float(close.iloc[-1] / close.iloc[-63] - 1)
+            suffix = next((s for s in [".ST", ".OL", ".CO", ".HE"] if ticker.endswith(s)), "")
+            idx_ret = _INDEX_BENCH.get(suffix, _INDEX_BENCH.get("", 0.0))
+            rs_raw = tkr_ret - idx_ret
+            rs_scores.append(max(0.0, min(100.0, (rs_raw + 0.30) / 0.60 * 100)))
+        else:
+            rs_scores.append(50.0)
+
+        # 52w high proximity
+        lookback = min(252, len(close))
+        high_52w = float(close.tail(lookback).max())
+        if high_52w > 0:
+            high_prox.append(max(0.0, min(100.0, float(close.iloc[-1]) / high_52w * 100)))
+        else:
+            high_prox.append(50.0)
+
+        # Volume trend
+        if "Volume" in df.columns and len(df) >= 60:
+            v20 = float(df["Volume"].tail(20).mean())
+            v60 = float(df["Volume"].tail(60).mean())
+            if v60 > 0:
+                ratio = v20 / v60
+                vol_trend.append(max(0.0, min(100.0, (ratio - 0.5) / 1.5 * 100)))
+            else:
+                vol_trend.append(50.0)
+        else:
+            vol_trend.append(50.0)
+
+    df_results = df_results.copy()
+    df_results["RS_score"] = [round(v, 1) for v in rs_scores]
+    df_results["HighProx"] = [round(v, 1) for v in high_prox]
+    df_results["VolTrend"] = [round(v, 1) for v in vol_trend]
+    df_results["Rank_Composite"] = (
+        df_results["RS_score"] * 0.40 +
+        df_results["HighProx"] * 0.30 +
+        df_results["VolTrend"] * 0.30
+    ).round(1)
+    df_results["Rank"] = (
+        df_results["Rank_Composite"].rank(ascending=False, method="min").astype(int)
+    )
+    return df_results
+
+
 def fetch_data(tickers, period="1y", interval="1d", pre_fetched=None):
     """
     Fetch OHLCV data for multiple tickers.
@@ -836,7 +957,8 @@ def run_screener(markets=None, min_score=0, pre_fetched=None):
             continue
 
         tickers = MARKETS[market_name]
-        print(f"\n[3/4] Scanning {market_name.upper()} ({len(tickers)} tickers)...")
+        tickers = _prefilter_wolf(tickers, pre_fetched)
+        print(f"\n[3/4] Scanning {market_name.upper()} ({len(tickers)} tickers after pre-filter)...")
 
         stock_data = fetch_data(tickers, period="1y", pre_fetched=pre_fetched)
 
@@ -922,6 +1044,9 @@ def run_screener(markets=None, min_score=0, pre_fetched=None):
 
     df_results = pd.DataFrame(all_results)
     df_results = df_results.sort_values("Total Score", ascending=False)
+
+    # Add composite ranking (RS · 52w-high proximity · volume trend)
+    df_results = _add_wolf_ranking_cols(df_results, pre_fetched or {})
 
     # Filter by min score
     if min_score > 0:

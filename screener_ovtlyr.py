@@ -537,6 +537,116 @@ def _batch_download(tickers: list, period: str = "1y") -> dict:
     return all_data
 
 
+def _prefilter_tickers(tickers_meta: dict, all_data: dict) -> dict:
+    """
+    Coarse pre-filter using already-downloaded OHLCV data.
+    Drops tickers where:
+      - avg daily turnover (close * volume, 20 d) < 5 MSEK equivalent
+      - price < SMA200  (only applied when >= 200 bars are available)
+    Returns filtered tickers_meta dict. Preserves tickers with no data
+    so they get a fair shot in the scoring loop.
+    """
+    MIN_TURNOVER = 5_000_000
+    kept = {}
+    for ticker, meta in tickers_meta.items():
+        df = all_data.get(ticker)
+        if df is None or df.empty or len(df) < 20:
+            continue  # no data downloaded — exclude rather than keep blindly
+        close = df["Close"]
+        # Turnover filter
+        if "Volume" in df.columns:
+            avg_turnover = (close * df["Volume"]).tail(20).mean()
+            if pd.notna(avg_turnover) and float(avg_turnover) < MIN_TURNOVER:
+                continue
+        # SMA200 filter — only when enough history is present
+        if len(close) >= 200:
+            sma200 = close.rolling(200).mean().iloc[-1]
+            if pd.notna(sma200) and float(close.iloc[-1]) < float(sma200):
+                continue
+        kept[ticker] = meta
+    return kept
+
+
+def _compute_ranking_cols(df_results: pd.DataFrame, all_data: dict) -> pd.DataFrame:
+    """
+    Add composite ranking columns to a results DataFrame.
+    RS_score  (40%): 3-month return vs index benchmark
+    HighProx  (30%): close / 52w-high  (1.0 = at all-time high)
+    VolTrend  (30%): 20d avg volume / 60d avg volume
+    All three normalised to 0-100; combined into Rank_Composite and Rank.
+    """
+    # Build index benchmark 3-month returns
+    _INDEX_BENCH: dict = {}
+    for idx_ticker, suffixes in [
+        ("^OMX",    [".ST"]),
+        ("^OSEBX",  [".OL"]),
+        ("^OMXC20", [".CO"]),
+        ("^OMXHPI", [".HE"]),
+        ("SPY",     [""]),
+    ]:
+        idx_df = all_data.get(idx_ticker)
+        if idx_df is not None and not idx_df.empty and len(idx_df) >= 63:
+            ret = float(idx_df["Close"].iloc[-1] / idx_df["Close"].iloc[-63] - 1)
+            for suf in suffixes:
+                _INDEX_BENCH[suf] = ret
+
+    rs_scores, high_prox, vol_trend = [], [], []
+
+    for _, row in df_results.iterrows():
+        ticker = row["Ticker"]
+        df = all_data.get(ticker)
+
+        if df is None or df.empty or len(df) < 20:
+            rs_scores.append(50.0); high_prox.append(50.0); vol_trend.append(50.0)
+            continue
+
+        close = df["Close"]
+
+        # RS score: 3-month ticker return minus benchmark, mapped 0-100
+        if len(close) >= 63:
+            tkr_ret = float(close.iloc[-1] / close.iloc[-63] - 1)
+            suffix = next((s for s in [".ST", ".OL", ".CO", ".HE"] if ticker.endswith(s)), "")
+            idx_ret = _INDEX_BENCH.get(suffix, _INDEX_BENCH.get("", 0.0))
+            rs_raw = tkr_ret - idx_ret
+            rs_scores.append(max(0.0, min(100.0, (rs_raw + 0.30) / 0.60 * 100)))
+        else:
+            rs_scores.append(50.0)
+
+        # 52w high proximity: 100 = at high, 0 = 100% below high
+        lookback = min(252, len(close))
+        high_52w = float(close.tail(lookback).max())
+        if high_52w > 0:
+            high_prox.append(max(0.0, min(100.0, float(close.iloc[-1]) / high_52w * 100)))
+        else:
+            high_prox.append(50.0)
+
+        # Volume trend: 20d avg vs 60d avg, mapped 0.5x→0 to 2.0x→100
+        if "Volume" in df.columns and len(df) >= 60:
+            v20 = float(df["Volume"].tail(20).mean())
+            v60 = float(df["Volume"].tail(60).mean())
+            if v60 > 0:
+                ratio = v20 / v60
+                vol_trend.append(max(0.0, min(100.0, (ratio - 0.5) / 1.5 * 100)))
+            else:
+                vol_trend.append(50.0)
+        else:
+            vol_trend.append(50.0)
+
+    df_results = df_results.copy()
+    df_results["RS_score"] = [round(v, 1) for v in rs_scores]
+    df_results["HighProx"] = [round(v, 1) for v in high_prox]
+    df_results["VolTrend"] = [round(v, 1) for v in vol_trend]
+    df_results["Rank_Composite"] = (
+        df_results["RS_score"] * 0.40 +
+        df_results["HighProx"] * 0.30 +
+        df_results["VolTrend"] * 0.30
+    ).round(1)
+    df_results["Rank"] = (
+        df_results["Rank_Composite"].rank(ascending=False, method="min").astype(int)
+    )
+    return df_results
+
+
 @st.cache_data(ttl=1800, show_spinner=False, max_entries=5)
 def run_ovtlyr_screener(
     universe: str = "Nordic",
@@ -576,19 +686,20 @@ def run_ovtlyr_screener(
             return pd.DataFrame()
 
         tickers = list(tickers_meta.keys())
-
-        # Cap tickers for memory safety
-        if len(tickers) > MAX_SCREENER_TICKERS:
-            tickers = tickers[:MAX_SCREENER_TICKERS]
     except Exception as e:
         logger.warning("run_ovtlyr_screener universe build error: %s", e)
         return pd.DataFrame()
 
-    # Batched download (memory-safe)
+    # Batched download — includes benchmark indices for RS ranking
+    _INDEX_TICKERS = ["^OMX", "^OSEBX", "^OMXC20", "^OMXHPI", "SPY"]
     try:
-        all_data = _batch_download(tickers, period)
+        all_data = _batch_download(list(tickers_meta.keys()) + _INDEX_TICKERS, period)
     except Exception:
         all_data = {}
+
+    # Coarse pre-filter: drop low-turnover and below-SMA200 tickers
+    tickers_meta = _prefilter_tickers(tickers_meta, all_data)
+    tickers = list(tickers_meta.keys())
 
     results = []
     for ticker in tickers:
@@ -706,11 +817,18 @@ def run_ovtlyr_screener(
     # Sort by composite descending
     df_results = df_results.sort_values("Composite", ascending=False).reset_index(drop=True)
 
+    # Add composite ranking (RS · 52w-high proximity · volume trend)
+    df_results = _compute_ranking_cols(df_results, all_data)
+
+    # Final sort by Rank_Composite so top row = rank 1
+    df_results = df_results.sort_values("Rank_Composite", ascending=False).reset_index(drop=True)
+
     # Select display columns
     display_cols = [
         "Rank", "Ticker", "Name", "Sector", "Country",
         "trend", "momentum", "volatility", "volume", "adx",
         "Composite", "Signal",
+        "Rank_Composite", "RS_score", "HighProx", "VolTrend",
         "F&G", "V9", "OC", "Signal Date", "Signal Ret %", "Retail",
     ]
     return df_results[display_cols]
