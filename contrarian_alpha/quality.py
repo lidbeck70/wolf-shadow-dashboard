@@ -4,11 +4,18 @@ quality.py — Quality Score (0-100) for Quality-Contrarian Screener.
 Measures the durability and quality of a business's economic engine.
 Used as the Quality pillar in the 5-pillar composite formula.
 
-4 components (weights sum to 100):
-  1. ROIC              max 30p  (Return on Invested Capital — moat indicator)
-  2. ROCE              max 20p  (Return on Capital Employed — capital efficiency)
-  3. Gross margin stability (5y) max 25p  (CoV — durable pricing power)
-  4. Operating margin trend      max 25p  (OLS slope over 3-5y)
+Mode-dependent component layout:
+
+  deep_contrarian (include_growth=False) — 4 components, sum to 100:
+    1. ROIC              max 30p
+    2. ROCE              max 20p
+    3. Gross margin stability (5y)  max 25p
+    4. Operating margin trend       max 25p
+
+  quality (include_growth=True) — 6 components, sum to 100:
+    1-4. Same as above but scaled × 0.70  → max 70p
+    5. Growth Consistency (KAP)           max 25p
+    6. Dividend Discipline bonus          max  5p
 
 Composite weight: QUALITY_COMPOSITE_WEIGHT_QUALITY = 0.30 ("quality" mode)
                   QUALITY_COMPOSITE_WEIGHT_DEEP    = 0.20 ("deep_contrarian" mode)
@@ -22,7 +29,8 @@ Börsdata KPI IDs used:
   ROCE             KPI 36
   Gross margin     KPI 28
   Operating margin KPI 29
-  Revenue growth   KPI 94  (5y CAGR gate, quality mode only — used by engine)
+  Dividend yield   KPI  1  (quality mode — dividend bonus)
+  Revenue CAGR / EPS CAGR computed from annual reports via api.get_growth_history()
 
 Input dict keys (all optional, degrade gracefully):
   roic                  float   Current ROIC % (KPI 37)
@@ -32,7 +40,10 @@ Input dict keys (all optional, degrade gracefully):
   gross_margin_history  list    Newest-first 3-5 annual values (KPI 28 history)
   operating_margin      float   Current operating margin % (KPI 29)
   op_margin_history     list    Newest-first 3-5 annual values (KPI 29 history)
-  revenue_growth_5y     float   Annualised 5y revenue growth % (computed by engine from KPI 94)
+  revenue_cagr_5y       float   5-year revenue CAGR % — e.g. 8.5 = 8.5%
+  revenue_cagr_10y      float   10-year revenue CAGR %  (graceful default when absent)
+  eps_cagr_10y          float   10-year EPS CAGR %       (graceful default when absent)
+  dividend_yield_pct    float   Current dividend yield % (e.g. 2.5 = 2.5%)
 """
 from __future__ import annotations
 
@@ -72,6 +83,12 @@ class QualityResult:
     roic_trend:      float | None      = None   # pp improvement over history period
     gm_stability:    float | None      = None   # gross margin CoV (lower = more stable)
     op_margin_slope: float | None      = None   # pp/year slope of operating margin
+    # Quality-mode KAP fields (None in deep_contrarian mode)
+    growth_consistency_score: float | None = None
+    revenue_cagr_5y:   float | None = None
+    revenue_cagr_10y:  float | None = None
+    eps_cagr_10y:      float | None = None
+    dividend_yield_pct: float | None = None
 
     @property
     def passes_gate_quality(self) -> bool:
@@ -272,25 +289,106 @@ def _score_op_margin_trend(data: dict) -> tuple[float, float | None, bool]:
     return pts, round(slope, 3), True
 
 
+# ─── Growth Consistency (KAP criteria, quality mode only) ────────────────────
+
+def _score_growth_consistency(
+    data: dict,
+) -> tuple[float, float | None, float | None, float | None, bool]:
+    """
+    Growth Consistency (KAP): max 25p.
+    Returns (pts, rev_cagr_5y, rev_cagr_10y, eps_cagr_10y, has_real_data).
+
+    Sub-components:
+      Revenue CAGR 5y  max 10p  (KAP gate: >= 5%)
+      Revenue CAGR 10y max  8p  (KAP gate: >= 5%; graceful 3p default if missing)
+      EPS CAGR 10y     max  7p  (KAP gate: >= 5%; graceful 2p default if missing)
+    """
+    rev5  = data.get("revenue_cagr_5y")
+    rev10 = data.get("revenue_cagr_10y")
+    eps10 = data.get("eps_cagr_10y")
+
+    has_real = rev5 is not None
+
+    # Revenue CAGR 5y — primary KAP criterion (max 10)
+    if rev5 is None:
+        rev5_pts = 4.0
+    else:
+        v = float(rev5)
+        if v >= 10:   rev5_pts = 10.0
+        elif v >= 7:  rev5_pts =  8.0
+        elif v >= 5:  rev5_pts =  7.0   # KAP threshold
+        elif v >= 3:  rev5_pts =  4.0
+        elif v >= 0:  rev5_pts =  2.0
+        else:         rev5_pts =  0.0
+
+    # Revenue CAGR 10y — secondary KAP criterion (max 8)
+    if rev10 is None:
+        rev10_pts = 3.0   # DATA_GAP default
+    else:
+        v = float(rev10)
+        if v >= 10:   rev10_pts = 8.0
+        elif v >= 7:  rev10_pts = 6.0
+        elif v >= 5:  rev10_pts = 5.0   # KAP threshold
+        elif v >= 3:  rev10_pts = 3.0
+        elif v >= 0:  rev10_pts = 1.0
+        else:         rev10_pts = 0.0
+
+    # EPS CAGR 10y (max 7)
+    if eps10 is None:
+        eps10_pts = 2.0   # DATA_GAP default
+    else:
+        v = float(eps10)
+        if v >= 10:   eps10_pts = 7.0
+        elif v >= 7:  eps10_pts = 5.0
+        elif v >= 5:  eps10_pts = 4.0   # KAP threshold
+        elif v >= 3:  eps10_pts = 2.0
+        elif v >= 0:  eps10_pts = 1.0
+        else:         eps10_pts = 0.0
+
+    total = _clamp(rev5_pts + rev10_pts + eps10_pts, 0.0, 25.0)
+    return (
+        total,
+        float(rev5)  if rev5  is not None else None,
+        float(rev10) if rev10 is not None else None,
+        float(eps10) if eps10 is not None else None,
+        has_real,
+    )
+
+
+def _score_dividend_bonus(data: dict) -> float:
+    """
+    Capital Discipline Bonus: +5p if dividend yield >= 1%.
+    Not a gate — great companies can reinvest instead.
+    """
+    div = data.get("dividend_yield_pct")
+    if div is None:
+        return 0.0
+    return 5.0 if float(div) >= 1.0 else 0.0
+
+
 # ─── Main scoring function ───────────────────────────────────────────────────
 
-def calculate_quality_score(quality_data: dict) -> QualityResult:
+def calculate_quality_score(
+    quality_data: dict,
+    include_growth: bool = False,
+) -> QualityResult:
     """
     Calculate Quality Score (0-100) for a single instrument.
 
     Args:
-        quality_data: Dict with ROIC, ROCE, gross margin and operating margin
-                      values and history. See module docstring for keys.
+        quality_data:   Dict with ROIC, ROCE, margin values + (quality mode) CAGR data.
+                        See module docstring for full key list.
+        include_growth: True for quality mode — adds Growth Consistency (25p) and
+                        Dividend Bonus (5p) while scaling base 4 components to 70%.
+                        False for deep_contrarian — original 4-component scoring.
 
     Returns:
         QualityResult with score, breakdown, flags, and raw indicator values.
 
-    Usage in engine:
-        result = calculate_quality_score(qdata)
+    Engine usage:
+        result = calculate_quality_score(qdata, include_growth=(mode == "quality"))
         composite += result.score * weights["quality"]
         # Gate check handled separately in engine._run_single_ticker()
-        if mode == "quality" and not result.passes_gate_quality:
-            eliminate at QUALITY_GATE stage
     """
     if not quality_data:
         logger.debug("calculate_quality_score: empty quality_data dict")
@@ -301,31 +399,67 @@ def calculate_quality_score(quality_data: dict) -> QualityResult:
     gm_pts,   gm_cov,   gm_real              = _score_gm_stability(quality_data)
     om_pts,   om_slope,  om_real             = _score_op_margin_trend(quality_data)
 
-    total = _clamp(roic_pts + roce_pts + gm_pts + om_pts, 0.0, 100.0)
-
-    breakdown = {
-        "roic":            round(roic_pts, 1),
-        "roce":            round(roce_pts, 1),
-        "gm_stability":    round(gm_pts, 1),
-        "op_margin_trend": round(om_pts, 1),
-    }
-
     flags: list[str] = []
     if not roic_real: flags.append("ROIC_DATA_MISSING")
     if not roce_real: flags.append("ROCE_DATA_MISSING")
     if not gm_real:   flags.append("GM_HISTORY_SHORT")
     if not om_real:   flags.append("OM_HISTORY_SHORT")
 
-    return QualityResult(
-        score           = round(total, 1),
-        breakdown       = breakdown,
-        flags           = flags,
-        roic            = roic_val,
-        roce            = roce_val,
-        roic_trend      = round(roic_trend, 2) if roic_trend is not None else None,
-        gm_stability    = gm_cov,
-        op_margin_slope = om_slope,
-    )
+    if include_growth:
+        # Quality mode: scale base 4 components to 70%, add Growth (25p) + DivBonus (5p)
+        scale = 0.70
+        growth_pts, rev5, rev10, eps10, growth_real = _score_growth_consistency(quality_data)
+        div_pts = _score_dividend_bonus(quality_data)
+
+        if not growth_real:
+            flags.append("GROWTH_DATA_GAP")
+
+        total = _clamp(
+            (roic_pts + roce_pts + gm_pts + om_pts) * scale + growth_pts + div_pts,
+            0.0, 100.0,
+        )
+        breakdown = {
+            "roic":               round(roic_pts * scale, 1),
+            "roce":               round(roce_pts * scale, 1),
+            "gm_stability":       round(gm_pts   * scale, 1),
+            "op_margin_trend":    round(om_pts   * scale, 1),
+            "growth_consistency": round(growth_pts, 1),
+            "dividend_bonus":     round(div_pts,    1),
+        }
+        return QualityResult(
+            score                 = round(total, 1),
+            breakdown             = breakdown,
+            flags                 = flags,
+            roic                  = roic_val,
+            roce                  = roce_val,
+            roic_trend            = round(roic_trend, 2) if roic_trend is not None else None,
+            gm_stability          = gm_cov,
+            op_margin_slope       = om_slope,
+            growth_consistency_score = round(growth_pts, 1),
+            revenue_cagr_5y       = rev5,
+            revenue_cagr_10y      = rev10,
+            eps_cagr_10y          = eps10,
+            dividend_yield_pct    = quality_data.get("dividend_yield_pct"),
+        )
+    else:
+        # Deep contrarian: original 4-component scoring, weights unchanged
+        total = _clamp(roic_pts + roce_pts + gm_pts + om_pts, 0.0, 100.0)
+        breakdown = {
+            "roic":            round(roic_pts, 1),
+            "roce":            round(roce_pts, 1),
+            "gm_stability":    round(gm_pts, 1),
+            "op_margin_trend": round(om_pts, 1),
+        }
+        return QualityResult(
+            score           = round(total, 1),
+            breakdown       = breakdown,
+            flags           = flags,
+            roic            = roic_val,
+            roce            = roce_val,
+            roic_trend      = round(roic_trend, 2) if roic_trend is not None else None,
+            gm_stability    = gm_cov,
+            op_margin_slope = om_slope,
+        )
 
 
 # ─── CLI diagnostics ──────────────────────────────────────────────────────────

@@ -72,7 +72,10 @@ from contrarian_alpha.quality   import (
     calculate_quality_score, QualityResult,
     GATE_ROIC_QUALITY, GATE_ROIC_DEEP,
 )
-from contrarian_alpha.value     import calculate_value_score, ValueResult
+from contrarian_alpha.value     import (
+    calculate_value_score, ValueResult,
+    check_valuation_bands, ValuationBandsResult,
+)
 
 # Börsdata – optional (degrades gracefully when no API key)
 try:
@@ -191,6 +194,17 @@ class ContrairianAlphaResult:
     avg_volume_20d: float | None = None   # for LOW_LIQUIDITY flag in flags.py
     roic:           float | None = None   # ROIC % (Quality model)
     p_fcf:          float | None = None   # P/FCF multiple (Value model)
+
+    # KAP quality-mode fields (None in deep_contrarian mode)
+    net_debt_ebitda:   float | None = None
+    dividend_yield_pct: float | None = None
+    pe_ratio:          float | None = None
+    ev_ebit_ratio:     float | None = None
+    revenue_cagr_5y:   float | None = None
+    revenue_cagr_10y:  float | None = None
+    eps_cagr_10y:      float | None = None
+    kap_badge:         bool = False
+    valuation_bands:   "ValuationBandsResult | None" = None
 
     # Meta
     data_confidence: float = 0.0
@@ -536,11 +550,18 @@ def _fetch_kpi_history(ins_id: int, kpi_id: int, api) -> list[float]:
         return []
 
 
-def _build_quality_data(fund_snap: dict, ins_id: int | None, api) -> dict:
+def _build_quality_data(
+    fund_snap: dict,
+    ins_id: int | None,
+    api,
+    mode: str = "quality",
+) -> dict:
     """
     Assemble quality_data dict for calculate_quality_score().
     Current values come from the batch snapshot (fractions → converted to %).
     History is fetched per-instrument (only for survivors, cached 24 h).
+    When mode='quality', also fetches revenue/EPS CAGR from annual reports
+    and adds dividend_yield_pct.
     """
     data: dict = {}
 
@@ -557,10 +578,10 @@ def _build_quality_data(fund_snap: dict, ins_id: int | None, api) -> dict:
     if om_frac is not None:
         data["operating_margin"] = om_frac * 100
 
-    # revenue_growth from screener is the YoY growth rate as fraction
-    rev_g = fund_snap.get("revenue_growth")
-    if rev_g is not None:
-        data["revenue_growth_5y"] = rev_g   # sign only matters for gate (>0 = positive)
+    # Dividend yield — snapshot stores as fraction (KPI 1 ÷ 100); convert to %
+    div_frac = fund_snap.get("dividend_yield")
+    if div_frac is not None:
+        data["dividend_yield_pct"] = round(float(div_frac) * 100, 2)
 
     if ins_id is None or api is None:
         return data
@@ -588,6 +609,22 @@ def _build_quality_data(fund_snap: dict, ins_id: int | None, api) -> dict:
         data["op_margin_history"] = om_hist
         if "operating_margin" not in data:
             data["operating_margin"] = om_hist[0]
+
+    # Quality-mode only: true CAGR figures from annual reports (per-survivor, disk-cached)
+    if mode == "quality":
+        try:
+            growth = api.get_growth_history(ins_id, years=11)
+            rev5  = growth.get("revenue_cagr_5y")
+            rev10 = growth.get("revenue_cagr_10y")
+            earn10 = growth.get("earnings_cagr_10y")
+            if rev5  is not None:
+                data["revenue_cagr_5y"]  = round(float(rev5)   * 100, 2)
+            if rev10 is not None:
+                data["revenue_cagr_10y"] = round(float(rev10)  * 100, 2)
+            if earn10 is not None:
+                data["eps_cagr_10y"]     = round(float(earn10) * 100, 2)
+        except Exception as e:
+            logger.debug("get_growth_history(%s) failed: %s", ins_id, e)
 
     return data
 
@@ -763,7 +800,17 @@ def _run_single_ticker(
     bs_failures = []
     if not gates.get("fcf_positive",          False): bs_failures.append("FCF ≤ 0")
     if not gates.get("ebitda_margin_positive", False): bs_failures.append("EBITDA margin ≤ 0%")
-    if not gates.get("debt_equity_low",        False): bs_failures.append("D/E ≥ 0.6")
+
+    # Leverage gate: quality mode uses Net Debt/EBITDA ≤ 3.5 (net cash = auto-pass)
+    # deep_contrarian keeps the original D/E < 0.6 gate unchanged
+    if config.mode == "quality":
+        nd_e = fund_snap.get("net_debt_ebitda")
+        if nd_e is not None and float(nd_e) > 3.5:
+            bs_failures.append(f"Net Debt/EBITDA {nd_e:.1f} > 3.5")
+        # nd_e <= 3.5 (including negative = net cash) → pass; None → skip (graceful)
+    else:
+        if not gates.get("debt_equity_low", False): bs_failures.append("D/E ≥ 0.6")
+
     if not gates.get("equity_positive",        False): bs_failures.append("Equity ≤ 0")
 
     if bs_failures:
@@ -777,10 +824,12 @@ def _run_single_ticker(
 
     # ── 3.5. QUALITY GATE ────────────────────────────────────────────────────
 
-    quality_data   = _build_quality_data(fund_snap, ins_id, api)
+    quality_data   = _build_quality_data(fund_snap, ins_id, api, mode=config.mode)
     value_data     = _build_value_data(fund_snap, ins_id, api)
 
-    quality_result = calculate_quality_score(quality_data)
+    quality_result = calculate_quality_score(
+        quality_data, include_growth=(config.mode == "quality")
+    )
     value_result   = calculate_value_score(value_data)
 
     result.quality_score  = quality_result.score
@@ -791,6 +840,21 @@ def _run_single_ticker(
     result.p_fcf          = value_result.p_fcf
     result.all_flags.extend(quality_result.flags)
     result.all_flags.extend([f for f in value_result.flags if f not in result.all_flags])
+
+    # Store KAP fundamental fields (populated only in quality mode via quality_data)
+    result.net_debt_ebitda   = fund_snap.get("net_debt_ebitda")
+    result.dividend_yield_pct = quality_data.get("dividend_yield_pct")
+    result.pe_ratio          = fund_snap.get("pe")
+    result.ev_ebit_ratio     = fund_snap.get("ev_ebit")
+    result.revenue_cagr_5y   = quality_data.get("revenue_cagr_5y")
+    result.revenue_cagr_10y  = quality_data.get("revenue_cagr_10y")
+    result.eps_cagr_10y      = quality_data.get("eps_cagr_10y")
+
+    # Valuation sanity bands (quality mode only)
+    if config.mode == "quality":
+        vb = check_valuation_bands({"pe": result.pe_ratio, "ev_ebit": result.ev_ebit_ratio})
+        result.valuation_bands = vb
+        result.all_flags.extend([f for f in vb.flags if f not in result.all_flags])
 
     # Mode-dependent ROIC gate (only applied when ROIC data is available)
     roic_gate_pass = (
@@ -806,6 +870,28 @@ def _run_single_ticker(
             f"ROIC {quality_result.roic:.1f}% < {gate_pct} gate [{config.mode} mode]"
         )
         return result
+
+    # ── 3.6. KAP BADGE (quality mode only) ───────────────────────────────────
+
+    if config.mode == "quality":
+        rev5  = result.revenue_cagr_5y
+        rev10 = result.revenue_cagr_10y
+        nd_e  = result.net_debt_ebitda
+        div   = result.dividend_yield_pct
+
+        # 1. Growth: revenue CAGR 5y >= 5% AND (10y >= 5% OR DATA_GAP)
+        _growth_ok = (
+            rev5 is not None and rev5 >= 5.0
+            and (rev10 is None or rev10 >= 5.0)
+        )
+        # 2. Leverage: Net Debt/EBITDA <= 3.5 or net cash (nd_e <= 0) or no data
+        _leverage_ok = nd_e is None or float(nd_e) <= 3.5
+        # 3. Valuation bands: both metrics within range
+        _val_ok = result.valuation_bands is None or result.valuation_bands.passed
+        # 4. Dividend: yield >= 1%
+        _div_ok = div is not None and float(div) >= 1.0
+
+        result.kap_badge = _growth_ok and _leverage_ok and _val_ok and _div_ok
 
     # ── 4. COMPOSITE SCORING ─────────────────────────────────────────────────
 

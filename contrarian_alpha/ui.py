@@ -583,13 +583,14 @@ def _render_results_table(pipeline_result) -> str | None:
         )
 
         # Ren text-fallback för expander (Streamlit stödjer inte HTML i label)
+        kap_str = "  ★ KAP" if getattr(r, "kap_badge", False) else ""
         expander_plain = (
             f"#{r.rank}  {r.ticker} — {r.name}  │  "
             f"Score {r.composite_score:.1f}  │  "
             f"N {r.necessity_score:.0f} · H {r.hat_score:.0f} "
             f"· Q {r.quality_score:.0f} · V {r.value_score:.0f} "
             f"· C {r.catalyst_score:.0f}  "
-            f"{flag_str}"
+            f"{flag_str}{kap_str}"
         )
 
         with st.expander(expander_plain, expanded=False):
@@ -623,6 +624,17 @@ def _render_detail_card(r) -> None:
 
     # ── Metadata (höger) ──
     with col_meta:
+        # KAP badge (quality mode only)
+        if getattr(r, "kap_badge", False):
+            st.markdown(
+                f'<div style="background:{P["gold_faint"]};border:1px solid {P["gold"]};'
+                f'border-radius:6px;padding:6px 14px;margin-bottom:12px;'
+                f'font-family:\'Courier New\',monospace;font-size:11px;font-weight:700;'
+                f'letter-spacing:0.18em;color:{P["gold"]};text-align:center">'
+                f'★ KAP SCREENED</div>',
+                unsafe_allow_html=True,
+            )
+
         _section_title("VIKING REGIME")
         st.markdown(
             f'<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">'
@@ -760,24 +772,37 @@ def _render_breakdown_chart(r) -> None:
 
     # Gate-sammanfattning under diagrammet
     gate_checks: list[tuple[str, bool]] = []
+    _mode = st.session_state.get("ca_mode", "quality")
 
     if r.strength_result:
         gates = r.strength_result.gate_results
         gate_checks += [
             ("FCF > 0",        gates.get("fcf_positive",          False)),
             ("EBITDA > 0%",    gates.get("ebitda_margin_positive", False)),
-            ("D/E < 0.6",      gates.get("debt_equity_low",        False)),
-            ("Altman Z > 1.8", gates.get("altman_z_ok",            False)),
             ("Equity > 0",     gates.get("equity_positive",        False)),
+            ("Altman Z > 1.8", gates.get("altman_z_ok",            False)),
         ]
+        # Leverage gate label depends on mode
+        if _mode == "quality":
+            nd_e = getattr(r, "net_debt_ebitda", None)
+            _nd_pass = nd_e is None or float(nd_e) <= 3.5
+            gate_checks.append(("ND/EBITDA ≤ 3.5", _nd_pass))
+        else:
+            gate_checks.append(("D/E < 0.6", gates.get("debt_equity_low", False)))
 
     # ROIC gate
     qr = getattr(r, "quality_result", None)
     if qr is not None and qr.roic is not None:
-        _mode = st.session_state.get("ca_mode", "quality")
         _gate_pct = "15%" if _mode == "quality" else "10%"
         _roic_pass = qr.passes_gate_quality if _mode == "quality" else qr.passes_gate_deep
         gate_checks.append((f"ROIC > {_gate_pct}", _roic_pass))
+
+    # Valuation bands gate (quality mode only)
+    if _mode == "quality":
+        vb = getattr(r, "valuation_bands", None)
+        if vb is not None:
+            gate_checks.append(("P/E band [7–25]",    vb.pe_status in ("OK", "NO_DATA", "TOO_CHEAP")))
+            gate_checks.append(("EV/EBIT band [4–20]", vb.ev_ebit_status in ("OK", "NO_DATA", "TOO_CHEAP")))
 
     if gate_checks:
         parts = []
@@ -796,6 +821,8 @@ def _render_breakdown_chart(r) -> None:
 def _render_metrics_grid(r) -> None:
     """3-kolumns nyckeltalsgrid under Viking-badge (Quality-Contrarian 5-pelare)."""
 
+    mode = st.session_state.get("ca_mode", "quality")
+
     # SMA200-avvikelse
     sma200_dev = None
     if r.sma200 and r.close and r.sma200 > 0:
@@ -806,47 +833,110 @@ def _render_metrics_grid(r) -> None:
     pfcf_disc = getattr(vr, "p_fcf_discount", None) if vr else None
     pfcf_sub = f"disc {pfcf_disc:+.0f}% vs hist" if pfcf_disc is not None else "multipel"
 
-    # Quality sub-result extras
-    qr = getattr(r, "quality_result", None)
     roic_val = getattr(r, "roic", None)
 
+    # Base metrics (both modes)
     metrics = [
         ("ROIC %",      _fmt(roic_val, ".1f"),        "Avkastning på inv.kap"),
         ("P/FCF",       _fmt(r.p_fcf, ".1f"),         pfcf_sub),
         ("EV/EBITDA",   _fmt(r.ev_ebitda, ".1f"),     "Multipel"),
         ("FCF",         _fmt(r.fcf_m, ".0f"),         "MSEK (TTM)"),
-        ("D/E",         _fmt(r.debt_equity, ".2f"),   "Skuld/Eget kapital"),
         ("EBITDA %",    _fmt(r.ebitda_pct, ".1f"),    "Marginal %"),
         ("SMA200 dev",  _fmt(sma200_dev, "+.1f"),     "% från SMA200"),
         ("Altman Z",    _fmt(r.altman_z, ".2f"),      ">2.99 safe"),
+        ("D/E",         _fmt(r.debt_equity, ".2f"),   "Skuld/Eget kapital"),
     ]
+
+    # KAP metrics (quality mode only — shown when data is present)
+    if mode == "quality":
+        # Net Debt / EBITDA (replaces D/E gate in quality mode)
+        nd_e = getattr(r, "net_debt_ebitda", None)
+        nd_sub = "≤ 3.5 OK  |  ≤ 0 nettokassa"
+        metrics.append(("ND/EBITDA", _fmt(nd_e, ".1f"), nd_sub))
+
+        # P/E band status
+        pe_val = getattr(r, "pe_ratio", None)
+        vb = getattr(r, "valuation_bands", None)
+        pe_band_str = ""
+        if vb is not None and vb.pe_status != "NO_DATA":
+            pe_band_str = f"[{vb.pe_status}]"
+        pe_sub = f"band 7–25  {pe_band_str}".strip()
+        metrics.append(("P/E", _fmt(pe_val, ".1f"), pe_sub))
+
+        # EV/EBIT band
+        ev_ebit_val = getattr(r, "ev_ebit_ratio", None)
+        eb_band_str = ""
+        if vb is not None and vb.ev_ebit_status != "NO_DATA":
+            eb_band_str = f"[{vb.ev_ebit_status}]"
+        metrics.append(("EV/EBIT", _fmt(ev_ebit_val, ".1f"), f"band 4–20  {eb_band_str}".strip()))
+
+        # Revenue growth CAGRs
+        rev5  = getattr(r, "revenue_cagr_5y",  None)
+        rev10 = getattr(r, "revenue_cagr_10y", None)
+        eps10 = getattr(r, "eps_cagr_10y",     None)
+        metrics.append(("Rev CAGR 5y",  _fmt(rev5,  ".1f") + ("%" if rev5  is not None else ""), "≥5% KAP"))
+        metrics.append(("Rev CAGR 10y", _fmt(rev10, ".1f") + ("%" if rev10 is not None else ""), "≥5% KAP"))
+        metrics.append(("EPS CAGR 10y", _fmt(eps10, ".1f") + ("%" if eps10 is not None else ""), "≥5% KAP"))
+
+        # Dividend yield
+        div_pct = getattr(r, "dividend_yield_pct", None)
+        metrics.append(("Utdelning %",  _fmt(div_pct, ".1f"), "≥1% KAP bonus"))
 
     # Färgkoda
     def _metric_val_color(label: str, val_str: str) -> str:
-        if val_str == "—":
+        if val_str in ("—", ""):
             return P["text_dim"]
+        raw = val_str.replace("+", "").replace("%", "").strip()
         if label == "ROIC %":
             try:
-                v = float(val_str)
+                v = float(raw)
                 return P["green"] if v >= 15 else P["amber"] if v >= 10 else P["red"]
             except ValueError:
                 return P["text"]
         if label == "SMA200 dev":
             try:
-                v = float(val_str.replace("+", ""))
+                v = float(raw)
                 return P["green"] if v > 0 else P["red"]
             except ValueError:
                 return P["text"]
         if label == "Altman Z":
             try:
-                v = float(val_str)
+                v = float(raw)
                 return P["green"] if v > 2.99 else P["amber"] if v > 1.8 else P["red"]
             except ValueError:
                 return P["text"]
         if label == "D/E":
             try:
-                v = float(val_str)
+                v = float(raw)
                 return P["green"] if v < 0.3 else P["amber"] if v < 0.6 else P["red"]
+            except ValueError:
+                return P["text"]
+        if label == "ND/EBITDA":
+            try:
+                v = float(raw)
+                return P["green"] if v <= 1.5 else P["amber"] if v <= 3.5 else P["red"]
+            except ValueError:
+                return P["text"]
+        if label in ("P/E", "EV/EBIT"):
+            # Color by band status
+            if "[OK]" in val_str or "[OK]" in (
+                val_str if isinstance(val_str, str) else ""
+            ):
+                return P["green"]
+            if "[EXPENSIVE]" in str(val_str):
+                return P["red"]
+            if "[TOO_CHEAP]" in str(val_str):
+                return P["amber"]
+        if label in ("Rev CAGR 5y", "Rev CAGR 10y", "EPS CAGR 10y"):
+            try:
+                v = float(raw)
+                return P["green"] if v >= 5.0 else P["amber"] if v >= 3.0 else P["red"]
+            except ValueError:
+                return P["text"]
+        if label == "Utdelning %":
+            try:
+                v = float(raw)
+                return P["green"] if v >= 1.0 else P["text_dim"]
             except ValueError:
                 return P["text"]
         return P["text"]

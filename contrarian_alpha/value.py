@@ -279,6 +279,99 @@ def calculate_value_score(value_data: dict) -> ValueResult:
     )
 
 
+# ─── Valuation bands (quality mode only) ─────────────────────────────────────
+
+_PE_MIN     = 7.0    # P/E below this → TOO_CHEAP warning (possible value trap)
+_PE_MAX     = 25.0   # P/E above this → EXPENSIVE
+_EVEBIT_MIN = 4.0    # EV/EBIT below this → TOO_CHEAP
+_EVEBIT_MAX = 20.0   # EV/EBIT above this → EXPENSIVE
+
+
+@dataclass
+class ValuationBandsResult:
+    """
+    Quality-mode sanity check: P/E ∈ [7, 25] and EV/EBIT ∈ [4, 20].
+    TOO_CHEAP is a warning flag (possible value trap / peak-cyclical earnings).
+    EXPENSIVE fails the band (soft score impact, not hard elimination in v1).
+    """
+    pe_status:      str        = "NO_DATA"   # "OK" | "TOO_CHEAP" | "EXPENSIVE" | "NO_DATA"
+    ev_ebit_status: str        = "NO_DATA"
+    pe:             float | None = None
+    ev_ebit:        float | None = None
+    passed:         bool       = True        # False only when EXPENSIVE on either metric
+    flags:          list[str]  = field(default_factory=list)
+
+
+def check_valuation_bands(data: dict) -> ValuationBandsResult:
+    """
+    Evaluate P/E and EV/EBIT against KAP quality-mode sanity bands.
+
+    Args:
+        data: dict with keys ``pe`` (P/E ratio) and ``ev_ebit`` (EV/EBIT ratio).
+
+    Returns:
+        ValuationBandsResult with per-metric status, overall passed flag, and flags list.
+    """
+    pe      = data.get("pe")
+    ev_ebit = data.get("ev_ebit")
+
+    flags:  list[str] = []
+    passed: bool      = True
+
+    # ── P/E check ──
+    if pe is None:
+        pe_status = "NO_DATA"
+    else:
+        try:
+            p = float(pe)
+        except (TypeError, ValueError):
+            p = None
+            pe_status = "NO_DATA"
+        else:
+            if p <= 0:
+                pe_status = "NO_DATA"   # negative P/E = loss-making; skip band
+            elif p < _PE_MIN:
+                pe_status = "TOO_CHEAP"
+                flags.append("PE_TOO_CHEAP")   # warning only — not a hard fail
+            elif p > _PE_MAX:
+                pe_status = "EXPENSIVE"
+                flags.append("PE_EXPENSIVE")
+                passed = False
+            else:
+                pe_status = "OK"
+
+    # ── EV/EBIT check ──
+    if ev_ebit is None:
+        ev_ebit_status = "NO_DATA"
+    else:
+        try:
+            e = float(ev_ebit)
+        except (TypeError, ValueError):
+            e = None
+            ev_ebit_status = "NO_DATA"
+        else:
+            if e <= 0:
+                ev_ebit_status = "NO_DATA"
+            elif e < _EVEBIT_MIN:
+                ev_ebit_status = "TOO_CHEAP"
+                flags.append("EVEBIT_TOO_CHEAP")
+            elif e > _EVEBIT_MAX:
+                ev_ebit_status = "EXPENSIVE"
+                flags.append("EVEBIT_EXPENSIVE")
+                passed = False
+            else:
+                ev_ebit_status = "OK"
+
+    return ValuationBandsResult(
+        pe_status      = pe_status,
+        ev_ebit_status = ev_ebit_status,
+        pe             = float(pe) if (pe is not None and pe_status != "NO_DATA") else None,
+        ev_ebit        = float(ev_ebit) if (ev_ebit is not None and ev_ebit_status != "NO_DATA") else None,
+        passed         = passed,
+        flags          = flags,
+    )
+
+
 # ─── CLI diagnostics ──────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
