@@ -122,30 +122,101 @@ def _fetch_price(ticker: str, period: str = "2y") -> pd.DataFrame:
         return pd.DataFrame()
 
 
+def _kpi_latest_and_history(api, ins_id: int, kpi_id: int, max_points: int = 6):
+    """Return (latest_value, newest_first_history) from annual KPI history."""
+    try:
+        rows = api.get_kpi_history(ins_id, kpi_id, "year", "mean")
+    except Exception:
+        return None, []
+    vals: list[float] = []
+    for r in sorted(rows, key=lambda x: (x.get("y") or 0), reverse=True):
+        v = r.get("v")
+        if v is not None:
+            try:
+                vals.append(float(v))
+            except (TypeError, ValueError):
+                continue
+        if len(vals) >= max_points:
+            break
+    return (vals[0] if vals else None), vals
+
+
+# Börsdata KPI IDs (see borsdata_api.KPI for the full table)
+_KPI_PE, _KPI_EV_EBIT = 2, 10
+_KPI_ROIC, _KPI_ROCE = 37, 36
+_KPI_GROSS_MARGIN, _KPI_OP_MARGIN = 28, 29
+_KPI_DIV_YIELD = 1
+
+
 def _fetch_fundamentals(ticker: str) -> dict:
-    """Return dict with pe, ev_ebit (floats or None)."""
+    """
+    Resolve ticker → Börsdata instrument ID, then fetch:
+      pe, ev_ebit          — latest annual values
+      quality_data         — full input dict for contrarian_alpha.quality
+    Returns {} when Börsdata is unavailable or the ticker can't be resolved.
+    """
     if not _BORSDATA_OK or _get_api is None:
         return {}
     try:
         api = _get_api()
         if not api.is_configured:
             return {}
-        snap = api.get_fundamentals_snapshot_fast(ticker)
-        if not snap:
+
+        ins_id = api.resolve_instrument_id(ticker)
+        if ins_id is None:
+            logger.warning("Börsdata: could not resolve ticker %s", ticker)
             return {}
-        result = {}
-        for key in ("pe", "ev_ebit"):
-            raw = snap.get(key)
-            if raw is not None:
-                try:
-                    v = float(raw)
-                    if v > 0:
-                        result[key] = v
-                except (TypeError, ValueError):
-                    pass
+
+        result: dict = {"ins_id": ins_id}
+
+        pe, _ = _kpi_latest_and_history(api, ins_id, _KPI_PE)
+        ev_ebit, _ = _kpi_latest_and_history(api, ins_id, _KPI_EV_EBIT)
+        if pe is not None and pe > 0:
+            result["pe"] = pe
+        if ev_ebit is not None and ev_ebit > 0:
+            result["ev_ebit"] = ev_ebit
+
+        # Quality pillar inputs (values are in percent units, as quality.py expects)
+        roic, roic_hist = _kpi_latest_and_history(api, ins_id, _KPI_ROIC)
+        roce, _ = _kpi_latest_and_history(api, ins_id, _KPI_ROCE)
+        gm, gm_hist = _kpi_latest_and_history(api, ins_id, _KPI_GROSS_MARGIN)
+        om, om_hist = _kpi_latest_and_history(api, ins_id, _KPI_OP_MARGIN)
+        div_yield, _ = _kpi_latest_and_history(api, ins_id, _KPI_DIV_YIELD)
+
+        quality_data: dict = {}
+        if roic is not None:
+            quality_data["roic"] = roic
+            quality_data["roic_history"] = roic_hist[:4]
+        if roce is not None:
+            quality_data["roce"] = roce
+        if gm is not None:
+            quality_data["gross_margin"] = gm
+            quality_data["gross_margin_history"] = gm_hist[1:6]
+        if om is not None:
+            quality_data["operating_margin"] = om
+            quality_data["op_margin_history"] = om_hist[1:6]
+        if div_yield is not None:
+            quality_data["dividend_yield_pct"] = div_yield
+
+        # Growth consistency (KAP) — CAGR fractions → percent
+        try:
+            growth = api.get_growth_history(ins_id)
+            for src, dst in (
+                ("revenue_cagr_5y", "revenue_cagr_5y"),
+                ("revenue_cagr_10y", "revenue_cagr_10y"),
+                ("earnings_cagr_10y", "eps_cagr_10y"),
+            ):
+                v = growth.get(src)
+                if v is not None:
+                    quality_data[dst] = round(float(v) * 100, 2)
+        except Exception as exc:
+            logger.debug("get_growth_history(%s): %s", ticker, exc)
+
+        if quality_data:
+            result["quality_data"] = quality_data
         return result
     except Exception as exc:
-        logger.debug("_fetch_fundamentals(%s): %s", ticker, exc)
+        logger.warning("_fetch_fundamentals(%s) failed: %s", ticker, exc)
         return {}
 
 
@@ -243,6 +314,19 @@ def run_regime_analysis(
     fund = _fetch_fundamentals(ticker)
     result.pe = fund.get("pe")
     result.ev_ebit = fund.get("ev_ebit")
+
+    # Compute quality score from Börsdata data when not supplied by caller
+    if quality_score is None and fund.get("quality_data"):
+        try:
+            from contrarian_alpha.quality import calculate_quality_score
+            qres = calculate_quality_score(
+                fund["quality_data"],
+                include_growth=(mode == "quality"),
+            )
+            if "NO_QUALITY_DATA" not in qres.flags:
+                quality_score = qres.score
+        except Exception as exc:
+            logger.debug("quality score compute failed for %s: %s", ticker, exc)
     result.quality_score = quality_score
     result.kap_badge = kap_badge
 
