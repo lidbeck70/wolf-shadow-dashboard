@@ -15,7 +15,7 @@ GIST_ID = "50348cb5b9e325c8ae91439763d5f144"
 GIST_FILENAME = "holdings_init.json"
 GIST_API_URL = f"https://api.github.com/gists/{GIST_ID}"
 LOCAL_FALLBACK = ".holdings_data.json"
-_EMPTY = {"swing": [], "ovtlyr": [], "long": []}
+_EMPTY = {"swing": [], "ovtlyr": [], "long": [], "cash": 0}
 
 
 def _get_github_token() -> Optional[str]:
@@ -82,6 +82,8 @@ def load_holdings() -> dict:
     for key in ("swing", "ovtlyr", "long"):
         if key not in data:
             data[key] = []
+
+    data.setdefault("cash", 0)  # backward compat: older gists have no cash key
 
     st.session_state["holdings_data"] = data
     return data
