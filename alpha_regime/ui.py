@@ -194,10 +194,77 @@ _STATUS_COLORS = {
     "DATA_GAP":              "#4a5060",
 }
 
+# Thresholds mirrored from commodity_ratios.py (avoid circular import)
+_GAUGE_STRETCHED_PCT  = 90.0
+_GAUGE_TENSION_PCT    = 80.0
+_GAUGE_CHEAP_LOW_MAX  = 10.0
+_GAUGE_CHEAP_LOW_TENS = 20.0
+
+
+def _ratio_verdict(ratio) -> tuple:
+    """Return (badge_text, color, explanation) for a RatioResult."""
+    pct = ratio.percentile
+    d   = ratio.cheap_direction
+    lbl = ratio.label
+    den = ratio.denominator_label
+
+    if d == "high":
+        if pct >= _GAUGE_STRETCHED_PCT:
+            return ("🟢 KÖP-STÖD",      "#1aaa5a",
+                    f"{lbl} vid {pct:.0f}:e percentilen — {den} historiskt max-billig")
+        if pct >= _GAUGE_TENSION_PCT:
+            return ("⚡ SPÄNNING BYGGS", "#c9a84c",
+                    f"{lbl} vid {pct:.0f}:e percentilen — {den} närmar sig billighetszonen")
+        if pct <= 10.0:
+            return ("🔴 SÄLJ-STÖD",      "#cc3333",
+                    f"{lbl} vid {pct:.0f}:e percentilen — {den} historiskt max-dyr")
+        return ("⚪ NEUTRAL", "#607080",
+                f"{lbl} vid {pct:.0f}:e percentilen — ingen extrem")
+    else:  # "low" direction (copper_gold, gdx_spy)
+        if pct <= _GAUGE_CHEAP_LOW_MAX:
+            return ("🟢 KÖP-STÖD",      "#1aaa5a",
+                    f"{lbl} vid {pct:.0f}:e percentilen — {den} historiskt max-billig vs motvikten")
+        if pct <= _GAUGE_CHEAP_LOW_TENS:
+            return ("⚡ SPÄNNING BYGGS", "#c9a84c",
+                    f"{lbl} vid {pct:.0f}:e percentilen — {den} närmar sig billighetszonen")
+        if pct >= 90.0:
+            return ("🔴 SÄLJ-STÖD",      "#cc3333",
+                    f"{lbl} vid {pct:.0f}:e percentilen — {den} historiskt max-dyr vs motvikten")
+        return ("⚪ NEUTRAL", "#607080",
+                f"{lbl} vid {pct:.0f}:e percentilen — ingen extrem")
+
+
+def _compute_ratio_summary(commodity_ratios: dict, keys: list) -> str:
+    """Return e.g. 'Gummisnoddar: 2 KÖP-STÖD, 1 NEUTRAL' for the exposure's ratio list."""
+    counts: dict[str, int] = {"KÖP-STÖD": 0, "SÄLJ-STÖD": 0, "SPÄNNING": 0, "NEUTRAL": 0, "DATA_GAP": 0}
+    for key in keys:
+        r = commodity_ratios.get(key)
+        if r is None or r.status == "DATA_GAP":
+            counts["DATA_GAP"] += 1
+            continue
+        badge, _, _ = _ratio_verdict(r)
+        if "KÖP-STÖD" in badge:
+            counts["KÖP-STÖD"] += 1
+        elif "SÄLJ-STÖD" in badge:
+            counts["SÄLJ-STÖD"] += 1
+        elif "SPÄNNING" in badge:
+            counts["SPÄNNING"] += 1
+        else:
+            counts["NEUTRAL"] += 1
+
+    parts = []
+    for label, key in [("KÖP-STÖD", "KÖP-STÖD"), ("SÄLJ-STÖD", "SÄLJ-STÖD"),
+                        ("SPÄNNING", "SPÄNNING"), ("NEUTRAL", "NEUTRAL")]:
+        if counts[key] > 0:
+            parts.append(f"{counts[key]} {label}")
+    if counts["DATA_GAP"] > 0:
+        parts.append(f"{counts['DATA_GAP']} DATA_GAP")
+    return ("Gummisnoddar: " + ", ".join(parts)) if parts else ""
+
 
 # ── Contrarian helpers ────────────────────────────────────────────────────────
 
-def _render_verdict_banner_contrarian(r: RegimeResult, c) -> None:
+def _render_verdict_banner_contrarian(r: RegimeResult, c, ratio_summary: str = "") -> None:
     info = _STAGE_VERDICT.get(c.stage, {"n": 0, "type": "WAIT", "sub": "Conditions not met — await clearer signal"})
     t, n = info["type"], info["n"]
     if t == "ACCUMULATE":
@@ -213,6 +280,11 @@ def _render_verdict_banner_contrarian(r: RegimeResult, c) -> None:
     conf_badge  = _css_badge(f"Confidence: {c.confidence}", "#2a3040")
     color = c.color
 
+    summary_line = (
+        f'<div style="font-size:0.78rem;color:#8899aa;margin-top:6px;">{ratio_summary}</div>'
+        if ratio_summary else ""
+    )
+
     st.markdown(
         f"""<div style="border:3px solid {color};border-radius:8px;padding:22px 28px;
             background:rgba({_hex_to_rgb(color)},0.10);margin-bottom:16px;">
@@ -222,6 +294,7 @@ def _render_verdict_banner_contrarian(r: RegimeResult, c) -> None:
               letter-spacing:0.06em;margin:4px 0;">{icon} {headline}</div>
           <div style="font-size:0.9rem;color:#aabbcc;margin-bottom:8px;">{info['sub']}</div>
           {conf_badge}&nbsp;{phase_badge}
+          {summary_line}
         </div>""",
         unsafe_allow_html=True,
     )
@@ -272,17 +345,118 @@ def _render_next_trigger(r: RegimeResult, c) -> None:
     )
 
 
-def _render_rubber_band_gauge(r: RegimeResult, exposure_override) -> None:
-    """Render horizontal percentile gauge + 10y sparkline for the relevant commodity ratio."""
-    # Determine which ratio key to display
-    if exposure_override is None:          # Auto
-        ratio_key = r.detected_exposure
-    elif exposure_override == "":          # user chose "None"
+def _render_single_ratio(ratio, idx: int) -> None:
+    """Render one ratio gauge row: verdict badge, percentile bar, sparkline."""
+    if ratio.status == "DATA_GAP":
+        st.warning(f"DATA_GAP — {ratio.label}: {ratio.error or 'data unavailable'}")
         return
-    else:
-        ratio_key = exposure_override
 
-    if not ratio_key:
+    badge_text, badge_color, explanation = _ratio_verdict(ratio)
+    status_color = _STATUS_COLORS.get(ratio.status, "#607080")
+
+    # Header row
+    h1, h2, h3, h4 = st.columns([2.2, 1.2, 1.0, 1.0])
+    with h1:
+        st.markdown(
+            f'<span style="font-weight:700;color:#e8e4dc;">{ratio.label}</span>',
+            unsafe_allow_html=True,
+        )
+    with h2:
+        st.markdown(_css_badge(badge_text, badge_color), unsafe_allow_html=True)
+    with h3:
+        st.markdown(
+            _css_badge(f"{ratio.percentile:.0f}th pct", status_color),
+            unsafe_allow_html=True,
+        )
+    with h4:
+        z_color = "#1aaa5a" if ratio.zscore > 1.5 else ("#cc3333" if ratio.zscore < -1.5 else "#8899aa")
+        st.markdown(
+            f'<span style="color:{z_color};font-size:0.82rem;">{ratio.zscore:+.2f}σ</span>',
+            unsafe_allow_html=True,
+        )
+
+    # Explanation line
+    st.markdown(
+        f'<div style="font-size:0.78rem;color:#8899aa;margin:2px 0 6px;">{explanation}</div>',
+        unsafe_allow_html=True,
+    )
+
+    # Horizontal percentile gauge
+    pct = ratio.percentile
+    if ratio.cheap_direction == "high":
+        tension_zone   = '<div style="position:absolute;left:80%;width:10%;top:0;bottom:0;background:rgba(201,168,76,0.22);"></div>'
+        stretched_zone = '<div style="position:absolute;left:90%;right:0;top:0;bottom:0;background:rgba(0,229,255,0.28);"></div>'
+        cheap_label, cheap_align = "CHEAP ZONE →", "right"
+    else:
+        tension_zone   = '<div style="position:absolute;left:10%;width:10%;top:0;bottom:0;background:rgba(201,168,76,0.22);"></div>'
+        stretched_zone = '<div style="position:absolute;left:0;width:10%;top:0;bottom:0;background:rgba(0,229,255,0.28);"></div>'
+        cheap_label, cheap_align = "← CHEAP ZONE", "left"
+
+    st.markdown(
+        f"""<div style="margin:4px 0 2px;">
+          <div style="position:relative;background:#1a2030;border-radius:6px;height:24px;overflow:hidden;">
+            {tension_zone}{stretched_zone}
+            <div style="position:absolute;left:0;width:{pct:.1f}%;top:0;bottom:0;
+                background:linear-gradient(to right,#2a3545,{status_color}55);pointer-events:none;"></div>
+            <div style="position:absolute;left:{pct:.1f}%;top:2px;bottom:2px;width:3px;
+                background:#ffffff;border-radius:2px;transform:translateX(-50%);pointer-events:none;"></div>
+            <span style="position:absolute;left:4px;top:50%;transform:translateY(-50%);
+                font-size:0.6rem;color:#6677aa;">0</span>
+            <span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+                font-size:0.6rem;color:#6677aa;pointer-events:none;">50</span>
+            <span style="position:absolute;right:4px;top:50%;transform:translateY(-50%);
+                font-size:0.6rem;color:#6677aa;">100</span>
+          </div>
+          <div style="font-size:0.6rem;color:#00E5FF;text-align:{cheap_align};margin-top:2px;">{cheap_label}</div>
+        </div>""",
+        unsafe_allow_html=True,
+    )
+
+    # 10y sparkline
+    if ratio.sparkline_dates and ratio.sparkline_values:
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=ratio.sparkline_dates,
+            y=ratio.sparkline_values,
+            mode="lines",
+            line=dict(color="#00E5FF", width=1.2),
+            fill="tozeroy",
+            fillcolor="rgba(0,229,255,0.05)",
+            name=ratio.label,
+        ))
+        fig.add_hline(
+            y=ratio.current,
+            line_dash="dot", line_color="#c9a84c", line_width=1,
+            annotation_text=f"  {ratio.current:.4f}",
+            annotation_font_color="#c9a84c",
+            annotation_font_size=9,
+        )
+        fig.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="#0D1117",
+            font=dict(color="#aabbcc", size=9),
+            xaxis=dict(gridcolor="rgba(138,133,120,0.08)", title=""),
+            yaxis=dict(gridcolor="rgba(138,133,120,0.08)", title=""),
+            margin=dict(l=36, r=16, t=4, b=24),
+            height=110,
+            showlegend=False,
+        )
+        st.plotly_chart(fig, use_container_width=True, key=f"rb_spark_{ratio.key}_{idx}")
+
+
+def _render_rubber_band_gauge(r: RegimeResult, exposure_override) -> None:
+    """Render all commodity ratio gauges for the current exposure, stacked vertically."""
+    # Resolve which list of ratio keys to show
+    if exposure_override is None:          # Auto
+        keys = r.detected_exposure or []
+    elif isinstance(exposure_override, list):
+        if not exposure_override:          # user chose "None" (empty list)
+            return
+        keys = exposure_override
+    else:
+        keys = []
+
+    if not keys:
         st.caption("Commodity exposure not detected — select manually in the control above.")
         return
 
@@ -290,113 +464,19 @@ def _render_rubber_band_gauge(r: RegimeResult, exposure_override) -> None:
         st.caption("Commodity ratio data unavailable (module not loaded).")
         return
 
-    ratio = r.commodity_ratios.get(ratio_key)
-    if ratio is None:
-        st.caption(f"No ratio data for key: {ratio_key}")
-        return
-
-    if ratio.status == "DATA_GAP":
-        st.warning(f"Commodity data gap — {ratio.label}: {ratio.error or 'data unavailable'}")
-        return
-
-    status_color = _STATUS_COLORS.get(ratio.status, "#607080")
-
     st.markdown(
-        f'<p style="color:#c9a84c;font-weight:600;margin-bottom:6px;">'
-        f'Rubber Band Gauge — {ratio.label}</p>',
+        '<p style="color:#c9a84c;font-weight:600;margin-bottom:8px;">Rubber Band Gauges</p>',
         unsafe_allow_html=True,
     )
 
-    m1, m2, m3 = st.columns(3)
-    with m1:
-        st.markdown(f"**Ratio value** `{ratio.current:.5f}`")
-    with m2:
-        st.markdown(
-            f"**10y Percentile** {_css_badge(f'{ratio.percentile:.1f}th', status_color)}",
-            unsafe_allow_html=True,
-        )
-    with m3:
-        z_color = "#1aaa5a" if ratio.zscore > 1.5 else ("#cc3333" if ratio.zscore < -1.5 else "#aabbcc")
-        st.markdown(
-            f"**Z-score** {_css_badge(f'{ratio.zscore:+.2f}σ', z_color)}",
-            unsafe_allow_html=True,
-        )
-
-    _STATUS_LABELS = {
-        "RUBBER_BAND_STRETCHED": f"RUBBER BAND STRETCHED — {ratio.denominator_label} historically stretched cheap",
-        "TENSION_BUILDING":      f"TENSION BUILDING — {ratio.denominator_label} approaching extreme cheap",
-        "NEUTRAL":               "NEUTRAL — no extreme commodity reading",
-    }
-    st.markdown(
-        f'<div style="color:{status_color};font-size:0.85rem;font-weight:700;margin:4px 0 10px;">'
-        f'{_STATUS_LABELS.get(ratio.status, ratio.status)}</div>',
-        unsafe_allow_html=True,
-    )
-
-    # ── Horizontal percentile gauge ───────────────────────────────────────────
-    pct = ratio.percentile
-    if ratio.cheap_direction == "high":
-        # Stretched zone on the right (high = cheap)
-        tension_zone  = '<div style="position:absolute;left:80%;width:10%;top:0;bottom:0;background:rgba(201,168,76,0.22);"></div>'
-        stretched_zone = '<div style="position:absolute;left:90%;right:0;top:0;bottom:0;background:rgba(0,229,255,0.28);"></div>'
-        cheap_label, cheap_align = "CHEAP ZONE →", "right"
-    else:
-        # Stretched zone on the left (low = cheap for copper_gold)
-        tension_zone  = '<div style="position:absolute;left:10%;width:10%;top:0;bottom:0;background:rgba(201,168,76,0.22);"></div>'
-        stretched_zone = '<div style="position:absolute;left:0;width:10%;top:0;bottom:0;background:rgba(0,229,255,0.28);"></div>'
-        cheap_label, cheap_align = "← CHEAP ZONE", "left"
-
-    bar_color_hex = status_color
-    gauge_html = f"""
-    <div style="margin:8px 0 2px;">
-      <div style="position:relative;background:#1a2030;border-radius:6px;height:28px;overflow:hidden;">
-        {tension_zone}
-        {stretched_zone}
-        <div style="position:absolute;left:0;width:{pct:.1f}%;top:0;bottom:0;
-            background:linear-gradient(to right,#2a3545,{bar_color_hex}55);pointer-events:none;"></div>
-        <div style="position:absolute;left:{pct:.1f}%;top:2px;bottom:2px;width:3px;
-            background:#ffffff;border-radius:2px;transform:translateX(-50%);pointer-events:none;"></div>
-        <span style="position:absolute;left:4px;top:50%;transform:translateY(-50%);
-            font-size:0.62rem;color:#6677aa;">0</span>
-        <span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-            font-size:0.62rem;color:#6677aa;pointer-events:none;">50</span>
-        <span style="position:absolute;right:4px;top:50%;transform:translateY(-50%);
-            font-size:0.62rem;color:#6677aa;">100</span>
-      </div>
-      <div style="font-size:0.65rem;color:#00E5FF;text-align:{cheap_align};margin-top:2px;">{cheap_label}</div>
-    </div>"""
-    st.markdown(gauge_html, unsafe_allow_html=True)
-
-    # ── 10y sparkline ─────────────────────────────────────────────────────────
-    if ratio.sparkline_dates and ratio.sparkline_values:
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=ratio.sparkline_dates,
-            y=ratio.sparkline_values,
-            mode="lines",
-            line=dict(color="#00E5FF", width=1.5),
-            fill="tozeroy",
-            fillcolor="rgba(0,229,255,0.06)",
-            name=ratio.label,
-        ))
-        fig.add_hline(
-            y=ratio.current,
-            line_dash="dot", line_color="#c9a84c", line_width=1,
-            annotation_text=f"  current {ratio.current:.4f}",
-            annotation_font_color="#c9a84c",
-            annotation_font_size=10,
-        )
-        fig.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="#0D1117",
-            font=dict(color="#aabbcc", size=10),
-            xaxis=dict(gridcolor="rgba(138,133,120,0.1)", title=""),
-            yaxis=dict(gridcolor="rgba(138,133,120,0.1)", title=""),
-            margin=dict(l=40, r=20, t=8, b=28),
-            height=130,
-            showlegend=False,
-        )
-        st.plotly_chart(fig, use_container_width=True, key=f"rb_spark_{ratio_key}")
+    for i, key in enumerate(keys):
+        ratio = r.commodity_ratios.get(key)
+        if ratio is None:
+            st.caption(f"No data for ratio key: {key}")
+            continue
+        _render_single_ratio(ratio, idx=i)
+        if i < len(keys) - 1:
+            st.markdown('<hr style="border-color:#2a3040;margin:8px 0;">', unsafe_allow_html=True)
 
 
 # ── Mode renderers ────────────────────────────────────────────────────────────
@@ -430,8 +510,17 @@ def _render_contrarian_mode(r: RegimeResult, exposure_override=None) -> None:
         st.warning("Contrarian stage could not be determined.")
         return
 
-    # 1. Verdict banner
-    _render_verdict_banner_contrarian(r, c)
+    # Resolve display keys (same logic as gauge)
+    if exposure_override is None:
+        _display_keys = r.detected_exposure or []
+    elif isinstance(exposure_override, list):
+        _display_keys = exposure_override
+    else:
+        _display_keys = []
+
+    # 1. Verdict banner (with ratio summary)
+    _ratio_sum = _compute_ratio_summary(r.commodity_ratios, _display_keys)
+    _render_verdict_banner_contrarian(r, c, ratio_summary=_ratio_sum)
 
     # 2. Next trigger box
     _render_next_trigger(r, c)
@@ -497,24 +586,25 @@ def render_alpha_regime() -> None:
         run_btn = st.button("▶ ANALYSE", key="ar_run", use_container_width=True)
 
     # ── Commodity exposure override (contrarian mode only) ────────────────────
-    exposure_override: Optional[str] = None
+    exposure_override = None   # None = auto-detect
     if mode == "contrarian":
         _exp_col, _ = st.columns([2, 5])
         with _exp_col:
-            _EXP_OPTIONS = ["Auto", "Silver", "Gold Miners", "Oil", "Copper", "None"]
-            _EXP_TO_KEY: dict[str, Optional[str]] = {
-                "Auto":        None,
-                "Silver":      "gold_silver",
-                "Gold Miners": "metal_miners",
-                "Oil":         "gold_oil",
-                "Copper":      "copper_gold",
-                "None":        "",
+            _EXP_OPTIONS = ["Auto", "Gold Miners", "Junior Miners", "Silver", "Oil", "Copper", "None"]
+            _EXP_TO_KEY: dict[str, object] = {
+                "Auto":          None,
+                "Gold Miners":   ["metal_miners", "gdxj_gdx", "gold_gdxj", "gdx_spy"],
+                "Junior Miners": ["gdxj_gdx", "gold_gdxj"],
+                "Silver":        ["gold_silver", "silver_juniors"],
+                "Oil":           ["gold_oil"],
+                "Copper":        ["copper_gold"],
+                "None":          [],
             }
             _exp_sel = st.selectbox(
                 "Commodity exposure",
                 options=_EXP_OPTIONS,
                 key="ar_exposure",
-                help="Override auto-detected commodity sector for the rubber band gauge",
+                help="Override auto-detected commodity sector for the rubber band gauges",
             )
             exposure_override = _EXP_TO_KEY.get(_exp_sel)
 

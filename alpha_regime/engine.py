@@ -97,7 +97,7 @@ class RegimeResult:
 
     # Contrarian: commodity ratios + price context
     commodity_ratios: dict = field(default_factory=dict)
-    detected_exposure: Optional[str] = None   # ratio key, e.g. "gold_silver"
+    detected_exposure: Optional[list] = None  # list of ratio keys, e.g. ["metal_miners", "gdxj_gdx"]
     branch_name: Optional[str] = None         # Börsdata branch/sector name
     price_3m_low: Optional[float] = None      # ticker's 3-month low (for next-trigger box)
     price_6m_low: Optional[float] = None      # ticker's 3–6 month low
@@ -400,14 +400,18 @@ def run_regime_analysis(
             try:
                 result.commodity_ratios = _fetch_ratios()
                 raw_exp = _detect_exposure(result.branch_name)
+                # detected_exposure is now a list of ratio keys (or None)
                 result.detected_exposure = _EXPOSURE_TO_RATIO.get(raw_exp) if raw_exp else None
                 if result.detected_exposure:
-                    _ratio = result.commodity_ratios.get(result.detected_exposure)
-                    if _ratio and _ratio.status == "RUBBER_BAND_STRETCHED":
-                        result.contrarian.rationale.append(
-                            f"Rubber Band: {_ratio.label} at {_ratio.percentile:.0f}th percentile"
-                            f" — {_ratio.denominator_label} historically stretched cheap"
-                        )
+                    # Append rationale for the first STRETCHED ratio found (max +1 confirmation)
+                    for _rk in result.detected_exposure:
+                        _ratio = result.commodity_ratios.get(_rk)
+                        if _ratio and _ratio.status == "RUBBER_BAND_STRETCHED":
+                            result.contrarian.rationale.append(
+                                f"Rubber Band: {_ratio.label} at {_ratio.percentile:.0f}th percentile"
+                                f" — {_ratio.denominator_label} historically stretched cheap"
+                            )
+                            break  # max +1 ACCUMULATE confirmation
             except Exception as exc:
                 logger.debug("commodity_ratios: %s", exc)
 

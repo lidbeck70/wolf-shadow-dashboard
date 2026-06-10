@@ -31,8 +31,9 @@ except ImportError:
 # ── Thresholds (named constants) ──────────────────────────────────────────────
 _STRETCHED_PCT   = 90.0   # ≥ → RUBBER_BAND_STRETCHED  (high direction)
 _TENSION_PCT     = 80.0   # ≥ → TENSION_BUILDING        (high direction)
-_CHEAP_LOW_MAX   = 10.0   # ≤ → RUBBER_BAND_STRETCHED  (low direction: copper_gold)
+_CHEAP_LOW_MAX   = 10.0   # ≤ → RUBBER_BAND_STRETCHED  (low direction: copper_gold / gdx_spy)
 _CHEAP_LOW_TENS  = 20.0   # ≤ → TENSION_BUILDING        (low direction)
+_MIN_HISTORY_DAYS = 252 * 5  # 5-year guard for silver_juniors (SILJ history)
 
 
 # ── Ratio specifications ──────────────────────────────────────────────────────
@@ -43,17 +44,24 @@ class RatioSpec:
     denominator_label: str   # asset that is "stretched cheap" when STRETCHED
     primary_num: str
     primary_den: str
-    fallback_num: str
+    fallback_num: str        # "" = no fallback (DATA_GAP on primary failure)
     fallback_den: str
     cheap_direction: str     # "high" | "low"
+    min_years: int = 0       # minimum history required; 0 = no guard
 
 
 _RATIO_SPECS: list[RatioSpec] = [
-    RatioSpec("gold_silver",    "Gold / Silver",              "Silver",         "GC=F", "SI=F", "GLD", "SLV",  "high"),
-    RatioSpec("gold_oil",       "Gold / Oil",                 "Oil",            "GC=F", "CL=F", "GLD", "USO",  "high"),
-    RatioSpec("metal_miners",   "Gold ETF / Gold Miners",     "Gold Miners",    "GLD",  "GDX",  "GLD", "GDX",  "high"),
-    RatioSpec("silver_miners",  "Silver ETF / Silver Miners", "Silver Miners",  "SLV",  "SIL",  "SLV", "SIL",  "high"),
-    RatioSpec("copper_gold",    "Copper / Gold",              "Copper",         "HG=F", "GC=F", "COPX","GLD",  "low"),
+    # ── Original five ────────────────────────────────────────────────────────
+    RatioSpec("gold_silver",     "Gold / Silver",               "Silver",          "GC=F", "SI=F",  "GLD",  "SLV",  "high"),
+    RatioSpec("gold_oil",        "Gold / Oil",                  "Oil",             "GC=F", "CL=F",  "GLD",  "USO",  "high"),
+    RatioSpec("metal_miners",    "Gold ETF / Gold Miners",      "Gold Miners",     "GLD",  "GDX",   "GLD",  "GDX",  "high"),
+    RatioSpec("silver_miners",   "Silver ETF / Silver Miners",  "Silver Miners",   "SLV",  "SIL",   "SLV",  "SIL",  "high"),
+    RatioSpec("copper_gold",     "Copper / Gold",               "Copper",          "HG=F", "GC=F",  "COPX", "GLD",  "low"),
+    # ── Miner benchmark ratios ───────────────────────────────────────────────
+    RatioSpec("gdxj_gdx",        "GDXJ / GDX (Juniors/Majors)", "Junior Miners",   "GDXJ", "GDX",   "GDXJ", "GDX",  "high"),
+    RatioSpec("gold_gdxj",       "GLD / GDXJ (Metal/Juniors)",  "Junior Miners",   "GLD",  "GDXJ",  "GLD",  "GDXJ", "high"),
+    RatioSpec("silver_juniors",  "SLV / SILJ (Silver Juniors)", "Silver Juniors",  "SLV",  "SILJ",  "",     "",     "high", min_years=5),
+    RatioSpec("gdx_spy",         "GDX / SPY (Miners/Market)",   "Gold Miners",     "GDX",  "SPY",   "GDX",  "SPY",  "low"),
 ]
 
 
@@ -143,10 +151,12 @@ def _compute_ratio(spec: RatioSpec) -> RatioResult:
         cheap_direction=spec.cheap_direction,
     )
 
-    for num_t, den_t in [
-        (spec.primary_num, spec.primary_den),
-        (spec.fallback_num, spec.fallback_den),
-    ]:
+    pairs = [(spec.primary_num, spec.primary_den)]
+    # Only add fallback when non-empty and different from primary
+    if spec.fallback_num and spec.fallback_den and (spec.fallback_num, spec.fallback_den) != (spec.primary_num, spec.primary_den):
+        pairs.append((spec.fallback_num, spec.fallback_den))
+
+    for num_t, den_t in pairs:
         try:
             num_s = _download_close(num_t)
             den_s = _download_close(den_t)
@@ -157,6 +167,14 @@ def _compute_ratio(spec: RatioSpec) -> RatioResult:
             if len(aligned) < 100:
                 continue
 
+            # Minimum history guard (e.g. 5y for SILJ)
+            if spec.min_years > 0 and len(aligned) < spec.min_years * 252:
+                base.error = (
+                    f"{spec.key}: only {len(aligned)} trading days of history "
+                    f"(need ≥{spec.min_years * 252} for {spec.min_years}y minimum)"
+                )
+                return base
+
             ratio = aligned["n"] / aligned["d"]
             arr = ratio.values.astype(float)
             current = float(arr[-1])
@@ -164,7 +182,7 @@ def _compute_ratio(spec: RatioSpec) -> RatioResult:
             mean, std = float(arr.mean()), float(arr.std())
             zscore = round((current - mean) / std, 2) if std > 0 else 0.0
 
-            # Weekly-resampled sparkline (full 10y ≈ 520 weeks)
+            # Weekly-resampled sparkline (full history)
             ratio_w = ratio.resample("W").last().dropna()
             base.sparkline_dates  = [str(d.date()) for d in ratio_w.index]
             base.sparkline_values = [round(float(v), 5) for v in ratio_w.values]
@@ -180,7 +198,8 @@ def _compute_ratio(spec: RatioSpec) -> RatioResult:
             logger.debug("_compute_ratio(%s) %s/%s: %s", spec.key, num_t, den_t, exc)
             continue
 
-    base.error = f"Data unavailable for {spec.key} (primary + ETF fallback both failed)"
+    if base.error is None:
+        base.error = f"Data unavailable for {spec.key} (primary{' + fallback' if spec.fallback_num else ''} failed)"
     return base
 
 
@@ -190,17 +209,20 @@ def fetch_all_ratios() -> dict:
     return {spec.key: _compute_ratio(spec) for spec in _RATIO_SPECS}
 
 
-# ── Exposure detection ────────────────────────────────────────────────────────
-EXPOSURE_TO_RATIO: dict[str, str] = {
-    "silver":     "gold_silver",
-    "gold_miner": "metal_miners",
-    "oil":        "gold_oil",
-    "copper":     "copper_gold",
+# ── Exposure → ratio key list ─────────────────────────────────────────────────
+# Each exposure maps to an ordered list of ratio keys to display.
+EXPOSURE_TO_RATIO: dict[str, list[str]] = {
+    "gold_miner":   ["metal_miners", "gdxj_gdx", "gold_gdxj", "gdx_spy"],
+    "junior_miner": ["gdxj_gdx", "gold_gdxj"],
+    "silver":       ["gold_silver", "silver_juniors"],
+    "oil":          ["gold_oil"],
+    "copper":       ["copper_gold"],
 }
 
-# Ordered: more specific patterns first
+# Ordered: most specific patterns first
 _KEYWORD_EXPOSURE: list[tuple[list[str], str]] = [
-    (["silver miner", "silver mine", "silvr", "silber"],      "silver"),
+    (["junior miner", "junior mine", "juniormine", "gdxj"],   "junior_miner"),
+    (["silver miner", "silver mine", "silvr", "silber"],       "silver"),
     (["gold miner", "gold mine", "goldminer"],                 "gold_miner"),
     (["silver"],                                               "silver"),
     (["gold", "guld", "gld"],                                  "gold_miner"),
