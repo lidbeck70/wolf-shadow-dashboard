@@ -8,3 +8,6 @@ import_data/
 
 .streamlit/secrets.toml
 output/
+
+blindspot/blindspot_history.jsonl
+retail_sentiment/sentiment_history.jsonl
