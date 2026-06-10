@@ -15,6 +15,8 @@ _YELLOW  = "#d4943a"
 _BLUE    = "#00E5FF"
 _TEXT    = "#e8e4dc"
 _DIM     = "#8a8578"
+_AMBER   = "#c9a84c"
+_EMBER   = "#FF6B3D"
 
 # ------------------------------------------------------------------ #
 #  Rule data — updated panel guides for 9-tab layout
@@ -248,10 +250,413 @@ def _section_header_html(title: str, subtitle: str, color: str) -> str:
 
 
 # ------------------------------------------------------------------ #
+#  Strategy guides
+# ------------------------------------------------------------------ #
+
+def _gs(title: str, body: str, color: str = _CYAN) -> str:
+    """Return styled guide-section HTML block."""
+    return (
+        f"<div style='margin-bottom:22px;'>"
+        f"<div style='color:{color};font-size:0.7rem;font-weight:700;"
+        f"letter-spacing:0.1em;text-transform:uppercase;"
+        f"border-bottom:1px solid {color}44;padding-bottom:4px;margin-bottom:8px;'>"
+        f"{title}</div>"
+        f"<div style='color:{_TEXT};font-size:0.87rem;line-height:1.6;'>{body}</div>"
+        f"</div>"
+    )
+
+
+def _ul(items: list, color: str = _DIM) -> str:
+    lis = "".join(f"<li style='margin-bottom:5px;'>{it}</li>" for it in items)
+    return (
+        f"<ul style='color:{color};font-size:0.85rem;line-height:1.55;"
+        f"margin:4px 0 0 16px;padding:0;'>{lis}</ul>"
+    )
+
+
+def _guide_quality() -> None:
+    st.markdown(
+        f"<h3 style='color:{_CYAN};letter-spacing:0.1em;margin-bottom:4px;'>Quality</h3>"
+        f"<div style='color:{_DIM};font-size:0.75rem;margin-bottom:20px;'>"
+        f"Inspirerad av Warren Buffett och Kvalitetsaktiepodden (KAP)</div>",
+        unsafe_allow_html=True,
+    )
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown(
+            _gs("1. Målet",
+                "Hitta välskötta bolag med stark ekonomi, köp dem till rimliga priser när "
+                "marknadsläget är gynnsamt och håll dem länge (0,5–3 år). "
+                "Strategin letar efter <em>wonderful companies at fair prices</em> — "
+                "Buffetts princip kombinerad med KAPs krav på hög lönsamhet, "
+                "stabila marginaler och låg skuldsättning.",
+                _CYAN),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("2. När köper du",
+                "Alla fyra villkor måste vara gröna (systemet visar BUY):"
+                + _ul([
+                    "<b>Trend:</b> Aktiekursen ÖVER 200-dagars EMA <em>och</em> 50-dagars EMA ÖVER 200-dagars EMA (gyllene kors).",
+                    "<b>Värdering:</b> P/E-tal 7–25 <em>och</em> EV/EBIT 4–20. Varken för dyrt eller suspekt billigt.",
+                    "<b>Marknadscykel:</b> Marknaden i DISBELIEF, HOPE, OPTIMISM, BELIEF eller DISBELIEF_NEW (tidigt till mitt i en uppgång — inte eufori).",
+                    "<b>Bolagskvalitet:</b> Kvalitetspoäng ≥ 55/100 (ROIC, marginaler, tillväxt) ELLER KAP-badge.",
+                ], _TEXT) +
+                "<div style='color:#607080;font-size:0.8rem;margin-top:6px;'>"
+                "WATCH = 3 av 4 gröna. WAIT = 2 eller färre.</div>",
+                _CYAN),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("3. Positionsstorlek",
+                _ul([
+                    "Max <b>10%</b> av portföljvärdet per enskild aktie.",
+                    "Sträva efter <b>8–10 innehav</b> (koncentrerat men diversifierat).",
+                    "Bygg hela positionen i en omgång när BUY-signalen tänds.",
+                    "Max <b>20–25% exponering per sektor</b>.",
+                ], _TEXT),
+                _AMBER),
+            unsafe_allow_html=True,
+        )
+    with c2:
+        st.markdown(
+            _gs("4. När säljer du",
+                _ul([
+                    "<b>Trenden bryts:</b> Kursen faller UNDER 200-dagars EMA — halvera positionen vid brottet, sälj resten vid regimskifte.",
+                    "<b>Värderingen spricker:</b> P/E > 25 eller EV/EBIT > 20 — cykeln kan vara på topp.",
+                    "<b>Cykeln skiftar:</b> Marknadsfas THRILL, EUPHORIA, COMPLACENCY, ANXIETY eller DENIAL.",
+                    "<b>Bolagskvaliteten faller:</b> Kvalitetspoängen rasar kraftigt eller marginaler försämras konsekvent.",
+                ], _TEXT),
+                _RED),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("5. Var i panelen",
+                _ul([
+                    "<b>Hitta kandidater:</b> SIGNALS → Contrarian Alpha (sortera på kvalitetspoäng).",
+                    "<b>Bekräfta köpläge:</b> REGIME → Alpha Regime → Quality-läge → tryck ANALYSERA.",
+                    "<b>Kontrollera portföljrisk:</b> PORTFOLIO → Holdings (korrelation + sektorexponering).",
+                    "<b>Bevaka regimskifte:</b> REGIME → Wolf Regime (trendfilter) eller Viking Regime (EMA-alignment).",
+                ], _CYAN),
+                _CYAN),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("6. Vanliga misstag",
+                _ul([
+                    "Köper för sent — när nyheterna är positiva är kursen ofta redan i THRILL-fasen.",
+                    "Struntar i kvalitetspoängen — ett billigt bolag med dålig lönsamhet är en värdefälla.",
+                    "Sprider för brett — 20+ aktier späder ur hela fördelen med strategin.",
+                    "Säljer inte vid EMA200-brott — <em>det vänder snart</em> kostar dig 30–50%.",
+                ], _DIM),
+                _RED),
+            unsafe_allow_html=True,
+        )
+
+
+def _guide_contrarian() -> None:
+    st.markdown(
+        f"<h3 style='color:{_EMBER};letter-spacing:0.1em;margin-bottom:4px;'>Deep Contrarian</h3>"
+        f"<div style='color:{_DIM};font-size:0.75rem;margin-bottom:20px;'>"
+        f"Inspirerad av Rick Rule och Eric Sprott</div>",
+        unsafe_allow_html=True,
+    )
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown(
+            _gs("1. Målet",
+                "Köp råvarurelaterade tillgångar (gruvbolag, guld, silver, olja) i faser av "
+                "maximalt hat och förtvivlan — och sälj när alla är euforiska. "
+                "Rick Rule: <em>du är antingen kontrarian eller du är ett offer.</em> "
+                "Eric Sprott: bygg positioner i tredjedelar, aldrig allt på en gång. "
+                "Tidshorisonten är 1–3 år per cykel.",
+                _EMBER),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("2. När köper du",
+                "Tre köpfaser baserade på marknadscykeln:"
+                + _ul([
+                    "<b>ACCUMULATE 1/3</b> — Marknadsfas: CAPITULATION eller DEPRESSION. "
+                    "Maximalt pessimism, alla ger upp. Köp första tredjedelen.",
+                    "<b>ACCUMULATE 2/3</b> — Marknadsfas: DISBELIEF, ANGER eller PANIC. "
+                    "Tvivel och ilska. Kursen fortfarande under 200-dagars MA. Köp andra tredjedelen.",
+                    "<b>ACCUMULATE 3/3</b> — Marknadsfas: HOPE. Kurs nära 200-dagars MA (–5% till +15%). "
+                    "Sista chansen att ackumulera billigt.",
+                    "<b>Bekräftelse:</b> Gummisnodde ≥ 90:e percentilen (t.ex. Gold/Silver) = "
+                    "råvaran historiskt max-billig vs motvikten → stärker köpfallet.",
+                    "<b>Sentiment-overlay:</b> Retail sentiment < 30/100 = extrem rädsla → "
+                    "HIGH confidence-signal.",
+                ], _TEXT),
+                _EMBER),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("3. Positionsstorlek",
+                _ul([
+                    "Bygg i <b>tre lika delar</b> — aldrig allt på en gång.",
+                    "Max <b>~25% per råvarukategori</b> (t.ex. max 25% i guldgruvbolag totalt).",
+                    "Räkna med att kunna hålla genom <b>50% nedgång</b> utan att sälja i panik.",
+                    "Ingen hård procentsats per trade — storleken bestäms av din totala portfölj och conviction.",
+                ], _TEXT),
+                _AMBER),
+            unsafe_allow_html=True,
+        )
+    with c2:
+        st.markdown(
+            _gs("4. När säljer du",
+                "Tre distributionsfaser:"
+                + _ul([
+                    "<b>DISTRIBUTE 1/3</b> — Fas: THRILL. Entusiasm och FOMO driver priserna. Sälj 25–33%.",
+                    "<b>DISTRIBUTE 2/3</b> — Fas: EUPHORIA eller COMPLACENCY. Alla är euforiska. Sälj 50–75%.",
+                    "<b>DISTRIBUTE 3/3</b> — Fas: ANXIETY eller DENIAL. Trenden bryter ner. Sälj resterande.",
+                    "<b>Sentiment-overlay:</b> Retail sentiment > 70/100 = extrem girighet → "
+                    "stärker sälj-signalen.",
+                    "<b>HOLD</b>-fasen (OPTIMISM/BELIEF): håll, köp inte mer, sälj inte ännu.",
+                ], _TEXT),
+                _RED),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("5. Var i panelen",
+                _ul([
+                    "<b>Hitta fas:</b> REGIME → Alpha Regime → välj Deep Contrarian → tryck ANALYSERA.",
+                    "<b>Gummisnodde-bekräftelse:</b> Välj 'Commodity exposure' i Alpha Regime för att se "
+                    "om råvaruratios är historiskt sträckta (≥ 90:e percentilen).",
+                    "<b>Hitta kandidater:</b> SIGNALS → Contrarian Alpha (Hat Score + Necessity).",
+                    "<b>Sentiment:</b> INTELLIGENCE → Retail Pulse.",
+                ], _CYAN),
+                _CYAN),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("6. Vanliga misstag",
+                _ul([
+                    "Köper allt på en gång istället för i tredjedelar — du missar möjligheten att pressa ner snittköp.",
+                    "Säljer i HOLD-fasen för tidigt — <em>trenden har precis börjat, du är på väg att missa det mesta.</em>",
+                    "Ignorerar gummisnodde-signalerna — de ger objektiv bekräftelse när magkänslan sviker.",
+                    "Köper i DENIAL/ANXIETY (som är ett SÄLJ-läge, inte ett KÖPLÄGE).",
+                ], _DIM),
+                _RED),
+            unsafe_allow_html=True,
+        )
+
+
+def _guide_wolf() -> None:
+    st.markdown(
+        f"<h3 style='color:{_CYAN};letter-spacing:0.1em;margin-bottom:4px;'>Wolf</h3>"
+        f"<div style='color:{_DIM};font-size:0.75rem;margin-bottom:20px;'>"
+        f"Kortsiktig swing-handel med trend + Ichimoku-exit</div>",
+        unsafe_allow_html=True,
+    )
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown(
+            _gs("1. Målet",
+                "Fånga kortsiktiga trendrörelser (dagar till veckor) med hög precision och "
+                "tight riskkontroll. Varje trade har definierat stop-loss och minst 1:2 i "
+                "risk/reward (förhållande mellan risk och potentiell vinst). "
+                "Max 1% av portföljkapitalet i risk per trade.",
+                _CYAN),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("2. När köper du (11 regler, alla krävs)",
+                _ul([
+                    "<b>Regel 1:</b> Handla <em>med</em> trenden — upptrend = long, nedtrend = short.",
+                    "<b>Regel 2:</b> Ingen trade i konsolidering (sidorörelser) — vänta på breakout.",
+                    "<b>Regel 3:</b> En key level krävs — tydligt stöd/motstånd eller supply/demand-zon inom 3%.",
+                    "<b>Regel 4:</b> Entry efter pullback — pris inom 2% av EMA10 eller EMA20.",
+                    "<b>Regel 5:</b> Candlestick-trigger — hammer, engulfing eller break-and-retest.",
+                    "<b>Regel 6:</b> Volymbekräftelse — volymratio ≥ 1,0× (ej undre volym).",
+                    "<b>Regel 7:</b> Min R:R 1:2, helst 1:3.",
+                    "<b>Regel 8:</b> Max 1% risk av portföljkapitalet per trade.",
+                ], _TEXT),
+                _CYAN),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("3. Positionsstorlek",
+                _ul([
+                    "Beräkna: <b>Positionsstorlek = (Kapital × 1%) / SL-avstånd i kr</b>.",
+                    "Sätt alltid SL baserat på struktur (key level), aldrig ett fast procenttal.",
+                    "Max 2 förluster per dag — stäng plattformen direkt efter den andra.",
+                ], _TEXT),
+                _AMBER),
+            unsafe_allow_html=True,
+        )
+    with c2:
+        st.markdown(
+            _gs("4. När säljer du",
+                _ul([
+                    "<b>Regel 9:</b> Flytta SL till breakeven (entry-priset) <em>efter</em> ny HH (higher high) eller HL (higher low) — inte tidigare.",
+                    "<b>Regel 10:</b> Max 2 förluster per dag — stopp dagen efter den andra.",
+                    "<b>Regel 11 — exit:</b> Trailing stop via Kijun-sen (Ichimoku, 26-period). "
+                    "Stäng om pris stänger UNDER Kijun <em>och</em> under EMA10. "
+                    "½ × ATR som hård nödstopp.",
+                ], _TEXT),
+                _RED),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("5. Var i panelen",
+                _ul([
+                    "<b>Screena kandidater:</b> SIGNALS → Arc Screener.",
+                    "<b>Kontrollera alla 11 regler:</b> REGIME → Wolf Regime → Entry Checklist (auto pass/fail).",
+                    "<b>SL/TP-kalkylator:</b> REGIME → Wolf Regime → SL/TP-sektion.",
+                    "<b>Trendfilter:</b> REGIME → Wolf Regime → Regime Score (grön badge = handla long).",
+                ], _CYAN),
+                _CYAN),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("6. Vanliga misstag",
+                _ul([
+                    "Handlar mot trenden — den enda regeln som aldrig har undantag.",
+                    "Tar trade utan key level — utan OB/stöd finns inget logiskt stopp.",
+                    "Dåligt R:R — tar 1:1 trades och undrar varför kontot krymper.",
+                    "Skippar volymkravet — låg volym = rörelsen är inte äkta.",
+                ], _DIM),
+                _RED),
+            unsafe_allow_html=True,
+        )
+
+
+def _guide_viking() -> None:
+    st.markdown(
+        f"<h3 style='color:{_BLUE};letter-spacing:0.1em;margin-bottom:4px;'>Viking</h3>"
+        f"<div style='color:{_DIM};font-size:0.75rem;margin-bottom:20px;'>"
+        f"OVTLYR Golden Ticket — momentum-swing med 10 entry + 10 exit-regler</div>",
+        unsafe_allow_html=True,
+    )
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown(
+            _gs("1. Målet",
+                "Fånga starka momentumrörelser i aktier som redan är i tydlig upptrend. "
+                "Strategin kräver att ALLT är alignat — marknad, sektor och aktie. "
+                "Baserad på OVTLYR Golden Ticket-systemet: "
+                "<em>Where Outliers Win.</em> "
+                "Max 1–2% risk per trade, alltid med exakt stop-loss.",
+                _BLUE),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("2. När köper du (10 entry-regler, alla måste passera)",
+                _ul([
+                    "<b>1. Marknadstrend:</b> SPY — 10 EMA ÖVER 20 EMA, aktiekurs ÖVER 50 EMA.",
+                    "<b>2. Marknadssignal:</b> Viking-signal på $SPY visar BUY (grön).",
+                    "<b>3. Marknadsbreadd:</b> Bull List % stiger (bullish crossover).",
+                    "<b>4. Sektorbreadd:</b> Sektorn stigande — bullish 10 EMA-kors.",
+                    "<b>5. Sektor Fear &amp; Greed:</b> Sektorsentimentet förbättras (stiger).",
+                    "<b>6. Aktiesignal:</b> Viking-signal på aktien visar BUY.",
+                    "<b>7. Aktietrend:</b> 10 EMA > 20 EMA > 50 EMA, aktie ÖVER alla tre.",
+                    "<b>8. Aktie F&amp;G:</b> Aktiens Fear &amp; Greed stiger (ej 'Exhausted').",
+                    "<b>9. Order Blocks:</b> Inga bearish OBs (motståndszoner) blockerar vägen uppåt.",
+                    "<b>10. Momentum:</b> Pris ovanför gårdagens lägsta — RSI > 50.",
+                ], _TEXT),
+                _BLUE),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("3. Positionsstorlek",
+                _ul([
+                    "Beräkna: <b>Positionsstorlek = (Kapital × 1–2%) / SL-avstånd</b>.",
+                    "SL = entry minus ½ × ATR (14-period).",
+                    "Max 2 förluster per dag — stäng plattformen.",
+                ], _TEXT),
+                _AMBER),
+            unsafe_allow_html=True,
+        )
+    with c2:
+        st.markdown(
+            _gs("4. När säljer du (10 exit-regler)",
+                _ul([
+                    "<b>1. Hård exit:</b> SPY stänger UNDER 20 EMA → stäng ALLT omedelbart.",
+                    "<b>2. SL:</b> ½ × ATR (14p) under entry — initial stop-loss.",
+                    "<b>3. Trailing stop:</b> Stäng om pris stänger under 10 EMA.",
+                    "<b>4. Order Block hit:</b> Pris rör sig in i bearish OB-zon → exit.",
+                    "<b>5. Gap &amp; Crap:</b> Gap upp följt av fall under gårdagens stängning → exit direkt.",
+                    "<b>6. Stängning under gårdagens lägsta</b> (efter att SL rullats till BE).",
+                    "<b>7. Sektor + breadth crossover:</b> Sektorn byter grön → röd AND Bull List vänder ner.",
+                    "<b>8. Aktiesignal flippar:</b> Viking-signal byter till SELL eller REDUCE.",
+                    "<b>9. F&amp;G target:</b> Entry F&amp;G 0–50 → exit vid +63. 50–75 → +10p. 75+ → +5p.",
+                    "<b>10. Earnings risk:</b> Stäng minst 5 handelsdagar före rapportdag.",
+                ], _TEXT),
+                _RED),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("5. Var i panelen",
+                _ul([
+                    "<b>Alla 10 entry-regler:</b> REGIME → Viking Regime (Vikings Nine-checklist).",
+                    "<b>Screena momentum:</b> SIGNALS → Arc Screener (Viking-filter).",
+                    "<b>Marknadsbreadd:</b> REGIME → Viking Regime → Bull List % gauge.",
+                    "<b>Sektor:</b> INTELLIGENCE → Heatmap / Flow Divergence.",
+                    "<b>F&amp;G per aktie:</b> REGIME → Viking Regime → Oscillator Direction.",
+                ], _CYAN),
+                _CYAN),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("6. Vanliga misstag",
+                _ul([
+                    "Köper när SPY är svag — den hårda exit-regeln (SPY under 20 EMA) visar varför det är farligt.",
+                    "Ignorerar marknadsbreadden — utan Bull List-bekräftelse köper du in i en försvagning.",
+                    "Håller igenom earnings — en rapport kan radera hela vinsten på sekunder.",
+                    "Använder för stort SL-avstånd — tar mer risk per trade än 1–2%, kontot töms snabbt vid en serie förluster.",
+                ], _DIM),
+                _RED),
+            unsafe_allow_html=True,
+        )
+
+
+def render_strategy_guides() -> None:
+    """Sub-page with beginner strategy guides in plain Swedish."""
+    st.markdown(
+        f"<div style='text-align:center;padding:16px 0 12px 0;'>"
+        f"<h2 style='color:{_CYAN};letter-spacing:0.12em;margin:0;'>STRATEGIGUIDER</h2>"
+        f"<p style='color:{_DIM};font-size:0.75rem;letter-spacing:0.08em;'>"
+        f"Enkla förklaringar i klartext — vad varje strategi gör, när du handlar och var i panelen du hittar det.</p>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+    sel = st.radio(
+        "Välj strategi",
+        ["Quality", "Deep Contrarian", "Wolf", "Viking"],
+        horizontal=True,
+        key="sg_pick",
+    )
+    st.markdown("<hr style='border-color:rgba(0,229,255,0.15);margin:12px 0 20px 0;'>",
+                unsafe_allow_html=True)
+    if sel == "Quality":
+        _guide_quality()
+    elif sel == "Deep Contrarian":
+        _guide_contrarian()
+    elif sel == "Wolf":
+        _guide_wolf()
+    elif sel == "Viking":
+        _guide_viking()
+
+
+# ------------------------------------------------------------------ #
 #  Main render
 # ------------------------------------------------------------------ #
 
 def render_rules_page() -> None:
+    sub = st.radio(
+        "",
+        ["📋 HANDELSREGLER", "📖 STRATEGIGUIDER"],
+        horizontal=True,
+        key="rules_sub",
+    )
+    st.markdown("<hr style='border-color:rgba(0,229,255,0.15);margin:8px 0 16px 0;'>",
+                unsafe_allow_html=True)
+
+    if sub == "📖 STRATEGIGUIDER":
+        render_strategy_guides()
+        return
+
     st.markdown(
         f"<div style='text-align:center;padding:20px 0 10px 0;'>"
         f"<h1 style='color:{_CYAN};letter-spacing:0.15em;margin:0;'>TRADING RULES</h1>"

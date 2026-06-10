@@ -20,15 +20,34 @@ from alpha_regime.contrarian_signals import (
     CYCLE_PHASE_COLORS,
 )
 
+# ── Optional: direct commodity ratio helpers for custom builder ───────────────
+_CR_OK = False
+try:
+    from alpha_regime.commodity_ratios import (
+        _download_close as _cr_download_close,
+        _percentile_of  as _cr_percentile_of,
+        _classify       as _cr_classify,
+        RatioResult     as _CRRatioResult,
+    )
+    _CR_OK = True
+except ImportError:
+    pass
+
 logger = logging.getLogger(__name__)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 _MARKET_OPTIONS = {
-    "SPY — S&P 500 (US)":    "SPY",
-    "^OMX — OMX Stockholm 30": "^OMX",
-    "^OMXSPI — OMX All Share":  "^OMXSPI",
-    "QQQ — Nasdaq 100":       "QQQ",
+    "SPY — S&P 500 (US)":              "SPY",
+    "QQQ — Nasdaq 100 (US)":           "QQQ",
+    "^OMX — OMXS30 (Stockholm)":       "^OMX",
+    "OBX — Oslo Børs":                 "OBX.OL",
+    "^OMXC25 — OMX Copenhagen 25":     "^OMXC25",
+    "^OMXH25 — OMX Helsinki 25":       "^OMXH25",
+    "GDX — Gold Miners ETF":           "GDX",
+    "GDXJ — Junior Gold Miners ETF":   "GDXJ",
+    "GLD — Gold":                      "GLD",
+    "SLV — Silver":                    "SLV",
 }
 
 _VERDICT_COLORS = {
@@ -479,12 +498,194 @@ def _render_rubber_band_gauge(r: RegimeResult, exposure_override) -> None:
             st.markdown('<hr style="border-color:#2a3040;margin:8px 0;">', unsafe_allow_html=True)
 
 
+# ── Custom ratio builder ─────────────────────────────────────────────────────
+
+def _render_custom_ratio_builder() -> None:
+    """Expander with two ticker inputs — compute and cache a custom rubber-band ratio."""
+    with st.expander("➕ Egen ratio", expanded=False):
+        cb1, cb2, cb3 = st.columns([1.2, 1.2, 0.8])
+        with cb1:
+            num_t = st.text_input("Täljare (t.ex. GLD)", value="GLD",
+                                  key="cr_num").strip().upper()
+        with cb2:
+            den_t = st.text_input("Nämnare (t.ex. GDXJ)", value="GDXJ",
+                                  key="cr_den").strip().upper()
+        with cb3:
+            period = st.selectbox("Period", ["5y", "10y", "max"], key="cr_period")
+
+        run_custom = st.button("Beräkna", key="cr_run")
+        saved: list = st.session_state.get("ar_custom_ratios", [])
+
+        if run_custom:
+            if not num_t or not den_t:
+                st.error("Ange båda tickerkoderna.")
+            elif not _CR_OK:
+                st.error("Commodity ratio-modulen är inte tillgänglig.")
+            else:
+                with st.spinner(f"Hämtar {num_t} / {den_t} ({period}) …"):
+                    try:
+                        import numpy as np
+                        import pandas as pd
+
+                        num_s = _cr_download_close(num_t, period=period)
+                        den_s = _cr_download_close(den_t, period=period)
+
+                        if num_s.empty:
+                            st.error(f"Ingen kursdata för täljaren '{num_t}'. "
+                                     "Kontrollera att tickerkoden är rätt (t.ex. GDXJ, GLD, AAPL).")
+                        elif den_s.empty:
+                            st.error(f"Ingen kursdata för nämnaren '{den_t}'. "
+                                     "Kontrollera att tickerkoden är rätt.")
+                        else:
+                            aligned = pd.concat({"n": num_s, "d": den_s}, axis=1).dropna()
+                            if len(aligned) < 50:
+                                st.error(
+                                    f"För lite gemensam historik ({len(aligned)} dagar). "
+                                    "Välj längre period eller andra tickerkoder."
+                                )
+                            else:
+                                series = aligned["n"] / aligned["d"]
+                                arr    = series.values.astype(float)
+                                cur    = float(arr[-1])
+                                pct    = _cr_percentile_of(arr, cur)
+                                mean, std = float(arr.mean()), float(arr.std())
+                                zscore = round((cur - mean) / std, 2) if std > 0 else 0.0
+
+                                series_w = series.resample("W").last().dropna()
+                                cr = _CRRatioResult(
+                                    key=f"custom_{num_t}_{den_t}",
+                                    label=f"{num_t} / {den_t}",
+                                    denominator_label=den_t,
+                                    cheap_direction="high",
+                                    current=round(cur, 5),
+                                    percentile=round(pct, 1),
+                                    zscore=zscore,
+                                    status=_cr_classify(pct, "high"),
+                                    sparkline_dates=[str(d.date()) for d in series_w.index],
+                                    sparkline_values=[round(float(v), 5) for v in series_w.values],
+                                )
+                                saved = [x for x in saved if x.label != cr.label]
+                                saved = [cr] + saved
+                                saved = saved[:5]
+                                st.session_state["ar_custom_ratios"] = saved
+                    except Exception as exc:
+                        st.error(f"Kunde inte beräkna ratio: {exc}")
+
+        if saved:
+            st.markdown(
+                '<p style="color:#c9a84c;font-weight:600;margin:14px 0 6px;">'
+                'Sparade egna ratios (senaste 5)</p>',
+                unsafe_allow_html=True,
+            )
+            for i, cr in enumerate(saved):
+                _render_single_ratio(cr, idx=1000 + i)
+                if i < len(saved) - 1:
+                    st.markdown(
+                        '<hr style="border-color:#2a3040;margin:8px 0;">',
+                        unsafe_allow_html=True,
+                    )
+
+
+# ── Action box ────────────────────────────────────────────────────────────────
+
+def _render_action_box(r: RegimeResult) -> None:
+    """Top-level Swedish action box — what to do right now, in plain language."""
+    if r.mode == "quality":
+        verdict = r.quality_verdict
+        passed  = r.signals_passed
+        total   = sum(1 for s in r.signals if s.label != "NO DATA")
+        if verdict == "BUY":
+            action_key = "KÖP NU"
+            color      = "#1aaa5a"
+            action_txt = f"Alla {total} köpvillkor är uppfyllda. Köp nu — max 10% av portföljvärdet per aktie."
+            why_txt    = "Upptrend bekräftad, rimlig värdering, gynnsamt marknadsläge och hög bolagskvalitet."
+        elif verdict == "WATCH":
+            action_key = "AVVAKTA"
+            color      = "#607080"
+            action_txt = "Lägg aktien på bevakningslista och vänta tills alla villkor är uppfyllda."
+            why_txt    = f"{passed} av {total} signaler är gröna — ett villkor saknas fortfarande."
+        else:
+            action_key = "AVVAKTA"
+            color      = "#607080"
+            action_txt = "Vänta. Tillräckligt många köpvillkor är inte uppfyllda ännu."
+            why_txt    = f"Bara {passed} av {total} signaler godkända — se vilka som inte klarar nedan."
+    else:  # contrarian
+        c = r.contrarian
+        if c is None:
+            return
+        stage = c.stage
+        if stage.startswith("ACCUMULATE"):
+            action_key = "KÖP NU"
+            color      = c.color
+            n          = int(stage[-1])
+            stop_part  = (
+                f" Sätt mental stopp under 3-månadersbotten ({r.price_3m_low:.2f})."
+                if r.price_3m_low else ""
+            )
+            if n == 1:
+                action_txt = f"Köp första tredjedelen (1/3) av din planerade position nu.{stop_part}"
+                why_txt    = (f"Marknaden är i {r.market_phase} — maximalt pessimism och kapitulation. "
+                              "Rick Rule: det bästa köpläget finns när alla ger upp.")
+            elif n == 2:
+                action_txt = f"Köp andra tredjedelen (2/3) av din position nu.{stop_part}"
+                why_txt    = (f"Marknaden är i {r.market_phase} — tvivel och ilska dominerar. "
+                              "Sprott: pressa in mer när pessimismen håller priset nere.")
+            else:
+                action_txt = f"Köp sista tredjedelen (3/3) av din position nu.{stop_part}"
+                why_txt    = (f"Hoppfas börjar ({r.market_phase}) — sista chansen att köpa billigt "
+                              "innan trenden bekräftas.")
+        elif stage == "HOLD":
+            action_key = "AVVAKTA"
+            color      = "#607080"
+            action_txt = "Håll befintliga positioner. Köp inga nya andelar till dessa priser."
+            why_txt    = (f"Trenden är bekräftad ({r.market_phase}) — ackumuleringsfönstret är stängt. "
+                          "Vänta på nästa distributionssignal.")
+        elif stage.startswith("DISTRIBUTE"):
+            action_key = "SÄLJ / TA HEM"
+            color      = "#FF6B3D"
+            n          = int(stage[-1])
+            if n == 1:
+                action_txt = "Sälj 25–33% av din position nu. Ta hem vinst och minska risken."
+                why_txt    = (f"Marknaden är i {r.market_phase} — FOMO och entusiasm driver priserna. "
+                              "Sprott: sälj till glada köpare.")
+            elif n == 2:
+                action_txt = "Sälj ytterligare 50% av din position. Distribuera aggressivt."
+                why_txt    = (f"Marknaden är i {r.market_phase} — extrem girighet. "
+                              "Rick Rule: sälj när alla andra köper.")
+            else:
+                action_txt = "Sälj resterande position omedelbart. Bevara kapitalet."
+                why_txt    = (f"Marknaden är i {r.market_phase} — trenden bryts ner. "
+                              "Bevara kapitalet till nästa köpcykel.")
+        else:
+            action_key = "AVVAKTA"
+            color      = "#607080"
+            action_txt = "Ingen tydlig signal. Gör ingenting och vänta på klarare marknadsläge."
+            why_txt    = f"Oklar marknadsfas ({r.market_phase}) — cykeln behöver mer tid att klargöras."
+
+    icon = "🟢" if action_key == "KÖP NU" else ("🔴" if "SÄLJ" in action_key else "⚪")
+    st.markdown(
+        f"""<div style="border:3px solid {color};border-radius:10px;padding:24px 28px;
+            background:rgba({_hex_to_rgb(color)},0.12);margin-bottom:20px;">
+          <div style="font-size:0.7rem;color:#8899aa;letter-spacing:0.12em;
+              text-transform:uppercase;margin-bottom:6px;">Vad ska jag göra?</div>
+          <div style="font-size:2.6rem;font-weight:900;color:{color};
+              letter-spacing:0.04em;margin-bottom:10px;">{icon}&nbsp;{action_key}</div>
+          <div style="font-size:0.98rem;color:#e8e4dc;font-weight:600;
+              margin-bottom:6px;">{action_txt}</div>
+          <div style="font-size:0.86rem;color:#aabbcc;">{why_txt}</div>
+        </div>""",
+        unsafe_allow_html=True,
+    )
+
+
 # ── Mode renderers ────────────────────────────────────────────────────────────
 
 def _render_quality_mode(r: RegimeResult) -> None:
     if r.error:
         st.error(r.error)
         return
+
+    _render_action_box(r)
 
     # Signal grid — 4 columns
     cols = st.columns(4)
@@ -518,6 +719,9 @@ def _render_contrarian_mode(r: RegimeResult, exposure_override=None) -> None:
     else:
         _display_keys = []
 
+    # 0. Action box (Swedish, beginner-friendly)
+    _render_action_box(r)
+
     # 1. Verdict banner (with ratio summary)
     _ratio_sum = _compute_ratio_summary(r.commodity_ratios, _display_keys)
     _render_verdict_banner_contrarian(r, c, ratio_summary=_ratio_sum)
@@ -525,8 +729,9 @@ def _render_contrarian_mode(r: RegimeResult, exposure_override=None) -> None:
     # 2. Next trigger box
     _render_next_trigger(r, c)
 
-    # 3. Rubber band gauge
+    # 3. Rubber band gauge + custom builder
     _render_rubber_band_gauge(r, exposure_override)
+    _render_custom_ratio_builder()
 
     # 4. Checklist
     if c.rationale:
