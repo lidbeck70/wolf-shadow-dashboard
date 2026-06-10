@@ -127,7 +127,14 @@ try:
 except ImportError:
     BLINDSPOT_AVAILABLE = False
 
-# Alpha Regime Monitor
+# Alpha Regime — dual-mode confirmation system (Quality / Deep Contrarian)
+try:
+    from alpha_regime.ui import render_alpha_regime
+    ALPHA_REGIME_AVAILABLE = True
+except ImportError:
+    ALPHA_REGIME_AVAILABLE = False
+
+# Legacy long-trend monitor (fallback)
 try:
     from long_regime_monitor import render_long_regime_monitor
     LONG_REGIME_AVAILABLE = True
@@ -228,10 +235,12 @@ def main():
             except Exception:
                 pass
         elif sub == "Alpha Regime":
-            if LONG_REGIME_AVAILABLE:
+            if ALPHA_REGIME_AVAILABLE:
+                render_alpha_regime()
+            elif LONG_REGIME_AVAILABLE:
                 render_long_regime_monitor()
             else:
-                tab_not_found("Alpha Regime Monitor", "long_regime_monitor")
+                tab_not_found("Alpha Regime Monitor", "alpha_regime")
             try:
                 if render_inline_rules:
                     render_inline_rules("alpha")
