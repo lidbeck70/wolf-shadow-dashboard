@@ -35,6 +35,10 @@ _CHEAP_LOW_MAX   = 10.0   # ≤ → RUBBER_BAND_STRETCHED  (low direction: coppe
 _CHEAP_LOW_TENS  = 20.0   # ≤ → TENSION_BUILDING        (low direction)
 _MIN_HISTORY_DAYS = 252 * 5  # 5-year guard for silver_juniors (SILJ history)
 
+# Per-leg percentile thresholds (driver classification)
+_LEG_EXPENSIVE_MIN = 80.0   # a leg is "expensive" when its own pctile >= this
+_LEG_CHEAP_MAX     = 20.0   # a leg is "cheap"    when its own pctile <= this
+
 
 # ── Ratio specifications ──────────────────────────────────────────────────────
 @dataclass
@@ -79,6 +83,12 @@ class RatioResult:
     sparkline_dates: list = field(default_factory=list)
     sparkline_values: list = field(default_factory=list)
     error: Optional[str] = None
+    # Per-leg breakdown (populated by _compute_ratio)
+    numerator_label:       str            = ""
+    denominator_leg_label: str            = ""
+    numerator_pctile:      Optional[float] = None
+    denominator_pctile:    Optional[float] = None
+    driver: str = "UNKNOWN"  # DENOMINATOR_CHEAP | NUMERATOR_EXPENSIVE | BOTH | MIXED | UNKNOWN
 
 
 # ── Fetch helpers ─────────────────────────────────────────────────────────────
@@ -126,6 +136,45 @@ def _percentile_of(arr: np.ndarray, val: float) -> float:
     if len(arr) == 0:
         return 50.0
     return float(np.searchsorted(np.sort(arr), val, side="right") / len(arr) * 100)
+
+
+def _leg_label(pct: float) -> str:
+    """Human-readable Swedish label for a single leg's own percentile."""
+    if pct >= 80: return "DYRT"
+    if pct >= 60: return "HÖGT"
+    if pct >= 40: return "NEUTRALT"
+    if pct >= 20: return "LÅGT"
+    return "BILLIGT"
+
+
+def _classify_driver(num_pct: float, den_pct: float, cheap_direction: str) -> str:
+    """
+    Classify what is actually driving a stretched ratio.
+
+    For 'high' direction (high ratio = denominator cheap, e.g. gold/silver → silver cheap):
+      Genuine signal  = denominator actually cheap (den_pct <= _LEG_CHEAP_MAX).
+      Misleading      = numerator just expensive   (num_pct >= _LEG_EXPENSIVE_MIN).
+    For 'low' direction (low ratio = numerator cheap, e.g. copper/gold → copper cheap):
+      Genuine signal  = numerator actually cheap   (num_pct <= _LEG_CHEAP_MAX).
+      Misleading      = denominator just expensive (den_pct >= _LEG_EXPENSIVE_MIN).
+    """
+    if cheap_direction == "high":
+        cheap_pct = den_pct
+        other_pct = num_pct
+    else:
+        cheap_pct = num_pct
+        other_pct = den_pct
+
+    genuine = cheap_pct <= _LEG_CHEAP_MAX
+    mislead = other_pct >= _LEG_EXPENSIVE_MIN
+
+    if genuine and mislead:
+        return "BOTH"
+    if genuine:
+        return "DENOMINATOR_CHEAP"
+    if mislead:
+        return "NUMERATOR_EXPENSIVE"
+    return "MIXED"
 
 
 def _classify(pct: float, direction: str) -> str:
@@ -192,6 +241,17 @@ def _compute_ratio(spec: RatioSpec) -> RatioResult:
             base.zscore     = zscore
             base.status     = _classify(pct, spec.cheap_direction)
             base.error      = None
+
+            # Per-leg percentile breakdown
+            num_leg = aligned["n"].values.astype(float)
+            den_leg = aligned["d"].values.astype(float)
+            num_leg_pct = _percentile_of(num_leg, float(num_leg[-1]))
+            den_leg_pct = _percentile_of(den_leg, float(den_leg[-1]))
+            base.numerator_label       = num_t
+            base.denominator_leg_label = den_t
+            base.numerator_pctile      = round(num_leg_pct, 1)
+            base.denominator_pctile    = round(den_leg_pct, 1)
+            base.driver                = _classify_driver(num_leg_pct, den_leg_pct, spec.cheap_direction)
             return base
 
         except Exception as exc:

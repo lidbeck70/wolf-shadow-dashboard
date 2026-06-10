@@ -406,7 +406,10 @@ def run_regime_analysis(
                     # Append rationale for the first STRETCHED ratio found (max +1 confirmation)
                     for _rk in result.detected_exposure:
                         _ratio = result.commodity_ratios.get(_rk)
-                        if _ratio and _ratio.status == "RUBBER_BAND_STRETCHED":
+                        # Only append if the cheap asset is genuinely cheap (not just expensive numerator)
+                        if (_ratio and _ratio.status == "RUBBER_BAND_STRETCHED"
+                                and getattr(_ratio, "driver", "UNKNOWN")
+                                in ("DENOMINATOR_CHEAP", "BOTH", "UNKNOWN")):
                             result.contrarian.rationale.append(
                                 f"Rubber Band: {_ratio.label} at {_ratio.percentile:.0f}th percentile"
                                 f" — {_ratio.denominator_label} historically stretched cheap"

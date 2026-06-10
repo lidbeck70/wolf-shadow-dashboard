@@ -24,10 +24,11 @@ from alpha_regime.contrarian_signals import (
 _CR_OK = False
 try:
     from alpha_regime.commodity_ratios import (
-        _download_close as _cr_download_close,
-        _percentile_of  as _cr_percentile_of,
-        _classify       as _cr_classify,
-        RatioResult     as _CRRatioResult,
+        _download_close  as _cr_download_close,
+        _percentile_of   as _cr_percentile_of,
+        _classify        as _cr_classify,
+        _classify_driver as _cr_classify_driver,
+        RatioResult      as _CRRatioResult,
     )
     _CR_OK = True
 except ImportError:
@@ -263,7 +264,11 @@ def _compute_ratio_summary(commodity_ratios: dict, keys: list) -> str:
             continue
         badge, _, _ = _ratio_verdict(r)
         if "KÖP-STÖD" in badge:
-            counts["KÖP-STÖD"] += 1
+            # Only genuine buy signal when driver confirms cheap asset, not expensive other leg
+            if getattr(r, "driver", "UNKNOWN") in ("DENOMINATOR_CHEAP", "BOTH", "UNKNOWN"):
+                counts["KÖP-STÖD"] += 1
+            else:
+                counts["NEUTRAL"] += 1   # NUMERATOR_EXPENSIVE/MIXED demoted
         elif "SÄLJ-STÖD" in badge:
             counts["SÄLJ-STÖD"] += 1
         elif "SPÄNNING" in badge:
@@ -431,6 +436,9 @@ def _render_single_ratio(ratio, idx: int) -> None:
         unsafe_allow_html=True,
     )
 
+    # Per-leg percentile breakdown + driver verdict
+    _render_leg_breakdown(ratio)
+
     # 10y sparkline
     if ratio.sparkline_dates and ratio.sparkline_values:
         fig = go.Figure()
@@ -498,6 +506,100 @@ def _render_rubber_band_gauge(r: RegimeResult, exposure_override) -> None:
             st.markdown('<hr style="border-color:#2a3040;margin:8px 0;">', unsafe_allow_html=True)
 
 
+# ── Per-leg breakdown helpers ─────────────────────────────────────────────────
+
+def _leg_pctile_label(pct: float) -> str:
+    if pct >= 80: return "DYRT"
+    if pct >= 60: return "HÖGT"
+    if pct >= 40: return "NEUTRALT"
+    if pct >= 20: return "LÅGT"
+    return "BILLIGT"
+
+
+def _leg_pctile_color(pct: float) -> str:
+    if pct >= 80: return "#cc3333"
+    if pct >= 60: return "#c9a84c"
+    if pct <= 20: return "#1aaa5a"
+    if pct <= 40: return "#607080"
+    return "#8899aa"
+
+
+def _driver_verdict_text(ratio) -> tuple:
+    """Return (icon, Swedish explanation) for the driver classification."""
+    d  = ratio.driver
+    cd = getattr(ratio, "cheap_direction", "high")
+
+    # Identify which leg is the "cheap asset" the user might want to buy
+    if cd == "high":
+        cheap_name = ratio.denominator_leg_label or ratio.denominator_label
+        other_name = ratio.numerator_label or "Täljare"
+        cheap_pct  = ratio.denominator_pctile or 0.0
+        other_pct  = ratio.numerator_pctile   or 0.0
+    else:
+        cheap_name = ratio.numerator_label or "Täljare"
+        other_name = ratio.denominator_leg_label or ratio.denominator_label
+        cheap_pct  = ratio.numerator_pctile   or 0.0
+        other_pct  = ratio.denominator_pctile or 0.0
+
+    if d == "DENOMINATOR_CHEAP":
+        return ("🟢",
+                f"{cheap_name} är genuint billig ({cheap_pct:.0f}:e pct i eget historiskt spann) "
+                f"— äkta köpstöd i {cheap_name}.")
+    if d == "NUMERATOR_EXPENSIVE":
+        return ("⚠️",
+                f"Snodden är spänd för att {other_name} är dyr ({other_pct:.0f}:e pct) "
+                f"— inte för att {cheap_name} är billig. "
+                f"Inte ett äkta köpläge i {cheap_name}.")
+    if d == "BOTH":
+        return ("🟢⚡",
+                f"{cheap_name} genuint billig ({cheap_pct:.0f}:e pct) OCH {other_name} "
+                f"dyr ({other_pct:.0f}:e pct) — båda sträcker snodden. Starkt köpstöd.")
+    if d == "MIXED":
+        return ("⚪", "Blandad signal — ingen tydlig billig/dyr-slutsats på bennivå.")
+    return ("⚪", "Driver okänd — otillräcklig bendata.")
+
+
+def _render_leg_breakdown(ratio) -> None:
+    """Two-row per-leg percentile + one-line driver verdict below the gauge bar."""
+    num_pct = ratio.numerator_pctile
+    den_pct = ratio.denominator_pctile
+    if num_pct is None or den_pct is None:
+        return
+
+    num_name  = ratio.numerator_label       or "Täljare"
+    den_name  = ratio.denominator_leg_label or "Nämnare"
+    num_lbl   = _leg_pctile_label(num_pct)
+    den_lbl   = _leg_pctile_label(den_pct)
+    num_color = _leg_pctile_color(num_pct)
+    den_color = _leg_pctile_color(den_pct)
+
+    icon, verdict_text = _driver_verdict_text(ratio)
+    verdict_color = {
+        "DENOMINATOR_CHEAP":   "#1aaa5a",
+        "NUMERATOR_EXPENSIVE": "#e8a020",
+        "BOTH":                "#c9a84c",
+        "MIXED":               "#607080",
+    }.get(ratio.driver, "#607080")
+
+    st.markdown(
+        f"""<div style="background:#0d1117;border:1px solid #2a3040;border-radius:5px;
+            padding:8px 12px;margin:4px 0 8px;">
+          <div style="display:flex;flex-wrap:wrap;gap:20px;margin-bottom:5px;font-size:0.8rem;">
+            <span>
+              <span style="color:#607080;">Täljare ({num_name}):</span>&nbsp;
+              <span style="color:{num_color};font-weight:700;">{num_pct:.0f}:e pct — {num_lbl}</span>
+            </span>
+            <span>
+              <span style="color:#607080;">Nämnare ({den_name}):</span>&nbsp;
+              <span style="color:{den_color};font-weight:700;">{den_pct:.0f}:e pct — {den_lbl}</span>
+            </span>
+          </div>
+          <div style="color:{verdict_color};font-size:0.78rem;">{icon} {verdict_text}</div>
+        </div>""",
+        unsafe_allow_html=True,
+    )
+
+
 # ── Custom ratio builder ─────────────────────────────────────────────────────
 
 def _render_custom_ratio_builder() -> None:
@@ -552,6 +654,10 @@ def _render_custom_ratio_builder() -> None:
                                 zscore = round((cur - mean) / std, 2) if std > 0 else 0.0
 
                                 series_w = series.resample("W").last().dropna()
+                                num_leg_arr = aligned["n"].values.astype(float)
+                                den_leg_arr = aligned["d"].values.astype(float)
+                                num_leg_pct = _cr_percentile_of(num_leg_arr, float(num_leg_arr[-1]))
+                                den_leg_pct = _cr_percentile_of(den_leg_arr, float(den_leg_arr[-1]))
                                 cr = _CRRatioResult(
                                     key=f"custom_{num_t}_{den_t}",
                                     label=f"{num_t} / {den_t}",
@@ -563,6 +669,11 @@ def _render_custom_ratio_builder() -> None:
                                     status=_cr_classify(pct, "high"),
                                     sparkline_dates=[str(d.date()) for d in series_w.index],
                                     sparkline_values=[round(float(v), 5) for v in series_w.values],
+                                    numerator_label=num_t,
+                                    denominator_leg_label=den_t,
+                                    numerator_pctile=round(num_leg_pct, 1),
+                                    denominator_pctile=round(den_leg_pct, 1),
+                                    driver=_cr_classify_driver(num_leg_pct, den_leg_pct, "high"),
                                 )
                                 saved = [x for x in saved if x.label != cr.label]
                                 saved = [cr] + saved
