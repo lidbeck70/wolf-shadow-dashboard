@@ -302,6 +302,136 @@ def _strategy_card(name: str, stats: dict):
 
 
 # ---------------------------------------------------------------------------
+# Broker import UI
+# ---------------------------------------------------------------------------
+def _render_import_section(existing_trades: list) -> None:
+    """Render the 'Import from Broker' expander at the bottom of the journal tab."""
+    st.markdown(
+        f'<p style="color:{_GOLD}; font-weight:600; margin-top:16px; margin-bottom:4px;">'
+        f'Import from Broker</p>',
+        unsafe_allow_html=True,
+    )
+    with st.expander("Import from Broker — Nordnet ISK / Nordea ASK", expanded=False):
+        try:
+            from journal_import.importer import run_import, apply_import
+            _IMPORT_OK = True
+        except ImportError as _ie:
+            st.warning(f"journal_import module not available: {_ie}")
+            return
+
+        ic1, ic2 = st.columns(2)
+        with ic1:
+            nordnet_file = st.file_uploader(
+                "Nordnet ISK — transactions-and-notes-export.csv",
+                type=["csv"], key="import_nordnet",
+            )
+        with ic2:
+            nordea_file = st.file_uploader(
+                "Nordea ASK — Transaksjoner.csv",
+                type=["csv"], key="import_nordea",
+            )
+
+        if not nordnet_file and not nordea_file:
+            st.caption("Upload one or both files to preview trades before importing.")
+            return
+
+        if st.button("Preview Import", key="import_preview_btn", use_container_width=True):
+            with st.spinner("Parsing and matching trades…"):
+                try:
+                    report = run_import(
+                        nordnet_file=nordnet_file,
+                        nordea_file=nordea_file,
+                        existing_trades=existing_trades,
+                    )
+                    st.session_state["import_report"] = report
+                except Exception as exc:
+                    st.error(f"Import error: {exc}")
+                    return
+
+        report = st.session_state.get("import_report")
+        if report is None:
+            return
+
+        # ── Summary chips ──────────────────────────────────────────────────
+        chip1, chip2, chip3, chip4 = st.columns(4)
+        with chip1:
+            _kpi_card("Trades Found",  str(report.trades_found))
+        with chip2:
+            _kpi_card("To Import",     str(len(report.preview)))
+        with chip3:
+            _kpi_card("Dupes Skipped", str(report.skipped_dupes),
+                      _GREEN if report.skipped_dupes == 0 else _GOLD)
+        with chip4:
+            _kpi_card("No Ticker",     str(report.skipped_no_ticker),
+                      _GREEN if report.skipped_no_ticker == 0 else _RED)
+
+        # ── Errors ─────────────────────────────────────────────────────────
+        if report.errors:
+            with st.expander(f"⚠ {len(report.errors)} warning(s)", expanded=False):
+                for err in report.errors:
+                    st.markdown(f"- {err}")
+
+        # ── Preview table ──────────────────────────────────────────────────
+        if report.preview:
+            st.markdown(
+                f'<p style="color:{_GOLD}; font-weight:600; margin-bottom:4px;">'
+                f'Closed Trades Preview ({len(report.preview)})</p>',
+                unsafe_allow_html=True,
+            )
+            prev_cols = ["ticker", "account", "entry_date", "exit_date",
+                         "shares", "entry_price", "exit_price", "pnl_pct", "pnl_amount", "currency"]
+            prev_df = pd.DataFrame(report.preview)
+            disp_cols = [c for c in prev_cols if c in prev_df.columns]
+            st.dataframe(
+                prev_df[disp_cols].rename(columns={
+                    "ticker": "Ticker", "account": "Account",
+                    "entry_date": "Entry", "exit_date": "Exit",
+                    "shares": "Qty", "entry_price": "Entry $",
+                    "exit_price": "Exit $", "pnl_pct": "P&L %",
+                    "pnl_amount": "P&L Amt", "currency": "CCY",
+                }),
+                use_container_width=True, hide_index=True,
+            )
+        else:
+            st.info("No new trades to import (all duplicates or unresolvable).")
+
+        # ── Open positions ─────────────────────────────────────────────────
+        if report.open_positions:
+            with st.expander(f"Open Positions ({len(report.open_positions)}) — not imported", expanded=False):
+                op_rows = [
+                    {
+                        "Account":      p.account,
+                        "Ticker":       p.ticker or p.isin,
+                        "Name":         p.name,
+                        "Qty":          round(p.qty, 4),
+                        "Avg Price":    round(p.avg_price, 4),
+                        "CCY":          p.currency,
+                        "First Entry":  p.earliest_entry_date,
+                    }
+                    for p in report.open_positions
+                ]
+                st.dataframe(pd.DataFrame(op_rows), use_container_width=True, hide_index=True)
+                st.caption("These are still-open positions — they appear in Holdings, not Journal.")
+
+        # ── Confirm ────────────────────────────────────────────────────────
+        if report.preview:
+            st.markdown("---")
+            if st.button(
+                f"Confirm Import — add {len(report.preview)} trade(s) to journal",
+                key="import_confirm_btn",
+                type="primary",
+                use_container_width=True,
+            ):
+                ok, msg = apply_import(report.preview)
+                if ok:
+                    st.success(msg)
+                    del st.session_state["import_report"]
+                    st.rerun()
+                else:
+                    st.error(msg)
+
+
+# ---------------------------------------------------------------------------
 # Main render function
 # ---------------------------------------------------------------------------
 def render_trade_journal_page():
@@ -573,6 +703,11 @@ def render_trade_journal_page():
                                 st.rerun()
                         except Exception as e:
                             st.error(f"Error deleting trade: {e}")
+
+        # ------------------------------------------------------------------
+        # 7. BROKER IMPORT
+        # ------------------------------------------------------------------
+        _render_import_section(trades)
 
     except Exception as e:
         st.error(f"Trade Journal error: {e}")
