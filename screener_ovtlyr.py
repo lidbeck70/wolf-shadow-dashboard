@@ -20,6 +20,17 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
+def _f(x, default: float = 0.0) -> float:
+    """Scalar-safe float cast: handles pandas Series/DataFrame from MultiIndex yfinance."""
+    try:
+        if isinstance(x, (pd.Series, pd.DataFrame)):
+            x = x.iloc[0] if isinstance(x, pd.Series) else x.iloc[0, 0]
+        return float(x)
+    except Exception:
+        return default
+
+
 # ── Memory safety constants ──────────────────────────────────────────
 MAX_SCREENER_TICKERS = 150   # Streamlit Cloud memory safety
 BATCH_SIZE = 50              # tickers per yf.download() batch
@@ -552,16 +563,16 @@ def _prefilter_tickers(tickers_meta: dict, all_data: dict) -> dict:
         df = all_data.get(ticker)
         if df is None or df.empty or len(df) < 20:
             continue  # no data downloaded — exclude rather than keep blindly
-        close = df["Close"]
+        close = df["Close"].squeeze()
         # Turnover filter
         if "Volume" in df.columns:
-            avg_turnover = (close * df["Volume"]).tail(20).mean()
-            if pd.notna(avg_turnover) and float(avg_turnover) < MIN_TURNOVER:
+            avg_turnover = (close * df["Volume"].squeeze()).tail(20).mean()
+            if pd.notna(avg_turnover) and _f(avg_turnover) < MIN_TURNOVER:
                 continue
         # SMA200 filter — only when enough history is present
         if len(close) >= 200:
             sma200 = close.rolling(200).mean().iloc[-1]
-            if pd.notna(sma200) and float(close.iloc[-1]) < float(sma200):
+            if pd.notna(sma200) and _f(close.iloc[-1]) < _f(sma200):
                 continue
         kept[ticker] = meta
     return kept
@@ -586,7 +597,8 @@ def _compute_ranking_cols(df_results: pd.DataFrame, all_data: dict) -> pd.DataFr
     ]:
         idx_df = all_data.get(idx_ticker)
         if idx_df is not None and not idx_df.empty and len(idx_df) >= 63:
-            ret = float(idx_df["Close"].iloc[-1] / idx_df["Close"].iloc[-63] - 1)
+            c_idx = idx_df["Close"].squeeze()
+            ret = _f(c_idx.iloc[-1]) / max(_f(c_idx.iloc[-63]), 1e-9) - 1
             for suf in suffixes:
                 _INDEX_BENCH[suf] = ret
 
@@ -600,11 +612,11 @@ def _compute_ranking_cols(df_results: pd.DataFrame, all_data: dict) -> pd.DataFr
             rs_scores.append(50.0); high_prox.append(50.0); vol_trend.append(50.0)
             continue
 
-        close = df["Close"]
+        close = df["Close"].squeeze()
 
         # RS score: 3-month ticker return minus benchmark, mapped 0-100
         if len(close) >= 63:
-            tkr_ret = float(close.iloc[-1] / close.iloc[-63] - 1)
+            tkr_ret = _f(close.iloc[-1]) / max(_f(close.iloc[-63]), 1e-9) - 1
             suffix = next((s for s in [".ST", ".OL", ".CO", ".HE"] if ticker.endswith(s)), "")
             idx_ret = _INDEX_BENCH.get(suffix, _INDEX_BENCH.get("", 0.0))
             rs_raw = tkr_ret - idx_ret
@@ -614,16 +626,17 @@ def _compute_ranking_cols(df_results: pd.DataFrame, all_data: dict) -> pd.DataFr
 
         # 52w high proximity: 100 = at high, 0 = 100% below high
         lookback = min(252, len(close))
-        high_52w = float(close.tail(lookback).max())
+        high_52w = _f(close.tail(lookback).max())
         if high_52w > 0:
-            high_prox.append(max(0.0, min(100.0, float(close.iloc[-1]) / high_52w * 100)))
+            high_prox.append(max(0.0, min(100.0, _f(close.iloc[-1]) / high_52w * 100)))
         else:
             high_prox.append(50.0)
 
         # Volume trend: 20d avg vs 60d avg, mapped 0.5x→0 to 2.0x→100
         if "Volume" in df.columns and len(df) >= 60:
-            v20 = float(df["Volume"].tail(20).mean())
-            v60 = float(df["Volume"].tail(60).mean())
+            vol = df["Volume"].squeeze()
+            v20 = _f(vol.tail(20).mean())
+            v60 = _f(vol.tail(60).mean())
             if v60 > 0:
                 ratio = v20 / v60
                 vol_trend.append(max(0.0, min(100.0, (ratio - 0.5) / 1.5 * 100)))
