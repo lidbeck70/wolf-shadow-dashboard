@@ -26,12 +26,19 @@ LOCAL_FALLBACK = ".journal_data.json"
 # Nordic Gold palette
 _BG_DARK = "#0c0c12"
 _BG_CARD = "#14141e"
-_GOLD = "#c9a84c"
+_GOLD    = "#c9a84c"
 _GOLD_DIM = "#8b7340"
-_GREEN = "#2d8a4e"
-_RED = "#c44545"
-_TEXT = "#e8e4dc"
+_CYAN    = "#00E5FF"   # Arc Cyan — CAGR 15–35%
+_EMBER   = "#FF6B3D"   # Ember    — CAGR < 0%
+_GREEN   = "#2d8a4e"
+_RED     = "#c44545"
+_TEXT    = "#e8e4dc"
 _TEXT_DIM = "#8a8578"
+
+# Starting capital assumption: the realized swing-trading portfolio size.
+# CAGR uses this as the denominator even when only a fraction is deployed at once,
+# because pnl_amount is position-level — not portfolio-level — P&L.
+STARTING_CAPITAL = 75_000
 
 
 def _get_github_token() -> Optional[str]:
@@ -133,7 +140,7 @@ def _compute_kpis(df: pd.DataFrame) -> dict:
     _empty_kpis = {
         "total": 0, "win_rate": 0.0, "avg_rr": 0.0,
         "profit_factor": 0.0, "best": 0.0, "worst": 0.0,
-        "streak": "0", "total_pnl": 0.0,
+        "streak": "0", "total_pnl": 0.0, "cagr": None,
     }
     if df.empty or "pnl_pct" not in df.columns:
         return _empty_kpis
@@ -165,6 +172,24 @@ def _compute_kpis(df: pd.DataFrame) -> dict:
                 break
         streak_label = f"{streak_count}W" if streak_type else f"{streak_count}L"
 
+        # Portfolio realized CAGR
+        cagr = None
+        try:
+            if ("entry_date" in df.columns and "exit_date" in df.columns
+                    and "pnl_amount" in df.columns and STARTING_CAPITAL > 0):
+                kdf = df.dropna(subset=["entry_date", "exit_date", "pnl_amount"])
+                if not kdf.empty:
+                    first_entry = pd.to_datetime(kdf["entry_date"]).min()
+                    last_exit   = pd.to_datetime(kdf["exit_date"]).max()
+                    years = (last_exit - first_entry).days / 365.0
+                    if years >= 0.1:
+                        ending = STARTING_CAPITAL + float(kdf["pnl_amount"].sum())
+                        cagr = round(
+                            ((ending / STARTING_CAPITAL) ** (1.0 / years) - 1) * 100, 1
+                        )
+        except Exception:
+            pass
+
         return {
             "total": total,
             "win_rate": round(win_rate, 1),
@@ -174,6 +199,7 @@ def _compute_kpis(df: pd.DataFrame) -> dict:
             "worst": round(worst, 2),
             "streak": streak_label,
             "total_pnl": round(total_pnl, 2),
+            "cagr": cagr,
         }
     except Exception:
         return _empty_kpis
@@ -181,7 +207,7 @@ def _compute_kpis(df: pd.DataFrame) -> dict:
 
 def _strategy_stats(df: pd.DataFrame, strategy: str) -> dict:
     """Stats for a single strategy."""
-    _empty = {"trades": 0, "win_rate": 0.0, "avg_r": 0.0, "total_pnl": 0.0}
+    _empty = {"trades": 0, "win_rate": 0.0, "avg_r": 0.0, "total_pnl": 0.0, "cagr": None}
     if df.empty or "strategy" not in df.columns:
         return _empty
     try:
@@ -189,14 +215,53 @@ def _strategy_stats(df: pd.DataFrame, strategy: str) -> dict:
         if sub.empty:
             return _empty
         wins = sub[sub["pnl_pct"] > 0] if "pnl_pct" in sub.columns else pd.DataFrame()
+
+        # CAGR for this strategy (same STARTING_CAPITAL base as portfolio CAGR)
+        cagr = None
+        try:
+            if ("entry_date" in sub.columns and "exit_date" in sub.columns
+                    and "pnl_amount" in sub.columns and STARTING_CAPITAL > 0):
+                skdf = sub.dropna(subset=["entry_date", "exit_date", "pnl_amount"])
+                if not skdf.empty:
+                    first_entry = pd.to_datetime(skdf["entry_date"]).min()
+                    last_exit   = pd.to_datetime(skdf["exit_date"]).max()
+                    years = (last_exit - first_entry).days / 365.0
+                    if years >= 0.1:
+                        ending = STARTING_CAPITAL + float(skdf["pnl_amount"].sum())
+                        cagr = round(
+                            ((ending / STARTING_CAPITAL) ** (1.0 / years) - 1) * 100, 1
+                        )
+        except Exception:
+            pass
+
         return {
             "trades": len(sub),
             "win_rate": round(len(wins) / len(sub) * 100, 1),
             "avg_r": round(sub["r_multiple"].mean(), 2) if "r_multiple" in sub.columns else 0.0,
             "total_pnl": round(sub["pnl_amount"].sum(), 2) if "pnl_amount" in sub.columns else 0.0,
+            "cagr": cagr,
         }
     except Exception:
         return _empty
+
+
+# ---------------------------------------------------------------------------
+# Per-trade annualized return helper
+# ---------------------------------------------------------------------------
+def _trade_annualized(pnl_pct: float, entry_dt, exit_dt) -> str:
+    """
+    Annualized return for a single trade.
+    Holds < 30 days: return raw pnl_pct with '*' (explodes when annualized).
+    """
+    try:
+        hd = max((pd.Timestamp(exit_dt) - pd.Timestamp(entry_dt)).days, 0)
+        p = float(pnl_pct)
+        if hd < 30:
+            return f"{p:+.1f}%*"
+        ann = ((1.0 + p / 100.0) ** (365.0 / hd) - 1.0) * 100.0
+        return f"{ann:+.1f}%"
+    except Exception:
+        return "—"
 
 
 # ---------------------------------------------------------------------------
@@ -266,8 +331,12 @@ def _build_monthly_bar(df: pd.DataFrame) -> go.Figure:
 # ---------------------------------------------------------------------------
 # KPI card helper
 # ---------------------------------------------------------------------------
-def _kpi_card(label: str, value: str, color: str = _GOLD):
+def _kpi_card(label: str, value: str, color: str = _GOLD, caption: str = ""):
     """Render a styled KPI metric card."""
+    cap_html = (
+        f'<div style="color:{_TEXT_DIM}; font-size:0.65rem; margin-top:2px;">{caption}</div>'
+        if caption else ""
+    )
     st.markdown(
         f"""<div style="background:{_BG_CARD}; border:1px solid {_GOLD_DIM};
         border-radius:8px; padding:12px 16px; text-align:center;">
@@ -275,6 +344,7 @@ def _kpi_card(label: str, value: str, color: str = _GOLD):
         letter-spacing:1px;">{label}</div>
         <div style="color:{color}; font-size:1.5rem; font-weight:700;
         margin-top:4px;">{value}</div>
+        {cap_html}
         </div>""",
         unsafe_allow_html=True,
     )
@@ -286,6 +356,13 @@ def _kpi_card(label: str, value: str, color: str = _GOLD):
 def _strategy_card(name: str, stats: dict):
     """Render per-strategy stats card."""
     pnl_color = _GREEN if stats["total_pnl"] >= 0 else _RED
+    cagr = stats.get("cagr")
+    if cagr is None:
+        cagr_html = '<span style="color:{_TEXT_DIM}">—</span>'
+        cagr_color = _TEXT_DIM
+    else:
+        cagr_color = _GREEN if cagr >= 35 else (_CYAN if cagr >= 15 else (_EMBER if cagr < 0 else _GOLD))
+        cagr_html = f'<b style="color:{cagr_color}">{cagr:+.1f}%</b>'
     st.markdown(
         f"""<div style="background:{_BG_CARD}; border:1px solid {_GOLD_DIM};
         border-radius:8px; padding:16px;">
@@ -295,7 +372,8 @@ def _strategy_card(name: str, stats: dict):
         Trades: <b>{stats['trades']}</b><br/>
         Win Rate: <b>{stats['win_rate']}%</b><br/>
         Avg R: <b>{stats['avg_r']}</b><br/>
-        Total P&L: <b style="color:{pnl_color}">{stats['total_pnl']:,.0f} SEK</b>
+        Total P&L: <b style="color:{pnl_color}">{stats['total_pnl']:,.0f} SEK</b><br/>
+        CAGR: {cagr_html}
         </div></div>""",
         unsafe_allow_html=True,
     )
@@ -462,7 +540,7 @@ def render_trade_journal_page():
         # ------------------------------------------------------------------
         kpis = _compute_kpis(df)
 
-        c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
+        c1, c2, c3, c4, c5, c6, c7, c8 = st.columns(8)
         with c1:
             _kpi_card("Total Trades", str(kpis["total"]))
         with c2:
@@ -478,6 +556,18 @@ def render_trade_journal_page():
             _kpi_card("Worst Trade", f"{kpis['worst']}%", _RED)
         with c7:
             _kpi_card("Streak", kpis["streak"])
+        with c8:
+            _cagr = kpis.get("cagr")
+            if _cagr is None:
+                _cagr_str, _cagr_color = "—", _TEXT_DIM
+            else:
+                _cagr_str = f"{_cagr:+.1f}%"
+                _cagr_color = (
+                    _GREEN if _cagr >= 35 else
+                    _CYAN  if _cagr >= 15 else
+                    _EMBER if _cagr < 0  else _GOLD
+                )
+            _kpi_card("CAGR (årstakt)", _cagr_str, _cagr_color, caption="Mål: 35–45%")
 
         st.markdown("<br/>", unsafe_allow_html=True)
 
@@ -540,10 +630,21 @@ def render_trade_journal_page():
         )
 
         if not df.empty:
+            # Per-trade annualized return column
+            if ("entry_date" in df.columns and "exit_date" in df.columns
+                    and "pnl_pct" in df.columns):
+                df["cagr_display"] = df.apply(
+                    lambda row: _trade_annualized(
+                        row["pnl_pct"], row["entry_date"], row["exit_date"]
+                    ),
+                    axis=1,
+                )
+
             display_cols = [
                 "exit_date", "ticker", "strategy", "direction",
                 "entry_price", "exit_price", "shares",
-                "pnl_pct", "pnl_amount", "r_multiple", "exit_reason", "notes",
+                "pnl_pct", "pnl_amount", "r_multiple", "cagr_display",
+                "exit_reason", "notes",
             ]
             existing_cols = [c for c in display_cols if c in df.columns]
             display_df = df[existing_cols].copy()
@@ -556,7 +657,8 @@ def render_trade_journal_page():
                 "exit_date": "Date", "ticker": "Ticker", "strategy": "Strategy",
                 "direction": "Dir", "entry_price": "Entry", "exit_price": "Exit",
                 "shares": "Shares", "pnl_pct": "P&L %", "pnl_amount": "P&L SEK",
-                "r_multiple": "R", "exit_reason": "Reason", "notes": "Notes",
+                "r_multiple": "R", "cagr_display": "Ann.R%",
+                "exit_reason": "Reason", "notes": "Notes",
             }
             display_df = display_df.rename(columns=col_rename)
 
@@ -591,6 +693,9 @@ def render_trade_journal_page():
                     styled = styled.map(_color_pnl, subset=[col])
 
             st.dataframe(styled, use_container_width=True, hide_index=True)
+            st.caption(
+                "* innehav under 30 dagar visas som faktisk avkastning, ej annualiserad"
+            )
         else:
             st.info("No trades logged yet.")
 
