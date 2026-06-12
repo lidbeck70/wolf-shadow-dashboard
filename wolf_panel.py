@@ -63,7 +63,7 @@ from ui.css import tab_not_found
 from ui.theme import inject_css, render_header, render_footer
 from auth import render_login_gate
 from tabs.home import tab_home
-from tabs.screener import tab_screener_consolidated
+from tabs.screener import tab_screener_consolidated, tab_screener, render_viking_screener
 from tabs.backtest import tab_backtest_consolidated
 from tabs.regime import tab_regime
 from tabs.alerts import tab_alerts
@@ -162,6 +162,13 @@ try:
 except ImportError:
     CONTRARIAN_ALPHA_AVAILABLE = False
 
+# CAGR / Long Screener
+try:
+    from cagr.cagr_streamlit import render_cagr_page
+    CAGR_AVAILABLE = True
+except ImportError:
+    CAGR_AVAILABLE = False
+
 # Market Cycle Engine
 try:
     from tabs.market_cycle import render_market_cycle_page
@@ -192,7 +199,7 @@ def main():
 
     tab_labels = [
         "  🏠 HOME  ",
-        "  🔱 SIGNALS  ",
+        "  🔱 SCREENING  ",
         "  📡 REGIME  ",
         "  👁 INTELLIGENCE  ",
         "  💼 PORTFOLIO  ",
@@ -200,7 +207,7 @@ def main():
         "  📋 RULES  ",
         "  🧬 STRATEGIES  ",
     ]
-    (tab_home_page, tab_signals, tab_regime_main,
+    (tab_home_page, tab_screening, tab_regime_main,
      tab_intelligence, tab_portfolio,
      tab_alerts_page, tab_rules,
      tab_strat_overview) = st.tabs(tab_labels)
@@ -209,77 +216,114 @@ def main():
     with tab_home_page:
         tab_home()
 
-    # ── SIGNALS ──────────────────────────────────────────────────────────────
-    with tab_signals:
+    # ── SCREENING ─────────────────────────────────────────────────────────────
+    with tab_screening:
         sub = st.radio(
-            "", ["Arc Screener", "Contrarian Alpha", "Market Cycle", "🔥 EMBER"],
-            horizontal=True, key="sub_signals",
+            "", ["Arc Screener", "Contrarian Alpha", "Market Cycle"],
+            horizontal=True, key="sub_screening",
         )
         st.markdown("---")
         if sub == "Arc Screener":
-            tab_screener_consolidated()
+            inner = st.radio(
+                "", ["Wolf", "Viking", "🔥 EMBER"],
+                horizontal=True, key="sub_screening_arc",
+            )
+            if inner == "Wolf":
+                tab_screener()
+            elif inner == "Viking":
+                if OVTLYR_AVAILABLE:
+                    render_viking_screener()
+                else:
+                    tab_not_found("Viking Screener", "screener_ovtlyr")
+            elif inner == "🔥 EMBER":
+                if EMBER_AVAILABLE:
+                    render_ember_page()
+                else:
+                    tab_not_found("EMBER", "ember")
+
         elif sub == "Contrarian Alpha":
-            if CONTRARIAN_ALPHA_AVAILABLE:
-                render_contrarian_alpha_page()
-            else:
-                tab_not_found("Contrarian Alpha", "contrarian_alpha")
+            inner = st.radio(
+                "", ["Contrarian Alpha", "Long Screener"],
+                horizontal=True, key="sub_screening_contrarian",
+            )
+            if inner == "Contrarian Alpha":
+                if CONTRARIAN_ALPHA_AVAILABLE:
+                    render_contrarian_alpha_page()
+                else:
+                    tab_not_found("Contrarian Alpha", "contrarian_alpha")
+            elif inner == "Long Screener":
+                if CAGR_AVAILABLE:
+                    render_cagr_page()
+                else:
+                    tab_not_found("Long Screener", "cagr")
+
         elif sub == "Market Cycle":
             if MARKET_CYCLE_AVAILABLE:
                 render_market_cycle_page()
             else:
                 tab_not_found("Market Cycle Engine", "tabs/market_cycle")
-        elif sub == "🔥 EMBER":
-            if EMBER_AVAILABLE:
-                render_ember_page()
-            else:
-                tab_not_found("EMBER", "ember")
 
     # ── REGIME ───────────────────────────────────────────────────────────────
     with tab_regime_main:
         sub = st.radio(
-            "", ["Wolf Regime", "Alpha Regime", "Viking Regime", "Flow Divergence", "🌍 EMBER Regime"],
+            "", ["Arc Regime", "Alpha Regime", "Flow Divergence"],
             horizontal=True, key="sub_regime",
         )
         st.markdown("---")
-        if sub == "Wolf Regime":
-            tab_regime()
-            try:
-                if render_inline_rules:
-                    render_inline_rules("wolf")
-            except Exception:
-                pass
+        if sub == "Arc Regime":
+            inner = st.radio(
+                "", ["Wolf Regime", "Viking Regime", "🌍 EMBER Regime"],
+                horizontal=True, key="sub_regime_arc",
+            )
+            if inner == "Wolf Regime":
+                tab_regime()
+                try:
+                    if render_inline_rules:
+                        render_inline_rules("wolf")
+                except Exception:
+                    pass
+            elif inner == "Viking Regime":
+                if OVTLYR_AVAILABLE:
+                    render_ovtlyr_page()
+                else:
+                    tab_not_found("OVTLYR", "ovtlyr")
+                try:
+                    if render_inline_rules:
+                        render_inline_rules("viking")
+                except Exception:
+                    pass
+            elif inner == "🌍 EMBER Regime":
+                if EMBER_AVAILABLE:
+                    render_ember_regime_page()
+                else:
+                    tab_not_found("EMBER Regime", "ember")
+
         elif sub == "Alpha Regime":
-            if ALPHA_REGIME_AVAILABLE:
-                render_alpha_regime()
-            elif LONG_REGIME_AVAILABLE:
-                render_long_regime_monitor()
-            else:
-                tab_not_found("Alpha Regime Monitor", "alpha_regime")
-            try:
-                if render_inline_rules:
-                    render_inline_rules("alpha")
-            except Exception:
-                pass
-        elif sub == "Viking Regime":
-            if OVTLYR_AVAILABLE:
-                render_ovtlyr_page()
-            else:
-                tab_not_found("OVTLYR", "ovtlyr")
-            try:
-                if render_inline_rules:
-                    render_inline_rules("viking")
-            except Exception:
-                pass
+            inner = st.radio(
+                "", ["Quality & Contrarian", "Long Trend"],
+                horizontal=True, key="sub_regime_alpha",
+            )
+            if inner == "Quality & Contrarian":
+                if ALPHA_REGIME_AVAILABLE:
+                    render_alpha_regime()
+                else:
+                    tab_not_found("Alpha Regime Monitor", "alpha_regime")
+                try:
+                    if render_inline_rules:
+                        render_inline_rules("alpha")
+                except Exception:
+                    pass
+            elif inner == "Long Trend":
+                if LONG_REGIME_AVAILABLE:
+                    render_long_regime_monitor()
+                else:
+                    tab_not_found("Long Trend Monitor", "long_regime_monitor")
+
         elif sub == "Flow Divergence":
             if SECTOR_CYCLE_AVAILABLE:
                 render_sector_cycle_page()
             else:
                 tab_not_found("Sector & Global Regime", "sector_cycle")
-        elif sub == "🌍 EMBER Regime":
-            if EMBER_AVAILABLE:
-                render_ember_regime_page()
-            else:
-                tab_not_found("EMBER Regime", "ember")
 
     # ── INTELLIGENCE ─────────────────────────────────────────────────────────
     with tab_intelligence:

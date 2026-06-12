@@ -126,19 +126,16 @@ def _score_dxy() -> tuple[float, str]:
 
 def _score_yield_curve() -> tuple[float, str]:
     try:
-        import requests
-        resp = requests.get(FRED_T10Y2Y_URL, timeout=FRED_TIMEOUT)
-        resp.raise_for_status()
-        df = pd.read_csv(io.StringIO(resp.text), skiprows=1, names=["date", "value"])
-        df["value"] = pd.to_numeric(df["value"], errors="coerce")
-        df = df.dropna(subset=["value"]).tail(30)
-        if len(df) < 20:
-            return 50.0, f"T10Y2Y otillräcklig historik ({len(df)} datapunkter)"
-        vals   = df["value"].values
-        change = float(vals[-1]) - float(vals[-20])
+        from ember.fred_cache import fetch_t10y2y_values
+        vals_list, is_stale = fetch_t10y2y_values(FRED_T10Y2Y_URL)
+        vals_arr = np.array(vals_list[-30:])
+        if len(vals_arr) < 20:
+            return 50.0, f"T10Y2Y otillräcklig historik ({len(vals_arr)} datapunkter)"
+        change = float(vals_arr[-1]) - float(vals_arr[-20])
         score  = 100.0 if change > 0 else 0.0
         label  = "BRANTARE ✓" if score > 0 else "FLATARE"
-        return score, f"T10Y2Y {vals[-1]:.2f}% (1M {change:+.2f}pp) → {label}"
+        stale_note = " (cachad)" if is_stale else ""
+        return score, f"T10Y2Y {vals_arr[-1]:.2f}% (1M {change:+.2f}pp) → {label}{stale_note}"
     except Exception as exc:
         logger.debug("_score_yield_curve: %s", exc)
         return 0.0, f"DATA_GAP — FRED: {exc}"
@@ -217,7 +214,7 @@ def compute_sentiment_score(ticker: str) -> SentimentScore:
                 ss.short_float = 20.0
             ss.short_float_detail = f"Short float: {pct:.1f}%"
         else:
-            ss.short_float_detail = "DATA_GAP — short float ej tillgänglig"
+            ss.short_float_detail = "Ej tillgängligt för detta instrument"
 
         # Analyst consensus
         try:
@@ -248,22 +245,29 @@ def compute_sentiment_score(ticker: str) -> SentimentScore:
 
         # Put/call ratio
         try:
-            chain = t.option_chain()
-            if chain is not None:
-                p_vol = float((chain.puts["volume"].sum()
-                               if "volume" in chain.puts.columns else 0) or 0)
-                c_vol = float((chain.calls["volume"].sum()
-                               if "volume" in chain.calls.columns else 0) or 0)
-                if c_vol > 0:
-                    pc = p_vol / c_vol
-                    ss.put_call = min(100.0, round(pc * 50, 1))
-                    ss.put_call_detail = f"Put/Call {pc:.2f} (hög = kontrariansk möjlighet)"
-                else:
-                    ss.put_call_detail = "DATA_GAP — optionsvolym = 0"
+            expiries = t.options  # tuple of date strings, empty if no options
+            if not expiries:
+                ss.put_call_detail = "Ej optionsbar (ingen kedja)"
             else:
-                ss.put_call_detail = "DATA_GAP — option chain ej tillgänglig"
+                try:
+                    chain = t.option_chain(expiries[0])
+                    if chain is None or (chain.puts.empty and chain.calls.empty):
+                        ss.put_call_detail = "Ej optionsbar (tom kedja)"
+                    else:
+                        p_vol = float((chain.puts["volume"].sum()
+                                       if "volume" in chain.puts.columns else 0) or 0)
+                        c_vol = float((chain.calls["volume"].sum()
+                                       if "volume" in chain.calls.columns else 0) or 0)
+                        if c_vol > 0:
+                            pc = p_vol / c_vol
+                            ss.put_call = min(100.0, round(pc * 50, 1))
+                            ss.put_call_detail = f"Put/Call {pc:.2f} (hög = kontrariansk möjlighet)"
+                        else:
+                            ss.put_call_detail = "Ej optionsbar (noll call-volym)"
+                except Exception as exc_inner:
+                    ss.put_call_detail = f"Ej optionsbar ({type(exc_inner).__name__})"
         except Exception as exc:
-            ss.put_call_detail = f"DATA_GAP — options: {exc}"
+            ss.put_call_detail = f"Ej optionsbar ({type(exc).__name__})"
 
     except Exception as exc:
         logger.debug("compute_sentiment_score(%s): %s", ticker, exc)
@@ -272,14 +276,15 @@ def compute_sentiment_score(ticker: str) -> SentimentScore:
         ss.total = float("nan")
         return ss
 
-    # Weighted total — skip DATA_GAP sources
+    # Weighted total — skip unavailable sources (DATA_GAP, Ej tillgängligt, Ej optionsbar)
+    _SKIP_MARKERS = ("DATA_GAP", "Ej tillgängligt", "Ej optionsbar")
     pts, wsum = 0.0, 0
     for val, det, w in [
         (ss.short_float, ss.short_float_detail, SENTIMENT_W_SHORT),
         (ss.analyst,     ss.analyst_detail,     SENTIMENT_W_ANALYST),
         (ss.put_call,    ss.put_call_detail,     SENTIMENT_W_OPTIONS),
     ]:
-        if "DATA_GAP" not in det:
+        if not any(m in det for m in _SKIP_MARKERS):
             pts  += val * w
             wsum += w
 

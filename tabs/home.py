@@ -83,12 +83,12 @@ def _render_system_pulse() -> None:
 # ── Navigation Zones ──────────────────────────────────────────────────────────
 
 def _render_zones() -> None:
-    # ZONE 1 — SIGNAL
-    st.markdown(_zone_label("SIGNAL — HITTA KANDIDATER", _CYAN), unsafe_allow_html=True)
+    # ZONE 1 — SCREENING
+    st.markdown(_zone_label("SCREENING — HITTA KANDIDATER", _CYAN), unsafe_allow_html=True)
     z1 = st.columns(3)
     zone1 = [
-        ("Arc Screener",     "Skanna nordiska + US-aktier mot alla strategier"),
-        ("Contrarian Alpha", "Hatade, nödvändiga bolag med stark balansräkning"),
+        ("Arc Screener",     "Wolf (EMA/swing) · Viking (OVTLYR) · EMBER (råvaror)"),
+        ("Contrarian Alpha", "Contrarian Alpha (hatade bolag) · Long Screener (CAGR)"),
         ("Market Cycle",     "14-fas psykologicykel för valfri ticker"),
     ]
     for col, (title, desc) in zip(z1, zone1):
@@ -99,11 +99,10 @@ def _render_zones() -> None:
 
     # ZONE 2 — REGIME
     st.markdown(_zone_label("REGIME — FÖRSTÅ MARKNADEN", _PURPLE), unsafe_allow_html=True)
-    z2 = st.columns(4)
+    z2 = st.columns(3)
     zone2 = [
-        ("Wolf Regime",     "EMA-stack för swing-trades"),
-        ("Alpha Regime",    "Långsiktigt positionscykel"),
-        ("Viking Regime",   "OVTLYR NINE + order blocks"),
+        ("Arc Regime",      "Wolf (EMA-stack) · Viking (OVTLYR NINE) · EMBER (råvaruregim)"),
+        ("Alpha Regime",    "Quality & Contrarian · Long Trend (positionscykel)"),
         ("Flow Divergence", "Global sektorsbredd och makrocykel"),
     ]
     for col, (title, desc) in zip(z2, zone2):

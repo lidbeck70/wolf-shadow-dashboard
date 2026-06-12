@@ -661,3 +661,7 @@ def tab_screener_consolidated():
 
     elif mode == "Viking Screener":
         _render_ovtlyr_screener_ui()
+
+
+# Public alias so wolf_panel.py can import Viking screener by a stable name
+render_viking_screener = _render_ovtlyr_screener_ui

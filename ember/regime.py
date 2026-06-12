@@ -19,7 +19,6 @@ DATA_GAP is never treated as GREEN — it counts as AMBER for the verdict.
 """
 from __future__ import annotations
 
-import io
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -294,28 +293,24 @@ def _pillar_copper_gold() -> PillarResult:
 def _pillar_yield_curve() -> PillarResult:
     name = "RÄNTEKURVA (T10Y2Y)"
     try:
-        import requests
-        resp = requests.get(FRED_T10Y2Y_URL, timeout=FRED_TIMEOUT)
-        resp.raise_for_status()
-        df = pd.read_csv(io.StringIO(resp.text), skiprows=1, names=["date", "value"])
-        df["value"] = pd.to_numeric(df["value"], errors="coerce")
-        df = df.dropna(subset=["value"])
-        if len(df) < 25:
+        from ember.fred_cache import fetch_t10y2y_values
+        vals_list, is_stale = fetch_t10y2y_values(FRED_T10Y2Y_URL)
+        if len(vals_list) < 25:
             return PillarResult(name=name, status="DATA_GAP",
                                 value="DATA_GAP",
-                                detail=f"T10Y2Y: för lite historik ({len(df)} rader)")
-        vals      = df["value"].values
-        current   = float(vals[-1])
-        change_4w = current - float(vals[-21])   # ~20 business days ≈ 4 weeks
+                                detail=f"T10Y2Y: för lite historik ({len(vals_list)} rader)")
+        current   = float(vals_list[-1])
+        change_4w = current - float(vals_list[-21])   # ~20 business days ≈ 4 weeks
+        stale_sfx = " (cachad)" if is_stale else ""
         if change_4w > YC_STEEPEN_PP:
             status = "GREEN"
-            detail = f"T10Y2Y brantnar {change_4w:+.2f}pp 4V → tillväxtmedvind ✓"
+            detail = f"T10Y2Y brantnar {change_4w:+.2f}pp 4V → tillväxtmedvind ✓{stale_sfx}"
         elif change_4w < YC_INVERT_PP:
             status = "RED"
-            detail = f"T10Y2Y inverterar djupare {change_4w:+.2f}pp 4V → recession-risk ⛔"
+            detail = f"T10Y2Y inverterar djupare {change_4w:+.2f}pp 4V → recession-risk ⛔{stale_sfx}"
         else:
             status = "AMBER"
-            detail = f"T10Y2Y flackar {change_4w:+.2f}pp 4V → neutral"
+            detail = f"T10Y2Y flackar {change_4w:+.2f}pp 4V → neutral{stale_sfx}"
         return PillarResult(name=name, status=status,
                             value=f"{current:.2f}% ({change_4w:+.2f}pp 4V)", detail=detail)
     except Exception as exc:
@@ -977,6 +972,180 @@ def _render_ticker_analysis(
 
     except Exception as exc:
         st.warning(f"Trendgate-analys misslyckades: {exc}")
+
+    # ── Discipline fields (shared session_state keys with signal cards) ───────
+    st.markdown("<br>", unsafe_allow_html=True)
+    fd1, fd2 = st.columns(2)
+    with fd1:
+        inv_text = st.text_input(
+            "Ogiltigförklaras om",
+            value=st.session_state.get(f"ember_inv_{ticker}", ""),
+            key=f"ember_regime_inv_input_{ticker}",
+            placeholder="ex: stänger under 50D EMA",
+        )
+        st.session_state[f"ember_inv_{ticker}"] = inv_text
+    with fd2:
+        cat_text = st.text_input(
+            "Trolig trigger",
+            value=st.session_state.get(f"ember_cat_{ticker}", ""),
+            key=f"ember_regime_cat_input_{ticker}",
+            placeholder="ex: FED pivot, Kina-stimulus",
+        )
+        st.session_state[f"ember_cat_{ticker}"] = cat_text
+
+    # Numeric invalidation price + INVALIDATED badge
+    inv_price_col, badge_col = st.columns([2, 1])
+    with inv_price_col:
+        inv_price = st.number_input(
+            "Invalideringspris (0 = ej satt)",
+            min_value=0.0, value=float(st.session_state.get(f"ember_inv_price_{ticker}", 0.0)),
+            step=0.01, format="%.2f",
+            key=f"ember_regime_inv_price_{ticker}",
+        )
+        st.session_state[f"ember_inv_price_{ticker}"] = inv_price
+
+    # Fetch current price for badge check
+    try:
+        from ember.gates import _download_robust as _dr
+        _px_df = _dr(ticker, "5d")
+        _cur_price: Optional[float] = None
+        if not _px_df.empty and "Close" in _px_df.columns:
+            _px = _px_df["Close"].squeeze()
+            if hasattr(_px, "iloc"):
+                _cur_price = float(_px.dropna().iloc[-1])
+    except Exception:
+        _cur_price = None
+
+    with badge_col:
+        if inv_price > 0 and _cur_price is not None and _cur_price <= inv_price:
+            st.markdown(
+                f"<div style='background:#2d0a0a;border:2px solid {RED};"
+                f"border-radius:6px;padding:10px 14px;margin-top:22px;"
+                f"text-align:center;'>"
+                f"<div style='color:{RED};font-size:0.9rem;font-weight:700;"
+                f"letter-spacing:0.08em;'>⛔ INVALIDERAD</div>"
+                f"<div style='color:{DIM};font-size:0.62rem;'>"
+                f"Pris {_cur_price:.2f} ≤ {inv_price:.2f}</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+        elif inv_price > 0 and _cur_price is not None:
+            st.markdown(
+                f"<div style='background:{BG2};border:1px solid {GREEN}44;"
+                f"border-radius:6px;padding:10px 14px;margin-top:22px;"
+                f"text-align:center;'>"
+                f"<div style='color:{GREEN};font-size:0.85rem;font-weight:700;'>✓ AKTIV</div>"
+                f"<div style='color:{DIM};font-size:0.62rem;'>"
+                f"Pris {_cur_price:.2f} &gt; {inv_price:.2f}</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+    # ── Case-context block ────────────────────────────────────────────────────
+    st.markdown(
+        f"<div style='color:{DIM};font-size:0.63rem;text-transform:uppercase;"
+        f"letter-spacing:0.1em;margin:16px 0 8px;border-top:1px solid {EMBER}22;"
+        f"padding-top:12px;'>CASE-KONTEXT — {ticker}</div>",
+        unsafe_allow_html=True,
+    )
+
+    ctx_col1, ctx_col2 = st.columns(2)
+
+    # Left: theme phase + HAT
+    with ctx_col1:
+        try:
+            from blindspot.theme_board import build_theme_board
+            from ember.config import TICKER_THEME_MAP as _TTM
+            _theme_key = _TTM.get(ticker.upper())
+            _theme_data = None
+            if _theme_key:
+                for _tr in build_theme_board():
+                    if _tr.key == _theme_key:
+                        _theme_data = _tr
+                        break
+
+            if _theme_data:
+                _cykel = _theme_data.cykel_label or "DATA_GAP"
+                _pct   = _theme_data.percentile_10y
+                _hat   = _theme_data.hat_score
+                _pct_s = f" · {_pct:.0f}:e percentilen 10å" if _pct else ""
+                _hat_s = f"{_hat:.0f}/100 — marknaden ignorerar" if _hat else "—"
+                _cykel_c = {
+                    "TIDIG": GREEN, "MITTEN": GOLD, "SEN": AMBER, "TOPP": RED,
+                }.get(_cykel, DIM)
+                st.markdown(
+                    f"<div style='background:{BG2};border:1px solid {EMBER}33;"
+                    f"border-radius:6px;padding:12px 14px;'>"
+                    f"<div style='color:{DIM};font-size:0.6rem;text-transform:uppercase;"
+                    f"letter-spacing:0.07em;margin-bottom:6px;'>CYKELFAS</div>"
+                    f"<div style='color:{_cykel_c};font-size:1.0rem;font-weight:700;"
+                    f"margin-bottom:4px;'>{_cykel}{_pct_s}</div>"
+                    f"<div style='color:{DIM};font-size:0.6rem;text-transform:uppercase;"
+                    f"letter-spacing:0.07em;margin:8px 0 4px;'>MARKNADEN OGILLAR (HAT)</div>"
+                    f"<div style='color:{AMBER};font-size:0.8rem;'>{_hat_s}</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    f"<div style='color:{DIM};font-size:0.75rem;'>"
+                    f"Ingen temadata för {ticker} — lägg till i TICKER_THEME_MAP"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+        except Exception as exc:
+            st.markdown(f"<div style='color:{DIM};font-size:0.7rem;'>Temadata: {exc}</div>",
+                        unsafe_allow_html=True)
+
+    # Right: macro score breakdown
+    with ctx_col2:
+        try:
+            from ember.scoring import compute_macro_score
+            from alpha_regime.commodity_ratios import fetch_all_ratios
+            from ember.config import TICKER_THEME_MAP as _TTM2
+            from blindspot.theme_board import build_theme_board as _btb2
+            _theme_key2 = _TTM2.get(ticker.upper())
+            # Resolve cykel_label for this ticker's theme
+            _cykel_label2: Optional[str] = None
+            if _theme_key2:
+                try:
+                    for _tr2 in _btb2():
+                        if _tr2.key == _theme_key2:
+                            _cykel_label2 = _tr2.cykel_label
+                            break
+                except Exception:
+                    pass
+            _ratios: Optional[dict] = None
+            try:
+                _ratios = fetch_all_ratios()
+            except Exception:
+                pass
+            _macro = compute_macro_score(_ratios, _cykel_label2)
+            st.markdown(
+                f"<div style='background:{BG2};border:1px solid {EMBER}33;"
+                f"border-radius:6px;padding:12px 14px;'>"
+                f"<div style='color:{DIM};font-size:0.6rem;text-transform:uppercase;"
+                f"letter-spacing:0.07em;margin-bottom:8px;'>"
+                f"MAKROSCORE — {_macro.total:.0f}/100</div>"
+                + "".join(
+                    f"<div style='margin-bottom:5px;'>"
+                    f"<div style='display:flex;justify-content:space-between;font-size:0.7rem;'>"
+                    f"<span style='color:{TEXT};'>{lbl}</span>"
+                    f"<span style='color:{GREEN if sc >= 50 else RED};font-weight:700;'>{sc:.0f}</span>"
+                    f"</div><div style='color:{DIM};font-size:0.6rem;'>{det}</div></div>"
+                    for lbl, sc, det in [
+                        ("Copper/Gold", _macro.copper_gold, _macro.copper_gold_detail),
+                        ("DXY",         _macro.dxy,         _macro.dxy_detail),
+                        ("Räntekurva",  _macro.yield_curve, _macro.yield_curve_detail),
+                        ("Cykelfas",    _macro.cycle,       _macro.cycle_detail),
+                    ]
+                )
+                + "</div>",
+                unsafe_allow_html=True,
+            )
+        except Exception as exc:
+            st.markdown(f"<div style='color:{DIM};font-size:0.7rem;'>Makroscore: {exc}</div>",
+                        unsafe_allow_html=True)
 
 
 # ── Streamlit page (v2) ────────────────────────────────────────────────────────

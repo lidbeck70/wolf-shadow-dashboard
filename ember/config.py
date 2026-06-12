@@ -69,7 +69,7 @@ PREFILTER_PERIOD       = "1y"       # download period for pre-filter (gives ~252
 
 # ── External data ─────────────────────────────────────────────────────────────
 FRED_T10Y2Y_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=T10Y2Y"
-FRED_TIMEOUT    = 8    # seconds
+FRED_TIMEOUT    = 20   # seconds (increased; disk cache in fred_cache.py handles daily data)
 
 DXY_PRIMARY  = "DX-Y.NYB"
 DXY_FALLBACK = "UUP"
@@ -112,16 +112,65 @@ EMBER_SECTOR_ETF: dict[str, str] = {
 DEFAULT_SECTOR_ETF = "GLD"
 
 # ── Ticker → theme key map ────────────────────────────────────────────────────
+# Covers all universe members so cycle phase is never DATA_GAP for known tickers.
 TICKER_THEME_MAP: dict[str, str] = {
-    "URA":  "uran",  "CCJ":  "uran",  "NXE":  "uran",  "DNN":  "uran",
-    "SLV":  "silver", "SIL": "silver", "PAAS": "silver", "HL": "silver", "AG": "silver",
-    "GLD":  "guld",  "GDX":  "guld",  "GDXJ": "guld",
-    "COPX": "koppar", "FCX": "koppar", "SCCO": "koppar",
-    "XLE":  "olja",  "USO":  "olja",  "OXY":  "olja",  "DVN": "olja",
-    "UNG":  "naturgas",
-    "BTU":  "kol",
-    "DBA":  "agri",  "MOS":  "agri",  "NTR":  "agri",
-    "REMX": "sallsynta",
+    # ── Guld (GDX / GDXJ names + key majors) ──────────────────────────────
+    "GLD":  "guld", "GDX": "guld", "GDXJ": "guld",
+    "NEM": "guld", "GOLD": "guld", "AEM": "guld", "WPM": "guld",
+    "KGC": "guld", "AGI": "guld", "AU":  "guld", "GFI": "guld",
+    "BTG": "guld", "EGO": "guld", "SSRM":"guld", "OR":  "guld",
+    "SA":  "guld", "HMY": "guld", "DRD": "guld", "NGD": "guld",
+    "MUX": "guld",
+    # Canada gold
+    "ABX.TO": "guld", "K.TO": "guld", "AGI.TO": "guld",
+    "BTO.TO": "guld", "EDV.TO": "guld", "WPM.TO": "guld", "FNV.TO": "guld",
+    # UK gold/diversified miners (gold-driven)
+    "RIO.L": "guld", "BHP.L": "guld",
+    # ── Silver (SIL / SILJ names) ──────────────────────────────────────────
+    "SLV": "silver", "SIL": "silver", "SILJ": "silver",
+    "PAAS": "silver", "HL": "silver", "AG": "silver",
+    "CDE": "silver", "FSM": "silver", "EXK": "silver",
+    "MAG": "silver", "GPL": "silver", "SVM": "silver", "ASM": "silver",
+    # Canada silver streaming
+    "ERO.TO": "koppar",   # Ero Copper, not silver
+    # UK silver major
+    "FRES.L": "silver",
+    # ── Koppar (COPX names) ────────────────────────────────────────────────
+    "COPX": "koppar", "FCX": "koppar", "SCCO": "koppar", "TECK": "koppar",
+    "PICK": "koppar", "XME": "koppar", "LIT": "koppar",
+    # Canada copper
+    "FM.TO": "koppar", "LUN.TO": "koppar",
+    # UK copper majors
+    "AAL.L": "koppar", "ANTO.L": "koppar", "GLEN.L": "koppar",
+    # ── Uran ──────────────────────────────────────────────────────────────
+    "URA": "uran", "URNM": "uran",
+    "CCJ": "uran", "NXE": "uran", "DNN": "uran",
+    "UUUU": "uran", "LEU": "uran", "UEC": "uran",
+    # Canada uranium
+    "CCO.TO": "uran", "DML.TO": "uran", "NXE.TO": "uran",
+    # ── Olja ──────────────────────────────────────────────────────────────
+    "XLE": "olja", "XOP": "olja", "USO": "olja",
+    "XOM": "olja", "CVX": "olja", "COP": "olja", "EOG": "olja",
+    "SLB": "olja", "MPC": "olja", "VLO": "olja", "PSX": "olja",
+    "OXY": "olja", "HAL": "olja", "DVN": "olja", "BKR": "olja",
+    "FANG": "olja", "APA": "olja", "MRO": "olja", "SHEL": "olja",
+    # Norway energy
+    "EQNR.OL": "olja", "AKRBP.OL": "olja", "VAR.OL": "olja", "TGS.OL": "olja",
+    # Canada oil
+    "SU.TO": "olja", "CNQ.TO": "olja", "CVE.TO": "olja", "IMO.TO": "olja",
+    "WCP.TO": "olja", "ARX.TO": "olja", "BTE.TO": "olja", "TOU.TO": "olja",
+    # UK oil
+    "BP.L": "olja", "SHEL.L": "olja",
+    # ── Naturgas ──────────────────────────────────────────────────────────
+    "UNG": "naturgas",
+    # ── Kol ───────────────────────────────────────────────────────────────
+    "BTU": "kol", "ARCH": "kol", "CEIX": "kol", "AMR": "kol",
+    # ── Agri ──────────────────────────────────────────────────────────────
+    "DBA": "agri", "MOS": "agri", "NTR": "agri",
+    "CF": "agri", "UAN": "agri", "ADM": "agri",
+    "NTR.TO": "agri",
+    # ── Sällsynta jordartsmetaller ─────────────────────────────────────────
+    "REMX": "sallsynta", "MP": "sallsynta",
 }
 
 _THEME_LABEL: dict[str, str] = {
