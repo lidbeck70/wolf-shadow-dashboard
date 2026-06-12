@@ -15,6 +15,10 @@ from ember.config import (
     BG, BG2, BG3, EMBER, GOLD, BRONZE, GREEN, RED, AMBER, TEXT, DIM,
     EMBER_ETF_UNIVERSE, EMBER_STOCK_UNIVERSE, RISK_PCT,
 )
+from ember.universe import (
+    ALL_SOURCES, SOURCE_CURATED, SOURCE_AUTO, SOURCE_BOTH,
+    US_INTL_CURATED, UniverseStats,
+)
 
 try:
     from ember.engine import run_ember_scan, EmberSetupResult, EmberScanResult
@@ -353,15 +357,60 @@ def _render_near_misses(near_misses: list[EmberSetupResult]) -> None:
 
 # ── Universe summary (pre-scan) ───────────────────────────────────────────────
 
-def _render_universe_info() -> None:
+def _render_universe_info(source: str) -> None:
+    if source == SOURCE_CURATED:
+        body = (
+            f"<b style='color:{GOLD};'>Universum:</b> "
+            f"{len(EMBER_ETF_UNIVERSE)} ETF:er + {len(EMBER_STOCK_UNIVERSE)} aktier<br/>"
+            f"<span style='font-size:0.68rem;'>"
+            f"ETF:er: {', '.join(EMBER_ETF_UNIVERSE)}<br/>"
+            f"Aktier: {', '.join(EMBER_STOCK_UNIVERSE)}"
+            f"</span>"
+        )
+    elif source == SOURCE_AUTO:
+        body = (
+            f"<b style='color:{GOLD};'>Universum:</b> "
+            f"Norden (Börsdata råvarufilter) + {len(US_INTL_CURATED)} US/INTL-tickers<br/>"
+            f"<span style='font-size:0.68rem;color:{DIM};'>"
+            f"Förfilter tillämpas: omsättning &gt; 5 MSEK/dag + pris &gt; SMA200"
+            f"</span>"
+        )
+    else:  # BOTH
+        curated_n = len(EMBER_ETF_UNIVERSE) + len(EMBER_STOCK_UNIVERSE)
+        body = (
+            f"<b style='color:{GOLD};'>Universum:</b> "
+            f"Norden + {len(US_INTL_CURATED)} US/INTL + {curated_n} kurerade<br/>"
+            f"<span style='font-size:0.68rem;color:{DIM};'>"
+            f"Förfilter tillämpas: omsättning &gt; 5 MSEK/dag + pris &gt; SMA200"
+            f"</span>"
+        )
+
     st.markdown(
-        f"<div style='margin-top:20px;color:{DIM};font-size:0.8rem;'>"
-        f"<b style='color:{GOLD};'>Universum:</b> "
-        f"{len(EMBER_ETF_UNIVERSE)} ETF:er + {len(EMBER_STOCK_UNIVERSE)} aktier<br/>"
-        f"<span style='font-size:0.7rem;'>"
-        f"ETF:er: {', '.join(EMBER_ETF_UNIVERSE)}<br/>"
-        f"Aktier: {', '.join(EMBER_STOCK_UNIVERSE)}"
-        f"</span></div>",
+        f"<div style='margin-top:16px;color:{TEXT};font-size:0.8rem;'>"
+        + body
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _render_universe_stats(stats: Optional[UniverseStats]) -> None:
+    """Show universe build stats in the metadata bar after a scan."""
+    if stats is None or stats.source == SOURCE_CURATED:
+        return
+    parts = []
+    if stats.nordic_raw > 0:
+        parts.append(f"Norden: {stats.nordic_raw} råvarubolag")
+    if stats.us_intl_raw > 0:
+        parts.append(f"US/INTL: {stats.us_intl_raw} tickers")
+    if not stats.borsdata_available and stats.borsdata_error:
+        parts.append(f"⚠ Börsdata: {stats.borsdata_error}")
+    detail = " · ".join(parts) if parts else ""
+    st.markdown(
+        f"<div style='font-size:0.7rem;color:{DIM};margin-top:6px;'>"
+        f"Universum: <b style='color:{TEXT};'>{stats.total_before_prefilter}</b> tickers "
+        f"→ förfilter: <b style='color:{GOLD};'>{stats.passed_prefilter}</b> kvar"
+        + (f"<br/>{detail}" if detail else "")
+        + "</div>",
         unsafe_allow_html=True,
     )
 
@@ -385,6 +434,22 @@ def render_ember_page() -> None:
     st.markdown(
         f"<hr style='border-color:{EMBER}33;margin:0 0 16px 0;'>",
         unsafe_allow_html=True,
+    )
+
+    # ── Universe source toggle ────────────────────────────────────────────────
+    source = st.radio(
+        "Universum",
+        ALL_SOURCES,
+        index=ALL_SOURCES.index(
+            st.session_state.get("ember_universe_source", SOURCE_CURATED)
+        ),
+        horizontal=True,
+        key="ember_universe_source",
+        help=(
+            "Kurerad lista: fast statisk lista (25 ticker, snabb). "
+            "Auto: Börsdata Norden + 150+ US/INTL råvaror med förfilter. "
+            "Båda: union av alla, förfiltrat."
+        ),
     )
 
     # Control panel
@@ -415,16 +480,30 @@ def render_ember_page() -> None:
         st.rerun()
 
     if scan_btn:
-        extra   = [t.strip().upper() for t in custom_raw.split(",") if t.strip()]
-        tickers = list(dict.fromkeys(
-            EMBER_ETF_UNIVERSE + EMBER_STOCK_UNIVERSE + extra
-        ))
-        with st.spinner(
-            "Skannar råvaruuniversum — hämtar kursdata, gates och makrokontext…"
-        ):
-            result = run_ember_scan(
-                tickers=tickers, account_size=float(account_size)
-            )
+        extra = [t.strip().upper() for t in custom_raw.split(",") if t.strip()]
+        spinner_msg = {
+            SOURCE_CURATED: "Skannar kurerad lista…",
+            SOURCE_AUTO:    "Bygger råvaruuniversum (Norden + US/INTL) och förfiltrerar — ca 1–2 min…",
+            SOURCE_BOTH:    "Bygger fullständigt universum och förfiltrerar — ca 2 min…",
+        }.get(source, "Skannar…")
+
+        with st.spinner(spinner_msg):
+            if extra:
+                # Extra tickers provided — add them to whichever universe was built
+                from ember.universe import build_universe as _bu
+                base_tickers, u_stats = _bu(source, use_prefilter=(source != SOURCE_CURATED))
+                tickers = list(dict.fromkeys(base_tickers + extra))
+                result  = run_ember_scan(
+                    tickers=tickers,
+                    account_size=float(account_size),
+                )
+                result.universe_stats = u_stats
+            else:
+                result = run_ember_scan(
+                    account_size=float(account_size),
+                    universe_source=source,
+                    use_prefilter=(source != SOURCE_CURATED),
+                )
         st.session_state["ember_result"] = result
 
     result: Optional[EmberScanResult] = st.session_state.get("ember_result")
@@ -435,24 +514,35 @@ def render_ember_page() -> None:
             f"</div>",
             unsafe_allow_html=True,
         )
-        _render_universe_info()
+        _render_universe_info(source)
         return
 
     # Metadata bar
-    ts  = result.timestamp.strftime("%H:%M:%S")
-    tot = len(result.all_results)
-    eli = len(result.eligible)
-    nm  = len(result.near_misses)
-    m1, m2, m3, m4 = st.columns(4)
+    ts    = result.timestamp.strftime("%H:%M:%S")
+    tot   = len(result.all_results)
+    eli   = len(result.eligible)
+    nm    = len(result.near_misses)
+    u_stats = result.universe_stats
+
+    # Pre-filter stat: show "X av Y" if we ran a prefilter
+    if u_stats is not None and u_stats.source != SOURCE_CURATED:
+        prefilter_val = f"{u_stats.passed_prefilter} av {u_stats.total_before_prefilter}"
+    else:
+        prefilter_val = str(tot)
+
+    m1, m2, m3, m4, m5 = st.columns(5)
     for col, (lbl, val, col_) in zip(
-        [m1, m2, m3, m4],
-        [("SKANNADE", str(tot), GOLD),
-         ("ELITCASE", str(eli), EMBER if eli > 0 else DIM),
-         ("NÄSTAN",   str(nm),  AMBER),
-         ("UPPDATERAD", ts,     DIM)],
+        [m1, m2, m3, m4, m5],
+        [("UNIVERSUM",   prefilter_val,  GOLD),
+         ("SKANNADE",    str(tot),        GOLD),
+         ("ELITCASE",    str(eli),        EMBER if eli > 0 else DIM),
+         ("NÄSTAN",      str(nm),         AMBER),
+         ("UPPDATERAD",  ts,              DIM)],
     ):
         with col:
             st.markdown(_stat_box(lbl, val, col_), unsafe_allow_html=True)
+
+    _render_universe_stats(u_stats)
 
     st.markdown("<br>", unsafe_allow_html=True)
 

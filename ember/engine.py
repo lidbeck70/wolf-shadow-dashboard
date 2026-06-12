@@ -31,6 +31,10 @@ from ember.scoring import (
     MacroScore, SentimentScore,
     compute_macro_score, compute_sentiment_score, cycle_asymmetry_bonus,
 )
+from ember.universe import (
+    UniverseStats, build_universe,
+    SOURCE_CURATED, SOURCE_AUTO, SOURCE_BOTH, ALL_SOURCES,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -81,10 +85,11 @@ class EmberSetupResult:
 
 @dataclass
 class EmberScanResult:
-    eligible:    list[EmberSetupResult]
-    near_misses: list[EmberSetupResult]
-    all_results: list[EmberSetupResult]
-    timestamp:   datetime = field(default_factory=datetime.now)
+    eligible:        list[EmberSetupResult]
+    near_misses:     list[EmberSetupResult]
+    all_results:     list[EmberSetupResult]
+    timestamp:       datetime               = field(default_factory=datetime.now)
+    universe_stats:  Optional[UniverseStats] = None
 
 
 # ── Per-ticker pipeline ───────────────────────────────────────────────────────
@@ -189,13 +194,22 @@ def run_ember_scan(
     tickers: Optional[list[str]] = None,
     account_size: float = 100_000.0,
     max_workers: int = 6,
+    universe_source: str = SOURCE_CURATED,
+    use_prefilter: bool = True,
 ) -> EmberScanResult:
     """
-    Scan tickers (default = full universe) and return ranked EmberScanResult.
-    Macro context (ratios, theme board) is fetched once and shared across all workers.
+    Scan tickers and return ranked EmberScanResult.
+
+    If `tickers` is provided it is used directly (source/prefilter ignored).
+    Otherwise, the universe is built from `universe_source` via build_universe().
+    Macro context is fetched once and shared across all parallel workers.
     """
+    u_stats: Optional[UniverseStats] = None
+
     if tickers is None:
-        tickers = list(dict.fromkeys(EMBER_ETF_UNIVERSE + EMBER_STOCK_UNIVERSE))
+        tickers, u_stats = build_universe(universe_source, use_prefilter=use_prefilter)
+        if not tickers:
+            tickers = list(dict.fromkeys(EMBER_ETF_UNIVERSE + EMBER_STOCK_UNIVERSE))
 
     # Shared macro context fetched once
     ratios_dict: Optional[dict] = None
@@ -262,4 +276,5 @@ def run_ember_scan(
         eligible=eligible,
         near_misses=near_misses,
         all_results=all_results,
+        universe_stats=u_stats,
     )

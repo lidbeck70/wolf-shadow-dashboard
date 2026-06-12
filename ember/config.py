@@ -62,6 +62,11 @@ CYCLE_BONUS_MITTEN =  10.0
 CYCLE_BONUS_SEN    =   0.0
 CYCLE_BONUS_TOPP   = -10.0
 
+# ── Pre-filter constants ──────────────────────────────────────────────────────
+PREFILTER_MIN_TURNOVER = 5_000_000  # avg daily turnover (close×vol) in local currency
+PREFILTER_BATCH_SIZE   = 50         # tickers per yf.download() batch call
+PREFILTER_PERIOD       = "1y"       # download period for pre-filter (gives ~252 bars)
+
 # ── External data ─────────────────────────────────────────────────────────────
 FRED_T10Y2Y_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=T10Y2Y"
 FRED_TIMEOUT    = 8    # seconds
