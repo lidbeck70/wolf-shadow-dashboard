@@ -640,11 +640,26 @@ def render_trade_journal_page():
                     axis=1,
                 )
 
+            # INVALIDATED badge: mark rows where exit_price < invalidation_price
+            if "invalidation_price" in df.columns and "exit_price" in df.columns:
+                def _inv_flag(row) -> str:
+                    try:
+                        ip = row.get("invalidation_price")
+                        ep = row.get("exit_price")
+                        if ip and float(ip) > 0 and float(ep) > 0 and float(ep) < float(ip):
+                            return "⛔ INVALIDATED"
+                    except (TypeError, ValueError):
+                        pass
+                    return ""
+                df["invalidated"] = df.apply(_inv_flag, axis=1)
+
             display_cols = [
                 "exit_date", "ticker", "strategy", "direction",
                 "entry_price", "exit_price", "shares",
                 "pnl_pct", "pnl_amount", "r_multiple", "cagr_display",
-                "exit_reason", "notes",
+                "exit_reason", "invalidated",
+                "invalidation_text", "invalidation_price", "probable_catalyst",
+                "notes",
             ]
             existing_cols = [c for c in display_cols if c in df.columns]
             display_df = df[existing_cols].copy()
@@ -658,7 +673,12 @@ def render_trade_journal_page():
                 "direction": "Dir", "entry_price": "Entry", "exit_price": "Exit",
                 "shares": "Shares", "pnl_pct": "P&L %", "pnl_amount": "P&L SEK",
                 "r_multiple": "R", "cagr_display": "Ann.R%",
-                "exit_reason": "Reason", "notes": "Notes",
+                "exit_reason": "Reason",
+                "invalidated": "Status",
+                "invalidation_text": "Ogiltigförklaras om",
+                "invalidation_price": "Inv.pris",
+                "probable_catalyst": "Trigger",
+                "notes": "Notes",
             }
             display_df = display_df.rename(columns=col_rename)
 
@@ -687,10 +707,17 @@ def render_trade_journal_page():
                     pass
                 return ""
 
+            def _color_status(val):
+                if str(val).startswith("⛔"):
+                    return f"color: {_RED}; font-weight: 700"
+                return ""
+
             styled = display_df.style.format(fmt, na_rep="—")
             for col in ["P&L %", "P&L SEK", "R"]:
                 if col in display_df.columns:
                     styled = styled.map(_color_pnl, subset=[col])
+            if "Status" in display_df.columns:
+                styled = styled.map(_color_status, subset=["Status"])
 
             st.dataframe(styled, use_container_width=True, hide_index=True)
             st.caption(
@@ -732,6 +759,24 @@ def render_trade_journal_page():
                 )
                 notes = st.text_area("Notes", height=80)
 
+            # Discipline fields (fifth row)
+            fd1, fd2, fd3 = st.columns([2, 1, 2])
+            with fd1:
+                invalidation_text = st.text_input(
+                    "Ogiltigförklaras om",
+                    placeholder="t.ex. Pris bryter under 180, nytt lägsta under trend",
+                )
+            with fd2:
+                invalidation_price = st.number_input(
+                    "Prisnivå (0 = ej satt)",
+                    min_value=0.0, step=0.01, format="%.2f", value=0.0,
+                )
+            with fd3:
+                probable_catalyst = st.text_input(
+                    "Trolig trigger",
+                    placeholder="t.ex. Q2-rapport, Fed-beslut, branschrotation",
+                )
+
             submitted = st.form_submit_button(
                 "Log Trade",
                 use_container_width=True,
@@ -768,6 +813,10 @@ def render_trade_journal_page():
                             "exit_reason": exit_reason.lower().replace(" ", "_"),
                             "notes": notes.strip(),
                             "sector": sector.strip(),
+                            # Discipline fields (backward-compatible: absent = "" / None)
+                            "invalidation_text":  invalidation_text.strip(),
+                            "invalidation_price": round(invalidation_price, 2) if invalidation_price > 0 else None,
+                            "probable_catalyst":  probable_catalyst.strip(),
                         }
 
                         trades = load_journal()

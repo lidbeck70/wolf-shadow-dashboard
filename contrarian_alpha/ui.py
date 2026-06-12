@@ -23,6 +23,14 @@ from pathlib import Path
 
 import streamlit as st
 
+# ─── Optional annotations (discipline fields) ────────────────────────────────
+_ANN_OK = False
+try:
+    from contrarian_alpha.annotations import get_annotation, save_annotation
+    _ANN_OK = True
+except ImportError:
+    pass
+
 # ─── Palette (speglar ui/theme.py PALETTE) ───────────────────────────────────
 
 P = {
@@ -600,6 +608,112 @@ def _render_results_table(pipeline_result) -> str | None:
     return selected
 
 
+# ─── Discipline fields ────────────────────────────────────────────────────────
+
+def _render_discipline_fields(r) -> None:
+    """
+    Render Ogiltigförklaras om + Trolig trigger fields for a CA result card.
+    Shows INVALIDATED badge if price breaches invalidation_price.
+    Includes an edit expander for saving new values.
+    """
+    if not _ANN_OK:
+        return
+
+    ann = get_annotation(r.ticker)
+    inv_text  = ann.get("invalidation_text", "")
+    inv_price = ann.get("invalidation_price")
+    catalyst  = ann.get("probable_catalyst", "")
+
+    # Decide whether to show INVALIDATED badge
+    close_now = getattr(r, "close", None) or 0.0
+    invalidated = (
+        inv_price is not None
+        and inv_price > 0
+        and close_now > 0
+        and close_now < inv_price
+    )
+
+    # Only render the info block when at least one field is filled
+    has_data = bool(inv_text or inv_price or catalyst)
+
+    if has_data or invalidated:
+        inv_badge_html = ""
+        if invalidated:
+            inv_badge_html = (
+                f'<span style="background:{P["red"]};color:#fff;padding:2px 8px;'
+                f'border-radius:4px;font-size:0.7rem;font-weight:700;'
+                f'letter-spacing:0.1em;margin-left:10px;">⛔ INVALIDATED</span>'
+            )
+
+        rows_html = ""
+        if inv_text or inv_price:
+            price_str = f"  (nivå: {inv_price:.2f})" if inv_price else ""
+            rows_html += (
+                f'<div style="margin-bottom:6px;">'
+                f'<span style="font-size:0.65rem;color:{P["text_dim"]};'
+                f'text-transform:uppercase;letter-spacing:0.1em;">Ogiltigförklaras om</span>'
+                f'<div style="font-size:0.82rem;color:{P["text"]};margin-top:2px;">'
+                f'{inv_text or "—"}{price_str}</div>'
+                f'</div>'
+            )
+        if catalyst:
+            rows_html += (
+                f'<div>'
+                f'<span style="font-size:0.65rem;color:{P["text_dim"]};'
+                f'text-transform:uppercase;letter-spacing:0.1em;">Trolig trigger</span>'
+                f'<div style="font-size:0.82rem;color:{P["text"]};margin-top:2px;">'
+                f'{catalyst}</div>'
+                f'</div>'
+            )
+
+        st.markdown(
+            f'<div style="border:1px solid {P["border"]};border-radius:6px;'
+            f'padding:10px 14px;margin-top:12px;background:{P["bg3"]};">'
+            f'<div style="font-family:\'Courier New\',monospace;font-size:9px;'
+            f'letter-spacing:0.18em;text-transform:uppercase;color:{P["gold_muted"]};'
+            f'margin-bottom:6px;">Disciplinfält{inv_badge_html}</div>'
+            f'{rows_html}'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+    # ── Edit expander ─────────────────────────────────────────────────────
+    with st.expander("✏️ Redigera disciplinfält", expanded=False):
+        ef1, ef2 = st.columns([3, 1])
+        with ef1:
+            new_inv_text = st.text_input(
+                "Ogiltigförklaras om (fritext)",
+                value=inv_text,
+                key=f"ann_inv_text_{r.ticker}",
+                placeholder="t.ex. Pris bryter under stöd vid 180, ny lägsta lämnar trend",
+            )
+            new_catalyst = st.text_input(
+                "Trolig trigger (fritext)",
+                value=catalyst,
+                key=f"ann_cat_{r.ticker}",
+                placeholder="t.ex. Q2-rapport, Fed-beslut, teknikgenombrott",
+            )
+        with ef2:
+            new_inv_price = st.number_input(
+                "Prisnivå (0 = ej satt)",
+                value=float(inv_price) if inv_price else 0.0,
+                min_value=0.0,
+                step=0.01,
+                format="%.2f",
+                key=f"ann_inv_price_{r.ticker}",
+            )
+
+        if st.button("Spara", key=f"ann_save_{r.ticker}"):
+            save_annotation(
+                r.ticker,
+                invalidation_text=new_inv_text.strip(),
+                invalidation_price=new_inv_price if new_inv_price > 0 else None,
+                probable_catalyst=new_catalyst.strip(),
+            )
+            st.success(f"Disciplinfält sparade för {r.ticker}.")
+            st.rerun()
+
+
 # ─── Zone 3: Detaljkort ───────────────────────────────────────────────────────
 
 def _render_detail_card(r) -> None:
@@ -683,6 +797,9 @@ def _render_detail_card(r) -> None:
                 f'color:{P["green"]}">✓ Inga varningar</p>',
                 unsafe_allow_html=True,
             )
+
+    # ── Discipline fields (full width below the two-column layout) ────────
+    _render_discipline_fields(r)
 
 
 def _render_breakdown_chart(r) -> None:

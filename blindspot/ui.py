@@ -9,6 +9,14 @@ from blindspot.config import BG, BG2, GOLD, BRONZE, GREEN, RED, TEXT, DIM
 from blindspot.engine import build_all_reports
 from blindspot.history import read_history
 
+# ── Optional commodity theme board ───────────────────────────────────────────
+_THEME_OK = False
+try:
+    from blindspot.theme_board import build_theme_board, theme_verdict_text, THEME_RATIO_KEYS
+    _THEME_OK = True
+except ImportError:
+    pass
+
 
 def _section_header(text: str, color: str = BRONZE) -> None:
     """Render a styled section header."""
@@ -46,6 +54,218 @@ def _flag_badges(flags: dict) -> str:
 def _run_engine():
     """Run the blindspot engine (cached for 15 min)."""
     return build_all_reports()
+
+
+# ── Commodity Theme Board ─────────────────────────────────────────────────────
+
+_CYKEL_COLORS = {
+    "TIDIG":   GREEN,
+    "MITTEN":  GOLD,
+    "SEN":     "#d4943a",
+    "TOPP":    RED,
+    "DATA_GAP": DIM,
+}
+
+
+def _render_theme_board() -> None:
+    """Render the Commodity Theme Board section in Odin's Blindspot."""
+    if not _THEME_OK:
+        st.caption("Commodity theme board module not available.")
+        return
+
+    _section_header("COMMODITY THEME BOARD", GOLD)
+    st.caption(
+        "Nio råvaruteman rankade efter Blindspot-poäng "
+        "(Nödvändighet × Hat × Billigt). "
+        "Cachad 12h. Klicka på ett tema för detaljer."
+    )
+
+    try:
+        themes = build_theme_board()
+    except Exception as exc:
+        st.error(f"Theme board error: {exc}")
+        return
+
+    if not themes:
+        st.warning("Ingen temadata tillgänglig.")
+        return
+
+    # ── Ranked summary table ──────────────────────────────────────────────
+    rows = []
+    for t in themes:
+        cykel_str = t.cykel_label if not t.error else "DATA_GAP"
+        rows.append({
+            "Tema":          t.label + (" ⚠PROXY" if t.proxy_flag else ""),
+            "Blindspot":     round(t.blindspot_score, 1),
+            "Cykel":         cykel_str,
+            "Hat":           round(t.hat_score, 1) if not t.error else None,
+            "Nödvändighet":  t.necessity,
+            "10y Pct":       round(t.percentile_10y, 1) if t.percentile_10y is not None else None,
+        })
+
+    tdf = pd.DataFrame(rows)
+
+    def _color_blindspot(val):
+        try:
+            v = float(val)
+            if v >= 25: return f"color: {GREEN}; font-weight: 700"
+            if v >= 12: return f"color: {GOLD}; font-weight: 700"
+            return f"color: {RED}"
+        except (ValueError, TypeError):
+            return f"color: {DIM}"
+
+    def _color_cykel(val):
+        c = _CYKEL_COLORS.get(str(val), DIM)
+        return f"color: {c}; font-weight: 700"
+
+    def _color_hat(val):
+        try:
+            v = float(val)
+            if v >= 60: return f"color: {RED}; font-weight: 700"
+            if v >= 35: return f"color: {GOLD}"
+            return f"color: {GREEN}"
+        except (ValueError, TypeError):
+            return f"color: {DIM}"
+
+    fmt = {"Blindspot": "{:.1f}", "Hat": "{:.1f}", "10y Pct": "{:.1f}"}
+    styler = tdf.style.format(fmt, na_rep="—")
+    if "Blindspot" in tdf.columns:
+        styler = styler.map(_color_blindspot, subset=["Blindspot"])
+    if "Cykel" in tdf.columns:
+        styler = styler.map(_color_cykel, subset=["Cykel"])
+    if "Hat" in tdf.columns:
+        styler = styler.map(_color_hat, subset=["Hat"])
+
+    st.dataframe(styler, use_container_width=True, hide_index=True)
+
+    # ── Per-theme expanders ───────────────────────────────────────────────
+    for t in themes:
+        cykel_color = _CYKEL_COLORS.get(t.cykel_label, DIM)
+        proxy_badge = "  ⚠ PROXY" if t.proxy_flag else ""
+        score_str   = f"  Blindspot {t.blindspot_score:.1f}" if not t.error else "  DATA SAKNAS"
+
+        with st.expander(
+            f"{t.label}{proxy_badge}{score_str}  ·  {t.cykel_label}",
+            expanded=False,
+        ):
+            if t.error:
+                st.warning(f"Data ej tillgänglig: {t.error}")
+                if t.proxy_note:
+                    st.caption(t.proxy_note)
+                continue
+
+            if t.proxy_note:
+                st.caption(f"Proxy: {t.proxy_note}")
+
+            col_scores, col_spark = st.columns([1, 2])
+
+            with col_scores:
+                # Sub-scores
+                st.markdown(
+                    f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
+
+                    f'<div style="background:{BG2};border:1px solid rgba(0,229,255,0.15);'
+                    f'border-radius:6px;padding:10px 12px;">'
+                    f'<div style="font-size:0.65rem;color:{DIM};text-transform:uppercase;'
+                    f'letter-spacing:0.1em;">Cykelposition</div>'
+                    f'<div style="font-size:1.1rem;font-weight:700;color:{cykel_color};'
+                    f'margin-top:4px;">{t.cykel_label}</div>'
+                    f'<div style="font-size:0.7rem;color:{DIM};margin-top:2px;">'
+                    f'10y pct: {t.percentile_10y:.0f}th' if t.percentile_10y is not None else "10y pct: —"
+                    f'</div></div>'
+
+                    f'<div style="background:{BG2};border:1px solid rgba(0,229,255,0.15);'
+                    f'border-radius:6px;padding:10px 12px;">'
+                    f'<div style="font-size:0.65rem;color:{DIM};text-transform:uppercase;'
+                    f'letter-spacing:0.1em;">Hat Score</div>'
+                    f'<div style="font-size:1.1rem;font-weight:700;'
+                    f'color:{"#c44545" if t.hat_score >= 60 else GOLD};margin-top:4px;">'
+                    f'{t.hat_score:.0f}/100</div>'
+                    f'<div style="font-size:0.7rem;color:{DIM};margin-top:2px;">'
+                    f'5y high dist: -{t.hat_from_5y_high_pct:.0f}%' if t.hat_from_5y_high_pct is not None else ""
+                    f'</div></div>'
+
+                    f'<div style="background:{BG2};border:1px solid rgba(0,229,255,0.15);'
+                    f'border-radius:6px;padding:10px 12px;">'
+                    f'<div style="font-size:0.65rem;color:{DIM};text-transform:uppercase;'
+                    f'letter-spacing:0.1em;">Nödvändighet</div>'
+                    f'<div style="font-size:1.1rem;font-weight:700;color:{GOLD};margin-top:4px;">'
+                    f'{t.necessity}/100</div>'
+                    f'<div style="font-size:0.7rem;color:{DIM};margin-top:2px;">statisk vikt</div>'
+                    f'</div>'
+
+                    f'<div style="background:{BG2};border:1px solid rgba(0,229,255,0.15);'
+                    f'border-radius:6px;padding:10px 12px;">'
+                    f'<div style="font-size:0.65rem;color:{DIM};text-transform:uppercase;'
+                    f'letter-spacing:0.1em;">Blindspot Score</div>'
+                    f'<div style="font-size:1.1rem;font-weight:700;'
+                    f'color:{"#2d8a4e" if t.blindspot_score >= 25 else GOLD};margin-top:4px;">'
+                    f'{t.blindspot_score:.1f}/100</div>'
+                    f'</div>'
+
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+
+                # RS vs SPY
+                if t.hat_rs_vs_spy is not None:
+                    rs_color = "#2d8a4e" if t.hat_rs_vs_spy >= 0 else "#c44545"
+                    st.markdown(
+                        f'<div style="font-size:0.75rem;color:{DIM};margin-top:8px;">'
+                        f'12m RS vs SPY: <span style="color:{rs_color};font-weight:700;">'
+                        f'{t.hat_rs_vs_spy:+.1f}%</span></div>',
+                        unsafe_allow_html=True,
+                    )
+
+            with col_spark:
+                # Sparkline (2y weekly)
+                if t.sparkline_dates and t.sparkline_values:
+                    try:
+                        import plotly.graph_objects as go
+                        fig = go.Figure()
+                        fig.add_trace(go.Scatter(
+                            x=t.sparkline_dates,
+                            y=t.sparkline_values,
+                            mode="lines",
+                            line=dict(color=cykel_color, width=1.5),
+                            fill="tozeroy",
+                            fillcolor=f"rgba(0,229,255,0.04)",
+                            name=t.label,
+                        ))
+                        fig.update_layout(
+                            paper_bgcolor="rgba(0,0,0,0)",
+                            plot_bgcolor=BG,
+                            font=dict(color=TEXT, size=9),
+                            xaxis=dict(gridcolor="rgba(138,133,120,0.08)", title=""),
+                            yaxis=dict(gridcolor="rgba(138,133,120,0.08)", title=""),
+                            margin=dict(l=36, r=8, t=8, b=24),
+                            height=130,
+                            showlegend=False,
+                        )
+                        st.plotly_chart(fig, use_container_width=True,
+                                        key=f"theme_spark_{t.key}")
+                    except Exception:
+                        st.caption("Sparkline ej tillgänglig.")
+
+            # Rubber-band ratio links
+            ratio_keys = THEME_RATIO_KEYS.get(t.key, [])
+            if ratio_keys:
+                st.markdown(
+                    f'<div style="font-size:0.75rem;color:{DIM};margin-top:6px;">'
+                    f'Relaterade gummisnoddar: '
+                    f'<span style="color:{GOLD};">{", ".join(ratio_keys)}</span>'
+                    f' — se Alpha Regime → Deep Contrarian</div>',
+                    unsafe_allow_html=True,
+                )
+
+            # Swedish verdict
+            verdict = theme_verdict_text(t)
+            st.markdown(
+                f'<div style="font-size:0.82rem;color:{TEXT};margin-top:10px;'
+                f'padding:10px 14px;background:{BG2};border-radius:6px;'
+                f'border-left:3px solid {cykel_color};">{verdict}</div>',
+                unsafe_allow_html=True,
+            )
 
 
 def render_blindspot_page() -> None:
@@ -186,6 +406,9 @@ def render_blindspot_page() -> None:
         styler = styler.map(_color_confidence, subset=["Confidence"])
 
     st.dataframe(styler, width='stretch', hide_index=True, height=500)
+
+    # ── Section 2b: COMMODITY THEME BOARD ────────────────────────────
+    _render_theme_board()
 
     # ── Section 3: SECTOR VIEW ────────────────────────────────────────
     _section_header("SECTOR BREAKDOWN", BRONZE)

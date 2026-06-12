@@ -34,6 +34,18 @@ try:
 except ImportError:
     pass
 
+# ── Optional: tactical entry module ──────────────────────────────────────────
+_TE_OK = False
+try:
+    from alpha_regime.tactical_entry import (
+        compute_tactical_entry,
+        resolve_sector_etf,
+        TacticalEntryResult,
+    )
+    _TE_OK = True
+except ImportError:
+    pass
+
 logger = logging.getLogger(__name__)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -697,6 +709,156 @@ def _render_custom_ratio_builder() -> None:
                     )
 
 
+# ── Tactical entry panel ──────────────────────────────────────────────────────
+
+_TE_VERDICT_COLORS = {
+    "ENTRY NOW":            "#1aaa5a",
+    "WAIT — PULLBACK PÅGÅR": "#e8a020",
+    "INGEN ENTRY":          "#cc3333",
+}
+
+
+def _render_tactical_entry(r: RegimeResult) -> None:
+    """
+    Render 🎯 TAKTISK ENTRY panel below the action box.
+    Computes and displays the 6 tactical checks + concrete levels in Swedish.
+    """
+    if not _TE_OK:
+        return
+
+    sector_etf = resolve_sector_etf(r.detected_exposure)
+
+    cache_key = f"te_result_{r.ticker}_{sector_etf}"
+    te: Optional[TacticalEntryResult] = st.session_state.get(cache_key)
+
+    if te is None:
+        with st.spinner(f"Beräknar taktisk entry för {r.ticker} …"):
+            try:
+                te = compute_tactical_entry(r.ticker, sector_etf=sector_etf)
+            except Exception as exc:
+                st.warning(f"Taktisk entry-beräkning misslyckades: {exc}")
+                return
+        st.session_state[cache_key] = te
+
+    if te is None:
+        return
+
+    verdict_color = _TE_VERDICT_COLORS.get(te.verdict, "#607080")
+
+    st.markdown(
+        f"""<div style="border:2px solid {verdict_color};border-radius:8px;
+            padding:18px 22px;background:rgba({_hex_to_rgb(verdict_color)},0.07);
+            margin:12px 0;">
+          <div style="font-size:0.7rem;color:#8899aa;letter-spacing:0.1em;
+              text-transform:uppercase;margin-bottom:4px;">🎯 Taktisk Entry</div>
+          <div style="font-size:1.7rem;font-weight:900;color:{verdict_color};
+              letter-spacing:0.06em;margin-bottom:8px;">{te.verdict}</div>
+          <div style="font-size:0.8rem;color:#8899aa;margin-bottom:4px;">
+              Sektorjämförelse: {sector_etf} &nbsp;·&nbsp;
+              {te.passed_count}/6 villkor uppfyllda</div>
+        </div>""",
+        unsafe_allow_html=True,
+    )
+
+    if te.error:
+        st.warning(f"Data-varning: {te.error}")
+        return
+
+    # ── Checklist ──────────────────────────────────────────────────────────
+    st.markdown(
+        '<p style="color:#c9a84c;font-weight:600;font-size:0.85rem;'
+        'margin:10px 0 4px;">Checklista</p>',
+        unsafe_allow_html=True,
+    )
+
+    rows_html = ""
+    for chk in te.checks:
+        icon  = "✅" if chk.passed else "❌"
+        color = "#1aaa5a" if chk.passed else "#cc3333"
+        trend_badge = (
+            ' <span style="font-size:0.6rem;color:#607080;'
+            'border:1px solid #607080;padding:1px 4px;border-radius:3px;">TREND</span>'
+            if chk.is_trend else ""
+        )
+        rows_html += (
+            f'<div style="display:flex;gap:10px;align-items:flex-start;'
+            f'margin-bottom:5px;font-size:0.82rem;">'
+            f'  <span style="color:{color};min-width:18px;">{icon}</span>'
+            f'  <span style="color:#e8e4dc;">{chk.name}{trend_badge}</span>'
+            f'  <span style="color:#607080;margin-left:auto;text-align:right;'
+            f'  font-size:0.75rem;">{chk.detail}</span>'
+            f'</div>'
+        )
+
+    st.markdown(
+        f'<div style="background:#0d1117;border:1px solid #2a3040;border-radius:6px;'
+        f'padding:12px 16px;">{rows_html}</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Concrete levels ─────────────────────────────────────────────────────
+    if te.entry_zone_low is not None:
+        st.markdown(
+            '<p style="color:#c9a84c;font-weight:600;font-size:0.85rem;'
+            'margin:14px 0 4px;">Nivåer</p>',
+            unsafe_allow_html=True,
+        )
+
+        stop_txt = (
+            f"{te.stop_level:.2f}"
+            + (f"  ({te.stop_risk_pct:.1f}% risk)" if te.stop_risk_pct else "")
+            if te.stop_level else "—"
+        )
+        t2r_txt = f"{te.target_2r:.2f}  (1:2)" if te.target_2r else "—"
+        t3r_txt = f"{te.target_3r:.2f}  (1:3)" if te.target_3r else "—"
+
+        lc1, lc2, lc3, lc4 = st.columns(4)
+        with lc1:
+            st.markdown(
+                f'<div style="background:#0d1117;border:1px solid #2a3040;'
+                f'border-radius:6px;padding:10px 14px;">'
+                f'<div style="font-size:0.65rem;color:#607080;text-transform:uppercase;'
+                f'letter-spacing:0.08em;">Entryzon (20D EMA ±2%)</div>'
+                f'<div style="font-size:1rem;font-weight:700;color:#00E5FF;margin-top:4px;">'
+                f'{te.entry_zone_low:.2f} – {te.entry_zone_high:.2f}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        with lc2:
+            st.markdown(
+                f'<div style="background:#0d1117;border:1px solid #2a3040;'
+                f'border-radius:6px;padding:10px 14px;">'
+                f'<div style="font-size:0.65rem;color:#607080;text-transform:uppercase;'
+                f'letter-spacing:0.08em;">Stopp (under svängningsbotten)</div>'
+                f'<div style="font-size:1rem;font-weight:700;color:#cc3333;margin-top:4px;">'
+                f'{stop_txt}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        with lc3:
+            st.markdown(
+                f'<div style="background:#0d1117;border:1px solid #2a3040;'
+                f'border-radius:6px;padding:10px 14px;">'
+                f'<div style="font-size:0.65rem;color:#607080;text-transform:uppercase;'
+                f'letter-spacing:0.08em;">Mål 1</div>'
+                f'<div style="font-size:1rem;font-weight:700;color:#1aaa5a;margin-top:4px;">'
+                f'{t2r_txt}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        with lc4:
+            st.markdown(
+                f'<div style="background:#0d1117;border:1px solid #2a3040;'
+                f'border-radius:6px;padding:10px 14px;">'
+                f'<div style="font-size:0.65rem;color:#607080;text-transform:uppercase;'
+                f'letter-spacing:0.08em;">Mål 2</div>'
+                f'<div style="font-size:1rem;font-weight:700;color:#1aaa5a;margin-top:4px;">'
+                f'{t3r_txt}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+
 # ── Action box ────────────────────────────────────────────────────────────────
 
 def _render_action_box(r: RegimeResult) -> None:
@@ -929,6 +1091,10 @@ def _render_quality_mode(r: RegimeResult) -> None:
 
     _render_action_box(r)
 
+    # Tactical entry — only when Quality verdict is BUY
+    if r.quality_verdict == "BUY":
+        _render_tactical_entry(r)
+
     # Signal grid — 4 columns
     cols = st.columns(4)
     for i, sig in enumerate(r.signals):
@@ -963,6 +1129,10 @@ def _render_contrarian_mode(r: RegimeResult, exposure_override=None) -> None:
 
     # 0. Action box (Swedish, beginner-friendly)
     _render_action_box(r)
+
+    # Tactical entry — only for ACCUMULATE stages
+    if c.stage.startswith("ACCUMULATE"):
+        _render_tactical_entry(r)
 
     # 1. Verdict banner (with ratio summary)
     _ratio_sum = _compute_ratio_summary(r.commodity_ratios, _display_keys)
