@@ -19,7 +19,7 @@ from ember.universe import (
     ALL_SOURCES, SOURCE_CURATED, SOURCE_AUTO, SOURCE_BOTH,
     US_INTL_CURATED, UniverseStats,
 )
-from ember.regime import VERDICT_PA, VERDICT_SELEKTIV, VERDICT_AV
+from ember.regime import VERDICT_PA, VERDICT_SELEKTIV, VERDICT_AV, detect_complex
 
 try:
     from ember.engine import run_ember_scan, EmberSetupResult, EmberScanResult
@@ -142,9 +142,11 @@ def _render_setup_card(r: EmberSetupResult, idx: int) -> None:
         f"[{r.cykel_label}]  RR {rr_str}  Makro {macro_str}"
     )
 
-    # Read current regime verdict from session state
-    _regime    = st.session_state.get("ember_regime")
-    _rv        = _regime.verdict if _regime else ""
+    # Read per-complex regime verdict from session state
+    _complex_key   = detect_complex(r.ticker)
+    _all_regimes   = st.session_state.get("ember_complex_regimes", {})
+    _regime        = _all_regimes.get(_complex_key) or st.session_state.get("ember_regime")
+    _rv            = _regime.verdict if _regime else ""
 
     with st.expander(title, expanded=(idx < 1)):
         # Regime banner (AV = hard warning; SELEKTIV = soft advisory)

@@ -79,6 +79,17 @@ class EmberRegimeResult:
     timestamp:   datetime = field(default_factory=datetime.now)
 
 
+@dataclass
+class ComplexRegimeResult:
+    key:         str            # "energi" | "adelmetaller" | "basmetaller" | "agri"
+    label:       str            # Swedish display label
+    pillars:     list[PillarResult]
+    green_count: int
+    verdict:     str            # VERDICT_PA | VERDICT_SELEKTIV | VERDICT_AV
+    action_text: str
+    timestamp:   datetime = field(default_factory=datetime.now)
+
+
 # ── Download helper ───────────────────────────────────────────────────────────
 
 def _close(ticker: str, period: str) -> pd.Series:
@@ -106,6 +117,110 @@ def _close(ticker: str, period: str) -> pd.Series:
     except Exception as exc:
         logger.debug("_close(%s, %s): %s", ticker, period, exc)
         return pd.Series(dtype=float)
+
+
+# ── Commodity complex map ─────────────────────────────────────────────────────
+
+TICKER_COMPLEX_MAP: dict[str, str] = {
+    # ENERGI — olja, gas, kol
+    "XOM": "energi", "CVX": "energi", "COP": "energi", "EOG": "energi",
+    "SLB": "energi", "MPC": "energi", "VLO": "energi", "PSX": "energi",
+    "OXY": "energi", "HAL": "energi", "DVN": "energi", "BKR": "energi",
+    "FANG": "energi", "APA": "energi", "MRO": "energi", "SHEL": "energi",
+    "EQNR.OL": "energi", "AKRBP.OL": "energi", "VAR.OL": "energi", "TGS.OL": "energi",
+    "XLE": "energi", "XOP": "energi", "USO": "energi", "UNG": "energi",
+    "BP.L": "energi", "SHEL.L": "energi",
+    "SU.TO": "energi", "CNQ.TO": "energi", "CVE.TO": "energi", "IMO.TO": "energi",
+    "WCP.TO": "energi", "ARX.TO": "energi", "BTE.TO": "energi", "TOU.TO": "energi",
+    "BTU": "energi", "ARCH": "energi", "CEIX": "energi", "AMR": "energi",
+    # ÄDELMETALLER — guld, silver, PGM, sällsynta jordartsmetaller
+    "NEM": "adelmetaller", "GOLD": "adelmetaller", "AEM": "adelmetaller",
+    "WPM": "adelmetaller", "KGC": "adelmetaller", "AGI": "adelmetaller",
+    "AU": "adelmetaller", "GFI": "adelmetaller", "BTG": "adelmetaller",
+    "EGO": "adelmetaller", "SSRM": "adelmetaller", "OR": "adelmetaller",
+    "SA": "adelmetaller", "HMY": "adelmetaller", "DRD": "adelmetaller",
+    "AG": "adelmetaller", "HL": "adelmetaller", "PAAS": "adelmetaller",
+    "CDE": "adelmetaller", "FSM": "adelmetaller", "EXK": "adelmetaller",
+    "MAG": "adelmetaller", "MUX": "adelmetaller", "GPL": "adelmetaller",
+    "SVM": "adelmetaller", "ASM": "adelmetaller", "NGD": "adelmetaller",
+    "GLD": "adelmetaller", "GDX": "adelmetaller", "GDXJ": "adelmetaller",
+    "SLV": "adelmetaller", "SIL": "adelmetaller", "SILJ": "adelmetaller",
+    "MP": "adelmetaller", "REMX": "adelmetaller",
+    "ABX.TO": "adelmetaller", "K.TO": "adelmetaller", "ERO.TO": "adelmetaller",
+    "AGI.TO": "adelmetaller", "BTO.TO": "adelmetaller", "EDV.TO": "adelmetaller",
+    "WPM.TO": "adelmetaller", "FNV.TO": "adelmetaller",
+    "RIO.L": "adelmetaller", "BHP.L": "adelmetaller", "AAL.L": "adelmetaller",
+    "FRES.L": "adelmetaller", "ANTO.L": "adelmetaller",
+    # BASMETALLER — koppar, nickel, zink, litium
+    "FCX": "basmetaller", "SCCO": "basmetaller", "TECK": "basmetaller",
+    "COPX": "basmetaller", "PICK": "basmetaller", "XME": "basmetaller",
+    "LIT": "basmetaller", "FM.TO": "basmetaller", "LUN.TO": "basmetaller",
+    "GLEN.L": "basmetaller",
+    # AGRI & ÖVRIGT — jordbruk + uran (diversified)
+    "MOS": "agri", "NTR": "agri", "CF": "agri", "UAN": "agri", "ADM": "agri",
+    "NTR.TO": "agri", "DBA": "agri",
+    "CCJ": "agri", "NXE": "agri", "DNN": "agri", "UUUU": "agri",
+    "LEU": "agri", "UEC": "agri", "URA": "agri", "URNM": "agri",
+    "CCO.TO": "agri", "DML.TO": "agri", "NXE.TO": "agri",
+}
+
+
+def detect_complex(ticker: str) -> str:
+    """Map a ticker to its commodity complex key. Defaults to 'energi'."""
+    return TICKER_COMPLEX_MAP.get(ticker.upper(), "energi")
+
+
+# ── Shared generic pillar helpers ─────────────────────────────────────────────
+
+def _p_50w_ema(ticker: str, label: str) -> PillarResult:
+    """Is price above its 50-week EMA?"""
+    try:
+        c = _close(ticker, "5y")
+        if len(c) < 52:
+            return PillarResult(name=label, status="DATA_GAP",
+                                value="DATA_GAP", detail=f"{ticker} ej tillgänglig")
+        cw = c.resample("W").last().dropna()
+        if len(cw) < 52:
+            return PillarResult(name=label, status="DATA_GAP",
+                                value="DATA_GAP", detail="För lite veckodata")
+        ema50w = float(cw.ewm(span=50, adjust=False).mean().iloc[-1])
+        price  = float(cw.iloc[-1])
+        pct    = (price / ema50w - 1) * 100
+        if price > ema50w:
+            return PillarResult(name=label, status="GREEN",
+                                value=f"{price:.2f} (EMA50V {ema50w:.2f})",
+                                detail=f"{ticker} {pct:+.1f}% över 50V EMA → upptrend ✓")
+        return PillarResult(name=label, status="RED",
+                            value=f"{price:.2f} (EMA50V {ema50w:.2f})",
+                            detail=f"{ticker} {pct:+.1f}% under 50V EMA → nedtrend ⛔")
+    except Exception as exc:
+        return PillarResult(name=label, status="DATA_GAP",
+                            value="DATA_GAP", detail=str(exc))
+
+
+def _p_rs_3m(ticker: str, bench: str, label: str) -> PillarResult:
+    """3-month (63 trading day) relative strength of ticker vs benchmark."""
+    try:
+        t = _close(ticker, "6mo")
+        b = _close(bench,  "6mo")
+        if len(t) < 64 or len(b) < 64:
+            return PillarResult(name=label, status="DATA_GAP",
+                                value="DATA_GAP", detail=f"{ticker}/{bench} ej tillgänglig")
+        t3m = float(t.iloc[-1]) / float(t.iloc[-64]) - 1
+        b3m = float(b.iloc[-1]) / float(b.iloc[-64]) - 1
+        rs  = t3m - b3m
+        val = f"{ticker} {t3m*100:+.1f}% vs {bench} {b3m*100:+.1f}% (3M)"
+        if rs > 0.02:
+            return PillarResult(name=label, status="GREEN", value=val,
+                                detail=f"{ticker} outperformar {bench} 3M → relativ styrka ✓")
+        if rs < -0.02:
+            return PillarResult(name=label, status="RED", value=val,
+                                detail=f"{ticker} underperformar {bench} 3M → svag RS ⛔")
+        return PillarResult(name=label, status="AMBER", value=val,
+                            detail=f"{ticker} i linje med {bench} 3M → neutral RS")
+    except Exception as exc:
+        return PillarResult(name=label, status="DATA_GAP",
+                            value="DATA_GAP", detail=str(exc))
 
 
 # ── Pillar 1: DOLLAR (DXY 4-week trend) ──────────────────────────────────────
@@ -355,6 +470,324 @@ def get_cached_regime() -> Optional[EmberRegimeResult]:
         return None
 
 
+# ── ENERGI pillars ────────────────────────────────────────────────────────────
+
+def _ep_dxy() -> PillarResult:
+    return _pillar_dxy()
+
+
+def _ep_xle_rs() -> PillarResult:
+    return _p_rs_3m("XLE", "SPY", "XLE/SPY RELATIV STYRKA")
+
+
+def _ep_oil_trend() -> PillarResult:
+    return _p_50w_ema("CL=F", "OLJA (CL=F) vs 50V EMA")
+
+
+def _ep_gas_trend() -> PillarResult:
+    return _p_50w_ema("NG=F", "GAS (NG=F) vs 50V EMA")
+
+
+def _ep_energy_breadth() -> PillarResult:
+    name = "ENERGI-BREDD (XLE/XOP/OIH)"
+    above, results = 0, []
+    for etf in ("XLE", "XOP", "OIH"):
+        try:
+            c = _close(etf, "5y")
+            cw = c.resample("W").last().dropna()
+            if len(cw) >= 52:
+                ok = float(cw.iloc[-1]) > float(cw.ewm(span=50, adjust=False).mean().iloc[-1])
+                above += int(ok)
+                results.append(f"{etf} {'✓' if ok else '✗'}")
+            else:
+                results.append(f"{etf} ?")
+        except Exception:
+            results.append(f"{etf} ?")
+    val = f"{above}/3 ({', '.join(results)})"
+    if above >= 2:
+        return PillarResult(name=name, status="GREEN", value=val,
+                            detail="≥2/3 energi-ETF:er ovan 50V EMA → bred upptrend ✓")
+    if above == 1:
+        return PillarResult(name=name, status="AMBER", value=val,
+                            detail="1/3 energi-ETF:er ovan 50V EMA → selektiv")
+    return PillarResult(name=name, status="RED", value=val,
+                        detail="Inga energi-ETF:er ovan 50V EMA → undvik energi ⛔")
+
+
+# ── ÄDELMETALLER pillars ──────────────────────────────────────────────────────
+
+def _am_dxy() -> PillarResult:
+    return _pillar_dxy()
+
+
+def _am_gdx_rs() -> PillarResult:
+    return _p_rs_3m("GDX", "SPY", "GDX/SPY RELATIV STYRKA")
+
+
+def _am_gold_blowoff() -> PillarResult:
+    name = "GULD BLOW-OFF GUARD"
+    try:
+        from alpha_regime.commodity_ratios import fetch_context_gauges
+        g = fetch_context_gauges().get("gold_usd")
+        if g is None:
+            return PillarResult(name=name, status="DATA_GAP",
+                                value="DATA_GAP", detail="Guld-percentil ej tillgänglig")
+        pct = g.percentile
+        if pct > 95:
+            return PillarResult(name=name, status="AMBER",
+                                value=f"Percentil {pct:.0f}% (10å)",
+                                detail=f"Guld i topp-5% ({pct:.0f}%) — blow-off risk, halvera position")
+        detail = (f"Guld {pct:.0f}% percentil — ej blow-off ✓"
+                  if pct > 80 else f"Guld {pct:.0f}% percentil — ej överköpt ✓")
+        return PillarResult(name=name, status="GREEN",
+                            value=f"Percentil {pct:.0f}% (10å)", detail=detail)
+    except Exception as exc:
+        return PillarResult(name=name, status="DATA_GAP",
+                            value="DATA_GAP", detail=str(exc))
+
+
+def _am_silver_trend() -> PillarResult:
+    return _p_50w_ema("SLV", "SILVER (SLV) vs 50V EMA")
+
+
+def _am_tip_trend() -> PillarResult:
+    name = "REALRÄNTA (TIP 3M)"
+    try:
+        c = _close("TIP", "6mo")
+        if len(c) < 64:
+            return PillarResult(name=name, status="DATA_GAP",
+                                value="DATA_GAP", detail="TIP ej tillgänglig")
+        chg = float(c.iloc[-1]) / float(c.iloc[-64]) - 1
+        val = f"TIP {chg*100:+.1f}% 3M"
+        if chg > 0.01:
+            return PillarResult(name=name, status="GREEN", value=val,
+                                detail=f"TIP +{chg*100:.1f}% 3M → realräntor fallande = guld-medvind ✓")
+        if chg < -0.01:
+            return PillarResult(name=name, status="RED", value=val,
+                                detail=f"TIP {chg*100:.1f}% 3M → realräntor stigande = guld-motvind ⛔")
+        return PillarResult(name=name, status="AMBER", value=val,
+                            detail=f"TIP {chg*100:+.1f}% 3M → realräntor neutrala")
+    except Exception as exc:
+        return PillarResult(name=name, status="DATA_GAP",
+                            value="DATA_GAP", detail=str(exc))
+
+
+# ── BASMETALLER pillars ───────────────────────────────────────────────────────
+
+def _bm_copper_gold() -> PillarResult:
+    return _pillar_copper_gold()
+
+
+def _bm_copx_rs() -> PillarResult:
+    return _p_rs_3m("COPX", "SPY", "COPX/SPY RELATIV STYRKA")
+
+
+def _bm_copper_trend() -> PillarResult:
+    return _p_50w_ema("HG=F", "KOPPAR (HG=F) vs 50V EMA")
+
+
+def _bm_china_demand() -> PillarResult:
+    name = "KINA-EFTERFRÅGAN (MCHI/FXI)"
+    try:
+        mchi = _close("MCHI", "6mo")
+        fxi  = _close("FXI",  "6mo")
+        ticker = "MCHI" if len(mchi) >= 64 else ("FXI" if len(fxi) >= 64 else None)
+        c = mchi if ticker == "MCHI" else (fxi if ticker == "FXI" else None)
+        if c is None:
+            return PillarResult(name=name, status="DATA_GAP",
+                                value="DATA_GAP", detail="MCHI/FXI ej tillgängliga")
+        chg = float(c.iloc[-1]) / float(c.iloc[-64]) - 1
+        val = f"{ticker} {chg*100:+.1f}% 3M"
+        if chg > 0.03:
+            return PillarResult(name=name, status="GREEN", value=val,
+                                detail=f"{ticker} +{chg*100:.1f}% 3M → Kina-efterfrågan expanderar ✓")
+        if chg < -0.03:
+            return PillarResult(name=name, status="RED", value=val,
+                                detail=f"{ticker} {chg*100:.1f}% 3M → Kina-osäkerhet tynger basmetaller ⛔")
+        return PillarResult(name=name, status="AMBER", value=val,
+                            detail=f"{ticker} {chg*100:+.1f}% 3M → neutral Kina-signal")
+    except Exception as exc:
+        return PillarResult(name=name, status="DATA_GAP",
+                            value="DATA_GAP", detail=str(exc))
+
+
+def _bm_yield_curve() -> PillarResult:
+    return _pillar_yield_curve()
+
+
+# ── AGRI & ÖVRIGT pillars ────────────────────────────────────────────────────
+
+def _ag_dba_trend() -> PillarResult:
+    name = "DBA vs 50V EMA + LUTNING"
+    try:
+        c = _close("DBA", "5y")
+        if len(c) < 52:
+            return PillarResult(name=name, status="DATA_GAP",
+                                value="DATA_GAP", detail="DBA ej tillgänglig")
+        cw = c.resample("W").last().dropna()
+        if len(cw) < 52:
+            return PillarResult(name=name, status="DATA_GAP",
+                                value="DATA_GAP", detail="För lite veckodata")
+        ema50w = cw.ewm(span=50, adjust=False).mean()
+        ema20w = cw.ewm(span=20, adjust=False).mean()
+        price  = float(cw.iloc[-1])
+        e50    = float(ema50w.iloc[-1])
+        e20_now = float(ema20w.iloc[-1])
+        e20_4w  = float(ema20w.iloc[-5]) if len(ema20w) >= 5 else e20_now
+        above, slope_up = price > e50, e20_now > e20_4w
+        if above and slope_up:
+            return PillarResult(name=name, status="GREEN",
+                                value=f"{price:.2f} (50V EMA {e50:.2f})",
+                                detail="DBA ovan 50V EMA och 20V EMA stiger → agri-upptrend ✓")
+        if above:
+            return PillarResult(name=name, status="AMBER",
+                                value=f"{price:.2f} (50V EMA {e50:.2f})",
+                                detail="DBA ovan 50V EMA men 20V EMA sjunker → avvakta")
+        return PillarResult(name=name, status="RED",
+                            value=f"{price:.2f} (50V EMA {e50:.2f})",
+                            detail="DBA under 50V EMA → agri-nedtrend ⛔")
+    except Exception as exc:
+        return PillarResult(name=name, status="DATA_GAP",
+                            value="DATA_GAP", detail=str(exc))
+
+
+def _ag_dba_rs() -> PillarResult:
+    return _p_rs_3m("DBA", "SPY", "DBA/SPY RELATIV STYRKA")
+
+
+def _ag_dxy() -> PillarResult:
+    return _pillar_dxy()
+
+
+def _ag_agri_theme() -> PillarResult:
+    name = "AGRI-TEMA CYKEL"
+    try:
+        from blindspot.theme_board import build_theme_board
+        agri = next((t for t in build_theme_board() if t.key == "agri"), None)
+        if agri is None:
+            return PillarResult(name=name, status="DATA_GAP",
+                                value="DATA_GAP", detail="Agri-temat ej i Theme Board")
+        lbl = agri.cykel_label
+        if lbl == "DATA_GAP":
+            return PillarResult(name=name, status="DATA_GAP",
+                                value=f"Cykel: {lbl}", detail="Agri-tema cykeldata ej tillgänglig")
+        if lbl in ("TIDIG", "MITTEN"):
+            return PillarResult(name=name, status="GREEN",
+                                value=f"Cykel: {lbl}",
+                                detail=f"Agri-tema: {lbl} — rätt cykelfas för entries ✓")
+        status = "AMBER" if lbl == "SEN" else "RED"
+        return PillarResult(name=name, status=status,
+                            value=f"Cykel: {lbl}",
+                            detail=f"Agri-tema: {lbl} — avancerad cykel, öka selektivitet")
+    except Exception as exc:
+        return PillarResult(name=name, status="DATA_GAP",
+                            value="DATA_GAP", detail=str(exc))
+
+
+def _ag_dba_volume() -> PillarResult:
+    name = "DBA VOLYM-TREND (3M)"
+    try:
+        import yfinance as yf
+        try:
+            df = yf.download("DBA", period="1y", auto_adjust=True,
+                             progress=False, show_errors=False, multi_level_index=False)
+        except TypeError:
+            df = yf.download("DBA", period="1y", auto_adjust=True, progress=False)
+        if df is None or df.empty or "Volume" not in df.columns:
+            return PillarResult(name=name, status="DATA_GAP",
+                                value="DATA_GAP", detail="DBA volym ej tillgänglig")
+        vol = df["Volume"].squeeze()
+        if isinstance(vol, pd.DataFrame):
+            vol = vol.iloc[:, 0]
+        vol = pd.to_numeric(vol, errors="coerce").dropna()
+        if len(vol) < 126:
+            return PillarResult(name=name, status="DATA_GAP",
+                                value="DATA_GAP", detail="För lite volymhistorik")
+        avg_3m = float(vol.iloc[-63:].mean())
+        avg_6m = float(vol.iloc[-126:-63].mean())
+        ratio  = avg_3m / avg_6m if avg_6m > 0 else 1.0
+        val = f"Vol ratio 3M/prior3M: {ratio:.2f}x"
+        if ratio > 1.05:
+            return PillarResult(name=name, status="GREEN", value=val,
+                                detail=f"DBA-volym {ratio:.2f}x — stigande intresse ✓")
+        if ratio < 0.90:
+            return PillarResult(name=name, status="RED", value=val,
+                                detail=f"DBA-volym {ratio:.2f}x — minskande intresse ⛔")
+        return PillarResult(name=name, status="AMBER", value=val,
+                            detail=f"DBA-volym stabil {ratio:.2f}x → neutral")
+    except Exception as exc:
+        return PillarResult(name=name, status="DATA_GAP",
+                            value="DATA_GAP", detail=str(exc))
+
+
+# ── Complex compute helpers ───────────────────────────────────────────────────
+
+def _complex_verdict(green_count: int, key: str) -> tuple[str, str]:
+    lbl = {"energi": "ENERGI", "adelmetaller": "ÄDELMETALLER",
+           "basmetaller": "BASMETALLER", "agri": "AGRI & ÖVRIGT"}.get(key, key.upper())
+    if green_count >= 4:
+        return (VERDICT_PA,
+                f"Full positionsstorlek tillåten för {lbl}. Alla topp-rankade elitcase är giltiga.")
+    if green_count == 3:
+        return (VERDICT_SELEKTIV,
+                f"Halverad positionsstorlek för {lbl}. Handla endast topp-1 och topp-2 i screener.")
+    return (VERDICT_AV,
+            f"Inga nya {lbl}-trades. Bevaka befintliga positioner och planera nästa setup.")
+
+
+@_cache_1h
+def compute_energi_regime() -> ComplexRegimeResult:
+    pillars = [_ep_dxy(), _ep_xle_rs(), _ep_oil_trend(), _ep_gas_trend(), _ep_energy_breadth()]
+    gc = sum(1 for p in pillars if p.status == "GREEN")
+    v, a = _complex_verdict(gc, "energi")
+    return ComplexRegimeResult(key="energi", label="ENERGI",
+                               pillars=pillars, green_count=gc, verdict=v, action_text=a)
+
+
+@_cache_1h
+def compute_adelmetaller_regime() -> ComplexRegimeResult:
+    pillars = [_am_dxy(), _am_gdx_rs(), _am_gold_blowoff(), _am_silver_trend(), _am_tip_trend()]
+    gc = sum(1 for p in pillars if p.status == "GREEN")
+    v, a = _complex_verdict(gc, "adelmetaller")
+    return ComplexRegimeResult(key="adelmetaller", label="ÄDELMETALLER",
+                               pillars=pillars, green_count=gc, verdict=v, action_text=a)
+
+
+@_cache_1h
+def compute_basmetaller_regime() -> ComplexRegimeResult:
+    pillars = [_bm_copper_gold(), _bm_copx_rs(), _bm_copper_trend(),
+               _bm_china_demand(), _bm_yield_curve()]
+    gc = sum(1 for p in pillars if p.status == "GREEN")
+    v, a = _complex_verdict(gc, "basmetaller")
+    return ComplexRegimeResult(key="basmetaller", label="BASMETALLER",
+                               pillars=pillars, green_count=gc, verdict=v, action_text=a)
+
+
+@_cache_1h
+def compute_agri_regime() -> ComplexRegimeResult:
+    pillars = [_ag_dba_trend(), _ag_dba_rs(), _ag_dxy(), _ag_agri_theme(), _ag_dba_volume()]
+    gc = sum(1 for p in pillars if p.status == "GREEN")
+    v, a = _complex_verdict(gc, "agri")
+    return ComplexRegimeResult(key="agri", label="AGRI & ÖVRIGT",
+                               pillars=pillars, green_count=gc, verdict=v, action_text=a)
+
+
+def compute_all_complex_regimes() -> dict[str, ComplexRegimeResult]:
+    """Compute all 4 complex regimes. Caches result in session_state."""
+    results: dict[str, ComplexRegimeResult] = {
+        "energi":       compute_energi_regime(),
+        "adelmetaller": compute_adelmetaller_regime(),
+        "basmetaller":  compute_basmetaller_regime(),
+        "agri":         compute_agri_regime(),
+    }
+    try:
+        import streamlit as st
+        st.session_state["ember_complex_regimes"] = results
+    except Exception:
+        pass
+    return results
+
+
 # ── Palette helpers for UI ────────────────────────────────────────────────────
 
 _STATUS_COLOR = {
@@ -374,46 +807,16 @@ _VERDICT_BORDER = {VERDICT_PA: GREEN,      VERDICT_SELEKTIV: AMBER,      VERDICT
 _VERDICT_ICON   = {VERDICT_PA: "🟢",       VERDICT_SELEKTIV: "🟡",       VERDICT_AV: "🔴"}
 
 
-# ── Streamlit page ────────────────────────────────────────────────────────────
+# ── Streamlit UI helpers ──────────────────────────────────────────────────────
 
-def render_ember_regime_page() -> None:
-    """Render the EMBER Regime master environment gauge page."""
-    try:
-        import streamlit as st
-    except ImportError:
-        return
+_COMPLEX_ICON: dict[str, str] = {
+    "energi": "⚡", "adelmetaller": "🥇", "basmetaller": "🔧", "agri": "🌾",
+}
 
-    st.markdown(
-        f"<div style='text-align:center;padding:14px 0 10px 0;'>"
-        f"<h2 style='color:{EMBER};letter-spacing:0.12em;margin:0;'>🌍 EMBER REGIME</h2>"
-        f"<p style='color:{DIM};font-size:0.75rem;letter-spacing:0.08em;margin:4px 0 0;'>"
-        f"Miljögauge för råvaru-swings · Fem pelare · Cachad 1h"
-        f"</p></div>",
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        f"<hr style='border-color:{EMBER}33;margin:0 0 16px 0;'>",
-        unsafe_allow_html=True,
-    )
 
-    if st.button("↺ Tvinga uppdatering", key="ember_regime_refresh"):
-        if hasattr(compute_ember_regime, "clear"):
-            compute_ember_regime.clear()
-        st.rerun()
-
-    with st.spinner("Beräknar EMBER Regime-pelare…"):
-        try:
-            result = compute_ember_regime()
-        except Exception as exc:
-            st.error(f"Kunde inte beräkna EMBER Regime: {exc}")
-            return
-
-    # Persist for the EMBER screener
-    st.session_state["ember_regime"] = result
-
-    # ── 5 pillar cards ────────────────────────────────────────────────────────
+def _render_pillar_cards(pillars: list[PillarResult]) -> None:
     cols = st.columns(5)
-    for col, pillar in zip(cols, result.pillars):
+    for col, pillar in zip(cols, pillars):
         sc  = _STATUS_COLOR.get(pillar.status, DIM)
         slv = _STATUS_LABEL_SV.get(pillar.status, pillar.status)
         with col:
@@ -433,20 +836,21 @@ def render_ember_regime_page() -> None:
                 unsafe_allow_html=True,
             )
 
-    st.markdown("<br>", unsafe_allow_html=True)
 
-    # ── Verdict box ───────────────────────────────────────────────────────────
-    vbg  = _VERDICT_BG.get(result.verdict, BG2)
+def _render_complex_tab(result: ComplexRegimeResult) -> None:
     vbrd = _VERDICT_BORDER.get(result.verdict, DIM)
+    vbg  = _VERDICT_BG.get(result.verdict, BG2)
     vico = _VERDICT_ICON.get(result.verdict, "○")
+    icon = _COMPLEX_ICON.get(result.key, "🌍")
 
     st.markdown(
         f"<div style='background:{vbg};border:1px solid {vbrd};"
-        f"border-left:5px solid {vbrd};border-radius:8px;padding:20px 24px;'>"
-        f"<div style='font-size:1.3rem;font-weight:700;color:{vbrd};"
-        f"letter-spacing:0.1em;margin-bottom:8px;'>"
-        f"{vico} EMBER REGIME: {result.verdict}</div>"
-        f"<div style='color:{TEXT};font-size:0.9rem;margin-bottom:8px;'>"
+        f"border-left:5px solid {vbrd};border-radius:8px;"
+        f"padding:20px 24px;margin-bottom:20px;'>"
+        f"<div style='font-size:1.5rem;font-weight:700;color:{vbrd};"
+        f"letter-spacing:0.1em;margin-bottom:6px;'>"
+        f"{vico} {icon} {result.label}: {result.verdict}</div>"
+        f"<div style='color:{TEXT};font-size:0.9rem;margin-bottom:6px;'>"
         f"{result.action_text}</div>"
         f"<div style='color:{DIM};font-size:0.7rem;'>"
         f"Gröna pelare: {result.green_count}/5 · "
@@ -454,40 +858,221 @@ def render_ember_regime_page() -> None:
         f"</div>",
         unsafe_allow_html=True,
     )
+    _render_pillar_cards(result.pillars)
 
-    st.markdown("<br>", unsafe_allow_html=True)
 
-    # ── Pillar model explanation ──────────────────────────────────────────────
-    with st.expander("ℹ Hur pelarmodellen fungerar", expanded=False):
+def _render_ticker_analysis(
+    ticker: str,
+    all_regimes: dict[str, ComplexRegimeResult],
+) -> None:
+    """Show complex regime + EMBER trend gate analysis for a specific ticker."""
+    complex_key = detect_complex(ticker)
+    result = all_regimes.get(complex_key)
+    if result is None:
+        st.warning(f"Ingen regimdata för komplex '{complex_key}'")
+        return
+
+    complex_label = {
+        "energi": "⚡ ENERGI", "adelmetaller": "🥇 ÄDELMETALLER",
+        "basmetaller": "🔧 BASMETALLER", "agri": "🌾 AGRI & ÖVRIGT",
+    }.get(complex_key, complex_key.upper())
+
+    vbrd = _VERDICT_BORDER.get(result.verdict, DIM)
+    vico = _VERDICT_ICON.get(result.verdict, "○")
+
+    st.markdown(
+        f"<div style='background:{BG2};border:2px solid {EMBER}55;"
+        f"border-radius:8px;padding:16px 20px;margin-bottom:16px;'>"
+        f"<div style='color:{DIM};font-size:0.65rem;text-transform:uppercase;"
+        f"letter-spacing:0.1em;margin-bottom:6px;'>IDENTIFIERAT KOMPLEX FÖR {ticker}</div>"
+        f"<div style='color:{EMBER};font-size:1.1rem;font-weight:700;'>{complex_label}</div>"
+        f"<div style='color:{vbrd};font-size:0.85rem;font-weight:700;margin-top:4px;'>"
+        f"{vico} Regim: {result.verdict}</div>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+    try:
+        from ember.gates import _download_robust, compute_trend_gates
+        from ember.config import EMBER_SECTOR_ETF, TICKER_THEME_MAP, DEFAULT_SECTOR_ETF
+
+        with st.spinner(f"Hämtar trendgates för {ticker}…"):
+            df_daily  = _download_robust(ticker, "2y")
+            df_weekly = _download_robust(ticker, "5y")
+
+        close_d: pd.Series = pd.Series(dtype=float)
+        close_w: pd.Series = pd.Series(dtype=float)
+
+        if not df_daily.empty and "Close" in df_daily.columns:
+            cd = df_daily["Close"].squeeze()
+            if isinstance(cd, pd.DataFrame):
+                cd = cd.iloc[:, 0]
+            close_d = cd.dropna()
+
+        if not df_weekly.empty and "Close" in df_weekly.columns:
+            cw = df_weekly["Close"].squeeze()
+            if isinstance(cw, pd.DataFrame):
+                cw = cw.iloc[:, 0]
+            close_w = cw.dropna().resample("W").last().dropna()
+
+        theme_key  = TICKER_THEME_MAP.get(ticker.upper())
+        sector_etf = (EMBER_SECTOR_ETF.get(theme_key, DEFAULT_SECTOR_ETF)
+                      if theme_key else DEFAULT_SECTOR_ETF)
+
+        gates = compute_trend_gates(close_d, close_w, sector_etf) if len(close_d) >= 60 else []
+        all_pass = all(g.passed for g in gates if g.is_blocker)
+
+        if gates:
+            st.markdown(
+                f"<div style='color:{DIM};font-size:0.63rem;text-transform:uppercase;"
+                f"letter-spacing:0.1em;margin:12px 0 8px;'>TREND GATES — {ticker}</div>",
+                unsafe_allow_html=True,
+            )
+            gcols = st.columns(len(gates))
+            for gcol, g in zip(gcols, gates):
+                gc = GREEN if g.passed else (RED if g.is_blocker else AMBER)
+                gi = "✓" if g.passed else "✗"
+                with gcol:
+                    st.markdown(
+                        f"<div style='background:{BG2};border:1px solid {gc}55;"
+                        f"border-top:3px solid {gc};border-radius:6px;padding:10px 12px;'>"
+                        f"<div style='color:{DIM};font-size:0.6rem;text-transform:uppercase;"
+                        f"letter-spacing:0.06em;margin-bottom:4px;'>{g.name}</div>"
+                        f"<div style='color:{gc};font-size:0.9rem;font-weight:700;"
+                        f"margin-bottom:4px;'>{gi}</div>"
+                        f"<div style='color:{TEXT};font-size:0.65rem;word-break:break-word;'>"
+                        f"{g.detail}</div>"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+        else:
+            st.info(f"Kunde inte beräkna trendgates för {ticker} — otillräcklig historik")
+
+        # Swedish action box
+        if result.verdict == VERDICT_AV:
+            ac, ai = RED,   "⛔"
+            at = f"NEJ — regimen för {result.label} är AV. Inga nya entries."
+        elif result.verdict == VERDICT_SELEKTIV and all_pass:
+            ac, ai = AMBER, "🟡"
+            at = f"SELEKTIV — regim SELEKTIV och trendfilter gröna. Halverad position."
+        elif result.verdict == VERDICT_SELEKTIV:
+            ac, ai = AMBER, "🟡"
+            at = f"AVVAKTA — regim SELEKTIV och trendfilter ej klara."
+        elif all_pass:
+            ac, ai = GREEN, "🟢"
+            at = f"KÖP-LÄGE — regim PÅ och trendfilter gröna."
+        else:
+            ac, ai = AMBER, "🟡"
+            at = f"AVVAKTA — regim PÅ men trendfilter ej klara."
+
+        st.markdown(
+            f"<div style='background:{BG2};border-left:5px solid {ac};"
+            f"border:1px solid {ac}55;border-radius:8px;"
+            f"padding:16px 20px;margin-top:16px;'>"
+            f"<div style='font-size:1.1rem;font-weight:700;color:{ac};"
+            f"letter-spacing:0.08em;'>{ai} {at}</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+    except Exception as exc:
+        st.warning(f"Trendgate-analys misslyckades: {exc}")
+
+
+# ── Streamlit page (v2) ────────────────────────────────────────────────────────
+
+def render_ember_regime_page() -> None:
+    """EMBER Regime v2 — per-complex regimes + ticker search."""
+    try:
+        import streamlit as st
+    except ImportError:
+        return
+
+    st.markdown(
+        f"<div style='text-align:center;padding:14px 0 10px 0;'>"
+        f"<h2 style='color:{EMBER};letter-spacing:0.12em;margin:0;'>🌍 EMBER REGIME</h2>"
+        f"<p style='color:{DIM};font-size:0.75rem;letter-spacing:0.08em;margin:4px 0 0;'>"
+        f"Per-komplex miljögauge · Energi · Ädelmetaller · Basmetaller · Agri · Cachad 1h"
+        f"</p></div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(f"<hr style='border-color:{EMBER}33;margin:0 0 16px 0;'>",
+                unsafe_allow_html=True)
+
+    # Ticker search bar
+    tc1, tc2 = st.columns([3, 1])
+    with tc1:
+        search_ticker = st.text_input(
+            "TICKER SÖKNING", placeholder="T.ex. XOM, GDX, FCX, DBA…",
+            key="ember_regime_ticker_search",
+        ).strip().upper()
+    with tc2:
+        st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+        analyse_btn = st.button("🔍 ANALYSERA", key="ember_regime_analyse", width="stretch")
+
+    col_r, _ = st.columns([1, 3])
+    with col_r:
+        if st.button("↺ Tvinga uppdatering", key="ember_regime_refresh"):
+            for fn in (compute_energi_regime, compute_adelmetaller_regime,
+                       compute_basmetaller_regime, compute_agri_regime):
+                if hasattr(fn, "clear"):
+                    fn.clear()
+            st.rerun()
+
+    with st.spinner("Beräknar EMBER per-komplex regimer…"):
+        try:
+            all_regimes = compute_all_complex_regimes()
+        except Exception as exc:
+            st.error(f"Kunde inte beräkna EMBER Regime: {exc}")
+            return
+
+    # Backward-compat: expose first complex result under the legacy key
+    first = next(iter(all_regimes.values()), None)
+    if first:
+        st.session_state["ember_regime"] = first
+
+    # Ticker analysis panel — show when ticker is entered (button re-runs anyway)
+    if search_ticker:
+        st.markdown("---")
+        _render_ticker_analysis(search_ticker, all_regimes)
+        st.markdown("---")
+
+    # 4 complex tabs
+    tab_e, tab_a, tab_b, tab_g = st.tabs([
+        "⚡ ENERGI", "🥇 ÄDELMETALLER", "🔧 BASMETALLER", "🌾 AGRI & ÖVRIGT",
+    ])
+    with tab_e:
+        _render_complex_tab(all_regimes["energi"])
+    with tab_a:
+        _render_complex_tab(all_regimes["adelmetaller"])
+    with tab_b:
+        _render_complex_tab(all_regimes["basmetaller"])
+    with tab_g:
+        _render_complex_tab(all_regimes["agri"])
+
+    with st.expander("ℹ Hur per-komplex regimmodellen fungerar", expanded=False):
         st.markdown(
             f"<div style='color:{TEXT};font-size:0.83rem;line-height:1.65;'>"
-            f"<b style='color:{GOLD};'>5 pelare — ≥4 gröna = PÅ, 3 = SELEKTIV, ≤2 = AV</b>"
-            f"<br/><br/>"
-            f"<b style='color:{GREEN};'>DOLLAR (DXY)</b> — 4V (20 handelsdagar) förändring. "
-            f"Fallande DXY = valutor stärks mot USD = råvaror billigare för globala köpare. "
-            f"RED om DXY stigit &gt;{DXY_SURGE_REGIME}% på 4V.<br/>"
-            f"<b style='color:{GREEN};'>TILLVÄXTPULS (Copper/Gold)</b> — Copper/Gold-ratio 3M "
-            f"trend via veckosparklinen. Stigande = industriell efterfrågan expanderar = "
-            f"makromedvind för bas- och ädelmetaller.<br/>"
-            f"<b style='color:{GREEN};'>RÄNTEKURVA (T10Y2Y)</b> — FRED 10Y minus 2Y Treasury-spread, "
-            f"4V förändring i procentenheter. Brantnar ({YC_STEEPEN_PP:+.2f}pp) = expansivt klimat. "
-            f"RED om kurvan inverterar djupare (&lt;{YC_INVERT_PP:.2f}pp).<br/>"
-            f"<b style='color:{GREEN};'>TEMA-BREDD</b> — Andel av de 9 råvarukategorierna som är "
-            f"TIDIG/MITTEN i cykeln OCH har positiv 3M sparkline-trend. "
-            f"Bredden bekräftar att cykeln är driven av fundamenta, inte ett enskilt tema.<br/>"
-            f"<b style='color:{GREEN};'>RISKAPTIT</b> — GDX/SPY 3M (gruvbolag vs breda börsen) + "
-            f"HYG/TLT 1M (HY-kredit vs lång statsobligation). Båda positiva = "
-            f"investerarna tar risk aktivt.<br/><br/>"
-            f"<b style='color:{AMBER};'>DATA_GAP</b> räknas alltid som AMBER — "
-            f"ett okänt pelare ger aldrig grön signal."
+            f"<b style='color:{EMBER};'>4 komplex — varje med 5 pelare — "
+            f"≥4 gröna = PÅ, 3 = SELEKTIV, ≤2 = AV</b><br/><br/>"
+            f"<b style='color:{GREEN};'>⚡ ENERGI</b> — DXY 4V · XLE/SPY RS 3M · "
+            f"CL=F 50V EMA · NG=F 50V EMA · Bredd XLE/XOP/OIH<br/>"
+            f"<b style='color:{GOLD};'>🥇 ÄDELMETALLER</b> — DXY 4V · GDX/SPY RS 3M · "
+            f"Guld blow-off guard · SLV 50V EMA · TIP 3M (realränta)<br/>"
+            f"<b style='color:{AMBER};'>🔧 BASMETALLER</b> — Copper/Gold 3M · COPX/SPY RS 3M · "
+            f"HG=F 50V EMA · MCHI/FXI 3M (Kina) · T10Y2Y<br/>"
+            f"<b style='color:{GREEN};'>🌾 AGRI & ÖVRIGT</b> — DBA 50V EMA+lutning · "
+            f"DBA/SPY RS 3M · DXY 4V · Agri-tema cykel · DBA volym 3M<br/><br/>"
+            f"Ticker-sökning identifierar automatiskt rätt komplex och visar "
+            f"regimen + EMBER trend-gates."
             f"</div>",
             unsafe_allow_html=True,
         )
 
     st.markdown(
         f"<div style='color:{DIM};font-size:0.69rem;margin-top:8px;'>"
-        f"Regimstatus ({result.verdict}) används automatiskt av EMBER-screener: "
-        f"halverad positionsstorlek vid SELEKTIV, varningsbanner per setup-kort vid AV."
+        f"Regimstatus per komplex används av EMBER-screener: "
+        f"halverad position vid SELEKTIV, varningsbanner vid AV."
         f"</div>",
         unsafe_allow_html=True,
     )

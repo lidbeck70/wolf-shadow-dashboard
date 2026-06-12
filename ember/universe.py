@@ -110,10 +110,18 @@ _REMX_NAMES: list[str] = [
     "MP",
 ]
 
-# XLE / XOP (US energy ETFs) top holdings
+# XLE / XOP (US energy ETFs) top holdings + Shell US-listed ADR
 _XLE_NAMES: list[str] = [
     "XOM", "CVX", "COP", "EOG", "SLB", "MPC", "VLO", "PSX",
-    "OXY", "HAL", "DVN", "BKR", "FANG", "APA", "MRO",
+    "OXY", "HAL", "DVN", "BKR", "FANG", "APA", "MRO", "SHEL",
+]
+
+# Norwegian energy — Oslo Børs listed
+_NORWAY_ENERGY: list[str] = [
+    "EQNR.OL",   # Equinor
+    "AKRBP.OL",  # Aker BP
+    "VAR.OL",    # Var Energi
+    "TGS.OL",    # TGS seismic / data
 ]
 
 # Coal / thermal energy
@@ -157,8 +165,8 @@ _AUTO_ETFS: list[str] = [
 US_INTL_CURATED: list[str] = list(dict.fromkeys(
     _GDX_NAMES + _GDXJ_NAMES + _SIL_NAMES + _COPX_NAMES
     + _URA_NAMES + _REMX_NAMES + _XLE_NAMES + _COAL_NAMES
-    + _AGRI_NAMES + _CANADA_MINING + _CANADA_OIL + _UK_COMMODITY
-    + _AUTO_ETFS
+    + _AGRI_NAMES + _CANADA_MINING + _CANADA_OIL + _NORWAY_ENERGY
+    + _UK_COMMODITY + _AUTO_ETFS
 ))
 
 
