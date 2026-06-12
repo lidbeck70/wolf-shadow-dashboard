@@ -19,6 +19,7 @@ from ember.universe import (
     ALL_SOURCES, SOURCE_CURATED, SOURCE_AUTO, SOURCE_BOTH,
     US_INTL_CURATED, UniverseStats,
 )
+from ember.regime import VERDICT_PA, VERDICT_SELEKTIV, VERDICT_AV
 
 try:
     from ember.engine import run_ember_scan, EmberSetupResult, EmberScanResult
@@ -141,7 +142,30 @@ def _render_setup_card(r: EmberSetupResult, idx: int) -> None:
         f"[{r.cykel_label}]  RR {rr_str}  Makro {macro_str}"
     )
 
+    # Read current regime verdict from session state
+    _regime    = st.session_state.get("ember_regime")
+    _rv        = _regime.verdict if _regime else ""
+
     with st.expander(title, expanded=(idx < 1)):
+        # Regime banner (AV = hard warning; SELEKTIV = soft advisory)
+        if _rv == VERDICT_AV:
+            st.markdown(
+                f"<div style='background:#2d0a0a;border:1px solid {RED}55;"
+                f"border-radius:6px;padding:9px 14px;margin-bottom:12px;"
+                f"color:{RED};font-size:0.8rem;font-weight:700;'>"
+                f"⛔ REGIMEN ÄR AV — inga nya entries. "
+                f"Bevaka för exit om du har en öppen position.</div>",
+                unsafe_allow_html=True,
+            )
+        elif _rv == VERDICT_SELEKTIV:
+            st.markdown(
+                f"<div style='background:#1a1004;border:1px solid {AMBER}55;"
+                f"border-radius:6px;padding:9px 14px;margin-bottom:12px;"
+                f"color:{AMBER};font-size:0.78rem;'>"
+                f"🟡 SELEKTIV REGIME — halverad positionsstorlek gäller för detta setup.</div>",
+                unsafe_allow_html=True,
+            )
+
         left, right = st.columns([3, 2])
 
         with left:
@@ -200,6 +224,15 @@ def _render_setup_card(r: EmberSetupResult, idx: int) -> None:
             rr_s = f"1:{r.rr:.1f}"  if r.rr     else "—"
             sh_s = f"{r.shares} st" if r.shares  else "—"
 
+            # Adjust position size display based on regime
+            if _rv == VERDICT_SELEKTIV and r.shares:
+                sh_s       = f"{max(1, r.shares // 2)} st"
+                pos_label  = f"Position ({RISK_PCT*100:.0f}% risk · ÷2 SELEKTIV)"
+                pos_color  = AMBER
+            else:
+                pos_label  = f"Position ({RISK_PCT*100:.0f}% risk)"
+                pos_color  = TEXT
+
             st.markdown(
                 "<hr style='border-color:rgba(255,107,61,0.15);margin:10px 0;'>"
                 + _field("Pris",            p_s)
@@ -209,7 +242,7 @@ def _render_setup_card(r: EmberSetupResult, idx: int) -> None:
                 + _field("T2 (1:3)",        t2_s, GOLD)
                 + _field("R:R",             rr_s, GOLD)
                 + _field("Tidsram",         "Swing (dagar till veckor)")
-                + _field(f"Position ({RISK_PCT*100:.0f}% risk)", sh_s),
+                + _field(pos_label,         sh_s, pos_color),
                 unsafe_allow_html=True,
             )
 
@@ -543,6 +576,23 @@ def render_ember_page() -> None:
             st.markdown(_stat_box(lbl, val, col_), unsafe_allow_html=True)
 
     _render_universe_stats(u_stats)
+
+    # ── Regime status banner ──────────────────────────────────────────────────
+    _regime = st.session_state.get("ember_regime")
+    if _regime:
+        _vbrd = {VERDICT_PA: GREEN, VERDICT_SELEKTIV: AMBER, VERDICT_AV: RED}.get(_regime.verdict, DIM)
+        _vico = {VERDICT_PA: "🟢", VERDICT_SELEKTIV: "🟡", VERDICT_AV: "🔴"}.get(_regime.verdict, "○")
+        st.markdown(
+            f"<div style='background:{_vbrd}11;border:1px solid {_vbrd}44;"
+            f"border-radius:6px;padding:9px 16px;margin:10px 0 4px 0;font-size:0.82rem;'>"
+            f"<span style='color:{_vbrd};font-weight:700;'>"
+            f"{_vico} EMBER REGIME: {_regime.verdict}</span>"
+            f"<span style='color:{DIM};'> — {_regime.action_text}</span>"
+            f"<span style='color:{DIM};font-size:0.68rem;'>"
+            f" (konfigurera i REGIME → 🌍 EMBER Regime)</span>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
 
     st.markdown("<br>", unsafe_allow_html=True)
 

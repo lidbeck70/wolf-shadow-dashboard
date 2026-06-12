@@ -169,12 +169,14 @@ try:
 except ImportError:
     MARKET_CYCLE_AVAILABLE = False
 
-# EMBER — commodity swing strategy
+# EMBER — commodity swing strategy + regime gauge
 try:
     from ember.ui import render_ember_page
+    from ember.regime import render_ember_regime_page
     EMBER_AVAILABLE = True
 except ImportError:
     EMBER_AVAILABLE = False
+    render_ember_regime_page = None
 
 
 # =============================================================================
@@ -235,7 +237,7 @@ def main():
     # ── REGIME ───────────────────────────────────────────────────────────────
     with tab_regime_main:
         sub = st.radio(
-            "", ["Wolf Regime", "Alpha Regime", "Viking Regime", "Flow Divergence"],
+            "", ["Wolf Regime", "Alpha Regime", "Viking Regime", "Flow Divergence", "🌍 EMBER Regime"],
             horizontal=True, key="sub_regime",
         )
         st.markdown("---")
@@ -273,6 +275,11 @@ def main():
                 render_sector_cycle_page()
             else:
                 tab_not_found("Sector & Global Regime", "sector_cycle")
+        elif sub == "🌍 EMBER Regime":
+            if EMBER_AVAILABLE:
+                render_ember_regime_page()
+            else:
+                tab_not_found("EMBER Regime", "ember")
 
     # ── INTELLIGENCE ─────────────────────────────────────────────────────────
     with tab_intelligence:

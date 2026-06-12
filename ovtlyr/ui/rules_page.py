@@ -673,16 +673,22 @@ def _guide_ember() -> None:
             unsafe_allow_html=True,
         )
         st.markdown(
-            _gs("5. Var i panelen",
-                _ul([
-                    "<b>Hitta kandidater:</b> SIGNALS → 🔥 EMBER → tryck SKANNA.",
-                    "<b>Trendfilter:</b> EMBER-kortet visar Trendgates — alla 4 måste vara gröna.",
-                    "<b>Makrokontext:</b> INTELLIGENCE → Odin's Blindspot → Tema-tavlan "
-                    "visar cykelposition per råvarukategori.",
-                    "<b>Rubber band:</b> REGIME → Alpha Regime → Deep Contrarian "
-                    "visar Copper/Gold och övriga ratios.",
-                    "<b>Disciplinfält:</b> I EMBER-kortet — fyll i 'Ogiltigförklaras om' "
-                    "och 'Trolig trigger' för varje position.",
+            _gs("5. Var i panelen — full kill chain",
+                "<b>Använd i denna ordning:</b>"
+                + _ul([
+                    "<b>1. INTELLIGENCE → Odin's Blindspot → Tema-tavlan:</b> "
+                    "vilka råvarukategorier är TIDIG/MITTEN i cykeln just nu?",
+                    "<b>2. REGIME → 🌍 EMBER Regime:</b> "
+                    "är makromiljön rätt? (PÅ / SELEKTIV / AV) — "
+                    "handla aldrig mot regimen.",
+                    "<b>3. SIGNALS → 🔥 EMBER → SKANNA:</b> "
+                    "välj universum, tryck SKANNA, granska TOPP 3 — "
+                    "bekräfta att alla 4 trendgates och båda entry-hårda gates är gröna.",
+                    "<b>4. Discipline (i setup-kortet):</b> "
+                    "fyll i 'Ogiltigförklaras om' och 'Trolig trigger' "
+                    "<em>innan</em> du öppnar positionen.",
+                    "<b>5. PORTFOLIO → Trade Journal:</b> "
+                    "logga trade med entry, stop, target och exit-orsak.",
                 ], _CYAN),
                 _CYAN),
             unsafe_allow_html=True,
@@ -690,15 +696,268 @@ def _guide_ember() -> None:
         st.markdown(
             _gs("6. Vanliga misstag",
                 _ul([
+                    "<b>Handlar när regimen är AV</b> — regimen är den yttersta garanten "
+                    "mot fel makrotiming. AV = stå utanför, oavsett hur bra setup-kortet ser ut.",
+                    "<b>Tror att DATA_GAP betyder godkänt</b> — DATA_GAP innebär att data saknas, "
+                    "inte att indikatorn är bullish. Behandla DATA_GAP som AMBER eller sämre.",
                     "Köper utan att trendgaterna passerat — råvaran är i nedtrend och "
                     "du fångar en fallande kniv.",
-                    "Ignorerar DXY-flaggan — ett DXY-rally > 2% på 2 veckor sätter "
+                    "Ignorerar DXY-flaggan — ett DXY-rally &gt;2% på 2 veckor sätter "
                     "konstant press på råvarorna oavsett hur bra de ser ut tekniskt.",
-                    "Tar entry när RSI > 45 — pullen är inte klar, du tar topp istället för botten.",
-                    "Köper in i SEN/TOPP-cykelfas — marknaden är already priced in, risk/reward är dåligt.",
-                    "Glömmer att sätta ogiltighetsscenario — utan det vet du inte när du har fel.",
+                    "Tar entry när RSI &gt; 45 — pullen är inte klar, "
+                    "du tar topp istället för botten.",
+                    "Köper in i SEN/TOPP-cykelfas — risk/reward försämrat, priset är inprisat.",
+                    "Glömmer ogiltighetsscenario — utan det vet du inte när du har fel.",
                 ], _DIM),
                 _RED),
+            unsafe_allow_html=True,
+        )
+
+
+def _render_ember_full_ruleset() -> None:
+    """Render EMBER complete 13-section ruleset with actual thresholds pulled from code."""
+    # Pull named constants — fallback to hardcoded values if ember not installed
+    try:
+        from ember.config import (
+            PULLBACK_EMA_PCT, RSI_ENTRY_MAX, RSI_PERIOD,
+            ATR_STOP_MULT, ATR_PERIOD, RISK_PCT, MIN_RR,
+            ATR_SURGE_PCT, ATR_SURGE_LOOKBACK_W,
+            LATE_CYCLE_PCT, DXY_SURGE_PCT, DXY_SURGE_LOOKBACK_W,
+            HIGHER_LOWS_MIN, HIGHER_LOWS_LOOKBACK_W, RS_LOOKBACK_DAYS,
+            MAX_PER_SECTOR, MAX_TOTAL,
+            MACRO_W_COPPER_GOLD, MACRO_W_DXY, MACRO_W_YIELD_CURVE, MACRO_W_CYCLE,
+            CYCLE_BONUS_TIDIG, CYCLE_BONUS_MITTEN, CYCLE_BONUS_SEN, CYCLE_BONUS_TOPP,
+        )
+        from ember.regime import (
+            DXY_SURGE_REGIME, CG_FLAT_PCT, YC_STEEPEN_PP, YC_INVERT_PP,
+            TEMA_GREEN_PCT, TEMA_AMBER_PCT,
+            VERDICT_PA, VERDICT_SELEKTIV, VERDICT_AV,
+        )
+    except ImportError:
+        PULLBACK_EMA_PCT = 3.0; RSI_ENTRY_MAX = 45; RSI_PERIOD = 14
+        ATR_STOP_MULT = 2.5; ATR_PERIOD = 14; RISK_PCT = 0.02; MIN_RR = 2.0
+        ATR_SURGE_PCT = 40.0; ATR_SURGE_LOOKBACK_W = 2
+        LATE_CYCLE_PCT = 85.0; DXY_SURGE_PCT = 2.0; DXY_SURGE_LOOKBACK_W = 2
+        HIGHER_LOWS_MIN = 3; HIGHER_LOWS_LOOKBACK_W = 6; RS_LOOKBACK_DAYS = 63
+        MAX_PER_SECTOR = 4; MAX_TOTAL = 8
+        MACRO_W_COPPER_GOLD = 30; MACRO_W_DXY = 25
+        MACRO_W_YIELD_CURVE = 25; MACRO_W_CYCLE = 20
+        CYCLE_BONUS_TIDIG = 20.0; CYCLE_BONUS_MITTEN = 10.0
+        CYCLE_BONUS_SEN = 0.0; CYCLE_BONUS_TOPP = -10.0
+        DXY_SURGE_REGIME = 2.0; CG_FLAT_PCT = 2.0
+        YC_STEEPEN_PP = 0.05; YC_INVERT_PP = -0.20
+        TEMA_GREEN_PCT = 50.0; TEMA_AMBER_PCT = 25.0
+        VERDICT_PA = "PÅ"; VERDICT_SELEKTIV = "SELEKTIV"; VERDICT_AV = "AV"
+
+    rp = f"{RISK_PCT*100:.0f}%"
+
+    st.markdown(
+        f"<div style='text-align:center;margin:30px 0 20px;'>"
+        f"<h2 style='color:{_EMBER};letter-spacing:0.15em;'>🔥 EMBER REGELVERK</h2>"
+        f"<p style='color:{_DIM};font-size:0.72rem;'>Fullständigt regelset — 13 sektioner · "
+        f"Trösklar hämtas direkt ur koden</p>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+    c1, c2 = st.columns(2)
+
+    with c1:
+        st.markdown(
+            _gs("1. Mål & Filosofi",
+                "Rick Rule-inspirerad cykelstrategi. Köp råvaror och råvaruaktier "
+                "<b>tidigt i cykeln</b> (TIDIG/MITTEN), bekräftat av makromedvind. "
+                "Kombinerar kontrariansk timing med teknisk precision: "
+                "pullback i upptrend, makroscore ≥ 50/100, och en makromiljö (regim) "
+                "som är PÅ eller SELEKTIV. "
+                "Tidshorisont: dagar till veckor.",
+                _EMBER),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("2. Univers",
+                _ul([
+                    f"<b>Kurerad lista (snabb):</b> {13} ETF:er + {12} aktier — statisk seed-lista.",
+                    "<b>Auto: Norden + US-råvaror (~150+ tickers):</b> "
+                    "Börsdata råvarufilter (energi, gruv, metall, olja, gas) + "
+                    "GDX/GDXJ/SIL/COPX/URA/XLE-konstituenter + Canada/UK-namn.",
+                    "<b>Förfilter (Auto/Båda):</b> Omsättning &gt; 5 MSEK/dag (20D snitt) "
+                    "<em>och</em> pris &gt; SMA(200) — utför batchar om 50 tickers.",
+                ], _TEXT),
+                _EMBER),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("3. Makro/Cykelfilter — EMBER Regime",
+                f"<b>5 pelare, varje grön/amber/röd</b> — ≥4 gröna = {VERDICT_PA} (full size), "
+                f"3 = {VERDICT_SELEKTIV} (halverad size), ≤2 = {VERDICT_AV} (inga trades):"
+                + _ul([
+                    f"<b>DOLLAR (DXY 4V):</b> fallande = GRÖN · &gt;{DXY_SURGE_REGIME}% = RÖD.",
+                    f"<b>TILLVÄXTPULS (Copper/Gold 3M):</b> stigande (|Δ| &gt; {CG_FLAT_PCT}%) = GRÖN.",
+                    f"<b>RÄNTEKURVA (T10Y2Y FRED 4V):</b> brantnar &gt;{YC_STEEPEN_PP}pp = GRÖN · "
+                    f"inverterar djupare &lt;{YC_INVERT_PP}pp = RÖD.",
+                    f"<b>TEMA-BREDD:</b> &gt;{TEMA_GREEN_PCT:.0f}% av 9 teman TIDIG/MITTEN "
+                    f"+ positiv 3M sparkline = GRÖN.",
+                    "<b>RISKAPTIT:</b> GDX/SPY 3M + HYG/TLT 1M båda positiva = GRÖN.",
+                ], _TEXT)
+                + f"<br/><b>Makroscore per setup (0–100):</b> Copper/Gold {MACRO_W_COPPER_GOLD}p · "
+                f"DXY {MACRO_W_DXY}p · T10Y2Y {MACRO_W_YIELD_CURVE}p · Cykelfas {MACRO_W_CYCLE}p. "
+                f"DATA_GAP = aldrig GRÖN.",
+                _EMBER),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("4. Sentimentfilter",
+                _ul([
+                    "<b>US-tickers:</b> Short float, analytikerkonsensus (KÖP-andel), "
+                    "put/call-ratio — viktad 0–100.",
+                    "<b>Nordiska tickers (.ST/.OL/.CO/.HE):</b> DATA_GAP — "
+                    "yfinance saknar sentimentdata. Behandla som neutral.",
+                    "DATA_GAP-komponenter exkluderas från viktsumman — "
+                    "totalpoängen baseras på tillgänglig data.",
+                ], _TEXT),
+                _EMBER),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("5. Trendfilter — 4 grindar (alla hårda, alla måste passera)",
+                _ul([
+                    "<b>T1 — Pris &gt; 50-veckors EMA:</b> bekräftar långsiktig upptrend.",
+                    "<b>T2 — 20D EMA &gt; 50D EMA:</b> kortsiktig trend alignad med medium.",
+                    f"<b>T3 — Relativ styrka vs sektor-ETF ({RS_LOOKBACK_DAYS} dagar / 3 mån):</b> "
+                    "ticker måste leda sektorn.",
+                    f"<b>T4 — ≥{HIGHER_LOWS_MIN} stigande bottnar på "
+                    f"{HIGHER_LOWS_LOOKBACK_W} veckor:</b> strukturell prisuppgång bekräftad.",
+                ], _TEXT),
+                _EMBER),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("6. Entryfilter — 2 hårda + 4 bekräftande",
+                "<b>Hårda (MÅSTE passa för elitcase):</b>"
+                + _ul([
+                    f"<b>E1 — Pullback till 20D EMA ≤ {PULLBACK_EMA_PCT}%:</b> "
+                    "köp närheten av EMA, inte toppen av rörelsen.",
+                    f"<b>E2 — RSI({RSI_PERIOD}) &lt; {RSI_ENTRY_MAX}:</b> "
+                    "bekräftar att pullbacken är äkta, inte ett trendbrott.",
+                ], _TEXT)
+                + "<b>Bekräftande (stärker rankning):</b>"
+                + _ul([
+                    "<b>E3 — MACD-histogram: stigande botten</b> (12/26/9).",
+                    "<b>E4 — Volym ≥ 1,0× 20D-snitt.</b>",
+                    "<b>E5 — Bullish candlestick:</b> HAMMER / ENGULFING / BREAKOUT.",
+                    f"<b>E6 — ATR({ATR_PERIOD}) sjunker under pullback</b> (lugn, ej panik).",
+                ], _TEXT),
+                _EMBER),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("7. Riskmodell",
+                _ul([
+                    f"<b>Stop:</b> entry − {ATR_STOP_MULT} × ATR({ATR_PERIOD}). "
+                    "Alltid strukturbaserat.",
+                    f"<b>Positionsstorlek:</b> (kapital × {rp}) / stop-avstånd.",
+                    f"<b>T1 = entry + 2 × risk</b> (1:{MIN_RR:.0f} R:R).",
+                    "<b>T2 = entry + 3 × risk</b> (1:3 R:R).",
+                    f"<b>Portföljgränser:</b> max {MAX_PER_SECTOR} positioner per "
+                    f"råvarusektor · max {MAX_TOTAL} totalt.",
+                    f"<b>SELEKTIV regime:</b> halvera positionsstorleken automatiskt.",
+                ], _TEXT),
+                _AMBER),
+            unsafe_allow_html=True,
+        )
+
+    with c2:
+        st.markdown(
+            _gs("8. Exitregler",
+                _ul([
+                    f"<b>Initial SL:</b> entry − {ATR_STOP_MULT} × ATR({ATR_PERIOD}).",
+                    "<b>Flytta SL till breakeven</b> (entry) efter ny HH (higher high) — "
+                    "inte tidigare, inte senare.",
+                    "<b>Trendbrott:</b> 20D EMA bryter under 50D EMA → stäng omedelbart.",
+                    "<b>Ogiltighetsscenario:</b> fyll i 'Ogiltigförklaras om'-fältet i "
+                    "setup-kortet <em>innan</em> du öppnar positionen. "
+                    "MANUELL BEDÖMNING.",
+                    "<b>Cykelbyte:</b> tema går MITTEN → SEN/TOPP → minska eller stäng.",
+                    f"<b>DXY-surge:</b> DXY upp &gt;{DXY_SURGE_PCT}% på "
+                    f"{DXY_SURGE_LOOKBACK_W} veckor → råvaror möter mothåll.",
+                ], _TEXT),
+                _RED),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("9. No-Trade-Zoner — 4 flaggor",
+                "Om <em>någon</em> flagga är aktiv blockeras entry:"
+                + _ul([
+                    "<b>F1 — Chop-zon:</b> pris MELLAN 20D och 50D EMA → "
+                    "ingen riktning, ingen edge.",
+                    f"<b>F2 — ATR-surge:</b> ATR upp &gt;{ATR_SURGE_PCT:.0f}% på "
+                    f"{ATR_SURGE_LOOKBACK_W} veckor → volatilitetsexplosion, vänta.",
+                    f"<b>F3 — Sen cykel:</b> 10å-percentil &gt;{LATE_CYCLE_PCT:.0f}% "
+                    "→ risk/reward försämrat, topp-risk.",
+                    f"<b>F4 — DXY-rally:</b> DXY upp &gt;{DXY_SURGE_PCT}% på "
+                    f"{DXY_SURGE_LOOKBACK_W} veckor → råvarumotvind.",
+                ], _TEXT),
+                _RED),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("10. Setup-format — fältlista per kort",
+                _ul([
+                    "<b>Auto (beräknat):</b> Ticker, Typ (ETF/Aktie), Sektor/Tema, "
+                    "Var i cykeln (TIDIG/MITTEN/SEN/TOPP + 10å-percentil), "
+                    "Trendstatus (4 gates), Varför intressant, Marknaden ogillar (HAT-score), "
+                    "Varför behövs (Nödvändighetspoäng), Tecken på undervärdering, "
+                    "Pris, Entry (20D EMA), Stop, T1, T2, R:R, "
+                    f"Position ({rp} risk, justerat för regim).",
+                    "<b>Manuell bedömning (MANUELL — fylls i av handlaren):</b> "
+                    "Ogiltigförklaras om · Trolig trigger · "
+                    "LME-lager sjunker [checkbox] · "
+                    "Capex-narrativ försämrad [checkbox].",
+                ], _TEXT),
+                _CYAN),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("11. Rangordning — asymmetry_score",
+                f"<b>asymmetry_score = (R:R × makroscore/100) + cykelbonus</b><br/>"
+                f"Cykelbonus: "
+                f"TIDIG +{CYCLE_BONUS_TIDIG:.0f} · "
+                f"MITTEN +{CYCLE_BONUS_MITTEN:.0f} · "
+                f"SEN {CYCLE_BONUS_SEN:+.0f} · "
+                f"TOPP {CYCLE_BONUS_TOPP:+.0f}<br/>"
+                "TOPP 3 etiketter: <b>Säkrast</b> (högst poäng) · "
+                "<b>Högst Potential</b> · <b>Mest Konträr</b>.",
+                _EMBER),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("12. Output — tre nivåer",
+                _ul([
+                    "<b>TOPP 3 JUST NU:</b> de tre högst rankade elitcasen "
+                    "med etiketter och nyckeltal.",
+                    "<b>Alla elitcase — rankade:</b> fullständigt setup-kort med "
+                    "alla 18 fält, gates och makroscore per ticker.",
+                    "<b>Nästan-kandidater:</b> tickers som passerade minst en gate "
+                    "men ej alla — visar exakt vad som saknas.",
+                    "<b>INGA ELITCASE:</b> om ingenting passerar visas "
+                    "'Disciplin är position. Vänta på rätt setup.'",
+                ], _TEXT),
+                _CYAN),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("13. Kvalitetskrav — definition av elitcase",
+                "<b>Elitcase kräver samtliga:</b>"
+                + _ul([
+                    "ALLA 4 trendgater = PASS (T1–T4).",
+                    "BÅDA hårda entry-gatar = PASS (E1 pullback + E2 RSI).",
+                    "INGA aktiva no-trade-flaggor (F1–F4 alla inaktiva).",
+                    "DATA_GAP på trenddata = automatiskt FAIL (aldrig tyst pass).",
+                ], _TEXT)
+                + "<b>Near-miss</b> = minst en trendgate ELLER en entry-gate passerad men ej komplett.<br/>"
+                "Makroscore ≥ 50/100 krävs inte formellt men lyfter rankningen.",
+                _EMBER),
             unsafe_allow_html=True,
         )
 
@@ -807,6 +1066,13 @@ def render_rules_page() -> None:
         f"</div>",
         unsafe_allow_html=True,
     )
+
+    # ── EMBER full ruleset ────────────────────────────────────────────
+    st.markdown(
+        "<hr style='border-color:rgba(255,107,61,0.2);margin:30px 0;'/>",
+        unsafe_allow_html=True,
+    )
+    _render_ember_full_ruleset()
 
     # ── Panel guide table ─────────────────────────────────────────────
     st.markdown("<hr style='border-color:rgba(0,229,255,0.13);margin:20px 0;'/>", unsafe_allow_html=True)
