@@ -611,6 +611,98 @@ def _guide_viking() -> None:
         )
 
 
+def _guide_ember() -> None:
+    st.markdown(
+        f"<h3 style='color:{_EMBER};letter-spacing:0.1em;margin-bottom:4px;'>🔥 EMBER</h3>"
+        f"<div style='color:{_DIM};font-size:0.75rem;margin-bottom:20px;'>"
+        f"Commodity swing trading med cykelfiltrar, trendgates och ATR-riskmodell</div>",
+        unsafe_allow_html=True,
+    )
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown(
+            _gs("1. Målet",
+                "Fånga kortsiktiga rörelser i råvaror och råvarurelaterade ETF:er "
+                "och aktier som befinner sig tidigt i sin cykel (TIDIG/MITTEN). "
+                "Strategin kombinerar Rick Rules kontrarianska cykellogik med "
+                "taktisk swing-timing: köp pullback i upptrend, bekräftat av "
+                "makromedvind (Copper/Gold-ratio, DXY, räntekurva). "
+                "Tidshorisont: dagar till veckor.",
+                _EMBER),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("2. När köper du",
+                "Fem villkor måste vara uppfyllda:"
+                + _ul([
+                    "<b>Trendgates (alla 4):</b> Pris > 50V EMA · 20D EMA > 50D EMA · "
+                    "RS positiv vs sektoretf (3 mån) · ≥3 stigande bottnar (6V).",
+                    "<b>Pullback:</b> Pris inom 3% av 20D EMA — köp närheten av EMA, inte toppen.",
+                    "<b>RSI(14) < 45:</b> Bekräftar att pullbacken är äkta, inte ett trendbrott.",
+                    "<b>Makroscore ≥ 50/100:</b> Minst hälften av makrokontexten (Copper/Gold, "
+                    "DXY, T10Y2Y, cykelfas) pekar i rätt riktning.",
+                    "<b>Inga ingen-handel-flaggor:</b> Pris ej i chop-zon · ingen ATR-surge · "
+                    "ej sen cykel (10å-percentil > 85%) · DXY ej rallying (+2% på 2V).",
+                ], _TEXT),
+                _EMBER),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("3. Positionsstorlek",
+                _ul([
+                    "Beräkna: <b>Positionsstorlek = (Kapital × 2%) / (2,5 × ATR14)</b>.",
+                    "Stop = entry − 2,5 × ATR(14). Alltid strukturbaserat, aldrig fast %.",
+                    "T1 = entry + 2 × risk (1:2 R:R). T2 = entry + 3 × risk (1:3 R:R).",
+                    "Max 4 positioner per råvarusektor · max 8 totalt.",
+                ], _TEXT),
+                _AMBER),
+            unsafe_allow_html=True,
+        )
+    with c2:
+        st.markdown(
+            _gs("4. När säljer du",
+                _ul([
+                    "<b>Stoploss:</b> Stop = entry − 2,5 × ATR(14). Flytta till BE efter ny HH.",
+                    "<b>Trendbrott:</b> 20D EMA bryter under 50D EMA — stäng omedelbart.",
+                    "<b>Ogiltighetsscenario:</b> Fyll i 'Ogiltigförklaras om' i setup-kortet "
+                    "— exakt vad som måste hända för att teser är fel.",
+                    "<b>Cykelbyte:</b> Om temat går från MITTEN → SEN/TOPP — minska.",
+                    "<b>DXY-surge:</b> DXY upp > 2% på 2 veckor — råvaror möter mothåll.",
+                ], _TEXT),
+                _RED),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("5. Var i panelen",
+                _ul([
+                    "<b>Hitta kandidater:</b> SIGNALS → 🔥 EMBER → tryck SKANNA.",
+                    "<b>Trendfilter:</b> EMBER-kortet visar Trendgates — alla 4 måste vara gröna.",
+                    "<b>Makrokontext:</b> INTELLIGENCE → Odin's Blindspot → Tema-tavlan "
+                    "visar cykelposition per råvarukategori.",
+                    "<b>Rubber band:</b> REGIME → Alpha Regime → Deep Contrarian "
+                    "visar Copper/Gold och övriga ratios.",
+                    "<b>Disciplinfält:</b> I EMBER-kortet — fyll i 'Ogiltigförklaras om' "
+                    "och 'Trolig trigger' för varje position.",
+                ], _CYAN),
+                _CYAN),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _gs("6. Vanliga misstag",
+                _ul([
+                    "Köper utan att trendgaterna passerat — råvaran är i nedtrend och "
+                    "du fångar en fallande kniv.",
+                    "Ignorerar DXY-flaggan — ett DXY-rally > 2% på 2 veckor sätter "
+                    "konstant press på råvarorna oavsett hur bra de ser ut tekniskt.",
+                    "Tar entry när RSI > 45 — pullen är inte klar, du tar topp istället för botten.",
+                    "Köper in i SEN/TOPP-cykelfas — marknaden är already priced in, risk/reward är dåligt.",
+                    "Glömmer att sätta ogiltighetsscenario — utan det vet du inte när du har fel.",
+                ], _DIM),
+                _RED),
+            unsafe_allow_html=True,
+        )
+
+
 def render_strategy_guides() -> None:
     """Sub-page with beginner strategy guides in plain Swedish."""
     st.markdown(
@@ -623,7 +715,7 @@ def render_strategy_guides() -> None:
     )
     sel = st.radio(
         "Välj strategi",
-        ["Quality", "Deep Contrarian", "Wolf", "Viking"],
+        ["Quality", "Deep Contrarian", "Wolf", "Viking", "🔥 Ember"],
         horizontal=True,
         key="sg_pick",
     )
@@ -637,6 +729,8 @@ def render_strategy_guides() -> None:
         _guide_wolf()
     elif sel == "Viking":
         _guide_viking()
+    elif sel == "🔥 Ember":
+        _guide_ember()
 
 
 # ------------------------------------------------------------------ #

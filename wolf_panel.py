@@ -169,6 +169,13 @@ try:
 except ImportError:
     MARKET_CYCLE_AVAILABLE = False
 
+# EMBER — commodity swing strategy
+try:
+    from ember.ui import render_ember_page
+    EMBER_AVAILABLE = True
+except ImportError:
+    EMBER_AVAILABLE = False
+
 
 # =============================================================================
 # MAIN APP
@@ -203,7 +210,7 @@ def main():
     # ── SIGNALS ──────────────────────────────────────────────────────────────
     with tab_signals:
         sub = st.radio(
-            "", ["Arc Screener", "Contrarian Alpha", "Market Cycle"],
+            "", ["Arc Screener", "Contrarian Alpha", "Market Cycle", "🔥 EMBER"],
             horizontal=True, key="sub_signals",
         )
         st.markdown("---")
@@ -219,6 +226,11 @@ def main():
                 render_market_cycle_page()
             else:
                 tab_not_found("Market Cycle Engine", "tabs/market_cycle")
+        elif sub == "🔥 EMBER":
+            if EMBER_AVAILABLE:
+                render_ember_page()
+            else:
+                tab_not_found("EMBER", "ember")
 
     # ── REGIME ───────────────────────────────────────────────────────────────
     with tab_regime_main:
