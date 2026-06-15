@@ -379,10 +379,22 @@ def main():
 
     # ── RULES ────────────────────────────────────────────────────────────────
     with tab_rules:
-        if RULES_AVAILABLE:
-            render_rules_page()
+        sub_rules = st.radio(
+            "", ["Regler & Guider", "Data Health"],
+            horizontal=True, key="sub_rules",
+        )
+        st.markdown("---")
+        if sub_rules == "Regler & Guider":
+            if RULES_AVAILABLE:
+                render_rules_page()
+            else:
+                tab_not_found("Rules", "ovtlyr/ui")
         else:
-            tab_not_found("Rules", "ovtlyr/ui")
+            try:
+                from data_health import render_data_health
+                render_data_health()
+            except Exception as _dh_e:
+                st.error(f"Data Health kunde inte laddas: {_dh_e}")
 
     # ── STRATEGIES ───────────────────────────────────────────────────────────
     with tab_strat_overview:
