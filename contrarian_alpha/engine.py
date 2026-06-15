@@ -100,6 +100,11 @@ except ImportError:
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 
+# Quality-mode hate floor: compounders need NOT be hated, but we still skip
+# obvious blow-off names. 0 = effectively no hate requirement in quality mode.
+QUALITY_HATE_FLOOR: float = 0.0
+
+
 @dataclass
 class PipelineConfig:
     """Runtime configuration for run_pipeline()."""
@@ -770,12 +775,17 @@ def _run_single_ticker(
     result.hat_score    = hate_result.score
     result.hate_result  = hate_result
 
-    if result.hat_score < config.hate_threshold:
+    # Mode-aware hate gate:
+    #   deep_contrarian -> hard gate (must be hated, Rule/Sprott trough hunting)
+    #   quality         -> soft gate (Buffett/KAP compounders need NOT be hated;
+    #                      a proven compounder at fair value is still a Quality buy)
+    _hate_floor = config.hate_threshold if config.mode == "deep_contrarian" else QUALITY_HATE_FLOOR
+    if result.hat_score < _hate_floor:
         result.eliminated       = True
         result.elimination_stage  = "HATE"
         result.elimination_reason = (
-            f"Hat {result.hat_score:.1f} < {config.hate_threshold:.0f} "
-            "(stock not sufficiently hated/neglected)"
+            f"Hat {result.hat_score:.1f} < {_hate_floor:.0f} "
+            f"(not sufficiently hated/neglected) [{config.mode} mode]"
         )
         return result
 
@@ -856,20 +866,34 @@ def _run_single_ticker(
         result.valuation_bands = vb
         result.all_flags.extend([f for f in vb.flags if f not in result.all_flags])
 
-    # Mode-dependent ROIC gate (only applied when ROIC data is available)
-    roic_gate_pass = (
-        quality_result.passes_gate_quality
-        if config.mode == "quality"
-        else quality_result.passes_gate_deep
-    )
-    if quality_result.roic is not None and not roic_gate_pass:
-        gate_pct = "15%" if config.mode == "quality" else "10%"
-        result.eliminated       = True
-        result.elimination_stage  = "QUALITY_GATE"
-        result.elimination_reason = (
-            f"ROIC {quality_result.roic:.1f}% < {gate_pct} gate [{config.mode} mode]"
-        )
-        return result
+    # Mode-dependent ROIC gate.
+    #   quality         -> HARD gate: ROIC data REQUIRED and must clear 15%.
+    #                      Missing ROIC = reject (a proven compounder must prove it).
+    #   deep_contrarian -> soft gate: only reject when ROIC data exists and fails 10%
+    #                      (cyclical troughs legitimately lack/àdepress ROIC).
+    if config.mode == "quality":
+        if quality_result.roic is None:
+            result.eliminated        = True
+            result.elimination_stage = "QUALITY_GATE"
+            result.elimination_reason = (
+                "ROIC saknas - Quality kraver bevisad ROIC >= 15% [quality mode]"
+            )
+            return result
+        if not quality_result.passes_gate_quality:
+            result.eliminated        = True
+            result.elimination_stage = "QUALITY_GATE"
+            result.elimination_reason = (
+                f"ROIC {quality_result.roic:.1f}% < 15% gate [quality mode]"
+            )
+            return result
+    else:
+        if quality_result.roic is not None and not quality_result.passes_gate_deep:
+            result.eliminated        = True
+            result.elimination_stage = "QUALITY_GATE"
+            result.elimination_reason = (
+                f"ROIC {quality_result.roic:.1f}% < 10% gate [deep_contrarian mode]"
+            )
+            return result
 
     # ── 3.6. KAP BADGE (quality mode only) ───────────────────────────────────
 
