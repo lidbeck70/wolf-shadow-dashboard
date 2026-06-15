@@ -24,9 +24,9 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 _CACHE_FILE = Path(tempfile.gettempdir()) / "ember_fred_t10y2y.json"
-_CACHE_TTL  = 43_200   # 12 hours in seconds
-_TIMEOUT    = 20       # seconds per attempt
-_RETRIES    = 1        # extra retry attempts after first failure
+_CACHE_TTL  = 604_800  # 7 days (T10Y2Y moves slowly; weekly refresh is plenty)
+_TIMEOUT    = 12       # seconds per attempt (fail fast, serve cache)
+_RETRIES    = 2        # extra retry attempts after first failure
 
 
 def _read_cache() -> Optional[tuple[list[float], float]]:
