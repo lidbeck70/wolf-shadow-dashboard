@@ -595,6 +595,10 @@ def _build_quality_data(
     roic_hist = _fetch_kpi_history(ins_id, KPI["roic"], api)
     if roic_hist:
         data["roic_history"] = roic_hist
+        # Fallback: if the batch snapshot lacked current ROIC, use the most
+        # recent history value so the quality ROIC gate can actually evaluate.
+        if "roic" not in data:
+            data["roic"] = roic_hist[0]
 
     # ROCE (KPI 36) — fetch from history, use most recent as current
     roce_hist = _fetch_kpi_history(ins_id, KPI["roc"], api)
@@ -873,13 +877,11 @@ def _run_single_ticker(
     #                      (cyclical troughs legitimately lack/àdepress ROIC).
     if config.mode == "quality":
         if quality_result.roic is None:
-            result.eliminated        = True
-            result.elimination_stage = "QUALITY_GATE"
-            result.elimination_reason = (
-                "ROIC saknas - Quality kraver bevisad ROIC >= 15% [quality mode]"
-            )
-            return result
-        if not quality_result.passes_gate_quality:
+            # ROIC data missing -> do NOT reject (would empty the list when
+            # Borsdata snapshot lacks ROIC). Keep but flag for transparency.
+            if "ROIC_SAKNAS" not in result.all_flags:
+                result.all_flags.append("ROIC_SAKNAS")
+        elif not quality_result.passes_gate_quality:
             result.eliminated        = True
             result.elimination_stage = "QUALITY_GATE"
             result.elimination_reason = (
