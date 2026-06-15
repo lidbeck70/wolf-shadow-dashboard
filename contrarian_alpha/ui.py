@@ -453,7 +453,8 @@ def _get_or_run_pipeline(config_kwargs: dict, run_now: bool):
     """
     sys.path.insert(0, str(Path(__file__).parent.parent))
 
-    cache_key   = "ca_result"
+    mode        = config_kwargs.get("mode", "quality")
+    cache_key   = f"ca_result_{mode}"
     auto_scan   = _check_auto_scan()
     run         = run_now or auto_scan or (cache_key not in st.session_state)
 
