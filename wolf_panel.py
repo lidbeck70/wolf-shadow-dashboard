@@ -380,7 +380,7 @@ def main():
     # ── RULES ────────────────────────────────────────────────────────────────
     with tab_rules:
         sub_rules = st.radio(
-            "", ["Regler & Guider", "Data Health"],
+            "", ["Regler & Guider", "Position Sizing", "Data Health"],
             horizontal=True, key="sub_rules",
         )
         st.markdown("---")
@@ -389,6 +389,12 @@ def main():
                 render_rules_page()
             else:
                 tab_not_found("Rules", "ovtlyr/ui")
+        elif sub_rules == "Position Sizing":
+            try:
+                from position_sizing import render_position_sizing
+                render_position_sizing()
+            except Exception as _ps_e:
+                st.error(f"Position Sizing kunde inte laddas: {_ps_e}")
         else:
             try:
                 from data_health import render_data_health
