@@ -534,18 +534,23 @@ def _render_results_table(pipeline_result) -> str | None:
 
     results = pipeline_result.results
     if not results:
+        _m = st.session_state.get("ca_mode", "quality")
+        _hint = (
+            'Alla bolag klarar inte Quality-kraven: bevisad ROIC &gt;= 15%, '
+            'sund skuldsattning (Net Debt/EBITDA &lt;= 3.5), tillracklig '
+            'nodvandighet och balansrakning. Prova Deep Contrarian for hatade '
+            'cykelbottnar, eller ett bredare universum.'
+        ) if _m == "quality" else (
+            'Alla bolag ar antingen for alskade (Hat &lt; 45), for lag '
+            'nodvandighet (Necessity &lt; 60), svag balansrakning eller '
+            'klarar inte ROIC-gransen. Prova Quality-modus eller ett bredare universum.'
+        )
         st.markdown(
             '<div class="ca-empty">'
             '  <div class="ca-empty-icon">🔍</div>'
             '  <div class="ca-empty-title">Inga bolag klarar filtren just nu</div>'
             '  <div class="ca-empty-sub">— det är ett korrekt svar, inte ett fel.</div>'
-            '  <div class="ca-empty-hint">'
-            '    Alla bolag är antingen för älskade (Hat &lt; 45), för låg '
-            '    nödvändighet (Necessity &lt; 60), svag balansräkning eller '
-            '    klarar inte ROIC-gransen för valt modus. '
-            '    Prova Deep Contrarian-modus (lägre ROIC-krav) eller ett '
-            '    bredare universum.'
-            '  </div>'
+            '  <div class="ca-empty-hint">' + _hint + '</div>'
             '</div>',
             unsafe_allow_html=True,
         )
