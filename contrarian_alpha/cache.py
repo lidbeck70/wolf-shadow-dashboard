@@ -348,7 +348,7 @@ def _result_to_dict(r) -> dict:
     }
 
 
-def save_screener_results(pipeline_result) -> bool:
+def save_screener_results(pipeline_result, mode: str = None) -> bool:
     """
     Persist top pipeline results to Gist + local fallback.
     pipeline_result is a PipelineResult from engine.run_pipeline().
@@ -372,12 +372,13 @@ def save_screener_results(pipeline_result) -> bool:
     if not token:
         return False
 
+    fname = f"contrarian_alpha_results_{mode}.json" if mode else _GIST_FILENAME
     try:
         import requests
         headers = _auth_header(token)
         body = {
             "files": {
-                _GIST_FILENAME: {
+                fname: {
                     "content": json.dumps(payload, indent=2, default=str)
                 }
             }
@@ -392,7 +393,7 @@ def save_screener_results(pipeline_result) -> bool:
     return False
 
 
-def load_screener_results() -> dict:
+def load_screener_results(mode: str = None) -> dict:
     """
     Load last-saved screener results.
     Priority: Gist → local file → empty.
@@ -404,7 +405,8 @@ def load_screener_results() -> dict:
         r = requests.get(_GIST_API_URL, timeout=10)
         if r.status_code == 200:
             gist = r.json()
-            content = gist.get("files", {}).get(_GIST_FILENAME, {}).get("content", "")
+            _fn = f"contrarian_alpha_results_{mode}.json" if mode else _GIST_FILENAME
+            content = gist.get("files", {}).get(_fn, {}).get("content", "")
             if content:
                 data = json.loads(content)
                 if data.get("results"):

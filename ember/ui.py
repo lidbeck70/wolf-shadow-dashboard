@@ -452,6 +452,48 @@ def _render_universe_stats(stats: Optional[UniverseStats]) -> None:
 
 # ── Main page ─────────────────────────────────────────────────────────────────
 
+
+def _render_ember_cached_preview() -> None:
+    """Show pre-computed scheduled EMBER results (from Gist) as an instant preview."""
+    try:
+        from ember.cache import load_ember_results
+        saved = load_ember_results()
+    except Exception:
+        saved = {}
+    eligible = saved.get("eligible", []) if saved else []
+    near = saved.get("near_misses", []) if saved else []
+    ts = saved.get("timestamp", "") if saved else ""
+    if not eligible and not near:
+        return False
+    ts_disp = str(ts)[:16].replace("T", " ")
+    import streamlit as st
+    st.markdown(
+        f"<div style='background:#1A1F25;border-left:3px solid #FF6B3D;border-radius:8px;"
+        f"padding:10px 14px;margin-bottom:12px;'>"
+        f"<b style='color:#E8EDF2;'>Schemalagt EMBER-resultat</b> "
+        f"<span style='color:#6B7280;'>&middot; senast uppdaterad {ts_disp} "
+        f"&middot; {len(eligible)} elitcase, {len(near)} nastan</span><br>"
+        f"<span style='font-size:0.8rem;color:#9aa4b0;'>Tryck <b>SKANNA</b> for live-analys.</span></div>",
+        unsafe_allow_html=True,
+    )
+    import pandas as pd
+    rows = []
+    for r in (eligible + near)[:30]:
+        rows.append({
+            "Ticker": r.get("ticker", ""),
+            "Typ": r.get("typ", ""),
+            "Sektor": r.get("sektor", ""),
+            "Elitcase": "JA" if r.get("eligible") else "nastan",
+            "Cykel": r.get("cykel_label", ""),
+            "Entry": r.get("entry", ""),
+            "Stop": r.get("stop", ""),
+            "RR": r.get("rr", ""),
+            "Asymmetri": round(r.get("asymmetry_score", 0), 1),
+        })
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    return True
+
+
 def render_ember_page() -> None:
     if not _ENGINE_OK:
         st.error("EMBER-motorn ej tillgänglig — kontrollera ember/engine.py")
@@ -543,12 +585,14 @@ def render_ember_page() -> None:
 
     result: Optional[EmberScanResult] = st.session_state.get("ember_result")
     if result is None:
-        st.markdown(
-            f"<div style='text-align:center;padding:40px 0;color:{DIM};'>"
-            f"Tryck <b style='color:{EMBER};'>🔥 SKANNA</b> för att köra EMBER-analysen."
-            f"</div>",
-            unsafe_allow_html=True,
-        )
+        _had_cache = _render_ember_cached_preview()
+        if not _had_cache:
+            st.markdown(
+                f"<div style='text-align:center;padding:40px 0;color:{DIM};'>"
+                f"Tryck <b style='color:{EMBER};'>SKANNA</b> för att köra EMBER-analysen."
+                f"</div>",
+                unsafe_allow_html=True,
+            )
         _render_universe_info(source)
         return
 

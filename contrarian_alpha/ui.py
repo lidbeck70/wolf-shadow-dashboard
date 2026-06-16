@@ -456,7 +456,7 @@ def _get_or_run_pipeline(config_kwargs: dict, run_now: bool):
     mode        = config_kwargs.get("mode", "quality")
     cache_key   = f"ca_result_{mode}"
     auto_scan   = _check_auto_scan()
-    run         = run_now or auto_scan or (cache_key not in st.session_state)
+    run         = run_now or auto_scan   # cold start no longer forces a 5-10 min live scan
 
     # If not running, try to restore from Gist when session is cold
     if not run:
@@ -1101,6 +1101,49 @@ def _render_elimination_breakdown(pipeline_result) -> None:
 
 # ─── Huvud-entry point ───────────────────────────────────────────────────────
 
+
+def _render_cached_preview(mode: str) -> None:
+    """Show pre-computed scheduled scan results (from Gist) as an instant preview."""
+    try:
+        from contrarian_alpha.cache import load_screener_results
+        saved = load_screener_results(mode=mode)
+    except Exception:
+        saved = {}
+    results = saved.get("results", []) if saved else []
+    ts = saved.get("timestamp", "") if saved else ""
+    if not results:
+        st.info("Klicka **Kor scan** for att starta screenern. "
+                "(Inga schemalagda resultat hittades an - de uppdateras vardagar 08/12/18.)")
+        return
+
+    ts_disp = str(ts)[:16].replace("T", " ")
+    st.markdown(
+        f"<div style='background:#1A1F25;border-left:3px solid #00E5FF;border-radius:8px;"
+        f"padding:10px 14px;margin-bottom:12px;'>"
+        f"<b style='color:#E8EDF2;'>Schemalagt resultat</b> "
+        f"<span style='color:#6B7280;'>&middot; senast uppdaterad {ts_disp} "
+        f"&middot; {len(results)} bolag &middot; lage: {mode}</span><br>"
+        f"<span style='font-size:0.8rem;color:#9aa4b0;'>Klicka <b>Kor scan</b> for live-analys "
+        f"med fullstandiga kort.</span></div>",
+        unsafe_allow_html=True,
+    )
+    import pandas as pd
+    rows = []
+    for r in results[:40]:
+        rows.append({
+            "#": r.get("rank", ""),
+            "Ticker": r.get("ticker", ""),
+            "Namn": (r.get("name") or "")[:24],
+            "Score": round(r.get("composite_score", 0), 1),
+            "Necessity": round(r.get("necessity_score", 0), 0),
+            "Hat": round(r.get("hat_score", 0), 0),
+            "Quality": round(r.get("strength_score", 0), 0),
+            "Catalyst": round(r.get("catalyst_score", 0), 0),
+            "Pris": r.get("close", ""),
+        })
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+
 def render_contrarian_alpha_page() -> None:
     """
     Huvud-entry point för Contrarian Alpha Screener-fliken.
@@ -1139,7 +1182,8 @@ def render_contrarian_alpha_page() -> None:
     pipeline_result = _get_or_run_pipeline(config_kwargs, run_now)
 
     if pipeline_result is None:
-        st.info("Klicka **🔍 Kör scan** för att starta screeners.")
+        _mode_now = config_kwargs.get("mode", "quality")
+        _render_cached_preview(_mode_now)
         return
 
     # ── Pipeline-stats-bar ──

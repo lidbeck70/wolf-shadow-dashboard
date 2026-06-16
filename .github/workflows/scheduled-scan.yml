@@ -1,0 +1,42 @@
+name: Scheduled Screening
+
+on:
+  schedule:
+    # Weekdays 08:00, 12:00, 18:00 Europe/Stockholm.
+    # Cron is UTC. Stockholm = UTC+1 (winter) / UTC+2 (summer).
+    # We run at both winter and summer UTC hours; the panel only shows the
+    # latest result, so an extra off-by-one-hour run is harmless.
+    - cron: "0 6,10,16 * * 1-5"   # summer (CEST, UTC+2): 08/12/18 local
+    - cron: "0 7,11,17 * * 1-5"   # winter (CET,  UTC+1): 08/12/18 local
+  workflow_dispatch: {}            # allow manual trigger from the Actions tab
+
+concurrency:
+  group: scheduled-screening
+  cancel-in-progress: false
+
+jobs:
+  screen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run scheduled screening
+        env:
+          BORSDATA_API_KEY: ${{ secrets.BORSDATA_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+          CA_GIST_ID: ${{ secrets.CA_GIST_ID }}
+          EMBER_GIST_ID: ${{ secrets.EMBER_GIST_ID }}
+        run: python scheduled_scan.py
