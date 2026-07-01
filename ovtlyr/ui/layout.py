@@ -383,11 +383,18 @@ def render_ovtlyr_page() -> None:
 
     # Normalise column names
     df.columns = [str(c).strip() for c in df.columns]
-    # If Date is in index, reset it to column
-    if "Date" not in df.columns and df.index.name and df.index.name.lower() == "date":
-        df = df.reset_index()
-    elif "Date" not in df.columns and df.index.name:
-        df = df.reset_index().rename(columns={df.index.name: "Date"})
+    # If Date lives in the index, lift it into a column. Handles a named
+    # DatetimeIndex, an unnamed DatetimeIndex (reset → "index" column), and a
+    # named RangeIndex — without raising KeyError when none apply.
+    if "Date" not in df.columns:
+        idx_name = df.index.name
+        if isinstance(df.index, pd.DatetimeIndex) or (idx_name and idx_name.lower() == "date"):
+            reset_col = idx_name if idx_name else "index"
+            df = df.reset_index()
+            if reset_col != "Date" and reset_col in df.columns:
+                df = df.rename(columns={reset_col: "Date"})
+        elif idx_name:
+            df = df.reset_index().rename(columns={idx_name: "Date"})
     for col in ("Date", "Open", "High", "Low", "Close", "Volume"):
         if col not in df.columns:
             # Try case-insensitive match
@@ -395,13 +402,21 @@ def render_ovtlyr_page() -> None:
             if match:
                 df = df.rename(columns={match[0]: col})
 
-    df["Date"]   = pd.to_datetime(df["Date"])
+    # Fail gracefully if Date still could not be located (avoids KeyError below).
+    if "Date" not in df.columns:
+        st.error(f"Price data for **{ticker}** has no Date column or datetime index — cannot render.")
+        return
+
+    df["Date"]   = pd.to_datetime(df["Date"], errors="coerce")
     df["Close"]  = pd.to_numeric(df["Close"],  errors="coerce")
     df["Open"]   = pd.to_numeric(df["Open"],   errors="coerce")
     df["High"]   = pd.to_numeric(df["High"],   errors="coerce")
     df["Low"]    = pd.to_numeric(df["Low"],    errors="coerce")
     df["Volume"] = pd.to_numeric(df["Volume"], errors="coerce").fillna(0)
-    df = df.dropna(subset=["Close"]).reset_index(drop=True)
+    df = df.dropna(subset=["Date", "Close"]).reset_index(drop=True)
+    if df.empty:
+        st.warning(f"No valid price rows for **{ticker}** after cleaning — nothing to display.")
+        return
 
     # ── Compute indicators ────────────────────────────────────────────
     with st.spinner("Computing indicators…"):

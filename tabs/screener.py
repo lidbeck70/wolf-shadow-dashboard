@@ -544,19 +544,17 @@ def _render_ovtlyr_screener_ui():
         section_title("RESULTS", "📊")
 
         total      = len(results)
-        strong_buy = len(results[results["Signal"] == "STRONG BUY"])
+        # BUY = absolute-eligible (Price>EMA200 & ADX>=20) with strong relative rank.
+        # RELATIVE TOP = high relative rank but NOT absolutely eligible (context, not a buy).
         buy_count  = len(results[results["Signal"] == "BUY"])
-        top_comp   = (
-            float(results["Rank_Composite"].max())
-            if "Rank_Composite" in results.columns
-            else float(results["Composite"].max())
-        )
+        rel_top    = len(results[results["Signal"] == "RELATIVE TOP"])
+        top_comp   = float(results["Composite"].max()) if total else 0.0
 
         k1, k2, k3, k4 = st.columns(4)
         k1.metric("SCANNED", total)
-        k2.metric("STRONG BUY", strong_buy,
-                  delta=f"{strong_buy/total*100:.0f}% of results" if total else None)
-        k3.metric("BUY", buy_count)
+        k2.metric("BUY", buy_count,
+                  delta=f"{buy_count/total*100:.0f}% of results" if total else None)
+        k3.metric("RELATIVE TOP", rel_top)
         k4.metric("TOP COMPOSITE", f"{top_comp:.1f}")
 
         st.markdown("<br>", unsafe_allow_html=True)
@@ -565,10 +563,10 @@ def _render_ovtlyr_screener_ui():
 
         def _signal_color(val):
             colors = {
-                "STRONG BUY": f"color:{_P['gold']};font-weight:bold",
-                "BUY":        f"color:{_P['green']};font-weight:bold",
-                "HOLD":       f"color:{_P['amber']};font-weight:bold",
-                "SELL":       f"color:{_P['red']};font-weight:bold",
+                "BUY":          f"color:{_P['green']};font-weight:bold",
+                "RELATIVE TOP": f"color:{_P['gold']};font-weight:bold",
+                "WATCH":        f"color:{_P['amber']};font-weight:bold",
+                "AVOID":        f"color:{_P['red']};font-weight:bold",
             }
             return colors.get(val, "")
 

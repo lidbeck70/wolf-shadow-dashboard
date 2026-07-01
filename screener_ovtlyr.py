@@ -741,6 +741,20 @@ def run_ovtlyr_screener(
 
             close_price = float(df["Close"].iloc[-1])
 
+            # ── Absolute eligibility grind ───────────────────
+            # The Composite below is z-score normalised *relative to the scanned
+            # universe*, so a high Composite only means "top of the pack" — not an
+            # absolute buy. Gate absolute BUY labels on a simple trend+strength
+            # check (Price > EMA200 AND ADX >= 20) to avoid false buy claims.
+            try:
+                _close = df["Close"]
+                _ema200 = _ema(_close, 200).iloc[-1] if len(_close) >= 200 \
+                    else _ema(_close, len(_close)).iloc[-1]
+                _adx_val = float(_adx(df["High"], df["Low"], df["Close"], 14).iloc[-1])
+                eligible = bool(close_price > float(_ema200)) and _adx_val >= 20.0
+            except Exception:
+                eligible = False
+
             # ── New OVTLYR columns ──────────────────────────
             # Retail score
             try:
@@ -773,6 +787,7 @@ def run_ovtlyr_screener(
                 "Country": meta.get("country", "Unknown"),
                 **scores,
                 "_close": close_price,
+                "_eligible": eligible,
                 "_avg_vol": float(avg_vol),
                 "F&G": fg_score,
                 "V9": f"{v9_count}/9",
@@ -804,10 +819,24 @@ def run_ovtlyr_screener(
     # Rank
     df_results["Rank"] = df_results["Composite"].rank(ascending=False, method="min").astype(int)
 
-    # Signal
-    df_results["Signal"] = df_results["Composite"].apply(
-        lambda x: "STRONG BUY" if x >= 75 else ("BUY" if x >= 60 else ("HOLD" if x >= 40 else "SELL"))
-    )
+    # Signal — Composite is a *relative* (z-score) rank, so only stocks that pass
+    # the absolute eligibility grind (Price>EMA200 & ADX>=20) may carry a BUY label.
+    # Non-eligible names get relative labels (RELATIVE TOP / WATCH) to avoid making
+    # false absolute buy claims. "STRONG BUY" wording removed for the same reason.
+    def _signal_label(row) -> str:
+        comp = row["Composite"]
+        if row.get("_eligible", False):
+            if comp >= 60:
+                return "BUY"
+            if comp >= 40:
+                return "WATCH"
+            return "AVOID"
+        # Not absolutely eligible → relative-only labels
+        if comp >= 60:
+            return "RELATIVE TOP"
+        return "WATCH"
+
+    df_results["Signal"] = df_results.apply(_signal_label, axis=1)
 
     # ── Signal tracking (depends on Composite) ─────────────────────
     signal_dates = []
@@ -830,11 +859,14 @@ def run_ovtlyr_screener(
     # Sort by composite descending
     df_results = df_results.sort_values("Composite", ascending=False).reset_index(drop=True)
 
-    # Add composite ranking (RS · 52w-high proximity · volume trend)
+    # Add secondary ranking (RS · 52w-high proximity · volume trend) as a
+    # context column only — it does NOT drive the Signal.
     df_results = _compute_ranking_cols(df_results, all_data)
 
-    # Final sort by Rank_Composite so top row = rank 1
-    df_results = df_results.sort_values("Rank_Composite", ascending=False).reset_index(drop=True)
+    # Final sort by Composite (the same score that drives Signal and the Rank
+    # column) so the visible top row matches Rank 1 and the Signal label.
+    # Rank_Composite is retained purely as a secondary display column.
+    df_results = df_results.sort_values("Composite", ascending=False).reset_index(drop=True)
 
     # Select display columns
     display_cols = [

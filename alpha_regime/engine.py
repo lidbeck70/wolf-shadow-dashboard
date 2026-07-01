@@ -412,10 +412,12 @@ def run_regime_analysis(
                     # Append rationale for the first STRETCHED ratio found (max +1 confirmation)
                     for _rk in result.detected_exposure:
                         _ratio = result.commodity_ratios.get(_rk)
-                        # Only append if the cheap asset is genuinely cheap (not just expensive numerator)
+                        # Only append if the cheap asset is genuinely cheap (not just expensive numerator).
+                        # UNKNOWN is NOT a valid confirmation: only an explicit cheap-leg driver may confirm,
+                        # otherwise an unclassified/missing driver would produce a false contrarian buy claim.
                         if (_ratio and _ratio.status == "RUBBER_BAND_STRETCHED"
                                 and getattr(_ratio, "driver", "UNKNOWN")
-                                in ("DENOMINATOR_CHEAP", "BOTH", "UNKNOWN")):
+                                in ("DENOMINATOR_CHEAP", "BOTH")):
                             result.contrarian.rationale.append(
                                 f"Rubber Band: {_ratio.label} at {_ratio.percentile:.0f}th percentile"
                                 f" — {_ratio.denominator_label} historically stretched cheap"

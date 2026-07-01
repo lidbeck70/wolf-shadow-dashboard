@@ -15,11 +15,11 @@ Exit triggers (first wins):
   • OVTLYR NINE < 40       → SELL
   • Price < 20EMA          → SELL (SPY proxy sell-off override)
   • Price < 10EMA          → trailing stop
-  • ½ ATR hard stop-loss
+  • 1.5×ATR hard stop-loss
 
 Risk / sizing:
   • Risk per trade = capital × risk_pct (default 1.5%)
-  • Stop distance  = ½ × ATR14
+  • Stop distance  = 1.5 × ATR14
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ DEFAULT_PARAMS: dict = {
     "ema50":       50,
     "ema200":      200,
     "atr_period":  14,
-    "atr_stop_mult": 0.5,    # ½ ATR hard stop
+    "atr_stop_mult": 1.5,    # 1.5×ATR hard stop (raised from 0.5× to give price room)
     "risk_pct":    0.015,    # 1.5% risk per trade
     "tp1_r":       2.0,
     "tp2_r":       4.0,
@@ -215,7 +215,7 @@ def exit_fn(position: dict, df: pd.DataFrame, params: dict | None = None) -> dic
     Evaluate Viking exit conditions on the latest bar of *df*.
 
     Exit triggers (first wins):
-      1. Hard stop-loss (½ ATR)
+      1. Hard stop-loss (1.5×ATR)
       2. Price < 10EMA  (trailing stop)
       3. Price < 20EMA  (SPY proxy sell-off override)
 
@@ -312,7 +312,7 @@ STRATEGY: dict = {
     "description": (
         "Swing/position strategy: OVTLYR NINE composite score (0-100) from "
         "Market(40%) + Sector(30%) + Stock(30%) layers. BUY >= 70, SELL < 40, "
-        "½-ATR stop-loss, EMA10 trailing exit."
+        "1.5×ATR stop-loss, EMA10 trailing exit."
     ),
     "color":            "#00A8BF",
     "params":           DEFAULT_PARAMS,
@@ -344,7 +344,7 @@ STRATEGY: dict = {
         "1. OVTLYR NINE < 40 → SELL",
         "2. Price < EMA20 → SPY sell-off proxy override",
         "3. Price < EMA10 → trailing stop exit",
-        "4. Price ≤ entry − ½ × ATR14 → hard stop-loss",
+        "4. Price ≤ entry − 1.5 × ATR14 → hard stop-loss",
         "5. Fear & Greed > 80 → REDUCE (extreme greed override)",
         "6. Order Block bias SELL or REDUCE → signal REDUCE",
         "7. Approaching bearish Order Block detected → REDUCE",
