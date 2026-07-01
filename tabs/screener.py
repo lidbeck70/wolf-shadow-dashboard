@@ -583,6 +583,12 @@ def _render_ovtlyr_screener_ui():
         styled = _map(_signal_color, subset=["Signal"])
         st.dataframe(styled, width='stretch', hide_index=True,
                      height=min(600, 38 + 35 * len(results)))
+        st.caption(
+            "Kontextkolumner (påverkar INTE Composite/Signal ännu): "
+            "V9 (Viking Nine) · F&G (Fear & Greed) · Retail · OC (Overhead Clusters). "
+            "Composite/Signal drivs enbart av Trend · Momentum · Volatility · Volume · ADX "
+            "plus absolut eligibility (Pris>EMA200 & ADX≥20)."
+        )
 
         # Test Top N
         if test_clicked:
@@ -646,6 +652,13 @@ def tab_screener_consolidated():
         "SCREENER MODE",
         ["Wolf Screener", "Alpha Screener", "Viking Screener"],
         key="screener_mode_select",
+    )
+
+    st.caption(
+        "Wolf = trend/swing/momentum-setup · "
+        "Alpha = fundamental/regim/kontrarian-ranking · "
+        "Viking = regim/OVTLYR-kontext + relativ (z-score) ranking. "
+        "Verktygen kompletterar varandra och är inte utbytbara."
     )
 
     if mode == "Wolf Screener":
