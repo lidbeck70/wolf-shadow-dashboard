@@ -204,6 +204,19 @@ class ContrairianAlphaResult:
     commodity_proxy:      str        = ""   # ETF/index proxies (metadata only)
     resource_data_as_of:  str        = ""   # enrichment date (may be blank)
 
+    # Existing-source overlay (PR5; us_ca_resource only). Context/watchlist only,
+    # NOT a buy trigger and separate from resource_composite. Blank for Nordic.
+    resource_overlay_score:    float       = 0.0   # 0-100 cautious overlay score
+    market_cap_bucket:         str         = ""    # nano|micro|small|mid|large|unknown
+    liquidity_flag:            str         = ""    # OK|THIN|LOW|UNKNOWN
+    drawdown_52w_pct:          float | None = None
+    commodity_relative_strength: float | None = None  # placeholder (not wired)
+    short_interest_flag:       str         = ""    # HIGH|ELEVATED|NORMAL|UNKNOWN
+    analyst_revision_flag:     str         = ""    # NET_DOWNGRADES|NET_UPGRADES|NEUTRAL|UNKNOWN
+    sentiment_attention_flag:  str         = ""    # placeholder
+    macro_context_flag:        str         = ""    # placeholder
+    existing_source_flags:     list[str]   = field(default_factory=list)
+
     # Price snapshot (for UI display)
     close:     float = 0.0
     sma50:     float = 0.0
@@ -854,6 +867,50 @@ def _apply_resource_composite(
             result.all_flags.append(f)
 
 
+# Existing-source overlay (PR5). Additive context layer built from data the
+# pipeline has already fetched from EXISTING sources (yfinance price snapshot,
+# EODHD/yfinance analyst + short dicts, static CSV shares_out_m). Makes no new
+# network calls of its own, adds no dependencies, and is kept SEPARATE from
+# resource_composite — it never changes the PR3 composite math.
+
+def _apply_existing_source_overlay(
+    result: "ContrairianAlphaResult",
+    inst_info: dict,
+    fund_snap: dict,
+    analyst_dict: dict | None,
+    short_dict: dict | None,
+) -> None:
+    """Populate result.resource_overlay_score + overlay flags (in place)."""
+    from contrarian_alpha.existing_source_enrichment import enrich_resource_candidate
+
+    meta = inst_info.get("resource_meta") or inst_info
+    # Börsdata market cap is MSEK and absent for US/CA rows (ins_id=None); pass it
+    # only when present so the overlay falls back to a flagged CSV estimate.
+    mcap = fund_snap.get("market_cap") if fund_snap else None
+
+    ov = enrich_resource_candidate(
+        close          = result.close,
+        high_52w       = result.high_52w,
+        low_52w        = result.low_52w,
+        avg_volume_20d = result.avg_volume_20d,
+        meta           = meta,
+        analyst_data   = analyst_dict,
+        short_data     = short_dict,
+        market_cap_usd = mcap,
+    )
+
+    result.resource_overlay_score      = ov.resource_overlay_score
+    result.market_cap_bucket           = ov.market_cap_bucket
+    result.liquidity_flag              = ov.liquidity_flag
+    result.drawdown_52w_pct            = ov.drawdown_52w_pct
+    result.commodity_relative_strength = ov.commodity_relative_strength
+    result.short_interest_flag         = ov.short_interest_flag
+    result.analyst_revision_flag       = ov.analyst_revision_flag
+    result.sentiment_attention_flag    = ov.sentiment_attention_flag
+    result.macro_context_flag          = ov.macro_context_flag
+    result.existing_source_flags       = ov.existing_source_flags
+
+
 # ─── Single-ticker pipeline ───────────────────────────────────────────────────
 
 def _run_single_ticker(
@@ -1199,6 +1256,10 @@ def _run_single_ticker(
     # enter this branch (no stage), so their composite/output is unchanged.
     if _is_resource and result.stage:
         _apply_resource_composite(result, inst_info, fund_snap)
+        # PR5 existing-source overlay (context/watchlist only, separate score).
+        _apply_existing_source_overlay(
+            result, inst_info, fund_snap, analyst_dict, short_dict
+        )
 
     return result
 
