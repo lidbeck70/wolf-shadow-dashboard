@@ -185,6 +185,12 @@ class ContrairianAlphaResult:
     elimination_reason:   str        = ""
     all_flags:            list[str]  = field(default_factory=list)
 
+    # Resource-universe metadata (us_ca_resource only; empty for Nordic)
+    stage:               str        = ""   # producer|developer|explorer|royalty|energy|services
+    primary_commodity:   str        = ""
+    resource_flags:      list[str]  = field(default_factory=list)  # stage guardrail notes
+    resource_gate_mode:  str        = ""   # ""|"RELAXED"|"MATURE" — see PR2 guardrail
+
     # Price snapshot (for UI display)
     close:     float = 0.0
     sma50:     float = 0.0
@@ -672,6 +678,113 @@ def _build_value_data(fund_snap: dict, ins_id: int | None, api) -> dict:
     return data
 
 
+# ─── Resource stage-aware guardrails (PR2) ────────────────────────────────────
+#
+# GUARDRAIL, NOT full resource scoring. The mature-company hard gates (FCF>0,
+# EBITDA margin>0, Altman Z, ROIC, positive equity) were designed for Nordic
+# Börsdata fundamentals. Applied unchanged to the US/CA resource universe they
+# wrongly eliminate pre-revenue juniors (explorers/developers legitimately burn
+# cash and have no ROIC) and data-sparse US/CA rows (ins_id is None → no
+# Börsdata snapshot at all). This helper relaxes those gates for the resource
+# universe only, converting the failures into transparent flags/notes. Full
+# resource composite (survival/cash runway, dilution, jurisdiction, stage
+# weights, commodity/regime triggers) is deferred to PR3.
+
+# Pre-revenue stages: never hard-eliminate on missing/negative fundamentals.
+_RESOURCE_PRE_REVENUE_STAGES = {"explorer", "developer"}
+# Mature/cash-flowing stages: keep gates when data is PRESENT, but never
+# eliminate solely because Börsdata-style fundamentals are missing in US/CA.
+_RESOURCE_MATURE_STAGES = {"producer", "energy", "services", "royalty"}
+
+
+def _apply_resource_stage_guardrails(
+    stage:      str,
+    fund_dict:  dict,
+    gates:      dict[str, bool],
+    roic:       float | None,
+    bs_failures: list[str],
+) -> tuple[list[str], bool, str, list[str]]:
+    """
+    Stage-aware guardrail for the us_ca_resource universe.
+
+    Decides which balance-sheet / ROIC eliminations to suppress and produces
+    transparency flags. This does NOT alter any score math — it only rewrites
+    elimination reasons. Nordic behavior is untouched because the caller only
+    invokes this for config.universe == "us_ca_resource".
+
+    Args:
+        stage:       resource stage (lowercased); may be unknown/empty.
+        fund_dict:   flat fundamentals dict (values None when data missing).
+        gates:       strength gate_results (fcf_positive, ebitda_margin_positive,
+                     equity_positive, debt_equity_low).
+        roic:        ROIC % or None (missing).
+        bs_failures: balance-sheet failure reasons computed by the caller.
+
+    Returns:
+        (kept_bs_failures, drop_roic_gate, gate_mode, flags)
+          kept_bs_failures : subset of bs_failures that should STILL eliminate
+          drop_roic_gate   : True → caller must NOT eliminate on ROIC
+          gate_mode        : "RELAXED" (pre-revenue) | "MATURE" (data-relaxed)
+          flags            : list[str] notes for ResourceFlags / all_flags
+    """
+    stg = (stage or "").strip().lower()
+    flags: list[str] = []
+
+    # Data presence (None = Börsdata-style fundamental simply absent for US/CA)
+    fcf_present    = fund_dict.get("fcf") is not None
+    ebitda_present = fund_dict.get("ebitda_margin") is not None
+    equity_present = fund_dict.get("equity") is not None
+
+    pre_revenue = stg in _RESOURCE_PRE_REVENUE_STAGES
+
+    if pre_revenue:
+        # Explorers/developers: relax FCF, EBITDA, equity and ROIC entirely
+        # (present-but-negative OR missing). D/E stays enforced only when data
+        # exists (juniors normally carry little debt; a genuinely over-levered
+        # junior should still be flagged out).
+        gate_mode = "RELAXED"
+        flags.append("PRE_REVENUE")
+        flags.append("STAGE_AWARE_GATE_RELAXED")
+        if not gates.get("fcf_positive", False):
+            flags.append("NO_FCF_EXPECTED")
+        if not gates.get("ebitda_margin_positive", False):
+            flags.append("NO_EBITDA_EXPECTED")
+        # ROIC is not a meaningful metric for a pre-revenue miner.
+        flags.append("ROIC_NOT_APPLICABLE")
+
+        kept = [
+            f for f in bs_failures
+            if f.startswith("D/E") or f.startswith("Net Debt")
+        ]
+        drop_roic_gate = True
+        return kept, drop_roic_gate, gate_mode, flags
+
+    # Mature/cash-flowing stages (producer/energy/services/royalty) and any
+    # unknown stage: keep the gates, but never eliminate purely on MISSING data.
+    gate_mode = "MATURE"
+    kept: list[str] = []
+    for f in bs_failures:
+        if f.startswith("FCF") and not fcf_present:
+            flags.append("FCF_DATA_MISSING")
+        elif f.startswith("EBITDA") and not ebitda_present:
+            flags.append("EBITDA_DATA_MISSING")
+        elif f.startswith("Equity") and not equity_present:
+            flags.append("EQUITY_DATA_MISSING")
+        else:
+            # Data present and failing (real weakness) → keep the elimination.
+            kept.append(f)
+
+    # ROIC gate is only dropped when data is missing (mature rows with real,
+    # sub-threshold ROIC are still legitimately eliminated by the caller).
+    drop_roic_gate = roic is None
+    if drop_roic_gate:
+        flags.append("ROIC_DATA_MISSING")
+
+    if flags:
+        flags.append("STAGE_AWARE_MISSING_DATA_RELAXED")
+    return kept, drop_roic_gate, gate_mode, flags
+
+
 # ─── Single-ticker pipeline ───────────────────────────────────────────────────
 
 def _run_single_ticker(
@@ -703,6 +816,13 @@ def _run_single_ticker(
         composite_score=0.0,
         timestamp=datetime.now(tz=timezone.utc).isoformat(),
     )
+
+    # Resource-universe context (PR2). Only populated for us_ca_resource; Nordic
+    # rows leave these empty so their behavior is bit-for-bit unchanged.
+    _is_resource = config.universe == "us_ca_resource"
+    if _is_resource:
+        result.stage             = (inst_info.get("stage") or "").strip().lower()
+        result.primary_commodity = inst_info.get("primary_commodity", "") or ""
 
     # ── 1. NECESSITY GATE ────────────────────────────────────────────────────
 
@@ -830,6 +950,23 @@ def _run_single_ticker(
 
     if not gates.get("equity_positive",        False): bs_failures.append("Equity ≤ 0")
 
+    # Resource universe: relax mature-company gates in a stage-aware way before
+    # deciding elimination (guardrail only — see _apply_resource_stage_guardrails).
+    if _is_resource:
+        kept, _, gate_mode, res_flags = _apply_resource_stage_guardrails(
+            stage=result.stage, fund_dict=fund_dict, gates=gates,
+            roic=None, bs_failures=bs_failures,
+        )
+        result.resource_gate_mode = gate_mode
+        for f in res_flags:
+            if f not in result.resource_flags:
+                result.resource_flags.append(f)
+        # Surface guardrail notes in the general flag list (survivors + rejects).
+        result.all_flags.extend(
+            f for f in result.resource_flags if f not in result.all_flags
+        )
+        bs_failures = kept
+
     if bs_failures:
         result.eliminated       = True
         result.elimination_stage  = "BALANCE_SHEET"
@@ -873,12 +1010,23 @@ def _run_single_ticker(
         result.valuation_bands = vb
         result.all_flags.extend([f for f in vb.flags if f not in result.all_flags])
 
+    # Resource guardrail (PR2): for pre-revenue miners ROIC is not applicable, so
+    # never let the ROIC gate eliminate them even if a stray value is present.
+    # Mature resource rows keep the normal ROIC gate.
+    _resource_skip_roic = (
+        _is_resource and result.stage in _RESOURCE_PRE_REVENUE_STAGES
+    )
+    if _resource_skip_roic and "ROIC_NOT_APPLICABLE" not in result.all_flags:
+        result.all_flags.append("ROIC_NOT_APPLICABLE")
+
     # Mode-dependent ROIC gate.
     #   quality         -> HARD gate: ROIC data REQUIRED and must clear 15%.
     #                      Missing ROIC = reject (a proven compounder must prove it).
     #   deep_contrarian -> soft gate: only reject when ROIC data exists and fails 10%
     #                      (cyclical troughs legitimately lack/àdepress ROIC).
-    if config.mode == "quality":
+    if _resource_skip_roic:
+        pass  # pre-revenue miner: ROIC gate intentionally bypassed
+    elif config.mode == "quality":
         if quality_result.roic is None:
             # ROIC data missing -> do NOT reject (would empty the list when
             # Borsdata snapshot lacks ROIC). Keep but flag for transparency.
