@@ -63,16 +63,32 @@ class TestPreRevenueStages:
         assert "PRE_REVENUE" in flags
 
     def test_explorer_high_debt_still_gated(self):
-        # Over-levered junior: D/E is the one gate kept even for explorers.
+        # Over-levered junior with a REAL (present + failing) D/E figure: leverage
+        # is the one gate kept even for explorers. Missing D/E is relaxed instead
+        # (see test_explorer_missing_debt_relaxed).
         gates = {"fcf_positive": False, "ebitda_margin_positive": False,
                  "equity_positive": True, "debt_equity_low": False}
         kept, _, mode, _ = _apply_resource_stage_guardrails(
-            "explorer", fund_dict={"equity": 10.0},
+            "explorer", fund_dict={"equity": 10.0, "debt_to_equity": 1.5},
             gates=gates, roic=None,
             bs_failures=["FCF ≤ 0", "EBITDA margin ≤ 0%", "D/E ≥ 0.6"],
         )
         assert kept == ["D/E ≥ 0.6"]
         assert mode == "RELAXED"
+
+    def test_explorer_missing_debt_relaxed(self):
+        # ins_id=None US/CA junior: D/E figure absent → must NOT hard-eliminate on
+        # a leverage gate that only fails because the ratio is missing.
+        gates = {"fcf_positive": False, "ebitda_margin_positive": False,
+                 "equity_positive": True, "debt_equity_low": False}
+        kept, _, mode, flags = _apply_resource_stage_guardrails(
+            "explorer", fund_dict={"equity": 10.0},
+            gates=gates, roic=None,
+            bs_failures=["FCF ≤ 0", "EBITDA margin ≤ 0%", "D/E ≥ 0.6"],
+        )
+        assert kept == []
+        assert mode == "RELAXED"
+        assert "LEVERAGE_DATA_MISSING" in flags
 
 
 class TestMatureStages:
@@ -109,6 +125,32 @@ class TestMatureStages:
             gates=gates, roic=8.0, bs_failures=[],
         )
         assert drop_roic is False         # real ROIC present → normal gate applies
+
+    def test_producer_missing_debt_relaxed(self):
+        # Mature producer with no Börsdata D/E → leverage gate fails only because
+        # the ratio is missing; must be relaxed to a flag, not eliminated.
+        gates = {"fcf_positive": True, "ebitda_margin_positive": True,
+                 "equity_positive": True, "debt_equity_low": False}
+        kept, _, mode, flags = _apply_resource_stage_guardrails(
+            "producer", fund_dict={"fcf": 10.0, "ebitda_margin": 20.0, "equity": 500.0},
+            gates=gates, roic=12.0, bs_failures=["D/E ≥ 0.6"],
+        )
+        assert kept == []
+        assert mode == "MATURE"
+        assert "LEVERAGE_DATA_MISSING" in flags
+
+    def test_producer_present_high_debt_eliminated(self):
+        # Real, present high leverage for a mature producer still eliminates.
+        gates = {"fcf_positive": True, "ebitda_margin_positive": True,
+                 "equity_positive": True, "debt_equity_low": False}
+        kept, _, mode, _ = _apply_resource_stage_guardrails(
+            "producer",
+            fund_dict={"fcf": 10.0, "ebitda_margin": 20.0, "equity": 500.0,
+                       "debt_to_equity": 1.4},
+            gates=gates, roic=12.0, bs_failures=["D/E ≥ 0.6"],
+        )
+        assert kept == ["D/E ≥ 0.6"]
+        assert mode == "MATURE"
 
     def test_royalty_missing_fundamentals_survives(self):
         gates = {"fcf_positive": False, "ebitda_margin_positive": False,
