@@ -12,6 +12,14 @@ is a later PR — see CLAUDE.md / PR2 notes.
 CSV schema (config/universes/us_ca_resource.csv):
     ticker,yf_ticker,name,exchange,country,stage,primary_commodity,
     secondary_commodity,notes
+
+Optional enrichment columns (read if present, ignored otherwise — PR3):
+    jurisdiction              fine-grained region (e.g. "Quebec", "Nevada")
+    cash_musd                 cash on hand, millions USD
+    quarterly_burn_musd       cash burn per quarter, millions USD
+    debt_musd                 total debt, millions USD
+    shares_out_m              shares outstanding, millions
+    shares_yoy_growth_pct     YoY share-count growth %
 """
 from __future__ import annotations
 
@@ -36,6 +44,13 @@ _REQUIRED_COLUMNS = {"ticker", "yf_ticker", "name", "country", "stage"}
 # Conservative stage vocabulary (informational only in PR1).
 VALID_STAGES = {"producer", "developer", "explorer", "royalty", "energy", "services"}
 
+# Optional enrichment columns consumed by resource_scoring.py (PR3). Absent =>
+# missing-data flags + neutral scores; never fabricated.
+_OPTIONAL_COLUMNS = (
+    "jurisdiction", "cash_musd", "quarterly_burn_musd", "debt_musd",
+    "shares_out_m", "shares_yoy_growth_pct",
+)
+
 
 @dataclass
 class ResourceRecord:
@@ -50,6 +65,13 @@ class ResourceRecord:
     primary_commodity: str = ""
     secondary_commodity: str = ""
     notes: str = ""
+    # Optional enrichment (PR3). Absent columns stay as-is (blank/None).
+    jurisdiction: str = ""
+    cash_musd: str = ""
+    quarterly_burn_musd: str = ""
+    debt_musd: str = ""
+    shares_out_m: str = ""
+    shares_yoy_growth_pct: str = ""
 
     def to_metadata(self) -> dict:
         """Return the metadata dict attached to instrument info for future PRs."""
@@ -61,6 +83,13 @@ class ResourceRecord:
             "country": self.country,
             "notes": self.notes,
             "yf_ticker": self.yf_ticker,
+            # Optional enrichment (blank string when the CSV column is absent).
+            "jurisdiction": self.jurisdiction,
+            "cash_musd": self.cash_musd,
+            "quarterly_burn_musd": self.quarterly_burn_musd,
+            "debt_musd": self.debt_musd,
+            "shares_out_m": self.shares_out_m,
+            "shares_yoy_growth_pct": self.shares_yoy_growth_pct,
         }
 
 
@@ -110,6 +139,8 @@ def load_resource_universe(path: str | Path | None = None) -> list[ResourceRecor
                     stage, ticker, i,
                 )
 
+            opt = {c: (row.get(c) or "").strip() for c in _OPTIONAL_COLUMNS}
+
             records.append(ResourceRecord(
                 ticker=ticker,
                 yf_ticker=yf_ticker,
@@ -120,6 +151,7 @@ def load_resource_universe(path: str | Path | None = None) -> list[ResourceRecor
                 primary_commodity=(row.get("primary_commodity") or "").strip().lower(),
                 secondary_commodity=(row.get("secondary_commodity") or "").strip().lower(),
                 notes=(row.get("notes") or "").strip(),
+                **opt,
             ))
 
     if not records:

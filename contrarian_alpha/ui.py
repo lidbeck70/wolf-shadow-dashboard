@@ -352,18 +352,21 @@ def _render_control_panel() -> tuple[dict, bool]:
             ),
         )
 
-    # ── US/CA Resource: stage-aware guardrails active (PR2) ──────────────────
+    # ── US/CA Resource: stage-aware guardrails + resource-composite v1 (PR3) ──
     if market == "US/CA Resource":
         st.warning(
-            "**US/CA Resource — stage-medvetna skyddsrackor aktiva (PR2).** Statiskt "
+            "**US/CA Resource — resurs-composite v1 aktiv (PR3).** Statiskt "
             "resurs-universum (US/Kanada, Rick Rule / Eric Sprott-stil) fran "
-            "`config/universes/us_ca_resource.csv`. De nordiska fundamentala grindarna "
-            "(FCF>0, EBITDA-marginal, Altman Z, ROIC) elimineras **inte langre** "
-            "explorers/developers eller rader som bara saknar Borsdata-fundamenta — "
-            "de omvandlas till flaggor (PRE_REVENUE, NO_FCF_EXPECTED, "
-            "ROIC_NOT_APPLICABLE m.fl.). Fullstandig resurs-scoring "
-            "(survival/cash runway, dilution, jurisdiktion, stage-vikter, "
-            "commodity/regim-triggers) kommer i PR3.",
+            "`config/universes/us_ca_resource.csv`. Stage-medvetna skyddsrackor (PR2) "
+            "elimineras inte langre explorers/developers eller rader som saknar "
+            "Borsdata-fundamenta. **Nytt i PR3:** en deterministisk resurs-composite "
+            "(survival/cash-runway, dilution, jurisdiktion, commodity-necessity) med "
+            "stage-baserade vikter, separat fran det nordiska composite-scoret. "
+            "**Detta ar resurs-scoring v1 — INTE en kopsignal; endast watchlist/"
+            "ranking.** Data som saknas ger neutrala poang + flaggor (SURVIVAL_DATA_"
+            "MISSING, DILUTION_DATA_MISSING, JURISDICTION_UNKNOWN m.fl.), aldrig "
+            "pahittad precision. Battre data (FMP/GoldStockData), NAV/resurs-ounces "
+            "och commodity/regim-triggers kommer i PR4.",
             icon="🛡️",
         )
 
@@ -775,20 +778,33 @@ def _render_detail_card(r) -> None:
                 unsafe_allow_html=True,
             )
 
-        # Resource stage guardrail transparency (us_ca_resource only)
+        # Resource stage guardrail + composite transparency (us_ca_resource only)
         _stage = getattr(r, "stage", "")
         if _stage:
             _commodity = getattr(r, "primary_commodity", "") or "—"
             _gate_mode = getattr(r, "resource_gate_mode", "") or "—"
             _res_flags = getattr(r, "resource_flags", []) or []
             _flags_disp = ", ".join(_res_flags) if _res_flags else "inga"
+            # Resource-composite v1 (PR3) — separate from the Nordic composite.
+            _rc = float(getattr(r, "resource_composite", 0.0) or 0.0)
+            _surv = float(getattr(r, "survival_score", 0.0) or 0.0)
+            _dil = float(getattr(r, "dilution_score", 0.0) or 0.0)
+            _jur = float(getattr(r, "jurisdiction_score", 0.0) or 0.0)
+            _comm = float(getattr(r, "commodity_score", 0.0) or 0.0)
+            _conf = float(getattr(r, "resource_confidence", 0.0) or 0.0)
+            _profile = getattr(r, "resource_stage_profile", "") or _stage
             st.markdown(
                 f'<div style="background:{P["surface"]};border:1px solid {P["border"]};'
                 f'border-radius:6px;padding:8px 12px;margin-bottom:12px;'
                 f'font-family:\'Courier New\',monospace;font-size:10px;'
                 f'color:{P["text_dim"]}">'
-                f'<b style="color:{P["text"]}">RESURS-METADATA</b><br>'
-                f'Stage: <b>{_stage}</b> · Commodity: <b>{_commodity}</b><br>'
+                f'<b style="color:{P["text"]}">RESURS-COMPOSITE v1</b> '
+                f'<span style="color:{P["text_dim"]}">(ej köpsignal · watchlist/ranking)</span><br>'
+                f'Composite: <b style="color:{P["gold"]}">{_rc:.1f}</b>/100 '
+                f'· Konfidens: <b>{_conf:.0%}</b> · Profil: <b>{_profile}</b><br>'
+                f'Survival: <b>{_surv:.0f}</b> · Dilution: <b>{_dil:.0f}</b> · '
+                f'Jurisdiktion: <b>{_jur:.0f}</b> · Commodity: <b>{_comm:.0f}</b><br>'
+                f'Stage: <b>{_stage}</b> · Commodity: <b>{_commodity}</b> · '
                 f'GateMode: <b>{_gate_mode}</b><br>'
                 f'ResourceFlags: {_flags_disp}'
                 f'</div>',
