@@ -825,6 +825,41 @@ def _render_detail_card(r) -> None:
                 unsafe_allow_html=True,
             )
 
+            # Existing-source overlay (PR5) — context/watchlist only, NOT a buy
+            # trigger and separate from the resource composite above.
+            _ov = float(getattr(r, "resource_overlay_score", 0.0) or 0.0)
+            _mcap = getattr(r, "market_cap_bucket", "") or "—"
+            _liq = getattr(r, "liquidity_flag", "") or "—"
+            _dd = getattr(r, "drawdown_52w_pct", None)
+            _dd_disp = f"{_dd:.1f}%" if _dd is not None else "—"
+            _crs = getattr(r, "commodity_relative_strength", None)
+            _crs_disp = f"{_crs:.1f}" if _crs is not None else "—"
+            _si = getattr(r, "short_interest_flag", "") or "—"
+            _ar = getattr(r, "analyst_revision_flag", "") or "—"
+            _sa = getattr(r, "sentiment_attention_flag", "") or "—"
+            _mac = getattr(r, "macro_context_flag", "") or "—"
+            _es_flags = getattr(r, "existing_source_flags", []) or []
+            _es_disp = ", ".join(_es_flags) if _es_flags else "inga"
+            st.markdown(
+                f'<div style="background:{P["surface"]};border:1px solid {P["border"]};'
+                f'border-radius:6px;padding:8px 12px;margin-bottom:12px;'
+                f'font-family:\'Courier New\',monospace;font-size:10px;'
+                f'color:{P["text_dim"]}">'
+                f'<b style="color:{P["text"]}">EXISTING-SOURCE OVERLAY</b> '
+                f'<span style="color:{P["text_dim"]}">(kontext/watchlist · ej köpsignal)</span><br>'
+                f'Overlay-score: <b style="color:{P["gold"]}">{_ov:.1f}</b>/100 '
+                f'· Market cap: <b>{_mcap}</b> · Likviditet: <b>{_liq}</b><br>'
+                f'52v drawdown: <b>{_dd_disp}</b> · Commodity RS: <b>{_crs_disp}</b><br>'
+                f'Short interest: <b>{_si}</b> · Analytiker: <b>{_ar}</b><br>'
+                f'Sentiment: <b>{_sa}</b> · Makro: <b>{_mac}</b> '
+                f'<span style="color:{P["text_dim"]}">(platshållare)</span><br>'
+                f'OverlayFlags: {_es_disp}<br>'
+                f'<span style="color:{P["text_dim"]}">Befintliga källor (yfinance/'
+                f'EODHD/CSV). Saknad data = flagga, ej negativ signal.</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
         _section_title("VIKING REGIME")
         st.markdown(
             f'<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">'
