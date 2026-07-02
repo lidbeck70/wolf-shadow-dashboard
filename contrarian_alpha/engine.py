@@ -1024,8 +1024,17 @@ def _run_single_ticker(
     gics_branch = inst_info.get("branchId")
     _sect_name  = branch_name or sector_name
 
+    # Resource universe: the static CSV carries no GICS codes, so necessity would
+    # otherwise fall through to a per-ticker yfinance sector call that is slow and
+    # unreliable for 60+ US/CA tickers (frequently returns nothing → FALLBACK 40
+    # → the whole curated universe is wrongly eliminated at NECESSITY). Seed the
+    # sector name from the curated commodity metadata (gold/copper/uranium/…),
+    # which maps directly onto SECTOR_NAME_MAP, and skip the network lookup.
+    if _is_resource and not _sect_name and result.primary_commodity:
+        _sect_name = result.primary_commodity.replace("_", " ")
+
     # Fallback: no GICS codes and no name → try yfinance sector + industry
-    if not gics_sector and not gics_branch and not _sect_name:
+    if not _is_resource and not gics_sector and not gics_branch and not _sect_name:
         yf_sector, yf_industry = _yf_sector_name(ticker)
         if not sector_name:
             result.sector = yf_sector
@@ -1050,13 +1059,27 @@ def _run_single_ticker(
     result.necessity_entry = necessity_entry
 
     if result.necessity_score < config.necessity_threshold:
-        result.eliminated       = True
-        result.elimination_stage  = "NECESSITY"
-        result.elimination_reason = (
-            f"Necessity {result.necessity_score:.0f} < {config.necessity_threshold:.0f} "
-            f"({necessity_entry.label})"
-        )
-        return result
+        if _is_resource:
+            # The US/CA resource universe is hand-curated for commodity necessity
+            # (Rick Rule / Eric Sprott style), so a below-threshold score here means
+            # an unrecognised commodity or missing metadata — NOT a low-necessity
+            # business. Never hard-eliminate; surface a transparent flag instead so
+            # the row survives onto the watchlist (missing data = flag, not cut).
+            _nflag = ("LOW_NECESSITY_UNRECOGNISED"
+                      if result.primary_commodity else "NECESSITY_DATA_MISSING")
+            for _f in ("NECESSITY_BELOW_THRESHOLD", _nflag):
+                if _f not in result.resource_flags:
+                    result.resource_flags.append(_f)
+                if _f not in result.all_flags:
+                    result.all_flags.append(_f)
+        else:
+            result.eliminated       = True
+            result.elimination_stage  = "NECESSITY"
+            result.elimination_reason = (
+                f"Necessity {result.necessity_score:.0f} < {config.necessity_threshold:.0f} "
+                f"({necessity_entry.label})"
+            )
+            return result
 
     # ── 2. HATE FILTER ───────────────────────────────────────────────────────
 

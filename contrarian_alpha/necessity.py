@@ -316,6 +316,10 @@ SECTOR_NAME_MAP: dict[str, int] = {
     "stål":                     15104050,
     "aluminum":                 15104010,
     "aluminium":                15104010,
+    "iron ore":                 15104070,
+    "järnmalm":                 15104070,
+    "rare earth":               -2,
+    "sällsynta jordartsmetaller": -2,
     # Utilities
     "utilities":                55,
     "allmännyttigt":            55,
