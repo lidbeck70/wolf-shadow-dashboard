@@ -17,6 +17,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from contrarian_alpha.existing_source_enrichment import (
     LIQUIDITY_THRESHOLD_USD,
+    classify_commodity_rs,
+    classify_macro_context,
+    classify_sentiment_attention,
+    compute_commodity_rs,
     enrich_resource_candidate,
 )
 
@@ -127,18 +131,106 @@ class TestAnalystRevisions:
         assert "ANALYST_DATA_MISSING" in ov.existing_source_flags
 
 
-class TestPlaceholders:
-    def test_commodity_rs_placeholder(self):
+class TestNotAvailableDefaults:
+    def test_commodity_rs_not_available_without_series(self):
         ov = enrich_resource_candidate()
         assert ov.commodity_relative_strength is None
+        assert ov.commodity_rs_flag == "COMMODITY_RS_NOT_AVAILABLE"
         assert "COMMODITY_RS_NOT_AVAILABLE" in ov.existing_source_flags
 
-    def test_sentiment_and_macro_placeholders(self):
+    def test_sentiment_and_macro_not_available_without_inputs(self):
         ov = enrich_resource_candidate()
-        assert ov.sentiment_attention_flag == "NOT_WIRED"
-        assert ov.macro_context_flag == "NOT_WIRED"
-        assert "SENTIMENT_NOT_WIRED" in ov.existing_source_flags
-        assert "MACRO_CONTEXT_NOT_WIRED" in ov.existing_source_flags
+        assert ov.sentiment_attention_flag == "SENTIMENT_NOT_AVAILABLE"
+        assert ov.macro_context_flag == "MACRO_CONTEXT_NOT_AVAILABLE"
+        assert "SENTIMENT_NOT_AVAILABLE" in ov.existing_source_flags
+        assert "MACRO_CONTEXT_NOT_AVAILABLE" in ov.existing_source_flags
+
+
+class TestCommodityRS:
+    def test_compute_rs_outperforming(self):
+        # candidate +20% over 3 bars, proxy +10% → RS ≈ +10pp.
+        cand = [100.0, 110.0, 120.0]
+        proxy = [100.0, 105.0, 110.0]
+        rs = compute_commodity_rs(cand, proxy, window=2)
+        assert rs == 10.0
+        assert classify_commodity_rs(rs) == "OUTPERFORMING_PROXY"
+
+    def test_compute_rs_lagging(self):
+        cand = [100.0, 100.0, 100.0]   # flat
+        proxy = [100.0, 110.0, 120.0]  # +20%
+        rs = compute_commodity_rs(cand, proxy, window=2)
+        assert rs == -20.0
+        assert classify_commodity_rs(rs) == "LAGGING_PROXY"
+
+    def test_compute_rs_neutral(self):
+        cand = [100.0, 101.0, 102.0]
+        proxy = [100.0, 100.5, 101.0]
+        rs = compute_commodity_rs(cand, proxy, window=2)
+        assert classify_commodity_rs(rs) == "RS_NEUTRAL"
+
+    def test_rs_none_when_series_too_short(self):
+        assert compute_commodity_rs([100.0], [100.0, 101.0, 102.0], window=2) is None
+        assert compute_commodity_rs(None, None, window=2) is None
+        assert classify_commodity_rs(None) == "COMMODITY_RS_NOT_AVAILABLE"
+
+    def test_rs_wired_through_enrich(self):
+        cand = [100.0, 110.0, 130.0]
+        proxy = [100.0, 100.0, 100.0]
+        ov = enrich_resource_candidate(
+            candidate_closes=cand, proxy_closes=proxy, rs_window=2
+        )
+        assert ov.commodity_relative_strength == 30.0
+        assert ov.commodity_rs_flag == "OUTPERFORMING_PROXY"
+        assert "OUTPERFORMING_PROXY" in ov.existing_source_flags
+
+
+class TestSentimentAttention:
+    def test_explicit_label_passthrough(self):
+        assert classify_sentiment_attention({"attention": "hype_risk"}) == "HYPE_RISK"
+
+    def test_hype_from_high_score(self):
+        assert classify_sentiment_attention({"composite_score": 85}) == "HYPE_RISK"
+
+    def test_low_attention_from_low_score(self):
+        assert classify_sentiment_attention({"composite_score": 10}) == "LOW_ATTENTION"
+
+    def test_normal_from_mid_score(self):
+        assert classify_sentiment_attention({"score": 50}) == "NORMAL_ATTENTION"
+
+    def test_low_attention_from_message_count(self):
+        assert classify_sentiment_attention({"message_count": 2}) == "LOW_ATTENTION"
+
+    def test_missing_is_not_available(self):
+        assert classify_sentiment_attention(None) == "SENTIMENT_NOT_AVAILABLE"
+        assert classify_sentiment_attention({}) == "SENTIMENT_NOT_AVAILABLE"
+
+    def test_wired_through_enrich(self):
+        ov = enrich_resource_candidate(sentiment={"composite_score": 90})
+        assert ov.sentiment_attention_flag == "HYPE_RISK"
+
+
+class TestMacroContext:
+    def test_tailwind_from_steepening(self):
+        assert classify_macro_context({"t10y2y_change_4w": 0.15}) == "COMMODITY_MACRO_TAILWIND"
+
+    def test_headwind_from_inversion(self):
+        assert classify_macro_context({"t10y2y_change_4w": -0.30}) == "COMMODITY_MACRO_HEADWIND"
+
+    def test_neutral_from_flat(self):
+        assert classify_macro_context({"t10y2y_change_4w": 0.0}) == "MACRO_NEUTRAL"
+
+    def test_ember_regime_mapping(self):
+        assert classify_macro_context({"regime": "GREEN"}) == "COMMODITY_MACRO_TAILWIND"
+        assert classify_macro_context({"regime": "RED"}) == "COMMODITY_MACRO_HEADWIND"
+        assert classify_macro_context({"regime": "AMBER"}) == "MACRO_NEUTRAL"
+
+    def test_missing_is_not_available(self):
+        assert classify_macro_context(None) == "MACRO_CONTEXT_NOT_AVAILABLE"
+        assert classify_macro_context({}) == "MACRO_CONTEXT_NOT_AVAILABLE"
+
+    def test_wired_through_enrich(self):
+        ov = enrich_resource_candidate(macro={"t10y2y_change_4w": 0.20})
+        assert ov.macro_context_flag == "COMMODITY_MACRO_TAILWIND"
 
 
 class TestOverlayScore:
@@ -195,4 +287,7 @@ class TestNoNetworkAndNordicUnchanged:
         assert r.market_cap_bucket == ""
         assert r.liquidity_flag == ""
         assert r.drawdown_52w_pct is None
+        assert r.commodity_rs_flag == ""
+        assert r.sentiment_attention_flag == ""
+        assert r.macro_context_flag == ""
         assert r.existing_source_flags == []

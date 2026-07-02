@@ -1,10 +1,12 @@
 """
-existing_source_enrichment.py — Existing-source overlay (PR5).
+existing_source_enrichment.py — Existing-source overlay (PR5 + PR6 wiring).
 
 A *lightweight, additive* context overlay for the ``us_ca_resource`` universe
 only. It reuses data the pipeline has ALREADY fetched from the project's
-existing free/optional sources — it makes no new network calls of its own and
-adds no new dependencies or paid APIs:
+existing free/optional sources — this module itself makes no network calls and
+adds no new dependencies or paid APIs. Every wired input is either passed in by
+the engine (which fetches through the project's existing cached paths) or left
+as a transparent *_NOT_AVAILABLE flag:
 
   * yfinance price snapshot the engine already computed (close / 52w high-low /
     20-day average volume) → 52-week drawdown, a liquidity flag, and — combined
@@ -12,11 +14,26 @@ adds no new dependencies or paid APIs:
   * EODHD/yfinance analyst upgrades-downgrades and short-interest dicts the hate
     stage already fetched (when enabled) → analyst-revision and short-interest
     flags.
-  * Sentiment (ApeWisdom/StockTwits) and FRED macro context are surfaced as
-    transparent *placeholders* only. Wiring those live would require network
-    calls from this layer / a larger refactor of the retail_sentiment and
-    alpha_regime engines, so they are intentionally deferred (see TODOs) rather
-    than faked.
+  * Commodity relative strength (PR6): candidate vs. commodity-proxy ETF close
+    series. The engine fetches the proxy series through its EXISTING yfinance
+    price cache (``_fetch_price_df``) — shared across all rows of a run — and
+    passes both close lists in here. The RS maths + classification live here as
+    pure functions so they are unit-testable with no network. Context only,
+    never a buy trigger → ``OUTPERFORMING_PROXY`` / ``LAGGING_PROXY`` /
+    ``RS_NEUTRAL`` / ``COMMODITY_RS_NOT_AVAILABLE``.
+  * Macro context (PR6): FRED T10Y2Y yield-curve snapshot. The engine fetches it
+    ONCE per run via the existing disk-cached ``ember.fred_cache`` helper and
+    passes the reading in. Classification is a pure function here →
+    ``COMMODITY_MACRO_TAILWIND`` / ``COMMODITY_MACRO_HEADWIND`` / ``MACRO_NEUTRAL``
+    / ``MACRO_CONTEXT_NOT_AVAILABLE``.
+  * Sentiment (ApeWisdom/StockTwits) attention: the *adapter/interface* is wired
+    and unit-tested (``classify_sentiment_attention`` → ``LOW_ATTENTION`` /
+    ``HYPE_RISK`` / ``NORMAL_ATTENTION`` / ``SENTIMENT_NOT_AVAILABLE``), but the
+    engine does NOT fetch it live: retail_sentiment fetches every source live via
+    a thread pool with no pure per-ticker cached accessor, so wiring it into the
+    scoring path would mean an uncontrolled network call / a larger refactor.
+    Left as a documented placeholder that lights up the moment a caller supplies
+    a sentiment dict (see TODO).
 
 Design constraints (mirror resource_scoring.py / CLAUDE.md):
   * Additive and universe-gated. engine.py calls this only when
@@ -26,7 +43,8 @@ Design constraints (mirror resource_scoring.py / CLAUDE.md):
     number. The single intentional penalty is genuinely-low liquidity.
   * The overlay score is kept *separate* from resource_composite. It never
     changes the deterministic PR3 composite math; it is "context/watchlist only,
-    not a buy trigger."
+    not a buy trigger." The PR6 RS/sentiment/macro readings are pure context —
+    they are surfaced as flags and do NOT feed resource_overlay_score.
 """
 from __future__ import annotations
 
@@ -59,6 +77,24 @@ _SHORT_ELEVATED = 8.0
 # Drawdown depth that marks a genuinely washed-out / contrarian name.
 _DEEP_DRAWDOWN_PCT = -50.0
 
+# Commodity relative-strength (PR6). RS = candidate %return − proxy %return over
+# ``_RS_WINDOW`` trading days. Bounds are deliberately wide: RS is context, not a
+# trigger, so only a clear divergence flips it off neutral.
+_RS_WINDOW = 60
+_RS_OUTPERFORM_PP = 5.0    # candidate ahead of proxy by ≥5pp → OUTPERFORMING_PROXY
+_RS_LAGGING_PP = -5.0      # candidate behind proxy by ≥5pp → LAGGING_PROXY
+
+# Sentiment attention (PR6). Composite/hype score thresholds (0-100) for the
+# contrarian reading: quiet names are constructive, crowded/hyped names warn.
+_SENTIMENT_HYPE_SCORE = 70.0
+_SENTIMENT_LOW_SCORE = 25.0
+_SENTIMENT_LOW_MSG_COUNT = 5.0   # very few messages → forgotten/low attention
+
+# Macro context (PR6). Yield-curve 4-week change thresholds mirror ember.regime
+# so the overlay and the Ember dashboard agree on what steepening/inverting is.
+_YC_TAILWIND_PP = 0.05     # T10Y2Y steepening > +0.05pp 4W → commodity tailwind
+_YC_HEADWIND_PP = -0.20    # T10Y2Y inverting < -0.20pp 4W → commodity headwind
+
 
 @dataclass
 class ExistingSourceOverlay:
@@ -67,11 +103,12 @@ class ExistingSourceOverlay:
     market_cap_bucket: str = "unknown"          # nano|micro|small|mid|large|unknown
     liquidity_flag: str = "UNKNOWN"             # OK|THIN|LOW|UNKNOWN
     drawdown_52w_pct: float | None = None       # % from 52-week high (<=0)
-    commodity_relative_strength: float | None = None  # placeholder (not wired)
+    commodity_relative_strength: float | None = None  # candidate−proxy %return (pp)
+    commodity_rs_flag: str = "COMMODITY_RS_NOT_AVAILABLE"  # OUTPERFORMING_PROXY|LAGGING_PROXY|RS_NEUTRAL|COMMODITY_RS_NOT_AVAILABLE
     short_interest_flag: str = "UNKNOWN"        # HIGH|ELEVATED|NORMAL|UNKNOWN
     analyst_revision_flag: str = "UNKNOWN"      # NET_DOWNGRADES|NET_UPGRADES|NEUTRAL|UNKNOWN
-    sentiment_attention_flag: str = "NOT_WIRED"     # placeholder
-    macro_context_flag: str = "NOT_WIRED"           # placeholder
+    sentiment_attention_flag: str = "SENTIMENT_NOT_AVAILABLE"  # LOW_ATTENTION|HYPE_RISK|NORMAL_ATTENTION|SENTIMENT_NOT_AVAILABLE
+    macro_context_flag: str = "MACRO_CONTEXT_NOT_AVAILABLE"     # COMMODITY_MACRO_TAILWIND|COMMODITY_MACRO_HEADWIND|MACRO_NEUTRAL|MACRO_CONTEXT_NOT_AVAILABLE
     resource_overlay_score: float = _OVERLAY_NEUTRAL  # 0-100, separate from composite
     existing_source_flags: list[str] = field(default_factory=list)
 
@@ -100,6 +137,138 @@ def _market_cap_bucket(mcap_usd: float | None) -> str:
     return "large"
 
 
+# ── Commodity relative strength (PR6) — pure, no network ──────────────────────
+
+def _window_return_pct(closes, window: int) -> float | None:
+    """
+    % price return over the last ``window`` trading days of a close series.
+
+    ``closes`` is oldest-first. Returns None when the series is missing, too
+    short, or the reference price is non-positive — never a fabricated number.
+    """
+    if not closes:
+        return None
+    seq = [c for c in (_opt_float(x) for x in closes) if c is not None and c > 0]
+    if len(seq) < window + 1:
+        return None
+    start = seq[-(window + 1)]
+    end = seq[-1]
+    if start <= 0:
+        return None
+    return (end - start) / start * 100.0
+
+
+def compute_commodity_rs(candidate_closes, proxy_closes, window: int = _RS_WINDOW) -> float | None:
+    """
+    Relative strength = candidate %return − commodity-proxy %return over
+    ``window`` trading days, in percentage points (rounded to 1dp).
+
+    Pure function: both close series are passed in (oldest-first). Returns None
+    when either series is unavailable/too short so the caller can flag it as
+    COMMODITY_RS_NOT_AVAILABLE rather than invent a reading.
+    """
+    cand = _window_return_pct(candidate_closes, window)
+    prox = _window_return_pct(proxy_closes, window)
+    if cand is None or prox is None:
+        return None
+    return round(cand - prox, 1)
+
+
+def classify_commodity_rs(rs: float | None) -> str:
+    """Categorical, context-only RS flag (never a buy trigger)."""
+    if rs is None:
+        return "COMMODITY_RS_NOT_AVAILABLE"
+    if rs >= _RS_OUTPERFORM_PP:
+        return "OUTPERFORMING_PROXY"
+    if rs <= _RS_LAGGING_PP:
+        return "LAGGING_PROXY"
+    return "RS_NEUTRAL"
+
+
+# ── Sentiment attention (PR6) — pure classifier over an injected dict ─────────
+
+_SENTIMENT_LABELS = {
+    "LOW_ATTENTION", "HYPE_RISK", "NORMAL_ATTENTION", "SENTIMENT_NOT_AVAILABLE",
+}
+
+
+def classify_sentiment_attention(sentiment: dict | None) -> str:
+    """
+    Contrarian retail-attention reading from an existing-source sentiment dict.
+
+    Low attention (a forgotten name) is constructive context; excessive hype is
+    a warning. Accepts an explicit label, a 0-100 composite/score, a hype flag,
+    or a raw message_count — whatever the caller already has. Missing/empty →
+    SENTIMENT_NOT_AVAILABLE. Pure: no network, no fabrication.
+    """
+    if not sentiment:
+        return "SENTIMENT_NOT_AVAILABLE"
+
+    label = str(sentiment.get("attention") or sentiment.get("label") or "").strip().upper()
+    if label in _SENTIMENT_LABELS:
+        return label
+
+    score = _opt_float(sentiment.get("composite_score"))
+    if score is None:
+        score = _opt_float(sentiment.get("score"))
+    if score is not None:
+        if score >= _SENTIMENT_HYPE_SCORE:
+            return "HYPE_RISK"
+        if score <= _SENTIMENT_LOW_SCORE:
+            return "LOW_ATTENTION"
+        return "NORMAL_ATTENTION"
+
+    if sentiment.get("hype") or sentiment.get("hype_alert"):
+        return "HYPE_RISK"
+
+    msg = _opt_float(sentiment.get("message_count"))
+    if msg is not None:
+        return "LOW_ATTENTION" if msg < _SENTIMENT_LOW_MSG_COUNT else "NORMAL_ATTENTION"
+
+    return "SENTIMENT_NOT_AVAILABLE"
+
+
+# ── Macro context (PR6) — pure classifier over an injected yield-curve dict ───
+
+_MACRO_LABELS = {
+    "COMMODITY_MACRO_TAILWIND", "COMMODITY_MACRO_HEADWIND",
+    "MACRO_NEUTRAL", "MACRO_CONTEXT_NOT_AVAILABLE",
+}
+
+
+def classify_macro_context(macro: dict | None) -> str:
+    """
+    Broad commodity macro reading from an existing-source macro dict.
+
+    Accepts an explicit label, an ember-style GREEN/AMBER/RED regime, or a raw
+    T10Y2Y 4-week change in percentage points. A steepening curve is a commodity
+    tailwind; a deepening inversion is a headwind. Missing/empty →
+    MACRO_CONTEXT_NOT_AVAILABLE. Pure: no network, no fabrication.
+    """
+    if not macro:
+        return "MACRO_CONTEXT_NOT_AVAILABLE"
+
+    label = str(macro.get("regime") or macro.get("label") or "").strip().upper()
+    if label in _MACRO_LABELS:
+        return label
+    if label == "GREEN":
+        return "COMMODITY_MACRO_TAILWIND"
+    if label == "RED":
+        return "COMMODITY_MACRO_HEADWIND"
+    if label == "AMBER":
+        return "MACRO_NEUTRAL"
+
+    change_4w = _opt_float(macro.get("t10y2y_change_4w"))
+    if change_4w is not None:
+        if change_4w > _YC_TAILWIND_PP:
+            return "COMMODITY_MACRO_TAILWIND"
+        if change_4w < _YC_HEADWIND_PP:
+            return "COMMODITY_MACRO_HEADWIND"
+        return "MACRO_NEUTRAL"
+
+    return "MACRO_CONTEXT_NOT_AVAILABLE"
+
+
 def enrich_resource_candidate(
     close: float = 0.0,
     high_52w: float = 0.0,
@@ -111,6 +280,9 @@ def enrich_resource_candidate(
     market_cap_usd: float | None = None,
     sentiment: dict | None = None,
     macro: dict | None = None,
+    candidate_closes: list | None = None,
+    proxy_closes: list | None = None,
+    rs_window: int = _RS_WINDOW,
 ) -> ExistingSourceOverlay:
     """
     Build an ExistingSourceOverlay from data the pipeline already has in hand.
@@ -197,32 +369,32 @@ def enrich_resource_candidate(
         ov.analyst_revision_flag = "UNKNOWN"
         flags.append("ANALYST_DATA_MISSING")
 
-    # ── Commodity relative strength — placeholder (not wired in PR5) ───────────
-    # TODO: a real RS reading needs the commodity-proxy ETF price series
-    # (alpha_regime.commodity_ratios), which is a network fetch — deferred to
-    # keep this layer pure/testable. commodity_proxy metadata already ships on
-    # the resource composite for future use.
-    ov.commodity_relative_strength = None
-    flags.append("COMMODITY_RS_NOT_AVAILABLE")
+    # ── Commodity relative strength (PR6) ──────────────────────────────────────
+    # Candidate vs. commodity-proxy ETF return over rs_window. The engine passes
+    # both close series (fetched through its existing yfinance price cache); the
+    # maths/classification here are pure. Context only — never a buy trigger.
+    ov.commodity_relative_strength = compute_commodity_rs(
+        candidate_closes, proxy_closes, window=rs_window
+    )
+    ov.commodity_rs_flag = classify_commodity_rs(ov.commodity_relative_strength)
+    flags.append(ov.commodity_rs_flag)
 
-    # ── Sentiment attention — placeholder (not wired in PR5) ───────────────────
-    # TODO: reuse retail_sentiment (ApeWisdom/StockTwits) attention/neglect once a
-    # pure, cached per-ticker accessor exists; today its engine fetches live.
-    if sentiment:
-        attention = str(sentiment.get("attention") or sentiment.get("label") or "").upper()
-        ov.sentiment_attention_flag = attention or "UNKNOWN"
-    else:
-        ov.sentiment_attention_flag = "NOT_WIRED"
-        flags.append("SENTIMENT_NOT_WIRED")
+    # ── Sentiment attention (PR6) ──────────────────────────────────────────────
+    # Adapter is wired + tested: a caller-supplied sentiment dict is classified
+    # into a contrarian attention flag. The engine does NOT fetch it live (no
+    # pure per-ticker cached retail_sentiment accessor → would be an uncontrolled
+    # network call / larger refactor), so in the live pipeline this stays
+    # SENTIMENT_NOT_AVAILABLE. TODO: wire once such an accessor exists.
+    ov.sentiment_attention_flag = classify_sentiment_attention(sentiment)
+    if ov.sentiment_attention_flag == "SENTIMENT_NOT_AVAILABLE":
+        flags.append("SENTIMENT_NOT_AVAILABLE")
 
-    # ── Macro context — placeholder (not wired in PR5) ─────────────────────────
-    # TODO: reuse FRED yield-curve / real-rate context (data_health / alpha_regime)
-    # once a lightweight cached accessor is exposed.
-    if macro:
-        ov.macro_context_flag = str(macro.get("regime") or macro.get("label") or "UNKNOWN").upper()
-    else:
-        ov.macro_context_flag = "NOT_WIRED"
-        flags.append("MACRO_CONTEXT_NOT_WIRED")
+    # ── Macro context (PR6) ────────────────────────────────────────────────────
+    # Broad commodity-macro reading from the FRED T10Y2Y yield-curve snapshot the
+    # engine fetches once per run via the existing ember.fred_cache disk cache.
+    ov.macro_context_flag = classify_macro_context(macro)
+    if ov.macro_context_flag == "MACRO_CONTEXT_NOT_AVAILABLE":
+        flags.append("MACRO_CONTEXT_NOT_AVAILABLE")
 
     # ── Overlay score — cautious, from clean signals only ──────────────────────
     # Contrarian nudges: deep drawdown, high short interest and net analyst

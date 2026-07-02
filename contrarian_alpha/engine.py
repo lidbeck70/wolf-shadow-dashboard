@@ -210,11 +210,12 @@ class ContrairianAlphaResult:
     market_cap_bucket:         str         = ""    # nano|micro|small|mid|large|unknown
     liquidity_flag:            str         = ""    # OK|THIN|LOW|UNKNOWN
     drawdown_52w_pct:          float | None = None
-    commodity_relative_strength: float | None = None  # placeholder (not wired)
+    commodity_relative_strength: float | None = None  # candidate−proxy %return (pp)
+    commodity_rs_flag:         str         = ""    # OUTPERFORMING_PROXY|LAGGING_PROXY|RS_NEUTRAL|COMMODITY_RS_NOT_AVAILABLE
     short_interest_flag:       str         = ""    # HIGH|ELEVATED|NORMAL|UNKNOWN
     analyst_revision_flag:     str         = ""    # NET_DOWNGRADES|NET_UPGRADES|NEUTRAL|UNKNOWN
-    sentiment_attention_flag:  str         = ""    # placeholder
-    macro_context_flag:        str         = ""    # placeholder
+    sentiment_attention_flag:  str         = ""    # LOW_ATTENTION|HYPE_RISK|NORMAL_ATTENTION|SENTIMENT_NOT_AVAILABLE (placeholder in live pipeline)
+    macro_context_flag:        str         = ""    # COMMODITY_MACRO_TAILWIND|COMMODITY_MACRO_HEADWIND|MACRO_NEUTRAL|MACRO_CONTEXT_NOT_AVAILABLE
     existing_source_flags:     list[str]   = field(default_factory=list)
 
     # Price snapshot (for UI display)
@@ -873,12 +874,59 @@ def _apply_resource_composite(
 # network calls of its own, adds no dependencies, and is kept SEPARATE from
 # resource_composite — it never changes the PR3 composite math.
 
+def _closes_from_df(df) -> list[float]:
+    """Oldest-first Close list from an OHLCV DataFrame; [] when unavailable."""
+    if df is None:
+        return []
+    try:
+        if getattr(df, "empty", True):
+            return []
+        col = "Close" if "Close" in df.columns else ("close" if "close" in df.columns else None)
+        if col is None:
+            return []
+        return [float(v) for v in df[col].dropna().tolist()]
+    except Exception:
+        return []
+
+
+def _fetch_resource_macro_context(api=None) -> dict | None:
+    """
+    Fetch the FRED T10Y2Y yield-curve reading ONCE per run via the project's
+    existing disk-cached helper (ember.fred_cache). Returns a plain dict
+    {"t10y2y", "t10y2y_change_4w"} for classify_macro_context, or None on any
+    failure so the overlay falls back to MACRO_CONTEXT_NOT_AVAILABLE.
+
+    This is the single controlled, cached macro network touch of a run — never
+    called from the pure scoring helpers or from tests.
+    """
+    try:
+        from ember.fred_cache import fetch_t10y2y_values
+        try:
+            from ember.config import FRED_T10Y2Y_URL
+        except Exception:
+            FRED_T10Y2Y_URL = (
+                "https://fred.stlouisfed.org/graph/fredgraph.csv?id=T10Y2Y"
+            )
+        vals, _is_stale = fetch_t10y2y_values(FRED_T10Y2Y_URL)
+        if not vals or len(vals) < 25:
+            return None
+        current = float(vals[-1])
+        change_4w = current - float(vals[-21])   # ~20 business days ≈ 4 weeks
+        return {"t10y2y": round(current, 3), "t10y2y_change_4w": round(change_4w, 3)}
+    except Exception as e:
+        logger.debug("resource macro context unavailable: %s", e)
+        return None
+
+
 def _apply_existing_source_overlay(
     result: "ContrairianAlphaResult",
     inst_info: dict,
     fund_snap: dict,
     analyst_dict: dict | None,
     short_dict: dict | None,
+    price_df=None,
+    api=None,
+    macro_context: dict | None = None,
 ) -> None:
     """Populate result.resource_overlay_score + overlay flags (in place)."""
     from contrarian_alpha.existing_source_enrichment import enrich_resource_candidate
@@ -888,15 +936,33 @@ def _apply_existing_source_overlay(
     # only when present so the overlay falls back to a flagged CSV estimate.
     mcap = fund_snap.get("market_cap") if fund_snap else None
 
+    # Commodity relative strength: candidate close series (already fetched) vs.
+    # the commodity-proxy ETF series (first symbol of the proxy metadata the
+    # resource composite attached), fetched through the SAME cached yfinance path
+    # so repeat proxies across the run cost one network call each.
+    candidate_closes = _closes_from_df(price_df)
+    proxy_closes: list[float] = []
+    proxy_field = (result.commodity_proxy or "").strip()
+    if candidate_closes and proxy_field:
+        proxy_ticker = proxy_field.split(",")[0].strip()
+        if proxy_ticker:
+            try:
+                proxy_closes = _closes_from_df(_fetch_price_df(proxy_ticker, None, api))
+            except Exception as e:
+                logger.debug("proxy price fetch failed for %s: %s", proxy_ticker, e)
+
     ov = enrich_resource_candidate(
-        close          = result.close,
-        high_52w       = result.high_52w,
-        low_52w        = result.low_52w,
-        avg_volume_20d = result.avg_volume_20d,
-        meta           = meta,
-        analyst_data   = analyst_dict,
-        short_data     = short_dict,
-        market_cap_usd = mcap,
+        close            = result.close,
+        high_52w         = result.high_52w,
+        low_52w          = result.low_52w,
+        avg_volume_20d   = result.avg_volume_20d,
+        meta             = meta,
+        analyst_data     = analyst_dict,
+        short_data       = short_dict,
+        market_cap_usd   = mcap,
+        macro            = macro_context,
+        candidate_closes = candidate_closes,
+        proxy_closes     = proxy_closes,
     )
 
     result.resource_overlay_score      = ov.resource_overlay_score
@@ -904,6 +970,7 @@ def _apply_existing_source_overlay(
     result.liquidity_flag              = ov.liquidity_flag
     result.drawdown_52w_pct            = ov.drawdown_52w_pct
     result.commodity_relative_strength = ov.commodity_relative_strength
+    result.commodity_rs_flag           = ov.commodity_rs_flag
     result.short_interest_flag         = ov.short_interest_flag
     result.analyst_revision_flag       = ov.analyst_revision_flag
     result.sentiment_attention_flag    = ov.sentiment_attention_flag
@@ -923,6 +990,7 @@ def _run_single_ticker(
     sector_name:  str,
     config:       PipelineConfig,
     api,
+    resource_macro_context: dict | None = None,
 ) -> ContrairianAlphaResult:
     """
     Run the full 4-stage pipeline for a single instrument.
@@ -1256,9 +1324,12 @@ def _run_single_ticker(
     # enter this branch (no stage), so their composite/output is unchanged.
     if _is_resource and result.stage:
         _apply_resource_composite(result, inst_info, fund_snap)
-        # PR5 existing-source overlay (context/watchlist only, separate score).
+        # PR5/PR6 existing-source overlay (context/watchlist only, separate
+        # score). Commodity RS uses the candidate + proxy close series; macro
+        # uses the once-per-run FRED reading passed down from run_pipeline.
         _apply_existing_source_overlay(
-            result, inst_info, fund_snap, analyst_dict, short_dict
+            result, inst_info, fund_snap, analyst_dict, short_dict,
+            price_df=price_df, api=api, macro_context=resource_macro_context,
         )
 
     return result
@@ -1511,6 +1582,13 @@ def run_pipeline(config: PipelineConfig | None = None) -> PipelineResult:
 
     delisted_skipped = _pre_run_in_universe + (_delisted_count() - _pre_run_total)
 
+    # ── Resource macro context (PR6): fetch the FRED yield-curve reading ONCE
+    # per run (only for the resource universe) via the existing cached helper.
+    # Shared by every candidate's existing-source overlay; None → NOT_AVAILABLE.
+    resource_macro_context: dict | None = None
+    if config.universe == "us_ca_resource":
+        resource_macro_context = _fetch_resource_macro_context(api)
+
     # ── Pipeline: run per ticker ───────────────────────────────────────────────
     passing:   list[ContrairianAlphaResult] = []
     eliminated: list[ContrairianAlphaResult] = []
@@ -1539,6 +1617,7 @@ def run_pipeline(config: PipelineConfig | None = None) -> PipelineResult:
                 sector_name = u["sector_name"],
                 config      = config,
                 api         = api,
+                resource_macro_context = resource_macro_context,
             )
         except Exception as e:
             logger.warning("Pipeline error for %s: %s", ticker, e)
