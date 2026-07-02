@@ -354,25 +354,28 @@ def _render_control_panel() -> tuple[dict, bool]:
 
     # ── US/CA Resource: guardrails + composite v1 + enrichment v1 (PR2/PR3/PR4) ──
     if market == "US/CA Resource":
-        st.warning(
-            "**US/CA Resource — resurs-composite v1 + enrichment v1 aktiv (PR4).** "
-            "Statiskt resurs-universum (US/Kanada, Rick Rule / Eric Sprott-stil) fran "
-            "`config/universes/us_ca_resource.csv`. Stage-medvetna skyddsrackor (PR2) "
-            "elimineras inte langre explorers/developers eller rader som saknar "
-            "Borsdata-fundamenta. Resurs-composite (PR3) blandar survival/cash-runway, "
-            "dilution, jurisdiktion och commodity-necessity med stage-baserade vikter, "
-            "separat fran det nordiska composite-scoret. **Nytt i PR4:** ett latt "
-            "enrichment-lager (jurisdiktion/projekt-region dar det ar rimligt kant) "
-            "plus en data-kvalitetsindikator (HIGH/MEDIUM/LOW), fardhetsflaggor for "
-            "`data_as_of` (DATA_AS_OF_MISSING/STALE/INVALID) och commodity-proxy-"
-            "metadata (t.ex. uranium->URNM/URA) for framtida RS/regim-arbete. "
-            "**Detta ar resurs-scoring v1 — INTE en kopsignal; endast watchlist/"
-            "ranking.** **Tomma falt = saknas/needs_validation, INTE en negativ "
-            "signal** — inga siffror hittas pa (ingen pahittad precision). Riktig "
-            "finansdata (FMP/GoldStockData), NAV/resurs-ounces, insider-agande och "
-            "commodity/regim-triggers kommer i senare PR.",
-            icon="🛡️",
+        st.caption(
+            "🛡️ **US/CA Resource** — statiskt resurs-universum · resurs-scoring v1 "
+            "(watchlist/ranking, **ej köpsignal**). Tomma fält = saknas/"
+            "needs_validation, **ej** negativ signal."
         )
+        with st.expander("Om resurs-scoring (PR2–PR6)", expanded=False):
+            st.markdown(
+                "Statiskt US/Kanada-universum (Rick Rule / Eric Sprott-stil) från "
+                "`config/universes/us_ca_resource.csv`.\n\n"
+                "- **Stage-guardrails (PR2):** explorers/developers och rader utan "
+                "Börsdata-fundamenta elimineras inte — necessity/balansräknings-"
+                "grindarna avväpnas för det kurerade råvaru-universumet.\n"
+                "- **Resurs-composite (PR3):** blandar survival/cash-runway, dilution, "
+                "jurisdiktion och commodity-necessity med stage-vikter, separat från "
+                "det nordiska composite-scoret.\n"
+                "- **Enrichment (PR4):** datakvalitet (HIGH/MEDIUM/LOW), `data_as_of`-"
+                "flaggor och commodity-proxy-metadata (t.ex. uranium→URNM/URA).\n"
+                "- **Existing-source overlay (PR5/PR6):** likviditet, drawdown, "
+                "commodity-RS, short/analytiker och FRED-makro från befintliga källor.\n\n"
+                "Riktig finansdata (FMP/GoldStockData), NAV/resurs-ounces, insider-"
+                "ägande och commodity/regim-triggers kommer i senare PR."
+            )
 
     custom_tickers: list[str] = []
     if market == "Custom":
