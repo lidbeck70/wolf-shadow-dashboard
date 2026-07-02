@@ -144,7 +144,7 @@ LONGTERM_RULES: list[dict] = [
         "number": 9,
         "text": "Max 10% per aktie",
         "explanation": "Ingen enskild position får dominera.",
-        "panel_guide": "SCREENER → Alpha Screener: STRONG BUY = allokera 10%. BUY = allokera 7%. Aldrig mer oavsett hur bra det ser ut.",
+        "panel_guide": "SCREENER → Alpha Screener: högsta ranking = allokera max 10%. Lägre ranking = allokera max 7%. Aldrig mer oavsett hur bra det ser ut.",
     },
     {
         "number": 10,
