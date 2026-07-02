@@ -71,6 +71,11 @@ _MARKETS = {
                      "FCX","NEM","GOLD","WPM","UUUU","CCJ","XOM","CVX",
                      "RIO","BHP","VALE","AA","CLF","MP","LTHM",
                  ]},
+    # PR1 foundation: static US/CA resource universe (Rick Rule / Eric Sprott style).
+    # Loads config/universes/us_ca_resource.csv. Scoring is NOT yet stage-aware,
+    # so the Nordic fundamental grinds still apply (see warning in control panel).
+    "US/CA Resource": {"market_ids": [], "include_global": False,
+                       "universe": "us_ca_resource"},
     "Custom":   {"market_ids": [], "include_global": False},
 }
 
@@ -345,6 +350,20 @@ def _render_control_panel() -> tuple[dict, bool]:
                 "Quality — ROIC>15%, Quality-vikt 30%, Hat-vikt 20%.\n"
                 "Deep Contrarian — ROIC>10%, Hat-vikt 30%, Quality-vikt 20%."
             ),
+        )
+
+    # ── US/CA Resource: pre-alpha warning (scoring not yet stage-aware) ──────
+    if market == "US/CA Resource":
+        st.warning(
+            "**US/CA Resource — foundation / pre-alpha.** Detta ar ett statiskt "
+            "resurs-universum (US/Kanada, Rick Rule / Eric Sprott-stil) som laddas "
+            "fran `config/universes/us_ca_resource.csv`. Scoringen ar **annu inte "
+            "stage-medveten** — de nordiska fundamentala grindarna (FCF>0, ROIC, "
+            "skuldsattning m.m.) ar fortfarande aktiva. Producenter kan klara sig, "
+            "men explorers/developers/royalties filtreras sannolikt bort. En tom "
+            "eller kort lista ar darfor vantat tills stage-medveten scoring laggs "
+            "till (PR2). Se elimineringsanalysen nedan for detaljer.",
+            icon="⚠️",
         )
 
     custom_tickers: list[str] = []

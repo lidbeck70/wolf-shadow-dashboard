@@ -115,6 +115,9 @@ class PipelineConfig:
     mode: str = "quality"
 
     # Universe
+    # "nordic"         → Börsdata Nordic instruments (default, unchanged behavior)
+    # "us_ca_resource" → static US/CA resource CSV (PR1 foundation, no scoring change)
+    universe: str = "nordic"
     market_ids: list[int] = field(default_factory=lambda: list(ALL_NORDIC_MARKETS))
     # All Nordic: SE Large/Mid/Small/First North/Spotlight/NGM, NO, FI, DK, all exchanges
     include_global: bool   = False   # Requires Börsdata Pro+ global licence
@@ -986,6 +989,50 @@ def _build_universe(config: PipelineConfig, api) -> list[dict]:
     """
     universe: list[dict] = []
     seen_ids: set[int] = set()
+
+    # ── Static US/CA resource universe (PR1 foundation) ───────────────────────
+    # Does NOT touch Börsdata Nordic scoring. yfinance ticker symbols only;
+    # ins_id stays None so fundamentals fall back gracefully. Stage/commodity
+    # metadata is attached to inst_info for future stage-aware scoring (PR2).
+    if config.universe == "us_ca_resource":
+        from contrarian_alpha.universe_static import load_resource_universe
+        # Country → Börsdata-compatible marketId for _MARKET_NAME display only.
+        _country_market = {"US": 11, "CA": 12}
+        records = load_resource_universe()   # may raise; caller surfaces the error
+        for rec in records:
+            yf_ticker = rec.yf_ticker or rec.ticker
+            if yf_ticker in {u["ticker"] for u in universe}:
+                continue
+            inst_info = {
+                "name": rec.name,
+                "marketId": _country_market.get(rec.country, 11),
+                "instrumentType": 1,
+                "resource_meta": rec.to_metadata(),
+                "stage": rec.stage,
+                "primary_commodity": rec.primary_commodity,
+                "secondary_commodity": rec.secondary_commodity,
+                "exchange": rec.exchange,
+                "country": rec.country,
+                "yf_ticker": yf_ticker,
+            }
+            universe.append({
+                "ticker":      yf_ticker,
+                "ins_id":      None,
+                "inst_info":   inst_info,
+                "branch_name": "",
+                "sector_name": "",
+            })
+        # Still honour any manual tickers as a supplement.
+        for t in config.manual_tickers:
+            if t not in {u["ticker"] for u in universe}:
+                universe.append({
+                    "ticker":      t,
+                    "ins_id":      None,
+                    "inst_info":   {"name": t, "marketId": 11, "instrumentType": 1},
+                    "branch_name": "",
+                    "sector_name": "",
+                })
+        return universe
 
     if api is not None and api.is_configured:
         try:
