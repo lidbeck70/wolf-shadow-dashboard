@@ -833,7 +833,10 @@ def _render_detail_card(r) -> None:
             _dd = getattr(r, "drawdown_52w_pct", None)
             _dd_disp = f"{_dd:.1f}%" if _dd is not None else "—"
             _crs = getattr(r, "commodity_relative_strength", None)
-            _crs_disp = f"{_crs:.1f}" if _crs is not None else "—"
+            _crs_flag = getattr(r, "commodity_rs_flag", "") or "—"
+            _crs_disp = (
+                f"{_crs:+.1f}pp · {_crs_flag}" if _crs is not None else _crs_flag
+            )
             _si = getattr(r, "short_interest_flag", "") or "—"
             _ar = getattr(r, "analyst_revision_flag", "") or "—"
             _sa = getattr(r, "sentiment_attention_flag", "") or "—"
@@ -851,8 +854,10 @@ def _render_detail_card(r) -> None:
                 f'· Market cap: <b>{_mcap}</b> · Likviditet: <b>{_liq}</b><br>'
                 f'52v drawdown: <b>{_dd_disp}</b> · Commodity RS: <b>{_crs_disp}</b><br>'
                 f'Short interest: <b>{_si}</b> · Analytiker: <b>{_ar}</b><br>'
-                f'Sentiment: <b>{_sa}</b> · Makro: <b>{_mac}</b> '
-                f'<span style="color:{P["text_dim"]}">(platshållare)</span><br>'
+                f'Makro: <b>{_mac}</b> '
+                f'<span style="color:{P["text_dim"]}">(FRED räntekurva)</span><br>'
+                f'Sentiment: <b>{_sa}</b> '
+                f'<span style="color:{P["text_dim"]}">(adapter klar · ej live-hämtad)</span><br>'
                 f'OverlayFlags: {_es_disp}<br>'
                 f'<span style="color:{P["text_dim"]}">Befintliga källor (yfinance/'
                 f'EODHD/CSV). Saknad data = flagga, ej negativ signal.</span>'
