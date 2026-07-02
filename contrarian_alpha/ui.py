@@ -352,18 +352,19 @@ def _render_control_panel() -> tuple[dict, bool]:
             ),
         )
 
-    # ── US/CA Resource: pre-alpha warning (scoring not yet stage-aware) ──────
+    # ── US/CA Resource: stage-aware guardrails active (PR2) ──────────────────
     if market == "US/CA Resource":
         st.warning(
-            "**US/CA Resource — foundation / pre-alpha.** Detta ar ett statiskt "
-            "resurs-universum (US/Kanada, Rick Rule / Eric Sprott-stil) som laddas "
-            "fran `config/universes/us_ca_resource.csv`. Scoringen ar **annu inte "
-            "stage-medveten** — de nordiska fundamentala grindarna (FCF>0, ROIC, "
-            "skuldsattning m.m.) ar fortfarande aktiva. Producenter kan klara sig, "
-            "men explorers/developers/royalties filtreras sannolikt bort. En tom "
-            "eller kort lista ar darfor vantat tills stage-medveten scoring laggs "
-            "till (PR2). Se elimineringsanalysen nedan for detaljer.",
-            icon="⚠️",
+            "**US/CA Resource — stage-medvetna skyddsrackor aktiva (PR2).** Statiskt "
+            "resurs-universum (US/Kanada, Rick Rule / Eric Sprott-stil) fran "
+            "`config/universes/us_ca_resource.csv`. De nordiska fundamentala grindarna "
+            "(FCF>0, EBITDA-marginal, Altman Z, ROIC) elimineras **inte langre** "
+            "explorers/developers eller rader som bara saknar Borsdata-fundamenta — "
+            "de omvandlas till flaggor (PRE_REVENUE, NO_FCF_EXPECTED, "
+            "ROIC_NOT_APPLICABLE m.fl.). Fullstandig resurs-scoring "
+            "(survival/cash runway, dilution, jurisdiktion, stage-vikter, "
+            "commodity/regim-triggers) kommer i PR3.",
+            icon="🛡️",
         )
 
     custom_tickers: list[str] = []
@@ -771,6 +772,26 @@ def _render_detail_card(r) -> None:
                 f'font-family:\'Courier New\',monospace;font-size:11px;font-weight:700;'
                 f'letter-spacing:0.18em;color:{P["gold"]};text-align:center">'
                 f'★ KAP SCREENED</div>',
+                unsafe_allow_html=True,
+            )
+
+        # Resource stage guardrail transparency (us_ca_resource only)
+        _stage = getattr(r, "stage", "")
+        if _stage:
+            _commodity = getattr(r, "primary_commodity", "") or "—"
+            _gate_mode = getattr(r, "resource_gate_mode", "") or "—"
+            _res_flags = getattr(r, "resource_flags", []) or []
+            _flags_disp = ", ".join(_res_flags) if _res_flags else "inga"
+            st.markdown(
+                f'<div style="background:{P["surface"]};border:1px solid {P["border"]};'
+                f'border-radius:6px;padding:8px 12px;margin-bottom:12px;'
+                f'font-family:\'Courier New\',monospace;font-size:10px;'
+                f'color:{P["text_dim"]}">'
+                f'<b style="color:{P["text"]}">RESURS-METADATA</b><br>'
+                f'Stage: <b>{_stage}</b> · Commodity: <b>{_commodity}</b><br>'
+                f'GateMode: <b>{_gate_mode}</b><br>'
+                f'ResourceFlags: {_flags_disp}'
+                f'</div>',
                 unsafe_allow_html=True,
             )
 
