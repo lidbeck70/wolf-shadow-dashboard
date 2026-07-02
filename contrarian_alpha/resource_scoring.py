@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from datetime import date, datetime
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +83,77 @@ _STRATEGIC_COMMODITIES = {
     "critical minerals", "nickel", "cobalt", "graphite",
     "gold", "silver", "oil", "oil & gas", "gas", "natural gas", "energy",
 }
+
+
+# ─── Commodity proxy map (PR4 metadata only) ──────────────────────────────────
+# Maps a primary commodity to liquid ETF/index proxies for *future* relative-
+# strength / commodity-regime checks. This is metadata ONLY in PR4 — it is not a
+# buy trigger and does not influence resource_composite. Keys cover both the
+# spaced ("oil & gas") and underscored ("oil_gas") CSV spellings.
+
+_COMMODITY_PROXY: dict[str, list[str]] = {
+    "uranium": ["URNM", "URA"],
+    "gold": ["GLD", "GDX"],
+    "silver": ["SLV", "SIL"],
+    "copper": ["COPX", "CPER"],
+    "lithium": ["LIT"],
+    "rare earth": ["REMX"], "rare earths": ["REMX"], "rare_earth": ["REMX"],
+    "nickel": ["JJN"],
+    "cobalt": ["BATT"],
+    "graphite": ["BATT"],
+    "oil": ["XLE", "USO"], "oil & gas": ["XLE", "USO"], "oil_gas": ["XLE", "USO"],
+    "gas": ["UNG"], "natural gas": ["UNG"], "natural_gas": ["UNG"],
+    "energy": ["XLE"],
+    "potash": ["MOO"], "phosphate": ["MOO"],
+    "iron_ore": ["XME"], "iron ore": ["XME"], "steel": ["SLX"],
+    "aluminum": ["XME"], "zinc": ["XME"], "coal": ["KOL"],
+    "pgm": ["PPLT"], "platinum": ["PPLT"], "palladium": ["PALL"],
+}
+
+
+def commodity_proxy(primary: str, secondary: str = "") -> str:
+    """
+    Return a comma-joined ETF/index proxy string for a commodity, e.g.
+    "URNM,URA" for uranium. Empty string when no proxy is known. Metadata only —
+    reserved for future RS/regime work; not a signal in PR4.
+    """
+    for token in ((primary or ""), (secondary or "")):
+        key = token.strip().lower()
+        if key in _COMMODITY_PROXY:
+            return ",".join(_COMMODITY_PROXY[key])
+    return ""
+
+
+# ─── Data-freshness / staleness (PR4) ─────────────────────────────────────────
+# Enrichment carries an optional data_as_of date. We flag missing / malformed /
+# stale dates transparently but never let them alter the composite math — they
+# feed the resource_data_quality label and confidence only.
+
+_DATA_AS_OF_STALE_DAYS = 365  # fundamentals older than ~1y are treated as stale
+
+
+def score_data_freshness(
+    meta: dict, today: date | None = None,
+) -> tuple[str, list[str]]:
+    """
+    Inspect meta['data_as_of'] and return (data_as_of_normalized, flags).
+
+    Flags: DATA_AS_OF_MISSING (blank), DATA_AS_OF_INVALID (unparseable),
+    DATA_AS_OF_STALE (older than _DATA_AS_OF_STALE_DAYS). `today` is injectable
+    for deterministic tests; defaults to date.today().
+    """
+    raw = str(meta.get("data_as_of") or "").strip()
+    if not raw:
+        return "", ["DATA_AS_OF_MISSING"]
+    try:
+        parsed = datetime.strptime(raw, "%Y-%m-%d").date()
+    except ValueError:
+        return raw, ["DATA_AS_OF_INVALID"]
+
+    ref = today or date.today()
+    if (ref - parsed).days > _DATA_AS_OF_STALE_DAYS:
+        return raw, ["DATA_AS_OF_STALE"]
+    return raw, []
 
 
 # ─── Jurisdiction map ─────────────────────────────────────────────────────────
@@ -164,6 +236,10 @@ class ResourceScore:
     commodity_score: float = _COMMODITY_DEFAULT
     resource_confidence: float = 0.0    # 0-1 mean of factor confidences
     stage_profile: str = "_default"     # which weight table was used
+    # PR4 transparency metadata (do not affect composite math).
+    resource_data_quality: str = "LOW"  # HIGH | MEDIUM | LOW
+    commodity_proxy: str = ""           # ETF/index proxies, reserved for RS/regime
+    data_as_of: str = ""                # normalized enrichment date (may be blank)
     flags: list[str] = field(default_factory=list)
 
 
@@ -347,6 +423,7 @@ def compute_resource_composite(
     catalyst_score: float = 0.0,
     quality_score: float | None = None,
     value_score: float | None = None,
+    today: date | None = None,
 ) -> ResourceScore:
     """
     Blend resource-specific factors (survival, dilution, jurisdiction, commodity)
@@ -405,12 +482,32 @@ def compute_resource_composite(
     if resource_confidence < 0.5 and "LOW_DATA_CONFIDENCE" not in flags:
         flags.append("LOW_DATA_CONFIDENCE")
 
-    # ── Commodity/regime trigger — deferred (PR4) ─────────────────────────────
-    # A lightweight commodity-ratio / alpha_regime context flag (e.g. gold vs
-    # gold-miners, uranium spot regime) would live here. The existing pipeline
-    # exposes an OVTLYR Viking regime per-ticker but no commodity-level ratio
-    # signal that can be reused without a larger refactor, so we intentionally
-    # leave a placeholder rather than overbuild. See PR3 brief / CLAUDE.md.
+    # ── Data-freshness transparency (PR4) ─────────────────────────────────────
+    # data_as_of staleness/validity feeds flags + the data-quality label only;
+    # it never alters the composite math above (kept deterministic/reviewable).
+    data_as_of, fresh_flags = score_data_freshness(meta, today=today)
+    for f in fresh_flags:
+        if f not in flags:
+            flags.append(f)
+
+    # ── Commodity/regime proxy — metadata only (PR4) ──────────────────────────
+    # Map the commodity to ETF/index proxies for *future* relative-strength /
+    # commodity-regime checks. Surfaced as metadata; NOT a buy trigger in PR4.
+    # A true commodity-ratio / alpha_regime signal remains deferred — the
+    # pipeline exposes a per-ticker OVTLYR Viking regime but no commodity-level
+    # ratio that can be reused without a larger refactor.
+    proxy = commodity_proxy(primary_commodity, secondary_commodity)
+
+    # ── Data-quality label (PR4) ──────────────────────────────────────────────
+    # Coarse, deterministic rollup of confidence + freshness for the UI. Blank
+    # enrichment => LOW, never a negative score; this is transparency, not a gate.
+    _stale = bool({"DATA_AS_OF_STALE", "DATA_AS_OF_INVALID"} & set(fresh_flags))
+    if resource_confidence >= 0.8 and not _stale and "DATA_AS_OF_MISSING" not in fresh_flags:
+        data_quality = "HIGH"
+    elif resource_confidence >= 0.5 and not _stale:
+        data_quality = "MEDIUM"
+    else:
+        data_quality = "LOW"
 
     return ResourceScore(
         resource_composite=round(composite, 2),
@@ -420,5 +517,8 @@ def compute_resource_composite(
         commodity_score=commodity,
         resource_confidence=resource_confidence,
         stage_profile=profile_key,
+        resource_data_quality=data_quality,
+        commodity_proxy=proxy,
+        data_as_of=data_as_of,
         flags=flags,
     )

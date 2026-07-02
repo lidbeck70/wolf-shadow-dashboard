@@ -199,6 +199,10 @@ class ContrairianAlphaResult:
     commodity_score:     float      = 0.0
     resource_confidence: float      = 0.0  # 0-1 data-quality confidence
     resource_stage_profile: str     = ""   # stage weight table used
+    # Resource enrichment transparency (PR4; us_ca_resource only)
+    resource_data_quality: str      = ""   # HIGH|MEDIUM|LOW (blank for Nordic)
+    commodity_proxy:      str        = ""   # ETF/index proxies (metadata only)
+    resource_data_as_of:  str        = ""   # enrichment date (may be blank)
 
     # Price snapshot (for UI display)
     close:     float = 0.0
@@ -839,6 +843,9 @@ def _apply_resource_composite(
     result.commodity_score        = rs.commodity_score
     result.resource_confidence    = rs.resource_confidence
     result.resource_stage_profile = rs.stage_profile
+    result.resource_data_quality  = rs.resource_data_quality
+    result.commodity_proxy        = rs.commodity_proxy
+    result.resource_data_as_of    = rs.data_as_of
 
     for f in rs.flags:
         if f not in result.resource_flags:

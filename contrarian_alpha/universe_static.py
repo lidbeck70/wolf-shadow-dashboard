@@ -13,13 +13,22 @@ CSV schema (config/universes/us_ca_resource.csv):
     ticker,yf_ticker,name,exchange,country,stage,primary_commodity,
     secondary_commodity,notes
 
-Optional enrichment columns (read if present, ignored otherwise — PR3):
+Optional enrichment columns (read if present, ignored otherwise — PR3/PR4):
     jurisdiction              fine-grained region (e.g. "Quebec", "Nevada")
+    project_region            flagship project/basin (e.g. "Athabasca Basin")
     cash_musd                 cash on hand, millions USD
     quarterly_burn_musd       cash burn per quarter, millions USD
     debt_musd                 total debt, millions USD
     shares_out_m              shares outstanding, millions
     shares_yoy_growth_pct     YoY share-count growth %
+    resource_notes            free-text data-quality notes (e.g. "needs_validation")
+    data_source               provenance of the enrichment (e.g. "manual", "FMP")
+    data_as_of                YYYY-MM-DD date the enrichment reflects
+
+PR4 note: enrichment is intentionally sparse. Financial fields are left blank
+(with resource_notes="needs_validation") rather than fabricated; a blank field
+means "missing / needs validation", never a negative signal. Populate only from
+paid-data/API integration in a later PR.
 """
 from __future__ import annotations
 
@@ -47,8 +56,9 @@ VALID_STAGES = {"producer", "developer", "explorer", "royalty", "energy", "servi
 # Optional enrichment columns consumed by resource_scoring.py (PR3). Absent =>
 # missing-data flags + neutral scores; never fabricated.
 _OPTIONAL_COLUMNS = (
-    "jurisdiction", "cash_musd", "quarterly_burn_musd", "debt_musd",
-    "shares_out_m", "shares_yoy_growth_pct",
+    "jurisdiction", "project_region", "cash_musd", "quarterly_burn_musd",
+    "debt_musd", "shares_out_m", "shares_yoy_growth_pct",
+    "resource_notes", "data_source", "data_as_of",
 )
 
 
@@ -65,13 +75,17 @@ class ResourceRecord:
     primary_commodity: str = ""
     secondary_commodity: str = ""
     notes: str = ""
-    # Optional enrichment (PR3). Absent columns stay as-is (blank/None).
+    # Optional enrichment (PR3/PR4). Absent columns stay as-is (blank).
     jurisdiction: str = ""
+    project_region: str = ""
     cash_musd: str = ""
     quarterly_burn_musd: str = ""
     debt_musd: str = ""
     shares_out_m: str = ""
     shares_yoy_growth_pct: str = ""
+    resource_notes: str = ""
+    data_source: str = ""
+    data_as_of: str = ""
 
     def to_metadata(self) -> dict:
         """Return the metadata dict attached to instrument info for future PRs."""
@@ -85,11 +99,15 @@ class ResourceRecord:
             "yf_ticker": self.yf_ticker,
             # Optional enrichment (blank string when the CSV column is absent).
             "jurisdiction": self.jurisdiction,
+            "project_region": self.project_region,
             "cash_musd": self.cash_musd,
             "quarterly_burn_musd": self.quarterly_burn_musd,
             "debt_musd": self.debt_musd,
             "shares_out_m": self.shares_out_m,
             "shares_yoy_growth_pct": self.shares_yoy_growth_pct,
+            "resource_notes": self.resource_notes,
+            "data_source": self.data_source,
+            "data_as_of": self.data_as_of,
         }
 
 
