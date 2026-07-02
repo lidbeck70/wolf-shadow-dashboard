@@ -191,6 +191,15 @@ class ContrairianAlphaResult:
     resource_flags:      list[str]  = field(default_factory=list)  # stage guardrail notes
     resource_gate_mode:  str        = ""   # ""|"RELAXED"|"MATURE" — see PR2 guardrail
 
+    # Resource-composite v1 (PR3; us_ca_resource only, 0.0 for Nordic)
+    resource_composite:  float      = 0.0  # blended resource score 0-100
+    survival_score:      float      = 0.0
+    dilution_score:      float      = 0.0
+    jurisdiction_score:  float      = 0.0
+    commodity_score:     float      = 0.0
+    resource_confidence: float      = 0.0  # 0-1 data-quality confidence
+    resource_stage_profile: str     = ""   # stage weight table used
+
     # Price snapshot (for UI display)
     close:     float = 0.0
     sma50:     float = 0.0
@@ -785,6 +794,59 @@ def _apply_resource_stage_guardrails(
     return kept, drop_roic_gate, gate_mode, flags
 
 
+# ─── Resource composite v1 (PR3) ──────────────────────────────────────────────
+#
+# Additive scoring layer for surviving us_ca_resource rows. Blends the
+# resource-specific factors (survival/dilution/jurisdiction/commodity) with the
+# pipeline's existing hate/catalyst/quality/value scores via stage-aware
+# weights. This does NOT change composite_score (the Nordic Contrarian Alpha
+# ranking) — it writes separate resource_* fields so the two rankings stay
+# independent and Nordic behavior is untouched.
+
+def _apply_resource_composite(
+    result: "ContrairianAlphaResult",
+    inst_info: dict,
+    fund_snap: dict,
+) -> None:
+    """Populate result.resource_composite + sub-scores/flags (in place)."""
+    from contrarian_alpha.resource_scoring import compute_resource_composite
+
+    meta = inst_info.get("resource_meta") or inst_info
+    # Quality/value are only meaningful when fundamentals existed; otherwise pass
+    # None so the composite treats them as neutral instead of a real 0.
+    _has_fund = bool(fund_snap)
+    q = result.quality_score if _has_fund else None
+    v = result.value_score if _has_fund else None
+
+    rs = compute_resource_composite(
+        stage             = result.stage,
+        meta              = meta,
+        country           = inst_info.get("country", "") or meta.get("country", ""),
+        exchange          = inst_info.get("exchange", "") or meta.get("exchange", ""),
+        primary_commodity = result.primary_commodity or meta.get("primary_commodity", ""),
+        secondary_commodity = inst_info.get("secondary_commodity", "")
+                              or meta.get("secondary_commodity", ""),
+        hate_score        = result.hat_score,
+        catalyst_score    = result.catalyst_score,
+        quality_score     = q,
+        value_score       = v,
+    )
+
+    result.resource_composite     = rs.resource_composite
+    result.survival_score         = rs.survival_score
+    result.dilution_score         = rs.dilution_score
+    result.jurisdiction_score     = rs.jurisdiction_score
+    result.commodity_score        = rs.commodity_score
+    result.resource_confidence    = rs.resource_confidence
+    result.resource_stage_profile = rs.stage_profile
+
+    for f in rs.flags:
+        if f not in result.resource_flags:
+            result.resource_flags.append(f)
+        if f not in result.all_flags:
+            result.all_flags.append(f)
+
+
 # ─── Single-ticker pipeline ───────────────────────────────────────────────────
 
 def _run_single_ticker(
@@ -1124,6 +1186,12 @@ def _run_single_ticker(
         1.0 if fund_snap else 0.0,
     ]
     result.data_confidence = round(sum(confs) / len(confs), 2)
+
+    # ── 4.5. RESOURCE COMPOSITE (PR3; us_ca_resource + stage present only) ────
+    # Additive, deterministic resource scoring for survivors. Nordic rows never
+    # enter this branch (no stage), so their composite/output is unchanged.
+    if _is_resource and result.stage:
+        _apply_resource_composite(result, inst_info, fund_snap)
 
     return result
 
