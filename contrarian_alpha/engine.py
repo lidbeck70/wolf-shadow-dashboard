@@ -758,9 +758,13 @@ def _apply_resource_stage_guardrails(
     flags: list[str] = []
 
     # Data presence (None = Börsdata-style fundamental simply absent for US/CA)
-    fcf_present    = fund_dict.get("fcf") is not None
-    ebitda_present = fund_dict.get("ebitda_margin") is not None
-    equity_present = fund_dict.get("equity") is not None
+    fcf_present     = fund_dict.get("fcf") is not None
+    ebitda_present  = fund_dict.get("ebitda_margin") is not None
+    equity_present  = fund_dict.get("equity") is not None
+    leverage_present = (
+        fund_dict.get("debt_to_equity") is not None
+        or fund_dict.get("net_debt_ebitda") is not None
+    )
 
     pre_revenue = stg in _RESOURCE_PRE_REVENUE_STAGES
 
@@ -779,10 +783,15 @@ def _apply_resource_stage_guardrails(
         # ROIC is not a meaningful metric for a pre-revenue miner.
         flags.append("ROIC_NOT_APPLICABLE")
 
+        # D/E stays enforced only when data actually exists (comment above);
+        # a missing leverage figure must not hard-eliminate a curated junior.
         kept = [
             f for f in bs_failures
-            if f.startswith("D/E") or f.startswith("Net Debt")
+            if (f.startswith("D/E") or f.startswith("Net Debt")) and leverage_present
         ]
+        if any(f.startswith("D/E") or f.startswith("Net Debt") for f in bs_failures) \
+                and not leverage_present:
+            flags.append("LEVERAGE_DATA_MISSING")
         drop_roic_gate = True
         return kept, drop_roic_gate, gate_mode, flags
 
@@ -797,6 +806,8 @@ def _apply_resource_stage_guardrails(
             flags.append("EBITDA_DATA_MISSING")
         elif f.startswith("Equity") and not equity_present:
             flags.append("EQUITY_DATA_MISSING")
+        elif (f.startswith("D/E") or f.startswith("Net Debt")) and not leverage_present:
+            flags.append("LEVERAGE_DATA_MISSING")
         else:
             # Data present and failing (real weakness) → keep the elimination.
             kept.append(f)
@@ -1125,13 +1136,37 @@ def _run_single_ticker(
     #                      a proven compounder at fair value is still a Quality buy)
     _hate_floor = config.hate_threshold if config.mode == "deep_contrarian" else QUALITY_HATE_FLOOR
     if result.hat_score < _hate_floor:
-        result.eliminated       = True
-        result.elimination_stage  = "HATE"
-        result.elimination_reason = (
-            f"Hat {result.hat_score:.1f} < {_hate_floor:.0f} "
-            f"(not sufficiently hated/neglected) [{config.mode} mode]"
-        )
-        return result
+        if _is_resource:
+            # US/CA resource rows are absent from Börsdata, so the Hat Score is
+            # built almost entirely from optional sentiment / analyst / short /
+            # sector context that is usually unavailable for these tickers (and
+            # price context is often missing too). A sub-threshold Hat here almost
+            # always means MISSING data — not a loved/hyped name — so hard-
+            # eliminating it empties the whole watchlist (the "67 scanned, 0
+            # results, all killed at HATE" bug). Mirror the necessity fix: never
+            # hard-eliminate the curated resource universe on a weak hate signal;
+            # surface transparent flags and let resource_composite / the overlay
+            # rank it. Only when real data actually shows the name is not hated do
+            # we flag it as hype/low-neglect (still kept, just deprioritised).
+            _hate_missing = (
+                result.hat_score <= 0.0
+                or hate_result.confidence < 0.5
+                or "NO_PRICE_DATA" in hate_result.flags
+            )
+            _hflag = "HATE_DATA_MISSING" if _hate_missing else "HYPE_OR_LOW_NEGLECT"
+            for _f in ("HATE_BELOW_THRESHOLD", _hflag):
+                if _f not in result.resource_flags:
+                    result.resource_flags.append(_f)
+                if _f not in result.all_flags:
+                    result.all_flags.append(_f)
+        else:
+            result.eliminated       = True
+            result.elimination_stage  = "HATE"
+            result.elimination_reason = (
+                f"Hat {result.hat_score:.1f} < {_hate_floor:.0f} "
+                f"(not sufficiently hated/neglected) [{config.mode} mode]"
+            )
+            return result
 
     # ── 3. BALANCE SHEET GATE ────────────────────────────────────────────────
 
