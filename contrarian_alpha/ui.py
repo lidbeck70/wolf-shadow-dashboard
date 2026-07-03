@@ -18,10 +18,14 @@ from __future__ import annotations
 
 import sys
 import os
+import math
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
 import streamlit as st
+
+logger = logging.getLogger(__name__)
 
 # ─── Optional annotations (discipline fields) ────────────────────────────────
 _ANN_OK = False
@@ -921,6 +925,72 @@ def _render_detail_card(r) -> None:
     _render_discipline_fields(r)
 
 
+def _finite(value, default: float = 0.0) -> float:
+    """Coerce ``value`` to a finite float.
+
+    Returns ``default`` for None, NaN, inf, or anything non-numeric. Keeps the
+    breakdown chart safe for US/CA resource rows whose sub-scores may be missing
+    or NaN when fundamentals were unavailable.
+    """
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return default
+    return f if math.isfinite(f) else default
+
+
+# Component order + colors for the breakdown chart. Colors live here (not in the
+# pure data helper) so the helper stays free of the Streamlit palette and is
+# unit-testable in isolation.
+_BREAKDOWN_COLORS = ("gold", "amber", "green", "ice_blue", "silver", "gold_dim")
+
+
+def build_breakdown_data(r, mode: str = "quality") -> dict:
+    """Build equal-length, finite-numeric arrays for the score-breakdown chart.
+
+    Pure (no Streamlit / Plotly) so it can be unit-tested with malformed rows.
+    Every sub-score is coerced via :func:`_finite`, so None/NaN/non-numeric
+    values (common for resource rows with missing fundamentals) become 0.0
+    instead of crashing Plotly. Returns a dict with matching-length lists
+    ``labels``/``scores_raw``/``contributions``/``max_contribs`` plus scalar
+    ``total`` and bool ``has_data``.
+    """
+    if mode == "deep_contrarian":
+        wmap = {"necessity": 0.15, "hate": 0.30, "quality": 0.20, "value": 0.20, "catalyst": 0.15}
+    else:
+        wmap = {"necessity": 0.15, "hate": 0.20, "quality": 0.30, "value": 0.20, "catalyst": 0.15}
+
+    # (label, raw_score, weight)
+    specs = [
+        ("Necessity", getattr(r, "necessity_score",  0.0), wmap["necessity"]),
+        ("Hat",       getattr(r, "hat_score",        0.0), wmap["hate"]),
+        ("Quality",   getattr(r, "quality_score",    0.0), wmap["quality"]),
+        ("Value",     getattr(r, "value_score",      0.0), wmap["value"]),
+        ("Catalyst",  getattr(r, "catalyst_score",   0.0), wmap["catalyst"]),
+        ("Viking",    getattr(r, "viking_bonus_raw", 0.0), 0.05),
+    ]
+
+    labels: list[str] = []
+    scores_raw: list[float] = []
+    contributions: list[float] = []
+    max_contribs: list[float] = []
+    for label, raw, weight in specs:
+        raw_f = _finite(raw, 0.0)
+        labels.append(label)
+        scores_raw.append(raw_f)
+        contributions.append(round(raw_f * weight, 1))
+        max_contribs.append(round(weight * 100, 1))
+
+    return {
+        "labels":        labels,
+        "scores_raw":    scores_raw,
+        "contributions": contributions,
+        "max_contribs":  max_contribs,
+        "total":         _finite(getattr(r, "composite_score", 0.0), 0.0),
+        "has_data":      any(c > 0 for c in contributions),
+    }
+
+
 def _render_breakdown_chart(r) -> None:
     """Plotly horisontellt stapeldiagram med sub-score bidrag (5-pelare)."""
     try:
@@ -929,82 +999,78 @@ def _render_breakdown_chart(r) -> None:
         st.info("Plotly krävs för breakdown-diagram (pip install plotly).")
         return
 
-    # Mode-baserade vikter (läs från session_state, fallback = quality)
     mode = st.session_state.get("ca_mode", "quality")
-    if mode == "deep_contrarian":
-        wmap = {"necessity": 0.15, "hate": 0.30, "quality": 0.20, "value": 0.20, "catalyst": 0.15}
-    else:
-        wmap = {"necessity": 0.15, "hate": 0.20, "quality": 0.30, "value": 0.20, "catalyst": 0.15}
+    data = build_breakdown_data(r, mode)
 
-    # Komponenter: (label, raw_score, weight, max_contribution, color)
-    components = [
-        ("Necessity",  r.necessity_score,  wmap["necessity"], wmap["necessity"] * 100, P["gold"]),
-        ("Hat",        r.hat_score,        wmap["hate"],      wmap["hate"] * 100,      P["amber"]),
-        ("Quality",    r.quality_score,    wmap["quality"],   wmap["quality"] * 100,   P["green"]),
-        ("Value",      r.value_score,      wmap["value"],     wmap["value"] * 100,     P["ice_blue"]),
-        ("Catalyst",   r.catalyst_score,   wmap["catalyst"],  wmap["catalyst"] * 100,  P["silver"]),
-        ("Viking",     r.viking_bonus_raw, 0.05,              5.0,                     P["gold_dim"]),
-    ]
+    if not data["has_data"]:
+        st.caption("Ingen score-breakdown att visa (saknade/otillräckliga delpoäng).")
+        return
 
-    labels       = [c[0] for c in components]
-    scores_raw   = [c[1] for c in components]
-    contributions= [round(c[1] * c[2], 1) for c in components]
-    max_contribs = [c[3] for c in components]
-    colors       = [c[4] for c in components]
+    labels        = data["labels"]
+    scores_raw    = data["scores_raw"]
+    contributions = data["contributions"]
+    max_contribs  = data["max_contribs"]
+    total         = data["total"]
+    colors        = [P[c] for c in _BREAKDOWN_COLORS]
 
-    fig = go.Figure()
+    # Wrap all Plotly work so a malformed row can never crash the detail card.
+    try:
+        fig = go.Figure()
 
-    # Max-bar (background)
-    fig.add_trace(go.Bar(
-        y=labels, x=max_contribs, orientation="h",
-        name="Max möjlig",
-        marker_color=[f"{c}22" for c in colors],
-        marker_line_color=[f"{c}44" for c in colors],
-        marker_line_width=1,
-        hovertemplate="%{y}: max %{x:.1f}p<extra></extra>",
-    ))
+        # Max-bar (background)
+        fig.add_trace(go.Bar(
+            y=labels, x=max_contribs, orientation="h",
+            name="Max möjlig",
+            marker_color=[f"{c}22" for c in colors],
+            marker_line_color=[f"{c}44" for c in colors],
+            marker_line_width=1,
+            hovertemplate="%{y}: max %{x:.1f}p<extra></extra>",
+        ))
 
-    # Actual-bar
-    fig.add_trace(go.Bar(
-        y=labels, x=contributions, orientation="h",
-        name="Faktiskt bidrag",
-        marker_color=colors,
-        text=[f"{c:.1f}p  (raw {s:.0f})"
-              for c, s in zip(contributions, scores_raw)],
-        textposition="inside",
-        textfont=dict(size=10, color=P["bg"], family="Courier New"),
-        hovertemplate="%{y}: %{x:.1f}p<extra></extra>",
-    ))
+        # Actual-bar
+        fig.add_trace(go.Bar(
+            y=labels, x=contributions, orientation="h",
+            name="Faktiskt bidrag",
+            marker_color=colors,
+            text=[f"{c:.1f}p  (raw {s:.0f})"
+                  for c, s in zip(contributions, scores_raw)],
+            textposition="inside",
+            textfont=dict(size=10, color=P["bg"], family="Courier New"),
+            hovertemplate="%{y}: %{x:.1f}p<extra></extra>",
+        ))
 
-    # Total linje
-    total = r.composite_score
-    fig.add_vline(
-        x=total,
-        line_dash="dash",
-        line_color=P["gold"],
-        annotation_text=f"  Total: {total:.1f}",
-        annotation_font_color=P["gold"],
-        annotation_font_size=11,
-    )
+        # Total linje
+        fig.add_vline(
+            x=total,
+            line_dash="dash",
+            line_color=P["gold"],
+            annotation_text=f"  Total: {total:.1f}",
+            annotation_font_color=P["gold"],
+            annotation_font_size=11,
+        )
 
-    fig.update_layout(
-        barmode="overlay",
-        plot_bgcolor=P["bg2"],
-        paper_bgcolor=P["bg"],
-        font=dict(family="Courier New", color=P["text"], size=11),
-        margin=dict(l=10, r=10, t=10, b=10),
-        height=260,
-        showlegend=False,
-        xaxis=dict(
-            range=[0, 105],
-            gridcolor=P["border"],
-            tickfont=dict(size=9),
-            title=dict(text="Bidrag till Composite Score (max 100p)", font=dict(size=9)),
-        ),
-        yaxis=dict(tickfont=dict(size=11), autorange="reversed"),
-    )
+        fig.update_layout(
+            barmode="overlay",
+            plot_bgcolor=P["bg2"],
+            paper_bgcolor=P["bg"],
+            font=dict(family="Courier New", color=P["text"], size=11),
+            margin=dict(l=10, r=10, t=10, b=10),
+            height=260,
+            showlegend=False,
+            xaxis=dict(
+                range=[0, 105],
+                gridcolor=P["border"],
+                tickfont=dict(size=9),
+                title=dict(text="Bidrag till Composite Score (max 100p)", font=dict(size=9)),
+            ),
+            yaxis=dict(tickfont=dict(size=11), autorange="reversed"),
+        )
 
-    st.plotly_chart(fig, width='stretch', config={"displayModeBar": False})
+        st.plotly_chart(fig, width='stretch', config={"displayModeBar": False})
+    except Exception as e:  # pragma: no cover - defensive Plotly guardrail
+        logger.warning("Breakdown chart render failed for %s: %s",
+                       getattr(r, "ticker", "?"), e)
+        st.caption("Score-breakdown kunde inte ritas (dataproblem).")
 
     # Gate-sammanfattning under diagrammet
     gate_checks: list[tuple[str, bool]] = []
