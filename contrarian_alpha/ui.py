@@ -1257,6 +1257,73 @@ def _render_metrics_grid(r) -> None:
     st.markdown(html, unsafe_allow_html=True)
 
 
+# ─── Resource watchlists (us_ca_resource only) ───────────────────────────────
+
+_WATCHLIST_COL_LABELS = {
+    "ticker":                       "Ticker",
+    "name":                         "Namn",
+    "stage":                        "Stage",
+    "commodity":                    "Commodity",
+    "resource_composite":           "Composite",
+    "resource_overlay_score":       "Overlay",
+    "drawdown_52w_pct":             "52v DD %",
+    "commodity_rs_flag":            "Commodity RS",
+    "resource_data_quality":        "Datakvalitet",
+    "liquidity_flag":               "Likviditet",
+    "flags":                        "Flaggor",
+}
+
+
+def _render_resource_watchlists(pipeline_result) -> None:
+    """Practical watchlist slices for the US/CA Resource universe (PR15).
+
+    Watchlist views only — reuses existing output fields, changes no scoring
+    math, and is rendered only for config.universe == 'us_ca_resource'. The
+    main results table above is untouched.
+    """
+    cfg = getattr(pipeline_result, "config", None)
+    if getattr(cfg, "universe", "") != "us_ca_resource":
+        return
+    results = getattr(pipeline_result, "results", None)
+    if not results:
+        return
+
+    try:
+        from contrarian_alpha.resource_watchlists import (
+            build_resource_watchlists, WATCHLIST_ORDER, WATCHLIST_META,
+            WATCHLIST_COLUMNS,
+        )
+        views = build_resource_watchlists(results)
+    except Exception as e:  # pragma: no cover - defensive UI guardrail
+        logger.warning("Resource watchlists failed: %s", e)
+        return
+
+    import pandas as pd
+
+    with st.expander("🗂️ Resurs-watchlists (slices, ej köpsignal)", expanded=False):
+        st.caption(
+            "Praktiska bevakningsvyer byggda på befintliga resurs-fält. "
+            "Detta är **watchlist-slices för manuell granskning, inte köpsignaler**. "
+            "Tomma fält = saknas/needs_validation, ej negativ signal."
+        )
+        tab_labels = [f"{WATCHLIST_META[k]['title']} ({len(views[k])})"
+                      for k in WATCHLIST_ORDER]
+        tabs = st.tabs(tab_labels)
+        for tab, key in zip(tabs, WATCHLIST_ORDER):
+            with tab:
+                meta = WATCHLIST_META[key]
+                st.caption(meta["caption"])
+                rows = views[key]
+                if not rows:
+                    st.caption("— Inga bolag i denna vy just nu.")
+                    continue
+                df = pd.DataFrame(rows)
+                # Keep only known columns that are present, in the recommended order.
+                cols = [c for c in WATCHLIST_COLUMNS if c in df.columns]
+                df = df[cols].rename(columns=_WATCHLIST_COL_LABELS)
+                st.dataframe(df, use_container_width=True, hide_index=True)
+
+
 # ─── Elimineringsinformation ─────────────────────────────────────────────────
 
 def _render_elimination_breakdown(pipeline_result) -> None:
@@ -1392,6 +1459,9 @@ def render_contrarian_alpha_page() -> None:
 
     # ── Zon 2 + 3: Tabell + Detaljkort ──
     _render_results_table(pipeline_result)
+
+    # ── Resurs-watchlists (endast us_ca_resource) ──
+    _render_resource_watchlists(pipeline_result)
 
     # ── Elimineringsanalys (alltid synlig) ──
     if pipeline_result.eliminated:
