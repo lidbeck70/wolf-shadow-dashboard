@@ -1187,20 +1187,59 @@ def _run_single_ticker(
     # BS gate uses 4 of the 5 hard gates (Altman Z is scoring-only here)
     gates = strength_result.gate_results
     bs_failures = []
-    if not gates.get("fcf_positive",          False): bs_failures.append("FCF ≤ 0")
-    if not gates.get("ebitda_margin_positive", False): bs_failures.append("EBITDA margin ≤ 0%")
+
+    # Missing-data policy (mirrors ROIC_SAKNAS handling below): a hard gate returns
+    # False both when the value violates the threshold AND when the underlying
+    # Börsdata field is simply absent. Börsdata batch KPI data is frequently empty
+    # or not in licence, so treating "missing" as "failed" rejects the whole
+    # universe (bs=0). Reject ONLY when the value EXISTS and violates; when it is
+    # missing, flag BS_DATA_SAKNAS and let the row pass.
+    _bs_data_missing = False
+
+    # 1. FCF (TTM) > 0 — mirrors strength._check_gates FCF logic
+    _fcf = fund_dict.get("fcf")
+    _fcf_hist = fund_dict.get("fcf_history") or []
+    _fcf_ttm = _fcf_hist[0] if _fcf_hist else _fcf
+    if _fcf_ttm is None:
+        _bs_data_missing = True
+    elif not gates.get("fcf_positive", False):
+        bs_failures.append("FCF ≤ 0")
+
+    # 2. EBITDA margin > 0%
+    if fund_dict.get("ebitda_margin") is None:
+        _bs_data_missing = True
+    elif not gates.get("ebitda_margin_positive", False):
+        bs_failures.append("EBITDA margin ≤ 0%")
 
     # Leverage gate: quality mode uses Net Debt/EBITDA ≤ 3.5 (net cash = auto-pass)
     # deep_contrarian keeps the original D/E < 0.6 gate unchanged
     if config.mode == "quality":
         nd_e = fund_snap.get("net_debt_ebitda")
-        if nd_e is not None and float(nd_e) > 3.5:
+        if nd_e is None:
+            # Snapshot lacked Net Debt/EBITDA (KPI 42) — fetch latest history value
+            # before deciding (batch KPI sometimes empty / not in licence).
+            nd_hist = _fetch_kpi_history(ins_id, KPI["net_debt_ebitda"], api)
+            if nd_hist:
+                nd_e = nd_hist[0]
+        if nd_e is None:
+            _bs_data_missing = True
+        elif float(nd_e) > 3.5:
             bs_failures.append(f"Net Debt/EBITDA {nd_e:.1f} > 3.5")
-        # nd_e <= 3.5 (including negative = net cash) → pass; None → skip (graceful)
+        # nd_e <= 3.5 (including negative = net cash) → pass
     else:
-        if not gates.get("debt_equity_low", False): bs_failures.append("D/E ≥ 0.6")
+        if fund_dict.get("debt_to_equity") is None:
+            _bs_data_missing = True
+        elif not gates.get("debt_equity_low", False):
+            bs_failures.append("D/E ≥ 0.6")
 
-    if not gates.get("equity_positive",        False): bs_failures.append("Equity ≤ 0")
+    # 5. Positive equity
+    if fund_dict.get("equity") is None:
+        _bs_data_missing = True
+    elif not gates.get("equity_positive", False):
+        bs_failures.append("Equity ≤ 0")
+
+    if _bs_data_missing and "BS_DATA_SAKNAS" not in result.all_flags:
+        result.all_flags.append("BS_DATA_SAKNAS")
 
     # Resource universe: relax mature-company gates in a stage-aware way before
     # deciding elimination (guardrail only — see _apply_resource_stage_guardrails).
