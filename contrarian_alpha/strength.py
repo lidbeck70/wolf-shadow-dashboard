@@ -67,6 +67,10 @@ class StrengthResult:
     flags: list[str]            = field(default_factory=list)
     altman_z: float | None      = None    # Raw Z-score (for display)
     gate_results: dict[str, bool] = field(default_factory=dict)  # gate → passed
+    # Three-state view of each gate so the UI can tell "failed because the value
+    # breaks the threshold" apart from "failed because the underlying Börsdata
+    # field is missing". Values: "pass" | "fail" | "missing".
+    gate_status: dict[str, str] = field(default_factory=dict)
 
     @property
     def passes_all_gates(self) -> bool:
@@ -142,24 +146,40 @@ def _altman_z(fund: dict) -> float | None:
 
 # ─── Gate checks ─────────────────────────────────────────────────────────────
 
-def _check_gates(fund: dict, z: float | None) -> tuple[list[str], dict[str, bool]]:
-    """Run all 5 hard-gate checks. Returns (flags, gate_results)."""
+def _check_gates(
+    fund: dict, z: float | None
+) -> tuple[list[str], dict[str, bool], dict[str, str]]:
+    """Run all 5 hard-gate checks.
+
+    Returns ``(flags, gate_results, gate_status)`` where:
+      * ``gate_results`` — bool per gate (passed?), unchanged for callers that
+        only care about pass/fail (the elimination engine).
+      * ``gate_status``  — three-state per gate: ``"pass"`` | ``"fail"`` |
+        ``"missing"``. ``"missing"`` means the underlying value was absent
+        (None), so a red ✗ would be misleading; ``"fail"`` means the value was
+        present and broke the threshold.
+    """
     flags: list[str] = []
     gates: dict[str, bool] = {}
+    status: dict[str, str] = {}
+
+    def _record(gate: str, present: bool, passed: bool) -> None:
+        gates[gate] = passed
+        status[gate] = "pass" if passed else ("fail" if present else "missing")
 
     # 1. FCF (TTM) positive
     fcf = fund.get("fcf")
     fcf_history = fund.get("fcf_history") or []
     fcf_ttm = fcf_history[0] if fcf_history else fcf
     gate_fcf = fcf_ttm is not None and fcf_ttm > GATE_FCF_POSITIVE
-    gates["fcf_positive"] = gate_fcf
+    _record("fcf_positive", fcf_ttm is not None, gate_fcf)
     if not gate_fcf:
         flags.append("FCF_NEGATIVE" if (fcf_ttm is not None and fcf_ttm <= 0) else "FCF_MISSING")
 
     # 2. EBITDA margin > 0%
     ebitda_margin = fund.get("ebitda_margin")
     gate_ebitda = ebitda_margin is not None and ebitda_margin > GATE_EBITDA_MARGIN_MIN
-    gates["ebitda_margin_positive"] = gate_ebitda
+    _record("ebitda_margin_positive", ebitda_margin is not None, gate_ebitda)
     if not gate_ebitda:
         flags.append("EBITDA_MARGIN_NEGATIVE" if (ebitda_margin is not None and ebitda_margin <= 0)
                      else "EBITDA_MARGIN_MISSING")
@@ -167,24 +187,24 @@ def _check_gates(fund: dict, z: float | None) -> tuple[list[str], dict[str, bool
     # 3. D/E < 0.6
     de = fund.get("debt_to_equity")
     gate_de = de is not None and de < GATE_DE_MAX
-    gates["debt_equity_low"] = gate_de
+    _record("debt_equity_low", de is not None, gate_de)
     if not gate_de:
         flags.append(f"DE_RATIO_HIGH({de:.2f})" if de is not None else "DE_RATIO_MISSING")
 
     # 4. Altman Z > 1.8
     gate_z = z is not None and z > GATE_ALTMAN_Z_MIN
-    gates["altman_z_ok"] = gate_z
+    _record("altman_z_ok", z is not None, gate_z)
     if not gate_z:
         flags.append(f"ALTMAN_Z_LOW({z:.2f})" if z is not None else "ALTMAN_Z_MISSING")
 
     # 5. Positive equity
     equity = fund.get("equity")
     gate_equity = equity is not None and equity > 0
-    gates["equity_positive"] = gate_equity
+    _record("equity_positive", equity is not None, gate_equity)
     if not gate_equity:
         flags.append("EQUITY_NEGATIVE" if (equity is not None and equity <= 0) else "EQUITY_MISSING")
 
-    return flags, gates
+    return flags, gates, status
 
 
 # ─── Soft score components ────────────────────────────────────────────────────
@@ -281,16 +301,17 @@ def calculate_strength_score(fundamentals: dict) -> StrengthResult:
     """
     if not fundamentals:
         logger.debug("calculate_strength_score: empty fundamentals dict")
+        _gate_names = ("fcf_positive", "ebitda_margin_positive",
+                       "debt_equity_low", "altman_z_ok", "equity_positive")
         return StrengthResult(
             score=0.0,
             flags=["NO_FUNDAMENTAL_DATA"],
-            gate_results={g: False for g in
-                          ("fcf_positive", "ebitda_margin_positive",
-                           "debt_equity_low", "altman_z_ok", "equity_positive")},
+            gate_results={g: False for g in _gate_names},
+            gate_status={g: "missing" for g in _gate_names},
         )
 
     z = _altman_z(fundamentals)
-    flags, gate_results = _check_gates(fundamentals, z)
+    flags, gate_results, gate_status = _check_gates(fundamentals, z)
 
     fcf_pts      = _score_fcf(fundamentals)
     ebitda_pts   = _score_ebitda_margin(fundamentals)
@@ -316,6 +337,7 @@ def calculate_strength_score(fundamentals: dict) -> StrengthResult:
         flags=flags,
         altman_z=z,
         gate_results=gate_results,
+        gate_status=gate_status,
     )
 
 

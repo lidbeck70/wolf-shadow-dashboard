@@ -925,12 +925,13 @@ def _render_detail_card(r) -> None:
     _render_discipline_fields(r)
 
 
-def _finite(value, default: float = 0.0) -> float:
+def _finite(value, default: float | None = 0.0) -> float | None:
     """Coerce ``value`` to a finite float.
 
     Returns ``default`` for None, NaN, inf, or anything non-numeric. Keeps the
     breakdown chart safe for US/CA resource rows whose sub-scores may be missing
-    or NaN when fundamentals were unavailable.
+    or NaN when fundamentals were unavailable. Pass ``default=None`` to detect
+    missing values (rather than silently substituting a zero).
     """
     try:
         f = float(value)
@@ -939,19 +940,29 @@ def _finite(value, default: float = 0.0) -> float:
     return f if math.isfinite(f) else default
 
 
-# Component order + colors for the breakdown chart. Colors live here (not in the
-# pure data helper) so the helper stays free of the Streamlit palette and is
-# unit-testable in isolation.
-_BREAKDOWN_COLORS = ("gold", "amber", "green", "ice_blue", "silver", "gold_dim")
+# Per-pillar colors for the breakdown chart, keyed by label so the color list
+# stays aligned even when pillars with missing data are skipped. Colors live in
+# the render layer (not the pure data helper) so the helper stays palette-free
+# and unit-testable in isolation.
+_BREAKDOWN_COLOR_BY_LABEL = {
+    "Necessity": "gold",
+    "Hat":       "amber",
+    "Quality":   "green",
+    "Value":     "ice_blue",
+    "Catalyst":  "silver",
+    "Viking":    "gold_dim",
+}
 
 
 def build_breakdown_data(r, mode: str = "quality") -> dict:
     """Build equal-length, finite-numeric arrays for the score-breakdown chart.
 
     Pure (no Streamlit / Plotly) so it can be unit-tested with malformed rows.
-    Every sub-score is coerced via :func:`_finite`, so None/NaN/non-numeric
-    values (common for resource rows with missing fundamentals) become 0.0
-    instead of crashing Plotly. Returns a dict with matching-length lists
+    Each sub-score is coerced via :func:`_finite`; pillars whose raw score is
+    missing (None / NaN / non-numeric / absent attribute) are **skipped
+    entirely** rather than drawn as a misleading zero bar. As long as at least
+    one pillar has data the chart renders — a single missing pillar never blanks
+    the whole breakdown. Returns matching-length lists
     ``labels``/``scores_raw``/``contributions``/``max_contribs`` plus scalar
     ``total`` and bool ``has_data``.
     """
@@ -960,14 +971,15 @@ def build_breakdown_data(r, mode: str = "quality") -> dict:
     else:
         wmap = {"necessity": 0.15, "hate": 0.20, "quality": 0.30, "value": 0.20, "catalyst": 0.15}
 
-    # (label, raw_score, weight)
+    # (label, raw_score, weight). Use None as the getattr default so a genuinely
+    # absent attribute is treated as missing (skipped), not as a real 0.
     specs = [
-        ("Necessity", getattr(r, "necessity_score",  0.0), wmap["necessity"]),
-        ("Hat",       getattr(r, "hat_score",        0.0), wmap["hate"]),
-        ("Quality",   getattr(r, "quality_score",    0.0), wmap["quality"]),
-        ("Value",     getattr(r, "value_score",      0.0), wmap["value"]),
-        ("Catalyst",  getattr(r, "catalyst_score",   0.0), wmap["catalyst"]),
-        ("Viking",    getattr(r, "viking_bonus_raw", 0.0), 0.05),
+        ("Necessity", getattr(r, "necessity_score",  None), wmap["necessity"]),
+        ("Hat",       getattr(r, "hat_score",        None), wmap["hate"]),
+        ("Quality",   getattr(r, "quality_score",    None), wmap["quality"]),
+        ("Value",     getattr(r, "value_score",      None), wmap["value"]),
+        ("Catalyst",  getattr(r, "catalyst_score",   None), wmap["catalyst"]),
+        ("Viking",    getattr(r, "viking_bonus_raw", None), 0.05),
     ]
 
     labels: list[str] = []
@@ -975,7 +987,9 @@ def build_breakdown_data(r, mode: str = "quality") -> dict:
     contributions: list[float] = []
     max_contribs: list[float] = []
     for label, raw, weight in specs:
-        raw_f = _finite(raw, 0.0)
+        raw_f = _finite(raw, None)
+        if raw_f is None:
+            continue  # skip pillar with missing/non-finite data
         labels.append(label)
         scores_raw.append(raw_f)
         contributions.append(round(raw_f * weight, 1))
@@ -987,6 +1001,9 @@ def build_breakdown_data(r, mode: str = "quality") -> dict:
         "contributions": contributions,
         "max_contribs":  max_contribs,
         "total":         _finite(getattr(r, "composite_score", 0.0), 0.0),
+        # At least one present pillar actually contributes. All-zero (or fully
+        # missing) rows fall back to the neutral "nothing to show" caption rather
+        # than the scary "kunde inte ritas" error.
         "has_data":      any(c > 0 for c in contributions),
     }
 
@@ -1011,7 +1028,9 @@ def _render_breakdown_chart(r) -> None:
     contributions = data["contributions"]
     max_contribs  = data["max_contribs"]
     total         = data["total"]
-    colors        = [P[c] for c in _BREAKDOWN_COLORS]
+    # Color per kept pillar — aligned with ``labels`` even when missing pillars
+    # were skipped upstream.
+    colors        = [P[_BREAKDOWN_COLOR_BY_LABEL.get(lbl, "gold")] for lbl in labels]
 
     # Wrap all Plotly work so a malformed row can never crash the detail card.
     try:
@@ -1068,50 +1087,78 @@ def _render_breakdown_chart(r) -> None:
 
         st.plotly_chart(fig, width='stretch', config={"displayModeBar": False})
     except Exception as e:  # pragma: no cover - defensive Plotly guardrail
+        # We only reach here with has_data == True (≥1 pillar). A Plotly failure
+        # is a render problem, not missing data, so don't show the misleading
+        # "dataproblem" message — degrade to a compact text breakdown instead.
         logger.warning("Breakdown chart render failed for %s: %s",
                        getattr(r, "ticker", "?"), e)
-        st.caption("Score-breakdown kunde inte ritas (dataproblem).")
+        _txt = "  ·  ".join(
+            f"{lbl} {c:.1f}p" for lbl, c in zip(labels, contributions)
+        )
+        st.caption(f"Score-breakdown (förenklad): {_txt}  →  Total {total:.1f}")
 
-    # Gate-sammanfattning under diagrammet
-    gate_checks: list[tuple[str, bool]] = []
+    # Gate-sammanfattning under diagrammet.
+    # Status is three-state: "pass" (grön ✓), "fail" (röd ✗ — värdet FINNS och
+    # bryter gränsen) eller "missing" (grå "– saknas" — underliggande Börsdata-
+    # fält är None, så rött ✗ vore missvisande).
+    gate_checks: list[tuple[str, str]] = []
     _mode = st.session_state.get("ca_mode", "quality")
 
     if r.strength_result:
+        # Prefer the three-state gate_status; fall back to bool gate_results for
+        # older StrengthResult objects that predate the status field.
+        gate_status = getattr(r.strength_result, "gate_status", None) or {}
         gates = r.strength_result.gate_results
+
+        def _strength_status(key: str) -> str:
+            if key in gate_status:
+                return gate_status[key]
+            return "pass" if gates.get(key, False) else "fail"
+
         gate_checks += [
-            ("FCF > 0",        gates.get("fcf_positive",          False)),
-            ("EBITDA > 0%",    gates.get("ebitda_margin_positive", False)),
-            ("Equity > 0",     gates.get("equity_positive",        False)),
-            ("Altman Z > 1.8", gates.get("altman_z_ok",            False)),
+            ("FCF > 0",        _strength_status("fcf_positive")),
+            ("EBITDA > 0%",    _strength_status("ebitda_margin_positive")),
+            ("Equity > 0",     _strength_status("equity_positive")),
+            ("Altman Z > 1.8", _strength_status("altman_z_ok")),
         ]
         # Leverage gate label depends on mode
         if _mode == "quality":
             nd_e = getattr(r, "net_debt_ebitda", None)
-            _nd_pass = nd_e is None or float(nd_e) <= 3.5
-            gate_checks.append(("ND/EBITDA ≤ 3.5", _nd_pass))
+            _nd_status = "missing" if nd_e is None else ("pass" if float(nd_e) <= 3.5 else "fail")
+            gate_checks.append(("ND/EBITDA ≤ 3.5", _nd_status))
         else:
-            gate_checks.append(("D/E < 0.6", gates.get("debt_equity_low", False)))
+            gate_checks.append(("D/E < 0.6", _strength_status("debt_equity_low")))
 
     # ROIC gate
     qr = getattr(r, "quality_result", None)
     if qr is not None and qr.roic is not None:
         _gate_pct = "15%" if _mode == "quality" else "10%"
         _roic_pass = qr.passes_gate_quality if _mode == "quality" else qr.passes_gate_deep
-        gate_checks.append((f"ROIC > {_gate_pct}", _roic_pass))
+        gate_checks.append((f"ROIC > {_gate_pct}", "pass" if _roic_pass else "fail"))
 
-    # Valuation bands gate (quality mode only)
+    # Valuation bands gate (quality mode only). NO_DATA → missing (grå), not a
+    # broken band; TOO_CHEAP/OK → pass.
     if _mode == "quality":
         vb = getattr(r, "valuation_bands", None)
         if vb is not None:
-            gate_checks.append(("P/E band [7–25]",    vb.pe_status in ("OK", "NO_DATA", "TOO_CHEAP")))
-            gate_checks.append(("EV/EBIT band [4–20]", vb.ev_ebit_status in ("OK", "NO_DATA", "TOO_CHEAP")))
+            def _band_status(band_status: str) -> str:
+                if band_status == "NO_DATA":
+                    return "missing"
+                return "pass" if band_status in ("OK", "TOO_CHEAP") else "fail"
+            gate_checks.append(("P/E band [7–25]",    _band_status(vb.pe_status)))
+            gate_checks.append(("EV/EBIT band [4–20]", _band_status(vb.ev_ebit_status)))
 
     if gate_checks:
+        _gate_icons = {
+            "pass":    f'<span style="color:{P["green"]}">✓</span>',
+            "fail":    f'<span style="color:{P["red"]}">✗</span>',
+            "missing": f'<span style="color:{P["text_dim"]}">–</span>',
+        }
         parts = []
-        for label, passed in gate_checks:
-            ico = f'<span style="color:{P["green"]}">✓</span>' if passed else \
-                  f'<span style="color:{P["red"]}">✗</span>'
-            parts.append(f'{ico} <span style="color:{P["text_dim"]}">{label}</span>')
+        for label, gstatus in gate_checks:
+            ico = _gate_icons.get(gstatus, _gate_icons["missing"])
+            _lbl = f"{label} · saknas" if gstatus == "missing" else label
+            parts.append(f'{ico} <span style="color:{P["text_dim"]}">{_lbl}</span>')
         st.markdown(
             f'<div style="font-family:\'Courier New\',monospace;font-size:9px;'
             f'letter-spacing:0.08em;display:flex;flex-wrap:wrap;gap:12px;'
