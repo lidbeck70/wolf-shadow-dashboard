@@ -33,6 +33,15 @@ logger = logging.getLogger(__name__)
 # KPIs that have returned 400 Bad Request — log once, then stay silent
 _KPI_ERROR_LOGGED: set[str] = set()
 
+# Batch-screener bookkeeping (module-global, per-process). Populated by
+# get_fundamentals_snapshot_fast so the engine's per-KPI history fallback only
+# fires for KPIs that actually failed at the batch level (400 / not in licence)
+# or were never batch-fetched — never for KPIs the batch retrieved fine.
+#   KPI_BATCH_ATTEMPTED — kpi_ids the batch screener tried this session
+#   KPI_BATCH_FAILED    — kpi_ids whose batch screener returned 400 / errored
+KPI_BATCH_ATTEMPTED: set[int] = set()
+KPI_BATCH_FAILED: set[int] = set()
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -872,8 +881,16 @@ class BorsdataAPI:
         }
 
         for key, (kpi_id, divisor) in kpi_fetch.items():
+            KPI_BATCH_ATTEMPTED.add(kpi_id)
+            _screener_path = f"/instruments/kpis/{kpi_id}/last/latest"
             try:
                 all_vals = self.get_kpi_screener(kpi_id, "last", "latest")
+                # _get() swallows a 400 into an empty result (no exception) and
+                # records the path in _KPI_ERROR_LOGGED. An empty screener result
+                # whose path 400'd means "not in licence" → mark the KPI failed
+                # so the engine can back-fill it from per-instrument history.
+                if not all_vals and _screener_path in _KPI_ERROR_LOGGED:
+                    KPI_BATCH_FAILED.add(kpi_id)
                 for entry in all_vals:
                     iid = entry.get("i")
                     if iid in id_set:
@@ -883,6 +900,7 @@ class BorsdataAPI:
                         else:
                             snapshots[iid][key] = None
             except Exception as exc:
+                KPI_BATCH_FAILED.add(kpi_id)
                 if key not in _KPI_ERROR_LOGGED:
                     logger.warning(
                         "Screener KPI %s (id=%d) failed — skipping for this session: %s",
