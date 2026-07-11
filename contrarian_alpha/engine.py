@@ -535,10 +535,27 @@ def _build_fundamentals_dict(snapshot: dict, reports: list[dict] | None = None) 
     if ev_e is not None:
         fund["ev_ebitda"] = float(ev_e)
 
-    # Revenue (MSEK)
+    # Revenue (MSEK) — also Altman X5 numerator
     rev = snapshot.get("revenue_m")
     if rev is not None:
         fund["revenue"] = float(rev)
+
+    # Total assets (MSEK) — Altman X1/X2/X3/X5 denominator
+    ta = snapshot.get("total_assets_m")
+    if ta is not None:
+        fund["total_assets"] = float(ta)
+
+    # EBIT (MSEK) — Altman X3 numerator
+    ebit = snapshot.get("ebit_m")
+    if ebit is not None:
+        fund["ebit"] = float(ebit)
+
+    # Total liabilities (Altman X4 denominator). No direct Börsdata KPI, so
+    # derive it from assets − equity when both are present (positive only).
+    if fund.get("total_assets") is not None and fund.get("equity") is not None:
+        _tl = fund["total_assets"] - fund["equity"]
+        if _tl > 0:
+            fund["total_liabilities"] = _tl
 
     # FCF yield (derive from market cap if available)
     if fund.get("fcf") and fund.get("market_cap") and fund["market_cap"] > 0:
@@ -589,6 +606,74 @@ def _fetch_kpi_history(ins_id: int, kpi_id: int, api) -> list[float]:
     except Exception as e:
         logger.debug("_fetch_kpi_history(%s, kpi=%s) failed: %s", ins_id, kpi_id, e)
         return []
+
+
+# Critical snapshot fields for the balance-sheet gate + Altman Z, mapped to the
+# Börsdata KPI id and the divisor get_fundamentals_snapshot_fast applies (so a
+# history back-fill scales identically to a successful batch). Some of these
+# KPIs (total_equity_m 58, total_assets_m 57, ebit_m 55) are NOT fetched by the
+# batch at all — for those, equity/Altman are always missing without this
+# fallback; the rest are back-filled only when their batch screener 400'd.
+def _critical_kpi_fallback() -> dict[str, tuple[int, float]]:
+    return {
+        "fcf_m":          (KPI["fcf_m"],          1),    # 63  FCF (TTM) gate
+        "ebitda_margin":  (KPI["ebitda_margin"],  100),  # 32  EBITDA-margin gate
+        "debt_to_equity": (KPI["debt_to_equity"], 100),  # 40  D/E gate
+        "total_equity_m": (KPI["total_equity_m"], 1),    # 58  Equity > 0 gate
+        "total_assets_m": (KPI["total_assets_m"], 1),    # 57  Altman denominator
+        "ebit_m":         (KPI["ebit_m"],         1),    # 55  Altman X3
+        "revenue_m":      (KPI["revenue_m"],      1),    # 53  Altman X5
+        "market_cap":     (KPI["market_cap"],     1),    # 50  Altman X4 numerator
+        "ev_ebitda":      (KPI["ev_ebitda"],      1),    # 11  strength EV/EBITDA
+    }
+
+
+def _augment_fund_snap_from_history(fund_snap: dict, ins_id: int | None, api) -> list[int]:
+    """
+    Root-cause data-layer fix: back-fill critical snapshot fields the Börsdata
+    batch left None (400 / not in licence, or never batch-fetched) from the
+    per-instrument KPI history (already TTL-cached 24 h by _fetch_kpi_history),
+    scaling each value with the batch's own divisor so downstream builders see a
+    value identical to a successful batch.
+
+    PERFORMANCE GUARD: a KPI is only fetched when the field is missing AND the
+    batch either failed on that KPI (KPI_BATCH_FAILED) or never attempted it —
+    KPIs the batch retrieved fine are never re-fetched. Runs survivor-only (past
+    necessity + hate elimination) and respects the API's shared rate limiter.
+
+    Returns the list of kpi_ids that were back-filled (for logging / flags).
+    """
+    if not fund_snap or ins_id is None or api is None:
+        return []
+
+    try:
+        import borsdata_api as _bd
+        failed = _bd.KPI_BATCH_FAILED
+        attempted = _bd.KPI_BATCH_ATTEMPTED
+    except Exception:
+        failed = attempted = set()
+
+    filled: list[int] = []
+    for key, (kpi_id, divisor) in _critical_kpi_fallback().items():
+        if fund_snap.get(key) is not None:
+            continue  # batch already has a value — nothing to do
+        # Skip KPIs the batch fetched successfully (attempted and not failed):
+        # a None there means the value genuinely does not exist, so fetching
+        # history would just waste a call. Fetch only for failed / never-tried.
+        if kpi_id in attempted and kpi_id not in failed:
+            continue
+        hist = _fetch_kpi_history(ins_id, kpi_id, api)
+        if hist:
+            val = hist[0]
+            fund_snap[key] = val / divisor if divisor != 1 else val
+            filled.append(kpi_id)
+
+    if filled:
+        logger.debug(
+            "BS history fallback for ins_id=%s back-filled KPI ids %s",
+            ins_id, filled,
+        )
+    return filled
 
 
 def _build_quality_data(
@@ -1169,6 +1254,15 @@ def _run_single_ticker(
             return result
 
     # ── 3. BALANCE SHEET GATE ────────────────────────────────────────────────
+
+    # Root-cause fix: the Börsdata batch screener returns 400 for several KPIs
+    # (not in licence) and never fetches equity/Altman inputs at all, leaving
+    # fund_snap None for equity, ebitda_margin and the Altman components — so the
+    # BS gate could only flag BS_DATA_SAKNAS. Back-fill those critical fields
+    # from 24h-cached KPI history (survivor-only, guarded to failed KPIs) so the
+    # gate + Altman Z can actually evaluate. BS_DATA_SAKNAS below still fires as
+    # the last-resort net when even the history is empty.
+    _augment_fund_snap_from_history(fund_snap, ins_id, api)
 
     fund_dict = _build_fundamentals_dict(fund_snap)
 
