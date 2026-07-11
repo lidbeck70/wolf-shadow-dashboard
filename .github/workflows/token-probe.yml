@@ -1,0 +1,30 @@
+name: Token Probe (temporary)
+
+# Temporary diagnostic: verifies whether the GIST_TOKEN secret value is itself
+# valid against the Gists API. Manual-trigger only. Safe to delete once the
+# 401 is isolated.
+#   200 = token is valid and can list the authenticated user's gists
+#   401 = the secret's VALUE is bad (expired / wrong / lacks gist scope)
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe GIST_TOKEN against the Gists API
+        env:
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: token $GIST_TOKEN" \
+            https://api.github.com/gists)
+          echo "HTTP status from GET /gists: $code"
+          if [ "$code" = "200" ]; then
+            echo "OK — token is valid (can list gists)."
+          elif [ "$code" = "401" ]; then
+            echo "401 — the GIST_TOKEN secret value itself is bad (expired/wrong/no gist scope)."
+          else
+            echo "Unexpected status $code — investigate."
+          fi
