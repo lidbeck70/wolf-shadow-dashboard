@@ -1421,18 +1421,34 @@ def _render_cached_preview(mode: str) -> None:
         unsafe_allow_html=True,
     )
     import pandas as pd
+
+    def _num(value, ndigits: int = 1):
+        """Coerce a cached score to a rounded number; blank for null/non-numeric.
+
+        The Gist may hold old-schema rows (or a partial write) where a score is
+        null or a string. round() on None raises TypeError and would crash the
+        whole cold-start preview for every user, so degrade to "" per-cell.
+        """
+        try:
+            f = float(value)
+        except (TypeError, ValueError):
+            return ""
+        if not math.isfinite(f):
+            return ""
+        return round(f, ndigits)
+
     rows = []
     for r in results[:40]:
         rows.append({
             "#": r.get("rank", ""),
             "Ticker": r.get("ticker", ""),
             "Namn": (r.get("name") or "")[:24],
-            "Score": round(r.get("composite_score", 0), 1),
-            "Necessity": round(r.get("necessity_score", 0), 0),
-            "Hat": round(r.get("hat_score", 0), 0),
-            "Quality": round(r.get("strength_score", 0), 0),
-            "Catalyst": round(r.get("catalyst_score", 0), 0),
-            "Pris": r.get("close", ""),
+            "Score": _num(r.get("composite_score"), 1),
+            "Necessity": _num(r.get("necessity_score"), 0),
+            "Hat": _num(r.get("hat_score"), 0),
+            "Quality": _num(r.get("strength_score"), 0),
+            "Catalyst": _num(r.get("catalyst_score"), 0),
+            "Pris": _num(r.get("close"), 2),
         })
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
