@@ -144,13 +144,46 @@ def _strategy_of(h: dict) -> str:
     return h.get("strategy", "Untagged")
 
 
+def _num(value, default: float = 0.0) -> float:
+    """Coerce a persisted numeric field to a finite float.
+
+    Holdings loaded from the Gist or a legacy local file may carry null, missing,
+    or string values for shares / entry_price / tranches / cash. Numeric
+    comparisons (``shares > 0``, ``min(tranches, 3)``, ``float(cash)``) raise
+    TypeError on None and would crash the whole panel, so every render-time
+    numeric read is funnelled through this.
+    """
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return default
+    if f != f or f in (float("inf"), float("-inf")):  # NaN / ±inf
+        return default
+    return f
+
+
 def _get_all_holdings_flat() -> List[dict]:
-    """Merge all portfolio keys into a flat list, each enriched with '_portfolio_key'."""
+    """Merge all portfolio keys into a flat list, each enriched with '_portfolio_key'.
+
+    Numeric fields are coerced to safe values here — this is the single read path
+    feeding the summary header and every strategy section, so a malformed
+    persisted row (null/str shares, entry_price or tranches from an old Gist)
+    can never crash the panel via a None comparison downstream. ``shares`` stays
+    an int when whole so the "· N st" label renders without a trailing ".0".
+    """
     all_data = _load_all()
     result: List[dict] = []
     for key in ("swing", "ovtlyr", "long"):
         for h in all_data.get(key, []):
-            result.append({**h, "_portfolio_key": key})
+            shares = _num(h.get("shares", 0))
+            tranches = int(_num(h.get("tranches_deployed", 0)))
+            result.append({
+                **h,
+                "_portfolio_key":    key,
+                "shares":            int(shares) if shares == int(shares) else shares,
+                "entry_price":       _num(h.get("entry_price", 0)),
+                "tranches_deployed": max(0, min(tranches, 3)),
+            })
     return result
 
 
@@ -806,7 +839,7 @@ def _render_summary_header() -> None:
     """Top-of-page summary: total value, per-strategy allocation bars, cash input."""
     all_flat = _get_all_holdings_flat()
     all_data = _load_all()
-    cash = float(all_data.get("cash", 0))
+    cash = _num(all_data.get("cash", 0))
 
     # Compute per-strategy invested values (uses cached price data)
     strat_vals: dict = {tag: 0.0 for tag in STRATEGY_TAGS}
