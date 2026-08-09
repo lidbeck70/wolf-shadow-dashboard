@@ -91,10 +91,26 @@ _HOLDINGS_DIR = os.path.dirname(os.path.abspath(__file__))
 _HOLDINGS_FILE = os.path.join(_HOLDINGS_DIR, ".holdings_data.json")
 
 
+# Session-state key for the cached Gist payload (see _load_all).
+_GIST_CACHE_KEY = "_holdings_all_cache"
+
+
 def _load_all() -> dict:
-    """Load all portfolios via gist_storage (preferred) or local file."""
+    """Load all portfolios via gist_storage (preferred) or local file.
+
+    The Gist fetch is a network round-trip, and render_holdings_page() calls
+    _load_all() ~8x per run (summary header, each strategy section, risk
+    dashboard). Without caching that is ~8 GETs to api.github.com on *every*
+    Streamlit rerun — i.e. every click. Memoise the payload in session_state so
+    it is fetched once per session; _save_all() refreshes the cache on write.
+    """
     if _HAS_GIST:
-        return _gist_load()
+        cached = st.session_state.get(_GIST_CACHE_KEY)
+        if cached is not None:
+            return cached
+        data = _gist_load()
+        st.session_state[_GIST_CACHE_KEY] = data
+        return data
     if "holdings_data" in st.session_state:
         return st.session_state["holdings_data"]
     try:
@@ -115,6 +131,9 @@ def _save_all(all_holdings: dict) -> None:
     """Save all portfolios via gist_storage (preferred) or local file."""
     if _HAS_GIST:
         _gist_save(all_holdings)
+        # Keep the session cache in sync so the just-saved state is served
+        # without another network fetch on the next rerun.
+        st.session_state[_GIST_CACHE_KEY] = all_holdings
     else:
         st.session_state["holdings_data"] = all_holdings
         try:
@@ -1043,7 +1062,11 @@ def render_holdings_page() -> None:
     # Cloud storage status
     try:
         from gist_storage import get_storage_status
-        status = get_storage_status()
+        # Cache per session — this is another network GET and only changes when
+        # credentials/config change, not between reruns.
+        if "_holdings_storage_status" not in st.session_state:
+            st.session_state["_holdings_storage_status"] = get_storage_status()
+        status = st.session_state["_holdings_storage_status"]
         if status == "cloud_ok":
             st.caption("☁ Cloud storage active — holdings saved permanently")
         elif status == "local_only":
