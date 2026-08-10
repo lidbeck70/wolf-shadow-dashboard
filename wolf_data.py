@@ -23,9 +23,9 @@ import requests
 
 CONFIG = {
     "API_KEY": os.environ.get("BORSDATA_API_KEY", "DIN_API_NYCKEL_HAR"),
-    "CACHE_DIR": "bd_cache",              # kan peka på backtesterns cache
-    "OUTPUT_DIR": "public",               # panelens public-/data-mapp
-    "UNIVERSE_CSV": "universe.csv",       # export från Börsdata-screenern (rekommenderas)
+    "CACHE_DIR": os.environ.get("WOLF_CACHE_DIR", "bd_cache"),    # kan peka på backtesterns cache
+    "OUTPUT_DIR": os.environ.get("WOLF_OUTPUT_DIR", "public"),    # panelens public-/data-mapp
+    "UNIVERSE_CSV": os.environ.get("WOLF_UNIVERSE_CSV", "universe.csv"),  # export från Börsdata-screenern
     "HISTORY_DAYS": 320,                  # räcker för MA200 + 6-mån momentum
     "MIN_MCAP_NOTE": "Screena börsvärde/F-score i Börsdata; detta är rankinglagret",
 
