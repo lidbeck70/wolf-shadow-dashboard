@@ -121,6 +121,56 @@ def save_holdings(data: dict) -> bool:
         return False
 
 
+def load_blob(filename: str, fallback):
+    """Generic Gist-backed read for an arbitrary file in the holdings Gist.
+
+    Read needs no auth (same as load_holdings). Falls back to a local ".<filename>"
+    then to ``fallback``. Lets feature tabs (e.g. swing) persist their own state
+    alongside holdings without touching holdings_init.json.
+    """
+    local = f".{filename}"
+    try:
+        r = requests.get(GIST_API_URL, timeout=10)
+        if r.status_code == 200:
+            content = r.json().get("files", {}).get(filename, {}).get("content", "")
+            if content:
+                return json.loads(content)
+    except Exception:
+        pass
+    try:
+        if os.path.exists(local):
+            with open(local) as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return fallback
+
+
+def save_blob(filename: str, data) -> bool:
+    """Generic Gist-backed write (mirrors save_holdings) for an arbitrary file.
+
+    A Gist PATCH only updates the named file, so writing "swing_data.json" leaves
+    holdings_init.json intact. Always writes the local fallback; returns True only
+    when the Gist write succeeded.
+    """
+    local = f".{filename}"
+    try:
+        with open(local, "w") as f:
+            json.dump(data, f, indent=2, default=str)
+    except Exception:
+        pass
+    token = _get_github_token()
+    if not token:
+        return False
+    try:
+        headers = _auth_header(token)
+        payload = {"files": {filename: {"content": json.dumps(data, indent=2, default=str)}}}
+        r = requests.patch(GIST_API_URL, headers=headers, json=payload, timeout=10)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
 def get_storage_status() -> str:
     """Return storage status string for UI display."""
     token = _get_github_token()

@@ -148,6 +148,13 @@ try:
 except ImportError:
     HOLDINGS_AVAILABLE = False
 
+# Swing (momentum veckorutin)
+try:
+    from swing import render_swing_page
+    SWING_AVAILABLE = True
+except ImportError:
+    SWING_AVAILABLE = False
+
 # Trade Journal
 try:
     from trade_journal import render_trade_journal_page
@@ -219,7 +226,7 @@ def main():
     # ── SCREENING ─────────────────────────────────────────────────────────────
     with tab_screening:
         sub = st.radio(
-            "", ["Arc Screener", "Contrarian Alpha", "Market Cycle"],
+            "", ["Arc Screener", "Contrarian Alpha", "Market Cycle", "Swing"],
             horizontal=True, key="sub_screening",
         )
         st.markdown("---")
@@ -262,6 +269,12 @@ def main():
                 render_market_cycle_page()
             else:
                 tab_not_found("Market Cycle Engine", "tabs/market_cycle")
+
+        elif sub == "Swing":
+            if SWING_AVAILABLE:
+                render_swing_page()
+            else:
+                tab_not_found("Swing", "swing")
 
     # ── REGIME ───────────────────────────────────────────────────────────────
     with tab_regime_main:
