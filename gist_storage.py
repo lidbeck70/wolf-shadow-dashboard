@@ -171,6 +171,30 @@ def save_blob(filename: str, data) -> bool:
         return False
 
 
+def load_wolf_json(name: str):
+    """Read a wolf_data.py output file (e.g. "wolf_screener.json") — Gist first,
+    then common local paths, so it works both on Streamlit Cloud (Gist) and when
+    wolf_data.py wrote a local file (public/ per the spec, repo root, or .name).
+    Returns the parsed object or None when nothing is found.
+    """
+    try:
+        r = requests.get(GIST_API_URL, timeout=10)
+        if r.status_code == 200:
+            content = r.json().get("files", {}).get(name, {}).get("content", "")
+            if content:
+                return json.loads(content)
+    except Exception:
+        pass
+    for path in (name, f".{name}", os.path.join("public", name), os.path.join("data", name)):
+        try:
+            if os.path.exists(path):
+                with open(path, encoding="utf-8") as f:
+                    return json.load(f)
+        except Exception:
+            pass
+    return None
+
+
 def get_storage_status() -> str:
     """Return storage status string for UI display."""
     token = _get_github_token()

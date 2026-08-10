@@ -142,6 +142,27 @@ def _save(data: dict) -> None:
         _blob_save(_STORE_FILE, data)
 
 
+def add_to_watchlist(ticker: str, mom6="", note: str = "") -> bool:
+    """Public hook for other tabs (e.g. the momentum screener) to push a
+    candidate into the Swing watchlist — the same store the Swing tab reads.
+
+    Returns True if added, False if empty ticker or already present.
+    """
+    ticker = (ticker or "").upper().strip()
+    if not ticker:
+        return False
+    data = _load()
+    if any((w.get("ticker") or "").upper() == ticker for w in data["watchlist"]):
+        return False
+    data["watchlist"].append({
+        "id": _uid(), "ticker": ticker,
+        "mom6": "" if mom6 in (None, "") else str(mom6),
+        "note": note or "", "setup": "väntar", "added": _today(),
+    })
+    _save(data)
+    return True
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 def render_swing_page() -> None:
     """Huvud-entry point för Swing-fliken (anropas från wolf_panel.py)."""

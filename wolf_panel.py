@@ -155,6 +155,19 @@ try:
 except ImportError:
     SWING_AVAILABLE = False
 
+# Swing momentum-screener + regim (data från wolf_data.py)
+try:
+    from wolf_screener_ui import render_wolf_screener_page
+    WOLF_SCREENER_AVAILABLE = True
+except ImportError:
+    WOLF_SCREENER_AVAILABLE = False
+
+try:
+    from wolf_regime_ui import render_wolf_regime_page
+    WOLF_REGIME_AVAILABLE = True
+except ImportError:
+    WOLF_REGIME_AVAILABLE = False
+
 # Trade Journal
 try:
     from trade_journal import render_trade_journal_page
@@ -226,7 +239,8 @@ def main():
     # ── SCREENING ─────────────────────────────────────────────────────────────
     with tab_screening:
         sub = st.radio(
-            "", ["Arc Screener", "Contrarian Alpha", "Market Cycle", "Swing"],
+            "", ["Arc Screener", "Contrarian Alpha", "Market Cycle", "Swing",
+                 "Swing Screener"],
             horizontal=True, key="sub_screening",
         )
         st.markdown("---")
@@ -276,14 +290,25 @@ def main():
             else:
                 tab_not_found("Swing", "swing")
 
+        elif sub == "Swing Screener":
+            if WOLF_SCREENER_AVAILABLE:
+                render_wolf_screener_page()
+            else:
+                tab_not_found("Swing Screener", "wolf_screener_ui")
+
     # ── REGIME ───────────────────────────────────────────────────────────────
     with tab_regime_main:
         sub = st.radio(
-            "", ["Arc Regime", "Alpha Regime", "Flow Divergence"],
+            "", ["Arc Regime", "Alpha Regime", "Flow Divergence", "Swing Regime"],
             horizontal=True, key="sub_regime",
         )
         st.markdown("---")
-        if sub == "Arc Regime":
+        if sub == "Swing Regime":
+            if WOLF_REGIME_AVAILABLE:
+                render_wolf_regime_page()
+            else:
+                tab_not_found("Swing Regime", "wolf_regime_ui")
+        elif sub == "Arc Regime":
             inner = st.radio(
                 "", ["Wolf Regime", "Viking Regime", "🌍 EMBER Regime"],
                 horizontal=True, key="sub_regime_arc",
