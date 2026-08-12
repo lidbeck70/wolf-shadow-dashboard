@@ -543,6 +543,14 @@ def _guide_ember() -> None:
             unsafe_allow_html=True,
         )
 
+    # The complete 13-section ruleset, with thresholds read live from the Ember
+    # code. Collapsed by default so the guide above stays readable.
+    st.markdown("<hr style='border-color:rgba(255,107,61,0.2);margin:24px 0 12px;'/>",
+                unsafe_allow_html=True)
+    with st.expander("📜 Fullständigt regelverk — alla 13 sektioner med exakta trösklar",
+                     expanded=False):
+        _render_ember_full_ruleset()
+
 
 def _render_ember_full_ruleset() -> None:
     """Render EMBER complete 13-section ruleset with actual thresholds pulled from code."""
@@ -1041,6 +1049,78 @@ def _page_cheatsheet() -> None:
             + "</div>", unsafe_allow_html=True)
 
 
+_PANEL_GUIDE: list[tuple] = [
+    ("SCREENING → Swing", "Momentum: alla regler",
+     "Veckochecklistan, bevakningslistan och positionerna med automatiska "
+     "säljregel-flaggor (MA50 / stop −10 % / ur topp 40). Köpknappar låses av "
+     "marknadsfiltret."),
+    ("SCREENING → Swing Screener", "Momentum: entry #2, #3",
+     "Färdig momentum-ranking topp 40 med setup-flaggor A/B och RSI. "
+     "'→ Bevakning' skickar kandidaten till Swing-fliken."),
+    ("REGIME → Swing Regime", "Momentum: entry #1, #6",
+     "Trafikljus GRÖN/GUL/RÖD + regelverk, OMXSPI vs MA200, marknadsbredd "
+     "(dör före index) och regimhistorik."),
+    ("SCREENING → Arc Screener", "Wolf / Viking / Ember",
+     "Wolf: Regime Score + volymbekräftelse. Viking: Z-score composite + Vikings "
+     "Nine. Ember: råvarusetups med T/E-grindar och no-trade-flaggor."),
+    ("SCREENING → Contrarian Alpha", "Quality / Deep Contrarian",
+     "Kvalitetspoäng, KAP-badge, Hat Score + Necessity. Detaljkort med "
+     "gate-checklista och score-breakdown."),
+    ("REGIME → Alpha Regime", "Alpha #1-10 · Quality · Deep Contrarian",
+     "Alla regler som live gates. GRÖN/ORANGE/RÖD badge. Quality-läge och "
+     "Deep Contrarian-läge (cykelfas + ackumulerings-/distributionssteg)."),
+    ("REGIME → Wolf Regime", "Wolf: alla regler",
+     "4-lagers regime + Entry Checklist (Trend/Volatilitet/Momentum/Candlestick/"
+     "OB) med auto-pass/fail. SL/TP-kalkylator. Benchmark RS."),
+    ("REGIME → Viking Regime", "Viking: alla + Vikings Nine",
+     "Prisgraf + EMA 10/20/50/200 + Order Blocks. Per-ticker Fear & Greed. "
+     "Overhead Clusters. SL/TP-kalkylator."),
+    ("REGIME → 🌍 EMBER Regime", "Ember: makro/cykelfilter",
+     "Regimbadge som avgör om Ember-entries överhuvudtaget är tillåtna. "
+     "DATA_GAP blir aldrig GRÖN."),
+    ("PORTFOLIO → Holdings", "Alpha #8-9 · Quality · Deep Contrarian",
+     "Tre portföljer med live-signaler. Positionsstorlek >10 %-varning, "
+     "sektorexponering >25 %, tranches 0/3–3/3, korrelationsmatris."),
+    ("PORTFOLIO → Trade Journal", "Alla — disciplin",
+     "Logga varje affär: entry, exit, R, exit-anledning och om du följde planen. "
+     "Utan journal går strategin inte att utvärdera."),
+    ("INTELLIGENCE → Retail Pulse", "Deep Contrarian: sentiment-overlay",
+     "Retail sentiment 0-100. Under 30 = extrem rädsla (köpstöd). Över 70 = "
+     "extrem girighet (säljstöd)."),
+    ("SENTIMENT", "Alpha #5 · Viking #5, #9",
+     "Fear & Greed gauge 0-100. Under 60 = OK att köpa. Över 60 = vänta."),
+    ("SCREENING → Market Cycle", "Quality · Deep Contrarian",
+     "Marknadsfas (CAPITULATION → EUPHORIA). Styr både Quality-cykelgaten och "
+     "Deep Contrarians ackumulerings-/distributionssteg."),
+    ("RULES", "Alla regelverk",
+     "Denna sida. Läs före varje handelsdag. Reglerna finns även inline i varje "
+     "regime-flik."),
+]
+
+
+def _page_panel_guide() -> None:
+    """Map of which tab enforces which rule."""
+    st.markdown(
+        f"<div style='text-align:center;padding:14px 0 4px;'>"
+        f"<h2 style='color:{_MAGENTA};letter-spacing:0.12em;margin:0;'>FLIKGUIDE</h2>"
+        f"<p style='color:{_DIM};font-size:0.76rem;margin:6px 0 14px;'>"
+        f"Vilken flik kontrollerar vilken regel — och hur du använder den.</p></div>",
+        unsafe_allow_html=True)
+
+    html = ("<table style='width:100%;border-collapse:collapse;'>"
+            f"<tr style='border-bottom:1px solid rgba(0,229,255,0.15);'>"
+            f"<th style='text-align:left;color:{_CYAN};font-size:0.72rem;padding:8px;'>FLIK</th>"
+            f"<th style='text-align:left;color:{_CYAN};font-size:0.72rem;padding:8px;'>KONTROLLERAR</th>"
+            f"<th style='text-align:left;color:{_CYAN};font-size:0.72rem;padding:8px;'>HUR DU ANVÄNDER DEN</th></tr>")
+    for tab, rules, usage in _PANEL_GUIDE:
+        html += (f"<tr style='border-bottom:1px solid rgba(138,133,120,0.2);'>"
+                 f"<td style='color:{_TEXT};font-size:0.78rem;padding:6px 8px;"
+                 f"font-weight:700;white-space:nowrap;'>{tab}</td>"
+                 f"<td style='color:{_YELLOW};font-size:0.7rem;padding:6px 8px;'>{rules}</td>"
+                 f"<td style='color:{_DIM};font-size:0.7rem;padding:6px 8px;'>{usage}</td></tr>")
+    st.markdown(html + "</table>", unsafe_allow_html=True)
+
+
 # ------------------------------------------------------------------ #
 #  Main render
 # ------------------------------------------------------------------ #
@@ -1048,7 +1128,8 @@ def _page_cheatsheet() -> None:
 def render_rules_page() -> None:
     sub = st.radio(
         "",
-        ["🚀 KOM IGÅNG", "📋 HANDELSREGLER", "⚡ FUSKLAPP", "📖 STRATEGIGUIDER"],
+        ["🚀 KOM IGÅNG", "📋 HANDELSREGLER", "⚡ FUSKLAPP", "🗺 FLIKGUIDE",
+         "📖 STRATEGIGUIDER"],
         horizontal=True,
         key="rules_sub",
     )
@@ -1061,6 +1142,8 @@ def render_rules_page() -> None:
         _page_rules()
     elif sub == "⚡ FUSKLAPP":
         _page_cheatsheet()
+    elif sub == "🗺 FLIKGUIDE":
+        _page_panel_guide()
     else:
         render_strategy_guides()
 

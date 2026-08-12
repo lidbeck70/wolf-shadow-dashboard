@@ -378,9 +378,13 @@ def _render_header(strategies: dict) -> None:
 
 # ── Main entry point ──────────────────────────────────────────────────────────
 
-def _render_manual_card(pb) -> None:
-    """Card for a manual (non-code) strategy — no entry_fn, so it isn't in the
-    registry, but it still belongs on this tab."""
+def _render_manual_card(pb, badge: str = "Manuell exekvering") -> None:
+    """Card for a strategy that has no entry_fn/exit_fn in strategies/registry.py.
+
+    These still have engines behind them (wolf_data, contrarian_alpha, ember) —
+    what they lack is the backtestable function triple, so they are documented
+    here rather than driven from the registry.
+    """
     c = pb.color
     st.markdown(
         f'<div style="border:1px solid {c}44;border-left:3px solid {c};'
@@ -390,7 +394,7 @@ def _render_manual_card(pb) -> None:
         f'letter-spacing:0.04em;">{pb.name}</span>'
         + _icon_pill("⏱", pb.horizon, c)
         + _icon_pill("🌍", pb.universe, _DIM)
-        + f'&nbsp;<span style="color:{_YELLOW};font-size:0.68rem;">◐ Manuell rutin</span>'
+        + f'&nbsp;<span style="color:{_YELLOW};font-size:0.68rem;">◐ {badge}</span>'
         f'</div>'
         f'<div style="color:{_DIM};font-size:0.77rem;margin-top:6px;">{pb.tagline}</div>'
         f'<div style="color:{_DIM};font-size:0.72rem;margin-top:6px;">📍 {pb.where}</div>',
@@ -435,11 +439,22 @@ def tab_strategy_overview() -> None:
     _render_header(STRATEGIES)
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Manual (non-code) strategies first — Momentum Swing is the recommended
-    # starting point, so it leads the list.
-    _momentum = _PLAYBOOKS.get("momentum")
-    if _momentum is not None:
-        _render_manual_card(_momentum)
+    # Registry-backed strategies (wolf/alpha/viking) render from their STRATEGY
+    # dict; everything else in the playbooks gets a documentation card, in the
+    # learning order so the easiest strategy leads.
+    _registry_keys = {s.get("key") for s in STRATEGIES.values()}
+    _badges = {"momentum": "Manuell rutin", "quality": "Motor: contrarian_alpha",
+               "contrarian": "Motor: contrarian_alpha", "ember": "Motor: ember"}
+    try:
+        from strategy_rules import LEARNING_ORDER as _ORDER
+    except Exception:
+        _ORDER = tuple(_PLAYBOOKS)
+
+    for _key in _ORDER:
+        _pb = _PLAYBOOKS.get(_key)
+        if _pb is None or _key in _registry_keys:
+            continue
+        _render_manual_card(_pb, _badges.get(_key, "Manuell exekvering"))
 
     # One card per code-backed strategy
     for display_name, strat in STRATEGIES.items():

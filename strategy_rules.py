@@ -492,18 +492,332 @@ VIKING = Playbook(
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+#  5. QUALITY  (Buffett / Kvalitetsaktiepodden)
+# ═════════════════════════════════════════════════════════════════════════════
+
+QUALITY = Playbook(
+    key="quality",
+    name="Quality",
+    tagline="Välskötta bolag till rimliga priser — ägda länge",
+    color=CYAN,
+    level=LEVEL_MEDIUM,
+    horizon="Position — 0,5–3 år",
+    universe="Nordiska + amerikanska kvalitetsbolag",
+    where="SCREENING → Contrarian Alpha (quality-läge)  ·  REGIME → Alpha Regime → Quality",
+    idea=(
+        "Inspirerad av Warren Buffett och Kvalitetsaktiepodden: hitta välskötta bolag "
+        "med stark ekonomi, köp dem till rimliga priser när marknadsläget är gynnsamt "
+        "och håll dem länge. 'Wonderful companies at fair prices' kombinerat med krav "
+        "på hög lönsamhet, stabila marginaler och låg skuldsättning. Du fattar få "
+        "beslut — men de kräver att du förstår både värdering och marknadscykel."
+    ),
+    risk=RiskModel(
+        risk_per_trade="Positionsbaserad — ingen fast stop-%. Risken styrs av "
+                       "positionsstorlek och att du bara köper i rätt cykelfas",
+        position_size="Max 10 % per aktie · hela positionen byggs i en omgång",
+        max_positions="8–10 innehav · max 20–25 % per sektor",
+        stop="Kurs under EMA200 = halvera · regimskifte = sälj resten",
+        targets="Inget vinstmål — säljs på värdering, cykel eller kvalitetsfall",
+    ),
+    entry=_rules([
+        ("Trend: pris över EMA200 och EMA50 över EMA200",
+         "Gyllene kors. Bolaget ska redan vara i långsiktig upptrend när du köper.",
+         "REGIME → Alpha Regime → Quality-läge → ANALYSERA. Trend-villkoret visas "
+         "som en av fyra gröna gates.", True),
+        ("Värdering: P/E 7–25 och EV/EBIT 4–20",
+         "Varken för dyrt eller suspekt billigt. Utanför spannet = avstå.",
+         "REGIME → Alpha Regime → Quality: värderingsgaten visar P/E och EV/EBIT "
+         "med spannet utsatt.", True),
+        ("Marknadscykel: DISBELIEF, HOPE, OPTIMISM, BELIEF eller DISBELIEF_NEW",
+         "Tidigt till mitt i en uppgång — aldrig i eufori.",
+         "SCREENING → Market Cycle: aktuell fas. Alpha Regime visar samma fas som "
+         "cykelgate."),
+        ("Bolagskvalitet ≥ 55/100 eller KAP-badge",
+         "ROIC, marginaler och tillväxt vägs till en kvalitetspoäng.",
+         "SCREENING → Contrarian Alpha: kvalitetspoäng per bolag, ★ KAP SCREENED-"
+         "badge på detaljkortet."),
+        ("Max 10 % per aktie",
+         "Ingen enskild position får dominera portföljen.",
+         "PORTFOLIO → Holdings: Quality-sektionen visar '⚠ >10% position' när en "
+         "position vuxit förbi taket.", True),
+        ("Max 20–25 % per sektor",
+         "Riskkontroll på portföljnivå — flera kvalitetsbolag i samma sektor är "
+         "fortfarande en enda vadslagning.",
+         "PORTFOLIO → Holdings: sektorexponering + korrelationsmatris.", True),
+    ]),
+    exit=_rules([
+        ("Trenden bryts — kurs under EMA200",
+         "Halvera positionen vid brottet, sälj resten vid regimskifte.",
+         "REGIME → Alpha Regime: gate visar dagar under EMA200. PORTFOLIO → "
+         "Holdings: signalkolumnen slår om till REDUCE/EXIT.", True),
+        ("Värderingen spricker — P/E > 25 eller EV/EBIT > 20",
+         "Cykeln kan vara på topp. Du betalar för optimism, inte för bolaget.",
+         "SCREENING → Contrarian Alpha: värderingsband på detaljkortet."),
+        ("Cykeln skiftar — THRILL, EUPHORIA, COMPLACENCY, ANXIETY eller DENIAL",
+         "Sencykliska faser. Kvalitet skyddar inte mot en hel marknad som vänder.",
+         "SCREENING → Market Cycle: fasindikatorn."),
+        ("Bolagskvaliteten faller",
+         "Kvalitetspoängen rasar eller marginalerna försämras konsekvent.",
+         "SCREENING → Contrarian Alpha: kvalitetspoäng över tid + gate-checklistan "
+         "på detaljkortet."),
+    ]),
+    workflow=(
+        "SCREENING → Contrarian Alpha: sortera på kvalitetspoäng, leta KAP-badges.",
+        "REGIME → Alpha Regime → Quality-läge: kör ANALYSERA på kandidaten.",
+        "Alla fyra gates gröna = BUY. Tre gröna = WATCH. Två eller färre = WAIT.",
+        "Räkna positionen: max 10 % av portföljen, kolla sektorexponeringen först.",
+        "PORTFOLIO → Holdings: lägg in innehavet så regim- och signalbevakning körs.",
+        "Kvartalsvis: gå igenom innehaven mot de fyra exit-reglerna.",
+    ),
+    cheatsheet=(
+        ("Trend", "Pris > EMA200 · EMA50 > EMA200"),
+        ("Värdering", "P/E 7–25 · EV/EBIT 4–20"),
+        ("Cykel", "DISBELIEF · HOPE · OPTIMISM · BELIEF"),
+        ("Kvalitet", "≥ 55/100 eller KAP-badge"),
+        ("Signal", "4 gröna = BUY · 3 = WATCH · ≤2 = WAIT"),
+        ("Max per aktie", "10 %"),
+        ("Max per sektor", "20–25 %"),
+        ("Antal innehav", "8–10"),
+        ("Exit", "EMA200-brott = halvera · regimskifte = sälj"),
+    ),
+    pitfalls=(
+        "Köper för sent — när nyheterna är positiva är kursen ofta redan i THRILL-fasen.",
+        "Betalar för mycket för ett bra bolag. Kvalitet till fel pris är fortfarande "
+        "en dålig affär — värderingsgaten finns just därför.",
+        "Låter en vinnare växa förbi 10 % utan att trimma.",
+        "Sitter kvar när kvalitetspoängen faller, för att bolaget 'brukade vara bra'.",
+    ),
+)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  6. DEEP CONTRARIAN  (Rick Rule / Eric Sprott)
+# ═════════════════════════════════════════════════════════════════════════════
+
+DEEP_CONTRARIAN = Playbook(
+    key="contrarian",
+    name="Deep Contrarian",
+    tagline="Köp i maximalt hat, sälj i eufori — i tredjedelar",
+    color=EMBER,
+    level=LEVEL_ADVANCED,
+    horizon="Cykel — 1–3 år per position",
+    universe="Råvarurelaterat: gruvbolag, guld, silver, olja, gas",
+    where="SCREENING → Contrarian Alpha (deep_contrarian)  ·  REGIME → Alpha Regime → Deep Contrarian",
+    idea=(
+        "Rick Rule: 'du är antingen kontrarian eller så är du ett offer.' Du köper "
+        "råvarurelaterade tillgångar i faser av maximal förtvivlan och säljer när alla "
+        "är euforiska. Eric Sprotts princip: bygg alltid i tredjedelar, aldrig allt på "
+        "en gång. Den svåraste strategin psykologiskt — du köper när det känns värst "
+        "och måste kunna sitta genom 50 % nedgång utan att sälja."
+    ),
+    risk=RiskModel(
+        risk_per_trade="Ingen fast procentsats — storleken bestäms av total portfölj "
+                       "och conviction. Räkna med att kunna hålla genom 50 % nedgång",
+        position_size="Byggs i tre lika delar (1/3 → 2/3 → 3/3)",
+        max_positions="Max ~25 % per råvarukategori",
+        stop="Ingen mekanisk stop — cykelfasen styr. Sälj i distributionsfaserna",
+        targets="Distribueras i tre steg: THRILL → EUPHORIA → ANXIETY/DENIAL",
+    ),
+    entry=_rules([
+        ("ACCUMULATE 1/3 — fas CAPITULATION eller DEPRESSION",
+         "Maximalt pessimism, alla ger upp. Köp första tredjedelen.",
+         "REGIME → Alpha Regime → Deep Contrarian → ANALYSERA: fasindikatorn visar "
+         "CAPITULATION/DEPRESSION och stage-etiketten ACCUMULATE 1/3."),
+        ("ACCUMULATE 2/3 — fas DISBELIEF, ANGER eller PANIC",
+         "Tvivel och ilska. Kursen fortfarande under 200-dagars MA. Andra tredjedelen.",
+         "REGIME → Alpha Regime → Deep Contrarian: stage ACCUMULATE 2/3."),
+        ("ACCUMULATE 3/3 — fas HOPE, kurs nära MA200 (−5 % till +15 %)",
+         "Sista chansen att ackumulera billigt innan trenden är uppenbar.",
+         "REGIME → Alpha Regime → Deep Contrarian: stage ACCUMULATE 3/3."),
+        ("Bygg ALLTID i tre lika delar",
+         "Aldrig allt på en gång. Det är så du får ner snittkursen när det faller mer.",
+         "PORTFOLIO → Holdings: Deep Contrarian-innehav har fältet "
+         "'Tranches deployed' (0/3–3/3) som visar var du är.", True),
+        ("Bekräftelse: gummisnodde ≥ 90:e percentilen",
+         "T.ex. Gold/Silver-ratio historiskt sträckt = råvaran max-billig vs motvikten.",
+         "REGIME → Alpha Regime: välj 'Commodity exposure' för att se om ratios är "
+         "historiskt sträckta."),
+        ("Sentiment-overlay: retail sentiment < 30/100",
+         "Extrem rädsla ger HIGH confidence på köpsignalen.",
+         "INTELLIGENCE → Retail Pulse: sentiment-score."),
+        ("Max ~25 % per råvarukategori",
+         "T.ex. max 25 % i guldgruvbolag totalt — de rör sig som en enda position.",
+         "PORTFOLIO → Holdings: Deep Contrarian-sektionen varnar '⚠ Sektor >25%'.", True),
+    ]),
+    exit=_rules([
+        ("DISTRIBUTE 1/3 — fas THRILL",
+         "Entusiasm och FOMO driver priserna. Sälj 25–33 %.",
+         "REGIME → Alpha Regime → Deep Contrarian: stage DISTRIBUTE 1/3."),
+        ("DISTRIBUTE 2/3 — fas EUPHORIA eller COMPLACENCY",
+         "Alla är euforiska. Sälj 50–75 %.",
+         "REGIME → Alpha Regime → Deep Contrarian: stage DISTRIBUTE 2/3."),
+        ("DISTRIBUTE 3/3 — fas ANXIETY eller DENIAL",
+         "Trenden bryter ner. Sälj resterande.",
+         "REGIME → Alpha Regime → Deep Contrarian: stage DISTRIBUTE 3/3.", True),
+        ("HOLD i OPTIMISM och BELIEF — sälj inte, köp inte mer",
+         "Trenden har precis börjat. Säljer du här missar du det mesta av rörelsen.",
+         "REGIME → Alpha Regime → Deep Contrarian: stage HOLD.", True),
+        ("Sentiment-overlay: retail sentiment > 70/100",
+         "Extrem girighet stärker säljsignalen.",
+         "INTELLIGENCE → Retail Pulse: sentiment-score."),
+    ]),
+    workflow=(
+        "REGIME → Alpha Regime → Deep Contrarian → ANALYSERA: vilken cykelfas?",
+        "Kolla gummisnodden (Commodity exposure) — är råvaran historiskt sträckt?",
+        "INTELLIGENCE → Retail Pulse: bekräfta med sentiment (<30 = rädsla).",
+        "SCREENING → Contrarian Alpha: hitta kandidater via Hat Score + Necessity.",
+        "Köp EN tredjedel. Notera 'Tranches deployed' i Holdings.",
+        "Vänta på nästa fas innan nästa tredjedel — månader, inte dagar.",
+    ),
+    cheatsheet=(
+        ("Köpfas 1/3", "CAPITULATION · DEPRESSION"),
+        ("Köpfas 2/3", "DISBELIEF · ANGER · PANIC"),
+        ("Köpfas 3/3", "HOPE (kurs −5 % till +15 % vs MA200)"),
+        ("Håll", "OPTIMISM · BELIEF — rör ingenting"),
+        ("Sälj 1/3", "THRILL"),
+        ("Sälj 2/3", "EUPHORIA · COMPLACENCY"),
+        ("Sälj 3/3", "ANXIETY · DENIAL"),
+        ("Bekräftelse", "Gummisnodde ≥ 90:e percentilen"),
+        ("Sentiment", "<30 = köp · >70 = sälj"),
+        ("Max per kategori", "~25 %"),
+        ("Uthållighet", "Måste klara 50 % nedgång utan panik"),
+    ),
+    pitfalls=(
+        "Köper allt på en gång istället för i tredjedelar — då kan du inte pressa ner "
+        "snittkursen när det faller vidare.",
+        "Säljer i HOLD-fasen för tidigt. Trenden har precis börjat — det är där de "
+        "flesta hoppar av och missar hela uppgången.",
+        "Ignorerar gummisnodde-signalerna, som ger objektiv bekräftelse när magkänslan "
+        "sviker (och den sviker alltid i de här faserna).",
+        "Köper i DENIAL/ANXIETY och tror det är billigt — det är ett SÄLJ-läge.",
+    ),
+)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  7. EMBER  (råvarucykel — Rick Rule-inspirerad, kodstyrd)
+# ═════════════════════════════════════════════════════════════════════════════
+
+# Live thresholds from ember/config.py so this page can never drift from the
+# engine. Fallbacks match the committed config if ember isn't importable.
+try:  # pragma: no cover - trivial import guard
+    from ember.config import (
+        RISK_PCT as _EMBER_RISK_PCT,
+        PULLBACK_EMA_PCT as _EMBER_PULLBACK_PCT,
+        RSI_ENTRY_MAX as _EMBER_RSI_MAX,
+    )
+except Exception:  # pragma: no cover
+    _EMBER_RISK_PCT, _EMBER_PULLBACK_PCT, _EMBER_RSI_MAX = 0.02, 3.0, 45
+
+EMBER_PB = Playbook(
+    key="ember",
+    name="🔥 Ember",
+    tagline="Råvarucykel med hårda grindar — kontrariansk timing, teknisk precision",
+    color=EMBER,
+    level=LEVEL_ADVANCED,
+    horizon="Swing — dagar till veckor",
+    universe="Börsdata råvarufilter + GDX/GDXJ/SIL/COPX/URA/XLE-konstituenter",
+    where="SCREENING → Arc Screener → 🔥 EMBER  ·  REGIME → Arc Regime → 🌍 EMBER Regime",
+    idea=(
+        "Ember tar Deep Contrarians cykeltänk och lägger teknisk precision ovanpå: "
+        "makro/cykelfilter avgör OM du får handla, fyra hårda trendgrindar avgör VAD, "
+        "och två hårda entrygrindar avgör NÄR. Allt är kodstyrt och mekaniskt — men "
+        "det är många villkor att hålla reda på, så lär dig Deep Contrarian först. "
+        "Det fullständiga regelverket (13 sektioner med exakta trösklar) finns under "
+        "STRATEGIGUIDER → Ember."
+    ),
+    risk=RiskModel(
+        risk_per_trade=f"{_EMBER_RISK_PCT * 100:.0f} % av kapitalet "
+                       f"(ember/config.py: RISK_PCT = {_EMBER_RISK_PCT})",
+        position_size="Risk ÷ stopavstånd — alltid strukturbaserat, aldrig fast antal",
+        max_positions="Justeras efter regim (GRÖN/GUL/RÖD)",
+        stop="Strukturbaserad (ATR/swing-low) — aldrig en godtycklig procentsats",
+        targets="T1 och T2 per setup-kort, med R:R utsatt",
+    ),
+    entry=_rules([
+        ("Makro/cykelfilter — EMBER Regime måste tillåta handel",
+         "Regimen sätts av cykel- och makroläge. DATA_GAP blir aldrig GRÖN.",
+         "REGIME → Arc Regime → 🌍 EMBER Regime: regimbadgen. RÖD = inga nya entries.", True),
+        ("Fyra trendgrindar (T1–T4) — alla hårda, alla måste passera",
+         "Trendstrukturen måste vara intakt innan en entry ens övervägs.",
+         "SCREENING → 🔥 EMBER: setup-kortet visar T1–T4 med PASS/FAIL per grind.", True),
+        (f"Entrygrind E1 — pullback inom ±{_EMBER_PULLBACK_PCT:.0f} % av 20D EMA",
+         "Du köper i en rekyl mot 20-dagars EMA, aldrig i ett rakt rally.",
+         "SCREENING → 🔥 EMBER: setup-kortet visar avstånd till 20D EMA.", True),
+        (f"Entrygrind E2 — RSI(14) under {_EMBER_RSI_MAX}",
+         "Momentum får inte vara utsträckt vid entry.",
+         "SCREENING → 🔥 EMBER: RSI visas på setup-kortet med gränsvärdet utsatt.", True),
+        ("Fyra bekräftande entryfilter",
+         "Inte hårda krav, men de höjer kvaliteten på caset.",
+         "SCREENING → 🔥 EMBER: bekräftelsefälten på setup-kortet."),
+        ("Inga aktiva no-trade-flaggor (F1–F4)",
+         "Är någon flagga aktiv blockeras entry helt — oavsett hur bra allt annat ser ut.",
+         "SCREENING → 🔥 EMBER: no-trade-flaggorna listas på kortet. Aktiv flagga = "
+         "kortet blockeras.", True),
+    ]),
+    exit=_rules([
+        ("Stop enligt setup-kortet — strukturbaserad",
+         "Stopen sätts av struktur (ATR/swing-low), inte av en procentsats.",
+         "SCREENING → 🔥 EMBER: fältet Stop på setup-kortet.", True),
+        ("T1 och T2 enligt kortet",
+         "Delavyttring vid T1, resten mot T2. R:R står utskrivet innan du går in.",
+         "SCREENING → 🔥 EMBER: fälten T1, T2 och R:R."),
+        ("Ogiltigförklaras om — casets premiss brister",
+         "Varje kort listar vad som gör caset ogiltigt. Inträffar det: ut, oavsett kurs.",
+         "SCREENING → 🔥 EMBER: fältet 'Ogiltigförklaras om' på setup-kortet.", True),
+        ("Regimskifte till RÖD",
+         "Inga nya entries; befintliga hanteras enligt stop och invalidering.",
+         "REGIME → 🌍 EMBER Regime: regimbadgen."),
+    ]),
+    workflow=(
+        "REGIME → 🌍 EMBER Regime: vilken regim råder? RÖD = läs bara, handla inte.",
+        "SCREENING → 🔥 EMBER: gå igenom topp-korten uppifrån.",
+        "Kontrollera T1–T4 (alla PASS) och att inga F1–F4-flaggor är aktiva.",
+        "Kontrollera E1 (pullback) + E2 (RSI) — båda måste passera.",
+        "Läs 'Ogiltigförklaras om' innan du köper — det är din exit-premiss.",
+        "Position = risk ÷ stopavstånd. Lägg stop direkt, logga i journalen.",
+    ),
+    cheatsheet=(
+        ("Regim", "Måste tillåta handel · DATA_GAP = aldrig GRÖN"),
+        ("Trendgrindar", "T1–T4 — alla måste passera"),
+        ("Entry E1", f"Pullback inom ±{_EMBER_PULLBACK_PCT:.0f} % av 20D EMA"),
+        ("Entry E2", f"RSI(14) < {_EMBER_RSI_MAX}"),
+        ("No-trade", "F1–F4 — någon aktiv = blockerad"),
+        ("Risk/affär", f"{_EMBER_RISK_PCT * 100:.0f} % av kapitalet"),
+        ("Stop", "Strukturbaserad (ATR/swing-low)"),
+        ("Rangordning", "asymmetry_score + cykelbonus"),
+        ("Elitcase", "Alla T + båda E + inga F"),
+    ),
+    pitfalls=(
+        "Ta ett case där 3 av 4 trendgrindar passerar. Grindarna är hårda av en "
+        "anledning — 'nästan' finns inte.",
+        "Ignorera en no-trade-flagga för att caset annars ser perfekt ut.",
+        "Köpa utan att ha läst 'Ogiltigförklaras om' — då vet du inte när du ska ut.",
+        "Sätta en procentbaserad stop istället för den strukturbaserade på kortet.",
+    ),
+    note="Det fullständiga regelverket med alla 13 sektioner och exakta trösklar "
+         "(hämtade live ur koden) finns under STRATEGIGUIDER → 🔥 Ember.",
+)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 #  Registry + helpers
 # ═════════════════════════════════════════════════════════════════════════════
 
 PLAYBOOKS: dict[str, Playbook] = {
     "momentum": MOMENTUM,
-    "wolf": WOLF,
+    "quality": QUALITY,
     "alpha": ALPHA,
     "viking": VIKING,
+    "wolf": WOLF,
+    "contrarian": DEEP_CONTRARIAN,
+    "ember": EMBER_PB,
 }
 
-# Suggested learning order — easiest and most mechanical first.
-LEARNING_ORDER: tuple[str, ...] = ("momentum", "alpha", "viking", "wolf")
+# Suggested learning order — easiest and most mechanical first, hardest last.
+LEARNING_ORDER: tuple[str, ...] = (
+    "momentum", "quality", "alpha", "viking", "wolf", "contrarian", "ember",
+)
 
 LEVEL_COLOR = {LEVEL_BEGINNER: GREEN, LEVEL_MEDIUM: AMBER, LEVEL_ADVANCED: RED}
 

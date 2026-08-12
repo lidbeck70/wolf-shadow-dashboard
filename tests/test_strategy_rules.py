@@ -89,6 +89,28 @@ def test_risk_matches_the_code_that_actually_trades():
             f"(risk_pct={params['risk_pct']})")
 
 
+def test_ember_thresholds_track_ember_config():
+    """Ember's playbook interpolates live values from ember/config.py."""
+    from ember.config import RISK_PCT, PULLBACK_EMA_PCT, RSI_ENTRY_MAX
+
+    pb = sr.PLAYBOOKS["ember"]
+    assert RISK_PCT * 100 in _pct_in(pb.risk.risk_per_trade)
+    entry_text = " ".join(r.text for r in pb.entry)
+    assert f"{PULLBACK_EMA_PCT:.0f} %" in entry_text, entry_text
+    assert str(RSI_ENTRY_MAX) in entry_text, entry_text
+
+
+def test_new_playbooks_are_registered_and_ordered():
+    """Quality, Deep Contrarian and Ember must be reachable and in the ladder."""
+    for key in ("quality", "contrarian", "ember"):
+        assert key in sr.PLAYBOOKS, f"{key} missing from registry"
+        assert key in sr.LEARNING_ORDER, f"{key} missing from learning order"
+    # Difficulty must not decrease along the learning ladder.
+    rank = {sr.LEVEL_BEGINNER: 0, sr.LEVEL_MEDIUM: 1, sr.LEVEL_ADVANCED: 2}
+    levels = [rank[sr.PLAYBOOKS[k].level] for k in sr.LEARNING_ORDER]
+    assert levels == sorted(levels), levels
+
+
 def test_momentum_risk_is_consistent_with_its_own_sizing():
     """Momentum states ≈1,2–2 %; that must equal position size × stop."""
     pb = sr.PLAYBOOKS["momentum"]
@@ -110,6 +132,24 @@ def test_legacy_aliases_preserve_original_rule_counts():
     assert len(sr.OVTLYR_MINDSET) == 3
     for rule in sr.SWING_RULES + sr.LONGTERM_RULES:
         assert {"number", "text", "explanation", "panel_guide"} <= set(rule)
+
+
+def test_no_rules_section_is_orphaned():
+    """Every rendering section must actually be reachable from the page.
+
+    Regression guard: rewriting render_rules_page once dropped the call to
+    _render_ember_full_ruleset (the 13-section Ember ruleset) and the panel
+    guide table, leaving them defined but unreachable.
+    """
+    import inspect
+    from ovtlyr.ui import rules_page
+
+    src = inspect.getsource(rules_page)
+    for fn in ("_render_ember_full_ruleset", "_page_panel_guide", "_page_start",
+               "_page_rules", "_page_cheatsheet", "render_strategy_guides"):
+        assert hasattr(rules_page, fn), f"{fn} missing"
+        # defined once, called at least once
+        assert src.count(fn) >= 2, f"{fn} is defined but never called"
 
 
 def test_rules_page_and_overview_read_the_same_source():
