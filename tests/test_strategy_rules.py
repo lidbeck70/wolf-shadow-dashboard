@@ -89,6 +89,30 @@ def test_risk_matches_the_code_that_actually_trades():
             f"(risk_pct={params['risk_pct']})")
 
 
+def test_stop_multipliers_match_the_code():
+    """Stated ATR stop distance must equal the multiplier the code trades.
+
+    Caught a real one: viking.py was raised to 1.5×ATR ("to give price room")
+    but every rule, the STRATEGIES tab and the panel hints still said ½ ATR —
+    a 3× difference in where the stop sits.
+    """
+    from strategies.wolf import DEFAULT_PARAMS as WOLF_P
+    from strategies.viking import DEFAULT_PARAMS as VIKING_P
+
+    def _mults(text: str) -> set:
+        """Multipliers written as '2,5 × ATR' / '1.5× ATR14'."""
+        return {float(m.replace(",", "."))
+                for m in re.findall(r"(\d+(?:[.,]\d+)?)\s*×\s*ATR", text)}
+
+    checks = [("wolf", float(WOLF_P["atr_mult"])),
+              ("viking", float(VIKING_P["atr_stop_mult"]))]
+    for key, code_mult in checks:
+        stated = _mults(sr.PLAYBOOKS[key].risk.stop)
+        assert code_mult in stated, (
+            f"{key}: playbook stop says {stated}× ATR, code uses {code_mult}× "
+            f"— the rules and the engine disagree")
+
+
 def test_ember_thresholds_track_ember_config():
     """Ember's playbook interpolates live values from ember/config.py."""
     from ember.config import RISK_PCT, PULLBACK_EMA_PCT, RSI_ENTRY_MAX

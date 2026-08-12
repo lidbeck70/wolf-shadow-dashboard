@@ -410,9 +410,9 @@ VIKING = Playbook(
     ),
     risk=RiskModel(
         risk_per_trade="1,5 % av kapitalet (strategies/viking.py: risk_pct = 0.015)",
-        position_size="Risk ÷ stopavstånd (½ × ATR14)",
+        position_size="Risk ÷ stopavstånd (1,5 × ATR14)",
         max_positions="Följ portföljens allmänna tak",
-        stop="½ × ATR14 från entry · EMA10 som trailing stop",
+        stop="1,5 × ATR14 från entry · EMA10 som trailing stop",
         targets="TP1 @ 2R (25 % av core) · TP2 @ 4R (25 %) · F&G-target enligt exit-regel 9",
     ),
     entry=_rules([
@@ -440,8 +440,8 @@ VIKING = Playbook(
     exit=_rules([
         ("$SPY stänger under 20 EMA → STÄNG ALLT", "Hård exit. Inga undantag.",
          "REGIME → Arc Regime → Viking Regime: Välj SPY. Om pris under orange linje (EMA 20) = stäng alla positioner omedelbart.", True),
-        ("½ ATR Stop Loss från entry", "Strukturbaserad stop, aldrig %.",
-         "REGIME → Arc Regime → Viking Regime: Volatility-kort: ATR 14 värde. SL = entry-pris minus (ATR ÷ 2).", True),
+        ("1,5 × ATR Stop Loss från entry", "Strukturbaserad stop, aldrig %. Höjd från ½ ATR för att ge priset utrymme (strategies/viking.py: atr_stop_mult = 1.5).",
+         "REGIME → Arc Regime → Viking Regime: Volatility-kort: ATR 14 värde. SL = entry-pris minus (1,5 × ATR).", True),
         ("10 EMA Trailing Stop", "Pris stänger under 10 EMA = exit.",
          "REGIME → Arc Regime → Viking Regime: Grafen: vit linje = EMA 10. Om candle stänger under den vita linjen = exit."),
         ("Order Block hit", "Pris springer in i restriktivt OB = exit.",
@@ -478,7 +478,7 @@ VIKING = Playbook(
     cheatsheet=(
         ("Entry", "Alla 10 krav måste vara gröna — inga undantag"),
         ("Marknad först", "SPY bullish + BUY-signal + breadth upp"),
-        ("Stop", "½ × ATR14"),
+        ("Stop", "1,5 × ATR14"),
         ("Risk/trade", "1,5 % av kapitalet"),
         ("Trail", "EMA10 — stängning under = exit"),
         ("Hård exit", "$SPY under EMA20 = stäng ALLT"),

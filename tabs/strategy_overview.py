@@ -76,7 +76,7 @@ _META: dict = {
             "NINE score < 40  → SELL",
             "Price < EMA20   → sell-off override",
             "Price < EMA10   → trailing stop",
-            "½× ATR14 hard stop-loss floor",
+            "1.5× ATR14 hard stop-loss floor",
         ],
         "risk": [
             "Risk per trade: 1.5% of capital",
