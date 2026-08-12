@@ -113,6 +113,23 @@ def test_stop_multipliers_match_the_code():
             f"— the rules and the engine disagree")
 
 
+def test_viking_sltp_calculator_reads_the_engine_multiplier():
+    """The live OVTLYR/Viking SL/TP calculator must not hardcode a multiplier.
+
+    It computed a ½ ATR stop while viking.py traded 1.5× ATR, so the panel
+    suggested a stop three times tighter than the strategy's own.
+    """
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    src = open(os.path.join(root, "ovtlyr", "ui", "layout.py"), encoding="utf-8").read()
+
+    # The calculator block must source the multiplier from the strategy.
+    assert "atr_stop_mult" in src, (
+        "OVTLYR SL/TP calculator no longer reads atr_stop_mult from the engine")
+    # And must not go back to deriving the stop from a hardcoded half-ATR.
+    assert "_sl = _price - _half_atr" not in src, (
+        "OVTLYR SL/TP calculator is hardcoding a ½ ATR stop again")
+
+
 def test_ember_thresholds_track_ember_config():
     """Ember's playbook interpolates live values from ember/config.py."""
     from ember.config import RISK_PCT, PULLBACK_EMA_PCT, RSI_ENTRY_MAX

@@ -1135,10 +1135,19 @@ def render_ovtlyr_page() -> None:
                     abs(_low - _close.shift(1)),
                 ], axis=1).max(axis=1)
                 _atr = float(_tr.rolling(14).mean().dropna().iloc[-1])
-                _half_atr = _atr / 2
+                # Stop multiplier is read from the Viking engine so this
+                # calculator can't disagree with the strategy. It used to be a
+                # hardcoded ½ ATR while viking.py traded 1.5× ATR — a 3×
+                # difference in the suggested stop, and therefore in size.
+                try:
+                    from strategies.viking import DEFAULT_PARAMS as _VK_PARAMS
+                    _atr_mult = float(_VK_PARAMS.get("atr_stop_mult", 1.5))
+                except Exception:
+                    _atr_mult = 1.5
+                _stop_atr = _atr * _atr_mult
                 _ema10 = float(_close.ewm(span=10).mean().iloc[-1])
 
-                _sl = _price - _half_atr
+                _sl = _price - _stop_atr
                 _sl_dist = _price - _sl
                 _tp_2r = _price + _sl_dist * 2
                 _tp_3r = _price + _sl_dist * 3
@@ -1166,7 +1175,8 @@ def render_ovtlyr_page() -> None:
                         f'<div style="background:{BG2};border:2px solid rgba(255,51,85,0.3);border-radius:8px;padding:12px;">'
                         f'<div style="color:{RED};font-weight:700;font-size:0.8rem;">STOP LOSS</div>'
                         f'<div style="color:{TEXT};font-size:1.1rem;font-weight:700;">{_sl:.2f}</div>'
-                        f'<div style="color:{DIM};font-size:0.65rem;">½ ATR = {_half_atr:.2f}</div>'
+                        f'<div style="color:{DIM};font-size:0.65rem;">'
+                        f'{_atr_mult:g}× ATR = {_stop_atr:.2f}</div>'
                         f'<div style="color:{RED};font-size:0.72rem;">Risk: {_sl_dist:.2f} ({_sl_dist/_price*100:.1f}%)</div>'
                         f'<div style="color:{DIM};font-size:0.6rem;margin-top:4px;">Trail: EMA10 ({_ema10:.2f})</div>'
                         f'</div>',

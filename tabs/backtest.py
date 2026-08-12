@@ -99,12 +99,22 @@ def _render_sl_tp_calculator(strategy: str = "swing"):
             sl_kijun = kijun
 
             if strategy == "swing":
+                # Wolf: ½ ATR is the emergency floor, paired with the Kijun trail
+                # (rule 11) — a different mechanism from the sizing stop.
                 sl = max(sl_atr, sl_kijun)
                 sl_method = f"½ ATR ({sl_atr:.2f}) / Kijun ({sl_kijun:.2f}) → tightest"
                 trail = f"Kijun-sen trail ({kijun:.2f}) + EMA 10 ({ema10:.2f})"
             else:
-                sl = sl_atr
-                sl_method = f"½ ATR = {half_atr:.2f} under entry"
+                # Viking: multiplier read from the engine so this can't drift
+                # (was a hardcoded ½ ATR while viking.py trades 1.5×).
+                try:
+                    from strategies.viking import DEFAULT_PARAMS as _VK_PARAMS
+                    atr_mult = float(_VK_PARAMS.get("atr_stop_mult", 1.5))
+                except Exception:
+                    atr_mult = 1.5
+                stop_atr = atr * atr_mult
+                sl = price - stop_atr
+                sl_method = f"{atr_mult:g}× ATR = {stop_atr:.2f} under entry"
                 trail = f"EMA 10 trail ({ema10:.2f})"
 
             sl_distance = price - sl
