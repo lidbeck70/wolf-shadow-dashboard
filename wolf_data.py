@@ -102,26 +102,31 @@ def find_index_id():
     if env_id.isdigit():
         print(f"Index: använder WOLF_INDEX_ID={env_id}")
         return int(env_id)
-    # 2) Name lookup against the indexes endpoint.
+    # 2) Search the full /instruments list (the /instruments/indexes endpoint
+    #    404s on this API tier). build_universe() filters to instrument==0
+    #    (stocks); indexes carry a different type, so query the unfiltered list.
     try:
-        idx = pd.DataFrame(_get("/instruments/indexes").get("indexes", []))
-        if len(idx) and "name" in idx.columns:
-            for hint in (CONFIG["INDEX_NAME_HINT"], "OMXSPI", "OMX Stockholm"):
-                hit = idx[idx["name"].str.contains(hint, case=False, na=False)]
+        allins = pd.DataFrame(_get("/instruments").get("instruments", []))
+        if len(allins) and "name" in allins.columns:
+            for hint in (CONFIG["INDEX_NAME_HINT"], "OMX Stockholm PI", "OMXSPI",
+                         "OMX Stockholm"):
+                hit = allins[allins["name"].str.contains(hint, case=False, na=False)]
                 if len(hit):
-                    print(f"Index: matchade '{hint}' -> insId {int(hit.iloc[0]['insId'])}")
-                    return int(hit.iloc[0]["insId"])
-            # No match — surface what's available so the hint/id can be fixed.
-            names = [str(n) for n in idx["name"].head(30).tolist()]
-            print("VARNING: OMXSPI hittades inte. Tillgängliga index (första 30):")
-            for n in names:
-                print("   -", n)
+                    row = hit.iloc[0]
+                    print(f"Index: matchade '{hint}' -> insId {int(row['insId'])} ({row['name']})")
+                    return int(row["insId"])
+            # No match — surface OMX candidates (insId + name) to identify it.
+            omx = allins[allins["name"].str.contains("OMX", case=False, na=False)]
+            print(f"VARNING: OMXSPI hittades inte bland {len(allins)} instrument. "
+                  f"OMX-kandidater (insId: namn):")
+            for _, r in omx.head(30).iterrows():
+                print(f"   {int(r['insId'])}: {r['name']}")
         else:
-            print("VARNING: index-endpointen gav ingen data (licens?).")
+            print("VARNING: /instruments gav ingen data.")
     except Exception as e:
-        print("VARNING: kunde inte hämta index:", e)
-    print("Fix: sätt WOLF_INDEX_ID till OMXSPI:s insId (secret/env), "
-          "eller justera INDEX_NAME_HINT. Regimfil får index=null tills dess.")
+        print("VARNING: kunde inte hämta instrumentlistan:", e)
+    print("Fix: sätt WOLF_INDEX_ID till OMXSPI:s insId (secret/env). "
+          "Regimfil får index=null tills dess.")
     return None
 
 

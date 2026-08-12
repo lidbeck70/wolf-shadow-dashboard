@@ -29,8 +29,10 @@ _INSTR = [
     {"insId": 3, "name": "Gamma AB", "ticker": "CCC", "instrument": 0},
     {"insId": 9, "name": "Sank AB",  "ticker": "SNK", "instrument": 0},  # downtrend
     {"insId": 7, "name": "En fond",  "ticker": "FND", "instrument": 1},  # not a stock
+    # Index lives in /instruments with a non-stock type -> excluded from the
+    # universe but found by find_index_id's name search.
+    {"insId": 100, "name": "OMX Stockholm PI", "ticker": "OMXSPI", "instrument": 6},
 ]
-_IDX = [{"insId": 100, "name": "OMX Stockholm PI"}]
 
 
 def _series(ins_id, n=260):
@@ -45,8 +47,6 @@ def _series(ins_id, n=260):
 def _fake_get(ep, params=None):
     if ep == "/instruments":
         return {"instruments": _INSTR}
-    if ep == "/instruments/indexes":
-        return {"indexes": _IDX}
     if ep.endswith("/stockprices"):
         ins_id = int(ep.split("/")[2])
         base = dt.date(2025, 1, 1)
