@@ -24,11 +24,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import yfinance as yf
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import matplotlib.ticker as mticker
-import matplotlib.dates as mdates
+# matplotlib is only needed by plot_results() (CLI chart output). Importing it
+# at module level made this whole module unimportable without it — and
+# tabs/backtest.py swallows that ImportError, so the Backtest tab silently fell
+# back to a degraded path wherever matplotlib wasn't installed (it is not in
+# requirements.txt). Imported lazily inside plot_results() instead.
 
 warnings.filterwarnings("ignore")
 
@@ -591,6 +591,12 @@ def validate_criteria(metrics):
 PALETTE = ['#20808D', '#A84B2F', '#1B474D', '#BCE2E7', '#944454', '#FFC553']
 
 def plot_results(results, ticker, output_dir):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import matplotlib.ticker as mticker
+    import matplotlib.dates as mdates
+
     eq = results["equity"]
     dd = results["drawdown"]
     metrics = results["metrics"]

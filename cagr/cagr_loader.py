@@ -534,12 +534,6 @@ def _safe_float(value, default=None) -> Optional[float]:
         return default
 
 
-def _get_close_col(df: pd.DataFrame) -> Optional[str]:
-    """Return the name of the Close column in a DataFrame."""
-    for candidate in ("Close", "Adj Close", "close", "adj close"):
-        if candidate in df.columns:
-            return candidate
-    return None
 
 
 # ---------------------------------------------------------------------------

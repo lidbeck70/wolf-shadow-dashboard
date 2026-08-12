@@ -44,32 +44,6 @@ from strategy_rules import (            # noqa: E402,F401
 #  HTML helpers
 # ------------------------------------------------------------------ #
 
-def _rule_card_html(rule: dict, color: str) -> str:
-    num = rule["number"]
-    text = rule["text"]
-    expl = rule["explanation"]
-    guide = rule.get("panel_guide", "")
-
-    guide_html = ""
-    if guide:
-        guide_html = (
-            f"<div style='color:{_CYAN};font-size:0.62rem;margin-top:5px;"
-            f"padding:5px 8px;background:rgba(0,229,255,0.05);border-radius:3px;"
-            f"border-left:2px solid rgba(0,229,255,0.2);'>"
-            f"<b>NORDIC ALPHA:</b> {guide}</div>"
-        )
-
-    return (
-        f"<div style='background:{_BG2};border-left:3px solid {color};"
-        f"padding:10px 14px;margin:6px 0;border-radius:4px;'>"
-        f"<span style='color:{color};font-size:1.1rem;font-weight:700;'>#{num}</span>"
-        f"<span style='color:{_TEXT};font-size:0.88rem;margin-left:10px;'>{text}</span>"
-        f"<div style='color:{_DIM};font-size:0.7rem;margin-top:3px;'>{expl}</div>"
-        f"{guide_html}"
-        f"</div>"
-    )
-
-
 def _section_header_html(title: str, subtitle: str, color: str) -> str:
     return (
         f"<div style='border-bottom:2px solid {color};padding-bottom:8px;margin-bottom:12px;'>"

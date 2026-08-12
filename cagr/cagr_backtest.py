@@ -321,29 +321,6 @@ def _cycle_score_historical(sector: str, year: int) -> int:
     return sum(1 for v in cycle.values() if v)
 
 
-def _get_ema200_at_date(
-    df: pd.DataFrame,
-    as_of,
-) -> Optional[float]:
-    """Return EMA200 value for the close series up to as_of date."""
-    close_col = next(
-        (c for c in ("Close", "Adj Close", "close") if c in df.columns),
-        None,
-    )
-    if close_col is None:
-        return None
-    try:
-        if hasattr(df.index, "tz") and df.index.tz is not None:
-            as_of_ts = pd.Timestamp(as_of).tz_localize(df.index.tz)
-        else:
-            as_of_ts = pd.Timestamp(as_of)
-        hist = df[df.index <= as_of_ts]
-        if len(hist) < 30:
-            return None
-        ema200 = _ema(hist[close_col], 200)
-        return float(ema200.iloc[-1])
-    except Exception:
-        return None
 
 
 def _compute_score_at_date(

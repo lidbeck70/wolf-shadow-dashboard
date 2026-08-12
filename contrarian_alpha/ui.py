@@ -294,15 +294,6 @@ def _score_color(score: float) -> str:
     return P["red"]
 
 
-def _score_cell(score: float, max_score: float = 100.0) -> str:
-    pct  = min(100, max(0, score / max_score * 100))
-    col  = _score_color(score)
-    return (
-        f'<div class="ca-score" style="color:{col}">{score:.1f}</div>'
-        f'<div class="ca-score-bar">'
-        f'  <div class="ca-score-fill" style="width:{pct:.0f}%;background:{col}"></div>'
-        f'</div>'
-    )
 
 
 def _regime_badge(color: str) -> str:

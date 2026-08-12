@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 import pandas as pd
 import yfinance as yf
@@ -12,6 +14,8 @@ from utils.bd_api import BDClient, load_api_key
 # Module-level Börsdata client — shared across all calls in this tab.
 # Falls back to yfinance transparently when bd returns None.
 bd = BDClient(load_api_key())
+
+logger = logging.getLogger(__name__)
 
 try:
     from long_trend.long_trend_streamlit import render_long_trend_page
@@ -37,142 +41,6 @@ try:
 except ImportError:
     _TU_REGIONS = {}
     _TICKER_UNIVERSE_AVAILABLE = False
-
-
-def _render_sl_tp_calculator(strategy: str = "swing"):
-    """SL/TP calculator based on strategy rules."""
-    _CYAN = "#00E5FF"
-    _GREEN = "#2d8a4e"
-    _RED = "#c44545"
-    _YELLOW = "#d4943a"
-    _TEXT = "#e8e4dc"
-    _DIM = "#8a8578"
-    _BG2 = "#14141e"
-
-    st.markdown(
-        f"<div style='color:{_CYAN};font-size:0.75rem;text-transform:uppercase;"
-        f"letter-spacing:0.1em;margin:16px 0 8px 0;border-top:1px solid rgba(0,229,255,0.1);"
-        f"padding-top:12px;'>SL / TP KALKYLATOR — {strategy.upper()}</div>",
-        unsafe_allow_html=True,
-    )
-
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        calc_ticker = st.text_input("Ticker", value="VOLV-B.ST", key=f"sltp_ticker_{strategy}")
-    with c2:
-        capital = st.number_input("Kapital (SEK)", value=100000, step=10000, key=f"sltp_cap_{strategy}")
-    with c3:
-        risk_pct = st.number_input("Risk %", value=5.0, min_value=0.5, max_value=10.0, step=0.5, key=f"sltp_risk_{strategy}")
-
-    if st.button("BERÄKNA", key=f"sltp_calc_{strategy}", width='stretch'):
-        try:
-            _ticker_clean = calc_ticker.strip()
-            df = bd.get_price_history(_ticker_clean, period="3m")
-            if df is None or df.empty:
-                # Fallback: yfinance
-                tk = yf.Ticker(_ticker_clean)
-                df = tk.history(period="3mo", auto_adjust=True)
-                if df.index.tz is not None:
-                    df.index = df.index.tz_localize(None)
-
-            if df is None or df.empty or len(df) < 20:
-                st.error("Kunde inte hämta data")
-                return
-
-            close = df["Close"].astype(float)
-            high = df["High"].astype(float)
-            low = df["Low"].astype(float)
-
-            price = float(close.iloc[-1])
-
-            tr = pd.concat([high - low, abs(high - close.shift(1)), abs(low - close.shift(1))], axis=1).max(axis=1)
-            atr = float(tr.rolling(14).mean().iloc[-1])
-            half_atr = atr / 2
-
-            ema10 = float(close.ewm(span=10).mean().iloc[-1])
-            ema20 = float(close.ewm(span=20).mean().iloc[-1])
-            ema50 = float(close.ewm(span=50).mean().iloc[-1])
-
-            kijun = float((high.rolling(26).max() + low.rolling(26).min()).iloc[-1] / 2)
-
-            sl_atr = price - half_atr
-            sl_kijun = kijun
-
-            if strategy == "swing":
-                # Wolf: ½ ATR is the emergency floor, paired with the Kijun trail
-                # (rule 11) — a different mechanism from the sizing stop.
-                sl = max(sl_atr, sl_kijun)
-                sl_method = f"½ ATR ({sl_atr:.2f}) / Kijun ({sl_kijun:.2f}) → tightest"
-                trail = f"Kijun-sen trail ({kijun:.2f}) + EMA 10 ({ema10:.2f})"
-            else:
-                # Viking: multiplier read from the engine so this can't drift
-                # (was a hardcoded ½ ATR while viking.py trades 1.5×).
-                try:
-                    from strategies.viking import DEFAULT_PARAMS as _VK_PARAMS
-                    atr_mult = float(_VK_PARAMS.get("atr_stop_mult", 1.5))
-                except Exception:
-                    atr_mult = 1.5
-                stop_atr = atr * atr_mult
-                sl = price - stop_atr
-                sl_method = f"{atr_mult:g}× ATR = {stop_atr:.2f} under entry"
-                trail = f"EMA 10 trail ({ema10:.2f})"
-
-            sl_distance = price - sl
-            tp_2r = price + sl_distance * 2
-            tp_3r = price + sl_distance * 3
-
-            risk_amount = capital * (risk_pct / 100)
-            shares = int(risk_amount / sl_distance) if sl_distance > 0 else 0
-            position_value = shares * price
-            position_pct = (position_value / capital * 100) if capital > 0 else 0
-
-            r1, r2 = st.columns(2)
-
-            with r1:
-                st.markdown(
-                    f'<div style="background:{_BG2};border:2px solid rgba(196,69,69,0.3);border-radius:8px;padding:14px;">'
-                    f'<div style="color:{_RED};font-weight:700;font-size:0.85rem;margin-bottom:8px;">STOP LOSS</div>'
-                    f'<div style="color:{_TEXT};font-size:1.2rem;font-weight:700;">{sl:.2f}</div>'
-                    f'<div style="color:{_DIM};font-size:0.68rem;margin-top:4px;">{sl_method}</div>'
-                    f'<div style="color:{_RED};font-size:0.75rem;margin-top:6px;">Risk: {sl_distance:.2f} ({sl_distance/price*100:.1f}%)</div>'
-                    f'<div style="color:{_DIM};font-size:0.65rem;margin-top:8px;">Trailing: {trail}</div>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-
-            with r2:
-                st.markdown(
-                    f'<div style="background:{_BG2};border:2px solid rgba(45,138,78,0.3);border-radius:8px;padding:14px;">'
-                    f'<div style="color:{_GREEN};font-weight:700;font-size:0.85rem;margin-bottom:8px;">TARGETS (R:R)</div>'
-                    f'<div style="color:{_TEXT};font-size:0.85rem;">2R: <span style="color:{_GREEN};font-weight:700;">{tp_2r:.2f}</span> (+{(tp_2r/price-1)*100:.1f}%)</div>'
-                    f'<div style="color:{_TEXT};font-size:0.85rem;">3R: <span style="color:{_GREEN};font-weight:700;">{tp_3r:.2f}</span> (+{(tp_3r/price-1)*100:.1f}%)</div>'
-                    f'<div style="color:{_DIM};font-size:0.65rem;margin-top:6px;">Obs: Trailing stop (ej fast TP) enl. strategi</div>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-
-            st.markdown(
-                f'<div style="background:{_BG2};border:2px solid rgba(0,229,255,0.2);border-radius:8px;padding:14px;margin-top:8px;">'
-                f'<div style="color:{_CYAN};font-weight:700;font-size:0.85rem;margin-bottom:8px;">POSITION SIZING</div>'
-                f'<div style="display:flex;justify-content:space-between;">'
-                f'<div><span style="color:{_DIM};font-size:0.7rem;">Aktier</span><br>'
-                f'<span style="color:{_TEXT};font-size:1.1rem;font-weight:700;">{shares}</span></div>'
-                f'<div><span style="color:{_DIM};font-size:0.7rem;">Position</span><br>'
-                f'<span style="color:{_TEXT};font-size:1.1rem;font-weight:700;">{position_value:,.0f} SEK</span></div>'
-                f'<div><span style="color:{_DIM};font-size:0.7rem;">% av kapital</span><br>'
-                f'<span style="color:{_YELLOW};font-size:1.1rem;font-weight:700;">{position_pct:.1f}%</span></div>'
-                f'<div><span style="color:{_DIM};font-size:0.7rem;">Risk belopp</span><br>'
-                f'<span style="color:{_RED};font-size:1.1rem;font-weight:700;">{risk_amount:,.0f} SEK</span></div>'
-                f'</div>'
-                f'<div style="color:{_DIM};font-size:0.62rem;margin-top:8px;">'
-                f'ATR(14): {atr:.2f} | ½ ATR: {half_atr:.2f} | EMA10: {ema10:.2f} | EMA20: {ema20:.2f} | Kijun: {kijun:.2f}'
-                f'</div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-
-        except Exception as e:
-            st.error(f"Fel: {e}")
 
 
 def tab_backtest():
@@ -253,8 +121,11 @@ def tab_backtest():
                 ACCEPT_CRITERIA,
             )
             _use_module = True
-        except ImportError:
-            pass
+        except ImportError as _exc:
+            # Was a silent `pass`, which hid a real breakage: the module used to
+            # import matplotlib at module level, so the tab quietly degraded
+            # wherever matplotlib was absent.
+            logger.warning("wolf_shadow_backtest unavailable, using fallback: %s", _exc)
 
         with st.spinner(f"🐺 Running backtest for {ticker_input} ({years_opt}y)..."):
             try:

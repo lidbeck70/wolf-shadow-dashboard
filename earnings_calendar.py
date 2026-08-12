@@ -100,13 +100,6 @@ def _fetch_earnings_date(ticker: str) -> dict:
         return {"ticker": ticker, "date": None, "source": None}
 
 
-def _color_days(days: int) -> str:
-    """Return color based on days until earnings."""
-    if days < 3:
-        return RED
-    elif days < 7:
-        return YELLOW
-    return DIM
 
 
 def render_earnings_calendar(holdings_data: dict):

@@ -323,15 +323,6 @@ def _kpi_card(label: str, value: str, extra_class: str = "") -> str:
     )
 
 
-def _signal_badge(signal: str) -> str:
-    cls = {
-        "STRONG BUY": "signal-strongbuy",
-        "BUY": "signal-buy",
-        "HOLD": "signal-hold",
-        "SELL": "signal-sell",
-        "STRONG SELL": "signal-strongsell",
-    }.get(signal, "")
-    return f'<span class="{cls}">{signal}</span>'
 
 
 def _data_source_badge(source: str) -> str:
@@ -341,31 +332,6 @@ def _data_source_badge(source: str) -> str:
     return '<span class="data-badge data-badge-yfinance">YFINANCE</span>'
 
 
-def _build_sparkline_fig(prices: list) -> go.Figure:
-    """Tiny inline sparkline figure."""
-    if not prices:
-        fig = go.Figure()
-    else:
-        color = CYAN
-        fig = go.Figure(
-            go.Scatter(
-                y=prices,
-                mode="lines",
-                line=dict(color=color, width=1.5),
-                hoverinfo="skip",
-            )
-        )
-    fig.update_layout(
-        margin=dict(l=0, r=0, t=0, b=0),
-        height=50,
-        width=120,
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        showlegend=False,
-        xaxis=dict(visible=False),
-        yaxis=dict(visible=False),
-    )
-    return fig
 
 
 def _build_price_chart(df: pd.DataFrame, ticker: str) -> Optional[go.Figure]:
