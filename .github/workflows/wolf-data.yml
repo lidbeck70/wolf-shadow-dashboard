@@ -54,6 +54,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
           # MUST match GIST_ID in gist_storage.py so the panel tabs read what we push.
           WOLF_GIST_ID: "50348cb5b9e325c8ae91439763d5f144"
+          # OMXSPI insId (638). Add repo secret WOLF_INDEX_ID=638 to skip the name
+          # lookup. Not sensitive (it's in the run logs) — a repo variable or a
+          # literal "638" here would work equally well. Empty -> auto-discovery.
+          WOLF_INDEX_ID: ${{ secrets.WOLF_INDEX_ID }}
           WOLF_OUTPUT_DIR: public
           WOLF_CACHE_DIR: bd_cache
           # Commit a universe.csv (Börsdata swing-screener export) to the repo root
