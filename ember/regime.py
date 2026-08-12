@@ -14,7 +14,9 @@ Regime verdict:
    3 GREEN → SELEKTIV  (half position sizing)
   ≤2 GREEN → AV        (no new trades)
 
-Session state key: "ember_regime" (EmberRegimeResult).
+Session state keys: "ember_complex_regimes" (dict of ComplexRegimeResult, one
+per commodity complex) and the legacy "ember_regime" (first complex, kept for
+backward compatibility).
 DATA_GAP is never treated as GREEN — it counts as AMBER for the verdict.
 """
 from __future__ import annotations
@@ -69,13 +71,6 @@ class PillarResult:
     detail: str            # one-line Swedish explanation
 
 
-@dataclass
-class EmberRegimeResult:
-    pillars:     list[PillarResult]
-    green_count: int
-    verdict:     str            # VERDICT_PA | VERDICT_SELEKTIV | VERDICT_AV
-    action_text: str
-    timestamp:   datetime = field(default_factory=datetime.now)
 
 
 @dataclass
@@ -321,148 +316,16 @@ def _pillar_yield_curve() -> PillarResult:
 
 # ── Pillar 4: TEMA-BREDD (Theme Board TIDIG/MITTEN + 3m momentum) ────────────
 
-def _pillar_tema_breadth() -> PillarResult:
-    name = "TEMA-BREDD"
-    try:
-        from blindspot.theme_board import build_theme_board
-        themes = build_theme_board()
-        if not themes:
-            return PillarResult(name=name, status="DATA_GAP",
-                                value="DATA_GAP", detail="Tema-tavlan ej tillgänglig")
-
-        total    = len(themes)
-        pos_count = 0
-        for t in themes:
-            if t.error:
-                continue
-            in_cycle = t.cykel_label in ("TIDIG", "MITTEN")
-            if not in_cycle:
-                continue
-            # 3m momentum: compare sparkline week[-1] vs week[-13]
-            if t.sparkline_values and len(t.sparkline_values) >= 14:
-                n     = min(13, len(t.sparkline_values) - 1)
-                v_now = t.sparkline_values[-1]
-                v_3m  = t.sparkline_values[-n]
-                if v_3m > 0 and v_now > v_3m:
-                    pos_count += 1
-
-        ratio_pct = (pos_count / total * 100) if total > 0 else 0.0
-
-        if ratio_pct > TEMA_GREEN_PCT:
-            status = "GREEN"
-            detail = f"{pos_count}/{total} teman tidig/mitten + positiv 3M trend ✓"
-        elif ratio_pct > TEMA_AMBER_PCT:
-            status = "AMBER"
-            detail = f"{pos_count}/{total} teman positiva — blandat cykelmönster"
-        else:
-            status = "RED"
-            detail = f"Bara {pos_count}/{total} teman positiva — brett cykelnedtryck ⛔"
-
-        return PillarResult(name=name, status=status,
-                            value=f"{pos_count}/{total} ({ratio_pct:.0f}%)", detail=detail)
-    except Exception as exc:
-        logger.debug("_pillar_tema_breadth: %s", exc)
-        return PillarResult(name=name, status="DATA_GAP",
-                            value="DATA_GAP", detail=str(exc))
 
 
 # ── Pillar 5: RISKAPTIT (GDX/SPY 3m + HYG/TLT 1m) ──────────────────────────
 
-def _pillar_risk_appetite() -> PillarResult:
-    name = "RISKAPTIT"
-    try:
-        # GDX/SPY 3-month relative performance (63 trading days)
-        gdx = _close("GDX", "6mo")
-        spy = _close("SPY", "6mo")
-        gdx_spy_pos = False
-        gdx_spy_str = "DATA_GAP"
-        if len(gdx) >= 64 and len(spy) >= 64:
-            gdx_3m = float(gdx.iloc[-1]) / float(gdx.iloc[-64]) - 1
-            spy_3m = float(spy.iloc[-1]) / float(spy.iloc[-64]) - 1
-            gdx_spy_pos = gdx_3m > spy_3m
-            gdx_spy_str = f"GDX {gdx_3m*100:+.1f}% vs SPY {spy_3m*100:+.1f}% (3M)"
-
-        # HYG/TLT 1-month relative performance (21 trading days)
-        hyg = _close("HYG", "3mo")
-        tlt = _close("TLT", "3mo")
-        hyg_tlt_pos = False
-        hyg_tlt_str = "DATA_GAP"
-        if len(hyg) >= 22 and len(tlt) >= 22:
-            hyg_1m = float(hyg.iloc[-1]) / float(hyg.iloc[-22]) - 1
-            tlt_1m = float(tlt.iloc[-1]) / float(tlt.iloc[-22]) - 1
-            hyg_tlt_pos = hyg_1m > tlt_1m
-            hyg_tlt_str = f"HYG {hyg_1m*100:+.1f}% vs TLT {tlt_1m*100:+.1f}% (1M)"
-
-        data_ok = gdx_spy_str != "DATA_GAP" or hyg_tlt_str != "DATA_GAP"
-        if not data_ok:
-            return PillarResult(name=name, status="DATA_GAP",
-                                value="DATA_GAP",
-                                detail="GDX/SPY + HYG/TLT ej tillgängliga")
-
-        if gdx_spy_pos and hyg_tlt_pos:
-            status = "GREEN"
-            detail = "Gruvbolag + kredit leder → stark riskaptit ✓"
-        elif gdx_spy_pos or hyg_tlt_pos:
-            status = "AMBER"
-            detail = "Blandat — en signal positiv, en negativ"
-        else:
-            status = "RED"
-            detail = "Gruvbolag + kredit underpresterar → svag riskaptit ⛔"
-
-        parts = [s for s in [gdx_spy_str, hyg_tlt_str] if s != "DATA_GAP"]
-        return PillarResult(name=name, status=status,
-                            value=" · ".join(parts) if parts else "DATA_GAP",
-                            detail=detail)
-    except Exception as exc:
-        logger.debug("_pillar_risk_appetite: %s", exc)
-        return PillarResult(name=name, status="DATA_GAP",
-                            value="DATA_GAP", detail=str(exc))
 
 
 # ── Regime computation ────────────────────────────────────────────────────────
 
-@_cache_1h
-def compute_ember_regime() -> EmberRegimeResult:
-    """Compute all five EMBER pillars and return the regime verdict. Cached 1h."""
-    pillars = [
-        _pillar_dxy(),
-        _pillar_copper_gold(),
-        _pillar_yield_curve(),
-        _pillar_tema_breadth(),
-        _pillar_risk_appetite(),
-    ]
-
-    # DATA_GAP treated as AMBER (not GREEN) for conservative verdict
-    green_count = sum(1 for p in pillars if p.status == "GREEN")
-
-    if green_count >= 4:
-        verdict     = VERDICT_PA
-        action_text = ("Full positionsstorlek tillåten. "
-                       "Alla topp-rankade elitcase är giltiga.")
-    elif green_count == 3:
-        verdict     = VERDICT_SELEKTIV
-        action_text = ("Halverad positionsstorlek. "
-                       "Handla endast topp-1 och topp-2 i EMBER TOPP 3.")
-    else:
-        verdict     = VERDICT_AV
-        action_text = ("Inga nya EMBER-trades. "
-                       "Bevaka befintliga positioner och planera nästa setup.")
-
-    return EmberRegimeResult(
-        pillars=pillars,
-        green_count=green_count,
-        verdict=verdict,
-        action_text=action_text,
-    )
 
 
-def get_cached_regime() -> Optional[EmberRegimeResult]:
-    """Return the EmberRegimeResult stored in session_state, or None."""
-    try:
-        import streamlit as st
-        return st.session_state.get("ember_regime")
-    except Exception:
-        return None
 
 
 # ── ENERGI pillars ────────────────────────────────────────────────────────────

@@ -737,9 +737,14 @@ EMBER_PB = Playbook(
         targets="T1 och T2 per setup-kort, med R:R utsatt",
     ),
     entry=_rules([
-        ("Makro/cykelfilter — EMBER Regime måste tillåta handel",
-         "Regimen sätts av cykel- och makroläge. DATA_GAP blir aldrig GRÖN.",
-         "REGIME → Arc Regime → 🌍 EMBER Regime: regimbadgen. RÖD = inga nya entries.", True),
+        ("Komplex-regimen måste tillåta handel",
+         "Varje råvarukomplex (Energi, Ädelmetaller, Basmetaller, Agri) har en egen "
+         "regim med 5 pelare: ≥4 gröna = PÅ (full storlek), 3 = SELEKTIV (halverad, "
+         "endast topp-1 och topp-2), ≤2 = AV (inga nya trades). DATA_GAP räknas "
+         "aldrig som grön.",
+         "REGIME → Arc Regime → 🌍 EMBER Regime: ett verdikt per komplex. Screenern "
+         "grindar varje setup mot sitt eget komplex — ett guldcase mot ÄDELMETALLER, "
+         "inte mot ENERGI.", True),
         ("Fyra trendgrindar (T1–T4) — alla hårda, alla måste passera",
          "Trendstrukturen måste vara intakt innan en entry ens övervägs.",
          "SCREENING → Arc Screener → 🔥 EMBER: setup-kortet visar T1–T4 med PASS/FAIL per grind.", True),
@@ -767,12 +772,14 @@ EMBER_PB = Playbook(
         ("Ogiltigförklaras om — casets premiss brister",
          "Varje kort listar vad som gör caset ogiltigt. Inträffar det: ut, oavsett kurs.",
          "SCREENING → Arc Screener → 🔥 EMBER: fältet 'Ogiltigförklaras om' på setup-kortet.", True),
-        ("Regimskifte till RÖD",
-         "Inga nya entries; befintliga hanteras enligt stop och invalidering.",
-         "REGIME → Arc Regime → 🌍 EMBER Regime: regimbadgen."),
+        ("Komplexets regim slår om till AV",
+         "Inga nya entries i det komplexet; befintliga hanteras enligt stop och "
+         "invalidering. Övriga komplex påverkas inte.",
+         "REGIME → Arc Regime → 🌍 EMBER Regime: verdikt per komplex."),
     ]),
     workflow=(
-        "REGIME → Arc Regime → 🌍 EMBER Regime: vilken regim råder? RÖD = läs bara, handla inte.",
+        "REGIME → Arc Regime → 🌍 EMBER Regime: vilket verdikt har komplexet du är "
+        "intresserad av? AV = läs bara, handla inte.",
         "SCREENING → Arc Screener → 🔥 EMBER: gå igenom topp-korten uppifrån.",
         "Kontrollera T1–T4 (alla PASS) och att inga F1–F4-flaggor är aktiva.",
         "Kontrollera E1 (pullback) + E2 (RSI) — båda måste passera.",
@@ -780,7 +787,7 @@ EMBER_PB = Playbook(
         "Position = risk ÷ stopavstånd. Lägg stop direkt, logga i journalen.",
     ),
     cheatsheet=(
-        ("Regim", "Måste tillåta handel · DATA_GAP = aldrig GRÖN"),
+        ("Regim", "Per komplex: ≥4 gröna = PÅ · 3 = SELEKTIV · ≤2 = AV"),
         ("Trendgrindar", "T1–T4 — alla måste passera"),
         ("Entry E1", f"Pullback inom ±{_EMBER_PULLBACK_PCT:.0f} % av 20D EMA"),
         ("Entry E2", f"RSI(14) < {_EMBER_RSI_MAX}"),

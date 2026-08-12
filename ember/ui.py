@@ -624,18 +624,49 @@ def render_ember_page() -> None:
     _render_universe_stats(u_stats)
 
     # ── Regime status banner ──────────────────────────────────────────────────
-    _regime = st.session_state.get("ember_regime")
-    if _regime:
-        _vbrd = {VERDICT_PA: GREEN, VERDICT_SELEKTIV: AMBER, VERDICT_AV: RED}.get(_regime.verdict, DIM)
-        _vico = {VERDICT_PA: "🟢", VERDICT_SELEKTIV: "🟡", VERDICT_AV: "🔴"}.get(_regime.verdict, "○")
+    # There is one verdict per commodity complex, and this screener spans all
+    # four. It used to render st.session_state["ember_regime"], which holds
+    # whichever complex happened to iterate first — so a green ENERGI regime was
+    # displayed as "EMBER REGIME: PÅ" even when ÄDELMETALLER was AV. Show every
+    # complex instead; the per-setup gating below already uses the right one.
+    _VCOL = {VERDICT_PA: GREEN, VERDICT_SELEKTIV: AMBER, VERDICT_AV: RED}
+    _VICO = {VERDICT_PA: "🟢", VERDICT_SELEKTIV: "🟡", VERDICT_AV: "🔴"}
+    _all_reg = st.session_state.get("ember_complex_regimes", {})
+
+    if _all_reg:
+        _chips = ""
+        for _res in _all_reg.values():
+            _c = _VCOL.get(_res.verdict, DIM)
+            _i = _VICO.get(_res.verdict, "○")
+            _chips += (
+                f"<span style='background:{_c}11;border:1px solid {_c}44;"
+                f"border-radius:5px;padding:4px 10px;margin-right:6px;"
+                f"white-space:nowrap;'>"
+                f"<span style='color:{_c};font-weight:700;'>{_i} "
+                f"{getattr(_res, 'label', _res.key)}: {_res.verdict}</span></span>")
+        st.markdown(
+            f"<div style='margin:10px 0 4px 0;font-size:0.78rem;'>"
+            f"<span style='color:{DIM};font-size:0.68rem;letter-spacing:0.1em;'>"
+            f"EMBER REGIME PER KOMPLEX</span><br>{_chips}"
+            f"<div style='color:{DIM};font-size:0.68rem;margin-top:5px;'>"
+            f"Varje setup nedan grindas mot sitt eget komplex "
+            f"(konfigurera i REGIME → Arc Regime → 🌍 EMBER Regime)</div></div>",
+            unsafe_allow_html=True,
+        )
+    elif st.session_state.get("ember_regime"):
+        # Legacy single-result fallback — label which complex it actually is.
+        _regime = st.session_state["ember_regime"]
+        _vbrd = _VCOL.get(_regime.verdict, DIM)
+        _vico = _VICO.get(_regime.verdict, "○")
+        _lbl = getattr(_regime, "label", "")
         st.markdown(
             f"<div style='background:{_vbrd}11;border:1px solid {_vbrd}44;"
             f"border-radius:6px;padding:9px 16px;margin:10px 0 4px 0;font-size:0.82rem;'>"
             f"<span style='color:{_vbrd};font-weight:700;'>"
-            f"{_vico} EMBER REGIME: {_regime.verdict}</span>"
+            f"{_vico} EMBER REGIME{f' ({_lbl})' if _lbl else ''}: {_regime.verdict}</span>"
             f"<span style='color:{DIM};'> — {_regime.action_text}</span>"
             f"<span style='color:{DIM};font-size:0.68rem;'>"
-            f" (konfigurera i REGIME → 🌍 EMBER Regime)</span>"
+            f" (konfigurera i REGIME → Arc Regime → 🌍 EMBER Regime)</span>"
             f"</div>",
             unsafe_allow_html=True,
         )
