@@ -140,7 +140,8 @@ def _history(hist: list) -> None:
     if not hist:
         return
     st.markdown(f"<div style='color:{DIM};font-size:0.7rem;text-transform:uppercase;"
-                f"margin:14px 0 6px;'>26-veckors historik (regim · bredd)</div>",
+                f"margin:14px 0 6px;'>Regim-historik — senaste {len(hist)} handelsdagarna "
+                f"(regim · bredd)</div>",
                 unsafe_allow_html=True)
     bar_bg = {"GRÖN": "#12351f", "GUL": "#3a2a10", "RÖD": "#3a1414"}
     cells = ""

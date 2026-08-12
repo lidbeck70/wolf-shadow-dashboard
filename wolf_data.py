@@ -62,7 +62,11 @@ def _get(ep, params=None):
 def get_prices(ins_id, start, end):
     os.makedirs(CONFIG["CACHE_DIR"], exist_ok=True)
     fp = os.path.join(CONFIG["CACHE_DIR"], f"{ins_id}.csv")
-    fresh = os.path.exists(fp) and (time.time() - os.path.getmtime(fp)) / 86400 < 3
+    # 12h freshness: a daily (weekday) run always refetches the latest close,
+    # while a same-day manual re-run still reuses the cache. (Was 3 days, which
+    # would have served stale prices on a sub-3-day cadence.)
+    fresh_days = float(os.environ.get("WOLF_CACHE_FRESH_DAYS", "0.5"))
+    fresh = os.path.exists(fp) and (time.time() - os.path.getmtime(fp)) / 86400 < fresh_days
     if fresh:
         df = pd.read_csv(fp, parse_dates=["d"])
         if len(df):
@@ -269,8 +273,11 @@ def main():
             hist = json.load(open(hist_fp, encoding="utf-8"))
         except Exception:
             hist = []
+    # Dedup by date so multiple runs on the same day (e.g. a manual re-run)
+    # replace rather than double-count. One point per trading day.
+    hist = [h for h in hist if isinstance(h, dict) and h.get("date") != end]
     hist.append(dict(date=end, qualifying=len(ranked), breadth=breadth, regime=regime))
-    hist = hist[-26:]  # ett halvårs veckohistorik
+    hist = hist[-60:]  # ~3 månaders handelsdagar
     json.dump(hist, open(hist_fp, "w", encoding="utf-8"), indent=1)
 
     regime_json = dict(
