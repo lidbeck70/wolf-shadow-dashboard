@@ -163,8 +163,8 @@ def _guide_quality() -> None:
         st.markdown(
             _gs("5. Var i panelen",
                 _ul([
-                    "<b>Hitta kandidater:</b> SIGNALS → Contrarian Alpha (sortera på kvalitetspoäng).",
-                    "<b>Bekräfta köpläge:</b> REGIME → Alpha Regime → Quality-läge → tryck ANALYSERA.",
+                    "<b>Hitta kandidater:</b> SCREENING → Contrarian Alpha (sortera på kvalitetspoäng).",
+                    "<b>Bekräfta köpläge:</b> REGIME → Alpha Regime → Quality & Contrarian (Quality-läge) → tryck ANALYSERA.",
                     "<b>Kontrollera portföljrisk:</b> PORTFOLIO → Holdings (korrelation + sektorexponering).",
                     "<b>Bevaka regimskifte:</b> REGIME → Wolf Regime (trendfilter) eller Viking Regime (EMA-alignment).",
                 ], _CYAN),
@@ -253,7 +253,7 @@ def _guide_contrarian() -> None:
                     "<b>Hitta fas:</b> REGIME → Alpha Regime → välj Deep Contrarian → tryck ANALYSERA.",
                     "<b>Gummisnodde-bekräftelse:</b> Välj 'Commodity exposure' i Alpha Regime för att se "
                     "om råvaruratios är historiskt sträckta (≥ 90:e percentilen).",
-                    "<b>Hitta kandidater:</b> SIGNALS → Contrarian Alpha (Hat Score + Necessity).",
+                    "<b>Hitta kandidater:</b> SCREENING → Contrarian Alpha (Hat Score + Necessity).",
                     "<b>Sentiment:</b> INTELLIGENCE → Retail Pulse.",
                 ], _CYAN),
                 _CYAN),
@@ -1066,16 +1066,16 @@ _PANEL_GUIDE: list[tuple] = [
     ("SCREENING → Contrarian Alpha", "Quality / Deep Contrarian",
      "Kvalitetspoäng, KAP-badge, Hat Score + Necessity. Detaljkort med "
      "gate-checklista och score-breakdown."),
-    ("REGIME → Alpha Regime", "Alpha #1-10 · Quality · Deep Contrarian",
+    ("REGIME → Alpha Regime → Quality & Contrarian", "Alpha #1-10 · Quality · Deep Contrarian",
      "Alla regler som live gates. GRÖN/ORANGE/RÖD badge. Quality-läge och "
      "Deep Contrarian-läge (cykelfas + ackumulerings-/distributionssteg)."),
-    ("REGIME → Wolf Regime", "Wolf: alla regler",
+    ("REGIME → Arc Regime → Wolf Regime", "Wolf: alla regler",
      "4-lagers regime + Entry Checklist (Trend/Volatilitet/Momentum/Candlestick/"
      "OB) med auto-pass/fail. SL/TP-kalkylator. Benchmark RS."),
-    ("REGIME → Viking Regime", "Viking: alla + Vikings Nine",
+    ("REGIME → Arc Regime → Viking Regime", "Viking: alla + Vikings Nine",
      "Prisgraf + EMA 10/20/50/200 + Order Blocks. Per-ticker Fear & Greed. "
      "Overhead Clusters. SL/TP-kalkylator."),
-    ("REGIME → 🌍 EMBER Regime", "Ember: makro/cykelfilter",
+    ("REGIME → Arc Regime → 🌍 EMBER Regime", "Ember: makro/cykelfilter",
      "Regimbadge som avgör om Ember-entries överhuvudtaget är tillåtna. "
      "DATA_GAP blir aldrig GRÖN."),
     ("PORTFOLIO → Holdings", "Alpha #8-9 · Quality · Deep Contrarian",
@@ -1087,7 +1087,7 @@ _PANEL_GUIDE: list[tuple] = [
     ("INTELLIGENCE → Retail Pulse", "Deep Contrarian: sentiment-overlay",
      "Retail sentiment 0-100. Under 30 = extrem rädsla (köpstöd). Över 70 = "
      "extrem girighet (säljstöd)."),
-    ("SENTIMENT", "Alpha #5 · Viking #5, #9",
+    ("INTELLIGENCE → Sentiment", "Alpha #5 · Viking #5, #9",
      "Fear & Greed gauge 0-100. Under 60 = OK att köpa. Över 60 = vänta."),
     ("SCREENING → Market Cycle", "Quality · Deep Contrarian",
      "Marknadsfas (CAPITULATION → EUPHORIA). Styr både Quality-cykelgaten och "
