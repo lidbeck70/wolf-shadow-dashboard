@@ -86,6 +86,35 @@ _META: dict = {
     },
 }
 
+# ── Single source of truth for the numbers ───────────────────────────────────
+# entry/exit above describe what the CODE does (technical conditions). The risk
+# figures, however, used to be hand-copied here and had drifted (2 % here vs 5 %
+# in the RULES tab vs 1 % in CLAUDE.md), so they are now generated from
+# strategy_rules.PLAYBOOKS — the same source the RULES tab renders.
+try:
+    from strategy_rules import PLAYBOOKS as _PLAYBOOKS
+
+    for _key, _pb in _PLAYBOOKS.items():
+        _m = _META.setdefault(_key, {})
+        _m.setdefault("timeframe", _pb.horizon)
+        _m.setdefault("universe", _pb.universe)
+        _m["level"] = _pb.level
+        _m["where"] = _pb.where
+        _m["risk"] = [
+            f"Risk per trade: {_pb.risk.risk_per_trade}",
+            f"Position size: {_pb.risk.position_size}",
+            f"Stop: {_pb.risk.stop}",
+            f"Targets: {_pb.risk.targets}",
+        ]
+        # Manual strategies have no code conditions — use the rule texts.
+        if not _m.get("entry"):
+            _m["entry"] = [r.text for r in _pb.entry]
+        if not _m.get("exit"):
+            _m["exit"] = [r.text for r in _pb.exit]
+except Exception:  # pragma: no cover - the tab must render even if this fails
+    _PLAYBOOKS = {}
+
+
 # Map plugin key → display label
 _PLUGIN_LABELS: dict = {
     "ovtlyr_fg":    "OVTLYR F&G",
@@ -349,6 +378,43 @@ def _render_header(strategies: dict) -> None:
 
 # ── Main entry point ──────────────────────────────────────────────────────────
 
+def _render_manual_card(pb) -> None:
+    """Card for a manual (non-code) strategy — no entry_fn, so it isn't in the
+    registry, but it still belongs on this tab."""
+    c = pb.color
+    st.markdown(
+        f'<div style="border:1px solid {c}44;border-left:3px solid {c};'
+        f'border-radius:8px;background:{_BG2};padding:20px 22px;margin-bottom:24px;">'
+        f'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+        f'<span style="color:{c};font-size:1.15rem;font-weight:700;'
+        f'letter-spacing:0.04em;">{pb.name}</span>'
+        + _icon_pill("⏱", pb.horizon, c)
+        + _icon_pill("🌍", pb.universe, _DIM)
+        + f'&nbsp;<span style="color:{_YELLOW};font-size:0.68rem;">◐ Manuell rutin</span>'
+        f'</div>'
+        f'<div style="color:{_DIM};font-size:0.77rem;margin-top:6px;">{pb.tagline}</div>'
+        f'<div style="color:{_DIM};font-size:0.72rem;margin-top:6px;">📍 {pb.where}</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(_divider(f"{c}22"), unsafe_allow_html=True)
+    col_e, col_x, col_r = st.columns(3)
+    with col_e:
+        st.markdown(_section_label("Entry"), unsafe_allow_html=True)
+        st.markdown(_bullet_list([r.text for r in pb.entry], c), unsafe_allow_html=True)
+    with col_x:
+        st.markdown(_section_label("Exit"), unsafe_allow_html=True)
+        st.markdown(_bullet_list([r.text for r in pb.exit], _RED), unsafe_allow_html=True)
+    with col_r:
+        st.markdown(_section_label("Risk"), unsafe_allow_html=True)
+        st.markdown(_bullet_list([
+            f"Risk per affär: {pb.risk.risk_per_trade}",
+            f"Position: {pb.risk.position_size}",
+            f"Antal: {pb.risk.max_positions}",
+            f"Stop: {pb.risk.stop}",
+        ], _YELLOW), unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
 def tab_strategy_overview() -> None:
     inject_css()
     section_title("Strategy Overview")
@@ -369,7 +435,13 @@ def tab_strategy_overview() -> None:
     _render_header(STRATEGIES)
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # One card per strategy
+    # Manual (non-code) strategies first — Momentum Swing is the recommended
+    # starting point, so it leads the list.
+    _momentum = _PLAYBOOKS.get("momentum")
+    if _momentum is not None:
+        _render_manual_card(_momentum)
+
+    # One card per code-backed strategy
     for display_name, strat in STRATEGIES.items():
         _render_strategy_card(display_name, strat)
 

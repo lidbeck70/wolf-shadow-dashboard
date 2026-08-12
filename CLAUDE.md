@@ -54,7 +54,10 @@ Typical swing rules include:
 - candlestick trigger
 - volume confirmation
 - minimum 1:2 R:R, preferably 1:3
-- max 1% risk per trade
+- risk per trade is defined per strategy in strategy_rules.py (single source of
+  truth; the RULES and STRATEGIES tabs both read from it):
+  Momentum Swing ≈1.2–2% (12–20% position × 10% stop) · Wolf 2% · Alpha 1.5% ·
+  Viking 1.5%. Treat ~1% as the conservative benchmark, not a hard cap.
 - move SL to breakeven after new HH/LL
 - max 2 losses per day
 
