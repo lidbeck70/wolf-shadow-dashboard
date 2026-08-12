@@ -96,15 +96,32 @@ def build_universe():
 
 
 def find_index_id():
+    # 1) Direct override — most reliable. Look up OMXSPI's insId once in Börsdata
+    #    and set WOLF_INDEX_ID; skips the fragile name lookup entirely.
+    env_id = os.environ.get("WOLF_INDEX_ID", "").strip()
+    if env_id.isdigit():
+        print(f"Index: använder WOLF_INDEX_ID={env_id}")
+        return int(env_id)
+    # 2) Name lookup against the indexes endpoint.
     try:
         idx = pd.DataFrame(_get("/instruments/indexes").get("indexes", []))
-        hit = idx[idx["name"].str.contains(CONFIG["INDEX_NAME_HINT"],
-                                           case=False, na=False)]
-        if len(hit):
-            return int(hit.iloc[0]["insId"])
-    except Exception:
-        pass
-    print("VARNING: OMXSPI hittades inte — regimfil får index=null.")
+        if len(idx) and "name" in idx.columns:
+            for hint in (CONFIG["INDEX_NAME_HINT"], "OMXSPI", "OMX Stockholm"):
+                hit = idx[idx["name"].str.contains(hint, case=False, na=False)]
+                if len(hit):
+                    print(f"Index: matchade '{hint}' -> insId {int(hit.iloc[0]['insId'])}")
+                    return int(hit.iloc[0]["insId"])
+            # No match — surface what's available so the hint/id can be fixed.
+            names = [str(n) for n in idx["name"].head(30).tolist()]
+            print("VARNING: OMXSPI hittades inte. Tillgängliga index (första 30):")
+            for n in names:
+                print("   -", n)
+        else:
+            print("VARNING: index-endpointen gav ingen data (licens?).")
+    except Exception as e:
+        print("VARNING: kunde inte hämta index:", e)
+    print("Fix: sätt WOLF_INDEX_ID till OMXSPI:s insId (secret/env), "
+          "eller justera INDEX_NAME_HINT. Regimfil får index=null tills dess.")
     return None
 
 
