@@ -51,8 +51,9 @@ RULE = Playbook(
     risk=RiskModel(
         risk_per_trade="Ingen mekanisk stop — tesen är cykelbaserad. Du måste kunna "
                        "ha fel länge, därför krävs balansräkningen",
-        position_size="5–10 % enligt strategikartan · positionstaket per bolag är "
-                      "4 % av totala portföljen (se anmärkning)",
+        position_size="Max 4 % per bolag av totala portföljen — taket gäller. "
+                      "Strategikartans 5–10 % är conviction-spannet inom "
+                      "Producent-ramen, inte en tillåten positionsstorlek",
         max_positions="Producent-ramen 10–25 % av portföljen (mål 15 %)",
         stop="Ingen stop. Sälj sker i kärleken, inte i hatet",
         targets="Trappa ur i tredjedelar över 6–12 månader när sektorn blir älskad",
@@ -116,7 +117,7 @@ RULE = Playbook(
         ("P/B", "< 1,5 (kriscase < 1,0)"),
         ("FCF-marginal", "> 0"),
         ("Listlängd", "< 15 = dyrt · > 100 = kapitulation"),
-        ("Position", "5–10 % · tak 4 % av total"),
+        ("Position", "Max 4 % av total (taket vinner)"),
         ("Sälj", "Sektorns EV/EBITDA > ~10, i tredjedelar"),
     ),
     pitfalls=(
@@ -132,6 +133,12 @@ RULE = Playbook(
                  "soliditet, P/B, FCF-marginal) och har ingen Producenter A-poängmodell.",
     source=_SRC,
 )
+
+# Masterguiden states 5–10 % in the strategy map but caps Rule producers at 4 %
+# of the total portfolio. The guide resolves it itself — "de två taken
+# (viktigare än målen)" and "taket bryts aldrig" — so the 4 % cap wins. It also
+# checks out arithmetically: the 15 % producer sleeve holds ~4 companies at 4 %,
+# which is the diversification a survive-the-wait strategy needs.
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -342,7 +349,7 @@ TIGGRE = Playbook(
     level=LEVEL_ADVANCED,
     horizon="6–24 månader",
     universe="Kanada, Australien, USA · Metals & Mining · börsvärde 50–1 000 MUSD · omsättning ~0",
-    where="Utanför panelen: Börsdata-håv + Lobo-arket (4 flikar).",
+    where="SCREENING → Tiggre (Lobo-arket). Håven körs i Börsdata.",
     idea=(
         "Lobo Tiggre skiljer knivskarpt på investering och spekulation: en spekulation "
         "är ett tidsbestämt köp av en SPECIFIK omvärdering, med händelsen definierad "
@@ -464,10 +471,12 @@ TIGGRE = Playbook(
     ),
     note="Tiggre fyller gapet mellan Sprotts lotter och Rules producenter — "
          "tillsammans täcker de tre hela Lassonde-kurvan.",
-    support=SUPPORT_MANUAL,
-    support_note="Ingen del finns i panelen ännu. Håven körs i Börsdata, all "
-                 "granskning i Lobo-arket (Excel). En Tiggre-flik som räknar U/N, "
-                 "poäng, katalysatorkalender och free ride-larm är nästa naturliga steg.",
+    support=SUPPORT_PARTIAL,
+    support_note="SCREENING → Tiggre kör Lobo-arket: grovsållning, U/N-kalkyl, "
+                 "femfaktorpoäng, katalysatorkalender, free ride-larm och de fyra "
+                 "sälj-allt-triggarna. KÖP är låst tills alla fyra grindar passerar. "
+                 "Själva håven körs fortfarande i Börsdata, och NAV matas manuellt "
+                 "från feasibility-studien.",
     source=_SRC,
 )
 

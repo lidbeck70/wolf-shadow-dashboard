@@ -155,6 +155,13 @@ try:
 except ImportError:
     SWING_AVAILABLE = False
 
+# Tiggre (Lobo-arket — Masterguiden Del 4)
+try:
+    from tiggre import render_tiggre_page
+    TIGGRE_AVAILABLE = True
+except ImportError:
+    TIGGRE_AVAILABLE = False
+
 # Swing momentum-screener + regim (data från wolf_data.py)
 try:
     from wolf_screener_ui import render_wolf_screener_page
@@ -240,7 +247,7 @@ def main():
     with tab_screening:
         sub = st.radio(
             "", ["Arc Screener", "Contrarian Alpha", "Market Cycle", "Swing",
-                 "Swing Screener"],
+                 "Swing Screener", "Tiggre"],
             horizontal=True, key="sub_screening",
         )
         st.markdown("---")
@@ -295,6 +302,12 @@ def main():
                 render_wolf_screener_page()
             else:
                 tab_not_found("Swing Screener", "wolf_screener_ui")
+
+        elif sub == "Tiggre":
+            if TIGGRE_AVAILABLE:
+                render_tiggre_page()
+            else:
+                tab_not_found("Tiggre", "tiggre")
 
     # ── REGIME ───────────────────────────────────────────────────────────────
     with tab_regime_main:
