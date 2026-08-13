@@ -53,6 +53,15 @@ class RiskModel:
     targets: str = "—"
 
 
+# How much of a strategy the panel actually implements. Stated per playbook so
+# the gaps are named rather than discovered mid-trade.
+SUPPORT_FULL = "I panelen"          # screener/gating implemented
+SUPPORT_PARTIAL = "Delvis"          # some support, manual steps remain
+SUPPORT_MANUAL = "Utanför panelen"  # documented here, executed in Excel/Börsdata
+
+SUPPORT_COLOR = {SUPPORT_FULL: GREEN, SUPPORT_PARTIAL: AMBER, SUPPORT_MANUAL: "#6B7280"}
+
+
 @dataclass(frozen=True)
 class Playbook:
     key: str
@@ -72,6 +81,9 @@ class Playbook:
     cheatsheet: tuple[tuple[str, str], ...] = ()
     pitfalls: tuple[str, ...] = ()
     note: str = ""
+    support: str = SUPPORT_FULL      # what the panel actually does for you
+    support_note: str = ""           # exactly what is and isn't implemented
+    source: str = "Panelen"          # where the rules come from
 
 
 def _rules(items: list[tuple]) -> tuple[Rule, ...]:
@@ -204,6 +216,9 @@ MOMENTUM = Playbook(
         "Dra slutsatser efter 5 affärer. Med 40–55 % vinstandel är fyra förluster i "
         "rad helt väntat och säger ingenting om strategin.",
     ),
+    support=SUPPORT_FULL,
+    support_note="Screener, regim och positionshantering körs helt i panelen.",
+    source="Masterguiden Del 4, Strategi 6 (Momentum-swing)",
     note="Rankingen förutsätter att universumet redan klarat Börsdata-screenerns "
          "kvalitetsfilter (börsvärde, F-score). F-score går inte att räkna ur prisdata "
          "— kör Börsdata-screenern som vanligt och använd panelen som ranking-lager.",
@@ -300,6 +315,9 @@ WOLF = Playbook(
         "Flytta stop till break-even för tidigt (innan ny HH/LL) och bli utstoppad "
         "i normalt brus.",
     ),
+    support=SUPPORT_FULL,
+    support_note="Wolf Regime kör Entry Checklist med auto-pass/fail per gate.",
+    source="Panelen"
 )
 
 
@@ -386,6 +404,9 @@ ALPHA = Playbook(
         "Sitta kvar genom en röd regim med hoppet att 'det vänder snart'.",
         "Samla flera innehav i samma sektor utan att räkna sektorexponeringen.",
     ),
+    support=SUPPORT_FULL,
+    support_note="Alpha Regime kör alla gates; Long Screener ger kandidater.",
+    source="Panelen"
 )
 
 
@@ -490,6 +511,9 @@ VIKING = Playbook(
         "Sätta ett eget vinstmål istället för att låta trailing-stopen jobba.",
         "Glömma rapportdatum och sitta med positionen över rapporten.",
     ),
+    support=SUPPORT_FULL,
+    support_note="Viking Regime + Arc Screener kör hela regelverket.",
+    source="Panelen"
 )
 
 
@@ -589,6 +613,9 @@ QUALITY = Playbook(
         "Låter en vinnare växa förbi 10 % utan att trimma.",
         "Sitter kvar när kvalitetspoängen faller, för att bolaget 'brukade vara bra'.",
     ),
+    support=SUPPORT_FULL,
+    support_note="Contrarian Alpha-screenern och Alpha Regime-gaten kör Quality-läget.",
+    source="Panelen + Masterguiden"
 )
 
 
@@ -598,8 +625,8 @@ QUALITY = Playbook(
 
 DEEP_CONTRARIAN = Playbook(
     key="contrarian",
-    name="Deep Contrarian",
-    tagline="Köp i maximalt hat, sälj i eufori — i tredjedelar",
+    name="Deep Contrarian (panelens)",
+    tagline="Köp i maximalt hat, sälj i eufori — i tredjedelar, styrt av cykelfasen",
     color=EMBER,
     level=LEVEL_ADVANCED,
     horizon="Cykel — 1–3 år per position",
@@ -693,6 +720,9 @@ DEEP_CONTRARIAN = Playbook(
         "sviker (och den sviker alltid i de här faserna).",
         "Köper i DENIAL/ANXIETY och tror det är billigt — det är ett SÄLJ-läge.",
     ),
+    support=SUPPORT_PARTIAL,
+    support_note="Panelen ger cykelfas, ackumulerings-/distributionssteg och hat-rankning. Detta är panelens EGEN kontrariska modell — den motsvarar inte Masterguidens fem råvarustrategier (Rule, Sprott, Durrett, Tiggre, Royalty), som har egna screeners och poängmodeller och ligger utanför panelen.",
+    source="Panelen"
 )
 
 
@@ -806,6 +836,9 @@ EMBER_PB = Playbook(
     ),
     note="Det fullständiga regelverket med alla 13 sektioner och exakta trösklar "
          "(hämtade live ur koden) finns under STRATEGIGUIDER → 🔥 Ember.",
+    support=SUPPORT_FULL,
+    support_note="Ember-screenern och per-komplex-regimerna körs i panelen.",
+    source="Panelen"
 )
 
 
@@ -823,10 +856,28 @@ PLAYBOOKS: dict[str, Playbook] = {
     "ember": EMBER_PB,
 }
 
+# The five commodity strategies from Masterguiden (Rule · Sprott · Durrett ·
+# Tiggre · Royalty). Defined in a separate module for readability; imported here
+# so there is still exactly one registry. Import is at the bottom on purpose —
+# that module imports Playbook/RiskModel from this one.
+try:  # pragma: no cover - import guard
+    from strategy_rules_commodity import COMMODITY_PLAYBOOKS as _COMMODITY
+    PLAYBOOKS.update(_COMMODITY)
+except Exception:  # pragma: no cover
+    _COMMODITY = {}
+
 # Suggested learning order — easiest and most mechanical first, hardest last.
+# Panel-native strategies come first; the Masterguide commodity family follows,
+# ordered from the safest (Royalty) to the most speculative (Sprott/Tiggre).
 LEARNING_ORDER: tuple[str, ...] = (
     "momentum", "quality", "alpha", "viking", "wolf", "contrarian", "ember",
+    "royalty", "rule", "durrett", "tiggre", "sprott",
 )
+
+
+def by_support(support: str) -> list[Playbook]:
+    """Playbooks grouped by how much of them the panel actually implements."""
+    return [p for p in PLAYBOOKS.values() if p.support == support]
 
 LEVEL_COLOR = {LEVEL_BEGINNER: GREEN, LEVEL_MEDIUM: AMBER, LEVEL_ADVANCED: RED}
 

@@ -31,7 +31,7 @@ if str(_ROOT) not in _sys.path:
     _sys.path.insert(0, str(_ROOT))
 
 from strategy_rules import (            # noqa: E402
-    PLAYBOOKS, LEARNING_ORDER, LEVEL_COLOR,
+    PLAYBOOKS, LEARNING_ORDER, LEVEL_COLOR, SUPPORT_COLOR, SUPPORT_FULL,
 )
 # Re-exported for backwards compatibility — this module used to own these lists.
 from strategy_rules import (            # noqa: E402,F401
@@ -815,6 +815,14 @@ def _level_badge(level: str) -> str:
             f"padding:2px 9px;border-radius:10px;'>{level.upper()}</span>")
 
 
+def _support_badge(pb) -> str:
+    """Says plainly whether the panel implements this strategy or not."""
+    c = SUPPORT_COLOR.get(pb.support, _DIM)
+    return (f"<span style='background:{c}22;border:1px solid {c};color:{c};"
+            f"font-size:0.6rem;font-weight:700;letter-spacing:0.06em;"
+            f"padding:2px 9px;border-radius:10px;'>{pb.support.upper()}</span>")
+
+
 def _hard_badge() -> str:
     return (f"<span style='background:{_RED}22;border:1px solid {_RED};color:{_RED};"
             f"font-size:0.55rem;font-weight:700;letter-spacing:0.06em;"
@@ -891,14 +899,19 @@ def _page_start() -> None:
             f"background:rgba(255,255,255,0.015);'>"
             f"<div style='display:flex;align-items:center;gap:10px;flex-wrap:wrap;'>"
             f"<span style='color:{pb.color};font-size:1.05rem;font-weight:800;'>"
-            f"{i}. {pb.name}</span>{_level_badge(pb.level)}</div>"
+            f"{i}. {pb.name}</span>{_level_badge(pb.level)}"
+            f"{_support_badge(pb)}</div>"
             f"<div style='color:{_TEXT};font-size:0.85rem;margin-top:4px;'>{pb.tagline}</div>"
             f"<div style='color:{_DIM};font-size:0.8rem;margin-top:8px;line-height:1.6;'>"
             f"{pb.idea}</div>"
             f"<div style='color:{_DIM};font-size:0.72rem;margin-top:10px;line-height:1.7;'>"
             f"⏱ <b style='color:{_TEXT};'>Horisont:</b> {pb.horizon}<br>"
             f"🎯 <b style='color:{_TEXT};'>Risk per affär:</b> {pb.risk.risk_per_trade}<br>"
-            f"📍 <b style='color:{_TEXT};'>Finns i panelen:</b> {pb.where}</div>"
+            f"📍 <b style='color:{_TEXT};'>Var:</b> {pb.where}<br>"
+            + (f"📖 <b style='color:{_TEXT};'>Källa:</b> {pb.source}" if pb.source else "")
+            + (f"<br>⚠️ <span style='color:{SUPPORT_COLOR.get(pb.support, _DIM)};'>"
+               f"{pb.support_note}</span>" if pb.support != SUPPORT_FULL and pb.support_note else "")
+            + f"</div>"
             f"</div>",
             unsafe_allow_html=True)
 
@@ -935,7 +948,7 @@ def _page_rules() -> None:
         f"<div style='display:flex;align-items:center;gap:10px;flex-wrap:wrap;"
         f"margin:14px 0 4px;'>"
         f"<span style='color:{pb.color};font-size:1.15rem;font-weight:800;'>{pb.name}</span>"
-        f"{_level_badge(pb.level)}"
+        f"{_level_badge(pb.level)}{_support_badge(pb)}"
         f"<span style='color:{_DIM};font-size:0.78rem;'>{pb.tagline}</span></div>"
         f"<div style='color:{_DIM};font-size:0.72rem;margin-bottom:8px;'>"
         f"📍 {pb.where}</div>",

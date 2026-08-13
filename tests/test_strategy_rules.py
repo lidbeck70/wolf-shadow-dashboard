@@ -141,15 +141,65 @@ def test_ember_thresholds_track_ember_config():
     assert str(RSI_ENTRY_MAX) in entry_text, entry_text
 
 
+_PANEL_NATIVE = ("momentum", "quality", "alpha", "viking", "wolf", "contrarian", "ember")
+_COMMODITY = ("royalty", "rule", "durrett", "tiggre", "sprott")
+
+
 def test_new_playbooks_are_registered_and_ordered():
-    """Quality, Deep Contrarian and Ember must be reachable and in the ladder."""
-    for key in ("quality", "contrarian", "ember"):
+    """Every strategy must be reachable, and each ladder group must not get easier."""
+    for key in _PANEL_NATIVE + _COMMODITY:
         assert key in sr.PLAYBOOKS, f"{key} missing from registry"
         assert key in sr.LEARNING_ORDER, f"{key} missing from learning order"
-    # Difficulty must not decrease along the learning ladder.
+    assert set(sr.LEARNING_ORDER) == set(sr.PLAYBOOKS)
+
+    # The ladder has two groups — panel-native strategies first, then the
+    # Masterguide commodity family. Difficulty must not decrease inside a group.
     rank = {sr.LEVEL_BEGINNER: 0, sr.LEVEL_MEDIUM: 1, sr.LEVEL_ADVANCED: 2}
-    levels = [rank[sr.PLAYBOOKS[k].level] for k in sr.LEARNING_ORDER]
-    assert levels == sorted(levels), levels
+    order = list(sr.LEARNING_ORDER)
+    split = order.index(_COMMODITY[0])
+    for group in (order[:split], order[split:]):
+        levels = [rank[sr.PLAYBOOKS[k].level] for k in group]
+        assert levels == sorted(levels), (group, levels)
+
+
+def test_support_status_is_stated_honestly():
+    """Each playbook must say what the panel actually implements.
+
+    The point of this field: Masterguiden's five commodity strategies are not in
+    the panel, and pretending otherwise is how a rule gets skipped mid-trade.
+    """
+    valid = {sr.SUPPORT_FULL, sr.SUPPORT_PARTIAL, sr.SUPPORT_MANUAL}
+    for key, pb in sr.PLAYBOOKS.items():
+        assert pb.support in valid, f"{key}: bad support value {pb.support!r}"
+        assert pb.source, f"{key}: missing source"
+        if pb.support != sr.SUPPORT_FULL:
+            assert pb.support_note, (
+                f"{key} is not fully in the panel and must say what is missing")
+
+    # The commodity family is documentation, not implementation.
+    for key in _COMMODITY:
+        assert sr.PLAYBOOKS[key].support in (sr.SUPPORT_MANUAL, sr.SUPPORT_PARTIAL), key
+        assert "Masterguiden" in sr.PLAYBOOKS[key].source, key
+
+
+def test_commodity_playbooks_carry_their_hard_numbers():
+    """Spot-check the figures that decide position size and go/no-go."""
+    tiggre = sr.PLAYBOOKS["tiggre"]
+    joined = " ".join(r.text + r.explanation for r in tiggre.entry + tiggre.exit)
+    assert "0,8× NAV" in joined or "0,8x NAV" in joined
+    assert "U/N" in joined and "≥ 3" in joined
+    assert "after tax" in joined.lower()
+    assert any("+100 %" in r.text for r in tiggre.exit)      # free ride
+
+    sprott = sr.PLAYBOOKS["sprott"]
+    assert "18 mån" in " ".join(r.explanation for r in sprott.entry)   # runway
+    assert "10–15" in sprott.risk.max_positions
+
+    rule = sr.PLAYBOOKS["rule"]
+    assert "0,5" in " ".join(r.explanation for r in rule.entry)        # ND/EBITDA
+
+    royalty = sr.PLAYBOOKS["royalty"]
+    assert "70 %" in " ".join(r.explanation for r in royalty.entry)    # gross margin
 
 
 def test_momentum_risk_is_consistent_with_its_own_sizing():
