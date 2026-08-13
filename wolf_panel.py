@@ -175,6 +175,13 @@ try:
 except ImportError:
     WOLF_REGIME_AVAILABLE = False
 
+# Portföljallokeraren (Masterguiden Del 2)
+try:
+    from allocator import render_allocator_page
+    ALLOCATOR_AVAILABLE = True
+except ImportError:
+    ALLOCATOR_AVAILABLE = False
+
 # Trade Journal
 try:
     from trade_journal import render_trade_journal_page
@@ -407,7 +414,7 @@ def main():
     # ── PORTFOLIO ─────────────────────────────────────────────────────────────
     with tab_portfolio:
         sub = st.radio(
-            "", ["Holdings", "Trade Journal", "Backtest"],
+            "", ["Holdings", "Allokering", "Trade Journal", "Backtest"],
             horizontal=True, key="sub_portfolio",
         )
         st.markdown("---")
@@ -416,6 +423,11 @@ def main():
                 render_holdings_page()
             else:
                 tab_not_found("Holdings", "holdings")
+        elif sub == "Allokering":
+            if ALLOCATOR_AVAILABLE:
+                render_allocator_page()
+            else:
+                tab_not_found("Portföljallokeraren", "allocator")
         elif sub == "Trade Journal":
             if JOURNAL_AVAILABLE:
                 render_trade_journal_page()
