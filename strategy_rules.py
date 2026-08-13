@@ -856,12 +856,12 @@ PLAYBOOKS: dict[str, Playbook] = {
     "ember": EMBER_PB,
 }
 
-# The five commodity strategies from Masterguiden (Rule · Sprott · Durrett ·
-# Tiggre · Royalty). Defined in a separate module for readability; imported here
+# Masterguiden's non-native strategies (Rule · Sprott · Durrett · Tiggre ·
+# Royalty · Insider). Defined in a separate module for readability; imported here
 # so there is still exactly one registry. Import is at the bottom on purpose —
 # that module imports Playbook/RiskModel from this one.
 try:  # pragma: no cover - import guard
-    from strategy_rules_commodity import COMMODITY_PLAYBOOKS as _COMMODITY
+    from strategy_rules_masterguide import MASTERGUIDE_PLAYBOOKS as _COMMODITY
     PLAYBOOKS.update(_COMMODITY)
 except Exception:  # pragma: no cover
     _COMMODITY = {}
@@ -871,7 +871,7 @@ except Exception:  # pragma: no cover
 # ordered from the safest (Royalty) to the most speculative (Sprott/Tiggre).
 LEARNING_ORDER: tuple[str, ...] = (
     "momentum", "quality", "alpha", "viking", "wolf", "contrarian", "ember",
-    "royalty", "rule", "durrett", "tiggre", "sprott",
+    "royalty", "insider", "rule", "durrett", "tiggre", "sprott",
 )
 
 

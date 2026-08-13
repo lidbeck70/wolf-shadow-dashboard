@@ -1,10 +1,15 @@
 """
-strategy_rules_commodity.py — The five commodity strategies from Masterguiden.
+strategy_rules_masterguide.py — Masterguiden's strategies that the panel does
+not implement natively.
 
-Rule · Sprott · Durrett · Tiggre · Royalty. Together they cover the whole
-Lassonde curve, from drill hole to dividend. They are defined here rather than
-in strategy_rules.py only to keep the files readable — strategy_rules.PLAYBOOKS
-imports them, so there is still one registry and one source of truth.
+Familj 1 (kontrarisk råvara): Rule · Sprott · Durrett · Tiggre · Royalty —
+together they cover the whole Lassonde curve, from drill hole to dividend.
+Familj 2 (nordisk aktiv): Insider — the second uncorrelated engine alongside
+Momentum-swing, which the panel already has.
+
+They are defined here rather than in strategy_rules.py only to keep the files
+readable — strategy_rules.PLAYBOOKS imports them, so there is still one registry
+and one source of truth.
 
 Important: most of these are NOT implemented in the panel. Each playbook states
 its `support` honestly, because the panel's "Deep Contrarian" screener is a
@@ -17,7 +22,7 @@ from __future__ import annotations
 
 from strategy_rules import (
     Playbook, RiskModel, _rules,
-    AMBER, EMBER, GREEN, PURPLE,
+    AMBER, CYAN, EMBER, GREEN, PURPLE,
     LEVEL_MEDIUM, LEVEL_ADVANCED,
     SUPPORT_PARTIAL, SUPPORT_MANUAL,
 )
@@ -571,10 +576,147 @@ ROYALTY = Playbook(
 )
 
 
-COMMODITY_PLAYBOOKS = {
+# ═════════════════════════════════════════════════════════════════════════════
+#  INSIDER (Norden) — trestegsraketen
+# ═════════════════════════════════════════════════════════════════════════════
+
+INSIDER = Playbook(
+    key="insider",
+    name="Insider — Trestegsraketen",
+    tagline="Följ dem som vet mest — men köp först när marknaden börjar hålla med",
+    color=CYAN,
+    level=LEVEL_MEDIUM,
+    horizon="6–18 månader",
+    universe="Norden · börsvärde > 300 MSEK",
+    where="Utanför panelen: Börsdata Insynshandel + Insiderbevakaren (2 flikar).",
+    idea=(
+        "Att insiderköp förutsäger överavkastning är dokumenterat sedan 1960-talet, "
+        "men edgen sitter på specifika ställen. Lakonishok & Lee: kluster slår "
+        "ensamköp — en person kan köpa av tusen privata skäl, tre samtidigt har en "
+        "gemensam åsikt. Cohen, Malloy & Pomorski: opportunistiska köpare "
+        "(oregelbundna, informationsdrivna) är en stark signal, rutinköpare (samma "
+        "månad varje år) ingen alls. Effekten är störst i småbolag med tunn "
+        "analytikertäckning — vilket beskriver Norden perfekt. Asymmetrin som gör "
+        "allt: insiders SÄLJER av tusen skäl (hus, skilsmässa, skatt) men KÖPER av "
+        "exakt ett — de tror att aktien är för billig."
+    ),
+    risk=RiskModel(
+        risk_per_trade="Stop −15 % under klustersnittet — läggs som order hos mäklaren",
+        position_size="8–15 % av strategidelen · positionstaket är 4 % av totala "
+                      "portföljen",
+        max_positions="6–10 innehav · max 1–2 nya per månad",
+        stop="−15 % under insiderklustrets snittkurs",
+        targets="+50–100 % när värderingen kommit ikapp sektorn · 18 månaders tidsstopp",
+    ),
+    entry=_rules([
+        ("Steg 1: hitta klustret — och rensa bruset först",
+         "Räkna ENDAST riktiga marknadsköp. Optionslösen, aktieprogram, arv och "
+         "interna omflyttningar är inte signaler och ska bort innan du poängsätter.",
+         "Börsdata → Insider/Insynshandel: skanna 1–2 ggr/vecka, filtrera på KÖP, "
+         "sortera på belopp. Transaktionstypen visar vad som är ett riktigt köp.", True),
+        ("Poängsätt signalen — krav ≥ 7 av 10",
+         "Kluster (3+ = 3 p, 2 = 2 p) · högsta roll (VD/CFO 2 p — de ser HELA bilden, "
+         "styrelse 1 p) · belopp > 1 MSEK 2 p · relativ storlek (ökar innehavet "
+         "> 25 % = 1 p) · kontext (efter fall > 20 % i friskt bolag = 1 p) · "
+         "återkommande köpare 1 p. 7–10 = stark signal · 5–6 = bevaka · < 5 = brus.",
+         "Insiderbevakaren. Relativ storlek är underskattad: 200 tkr kan vara enormt "
+         "för en CFO med litet innehav och ingenting för en miljardär.", True),
+        ("Steg 2: kvalitetsgrinden",
+         "Börsvärde > 300 MSEK (under det äter spreadarna edgen) · F-score ≥ 5 · "
+         "nettoskuld/EBITDA < 2 eller nettokassa · positivt FCF eller tydlig väg dit. "
+         "Insiders fångar också fallande knivar — grinden sorterar bort bolagen där "
+         "även VD:n har fel.",
+         "Börsdata → sparad screener 'Insider – grind'. Fallande omsättning i "
+         "strukturell nedgång = varning även om allt annat kvalar.", True),
+        ("Steg 3: vänta på den tekniska triggern",
+         "Insiders är notoriskt 3–6 månader tidiga — du förlorar inget på att vänta "
+         "på att marknaden börjar hålla med. A) stängning över MA20 som planat ut "
+         "eller vänt upp · B) positiv 1-månadsutveckling OCH kurs över klustrets "
+         "snittkurs · C) första rapporten efter köpen bekräftar (köp på rapportdagen).",
+         "Insiderbevakaren driver statusflödet: Ignorera → Bevaka → Kör grinden! → "
+         "Väntar på trigger → KÖP.", True),
+        ("Klustersnittkursen är ankaret — max 30 % över",
+         "Insiders betalade den. Köper du nära eller under har du samma ingång som "
+         "de som vet mest. Mer än 30 % över = edgen förbrukad, passa.",
+         "Insiderbevakaren räknar snittet automatiskt.", True),
+        ("Max 1–2 nya per månad, 6–10 innehav",
+         "Detta är inte swing — edgen realiseras via rapporter, uppköp och "
+         "omvärdering över 6–18 månader.",
+         "PORTFOLIO → Allokering: Insider-ramen 10–30 % (mål 20 %), positionstak "
+         "4 % per bolag."),
+    ]),
+    exit=_rules([
+        ("Säljregel 1 — säljKLUSTER",
+         "2+ insiders säljer (inte småposter). Signalen som tog dig in har vänt.",
+         "Börsdata → Insynshandel: samma flöde, men filtrerat på SÄLJ.", True),
+        ("Säljregel 2 — −15 % under klustersnittet",
+         "Läggs som order hos mäklaren direkt vid köp, inte som en påminnelse.",
+         "Insiderbevakaren räknar stoppnivån ur klustersnittet.", True),
+        ("Säljregel 3 — grinden bryts",
+         "F-score < 4 eller skulden drar iväg. Kvalitetsgrinden gäller även efter köp.",
+         "Börsdata: kontrollera F-score och nettoskuld vid varje rapport.", True),
+        ("Säljregel 4 — +50–100 % och värderingen ikapp sektorn",
+         "Omvärderingen är gjord. Det var hela tesen.",
+         "Jämför multipeln mot sektorn i Börsdata."),
+        ("Säljregel 5 — 18 månaders tidsstopp",
+         "Kapitalet jobbar bättre i nästa signal. Har inget hänt på 18 månader hade "
+         "insidern fel om timingen även om hen hade rätt om bolaget.",
+         "Insiderbevakaren: köpdatum + 18 månader.", True),
+    ]),
+    workflow=(
+        "1–2 ggr/vecka: skanna Börsdatas insynsflöde, filtrera på KÖP, sortera på "
+        "belopp. Notera bolag med flera transaktioner.",
+        "Rensa bort optionslösen, aktieprogram, arv och interna omflyttningar.",
+        "Poängsätt kandidaterna i Insiderbevakaren — under 5 poäng är brus.",
+        "Kör 7+-kandidaterna mot kvalitetsgrinden (F-score, skuld, FCF).",
+        "Vänta på trigger A, B eller C. Köp aldrig kniven — köp bekräftelsen.",
+        "Kontrollera att kursen är max 30 % över klustersnittet.",
+        "Köp, lägg stop −15 % under snittet som order, logga i journalen.",
+    ),
+    cheatsheet=(
+        ("Skanning", "1–2 ggr/vecka, endast riktiga marknadsköp"),
+        ("Kluster", "3+ köpare = 3 p · 2 = 2 p"),
+        ("Roll", "VD/CFO 2 p · styrelse 1 p"),
+        ("Belopp", "> 1 MSEK = 2 p"),
+        ("Poängkrav", "≥ 7 av 10 (5–6 = bevaka, < 5 = brus)"),
+        ("Grinden", "> 300 MSEK · F-score ≥ 5 · ND/EBITDA < 2 · FCF+"),
+        ("Trigger", "A) över MA20 · B) 1 mån+ över snittet · C) rapport"),
+        ("Ankare", "Max 30 % över klustersnittet"),
+        ("Stop", "−15 % under klustersnittet"),
+        ("Position", "8–15 % av delen · tak 4 % av total"),
+        ("Antal", "6–10 innehav · max 1–2 nya/månad"),
+        ("Tidsstopp", "18 månader"),
+    ),
+    pitfalls=(
+        "Räkna optionslösen och aktieprogram som insiderköp. De är ersättning, inte "
+        "en åsikt om kursen — och de dominerar flödet om du inte rensar.",
+        "Köpa kniven direkt på signalen. Insiders är 3–6 månader tidiga; triggern "
+        "finns för att du inte ska sitta och blöda under tiden.",
+        "Köpa mer än 30 % över klustersnittet — då har du inte längre samma ingång "
+        "som de som vet mest.",
+        "Tolka en enstaka försäljning som en säljsignal. Insiders säljer av tusen "
+        "skäl; först ett säljKLUSTER betyder något.",
+        "Sitta kvar förbi 18-månadersstoppet i hopp om att tesen ska mogna.",
+    ),
+    note="Synergin gör hela systemet skarpare: insiderkluster i ett bolag som redan "
+         "ligger i momentum- eller Överlevar-listan = dubbel bekräftelse (position i "
+         "övre intervallet, aldrig över taket). Säljkluster i ett swinginnehav = dra "
+         "åt stoppen. Klusterköp i en hatad råvarusektor = extra vikt i "
+         "rotationsbetyget.",
+    support=SUPPORT_MANUAL,
+    support_note="Ingen del finns i panelen. Flödet skannas i Börsdatas "
+                 "Insynshandel, poängsättning och statusflöde sker i "
+                 "Insiderbevakaren (Excel). PORTFOLIO → Allokering håller dock "
+                 "Insider-ramen (mål 20 %) och positionstaket 4 %.",
+    source=_SRC,
+)
+
+
+MASTERGUIDE_PLAYBOOKS = {
     "rule": RULE,
     "royalty": ROYALTY,
     "durrett": DURRETT,
     "sprott": SPROTT,
     "tiggre": TIGGRE,
+    "insider": INSIDER,
 }

@@ -142,7 +142,7 @@ def test_ember_thresholds_track_ember_config():
 
 
 _PANEL_NATIVE = ("momentum", "quality", "alpha", "viking", "wolf", "contrarian", "ember")
-_COMMODITY = ("royalty", "rule", "durrett", "tiggre", "sprott")
+_COMMODITY = ("royalty", "insider", "rule", "durrett", "tiggre", "sprott")
 
 
 def test_new_playbooks_are_registered_and_ordered():
@@ -180,6 +180,22 @@ def test_support_status_is_stated_honestly():
     for key in _COMMODITY:
         assert sr.PLAYBOOKS[key].support in (sr.SUPPORT_MANUAL, sr.SUPPORT_PARTIAL), key
         assert "Masterguiden" in sr.PLAYBOOKS[key].source, key
+
+
+def test_insider_carries_its_three_steps():
+    """The strategy is a three-stage rocket; each stage must be stated."""
+    pb = sr.PLAYBOOKS["insider"]
+    joined = " ".join(r.text + r.explanation for r in pb.entry + pb.exit)
+    assert "≥ 7" in joined                      # signal score gate
+    assert "F-score ≥ 5" in joined              # quality gate
+    assert "MA20" in joined                     # technical trigger
+    assert "30 %" in joined                     # cluster-average anchor
+    assert "−15 %" in joined                    # stop under the cluster average
+    assert "18 månader" in " ".join(r.text for r in pb.exit)   # time stop
+    # The panel's allocator holds this sleeve even though the strategy isn't built
+    import allocator as alloc
+    assert alloc.SLEEVE_BY_KEY["insider"].target == 20
+    assert alloc.SLEEVE_BY_KEY["insider"].position_cap == 4.0
 
 
 def test_commodity_playbooks_carry_their_hard_numbers():
