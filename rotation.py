@@ -25,7 +25,6 @@ from __future__ import annotations
 import streamlit as st
 from dataclasses import dataclass
 from datetime import date
-from typing import Optional
 
 try:
     from gist_storage import load_blob as _blob_load, save_blob as _blob_save
@@ -295,7 +294,6 @@ def _grid(data: dict) -> None:
     for r in rows:
         c = r["commodity"]
         g = grades.setdefault(c.key, {})
-        sc = STATUS_COLOR.get(r["status"], DIM)
 
         h1, h2, h3, h4, h5 = st.columns([1.5, 1, 1, 1.2, 2.2])
         anchor_mark = (f"<span style='color:{GOLD};font-size:0.7rem;'>⚓</span>"
@@ -343,7 +341,7 @@ def _grid(data: dict) -> None:
 
 
 def _reference() -> None:
-    st.markdown(f"<div style='height:10px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
     st.caption(NOTE_PRECIOUS)
     if DOCUMENTED_COUNT != GUIDE_CLAIMS:
         st.caption(f"⚠️ Masterguidens text säger {GUIDE_CLAIMS} råvaror, men "
