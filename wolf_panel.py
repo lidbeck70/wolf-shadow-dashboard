@@ -175,6 +175,13 @@ try:
 except ImportError:
     WOLF_REGIME_AVAILABLE = False
 
+# Råvarurotationen (Masterguiden Del 3)
+try:
+    from rotation import render_rotation_page
+    ROTATION_AVAILABLE = True
+except ImportError:
+    ROTATION_AVAILABLE = False
+
 # Portföljallokeraren (Masterguiden Del 2)
 try:
     from allocator import render_allocator_page
@@ -319,11 +326,17 @@ def main():
     # ── REGIME ───────────────────────────────────────────────────────────────
     with tab_regime_main:
         sub = st.radio(
-            "", ["Arc Regime", "Alpha Regime", "Flow Divergence", "Swing Regime"],
+            "", ["Arc Regime", "Alpha Regime", "Flow Divergence", "Swing Regime",
+                 "Råvarurotation"],
             horizontal=True, key="sub_regime",
         )
         st.markdown("---")
-        if sub == "Swing Regime":
+        if sub == "Råvarurotation":
+            if ROTATION_AVAILABLE:
+                render_rotation_page()
+            else:
+                tab_not_found("Råvarurotationen", "rotation")
+        elif sub == "Swing Regime":
             if WOLF_REGIME_AVAILABLE:
                 render_wolf_regime_page()
             else:
