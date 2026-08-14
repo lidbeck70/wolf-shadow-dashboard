@@ -242,13 +242,17 @@ def test_legacy_aliases_preserve_original_rule_counts():
 
 
 def _real_tab_names() -> set:
-    """Parse the actual tab + sub-tab labels straight out of wolf_panel.py.
+    """Parse the actual tab + sub-tab labels straight out of the panel source.
 
     Ground truth, so a renamed or moved tab makes the rules fail rather than
-    silently sending the user to a path that no longer exists.
+    silently sending the user to a path that no longer exists. wolf_panel.py
+    owns the top-level tabs and most sub-tabs; the RULES sub-tabs (KOM IGÅNG,
+    ÅRSHJULET, …) are declared inside rules_page.py, so both are read.
     """
-    src = open(os.path.join(os.path.dirname(os.path.dirname(
-        os.path.abspath(__file__))), "wolf_panel.py"), encoding="utf-8").read()
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    src = "\n".join(
+        open(os.path.join(root, f), encoding="utf-8").read()
+        for f in ("wolf_panel.py", os.path.join("ovtlyr", "ui", "rules_page.py")))
     names = set()
     block = re.search(r"tab_labels\s*=\s*\[(.*?)\]", src, re.S)
     if block:
@@ -344,7 +348,8 @@ def test_no_rules_section_is_orphaned():
 
     src = inspect.getsource(rules_page)
     for fn in ("_render_ember_full_ruleset", "_page_panel_guide", "_page_start",
-               "_page_rules", "_page_cheatsheet", "render_strategy_guides"):
+               "_page_rules", "_page_cheatsheet", "render_strategy_guides",
+               "_page_routines"):
         assert hasattr(rules_page, fn), f"{fn} missing"
         # defined once, called at least once
         assert src.count(fn) >= 2, f"{fn} is defined but never called"

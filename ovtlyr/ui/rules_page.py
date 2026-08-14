@@ -5,6 +5,7 @@ Updated for the consolidated 9-tab layout.
 """
 
 import streamlit as st
+from datetime import date as _date
 
 _BG2     = "#14141e"
 _CYAN    = "#00E5FF"
@@ -33,6 +34,10 @@ if str(_ROOT) not in _sys.path:
 from strategy_rules import (            # noqa: E402
     PLAYBOOKS, LEARNING_ORDER, LEVEL_COLOR, SUPPORT_COLOR, SUPPORT_FULL,
 )
+# Årshjulet — cadences, the quarterly ritual and the journal rules live in
+# routines.py so the wheel and its tests can never drift apart.
+import routines                          # noqa: E402
+from routines import STATUS_COLOR as ROUTINE_STATUS_COLOR   # noqa: E402
 # Re-exported for backwards compatibility — this module used to own these lists.
 from strategy_rules import (            # noqa: E402,F401
     as_rule_dicts, SWING_RULES, LONGTERM_RULES,
@@ -930,6 +935,12 @@ def _page_start() -> None:
                  f"display:flex;align-items:center;justify-content:center;'>{n}</span>"
                  f"<span style='color:{_TEXT};font-size:0.82rem;line-height:1.5;'>{step}</span></div>")
     st.markdown(flow, unsafe_allow_html=True)
+    st.markdown(
+        f"<div style='color:{_DIM};font-size:0.78rem;margin-top:10px;'>"
+        f"Den här rutinen är en av fem. Resten — månadens råvarurotation, "
+        f"kvartalsritualen och årsgenomgången — ligger i "
+        f"<b style='color:{_AMBER};'>🗓 ÅRSHJULET</b> här ovanför.</div>",
+        unsafe_allow_html=True)
 
 
 def _page_rules() -> None:
@@ -1082,6 +1093,10 @@ _PANEL_GUIDE: list[tuple] = [
     ("RULES", "Alla regelverk",
      "Denna sida. Läs före varje handelsdag. Reglerna finns även inline i varje "
      "regime-flik."),
+    ("RULES → 🗓 ÅRSHJULET", "Alla — exekvering",
+     "När varje rutin ska köras och hur lång tid den tar: söndagsrutinen, "
+     "råvarurotationen, kvartalsritualen och årsgenomgången. Visar vad som är "
+     "dags i dag."),
 ]
 
 
@@ -1108,6 +1123,153 @@ def _page_panel_guide() -> None:
     st.markdown(html + "</table>", unsafe_allow_html=True)
 
 
+def _routine_card(row) -> str:
+    """One row of the wheel: what, when, how long, and the steps."""
+    r = row["routine"]
+    st_label = row["status"]
+    sc = ROUTINE_STATUS_COLOR.get(st_label, _DIM)
+    left = row["days_until"]
+    nxt = row["next_due"]
+
+    if left is None:
+        timing = "Utlöses av nytt kapital — inte av kalendern"
+    elif left == 0:
+        timing = "I dag"
+    elif left == 1:
+        timing = f"I morgon · {routines.fmt_date(nxt)}"
+    else:
+        timing = f"Om {left} dagar · {routines.fmt_date(nxt, with_year=True)}"
+
+    steps = ""
+    for n, s in enumerate(r.steps, start=1):
+        where = (f"<div style='color:{r.color};font-size:0.7rem;margin-top:3px;'>"
+                 f"📍 {s.panel}</div>") if s.panel else ""
+        steps += (f"<div style='display:flex;gap:10px;margin-bottom:8px;"
+                  f"align-items:flex-start;'>"
+                  f"<span style='color:{r.color};font-size:0.72rem;font-weight:800;"
+                  f"min-width:16px;padding-top:2px;'>{n}.</span>"
+                  f"<div><span style='color:{_TEXT};font-size:0.82rem;"
+                  f"line-height:1.5;'>{s.text}</span>{where}</div></div>")
+
+    note = (f"<div style='color:{_DIM};font-size:0.75rem;font-style:italic;"
+            f"border-top:1px solid {r.color}33;padding-top:8px;margin-top:8px;'>"
+            f"{r.note}</div>") if r.note else ""
+
+    return (
+        f"<div style='border:1px solid {r.color}44;border-left:4px solid {r.color};"
+        f"border-radius:0 8px 8px 0;padding:14px 18px;margin-bottom:12px;"
+        f"background:rgba(255,255,255,0.015);'>"
+        f"<div style='display:flex;align-items:center;gap:10px;flex-wrap:wrap;'>"
+        f"<span style='color:{r.color};font-size:1rem;font-weight:800;'>{r.when}</span>"
+        f"<span style='background:{sc}22;border:1px solid {sc};color:{sc};"
+        f"font-size:0.6rem;font-weight:700;letter-spacing:0.09em;"
+        f"padding:2px 9px;border-radius:10px;'>{st_label.upper()}</span>"
+        f"<span style='color:{_DIM};font-size:0.72rem;'>{timing}</span></div>"
+        f"<div style='color:{_TEXT};font-size:0.88rem;font-weight:600;"
+        f"margin:4px 0 2px;'>{r.title}</div>"
+        f"<div style='color:{_DIM};font-size:0.72rem;margin-bottom:10px;'>"
+        f"⏱ {r.minutes} &nbsp;·&nbsp; 🧰 {r.tools}</div>"
+        f"{steps}{note}</div>"
+    )
+
+
+def _page_routines() -> None:
+    """Årshjulet — when you sit down and do the work, and for how long."""
+    today = _date.today()
+
+    st.markdown(
+        f"<div style='text-align:center;padding:14px 0 4px;'>"
+        f"<h2 style='color:{_AMBER};letter-spacing:0.12em;margin:0;'>ÅRSHJULET</h2>"
+        f"<p style='color:{_DIM};font-size:0.76rem;margin:6px 0 14px;'>"
+        f"Strategierna säger <i>vad</i>, allokeraren <i>hur mycket</i>, "
+        f"rotationen <i>var</i> — det här säger <b>när</b>.</p></div>",
+        unsafe_allow_html=True)
+
+    # ── Dagens rutin ────────────────────────────────────────────────────────
+    due = routines.due_today(today)
+    if due:
+        items = "".join(
+            f"<div style='color:{_TEXT};font-size:0.85rem;margin-top:4px;'>"
+            f"• <b>{r.title}</b> "
+            f"<span style='color:{_DIM};'>· {r.minutes}</span></div>"
+            for r in due)
+        st.markdown(
+            f"<div style='border:1px solid {_GREEN};background:{_GREEN}18;"
+            f"border-radius:8px;padding:12px 16px;margin-bottom:18px;'>"
+            f"<b style='color:{_GREEN};'>👉 I dag "
+            f"({routines.fmt_weekday(today)}):</b>{items}</div>",
+            unsafe_allow_html=True)
+    else:
+        nxt = routines.agenda(today)[0]
+        st.markdown(
+            f"<div style='border:1px solid {_DIM}55;background:rgba(255,255,255,0.02);"
+            f"border-radius:8px;padding:12px 16px;margin-bottom:18px;'>"
+            f"<b style='color:{_DIM};'>Ingen rutin i dag "
+            f"({routines.fmt_date(today)}).</b> "
+            f"<span style='color:{_TEXT};font-size:0.85rem;'>Nästa: "
+            f"{nxt['routine'].title} om {nxt['days_until']} dagar.</span> "
+            f"<span style='color:{_DIM};font-size:0.8rem;'>Att inte göra "
+            f"någonting mellan rutinerna är en del av systemet.</span></div>",
+            unsafe_allow_html=True)
+
+    for row in routines.agenda(today):
+        st.markdown(_routine_card(row), unsafe_allow_html=True)
+
+    # ── Kvartalsritualen ────────────────────────────────────────────────────
+    st.markdown(_section_header_html(
+        "Kvartalsritualen",
+        f"{routines.RITUAL_TOTAL_MIN}–{routines.RITUAL_TOTAL_MAX} min, fast datum",
+        _CYAN), unsafe_allow_html=True)
+    ritual = ""
+    for s in routines.QUARTERLY_RITUAL:
+        ritual += (
+            f"<div style='display:flex;gap:12px;margin-bottom:10px;"
+            f"align-items:flex-start;'>"
+            f"<span style='background:{_CYAN};color:#000;font-weight:800;"
+            f"font-size:0.7rem;min-width:22px;height:22px;border-radius:50%;"
+            f"display:flex;align-items:center;justify-content:center;'>"
+            f"{s.number}</span><div>"
+            f"<span style='color:{_TEXT};font-size:0.86rem;font-weight:700;'>"
+            f"{s.title}</span> "
+            f"<span style='color:{_DIM};font-size:0.72rem;'>({s.minutes} min)</span>"
+            f"<div style='color:{_DIM};font-size:0.8rem;line-height:1.55;"
+            f"margin-top:2px;'>{s.body}</div></div></div>")
+    st.markdown(ritual, unsafe_allow_html=True)
+
+    # ── Journalen ───────────────────────────────────────────────────────────
+    st.markdown(_section_header_html(
+        "Journalen och statistiken", "Utan logg går strategin inte att utvärdera",
+        _GREEN), unsafe_allow_html=True)
+    st.markdown(_ul(list(routines.JOURNAL_RULES), _TEXT), unsafe_allow_html=True)
+    st.markdown(
+        f"<div style='color:{_DIM};font-size:0.72rem;margin:8px 0 4px;'>"
+        f"📍 PORTFOLIO → Trade Journal &nbsp;·&nbsp; PORTFOLIO → Backtest</div>",
+        unsafe_allow_html=True)
+
+    with st.expander("🔬 Backtestern — innan du litar på siffrorna", expanded=False):
+        st.markdown(_ul(list(routines.BACKTEST_RULES), _TEXT),
+                    unsafe_allow_html=True)
+
+    # ── Kom igång-ordningen ─────────────────────────────────────────────────
+    st.markdown(_section_header_html(
+        "Kom igång-ordningen", "För varje ny strategi — inte bara den första",
+        _YELLOW), unsafe_allow_html=True)
+    onb = "".join(
+        f"<div style='display:flex;gap:12px;margin-bottom:7px;'>"
+        f"<span style='color:{_YELLOW};font-size:0.8rem;font-weight:700;"
+        f"min-width:82px;'>{period}</span>"
+        f"<span style='color:{_TEXT};font-size:0.83rem;'>{text}</span></div>"
+        for period, text in routines.ONBOARDING)
+    st.markdown(onb, unsafe_allow_html=True)
+
+    st.markdown(
+        f"<div style='border-left:3px solid {_AMBER};background:{_AMBER}0d;"
+        f"border-radius:0 6px 6px 0;padding:12px 16px;margin-top:20px;"
+        f"color:{_TEXT};font-size:0.87rem;font-style:italic;'>"
+        f"{routines.CLOSING_LINE}</div>",
+        unsafe_allow_html=True)
+
+
 # ------------------------------------------------------------------ #
 #  Main render
 # ------------------------------------------------------------------ #
@@ -1116,7 +1278,7 @@ def render_rules_page() -> None:
     sub = st.radio(
         "",
         ["🚀 KOM IGÅNG", "📋 HANDELSREGLER", "⚡ FUSKLAPP", "🗺 FLIKGUIDE",
-         "📖 STRATEGIGUIDER"],
+         "📖 STRATEGIGUIDER", "🗓 ÅRSHJULET"],
         horizontal=True,
         key="rules_sub",
     )
@@ -1131,6 +1293,8 @@ def render_rules_page() -> None:
         _page_cheatsheet()
     elif sub == "🗺 FLIKGUIDE":
         _page_panel_guide()
+    elif sub == "🗓 ÅRSHJULET":
+        _page_routines()
     else:
         render_strategy_guides()
 
