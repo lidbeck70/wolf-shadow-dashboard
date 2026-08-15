@@ -11,11 +11,12 @@ They are defined here rather than in strategy_rules.py only to keep the files
 readable — strategy_rules.PLAYBOOKS imports them, so there is still one registry
 and one source of truth.
 
-Important: most of these are NOT implemented in the panel. Each playbook states
-its `support` honestly, because the panel's "Deep Contrarian" screener is a
-single hate-ranking layer while Masterguiden splits the same space into five
-strategies with their own screeners, scoring models, position caps and sell
-rules. Naming the gap is the point of this module.
+Each playbook states its `support` honestly, and the honest answer has changed:
+all six now have a tab. Rule has Producenter A, Sprott and Durrett the
+Poängmodell, Tiggre the Lobo sheet, Royalty the Royalty C sheet, Insider the
+Insiderbevakare. What is still manual in every case is the Börsdata screener
+itself — the panel fetches no fundamentals — and each support_note says so.
+Naming the gap remains the point of this module; the gap is just smaller.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from strategy_rules import (
     Playbook, RiskModel, _rules,
     AMBER, CYAN, EMBER, GREEN, PURPLE,
     LEVEL_MEDIUM, LEVEL_ADVANCED,
-    SUPPORT_PARTIAL, SUPPORT_MANUAL,
+    SUPPORT_PARTIAL,
 )
 
 _SRC = "Masterguiden Del 4"
@@ -42,8 +43,9 @@ RULE = Playbook(
     level=LEVEL_MEDIUM,
     horizon="2–5 år",
     universe="Kanada, Australien, USA, Norden · Metals & Mining + Oil & Gas",
-    where="Delvis: SCREENING → Contrarian Alpha ger hat-rankningen. Screenern och "
-          "de fyra granskningsstegen görs i Börsdata + Producenter A-arket.",
+    where="SCREENING → Granskningsark (Producenter A) — Rules granskningsark. "
+          "Screenern körs i Börsdata; SCREENING → Contrarian Alpha ger "
+          "hat-rankningen.",
     idea=(
         "Rick Rule: 'bear markets are the authors of bull markets'. I en hatad "
         "sektor prissätts alla bolag som döende — även de med nettokassa och "
@@ -133,9 +135,14 @@ RULE = Playbook(
         "Acceptera skuld 'för att bolaget är så bra'. Skulder dödar i väntan.",
     ),
     support=SUPPORT_PARTIAL,
-    support_note="Contrarian Alpha-screenern ger hat- och kvalitetsrankning som "
-                 "överlappar Rules idé, men den kör INTE Rules filter (ND/EBITDA, "
-                 "soliditet, P/B, FCF-marginal) och har ingen Producenter A-poängmodell.",
+    support_note="SCREENING → Granskningsark (Producenter A) ÄR Rules "
+                 "granskningsark: marginalen mot kostnadskurvan, de tre "
+                 "disciplinfrågorna och strykregeln för döende tillgång "
+                 "(gruvlivslängd < 5 år, R/P < 8 år). Contrarian "
+                 "Alpha-screenern ger hat-rankning som överlappar Rules idé, "
+                 "men kör INTE Rules filter (ND/EBITDA, soliditet, P/B, "
+                 "FCF-marginal) — de fyra granskningsstegen görs i Börsdata "
+                 "och matas in i arket.",
     source=_SRC,
 )
 

@@ -4,8 +4,12 @@ producers.py — Producenter A + Royalty C (ur ravarurotation.xlsx).
 De två granskningsarken som ligger mellan rotationen och köpet: när
 rotationen sagt VAR kapitalet ska, säger de här VILKET bolag.
 
-  Producenter A — marginalen mot kostnadskurvan plus tre disciplinfrågor.
-                  0–5 poäng: ≥ 4 köpkandidat, 3 bevaka, under 3 passa.
+  Producenter A — Rules granskningsark. Guiden kallar det så rakt ut ("2 p i
+                  Producenter A-arket"), och dess fyra granskningssteg —
+                  landrisk, kostnadsposition, ledning, kapitaldisciplin — är
+                  exakt arkets fyra fält. Marginalen mot kostnadskurvan plus
+                  tre disciplinfrågor: 0–5 poäng, ≥ 4 köpkandidat, 3 bevaka,
+                  under 3 passa.
   Royalty C     — rabatten mot egen historik, och om GEO per aktie växer.
                   En royalty som krymper per aktie är inte billig, den är
                   utspädd.
@@ -55,6 +59,14 @@ PRODUCERS, ROYALTY = "producers", "royalty"
 MARGIN_STRONG, MARGIN_OK = 40.0, 25.0      # procent
 PROD_BUY_MIN, PROD_WATCH_MIN = 4, 3
 PROD_MAX_SCORE = 5
+
+# Den döende tillgången — Rules egen strykregel. Guiden, om screeningen:
+# "stryk direkt ... bolag där låg multipel förklaras av döende tillgång
+# (gruvlivslängd < 5 år, R/P < 8 år)". Och i mini-exemplet: samma 5/5-bolag
+# med fyra års gruvlivslängd är en passa, för priset är lågt av ett skäl.
+LIFE_MIN_YEARS = 5.0        # gruvlivslängd
+RP_MIN_YEARS = 8.0          # reserver/produktion, olja och gas
+DYING_ASSET = "Döende tillgång — låg multipel av ett skäl"
 
 P_BUY = "Köpkandidat"
 P_WATCH = "Bevaka"
@@ -122,6 +134,24 @@ def margin_points(margin) -> int:
     return 1 if m >= MARGIN_OK else 0
 
 
+def asset_dying(row: dict) -> Optional[bool]:
+    """Är den låga multipeln förklarad av att tillgången tar slut?
+
+    None när varken gruvlivslängd eller R/P är ifylld — obesvarad fråga är
+    inte ett friskintyg, men den ska heller inte döma ut bolaget här. Den
+    fångas i stället av köpgrindens luck-regel om positionen är stor nog.
+    """
+    life = _num(row.get("mine_life"))
+    rp = _num(row.get("rp_ratio"))
+    if life is None and rp is None:
+        return None
+    if life is not None and life < LIFE_MIN_YEARS:
+        return True
+    if rp is not None and rp < RP_MIN_YEARS:
+        return True
+    return False
+
+
 def producer_score(row: dict) -> Optional[int]:
     """0–5: marginalpoängen plus de tre disciplinfrågorna.
 
@@ -134,9 +164,22 @@ def producer_score(row: dict) -> Optional[int]:
     return margin_points(m) + sum(1 for k, _l, _h in CHECKS if row.get(k))
 
 
-def producer_verdict(score: Optional[int]) -> Optional[Verdict]:
+def producer_verdict(score: Optional[int],
+                     dying: Optional[bool] = None) -> Optional[Verdict]:
+    """Bedömningen. En döende tillgång överprövar poängen helt.
+
+    Guidens mini-exempel är just den fällan: EV/EBITDA 3,8, nettokassa,
+    soliditet 64 %, AISC i 25:e percentilen, Nevada, insynsägande, 6 %
+    direktavkastning ger 5/5 — men med fyra års gruvlivslängd är det ändå en
+    passa. Poängen mäter hur bra bolaget är på att vänta; den mäter inte om
+    det finns något kvar att vänta på.
+    """
     if score is None:
         return None
+    if dying:
+        return Verdict(P_PASS, f"{DYING_ASSET}. Poängen ({score}/"
+                               f"{PROD_MAX_SCORE}) spelar ingen roll — "
+                               f"gruvan tar slut före cykeln vänder.")
     if score >= PROD_BUY_MIN:
         return Verdict(P_BUY, "Marginal och disciplin på plats.")
     if score >= PROD_WATCH_MIN:
@@ -196,7 +239,9 @@ def ranked_producers(rows: list) -> list:
     out = []
     for r in rows or []:
         sc = producer_score(r)
-        out.append({"row": r, "score": sc, "verdict": producer_verdict(sc),
+        dying = asset_dying(r)
+        out.append({"row": r, "score": sc,
+                    "verdict": producer_verdict(sc, dying), "dying": dying,
                     "margin": margin_pct(r.get("price"), r.get("unit_cost"))})
     out.sort(key=lambda x: (-(x["score"] if x["score"] is not None else -1),
                             (x["row"].get("ticker") or "")))
@@ -286,6 +331,8 @@ PROD_CSV = [("date", "Datum"), ("ticker", "Ticker"), ("name", "Bolag"),
             ("kapitaldisciplin", "Kapitaldisciplin"), ("insyn", "Insyn"),
             ("_score", "Poäng (0–5)"), ("_verdict", "Bedömning"),
             ("position_pct", "Position % av total"),
+            ("mine_life", "Gruvlivslängd (år)"), ("rp_ratio", "R/P (år)"),
+            ("_dying", "Döende tillgång"),
             ("_ds", "DS"), ("_aqs", "AQS"), ("_csm_flag", "CSM röd flagga")]
 
 ROYALTY_CSV = [("date", "Datum"), ("ticker", "Ticker"), ("name", "Bolag"),
@@ -302,9 +349,16 @@ def _r1(v):
 
 
 def _producers(data: dict) -> None:
+    st.markdown(f"<div style='color:{DIM};font-size:0.78rem;margin-bottom:4px;'>"
+                f"<b style='color:{TEXT};'>Rules granskningsark.</b> "
+                f"Överlevar-screenern körs i Börsdata; de fyra "
+                f"granskningsstegen — landrisk, kostnadsposition, ledning, "
+                f"kapitaldisciplin — är fälten nedan.</div>",
+                unsafe_allow_html=True)
     csv_export.download_button(
         [{**r["row"], "_margin": _r1(r["margin"]), "_score": r["score"],
           "_verdict": r["verdict"].label if r["verdict"] else None,
+          "_dying": r["dying"],
           "_ds": ctl.ds_total(r["row"]), "_aqs": ctl.aqs_total(r["row"]),
           "_csm_flag": ctl.csm_red_flag(r["row"].get("csm_kind", ctl.PRODUCER),
                                         r["row"].get("csm", {}),
@@ -367,10 +421,29 @@ def _producers(data: dict) -> None:
                 changed = True
 
             m = r["margin"]
-            st.metric("Marginal", f"{m:.1f} %" if m is not None else "–",
+            l1, l2, l3 = st.columns(3)
+            l1.metric("Marginal", f"{m:.1f} %" if m is not None else "–",
                       help=f"Ger {margin_points(m)} p. Kostnadskurvan är hela "
                            f"caset: de dyraste producenterna dör först i "
                            f"prisfall.")
+            life = l2.number_input(
+                "Gruvlivslängd (år)", min_value=0.0, step=1.0,
+                value=float(_num(row.get("mine_life"), 0.0) or 0.0),
+                key=f"pr_life_{row['id']}",
+                help=f"Under {LIFE_MIN_YEARS:g} år = passa oavsett poäng. "
+                     f"Står i presentationen.")
+            rp = l3.number_input(
+                "R/P-kvot (olja/gas, år)", min_value=0.0, step=1.0,
+                value=float(_num(row.get("rp_ratio"), 0.0) or 0.0),
+                key=f"pr_rp_{row['id']}",
+                help=f"Reserver ÷ produktion. Under {RP_MIN_YEARS:g} år = "
+                     f"samma sak.")
+            if life != row.get("mine_life") or rp != row.get("rp_ratio"):
+                row["mine_life"], row["rp_ratio"] = life, rp
+                changed = True
+            if asset_dying(row):
+                st.error(f"{DYING_ASSET} — den låga multipeln förklaras av "
+                         f"att tillgången tar slut. Passa.")
 
             ccols = st.columns(3)
             for (ckey, clabel, chelp), col in zip(CHECKS, ccols):
@@ -380,7 +453,8 @@ def _producers(data: dict) -> None:
                     row[ckey] = v
                     changed = True
 
-            sc2, vd2 = producer_score(row), producer_verdict(producer_score(row))
+            sc2 = producer_score(row)
+            vd2 = producer_verdict(sc2, asset_dying(row))
             c2_ = PROD_COLOR.get(vd2.label if vd2 else "", DIM)
             st.markdown(
                 f"<div style='border:1px solid {c2_}55;background:{c2_}0d;"

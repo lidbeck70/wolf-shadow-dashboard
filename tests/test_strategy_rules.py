@@ -364,3 +364,24 @@ def test_rules_page_and_overview_read_the_same_source():
     for key, pb in sr.PLAYBOOKS.items():
         meta_risk = strategy_overview._META[key]["risk"][0]
         assert pb.risk.risk_per_trade in meta_risk
+
+
+def test_no_strategy_claims_to_be_fully_manual_anymore():
+    """Every Masterguide strategy now has at least a partial tab.
+
+    The field exists to stop the panel overclaiming; this asserts the opposite
+    direction — that it does not UNDERclaim either. Rule was the last one
+    saying "har ingen Producenter A-poängmodell" after the sheet was built.
+    """
+    manual = [k for k, pb in sr.PLAYBOOKS.items()
+              if pb.support == sr.SUPPORT_MANUAL]
+    assert manual == [], f"{manual} säger sig sakna panelstöd — stämmer det?"
+
+
+def test_rule_points_at_its_own_review_sheet():
+    """Guiden kallar det "Producenter A-arket" — panelen ska säga samma sak."""
+    pb = sr.PLAYBOOKS["rule"]
+    assert "Granskningsark" in pb.where
+    assert "Producenter A" in pb.where
+    assert "Producenter A" in pb.support_note
+    assert "gruvlivslängd" in pb.support_note.lower()

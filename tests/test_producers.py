@@ -179,3 +179,74 @@ def test_royalty_levels_match_the_playbooks_sell_rule():
     assert set(p.ROYALTY_LEVELS) == {1, 2, 3}
     assert "aldrig" in p.LEVEL_NOTE[1]
     assert "GEO" in p.LEVEL_NOTE[2]
+
+
+# ── Guidens egna exempel (Masterguiden 4.0, Del 4, Strategi 1: Rule) ─────────
+# Producenter A ÄR Rules granskningsark — guiden säger det rakt ut, och båda
+# exemplen nedan är dess egna siffror.
+def test_the_guides_aisc_example_scores_two_points():
+    """"AISC $1 400 vid guld $2 600 = 46 % marginal = lågkostnad (2 p)"."""
+    m = p.margin_pct(2600, 1400)
+    assert round(m, 1) == 46.2
+    assert p.margin_points(m) == 2
+
+
+def test_the_guides_mini_example_scores_five_of_five():
+    """EV/EBITDA 3,8 · nettokassa · soliditet 64 % · AISC i 25:e percentilen ·
+    Nevada · VD äger 8 årslöner · 6 % direktavkastning -> 5/5 -> full position."""
+    row = {"ticker": "MINI", "ev_ebitda": 3.8, "nd_ebitda": -0.5,
+           "price": 2600, "unit_cost": 1400,      # lågkostnad -> 2 p
+           "jurisdiktion": True,                   # Nevada
+           "insyn": True,                          # VD äger 8 årslöner
+           "kapitaldisciplin": True,               # 6 % direktavkastning
+           "mine_life": 12}
+    assert p.producer_score(row) == p.PROD_MAX_SCORE == 5
+    assert p.producer_verdict(p.producer_score(row),
+                              p.asset_dying(row)).label == p.P_BUY
+
+
+def test_the_same_company_with_a_four_year_mine_is_a_pass():
+    """The guide's own follow-up: "Samma bolag men med gruvlivslängd 4 år →
+    priset är lågt av ett skäl → passa"."""
+    row = {"price": 2600, "unit_cost": 1400, "jurisdiktion": True,
+           "insyn": True, "kapitaldisciplin": True, "mine_life": 4}
+    assert p.producer_score(row) == 5          # poängen är oförändrad...
+    assert p.asset_dying(row) is True
+    v = p.producer_verdict(p.producer_score(row), p.asset_dying(row))
+    assert v.label == p.P_PASS                 # ...men bedömningen är inte det
+    assert p.DYING_ASSET in v.why
+
+
+def test_the_rp_ratio_strikes_oil_and_gas_the_same_way():
+    row = {"price": 80, "unit_cost": 40, "jurisdiktion": True, "insyn": True,
+           "kapitaldisciplin": True, "rp_ratio": 6}
+    assert p.asset_dying(row) is True
+    assert p.producer_verdict(5, True).label == p.P_PASS
+    row["rp_ratio"] = 10
+    assert p.asset_dying(row) is False
+
+
+def test_the_strike_boundaries_are_the_guides():
+    assert p.LIFE_MIN_YEARS == 5.0 and p.RP_MIN_YEARS == 8.0
+    assert p.asset_dying({"mine_life": 5}) is False
+    assert p.asset_dying({"mine_life": 4.9}) is True
+    assert p.asset_dying({"rp_ratio": 8}) is False
+    assert p.asset_dying({"rp_ratio": 7.9}) is True
+
+
+def test_an_unanswered_life_question_is_not_a_clean_bill_of_health():
+    """None, not False — the scorecard's gap rule handles it from there."""
+    assert p.asset_dying({}) is None
+    assert p.asset_dying({"price": 100, "unit_cost": 50}) is None
+    # ...och den dömer inte ut bolaget här
+    assert p.producer_verdict(5, None).label == p.P_BUY
+
+
+def test_ranked_exposes_the_dying_flag():
+    rows = [{"id": "a", "ticker": "DYING", "price": 100, "unit_cost": 40,
+             "jurisdiktion": True, "insyn": True, "kapitaldisciplin": True,
+             "mine_life": 3}]
+    out = p.ranked_producers(rows)
+    assert out[0]["dying"] is True
+    assert out[0]["score"] == 5
+    assert out[0]["verdict"].label == p.P_PASS
