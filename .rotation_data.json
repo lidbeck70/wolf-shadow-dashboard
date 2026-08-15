@@ -1,0 +1,71 @@
+{
+  "month": "2026-08",
+  "grades": {
+    "gas": {
+      "hat": 0,
+      "case_intact": true,
+      "timing": "Nej"
+    },
+    "guld": {
+      "hat": 0,
+      "case_intact": true,
+      "timing": "Nej"
+    },
+    "jarnmalm": {
+      "hat": 0,
+      "case_intact": true,
+      "timing": "Nej"
+    },
+    "kol": {
+      "hat": 0,
+      "case_intact": true,
+      "timing": "Nej"
+    },
+    "koppar": {
+      "hat": 0,
+      "case_intact": true,
+      "timing": "Nej"
+    },
+    "litium": {
+      "hat": 0,
+      "case_intact": true,
+      "timing": "Nej"
+    },
+    "olja": {
+      "hat": 0,
+      "case_intact": true,
+      "timing": "Nej"
+    },
+    "palladium": {
+      "hat": 0,
+      "case_intact": true,
+      "timing": "Nej"
+    },
+    "platina": {
+      "hat": 0,
+      "case_intact": true,
+      "timing": "Nej"
+    },
+    "royalty": {
+      "hat": 0,
+      "case_intact": true,
+      "timing": "Nej"
+    },
+    "silver": {
+      "hat": 0,
+      "case_intact": true,
+      "timing": "Nej"
+    },
+    "uran": {
+      "hat": 0,
+      "case_intact": true,
+      "timing": "Nej"
+    },
+    "zink": {
+      "hat": 0,
+      "case_intact": true,
+      "timing": "Nej"
+    }
+  },
+  "history": []
+}

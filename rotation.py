@@ -25,6 +25,11 @@ from __future__ import annotations
 import streamlit as st
 from dataclasses import dataclass
 from datetime import date
+from html import escape as _esc
+
+# Del 5 — the deep-dive behind each row. Kept in its own module so this one
+# stays the grading engine; commodity_book is keyed by COMMODITIES.
+import commodity_book
 
 try:
     from gist_storage import load_blob as _blob_load, save_blob as _blob_save
@@ -282,6 +287,49 @@ def _targets(data: dict) -> None:
         unsafe_allow_html=True)
 
 
+def _book_section(title: str, body: str, color: str) -> str:
+    return (f"<div style='margin-top:12px;'>"
+            f"<div style='color:{color};font-size:0.63rem;font-weight:700;"
+            f"letter-spacing:0.12em;text-transform:uppercase;'>{title}</div>"
+            f"<div style='color:{TEXT};font-size:0.82rem;line-height:1.6;"
+            f"margin-top:3px;'>{_esc(body)}</div></div>")
+
+
+def chapter_html(ch) -> str:
+    """Råvarukartboken (Del 5) — the case behind the one-liner above.
+
+    The prose is escaped, not trusted as markup: it is full of threshold
+    comparisons like "EV/EBITDA < 5 ... hedgebok > 40 %", and an unescaped
+    run of those reads as an HTML tag and swallows everything between them.
+    """
+    html = (f"<div style='color:{DIM};font-size:0.72rem;font-style:italic;"
+            f"margin-top:8px;'>{_esc(ch.subtitle)}</div>")
+    html += _book_section("Marknaden", ch.market, CYAN)
+    html += _book_section("Spelet", ch.play, GREEN)
+    html += _book_section("Timing", ch.timing, AMBER)
+    if ch.role:
+        html += _book_section("Portföljroll", ch.role, GOLD)
+    if ch.pitfall:
+        html += (f"<div style='border-left:3px solid {RED};background:{RED}0d;"
+                 f"border-radius:0 6px 6px 0;padding:8px 12px;margin-top:12px;"
+                 f"color:{TEXT};font-size:0.8rem;line-height:1.55;'>"
+                 f"⚠️ <b style='color:{RED};'>Fallgropen:</b> "
+                 f"{_esc(ch.pitfall)}</div>")
+    if ch.sources:
+        items = "".join(f"<li style='margin-bottom:2px;'>{_esc(s)}</li>"
+                        for s in ch.sources)
+        html += (f"<div style='margin-top:12px;'>"
+                 f"<div style='color:{DIM};font-size:0.63rem;font-weight:700;"
+                 f"letter-spacing:0.12em;'>DÄR SIFFRAN FINNS</div>"
+                 f"<ul style='color:{DIM};font-size:0.76rem;margin:4px 0 0 16px;"
+                 f"padding:0;'>{items}</ul></div>")
+    return html
+
+
+def _chapter_block(ch) -> None:
+    st.markdown(chapter_html(ch), unsafe_allow_html=True)
+
+
 def _grid(data: dict) -> None:
     grades = data.setdefault("grades", {})
     rows = ranked(grades)
@@ -330,11 +378,16 @@ def _grid(data: dict) -> None:
             f"<div style='color:{DIM};font-size:0.66rem;margin-top:2px;'>{why_now}</div>"
             f"</div>", unsafe_allow_html=True)
 
-        with st.expander(f"Köpsignal — {c.name}", expanded=False):
+        ch = commodity_book.chapter(c.key)
+        label = (f"📖 Kartboken — {c.name}" if ch
+                 else f"Köpsignal — {c.name}")
+        with st.expander(label, expanded=False):
             st.markdown(f"<div style='color:{TEXT};font-size:0.82rem;'>"
                         f"<b>Cykelmotor:</b> {c.engine}<br>"
                         f"<b>Hatad när:</b> {c.buy_signal}</div>",
                         unsafe_allow_html=True)
+            if ch:
+                _chapter_block(ch)
 
     if changed:
         _save(data)
