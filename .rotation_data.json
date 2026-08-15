@@ -4,67 +4,171 @@
     "gas": {
       "hat": 0,
       "case_intact": true,
-      "timing": "Nej"
+      "timing": "Nej",
+      "hatred": 1,
+      "fundamentals": 3,
+      "catalyst": 1,
+      "migrated": true,
+      "screener_hits": 0,
+      "hits_history": [
+        0
+      ]
     },
     "guld": {
       "hat": 0,
       "case_intact": true,
-      "timing": "Nej"
+      "timing": "Nej",
+      "hatred": 1,
+      "fundamentals": 3,
+      "catalyst": 1,
+      "migrated": true,
+      "screener_hits": 0,
+      "hits_history": [
+        0
+      ]
     },
     "jarnmalm": {
       "hat": 0,
       "case_intact": true,
-      "timing": "Nej"
+      "timing": "Nej",
+      "hatred": 1,
+      "fundamentals": 3,
+      "catalyst": 1,
+      "migrated": true,
+      "screener_hits": 0,
+      "hits_history": [
+        0
+      ]
     },
     "kol": {
       "hat": 0,
       "case_intact": true,
-      "timing": "Nej"
+      "timing": "Nej",
+      "hatred": 1,
+      "fundamentals": 3,
+      "catalyst": 1,
+      "migrated": true,
+      "screener_hits": 0,
+      "hits_history": [
+        0
+      ]
     },
     "koppar": {
       "hat": 0,
       "case_intact": true,
-      "timing": "Nej"
+      "timing": "Nej",
+      "hatred": 1,
+      "fundamentals": 3,
+      "catalyst": 1,
+      "migrated": true,
+      "screener_hits": 0,
+      "hits_history": [
+        0
+      ]
     },
     "litium": {
       "hat": 0,
       "case_intact": true,
-      "timing": "Nej"
+      "timing": "Nej",
+      "hatred": 1,
+      "fundamentals": 3,
+      "catalyst": 1,
+      "migrated": true,
+      "screener_hits": 0,
+      "hits_history": [
+        0
+      ]
     },
     "olja": {
       "hat": 0,
       "case_intact": true,
-      "timing": "Nej"
+      "timing": "Nej",
+      "hatred": 1,
+      "fundamentals": 3,
+      "catalyst": 1,
+      "migrated": true,
+      "screener_hits": 0,
+      "hits_history": [
+        0
+      ]
     },
     "palladium": {
       "hat": 0,
       "case_intact": true,
-      "timing": "Nej"
+      "timing": "Nej",
+      "hatred": 1,
+      "fundamentals": 3,
+      "catalyst": 1,
+      "migrated": true,
+      "screener_hits": 0,
+      "hits_history": [
+        0
+      ]
     },
     "platina": {
       "hat": 0,
       "case_intact": true,
-      "timing": "Nej"
+      "timing": "Nej",
+      "hatred": 1,
+      "fundamentals": 3,
+      "catalyst": 1,
+      "migrated": true,
+      "screener_hits": 0,
+      "hits_history": [
+        0
+      ]
     },
     "royalty": {
       "hat": 0,
       "case_intact": true,
-      "timing": "Nej"
+      "timing": "Nej",
+      "hatred": 1,
+      "fundamentals": 3,
+      "catalyst": 1,
+      "migrated": true,
+      "screener_hits": 0,
+      "hits_history": [
+        0
+      ]
     },
     "silver": {
       "hat": 0,
       "case_intact": true,
-      "timing": "Nej"
+      "timing": "Nej",
+      "hatred": 1,
+      "fundamentals": 3,
+      "catalyst": 1,
+      "migrated": true,
+      "screener_hits": 0,
+      "hits_history": [
+        0
+      ]
     },
     "uran": {
       "hat": 0,
       "case_intact": true,
-      "timing": "Nej"
+      "timing": "Nej",
+      "hatred": 1,
+      "fundamentals": 3,
+      "catalyst": 1,
+      "migrated": true,
+      "screener_hits": 0,
+      "hits_history": [
+        0
+      ]
     },
     "zink": {
       "hat": 0,
       "case_intact": true,
-      "timing": "Nej"
+      "timing": "Nej",
+      "hatred": 1,
+      "fundamentals": 3,
+      "catalyst": 1,
+      "migrated": true,
+      "screener_hits": 0,
+      "hits_history": [
+        0
+      ]
     }
   },
   "history": []

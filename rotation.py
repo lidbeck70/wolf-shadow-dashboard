@@ -7,17 +7,22 @@ Durrett all need a hated sector to work in; this is what picks it.
   "Poängen med att bevaka 14 råvaror är inte att äga alla — det är att alltid
    ha någon sektor som är hatad."
 
-Each month every commodity is graded: hat-poäng 1–5, case intakt Ja/Nej,
-timing-signal Ja/Delvis/Nej. Capital goes to the 2–3 most hated with intact
-cases. Gold and the royalty leg stay put regardless of grade — gold is the only
-commodity that rises in risk aversion.
+Each month every commodity is graded on the Triple Signal (Masterguiden 4.0):
+hatred, fundamentals and catalyst 1–5 each, plus case intakt Ja/Nej as a hard
+gate. The sum 3–15 decides: 13–15 AGERA, 10–12 Bevaka, 9 or below Vila. Capital
+goes to the 2–3 highest with intact cases. Gold and the royalty leg stay put
+regardless of grade — gold is the only commodity that rises in risk aversion.
 
-NOTE on the priority formula: the guide says "arket räknar prioritet" but never
-publishes how. PRIORITY and the AGERA/Bevaka/Vila thresholds below are therefore
-this module's construction, chosen to match the behaviour the guide describes
-(a broken case can never be AGERA; high hate plus some timing confirmation is
-what triggers a screener run). Adjust them here if your sheet differs — they are
-not the guide's numbers.
+The point of three axes rather than one: hatred alone cannot tell a bottom from
+a value trap. A sector can be despised because nobody wants it yet (buy) or
+because the case is gone (never buy), and the fundamentals axis is what
+separates them. Both failure modes raise their own warning badge.
+
+Upgraded from the 3.x model (hat 1–5 + timing Ja/Delvis/Nej); saved grades are
+migrated on read by migrate_grade().
+
+NOTE: the 4.0 thresholds here are the spec's. The 3.x priority formula was this
+module's own construction and has been replaced by the published one.
 """
 
 from __future__ import annotations
@@ -50,14 +55,44 @@ BORDER = "#2a2a38"
 AGERA, BEVAKA, VILA = "AGERA", "Bevaka", "Vila"
 STATUS_COLOR = {AGERA: GREEN, BEVAKA: AMBER, VILA: DIM}
 
-# Timing-signalen
-TIMING_YES, TIMING_PARTLY, TIMING_NO = "Ja", "Delvis", "Nej"
-TIMING_BONUS = {TIMING_YES: 2, TIMING_PARTLY: 1, TIMING_NO: 0}
+# ── Triple Signal (Masterguiden 4.0) ─────────────────────────────────────────
+# Tre axlar 1–5 i stället för hat + timing. Summan 3–15 avgör status. Till
+# skillnad från 3.x-modellen är trösklarna guidens, inte panelens.
+SIGNALS = (
+    ("hatred", "Hat",
+     "Hur avskydd är sektorn? Femkryss-checklistan nedan."),
+    ("fundamentals", "Fundamenta",
+     "Utbuds- och efterfrågecasets styrka. Finns ett skäl att priset ska upp?"),
+    ("catalyst", "Katalysator",
+     "Konkret, tidsatt mekanism — LNG-våg, kontraktscykel, kapacitetsstängning."),
+)
+SIGNAL_MIN, SIGNAL_MAX = 1, 5
+SUM_MIN, SUM_MAX = 3, 15
 
-# Thresholds — this module's construction, not the guide's (see docstring).
-HAT_AGERA_MIN = 4        # hat-poäng som krävs för AGERA
-HAT_BEVAKA_MIN = 3
+AGERA_MIN = 13           # 13–15 AGERA
+BEVAKA_MIN = 10          # 10–12 Bevaka, <= 9 Vila
 CAPITAL_SLOTS = 3        # "de 2–3 mest hatade med intakta case"
+
+# Hat-checklistan lever kvar som hjälp för att sätta hatred 1–5: ett kryss
+# per uppfyllt påstående.
+HATRED_CHECKLIST = (
+    "Priset ligger under incitamentspriset",
+    "Utbudet krymper av nöd — stängningar, inte planer",
+    "Kapitalet är stängt: inga emissioner, inga nya projekt",
+    "Screener-listan är lång",
+    "Media är tyst",
+)
+
+# ── Varningsbadges (Masterguiden 4.0) ────────────────────────────────────────
+# Två sätt att ha hög summa av fel skäl.
+WARN_VALUE_TRAP = "VÄRDEFÄLLA — hög hat utan case"
+WARN_NOT_CONTRARIAN = "Ej kontrarisk — ägs via momentum/kvalitet"
+WARN_COLOR = {WARN_VALUE_TRAP: RED, WARN_NOT_CONTRARIAN: AMBER}
+
+# Den gamla timing-skalan behålls enbart för att kunna migrera sparad data.
+TIMING_YES, TIMING_PARTLY, TIMING_NO = "Ja", "Delvis", "Nej"
+LEGACY_TIMING_TO_CATALYST = {TIMING_YES: 3, TIMING_PARTLY: 2, TIMING_NO: 1}
+LEGACY_FUNDAMENTALS_DEFAULT = 3    # sätts manuellt efter migreringen
 
 
 @dataclass(frozen=True)
@@ -137,46 +172,96 @@ def _num(value, default=None):
     return default if f != f else f
 
 
-def priority(hat, timing: str, case_intact: bool) -> float:
-    """Prioritet = hat-poäng + timing-bonus. Brutet case ger alltid 0.
+def _signal(value) -> int:
+    """En axel klämd till 1–5. Osatt räknas som 1 — inte som noll."""
+    v = _num(value)
+    if v is None:
+        return SIGNAL_MIN
+    return max(SIGNAL_MIN, min(SIGNAL_MAX, int(v)))
 
-    Not the guide's formula — see the module docstring.
+
+def migrate_grade(grade: dict) -> dict:
+    """3.x-betyg (hat + timing) -> 4.0 Triple Signal.
+
+    hatred behåller hat-poängen, catalyst kommer ur timingen (Ja/Delvis/Nej ->
+    3/2/1) och fundamentals sätts till 3. Trean är en platshållare, inte en
+    bedömning: den gamla modellen frågade aldrig om caset, så den siffran finns
+    inte att migrera. Raden märks som migrerad tills den rörts för hand.
     """
-    if not case_intact:
+    g = dict(grade or {})
+    if "hatred" in g:
+        return g
+    if "hat" not in g and "timing" not in g:
+        return g
+    g["hatred"] = _signal(g.get("hat"))
+    g["fundamentals"] = LEGACY_FUNDAMENTALS_DEFAULT
+    g["catalyst"] = LEGACY_TIMING_TO_CATALYST.get(g.get("timing"), 1)
+    g["migrated"] = True
+    return g
+
+
+def migrate_grades(grades: dict) -> dict:
+    return {k: migrate_grade(v) for k, v in (grades or {}).items()}
+
+
+def signal_sum(grade: dict) -> int:
+    """Triple Signal-summan 3–15."""
+    g = grade or {}
+    return sum(_signal(g.get(key)) for key, _label, _help in SIGNALS)
+
+
+def priority(grade: dict) -> float:
+    """Prioritet = Triple Signal-summan. Brutet case ger alltid 0."""
+    if not bool((grade or {}).get("case_intact", True)):
         return 0.0
-    h = _num(hat, 0) or 0
-    h = max(1, min(5, int(h))) if h else 0
-    return float(h) + TIMING_BONUS.get(timing, 0)
+    return float(signal_sum(grade))
 
 
-def status(hat, timing: str, case_intact: bool) -> tuple[str, str]:
-    """(status, motivering) — AGERA kör screenern, Bevaka väntar, Vila avstår."""
-    if not case_intact:
-        return VILA, "Caset är brutet — ingen screener, oavsett hur hatad sektorn är"
-    h = int(_num(hat, 0) or 0)
-    if h >= HAT_AGERA_MIN and timing in (TIMING_YES, TIMING_PARTLY):
-        return AGERA, "Hatad OCH timing bekräftar — kör screenern"
-    if h >= HAT_AGERA_MIN:
-        return BEVAKA, "Hatad men timing saknas — vänta på signalen"
-    if h >= HAT_BEVAKA_MIN or timing == TIMING_YES:
-        return BEVAKA, "På väg — bevaka månadsvis"
-    return VILA, "Varken hatad nog eller timing — vila"
+def status(grade: dict) -> tuple[str, str]:
+    """(status, motivering) — AGERA kör screenern, Bevaka väntar, Vila avstår.
+
+    Case intakt är en hård grind före summan: ett brutet case kan inte köpas
+    hur hatat, välmotiverat eller tidsatt det än är.
+    """
+    g = grade or {}
+    if not bool(g.get("case_intact", True)):
+        return VILA, "Caset är brutet — ingen screener, oavsett summa"
+    total = signal_sum(g)
+    if total >= AGERA_MIN:
+        return AGERA, f"Summa {total}/{SUM_MAX} — hat, case och katalysator drar åt samma håll"
+    if total >= BEVAKA_MIN:
+        return BEVAKA, f"Summa {total}/{SUM_MAX} — en av de tre saknas ännu"
+    return VILA, f"Summa {total}/{SUM_MAX} — vila"
+
+
+def warnings(grade: dict) -> list:
+    """Två sätt att ha en hög summa av fel skäl."""
+    g = grade or {}
+    h, f = _signal(g.get("hatred")), _signal(g.get("fundamentals"))
+    out = []
+    if h >= 4 and f <= 2:
+        out.append(WARN_VALUE_TRAP)
+    if f >= 4 and h <= 2:
+        out.append(WARN_NOT_CONTRARIAN)
+    return out
 
 
 def ranked(grades: dict) -> list:
     """Alla råvaror sorterade på prioritet, högst först."""
     out = []
+    graded = migrate_grades(grades)
     for c in COMMODITIES:
-        g = grades.get(c.key, {}) or {}
-        hat = g.get("hat", 0)
-        timing = g.get("timing", TIMING_NO)
+        g = graded.get(c.key, {}) or {}
         intact = bool(g.get("case_intact", True))
-        st_, why = status(hat, timing, intact)
-        out.append({
-            "commodity": c, "hat": int(_num(hat, 0) or 0), "timing": timing,
-            "case_intact": intact, "priority": priority(hat, timing, intact),
-            "status": st_, "why": why,
-        })
+        st_, why = status(g)
+        row = {"commodity": c, "case_intact": intact, "grade": g,
+               "sum": signal_sum(g), "priority": priority(g),
+               "status": st_, "why": why, "warnings": warnings(g),
+               "screener_hits": _num(g.get("screener_hits")),
+               "migrated": bool(g.get("migrated"))}
+        for key, _label, _help in SIGNALS:
+            row[key] = _signal(g.get(key))
+        out.append(row)
     out.sort(key=lambda r: (-r["priority"], r["commodity"].name))
     return out
 
@@ -245,9 +330,11 @@ def render_rotation_page() -> None:
         st.error(f"Råvarurotationen kunde inte renderas: {e}")
 
 
-ROT_CSV = [("_name", "Råvara"), ("hat", "Hat-poäng"), ("timing", "Timing"),
-           ("case_intact", "Case intakt"), ("_priority", "Prioritet"),
+ROT_CSV = [("_name", "Råvara"), ("hatred", "Hat (1–5)"),
+           ("fundamentals", "Fundamenta (1–5)"), ("catalyst", "Katalysator (1–5)"),
+           ("sum", "Summa (3–15)"), ("case_intact", "Case intakt"),
            ("_status", "Status"), ("_why", "Motivering"),
+           ("_warnings", "Varningar"), ("screener_hits", "Screener-träffar"),
            ("_engine", "Cykelmotor"), ("_signal", "Hatad när")]
 
 
@@ -255,9 +342,12 @@ def _export(data: dict) -> None:
     rows = []
     for r in ranked(data.get("grades", {})):
         c = r["commodity"]
-        rows.append({"_name": c.name, "hat": r["hat"], "timing": r["timing"],
-                     "case_intact": r["case_intact"], "_priority": r["priority"],
+        rows.append({"_name": c.name, "hatred": r["hatred"],
+                     "fundamentals": r["fundamentals"], "catalyst": r["catalyst"],
+                     "sum": r["sum"], "case_intact": r["case_intact"],
                      "_status": r["status"], "_why": r["why"],
+                     "_warnings": " · ".join(r["warnings"]),
+                     "screener_hits": r["screener_hits"],
                      "_engine": c.engine, "_signal": c.buy_signal})
     csv_export.download_button(rows, ROT_CSV, "ravarurotationen",
                                key="csv_rotation")
@@ -289,8 +379,9 @@ def _targets(data: dict) -> None:
             f"<span style='background:{GREEN}18;border:1px solid {GREEN}66;"
             f"border-radius:5px;padding:4px 11px;margin-right:6px;'>"
             f"<b style='color:{GREEN};'>{t['commodity'].name}</b>"
-            f"<span style='color:{DIM};font-size:0.72rem;'> hat {t['hat']}/5 · "
-            f"timing {t['timing']}</span></span>" for t in targets)
+            f"<span style='color:{DIM};font-size:0.72rem;'> "
+            f"{t['sum']}/{SUM_MAX} · hat {t['hatred']} · fund {t['fundamentals']} "
+            f"· kat {t['catalyst']}</span></span>" for t in targets)
         st.markdown(
             f"<div style='margin:8px 0 12px;'>"
             f"<div style='color:{DIM};font-size:0.68rem;letter-spacing:0.1em;"
@@ -357,14 +448,29 @@ def _grid(data: dict) -> None:
     changed = False
 
     st.markdown(f"<div style='color:{DIM};font-size:0.68rem;letter-spacing:0.1em;"
-                f"margin:6px 0 4px;'>MÅNADENS BETYG — HAT 1–5 · CASE INTAKT · "
-                f"TIMING</div>", unsafe_allow_html=True)
+                f"margin:6px 0 4px;'>MÅNADENS BETYG — HAT · FUNDAMENTA · "
+                f"KATALYSATOR (1–5 var) · CASE INTAKT</div>",
+                unsafe_allow_html=True)
+
+    with st.expander("Hat-checklistan — ett kryss per uppfyllt påstående",
+                     expanded=False):
+        st.markdown("".join(
+            f"<div style='color:{TEXT};font-size:0.82rem;padding:2px 0 2px 16px;'>"
+            f"· {c}</div>" for c in HATRED_CHECKLIST), unsafe_allow_html=True)
+        st.caption("Fem kryss = hat 5. Noll kryss = hat 1. Checklistan är "
+                   "hjälpen, siffran är din bedömning.")
 
     for r in rows:
         c = r["commodity"]
         g = grades.setdefault(c.key, {})
 
-        h1, h2, h3, h4, h5 = st.columns([1.5, 1, 1, 1.2, 2.2])
+        # Migrera raden på plats första gången den läses.
+        migrated = migrate_grade(g)
+        if migrated is not g and migrated != g:
+            g.update(migrated)
+            changed = True
+
+        h1, h2, h3, h4, h5, h6, h7 = st.columns([1.4, .8, .8, .8, .7, .8, 2.0])
         anchor_mark = (f"<span style='color:{GOLD};font-size:0.7rem;'>⚓</span>"
                        if c.anchor else "")
         engine_short = c.engine[:38]
@@ -373,31 +479,56 @@ def _grid(data: dict) -> None:
             f"<b style='color:{TEXT};'>{c.name}</b> {anchor_mark}"
             f"<div style='color:{DIM};font-size:0.66rem;'>{engine_short}</div></div>",
             unsafe_allow_html=True)
-        hat = h2.selectbox("Hat", [0, 1, 2, 3, 4, 5],
-                           index=int(max(0, min(5, int(_num(g.get("hat"), 0) or 0)))),
-                           key=f"rot_hat_{c.key}", label_visibility="collapsed")
-        intact = h3.checkbox("Case", value=bool(g.get("case_intact", True)),
-                             key=f"rot_case_{c.key}")
-        timing = h4.selectbox("Timing", [TIMING_NO, TIMING_PARTLY, TIMING_YES],
-                              index=[TIMING_NO, TIMING_PARTLY, TIMING_YES].index(
-                                  g.get("timing", TIMING_NO)
-                                  if g.get("timing") in (TIMING_NO, TIMING_PARTLY, TIMING_YES)
-                                  else TIMING_NO),
-                              key=f"rot_tim_{c.key}", label_visibility="collapsed")
-        if (hat != g.get("hat") or intact != g.get("case_intact")
-                or timing != g.get("timing")):
-            g["hat"], g["case_intact"], g["timing"] = hat, intact, timing
+
+        opts = list(range(SIGNAL_MIN, SIGNAL_MAX + 1))
+        cols = (h2, h3, h4)
+        for (skey, slabel, shelp), col in zip(SIGNALS, cols):
+            cur = _signal(g.get(skey))
+            v = col.selectbox(slabel, opts, index=opts.index(cur),
+                              key=f"rot_{skey}_{c.key}", help=shelp,
+                              label_visibility="collapsed")
+            if v != g.get(skey):
+                g[skey] = v
+                changed = True
+
+        intact = h5.checkbox("Case", value=bool(g.get("case_intact", True)),
+                             key=f"rot_case_{c.key}",
+                             help="Hård grind: nej = Vila oavsett summa.")
+        if intact != g.get("case_intact"):
+            g["case_intact"] = intact
             changed = True
 
-        st_now, why_now = status(hat, timing, intact)
+        hits = h6.number_input("Träffar", min_value=0, step=1,
+                               value=int(_num(g.get("screener_hits"), 0) or 0),
+                               key=f"rot_hits_{c.key}",
+                               label_visibility="collapsed",
+                               help="Screener-träffar denna månad. En lång "
+                                    "lista är i sig ett hat-tecken.")
+        if hits != g.get("screener_hits"):
+            g["screener_hits"] = hits
+            g.setdefault("hits_history", [])
+            g["hits_history"] = (g["hits_history"] + [hits])[-24:]
+            changed = True
+
+        st_now, why_now = status(g)
         sc_now = STATUS_COLOR.get(st_now, DIM)
-        h5.markdown(
+        warn_html = "".join(
+            f"<div style='color:{WARN_COLOR.get(w, DIM)};font-size:0.66rem;"
+            f"margin-top:2px;'>⚠️ {w}</div>" for w in warnings(g))
+        mig_html = (f"<div style='color:{AMBER};font-size:0.62rem;margin-top:2px;'>"
+                    f"Migrerad från 3.x — fundamenta är en platshållare (3), "
+                    f"sätt den själv</div>" if g.get("migrated") else "")
+        h7.markdown(
             f"<div style='padding-top:4px;'>"
             f"<span style='background:{sc_now}22;border:1px solid {sc_now};"
             f"color:{sc_now};font-size:0.68rem;font-weight:700;padding:2px 9px;"
-            f"border-radius:10px;'>{st_now}</span>"
+            f"border-radius:10px;'>{st_now} {signal_sum(g)}/{SUM_MAX}</span>"
             f"<div style='color:{DIM};font-size:0.66rem;margin-top:2px;'>{why_now}</div>"
-            f"</div>", unsafe_allow_html=True)
+            f"{warn_html}{mig_html}</div>", unsafe_allow_html=True)
+
+        hist = g.get("hits_history") or []
+        if len(hist) > 1:
+            h6.line_chart(hist, height=40)
 
         ch = commodity_book.chapter(c.key)
         label = (f"📖 Kartboken — {c.name}" if ch
@@ -422,6 +553,8 @@ def _reference() -> None:
                    f"master-tabellen (Del 3, sida 7) listar {DOCUMENTED_COUNT}. "
                    f"Här finns de {DOCUMENTED_COUNT} som står i tabellen — lägg till "
                    f"den saknade i rotation.py om du vet vilken den är.")
-    st.caption("Prioritetsformeln och AGERA/Bevaka-gränserna är panelens "
-               "konstruktion — guiden säger att arket räknar prioritet men "
-               "publicerar aldrig hur. Justeras i rotation.py.")
+    st.caption(f"Triple Signal (Masterguiden 4.0): hat + fundamenta + "
+               f"katalysator, {SIGNAL_MIN}–{SIGNAL_MAX} var. "
+               f"{AGERA_MIN}–{SUM_MAX} AGERA · {BEVAKA_MIN}–{AGERA_MIN - 1} "
+               f"Bevaka · {BEVAKA_MIN - 1} och under Vila. Brutet case är en "
+               f"hård grind före summan.")
