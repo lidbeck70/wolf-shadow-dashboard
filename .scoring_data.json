@@ -1,0 +1,24 @@
+{
+  "sprott": [
+    {
+      "id": "s1",
+      "ticker": "AAA",
+      "name": "Alfa",
+      "commodity": "Uran",
+      "cash": 30,
+      "burn": 10,
+      "factors": {
+        "balans": 2,
+        "vardering": 1
+      },
+      "ds_runway": 2,
+      "ds_capex": 2,
+      "ds_warrants": 2,
+      "ds_aktier_3ar": 1,
+      "ds_historik": 1,
+      "fully_diluted_shares": 0.0,
+      "forvantad_utspadning": 0.0
+    }
+  ],
+  "durrett": []
+}

@@ -1,0 +1,38 @@
+{
+  "producers": [
+    {
+      "id": "p1",
+      "ticker": "BBB",
+      "name": "Beta",
+      "commodity": "Koppar",
+      "price": 100.0,
+      "unit_cost": 55.0,
+      "jurisdiktion": true,
+      "insyn": true,
+      "position_pct": 4.0,
+      "ev_ebitda": 0.0,
+      "nd_ebitda": 0.0,
+      "fully_diluted_shares": 0.0,
+      "forvantad_utspadning": 0.0,
+      "aqs_jurisdiktion": 2,
+      "aqs_management": 2,
+      "csm": {
+        "Bear": {
+          "price": 0.0,
+          "fcf_musd": 0.0
+        },
+        "Base": {
+          "price": 0.0,
+          "fcf_musd": 0.0
+        },
+        "Bull": {
+          "price": 0.0,
+          "fcf_musd": 0.0
+        }
+      },
+      "csm_kind": "producent",
+      "is_core": false
+    }
+  ],
+  "royalty": []
+}

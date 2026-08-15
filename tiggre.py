@@ -13,9 +13,12 @@ omvärdering, med händelsen definierad före köpet. Den här fliken gör arket
   5. Positioner   — free ride-larm vid +100 %, eget kapital i risk,
                     de fyra sälj-allt-triggarna, P/NAV mot 0,8-1,0
 
-Grindarna är hårda: KÖP är låst tills 2-av-3, U/N >= 3, poäng >= 8 och två
-katalysatorer alla passerar. Panelen ska göra det svårt att bryta reglerna, inte
-bara påminna om dem.
+  6. Kontrollerna — DS (utspädning) och CSM (Bear-överlevnad) ur Masterguiden
+                    4.0, plus AQS på tillgången
+
+Grindarna är hårda: KÖP är låst tills 2-av-3, U/N >= 3, poäng >= 8, två
+katalysatorer, DS under 6 och CSM utan röd flagga alla passerar. Panelen ska
+göra det svårt att bryta reglerna, inte bara påminna om dem.
 
 Lagring: samma modell som holdings/swing — Gist ("tiggre_data.json") med lokal
 fallback, cachad per session.
@@ -28,6 +31,8 @@ from datetime import date
 from typing import Optional
 
 import csv_export
+import controls as ctl
+import controls_ui
 
 try:
     from gist_storage import load_blob as _blob_load, save_blob as _blob_save
@@ -200,6 +205,10 @@ def buy_gates(cand: dict) -> list[tuple[str, bool, str]]:
     un = un_ratio(up, cand.get("downside"))
     score = factor_score(cand.get("factors", {}), un)
     cats = [c for c in cand.get("catalysts", []) if c.get("name") and c.get("date")]
+    ds = ctl.ds_total(cand)
+    csm_flag = ctl.csm_red_flag(cand.get("csm_kind", ctl.DEVELOPER),
+                                cand.get("csm", {}),
+                                bool(cand.get("secured_cash")))
     return [
         (f"Grovsållning {SCREEN_HITS_MIN} av 3", hits >= SCREEN_HITS_MIN,
          f"{hits}/3 nyckelfraser"),
@@ -208,6 +217,11 @@ def buy_gates(cand: dict) -> list[tuple[str, bool, str]]:
         (f"Poäng ≥ {SCORE_MIN}", score >= SCORE_MIN, f"{score}/10"),
         (f"≥ {CATALYSTS_MIN} katalysatorer", len(cats) >= CATALYSTS_MIN,
          f"{len(cats)} namngivna och tidsatta"),
+        # DS och CSM är 4.0-grindar: utspädning och Bear-överlevnad.
+        (f"DS < {ctl.DS_BLOCK_MIN}", not ctl.ds_blocks_buy(cand),
+         f"{ds}/{ctl.DS_MAX}" if ds is not None else "ej bedömd"),
+        ("CSM: Bear överlevs", not csm_flag,
+         "röd flagga" if csm_flag else "ingen röd flagga"),
     ]
 
 
@@ -447,6 +461,17 @@ def _candidate_card(data: dict, cand: dict) -> None:
                 fac[fkey] = v
                 changed = True
 
+        # Kontrollsystemen (Masterguiden 4.0). Tiggre är utvecklare per
+        # definition, och positionen ligger i intervallet 2–4 % — alltså
+        # kräver proportionalitetsregeln hela paketet.
+        if controls_ui.render_all(
+                cand, cand["id"],
+                position_pct=_num(cand.get("position_pct"), POS_MAX_PCT),
+                strategy="tiggre",
+                aqs_prefill=ctl.aqs_prefill_from_tiggre(cand.get("factors", {})),
+                kind=ctl.DEVELOPER):
+            changed = True
+
         # Katalysatorer
         _catalysts(data, cand)
 
@@ -482,7 +507,7 @@ def _candidate_card(data: dict, cand: dict) -> None:
         if not room:
             st.warning(f"Max {MAX_POSITIONS} positioner — stäng en först.")
         elif not all_pass:
-            st.caption("KÖP är låst tills alla fyra grindar passerar.")
+            st.caption(f"KÖP är låst tills alla {len(gates)} grindar passerar.")
 
         if changed:
             _save(data)

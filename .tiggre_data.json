@@ -1,0 +1,49 @@
+{
+  "candidates": [
+    {
+      "id": "t1",
+      "ticker": "CCC",
+      "name": "Gamma",
+      "mcap": 200,
+      "nav": 650,
+      "downside": -40,
+      "screen": {
+        "fs": true,
+        "permits": true
+      },
+      "factors": {
+        "stadium": 2,
+        "finansiering": 2,
+        "manniskor": 2,
+        "jurisdiktion": 2
+      },
+      "csm": {
+        "Bear": {
+          "financing_need": 120.0,
+          "price": 0.0,
+          "nav_musd": 0.0
+        },
+        "Base": {
+          "price": 0.0,
+          "nav_musd": 0.0,
+          "financing_need": 0.0
+        },
+        "Bull": {
+          "price": 0.0,
+          "nav_musd": 0.0,
+          "financing_need": 0.0
+        }
+      },
+      "catalysts": [],
+      "fully_diluted_shares": 0.0,
+      "forvantad_utspadning": 0.0,
+      "aqs_jurisdiktion": 2,
+      "aqs_management": 2,
+      "csm_kind": "utvecklare",
+      "is_core": false
+    }
+  ],
+  "positions": [],
+  "parked": [],
+  "closed": []
+}

@@ -28,6 +28,8 @@ from datetime import date
 from typing import Optional
 
 import csv_export
+import controls as ctl
+import controls_ui
 
 try:
     from gist_storage import load_blob as _blob_load, save_blob as _blob_save
@@ -282,7 +284,9 @@ PROD_CSV = [("date", "Datum"), ("ticker", "Ticker"), ("name", "Bolag"),
             ("price", "Råvarupris"), ("_margin", "Marginal %"),
             ("jurisdiktion", "Jurisdiktion"),
             ("kapitaldisciplin", "Kapitaldisciplin"), ("insyn", "Insyn"),
-            ("_score", "Poäng (0–5)"), ("_verdict", "Bedömning")]
+            ("_score", "Poäng (0–5)"), ("_verdict", "Bedömning"),
+            ("position_pct", "Position % av total"),
+            ("_ds", "DS"), ("_aqs", "AQS"), ("_csm_flag", "CSM röd flagga")]
 
 ROYALTY_CSV = [("date", "Datum"), ("ticker", "Ticker"), ("name", "Bolag"),
                ("level", "Nivå"), ("pnav_now", "P/NAV nu"),
@@ -300,7 +304,11 @@ def _r1(v):
 def _producers(data: dict) -> None:
     csv_export.download_button(
         [{**r["row"], "_margin": _r1(r["margin"]), "_score": r["score"],
-          "_verdict": r["verdict"].label if r["verdict"] else None}
+          "_verdict": r["verdict"].label if r["verdict"] else None,
+          "_ds": ctl.ds_total(r["row"]), "_aqs": ctl.aqs_total(r["row"]),
+          "_csm_flag": ctl.csm_red_flag(r["row"].get("csm_kind", ctl.PRODUCER),
+                                        r["row"].get("csm", {}),
+                                        bool(r["row"].get("secured_cash")))}
          for r in ranked_producers(data[PRODUCERS])],
         PROD_CSV, "producenter_a", key="csv_producers")
     st.caption(f"Marginal ≥ {MARGIN_STRONG:g} % ger 2 p, ≥ {MARGIN_OK:g} % ger "
@@ -383,6 +391,23 @@ def _producers(data: dict) -> None:
                 f"{vd2.label if vd2 else 'Fyll i pris och kostnad'}</span>"
                 f"<div style='color:{TEXT};font-size:0.8rem;margin-top:3px;'>"
                 f"{vd2.why if vd2 else ''}</div></div>", unsafe_allow_html=True)
+
+            # Positionsstorleken styr vilka kontroller som krävs.
+            pos = st.number_input(
+                "Tänkt position (% av total)", min_value=0.0, step=0.5,
+                value=float(_num(row.get("position_pct"), 0.0) or 0.0),
+                key=f"pr_pos_{row['id']}",
+                help=f"Över {ctl.FULL_WORK_MIN_PCT:g} % krävs AQS och CSM. "
+                     f"Under räcker DS.")
+            if pos != row.get("position_pct"):
+                row["position_pct"] = pos
+                changed = True
+
+            if controls_ui.render_all(
+                    row, row["id"], position_pct=pos, strategy="producenter",
+                    aqs_prefill=ctl.aqs_prefill_from_producer(row),
+                    kind=ctl.PRODUCER):
+                changed = True
 
             if st.button("Ta bort", key=f"pr_del_{row['id']}"):
                 data[PRODUCERS] = [x for x in data[PRODUCERS]

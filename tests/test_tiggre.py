@@ -80,7 +80,7 @@ def _good_candidate() -> dict:
 
 def test_all_gates_pass_for_a_complete_case():
     gates = t.buy_gates(_good_candidate())
-    assert len(gates) == 4
+    assert len(gates) == 6          # 4 ur Lobo-arket + DS och CSM ur 4.0
     assert all(passed for _label, passed, _detail in gates), gates
 
 
@@ -198,3 +198,48 @@ def test_one_delay_is_not_a_sell_signal():
 def test_the_sell_rule_is_reachable_from_a_position():
     """SELL_ALL_TRIGGERS must keep the key the calendar sets automatically."""
     assert "delayed_twice" in dict((k, v) for k, v in t.SELL_ALL_TRIGGERS)
+
+
+# ── 4.0-grindarna (DS + CSM) ─────────────────────────────────────────────────
+import controls as ctl                                          # noqa: E402
+
+
+def _gate(cand, label_start):
+    return [g for g in t.buy_gates(cand) if g[0].startswith(label_start)][0]
+
+
+def test_an_unassessed_ds_does_not_block_the_buy_here():
+    """The gate reads "ej bedömd" and passes; the scorecard is what refuses
+    to sign off on gaps."""
+    c = _good_candidate()
+    label, passed, detail = _gate(c, "DS")
+    assert passed and detail == "ej bedömd"
+
+
+def test_high_dilution_closes_the_gate_until_financing_is_dated():
+    c = _good_candidate()
+    c.update({f.key: 2 for f in ctl.DS_FIELDS})          # DS 10/10
+    assert not _gate(c, "DS")[1]
+    assert _gate(c, "DS")[2] == "10/10"
+    c["fin_catalyst_text"] = "Byggkredit klar"
+    assert not _gate(c, "DS")[1], "utan datum är det ingen katalysator"
+    c["fin_catalyst_date"] = "2027-01"
+    assert _gate(c, "DS")[1]
+
+
+def test_a_developer_that_needs_capital_in_bear_closes_the_csm_gate():
+    c = _good_candidate()
+    c["csm"] = {ctl.BEAR: {"financing_need": 150}}
+    label, passed, detail = _gate(c, "CSM")
+    assert not passed and detail == "röd flagga"
+    c["secured_cash"] = True
+    assert _gate(c, "CSM")[1]
+
+
+def test_the_lobo_gates_are_unchanged_by_the_additions():
+    """The four original gates must keep their order and their thresholds."""
+    labels = [g[0] for g in t.buy_gates(_good_candidate())]
+    assert labels[0].startswith("Grovsållning")
+    assert labels[1].startswith("U/N")
+    assert labels[2].startswith("Poäng")
+    assert labels[3].startswith("≥ 2 katalysatorer") or "katalysator" in labels[3]

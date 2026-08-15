@@ -28,6 +28,8 @@ from datetime import date
 from typing import Optional
 
 import csv_export
+import controls as ctl
+import controls_ui
 
 try:
     from gist_storage import load_blob as _blob_load, save_blob as _blob_save
@@ -262,8 +264,10 @@ def render_scoring_page() -> None:
 CSV_COMMON = [("date", "Datum"), ("ticker", "Ticker"), ("name", "Bolag"),
               ("commodity", "Råvara")]
 CSV_FACTORS = [(f.key, f.label) for f in FACTORS]
-CSV_TAIL = [("_score", "Totalt (0–10)"), ("_verdict", "Bedömning"),
-            ("comment", "Kommentar")]
+CSV_TAIL = ([("_score", "Totalt (0–10)"), ("_verdict", "Bedömning")]
+            + [(f.key, f"DS {f.label}") for f in ctl.DS_FIELDS]
+            + [("_ds", "DS totalt"), ("_ds_band", "DS-band"),
+               ("comment", "Kommentar")])
 CSV_COLUMNS = {
     SPROTT: CSV_COMMON + [("cash", "Kassa (MUSD)"), ("burn", "Burn/år (MUSD)"),
                           ("_runway", "Runway (år)")] + CSV_FACTORS + CSV_TAIL,
@@ -279,7 +283,9 @@ def _export(data: dict, key: str) -> None:
     rows = []
     for r in ranked(data.get(key, [])):
         row = r["row"]
+        ds = ctl.ds_total(row)
         extra = {"_score": r["score"], "_verdict": r["verdict"],
+                 "_ds": ds, "_ds_band": ctl.ds_band(ds),
                  **(row.get("factors") or {})}
         if key == SPROTT:
             rw = runway_years(row.get("cash"), row.get("burn"))
@@ -334,16 +340,26 @@ def _rows(data: dict, key: str) -> None:
                 _durrett_math(data, row)
             _factors(data, row, key)
 
+            # DS (Masterguiden 4.0) — utspädningen är den här strategifamiljens
+            # största enskilda risk, så den frågas alltid, oavsett storlek.
+            rw = (runway_years(row.get("cash"), row.get("burn"))
+                  if key == SPROTT else None)
+            with st.expander("🧪 DS — utspädningsrisk", expanded=False):
+                if controls_ui.render_ds(row, row["id"], rw):
+                    _save(data)
+
+            blocked = ctl.ds_blocks_buy(row)
+            eff_c, eff_vd = (RED, "KÖP LÅST — hög DS") if blocked else (c, vd)
             st.markdown(
-                f"<div style='border:1px solid {c}55;background:{c}0d;"
+                f"<div style='border:1px solid {eff_c}55;background:{eff_c}0d;"
                 f"border-radius:8px;padding:10px 14px;margin:10px 0;'>"
-                f"<span style='color:{c};font-weight:700;font-size:1.05rem;'>"
+                f"<span style='color:{eff_c};font-weight:700;font-size:1.05rem;'>"
                 f"{sc if sc is not None else '–'} / {MAX_SCORE}</span>"
-                f"<span style='color:{c};font-weight:700;margin-left:12px;'>"
-                f"{vd or 'Sätt minst en faktor'}</span>"
+                f"<span style='color:{eff_c};font-weight:700;margin-left:12px;'>"
+                f"{eff_vd or 'Sätt minst en faktor'}</span>"
                 f"<div style='color:{TEXT};font-size:0.8rem;margin-top:3px;'>"
-                f"{VERDICT_ACTION.get(vd, '')}</div></div>",
-                unsafe_allow_html=True)
+                f"{ctl.ds_note(row) if blocked else VERDICT_ACTION.get(vd, '')}"
+                f"</div></div>", unsafe_allow_html=True)
 
             com = st.text_input("Kommentar", value=row.get("comment", ""),
                                 key=f"sc_com_{row['id']}")
