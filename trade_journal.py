@@ -14,6 +14,10 @@ import plotly.graph_objects as go
 from datetime import datetime
 from typing import Optional
 
+# Statistikbladet ur tradingjournal_swing.xlsx — rena funktioner, testade mot
+# arkets formler. R räknas här ur stoppen i stället för att skrivas in.
+import journal_stats as js
+
 # ---------------------------------------------------------------------------
 # Storage — reuse gist_storage.py token/auth helpers, store journal as
 # a separate file in the SAME gist used by holdings.
@@ -512,6 +516,88 @@ def _render_import_section(existing_trades: list) -> None:
 # ---------------------------------------------------------------------------
 # Main render function
 # ---------------------------------------------------------------------------
+def _render_swing_stats(trades: list) -> None:
+    """Statistikbladet ur tradingjournal_swing.xlsx.
+
+    Skiljer sig från KPI-korten ovanför: de mäter portföljen, det här mäter
+    om reglerna funkar. Payoff-kvoten, setup A mot B och exit-fördelningen
+    säger vilket beteende som tjänar pengar — vilket är hela poängen med att
+    föra journal.
+    """
+    s = js.summary(trades)
+    if not s["closed"]:
+        return
+
+    st.markdown(
+        f'<p style="color:{_GOLD}; font-weight:600; margin-top:16px; '
+        f'margin-bottom:4px;">Swing-statistik <span style="color:{_TEXT_DIM};'
+        f'font-weight:400;font-size:0.8rem;">— mäter reglerna, inte '
+        f'portföljen</span></p>', unsafe_allow_html=True)
+
+    if not s["enough"]:
+        st.warning(
+            f"{s['closed']} avslutade affärer. Under {js.MIN_TRADES} är "
+            f"vinstandel och payoff-kvot brus — läs lärdomskolumnen i stället.")
+
+    def _fmt(v, suffix="", dec=2):
+        return "—" if v is None else f"{v:.{dec}f}{suffix}"
+
+    k1, k2, k3, k4 = st.columns(4)
+    with k1:
+        _kpi_card("Vinstandel", _fmt(s["win_rate"], " %", 1),
+                  caption=f"{js.WIN_RATE_LOW:.0f}–{js.WIN_RATE_HIGH:.0f} % "
+                          f"är normalt")
+    with k2:
+        payoff = s["payoff"]
+        _kpi_card("Payoff-kvot", _fmt(payoff),
+                  _GREEN if payoff and payoff >= js.PAYOFF_TARGET else _GOLD,
+                  caption=f"Mål: > {js.PAYOFF_TARGET:g}")
+    with k3:
+        avg_r = s["avg_r"]
+        _kpi_card("Snitt-R", _fmt(avg_r),
+                  _GREEN if avg_r and avg_r >= js.AVG_R_TARGET else _GOLD,
+                  caption=f"Mål: > {js.AVG_R_TARGET:g}R")
+    with k4:
+        _kpi_card("Snitt innehav", _fmt(s["avg_days"], " d", 0),
+                  caption=f"Förväntat: {js.HOLD_MIN}–{js.HOLD_MAX} d")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        rows = ""
+        for key, stats in s["setups"].items():
+            avg = stats["avg_pct"]
+            rows += (f"<div style=\'display:flex;justify-content:space-between;"
+                     f"padding:3px 0;font-size:0.82rem;\'>"
+                     f"<span style=\'color:{_TEXT_DIM};\'>"
+                     f"{js.SETUP_LABEL[key]}</span>"
+                     f"<span style=\'color:{_TEXT};\'>{stats['count']} st · "
+                     f"{'—' if avg is None else f'{avg:+.1f} %'}</span></div>")
+        st.markdown(
+            f"<div style=\'background:{_BG_CARD};border-radius:8px;"
+            f"padding:10px 14px;\'><div style=\'color:{_GOLD};"
+            f"font-size:0.7rem;font-weight:700;letter-spacing:0.1em;"
+            f"margin-bottom:6px;\'>SETUP A MOT B</div>{rows}"
+            f"<div style=\'color:{_TEXT_DIM};font-size:0.72rem;margin-top:6px;\'>"
+            f"Satsa på den som funkar för dig.</div></div>",
+            unsafe_allow_html=True)
+    with c2:
+        rows = ""
+        for key, count in s["exits"].items():
+            rows += (f"<div style=\'display:flex;justify-content:space-between;"
+                     f"padding:3px 0;font-size:0.82rem;\'>"
+                     f"<span style=\'color:{_TEXT_DIM};\'>"
+                     f"{js.SELL_RULE_LABEL[key]}</span>"
+                     f"<span style=\'color:{_TEXT};\'>{count}</span></div>")
+        st.markdown(
+            f"<div style=\'background:{_BG_CARD};border-radius:8px;"
+            f"padding:10px 14px;\'><div style=\'color:{_GOLD};"
+            f"font-size:0.7rem;font-weight:700;letter-spacing:0.1em;"
+            f"margin-bottom:6px;\'>EXITS PER REGEL</div>{rows}"
+            f"<div style=\'color:{_TEXT_DIM};font-size:0.72rem;margin-top:6px;\'>"
+            f"Många stoppar = slagig marknad eller sena köp.</div></div>",
+            unsafe_allow_html=True)
+
+
 def render_trade_journal_page():
     """Render the full Trade Journal tab."""
     try:
@@ -617,6 +703,8 @@ def render_trade_journal_page():
             _strategy_card("Viking", _strategy_stats(df, "viking"))
         with s3:
             _strategy_card("Alpha", _strategy_stats(df, "alpha"))
+
+        _render_swing_stats(trades)
 
         st.markdown("<br/>", unsafe_allow_html=True)
 
@@ -752,12 +840,30 @@ def render_trade_journal_page():
                                               step=0.01, format="%.2f")
                 shares = st.number_input("Shares", min_value=0, step=1, value=0)
             with fc4:
-                r_multiple = st.number_input("R-Multiple", step=0.1, format="%.2f",
+                stop_loss = st.number_input(
+                    "Stop Loss", min_value=0.0, step=0.01, format="%.2f",
+                    help="Stoppen du faktiskt la. Med den räknas R-multipeln "
+                         "ur affären i stället för att skrivas in.")
+                r_multiple = st.number_input("R-Multiple (om ingen stop)",
+                                              step=0.1, format="%.2f",
                                               value=0.0)
                 exit_reason = st.selectbox(
                     "Exit Reason", ["Target", "Stop Loss", "Manual", "Regime Change"]
                 )
                 notes = st.text_area("Notes", height=80)
+
+            # Swing-fälten (frivilliga — arket kräver dem, övriga strategier inte)
+            fs1, fs2 = st.columns(2)
+            with fs1:
+                setup = st.selectbox(
+                    "Setup (swing)", ["", "A", "B"],
+                    format_func=lambda x: js.SETUP_LABEL.get(x, "— ingen —"),
+                    help="A = pullback, B = utbrott. Statistiken jämför dem.")
+            with fs2:
+                sell_rule = st.selectbox(
+                    "Säljregel (swing)", [""] + list(js.SELL_RULES),
+                    format_func=lambda x: js.SELL_RULE_LABEL.get(x, "— ingen —"),
+                    help="Vilken regel som faktiskt tog dig ur affären.")
 
             # Discipline fields (fifth row)
             fd1, fd2, fd3 = st.columns([2, 1, 2])
@@ -809,7 +915,16 @@ def render_trade_journal_page():
                             "direction": direction.lower(),
                             "pnl_pct": round(pnl_pct, 2),
                             "pnl_amount": round(pnl_amount, 2),
-                            "r_multiple": round(r_multiple, 2),
+                            # R ur stoppen när den finns; annars det inmatade
+                            # värdet, så gamla affärer och import fungerar som förr.
+                            "r_multiple": round(
+                                js.r_multiple(entry_price, stop_loss,
+                                              exit_price=exit_price)
+                                or r_multiple, 2),
+                            "stop_loss": round(stop_loss, 2) if stop_loss > 0 else None,
+                            "setup": setup or None,
+                            "sell_rule": sell_rule or None,
+                            "holding_days": js.holding_days(entry_date, exit_date),
                             "exit_reason": exit_reason.lower().replace(" ", "_"),
                             "notes": notes.strip(),
                             "sector": sector.strip(),

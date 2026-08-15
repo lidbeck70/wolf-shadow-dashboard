@@ -23,6 +23,8 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Optional
 
+import csv_export
+
 try:
     from gist_storage import load_blob as _blob_load, save_blob as _blob_save
     _HAS_GIST = True
@@ -290,6 +292,7 @@ def render_insider_page() -> None:
         unsafe_allow_html=True)
 
     _summary(data)
+    _export(data)
     _new_signal(data)
     _signals(data)
     _criteria()
@@ -307,6 +310,32 @@ def _summary(data: dict) -> None:
     c3.metric("Köpklara", len(buys),
               help="Poäng ≥ 7, grinden OK, teknisk trigger satt — och inte "
                    "mer än 30 % över klustersnittet.")
+
+
+CSV_COLUMNS = [
+    ("found", "Upptäckt"), ("ticker", "Ticker"), ("name", "Bolag"),
+    ("insiders", "Antal insiders 30 dgr"), ("role", "Högsta roll"),
+    ("amount", "Belopp tot (tkr)"), ("okar_25", "Ökar innehav > 25 %"),
+    ("efter_fall", "Efter fall > 20 %"), ("aterkommande", "Återkommande"),
+    ("_score", "Insiderpoäng"), ("cluster_avg", "Klustrets snittkurs"),
+    ("gate", "Kvalitetsgrind"), ("trigger", "Teknisk trigger"),
+    ("_status", "Status"), ("price_now", "Kurs nu"),
+    ("_vs", "Vs kluster %"), ("_stop", "Stopp (−15 %)"),
+    ("comment", "Kommentar"),
+]
+
+
+def _export(data: dict) -> None:
+    """Beräknade kolumner räknas här — lagringen håller bara inmatningar."""
+    rows = []
+    for r in ranked(data.get("signals", [])):
+        s = r["signal"]
+        rows.append({**s, "_score": r["score"], "_status": r["status"],
+                     "_vs": None if r["vs_cluster"] is None
+                            else round(r["vs_cluster"], 1),
+                     "_stop": None if r["stop"] is None else round(r["stop"], 2)})
+    csv_export.download_button(rows, CSV_COLUMNS, "insiderbevakaren",
+                               key="csv_insider")
 
 
 def _new_signal(data: dict) -> None:

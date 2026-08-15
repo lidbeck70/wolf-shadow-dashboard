@@ -27,6 +27,8 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Optional
 
+import csv_export
+
 try:
     from gist_storage import load_blob as _blob_load, save_blob as _blob_save
     _HAS_GIST = True
@@ -251,9 +253,45 @@ def render_scoring_page() -> None:
     key = SPROTT if which.startswith("Sprott") else DURRETT
     st.caption(POSITION_NOTE[key])
 
+    _export(data, key)
     _new_row(data, key)
     _rows(data, key)
     _criteria()
+
+
+CSV_COMMON = [("date", "Datum"), ("ticker", "Ticker"), ("name", "Bolag"),
+              ("commodity", "Råvara")]
+CSV_FACTORS = [(f.key, f.label) for f in FACTORS]
+CSV_TAIL = [("_score", "Totalt (0–10)"), ("_verdict", "Bedömning"),
+            ("comment", "Kommentar")]
+CSV_COLUMNS = {
+    SPROTT: CSV_COMMON + [("cash", "Kassa (MUSD)"), ("burn", "Burn/år (MUSD)"),
+                          ("_runway", "Runway (år)")] + CSV_FACTORS + CSV_TAIL,
+    DURRETT: CSV_COMMON + [("mcap", "Börsvärde (MUSD)"), ("moz", "Uns (Moz AuEq)"),
+                           ("_per_oz", "MCap/uns ($)"),
+                           ("profit", "Framtida vinst/år (MUSD)"),
+                           ("_ratio", "MCap/framtida vinst")]
+             + CSV_FACTORS + CSV_TAIL,
+}
+
+
+def _export(data: dict, key: str) -> None:
+    rows = []
+    for r in ranked(data.get(key, [])):
+        row = r["row"]
+        extra = {"_score": r["score"], "_verdict": r["verdict"],
+                 **(row.get("factors") or {})}
+        if key == SPROTT:
+            rw = runway_years(row.get("cash"), row.get("burn"))
+            extra["_runway"] = None if rw is None else round(rw, 2)
+        else:
+            po = mcap_per_oz(row.get("mcap"), row.get("moz"))
+            ra = mcap_per_earnings(row.get("mcap"), row.get("profit"))
+            extra["_per_oz"] = None if po is None else round(po, 1)
+            extra["_ratio"] = None if ra is None else round(ra, 2)
+        rows.append({**row, **extra})
+    csv_export.download_button(rows, CSV_COLUMNS[key], f"poangmodell_{key}",
+                               key=f"csv_scoring_{key}")
 
 
 def _new_row(data: dict, key: str) -> None:

@@ -27,6 +27,8 @@ import streamlit as st
 from datetime import date
 from typing import Optional
 
+import csv_export
+
 try:
     from gist_storage import load_blob as _blob_load, save_blob as _blob_save
     _HAS_GIST = True
@@ -273,6 +275,7 @@ def render_tiggre_page() -> None:
             f"är det en förhoppning — passa.</p>",
             unsafe_allow_html=True)
 
+        _export(data)
         _screener_card()
         _positions(data)
         _candidates(data)
@@ -282,6 +285,51 @@ def render_tiggre_page() -> None:
 
 
 # ── 1. Håven ─────────────────────────────────────────────────────────────────
+POS_CSV = [("date", "Köpdatum"), ("ticker", "Ticker"), ("name", "Bolag"),
+           ("shares", "Antal"), ("entry", "Entry"), ("current", "Kurs nu"),
+           ("_ret", "Utveckling %"), ("_free_ride", "+100 %-nivå"),
+           ("half_sold", "Halva såld"), ("_risk", "Kapital i risk"),
+           ("_pnav", "P/NAV nu"), ("_sell", "Säljregel utlöst")]
+
+CAT_CSV = [("_ticker", "Bolag"), ("name", "Katalysator"), ("date", "Förväntad"),
+           ("status", "Status"), ("actual", "Faktiskt datum"),
+           ("reaction", "Kursreaktion %"), ("lesson", "Utfall/lärdom")]
+
+
+def _export(data: dict) -> None:
+    """Positionerna och katalysatorkalendern — arkets två viktigaste blad."""
+    pos_rows = []
+    for p in data.get("positions", []):
+        entry = _num(p.get("entry"), 0.0) or 0.0
+        cur = _num(p.get("current"), 0.0) or 0.0
+        ret = (cur / entry - 1) * 100 if entry > 0 and cur > 0 else None
+        pn = p_nav(p.get("mcap"), p.get("nav"))
+        sell = catalyst_sell_signal(p.get("catalysts", []))
+        pos_rows.append({
+            **p, "_ret": None if ret is None else round(ret, 1),
+            "_free_ride": round(entry * 2, 2) if entry else None,
+            "_risk": equity_at_risk(entry, cur, p.get("shares", 0),
+                                    p.get("half_sold")),
+            "_pnav": None if pn is None else round(pn, 2),
+            "_sell": sell.get("name") if sell else None,
+        })
+
+    cat_rows = []
+    for p in data.get("positions", []) + data.get("candidates", []):
+        for c in p.get("catalysts", []) or []:
+            cat_rows.append({**c, "_ticker": p.get("ticker", "?")})
+
+    c1, c2 = st.columns(2)
+    with c1:
+        csv_export.download_button(pos_rows, POS_CSV, "lobo_positioner",
+                                   label="⬇ Positioner (CSV)",
+                                   key="csv_tiggre_pos")
+    with c2:
+        csv_export.download_button(cat_rows, CAT_CSV, "lobo_katalysatorer",
+                                   label="⬇ Katalysatorer (CSV)",
+                                   key="csv_tiggre_cat")
+
+
 def _screener_card() -> None:
     with st.expander("🕸️ Håven — screener-kriterier att köra i Börsdata", expanded=False):
         st.markdown(

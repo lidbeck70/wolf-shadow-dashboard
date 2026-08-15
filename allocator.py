@@ -26,6 +26,8 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Optional
 
+import csv_export
+
 try:
     from gist_storage import load_blob as _blob_load, save_blob as _blob_save
     _HAS_GIST = True
@@ -284,12 +286,56 @@ def render_allocator_page() -> None:
             f"får finnas. Procenten avser aktieportföljen; bufferten ligger utanför."
             f"</p>", unsafe_allow_html=True)
 
+        _export(data)
         _breaker(data)
         _allocation(data)
         _caps(data)
         _positions(data)
     except Exception as e:
         st.error(f"Portföljallokeraren kunde inte renderas: {e}")
+
+
+SLEEVE_CSV = [("_name", "Strategi"), ("_value", "Värde"), ("_pct", "Andel %"),
+              ("_target", "Mål %"), ("_lo", "Ram låg"), ("_hi", "Ram hög"),
+              ("_status", "Status"), ("_action", "Åtgärd"),
+              ("_cap", "Positionstak %")]
+
+POS_CSV = [("ticker", "Ticker"), ("sleeve", "Strategi"), ("value", "Värde"),
+           ("_pct", "Andel %"), ("_cap", "Tak %"), ("_state", "Läge")]
+
+
+def _export(data: dict) -> None:
+    vals = data.get("values", {})
+    pcts = sleeve_pct(vals)
+    sleeve_rows = []
+    for s in SLEEVES:
+        st_, action = sleeve_status(s.key, pcts[s.key])
+        sleeve_rows.append({
+            "_name": s.name, "_value": vals.get(s.key), "_pct": round(pcts[s.key], 1),
+            "_target": s.target, "_lo": s.lo, "_hi": s.hi, "_status": st_,
+            "_action": action, "_cap": s.position_cap})
+
+    positions = data.get("positions", [])
+    total = sum(max(0.0, _num(v, 0.0) or 0.0) for v in vals.values())
+    total = total or sum(max(0.0, _num(p.get("value"), 0.0) or 0.0)
+                         for p in positions)
+    pos_rows = []
+    for p in positions:
+        s = SLEEVE_BY_KEY.get(p.get("sleeve", ""))
+        pct = ((max(0.0, _num(p.get("value"), 0.0) or 0.0) / total * 100)
+               if total else 0.0)
+        eff = (ROYALTY_DRIFT_CAP if s and s.key == "royalty"
+               else (s.position_cap if s else None))
+        pos_rows.append({**p, "_pct": round(pct, 1), "_cap": eff,
+                         "_state": position_state(pct, eff)})
+
+    c1, c2 = st.columns(2)
+    with c1:
+        csv_export.download_button(sleeve_rows, SLEEVE_CSV, "allokering",
+                                   label="⬇ Allokering (CSV)", key="csv_alloc")
+    with c2:
+        csv_export.download_button(pos_rows, POS_CSV, "positioner",
+                                   label="⬇ Positioner (CSV)", key="csv_alloc_pos")
 
 
 def _breaker(data: dict) -> None:

@@ -27,6 +27,8 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Optional
 
+import csv_export
+
 try:
     from gist_storage import load_blob as _blob_load, save_blob as _blob_save
     _HAS_GIST = True
@@ -274,7 +276,33 @@ def render_producers_page() -> None:
         _royalty(data)
 
 
+PROD_CSV = [("date", "Datum"), ("ticker", "Ticker"), ("name", "Bolag"),
+            ("commodity", "Råvara"), ("ev_ebitda", "EV/EBITDA"),
+            ("nd_ebitda", "Nettoskuld/EBITDA"), ("unit_cost", "Kostnad/enhet"),
+            ("price", "Råvarupris"), ("_margin", "Marginal %"),
+            ("jurisdiktion", "Jurisdiktion"),
+            ("kapitaldisciplin", "Kapitaldisciplin"), ("insyn", "Insyn"),
+            ("_score", "Poäng (0–5)"), ("_verdict", "Bedömning")]
+
+ROYALTY_CSV = [("date", "Datum"), ("ticker", "Ticker"), ("name", "Bolag"),
+               ("level", "Nivå"), ("pnav_now", "P/NAV nu"),
+               ("pnav_bottom", "P/NAV botten"), ("_discount", "Mot botten %"),
+               ("ev_now", "EV/EBITDA nu"), ("ev_median", "EV/EBITDA median"),
+               ("_median", "Mot median %"), ("geo_now", "GEO/aktie nu"),
+               ("geo_3y", "GEO/aktie 3 år"), ("_geo", "GEO-tillväxt %"),
+               ("_signal", "Signal")]
+
+
+def _r1(v):
+    return None if v is None else round(v, 1)
+
+
 def _producers(data: dict) -> None:
+    csv_export.download_button(
+        [{**r["row"], "_margin": _r1(r["margin"]), "_score": r["score"],
+          "_verdict": r["verdict"].label if r["verdict"] else None}
+         for r in ranked_producers(data[PRODUCERS])],
+        PROD_CSV, "producenter_a", key="csv_producers")
     st.caption(f"Marginal ≥ {MARGIN_STRONG:g} % ger 2 p, ≥ {MARGIN_OK:g} % ger "
                f"1 p. Tre disciplinfrågor ger 1 p var. "
                f"{PROD_BUY_MIN}–{PROD_MAX_SCORE} = köpkandidat · "
@@ -366,6 +394,12 @@ def _producers(data: dict) -> None:
 
 
 def _royalty(data: dict) -> None:
+    csv_export.download_button(
+        [{**r["row"], "_discount": _r1(r["discount"]),
+          "_median": _r1(r["median"]), "_geo": _r1(r["geo"]),
+          "_signal": r["verdict"].label}
+         for r in ranked_royalty(data[ROYALTY])],
+        ROYALTY_CSV, "royalty_c", key="csv_royalty")
     st.caption(f"Köpläge kräver tre saker samtidigt: högst {DISCOUNT_MAX:g} % "
                f"över egen P/NAV-botten, EV/EBITDA under egen median, och "
                f"växande GEO per aktie.")

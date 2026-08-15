@@ -31,6 +31,8 @@ from html import escape as _esc
 # stays the grading engine; commodity_book is keyed by COMMODITIES.
 import commodity_book
 
+import csv_export
+
 try:
     from gist_storage import load_blob as _blob_load, save_blob as _blob_save
     _HAS_GIST = True
@@ -234,12 +236,31 @@ def render_rotation_page() -> None:
             f"hatad. Betygsätts en gång i månaden; kapitalet går till de 2–3 mest "
             f"hatade med intakta case.</p>", unsafe_allow_html=True)
 
+        _export(data)
         _month_header(data)
         _targets(data)
         _grid(data)
         _reference()
     except Exception as e:
         st.error(f"Råvarurotationen kunde inte renderas: {e}")
+
+
+ROT_CSV = [("_name", "Råvara"), ("hat", "Hat-poäng"), ("timing", "Timing"),
+           ("case_intact", "Case intakt"), ("_priority", "Prioritet"),
+           ("_status", "Status"), ("_why", "Motivering"),
+           ("_engine", "Cykelmotor"), ("_signal", "Hatad när")]
+
+
+def _export(data: dict) -> None:
+    rows = []
+    for r in ranked(data.get("grades", {})):
+        c = r["commodity"]
+        rows.append({"_name": c.name, "hat": r["hat"], "timing": r["timing"],
+                     "case_intact": r["case_intact"], "_priority": r["priority"],
+                     "_status": r["status"], "_why": r["why"],
+                     "_engine": c.engine, "_signal": c.buy_signal})
+    csv_export.download_button(rows, ROT_CSV, "ravarurotationen",
+                               key="csv_rotation")
 
 
 def _month_header(data: dict) -> None:
