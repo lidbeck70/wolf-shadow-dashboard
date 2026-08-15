@@ -76,8 +76,13 @@ SLEEVES: tuple[Sleeve, ...] = (
 SLEEVE_BY_KEY = {s.key: s for s in SLEEVES}
 
 COMMODITY_CAP = 55.0        # råvarutaket: royalty + producenter + optionalitet + durrett
+COMMODITY_WARN = 50.0       # arket varnar redan här — taket ska aldrig nås oplanerat
 CASH_LOW, CASH_HIGH = 5.0, 25.0
 ROYALTY_DRIFT_CAP = 12.0    # kärnan får glida hit innan trimning
+POSITION_WARN_FRAC = 0.9    # "nära taket" när positionen passerat 90 % av det
+
+# Positions- och råvarulägen
+POS_OK, POS_NEAR, POS_OVER = "inom tak", "nära taket", "över tak"
 
 # ── Strömbrytaren ────────────────────────────────────────────────────────────
 BREAKER_LEVELS = (
@@ -128,13 +133,46 @@ def sleeve_status(key: str, pct: float) -> tuple[str, str]:
 
 
 def commodity_exposure(values: dict, total: Optional[float] = None) -> float:
-    """Råvarutaket: royalty + producenter + optionalitet + durrett."""
+    """Råvarutaket: royalty + producenter + optionalitet + durrett.
+
+    Avrundad av samma skäl som nedgången i drawdown_pct: en portfölj som är
+    exakt 55 % råvara summerar till 55.000000000000007 i binär flyttalsform,
+    och taket säger "högst 55 %" — inte "under 55 %".
+    """
     pcts = sleeve_pct(values, total)
-    return sum(pcts[s.key] for s in SLEEVES if s.commodity)
+    return round(sum(pcts[s.key] for s in SLEEVES if s.commodity), 6)
 
 
 def commodity_breach(values: dict, total: Optional[float] = None) -> bool:
     return commodity_exposure(values, total) > COMMODITY_CAP
+
+
+def commodity_state(values: dict, total: Optional[float] = None) -> tuple[str, str]:
+    """(läge, text) för råvarutaket — med förvarning innan taket bryts.
+
+    Arket varnar från 50 % just för att 55 % inte ska nås av misstag: när alla
+    kontrariska ben laddas samtidigt går exponeringen fort.
+    """
+    exp = commodity_exposure(values, total)
+    if exp > COMMODITY_CAP:
+        return POS_OVER, (f"Råvaruexponeringen är {exp:.1f} % — över taket "
+                          f"{COMMODITY_CAP:g} %. Trimma ner.")
+    if exp >= COMMODITY_WARN:
+        return POS_NEAR, (f"Råvaruexponeringen är {exp:.1f} % — närmar sig taket "
+                          f"{COMMODITY_CAP:g} %. Nya råvaruköp kräver att något "
+                          f"annat minskar.")
+    return POS_OK, f"Råvaruexponering {exp:.1f} % av {COMMODITY_CAP:g} %."
+
+
+def position_state(pct: float, cap: Optional[float]) -> str:
+    """inom tak / nära taket / över tak för en enskild position."""
+    c = _num(cap)
+    p = _num(pct, 0.0) or 0.0
+    if c is None or c <= 0:
+        return POS_OK
+    if p > c:
+        return POS_OVER
+    return POS_NEAR if p >= c * POSITION_WARN_FRAC else POS_OK
 
 
 def cash_rule(pct_cash: float, quarters_high: int = 0) -> tuple[str, str]:
@@ -352,15 +390,16 @@ def _caps(data: dict) -> None:
                 unsafe_allow_html=True)
 
     exp = commodity_exposure(vals)
-    breach = exp > COMMODITY_CAP
-    c = RED if breach else GREEN
+    state, note = commodity_state(vals)
+    c = {POS_OVER: RED, POS_NEAR: AMBER}.get(state, GREEN)
+    detail = ("ÖVER TAKET — nytt kapital går till Norden-delen eller kassan, "
+              "oavsett hur billigt något ser ut." if state == POS_OVER else note)
     st.markdown(
         f"<div style='background:{c}11;border:1px solid {c}55;border-radius:8px;"
         f"padding:10px 14px;margin-bottom:8px;'>"
         f"<span style='color:{c};font-weight:700;'>Råvarutaket "
         f"{exp:.1f} % / {COMMODITY_CAP:g} %</span>"
-        f"<div style='color:{TEXT};font-size:0.8rem;margin-top:3px;'>"
-        f"{'ÖVER TAKET — nytt kapital går till Norden-delen eller kassan, oavsett hur billigt något ser ut.' if breach else 'Royalty + producenter + optionalitet + Durrett sammanlagt.'}"
+        f"<div style='color:{TEXT};font-size:0.8rem;margin-top:3px;'>{detail}"
         f"</div></div>", unsafe_allow_html=True)
 
     cash_pct = sleeve_pct(vals)["kassa"]
@@ -411,7 +450,10 @@ def _positions(data: dict) -> None:
         pct = (max(0.0, _num(p.get("value"), 0.0) or 0.0) / total * 100) if total else 0
         s = SLEEVE_BY_KEY.get(p.get("sleeve", ""))
         over = p.get("ticker") in breaches
-        c = RED if over else TEXT
+        eff = (ROYALTY_DRIFT_CAP if s and s.key == "royalty"
+               else (s.position_cap if s else None))
+        state = POS_OVER if over else position_state(pct, eff)
+        c = RED if over else (AMBER if state == POS_NEAR else TEXT)
         r1, r2, r3, r4 = st.columns([1.2, 1.6, 1.2, 0.8])
         r1.markdown(f"<span style='color:{c};font-weight:700;'>{p.get('ticker','?')}"
                     f"</span>", unsafe_allow_html=True)
@@ -429,6 +471,17 @@ def _positions(data: dict) -> None:
     for b in position_breaches(positions, total):
         st.error(f"{b['ticker']} är {b['pct']:.1f} % — över taket {b['cap']:g} % "
                  f"({b['sleeve']}). Trimma ner.")
+
+    # Förvarning: en position som passerat 90 % av taket ska inte fyllas på.
+    for p in positions:
+        s = SLEEVE_BY_KEY.get(p.get("sleeve", ""))
+        if s is None or s.position_cap is None or p.get("ticker") in breaches:
+            continue
+        pct = (max(0.0, _num(p.get("value"), 0.0) or 0.0) / total * 100) if total else 0
+        eff = ROYALTY_DRIFT_CAP if s.key == "royalty" else s.position_cap
+        if position_state(pct, eff) == POS_NEAR:
+            st.warning(f"{p.get('ticker','?')} är {pct:.1f} % — nära taket "
+                       f"{eff:g} %. Fyll inte på.")
 
     st.caption("Ombalanseringen överprövar ALDRIG strategiernas egna säljregler — "
                "stoppar och exits exekveras omedelbart; ombalanseringen fördelar "

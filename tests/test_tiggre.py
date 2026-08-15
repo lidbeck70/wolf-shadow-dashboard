@@ -136,3 +136,65 @@ def test_thresholds_match_the_documented_playbook():
     assert f"+{t.FREE_RIDE_PCT:g} %" in joined
     assert "4–6 bolag" in pb.risk.max_positions
     assert t.MAX_POSITIONS == 6
+
+
+# ── Mot Lobo-arket (afeabdaa-lobo_tiggre.xlsx) ───────────────────────────────
+# Bladet "Sweet spot", kolumn N:
+#   =IF(I5="","",IF(I5>=3,2,IF(I5>=2,1,0)))
+# Kriterier-bladet: "Kvot >= 3 (räknas automatiskt) | Kvot 2–3 | Kvot < 2".
+def test_un_points_follow_the_sheet_not_the_guides_example():
+    """The panel used to say ">= 4:1 = 2p", read off the guide's 4:1 example.
+
+    The sheet is the spec, and it scores from 3.
+    """
+    assert t.un_points(3.0) == 2
+    assert t.un_points(4.0) == 2
+    assert t.un_points(2.9) == 1
+    assert t.un_points(2.0) == 1
+    assert t.un_points(1.9) == 0
+    assert t.un_points(0) == 0
+    assert t.un_points(None) == 0
+
+
+def test_un_factor_is_computed_not_entered():
+    """Feeding a ratio overrides whatever sits in the stored factor dict."""
+    factors = {"stadium": 2, "finansiering": 2, "manniskor": 2,
+               "jurisdiktion": 2, "un": 0}
+    assert t.factor_score(factors) == 8            # utan kvot: lagrat värde
+    assert t.factor_score(factors, un=4.0) == 10   # med kvot: 2p oavsett
+    assert t.factor_score(factors, un=1.0) == 8
+
+
+def test_the_guides_worked_example_scores_the_same_as_the_sheet():
+    """Guiden: 200/650 -> +160 %, nedsida −40 % -> 4:1."""
+    up = t.upside_pct(200, 650)
+    un = t.un_ratio(up, -40)
+    assert round(un, 1) == 4.0
+    assert t.un_points(un) == 2
+
+
+# Bladet "Katalysatorer", kolumn D — dropdownen ÄR säljregeln.
+def test_catalyst_statuses_match_the_sheets_dropdown():
+    assert t.CAT_STATUSES == ("Väntar", "Levererad", "Försenad 1:a ggn",
+                              "Försenad 2:a ggn — SÄLJREGEL", "Utebliven")
+
+
+def test_a_twice_delayed_catalyst_fires_the_sell_rule():
+    cats = [{"name": "Miljötillstånd", "status": t.CAT_DELIVERED},
+            {"name": "Finansieringsbesked", "status": t.CAT_LATE_2}]
+    hit = t.catalyst_sell_signal(cats)
+    assert hit is not None and hit["name"] == "Finansieringsbesked"
+
+
+def test_one_delay_is_not_a_sell_signal():
+    """First delay is information. Second is the rule."""
+    for status in (t.CAT_WAITING, t.CAT_DELIVERED, t.CAT_LATE_1, t.CAT_MISSED):
+        assert t.catalyst_sell_signal([{"name": "x", "status": status}]) is None
+    assert t.catalyst_sell_signal([]) is None
+    assert t.catalyst_sell_signal(None) is None
+    assert t.catalyst_sell_signal([{}, None]) is None
+
+
+def test_the_sell_rule_is_reachable_from_a_position():
+    """SELL_ALL_TRIGGERS must keep the key the calendar sets automatically."""
+    assert "delayed_twice" in dict((k, v) for k, v in t.SELL_ALL_TRIGGERS)

@@ -56,8 +56,24 @@ FACTORS = [
     ("manniskor", "Människor", "Byggmeriter i teamet, insyn > 5–10 %, långsam "
                                "utspädning. Tiggres hårdaste faktor."),
     ("jurisdiktion", "Jurisdiktion", "Fraser-rankingen. Toppjurisdiktion = 2."),
-    ("un", "U/N", "Uppsida/nedsida-kvoten. >= 4:1 = 2 poäng, 3–4 = 1, < 3 = 0."),
+    ("un", "U/N", "Räknas automatiskt ur kvoten: ≥ 3 = 2 poäng, 2–3 = 1, < 2 = 0."),
 ]
+
+# The U/N factor is not entered — the sheet computes it from the ratio
+# (Lobo-arket, kolumn N: >=3 -> 2p, >=2 -> 1p, annars 0).
+UN_POINTS = ((3.0, 2), (2.0, 1))
+
+# Katalysatorkalenderns lägen. "Försenad 2:a ggn" är inte en status bland
+# andra — det ÄR säljregeln, och utan den går den inte att registrera.
+CAT_WAITING = "Väntar"
+CAT_DELIVERED = "Levererad"
+CAT_LATE_1 = "Försenad 1:a ggn"
+CAT_LATE_2 = "Försenad 2:a ggn — SÄLJREGEL"
+CAT_MISSED = "Utebliven"
+CAT_STATUSES = (CAT_WAITING, CAT_DELIVERED, CAT_LATE_1, CAT_LATE_2, CAT_MISSED)
+CAT_STATUS_COLOR = {CAT_WAITING: "#8a8578", CAT_DELIVERED: "#2d8a4e",
+                    CAT_LATE_1: "#d4943a", CAT_LATE_2: "#c44545",
+                    CAT_MISSED: "#c44545"}
 
 SCREEN_PHRASES = [
     ("fs", "Feasibility Study complete (DFS/BFS)"),
@@ -133,13 +149,42 @@ def un_ratio(up: Optional[float], down: Optional[float]) -> Optional[float]:
     return u / abs(d)
 
 
-def factor_score(factors: dict) -> int:
-    """Summa av de fem faktorerna, var och en klämd till 0–2."""
+def un_points(un: Optional[float]) -> int:
+    """U/N-faktorns poäng, räknad ur kvoten precis som Lobo-arket gör."""
+    v = _num(un)
+    if v is None:
+        return 0
+    for threshold, points in UN_POINTS:
+        if v >= threshold:
+            return points
+    return 0
+
+
+def factor_score(factors: dict, un: Optional[float] = None) -> int:
+    """Summa av de fem faktorerna, var och en klämd till 0–2.
+
+    U/N-faktorn matas inte in: skickas `un` med räknas den ur kvoten, så att
+    poängen inte kan bli en annan än den arket ger.
+    """
     total = 0
     for key, _label, _help in FACTORS:
+        if key == "un" and un is not None:
+            total += un_points(un)
+            continue
         v = _num(factors.get(key), 0) or 0
         total += max(0, min(2, int(v)))
     return total
+
+
+def catalyst_sell_signal(catalysts: list) -> Optional[dict]:
+    """Den första katalysatorn som utlöst säljregeln, om någon.
+
+    "Katalysator försenad andra gången utan god förklaring = sälj allt."
+    """
+    for c in catalysts or []:
+        if (c or {}).get("status") == CAT_LATE_2:
+            return c
+    return None
 
 
 def screen_hits(flags: dict) -> int:
@@ -151,7 +196,7 @@ def buy_gates(cand: dict) -> list[tuple[str, bool, str]]:
     hits = screen_hits(cand.get("screen", {}))
     up = upside_pct(cand.get("mcap"), cand.get("nav"))
     un = un_ratio(up, cand.get("downside"))
-    score = factor_score(cand.get("factors", {}))
+    score = factor_score(cand.get("factors", {}), un)
     cats = [c for c in cand.get("catalysts", []) if c.get("name") and c.get("date")]
     return [
         (f"Grovsållning {SCREEN_HITS_MIN} av 3", hits >= SCREEN_HITS_MIN,
@@ -283,7 +328,7 @@ def _candidate_card(data: dict, cand: dict) -> None:
     up = upside_pct(cand.get("mcap"), cand.get("nav"))
     pn = p_nav(cand.get("mcap"), cand.get("nav"))
     un = un_ratio(up, cand.get("downside"))
-    score = factor_score(cand.get("factors", {}))
+    score = factor_score(cand.get("factors", {}), un)
     gates = buy_gates(cand)
     all_pass = all(g[1] for g in gates)
 
@@ -338,6 +383,15 @@ def _candidate_card(data: dict, cand: dict) -> None:
         fac = cand.setdefault("factors", {})
         fcols = st.columns(5)
         for (fkey, flabel, fhelp), col in zip(FACTORS, fcols):
+            if fkey == "un":
+                # Räknas ur kvoten, precis som arket — inte en bedömning.
+                col.markdown(
+                    f"<div style='font-size:0.8rem;color:{DIM};'>{flabel}</div>"
+                    f"<div style='color:{TEXT};font-size:1.1rem;font-weight:700;"
+                    f"padding-top:4px;'>{un_points(un)}"
+                    f"<span style='color:{DIM};font-size:0.72rem;'> auto</span></div>",
+                    unsafe_allow_html=True)
+                continue
             v = col.selectbox(flabel, [0, 1, 2],
                               index=int(max(0, min(2, int(_num(fac.get(fkey), 0) or 0)))),
                               key=f"tg_f_{cand['id']}_{fkey}", help=fhelp)
@@ -394,16 +448,61 @@ def _catalysts(data: dict, cand: dict) -> None:
         f"{' → '.join(CATALYST_CHAIN)}</span>", unsafe_allow_html=True)
 
     cats = cand.setdefault("catalysts", [])
+    changed = False
     for cat in list(cats):
-        cc1, cc2, cc3 = st.columns([2.4, 1.2, 0.5])
+        cc1, cc2, cc3, cc4 = st.columns([2.0, 1.0, 1.6, 0.4])
         cc1.markdown(f"<span style='color:{TEXT};font-size:0.84rem;'>"
                      f"{cat.get('name','?')}</span>", unsafe_allow_html=True)
         cc2.markdown(f"<span style='color:{DIM};font-size:0.8rem;'>"
                      f"{cat.get('date','?')}</span>", unsafe_allow_html=True)
-        if cc3.button("✕", key=f"tg_delcat_{cand['id']}_{cat.get('id','')}"):
+        cur = cat.get("status") if cat.get("status") in CAT_STATUSES else CAT_WAITING
+        new = cc3.selectbox("Status", list(CAT_STATUSES),
+                            index=CAT_STATUSES.index(cur),
+                            key=f"tg_catst_{cand['id']}_{cat.get('id','')}",
+                            label_visibility="collapsed")
+        if new != cat.get("status"):
+            cat["status"] = new
+            changed = True
+        if cc4.button("✕", key=f"tg_delcat_{cand['id']}_{cat.get('id','')}"):
             cand["catalysts"] = [c for c in cats if c.get("id") != cat.get("id")]
             _save(data)
             st.rerun()
+
+        # Utfallet är strategins viktigaste lärdata — arket samlar det per
+        # händelse, inte per bolag.
+        if new in (CAT_DELIVERED, CAT_LATE_1, CAT_LATE_2, CAT_MISSED):
+            o1, o2, o3 = st.columns([1.0, 1.0, 3.0])
+            act = o1.text_input("Faktiskt datum", value=cat.get("actual", ""),
+                                key=f"tg_catact_{cand['id']}_{cat.get('id','')}",
+                                placeholder="ÅÅÅÅ-MM-DD",
+                                label_visibility="collapsed")
+            rea = o2.number_input("Kursreaktion %",
+                                  value=float(_num(cat.get("reaction"), 0.0) or 0.0),
+                                  step=1.0,
+                                  key=f"tg_catrea_{cand['id']}_{cat.get('id','')}",
+                                  label_visibility="collapsed")
+            les = o3.text_input("Lärdom", value=cat.get("lesson", ""),
+                                key=f"tg_catles_{cand['id']}_{cat.get('id','')}",
+                                placeholder="Utfall / lärdom — vad lärde den dig?",
+                                label_visibility="collapsed")
+            if (act != cat.get("actual", "") or rea != cat.get("reaction")
+                    or les != cat.get("lesson", "")):
+                cat["actual"], cat["reaction"], cat["lesson"] = act, rea, les
+                changed = True
+
+    sell = catalyst_sell_signal(cats)
+    if sell:
+        st.markdown(
+            f"<div style='border:1px solid {RED};background:{RED}1a;"
+            f"border-radius:8px;padding:10px 14px;margin:8px 0;'>"
+            f"<b style='color:{RED};'>SÄLJREGEL UTLÖST</b> "
+            f"<span style='color:{TEXT};font-size:0.84rem;'>— "
+            f"{sell.get('name','katalysatorn')} är försenad andra gången. "
+            f"Utan god förklaring säljs hela positionen.</span></div>",
+            unsafe_allow_html=True)
+
+    if changed:
+        _save(data)
 
     a1, a2, a3 = st.columns([2.4, 1.2, 0.5])
     cname = a1.text_input("Händelse", key=f"tg_cat_name_{cand['id']}",
@@ -413,7 +512,8 @@ def _catalysts(data: dict, cand: dict) -> None:
                           label_visibility="collapsed", placeholder="ÅÅÅÅ-MM")
     if a3.button("+", key=f"tg_addcat_{cand['id']}"):
         if cname.strip() and cdate.strip():
-            cats.append({"id": _uid(), "name": cname.strip(), "date": cdate.strip()})
+            cats.append({"id": _uid(), "name": cname.strip(),
+                         "date": cdate.strip(), "status": CAT_WAITING})
             _save(data)
             st.rerun()
 
@@ -453,6 +553,11 @@ def _positions(data: dict) -> None:
         cur = _num(p.get("current"), 0.0) or 0.0
         ret = (cur / entry - 1) * 100 if entry > 0 and cur > 0 else None
         free_ride = free_ride_reached(entry, cur) and not p.get("half_sold")
+        # Kalendern styr sin egen trigger: en katalysator satt till "Försenad
+        # 2:a ggn" ÄR säljregeln, så den ska inte behöva kryssas i för hand.
+        cat_sell = catalyst_sell_signal(p.get("catalysts", []))
+        if cat_sell:
+            p.setdefault("triggers", {})["delayed_twice"] = True
         fired = [lbl for k, lbl in SELL_ALL_TRIGGERS if p.get("triggers", {}).get(k)]
         pn_now = p_nav(p.get("mcap"), p.get("nav"))
 

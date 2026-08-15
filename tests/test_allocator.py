@@ -168,3 +168,56 @@ def test_royalty_core_may_drift_to_12_percent():
 def test_breaches_survive_missing_values():
     assert a.position_breaches([{"ticker": "X"}], 1_000_000) == []
     assert a.position_breaches([{"ticker": "X", "sleeve": "durrett"}], 0) == []
+
+
+# ── Mot migrationsspecens varningsband ───────────────────────────────────────
+# Specen §1: "flagga 'FÖR STOR — trimma' om andel > tak (varning vid > 90 % av
+# tak)" och "Råvarutak ... <= 55 % av total (varning från 50 %)".
+def test_position_state_warns_before_the_cap_is_broken():
+    assert a.position_state(3.5, 4.0) == a.POS_OK      # 87,5 % av taket
+    assert a.position_state(3.6, 4.0) == a.POS_NEAR    # 90 % — förvarning
+    assert a.position_state(4.0, 4.0) == a.POS_NEAR    # exakt på taket
+    assert a.position_state(4.1, 4.0) == a.POS_OVER
+    assert a.POSITION_WARN_FRAC == 0.9
+
+
+def test_position_state_handles_missing_caps():
+    assert a.position_state(50.0, None) == a.POS_OK    # kassan har inget tak
+    assert a.position_state(50.0, 0) == a.POS_OK
+    assert a.position_state(None, 4.0) == a.POS_OK
+
+
+def test_commodity_state_warns_from_fifty_percent():
+    def vals(commodity_pct):
+        """Portfölj där råvarubenen tillsammans utgör commodity_pct."""
+        return {"royalty": commodity_pct, "producenter": 0, "optionalitet": 0,
+                "durrett": 0, "swing": 100 - commodity_pct, "insider": 0,
+                "kassa": 0}
+
+    assert a.commodity_state(vals(49))[0] == a.POS_OK
+    assert a.commodity_state(vals(50))[0] == a.POS_NEAR
+    assert a.commodity_state(vals(55))[0] == a.POS_NEAR   # taket ej brutet ännu
+    assert a.commodity_state(vals(56))[0] == a.POS_OVER
+    assert a.COMMODITY_WARN == 50.0
+
+
+def test_commodity_state_agrees_with_the_breach_flag():
+    """The warning band must never contradict the hard flag."""
+    for pct in (0, 30, 49, 50, 55, 56, 80, 100):
+        vals = {"royalty": pct, "producenter": 0, "optionalitet": 0,
+                "durrett": 0, "swing": 100 - pct, "insider": 0, "kassa": 0}
+        over = a.commodity_state(vals)[0] == a.POS_OVER
+        assert over == a.commodity_breach(vals), pct
+
+
+def test_an_exactly_full_commodity_budget_is_not_a_breach():
+    """The cap is "<= 55 %". Binary floating point made exactly 55 % break it."""
+    vals = {"royalty": 55, "producenter": 0, "optionalitet": 0, "durrett": 0,
+            "swing": 45, "insider": 0, "kassa": 0}
+    assert a.commodity_exposure(vals) == 55.0
+    assert not a.commodity_breach(vals)
+    # And split across all four commodity sleeves, which is the realistic case.
+    split = {"royalty": 20, "producenter": 15, "optionalitet": 7, "durrett": 13,
+             "swing": 45, "insider": 0, "kassa": 0}
+    assert a.commodity_exposure(split) == 55.0
+    assert not a.commodity_breach(split)
