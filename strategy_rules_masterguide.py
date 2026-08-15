@@ -588,7 +588,7 @@ INSIDER = Playbook(
     level=LEVEL_MEDIUM,
     horizon="6–18 månader",
     universe="Norden · börsvärde > 300 MSEK",
-    where="Utanför panelen: Börsdata Insynshandel + Insiderbevakaren (2 flikar).",
+    where="SCREENING → Insider (bevakaren). Insynsflödet läses i Börsdata.",
     idea=(
         "Att insiderköp förutsäger överavkastning är dokumenterat sedan 1960-talet, "
         "men edgen sitter på specifika ställen. Lakonishok & Lee: kluster slår "
@@ -703,11 +703,13 @@ INSIDER = Playbook(
          "övre intervallet, aldrig över taket). Säljkluster i ett swinginnehav = dra "
          "åt stoppen. Klusterköp i en hatad råvarusektor = extra vikt i "
          "rotationsbetyget.",
-    support=SUPPORT_MANUAL,
-    support_note="Ingen del finns i panelen. Flödet skannas i Börsdatas "
-                 "Insynshandel, poängsättning och statusflöde sker i "
-                 "Insiderbevakaren (Excel). PORTFOLIO → Allokering håller dock "
-                 "Insider-ramen (mål 20 %) och positionstaket 4 %.",
+    support=SUPPORT_PARTIAL,
+    support_note="SCREENING → Insider kör bevakaren: poängen 0–10, "
+                 "kvalitetsgrinden, den tekniska triggern, statusflödet, "
+                 "vs-kluster och stoppen. Själva insynsflödet läses fortfarande "
+                 "manuellt i Börsdatas Insynshandel — panelen hämtar inga "
+                 "transaktioner. PORTFOLIO → Allokering håller Insider-ramen "
+                 "(mål 20 %) och positionstaket 4 %.",
     source=_SRC,
 )
 

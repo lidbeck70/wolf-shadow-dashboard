@@ -162,6 +162,13 @@ try:
 except ImportError:
     TIGGRE_AVAILABLE = False
 
+# Insiderbevakaren (ersätter insiderbevakaren.xlsx)
+try:
+    from insider import render_insider_page
+    INSIDER_AVAILABLE = True
+except ImportError:
+    INSIDER_AVAILABLE = False
+
 # Swing momentum-screener + regim (data från wolf_data.py)
 try:
     from wolf_screener_ui import render_wolf_screener_page
@@ -261,7 +268,7 @@ def main():
     with tab_screening:
         sub = st.radio(
             "", ["Arc Screener", "Contrarian Alpha", "Market Cycle", "Swing",
-                 "Swing Screener", "Tiggre"],
+                 "Swing Screener", "Tiggre", "Insider"],
             horizontal=True, key="sub_screening",
         )
         st.markdown("---")
@@ -322,6 +329,12 @@ def main():
                 render_tiggre_page()
             else:
                 tab_not_found("Tiggre", "tiggre")
+
+        elif sub == "Insider":
+            if INSIDER_AVAILABLE:
+                render_insider_page()
+            else:
+                tab_not_found("Insiderbevakaren", "insider")
 
     # ── REGIME ───────────────────────────────────────────────────────────────
     with tab_regime_main:
