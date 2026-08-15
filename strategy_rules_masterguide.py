@@ -501,7 +501,7 @@ ROYALTY = Playbook(
     level=LEVEL_MEDIUM,
     horizon="Evig kärna — ägs genom cykeln",
     universe="Kanada, USA, Australien · klassas som Metals & Mining (ingen egen branschkod)",
-    where="Utanför panelen: Börsdata-screener (körs en gång) + Royalty C-arket.",
+    where="SCREENING → Granskningsark (Royalty C). Screenern körs i Börsdata.",
     idea=(
         "En royalty är en evig procentandel av en gruvas intäkter (typiskt 1–3 % NSR) "
         "köpt för en engångssumma; en stream är rätten att köpa produktion till fast "
@@ -572,9 +572,11 @@ ROYALTY = Playbook(
         "Köpa belånade royaltybolag. Skulden är sektorns enda verkliga risk.",
         "Sälja kärnan i en nedgång. Den finns just för att bära dig genom den.",
     ),
-    support=SUPPORT_MANUAL,
-    support_note="Ingen del finns i panelen. Screenern körs en gång i Börsdata; "
-                 "P/NAV och GEO följs i Royalty C-arket.",
+    support=SUPPORT_PARTIAL,
+    support_note="SCREENING → Granskningsark (Royalty C) räknar rabatten mot "
+                 "egen botten, mot egen median och GEO-tillväxten per aktie, "
+                 "och ger köpsignalen. Screenern körs en gång i Börsdata, "
+                 "och siffrorna matas in för hand ur presentationerna.",
     source=_SRC,
 )
 

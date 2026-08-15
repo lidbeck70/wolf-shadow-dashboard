@@ -1097,6 +1097,20 @@ _PANEL_GUIDE: list[tuple] = [
     ("RULES", "Alla regelverk",
      "Denna sida. Läs före varje handelsdag. Reglerna finns även inline i varje "
      "regime-flik."),
+    ("SCREENING → 🎯 Scorecard", "Alla — köpgrinden",
+     "Sista steget före köp. Läser kandidaterna ur de andra flikarna och "
+     "kräver sju gröna kryss. Luckor i tabellen = standardbeslut INGEN AFFÄR."),
+    ("SCREENING → Insider", "Insider: alla regler",
+     "Poängen 0–10, kvalitetsgrinden, teknisk trigger och statusflödet. "
+     "Visar vs klustersnittet och stoppen −15 %. Insynsflödet läses i "
+     "Börsdata."),
+    ("SCREENING → Poängmodell", "Sprott · Durrett",
+     "Fem faktorer 0–2, runway ur kassa/burn, MCap/uns och MCap/framtida "
+     "vinst mot 10x-regeln. DS-sektionen låser köp vid hög utspädningsrisk."),
+    ("SCREENING → Granskningsark", "Producenter A · Royalty C",
+     "Marginal mot kostnadskurvan och de tre disciplinfrågorna. Royalty: "
+     "rabatt mot egen botten, mot median och GEO per aktie. AQS och CSM "
+     "visas när positionen kräver dem."),
     ("RULES → 📚 SNABBREFERENS", "Alla — uppslag",
      "Alla screeners med sina kärnfilter, alla säljregler på en sida, "
      "datakällorna och ordlistan. Sidan du slår upp i mitt i en affär "
