@@ -6,6 +6,7 @@ Updated for the consolidated 9-tab layout.
 
 import streamlit as st
 from datetime import date as _date
+from html import escape as _esc
 
 _BG2     = "#14141e"
 _CYAN    = "#00E5FF"
@@ -37,6 +38,9 @@ from strategy_rules import (            # noqa: E402
 # Årshjulet — cadences, the quarterly ritual and the journal rules live in
 # routines.py so the wheel and its tests can never drift apart.
 import routines                          # noqa: E402
+# Del 7 — the four lookup tables. reference.py is the single source; the tests
+# assert its sell rules against the playbooks they summarise.
+import reference                         # noqa: E402
 from routines import STATUS_COLOR as ROUTINE_STATUS_COLOR   # noqa: E402
 # Re-exported for backwards compatibility — this module used to own these lists.
 from strategy_rules import (            # noqa: E402,F401
@@ -1093,6 +1097,10 @@ _PANEL_GUIDE: list[tuple] = [
     ("RULES", "Alla regelverk",
      "Denna sida. Läs före varje handelsdag. Reglerna finns även inline i varje "
      "regime-flik."),
+    ("RULES → 📚 SNABBREFERENS", "Alla — uppslag",
+     "Alla screeners med sina kärnfilter, alla säljregler på en sida, "
+     "datakällorna och ordlistan. Sidan du slår upp i mitt i en affär "
+     "istället för att läsa en hel playbook."),
     ("RULES → 🗓 ÅRSHJULET", "Alla — exekvering",
      "När varje rutin ska köras och hur lång tid den tar: söndagsrutinen, "
      "råvarurotationen, kvartalsritualen och årsgenomgången. Visar vad som är "
@@ -1270,6 +1278,91 @@ def _page_routines() -> None:
         unsafe_allow_html=True)
 
 
+def _ref_table(headers: tuple, rows: list, color: str,
+               widths: tuple = ()) -> str:
+    """Lookup table — escaped, because every cell is full of < and > filters."""
+    ws = widths or ("",) * len(headers)
+    head = "".join(
+        f"<th style='text-align:left;color:{color};font-size:0.7rem;"
+        f"padding:8px;{f'width:{w};' if w else ''}'>{h}</th>"
+        for h, w in zip(headers, ws))
+    html = (f"<table style='width:100%;border-collapse:collapse;'>"
+            f"<tr style='border-bottom:1px solid {color}33;'>{head}</tr>")
+    for cells in rows:
+        tds = ""
+        for i, cell in enumerate(cells):
+            style = (f"color:{_TEXT};font-weight:700;" if i == 0
+                     else f"color:{_DIM};")
+            tds += (f"<td style='{style}font-size:0.74rem;padding:7px 8px;"
+                    f"vertical-align:top;'>{_esc(str(cell))}</td>")
+        html += f"<tr style='border-bottom:1px solid rgba(138,133,120,0.15);'>{tds}</tr>"
+    return html + "</table>"
+
+
+def _page_reference() -> None:
+    """Snabbreferens — the four lookup tables, for mid-trade questions."""
+    st.markdown(
+        f"<div style='text-align:center;padding:14px 0 4px;'>"
+        f"<h2 style='color:{_MAGENTA};letter-spacing:0.12em;margin:0;'>"
+        f"SNABBREFERENS</h2>"
+        f"<p style='color:{_DIM};font-size:0.76rem;margin:6px 0 14px;'>"
+        f"Uppslagsverket: alla screeners · alla säljregler · alla källor · "
+        f"ordlistan. Ingen ny policy — samma regler som playbooksen, "
+        f"på en sida.</p></div>",
+        unsafe_allow_html=True)
+
+    view = st.radio("Referens",
+                    ["🔻 Säljregler", "🔍 Screeners", "🔗 Datakällor",
+                     "📕 Ordlista"],
+                    horizontal=True, key="rules_ref_view",
+                    label_visibility="collapsed")
+
+    if view == "🔻 Säljregler":
+        st.markdown(_section_header_html(
+            "Alla säljregler på en sida", reference.SELL_FIRST_WINS, _RED),
+            unsafe_allow_html=True)
+        st.markdown(_ref_table(
+            ("STRATEGI", "SÄLJ NÄR"),
+            [(s.strategy, s.rule) for s in reference.SELL_RULES],
+            _RED, ("22%", "78%")), unsafe_allow_html=True)
+        st.caption("De två sista raderna hör inte till någon enskild strategi: "
+                   "metallregeln gäller oavsett vilket ben du äger dem i, och "
+                   "strömbrytaren mäts på hela portföljen "
+                   "(PORTFOLIO → Allokering).")
+
+    elif view == "🔍 Screeners":
+        st.markdown(_section_header_html(
+            "Alla screeners", "Spara i Börsdata med exakt de här namnen",
+            _CYAN), unsafe_allow_html=True)
+        st.markdown(_ref_table(
+            ("SCREENER", "KÄRNFILTER", "VAR"),
+            [(s.name, s.filters, s.where) for s in reference.SCREENERS],
+            _CYAN, ("18%", "62%", "20%")), unsafe_allow_html=True)
+
+    elif view == "🔗 Datakällor":
+        st.markdown(_section_header_html(
+            "Alla datakällor", "Var siffran faktiskt finns", _GREEN),
+            unsafe_allow_html=True)
+        st.markdown(_ref_table(
+            ("SIFFRA", "KÄLLA", "VAR / SÖKORD"),
+            [(s.number, s.source, s.where) for s in reference.SOURCES],
+            _GREEN, ("34%", "26%", "40%")), unsafe_allow_html=True)
+
+    else:
+        st.markdown(_section_header_html(
+            "Ordlistan", f"{len(reference.GLOSSARY)} begrepp", _YELLOW),
+            unsafe_allow_html=True)
+        q = st.text_input("Sök begrepp", "", key="rules_gloss_q",
+                          placeholder="Sök — t.ex. runway, NAV, AISC")
+        hits = reference.find_terms(q)
+        if not hits:
+            st.caption(f"Inget begrepp matchar '{q}'.")
+        st.markdown(_ref_table(
+            ("BEGREPP", "ENKEL FÖRKLARING"),
+            [(t.term, t.meaning) for t in hits],
+            _YELLOW, ("26%", "74%")), unsafe_allow_html=True)
+
+
 # ------------------------------------------------------------------ #
 #  Main render
 # ------------------------------------------------------------------ #
@@ -1278,7 +1371,7 @@ def render_rules_page() -> None:
     sub = st.radio(
         "",
         ["🚀 KOM IGÅNG", "📋 HANDELSREGLER", "⚡ FUSKLAPP", "🗺 FLIKGUIDE",
-         "📖 STRATEGIGUIDER", "🗓 ÅRSHJULET"],
+         "📖 STRATEGIGUIDER", "🗓 ÅRSHJULET", "📚 SNABBREFERENS"],
         horizontal=True,
         key="rules_sub",
     )
@@ -1295,6 +1388,8 @@ def render_rules_page() -> None:
         _page_panel_guide()
     elif sub == "🗓 ÅRSHJULET":
         _page_routines()
+    elif sub == "📚 SNABBREFERENS":
+        _page_reference()
     else:
         render_strategy_guides()
 

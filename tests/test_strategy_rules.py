@@ -349,7 +349,7 @@ def test_no_rules_section_is_orphaned():
     src = inspect.getsource(rules_page)
     for fn in ("_render_ember_full_ruleset", "_page_panel_guide", "_page_start",
                "_page_rules", "_page_cheatsheet", "render_strategy_guides",
-               "_page_routines"):
+               "_page_routines", "_page_reference"):
         assert hasattr(rules_page, fn), f"{fn} missing"
         # defined once, called at least once
         assert src.count(fn) >= 2, f"{fn} is defined but never called"
