@@ -43,7 +43,7 @@ RULE = Playbook(
     level=LEVEL_MEDIUM,
     horizon="2–5 år",
     universe="Kanada, Australien, USA, Norden · Metals & Mining + Oil & Gas",
-    where="SCREENING → Granskningsark → Rick Rule (guidens 'Producenter A'). "
+    where="GRANSKNING → Rick Rule (guidens 'Producenter A'). "
           "Screenern körs i Börsdata; SCREENING → Contrarian Alpha ger "
           "hat-rankningen.",
     idea=(
@@ -136,7 +136,7 @@ RULE = Playbook(
         "Acceptera skuld 'för att bolaget är så bra'. Skulder dödar i väntan.",
     ),
     support=SUPPORT_PARTIAL,
-    support_note="SCREENING → Granskningsark → Rick Rule ÄR arket guiden "
+    support_note="GRANSKNING → Rick Rule ÄR arket guiden "
                  "kallar Producenter A: marginalen mot kostnadskurvan, de tre "
                  "disciplinfrågorna och strykregeln för döende tillgång "
                  "(gruvlivslängd < 5 år, R/P < 8 år). Contrarian "
@@ -166,7 +166,7 @@ SPROTT = Playbook(
     level=LEVEL_ADVANCED,
     horizon="1–5 år",
     universe="Kanada, Australien (TSX-V och ASX) · Metals & Mining, sub-industri per metall",
-    where="SCREENING → Poängmodell (Sprott). Screenern körs i Börsdata.",
+    where="GRANSKNING → Poängmodell (Sprott). Screenern körs i Börsdata.",
     idea=(
         "Eric Sprott: i prospekteringsbolag är förlusten begränsad till insatsen men "
         "vinsten obegränsad — spelet handlar inte om att gissa rätt utan om att "
@@ -244,7 +244,7 @@ SPROTT = Playbook(
         "Kompromissa med nettoskuldsfiltret.",
     ),
     support=SUPPORT_PARTIAL,
-    support_note="SCREENING → Poängmodell räknar runwayen ur kassa och burn, "
+    support_note="GRANSKNING → Poängmodell räknar runwayen ur kassa och burn, "
                  "poängsätter de fem faktorerna och ger bedömningen. Screenern "
                  "körs fortfarande i Börsdata — panelen hämtar inga "
                  "kvartalssiffror, de matas in för hand.",
@@ -264,7 +264,7 @@ DURRETT = Playbook(
     level=LEVEL_ADVANCED,
     horizon="1–3 år",
     universe="Kanada, Australien, USA · Metals & Mining → Gold / Silver",
-    where="SCREENING → Poängmodell (Durrett). Screenern körs i Börsdata.",
+    where="GRANSKNING → Poängmodell (Durrett). Screenern körs i Börsdata.",
     idea=(
         "Don Durrett värderar mot en enda fråga: vad tjänar bolaget vid nästa "
         "guldpris-platå, och vad betalar jag för den vinsten idag? Motorn är operativ "
@@ -345,7 +345,7 @@ DURRETT = Playbook(
         "Glömma att hävstången verkar lika brutalt nedåt.",
     ),
     support=SUPPORT_PARTIAL,
-    support_note="SCREENING → Poängmodell räknar MCap/uns, MCap/framtida vinst "
+    support_note="GRANSKNING → Poängmodell räknar MCap/uns, MCap/framtida vinst "
                  "och köpregeln under 10x, med hjälpräknaren produktion × "
                  "(målpris − AISC). Guld/silver-kvoten syns i EMBER-regimen "
                  "(Ädelmetaller). Screenern körs i Börsdata.",
@@ -365,7 +365,7 @@ TIGGRE = Playbook(
     level=LEVEL_ADVANCED,
     horizon="6–24 månader",
     universe="Kanada, Australien, USA · Metals & Mining · börsvärde 50–1 000 MUSD · omsättning ~0",
-    where="SCREENING → Tiggre (Lobo-arket). Håven körs i Börsdata.",
+    where="GRANSKNING → Tiggre (Lobo-arket). Håven körs i Börsdata.",
     idea=(
         "Lobo Tiggre skiljer knivskarpt på investering och spekulation: en spekulation "
         "är ett tidsbestämt köp av en SPECIFIK omvärdering, med händelsen definierad "
@@ -488,7 +488,7 @@ TIGGRE = Playbook(
     note="Tiggre fyller gapet mellan Sprotts lotter och Rules producenter — "
          "tillsammans täcker de tre hela Lassonde-kurvan.",
     support=SUPPORT_PARTIAL,
-    support_note="SCREENING → Tiggre kör Lobo-arket: grovsållning, U/N-kalkyl, "
+    support_note="GRANSKNING → Tiggre kör Lobo-arket: grovsållning, U/N-kalkyl, "
                  "femfaktorpoäng, katalysatorkalender, free ride-larm och de fyra "
                  "sälj-allt-triggarna. KÖP är låst tills alla fyra grindar passerar. "
                  "Själva håven körs fortfarande i Börsdata, och NAV matas manuellt "
@@ -509,7 +509,7 @@ ROYALTY = Playbook(
     level=LEVEL_MEDIUM,
     horizon="Evig kärna — ägs genom cykeln",
     universe="Kanada, USA, Australien · klassas som Metals & Mining (ingen egen branschkod)",
-    where="SCREENING → Granskningsark (Royalty C). Screenern körs i Börsdata.",
+    where="GRANSKNING → Royalty C. Screenern körs i Börsdata.",
     idea=(
         "En royalty är en evig procentandel av en gruvas intäkter (typiskt 1–3 % NSR) "
         "köpt för en engångssumma; en stream är rätten att köpa produktion till fast "
@@ -581,7 +581,7 @@ ROYALTY = Playbook(
         "Sälja kärnan i en nedgång. Den finns just för att bära dig genom den.",
     ),
     support=SUPPORT_PARTIAL,
-    support_note="SCREENING → Granskningsark (Royalty C) räknar rabatten mot "
+    support_note="GRANSKNING → Royalty C räknar rabatten mot "
                  "egen botten, mot egen median och GEO-tillväxten per aktie, "
                  "och ger köpsignalen. Screenern körs en gång i Börsdata, "
                  "och siffrorna matas in för hand ur presentationerna.",
@@ -601,7 +601,7 @@ INSIDER = Playbook(
     level=LEVEL_MEDIUM,
     horizon="6–18 månader",
     universe="Norden · börsvärde > 300 MSEK",
-    where="SCREENING → Insider (bevakaren). Insynsflödet läses i Börsdata.",
+    where="GRANSKNING → Insider (bevakaren). Insynsflödet läses i Börsdata.",
     idea=(
         "Att insiderköp förutsäger överavkastning är dokumenterat sedan 1960-talet, "
         "men edgen sitter på specifika ställen. Lakonishok & Lee: kluster slår "
@@ -717,7 +717,7 @@ INSIDER = Playbook(
          "åt stoppen. Klusterköp i en hatad råvarusektor = extra vikt i "
          "rotationsbetyget.",
     support=SUPPORT_PARTIAL,
-    support_note="SCREENING → Insider kör bevakaren: poängen 0–10, "
+    support_note="GRANSKNING → Insider kör bevakaren: poängen 0–10, "
                  "kvalitetsgrinden, den tekniska triggern, statusflödet, "
                  "vs-kluster och stoppen. Själva insynsflödet läses fortfarande "
                  "manuellt i Börsdatas Insynshandel — panelen hämtar inga "

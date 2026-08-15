@@ -266,9 +266,12 @@ def main():
     inject_css()
     render_header()
 
+    # Guidens tre steg i ordning: var kapitalet ska (REGIME), vilka bolag som
+    # kvalar (SCREENING), och vilket av dem som faktiskt köps (GRANSKNING).
     tab_labels = [
         "  🏠 HOME  ",
         "  🔱 SCREENING  ",
+        "  🔬 GRANSKNING  ",
         "  📡 REGIME  ",
         "  👁 INTELLIGENCE  ",
         "  💼 PORTFOLIO  ",
@@ -276,7 +279,7 @@ def main():
         "  📋 RULES  ",
         "  🧬 STRATEGIES  ",
     ]
-    (tab_home_page, tab_screening, tab_regime_main,
+    (tab_home_page, tab_screening, tab_review, tab_regime_main,
      tab_intelligence, tab_portfolio,
      tab_alerts_page, tab_rules,
      tab_strat_overview) = st.tabs(tab_labels)
@@ -288,9 +291,8 @@ def main():
     # ── SCREENING ─────────────────────────────────────────────────────────────
     with tab_screening:
         sub = st.radio(
-            "", ["Arc Screener", "Contrarian Alpha", "Market Cycle", "Swing",
-                 "Swing Screener", "Tiggre", "Insider", "Poängmodell",
-                 "Granskningsark", "🎯 Scorecard"],
+            "", ["Arc Screener", "Contrarian Alpha", "Market Cycle",
+                 "Swing Screener"],
             horizontal=True, key="sub_screening",
         )
         st.markdown("---")
@@ -334,17 +336,33 @@ def main():
             else:
                 tab_not_found("Market Cycle Engine", "tabs/market_cycle")
 
-        elif sub == "Swing":
-            if SWING_AVAILABLE:
-                render_swing_page()
-            else:
-                tab_not_found("Swing", "swing")
-
         elif sub == "Swing Screener":
             if WOLF_SCREENER_AVAILABLE:
                 render_wolf_screener_page()
             else:
                 tab_not_found("Swing Screener", "wolf_screener_ui")
+
+    # ── GRANSKNING ───────────────────────────────────────────────────────────
+    # Beslutsunderlaget efter screeningen. Inget här screenar — screeningen
+    # sker i Börsdata; det här är arken som avgör vilket bolag som köps.
+    with tab_review:
+        sub = st.radio(
+            "", ["Rick Rule", "Royalty C", "Poängmodell", "Tiggre", "Insider",
+                 "🎯 Scorecard"],
+            horizontal=True, key="sub_review",
+        )
+        st.markdown("---")
+        if sub in ("Rick Rule", "Royalty C"):
+            if PRODUCERS_AVAILABLE:
+                render_producers_page(sheet=sub)
+            else:
+                tab_not_found("Granskningsarken", "producers")
+
+        elif sub == "Poängmodell":
+            if SCORING_AVAILABLE:
+                render_scoring_page()
+            else:
+                tab_not_found("Poängmodellen", "scoring")
 
         elif sub == "Tiggre":
             if TIGGRE_AVAILABLE:
@@ -357,18 +375,6 @@ def main():
                 render_insider_page()
             else:
                 tab_not_found("Insiderbevakaren", "insider")
-
-        elif sub == "Poängmodell":
-            if SCORING_AVAILABLE:
-                render_scoring_page()
-            else:
-                tab_not_found("Poängmodellen", "scoring")
-
-        elif sub == "Granskningsark":
-            if PRODUCERS_AVAILABLE:
-                render_producers_page()
-            else:
-                tab_not_found("Granskningsarken", "producers")
 
         elif sub == "🎯 Scorecard":
             if SCORECARD_AVAILABLE:
@@ -480,7 +486,8 @@ def main():
     # ── PORTFOLIO ─────────────────────────────────────────────────────────────
     with tab_portfolio:
         sub = st.radio(
-            "", ["Holdings", "Allokering", "Trade Journal", "Backtest"],
+            "", ["Holdings", "Swing", "Allokering", "Trade Journal",
+                 "Backtest"],
             horizontal=True, key="sub_portfolio",
         )
         st.markdown("---")
@@ -489,6 +496,11 @@ def main():
                 render_holdings_page()
             else:
                 tab_not_found("Holdings", "holdings")
+        elif sub == "Swing":
+            if SWING_AVAILABLE:
+                render_swing_page()
+            else:
+                tab_not_found("Swing", "swing")
         elif sub == "Allokering":
             if ALLOCATOR_AVAILABLE:
                 render_allocator_page()

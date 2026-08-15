@@ -108,7 +108,7 @@ MOMENTUM = Playbook(
     level=LEVEL_BEGINNER,
     horizon="Swing — veckor till månader",
     universe="Svenska bolag som klarat Börsdata-screenerns kvalitetsfilter",
-    where="SCREENING → Swing · Swing Screener  ·  REGIME → Swing Regime",
+    where="PORTFOLIO → Swing · Swing Screener  ·  REGIME → Swing Regime",
     idea=(
         "Den enklaste strategin i panelen och den bästa att börja med. Du gör tre "
         "saker: (1) kollar om marknaden överhuvudtaget tillåter köp, (2) tar de "
@@ -142,11 +142,11 @@ MOMENTUM = Playbook(
         ("Max 1–2 nya köp per vecka",
          "Skyddar mot att du fyller portföljen på en enda vecka och därmed satsar "
          "allt på ett enda marknadsläge.",
-         "SCREENING → Swing: veckochecklistan punkt 4 påminner dig. Räkna dina köp "
+         "PORTFOLIO → Swing: veckochecklistan punkt 4 påminner dig. Räkna dina köp "
          "i journalen innan du lägger nästa order."),
         ("Max 8 positioner — mål 6–8",
          "Färre positioner = du hinner följa dem. Fler = du tappar överblick.",
-         "SCREENING → Swing: Positioner visar 'x/6–8'. Panelen vägrar lägga till "
+         "PORTFOLIO → Swing: Positioner visar 'x/6–8'. Panelen vägrar lägga till "
          "en nionde position.", True),
         ("Positionsstorlek 12–20 % — halv vid GUL regim",
          "GUL regim (index över MA200 men bredden < 45 % eller marginalen < 2 %) "
@@ -157,11 +157,11 @@ MOMENTUM = Playbook(
     exit=_rules([
         ("Säljregel 1 — stängning under MA50",
          "Bolaget har tappat sin trend. Sälj hela positionen.",
-         "SCREENING → Swing: kryssa 'Stängt under MA50' på positionskortet — kortet "
+         "PORTFOLIO → Swing: kryssa 'Stängt under MA50' på positionskortet — kortet "
          "blir rött med 'SÄLJ — regel utlöst'.", True),
         ("Säljregel 2 — stop på −10 %",
          "Hård stop från entry. Räknas automatiskt, ingen tolkning.",
-         "SCREENING → Swing: 'Stop (−10 %)' på varje positionskort. Kursen når stop "
+         "PORTFOLIO → Swing: 'Stop (−10 %)' på varje positionskort. Kursen når stop "
          "→ kortet blir rött automatiskt. Lägg alltid stopen hos mäklaren också.", True),
         ("Säljregel 3 — ur topp 40 på rankingen",
          "Momentum har lämnat bolaget även om priset inte fallit än. Den regel som "
@@ -170,7 +170,7 @@ MOMENTUM = Playbook(
          "Kryssa då 'Ur topp 40' på positionskortet i Swing-fliken.", True),
         ("Vid +20 % — sälj halva, flytta stop till entry",
          "Du säkrar vinst och gör resten riskfri. Resten får löpa utan vinstmål.",
-         "SCREENING → Swing: en gul '+20 % — sälj halva'-flagga dyker upp på kortet. "
+         "PORTFOLIO → Swing: en gul '+20 % — sälj halva'-flagga dyker upp på kortet. "
          "Kryssa 'Halva såld' när du gjort det."),
         ("Röd regim — inga nya köp, hantera bara exits",
          "Befintliga innehav säljs enligt regel 1–3 som vanligt. Du slutar bara köpa.",
@@ -183,9 +183,9 @@ MOMENTUM = Playbook(
         "gul = halv storlek, röd = inga köp.",
         "SCREENING → Swing Screener: vad ska jag köpa? Titta på topp 20 och leta "
         "A/B-flaggor. Klicka '→ Bevakning' på kandidaterna.",
-        "SCREENING → Swing: gå igenom ALLA befintliga positioner mot säljregel 1–3 "
+        "PORTFOLIO → Swing: gå igenom ALLA befintliga positioner mot säljregel 1–3 "
         "innan du köper något nytt.",
-        "SCREENING → Swing: välj setup (A/B) på bevakningen, sätt entry-kurs och "
+        "PORTFOLIO → Swing: välj setup (A/B) på bevakningen, sätt entry-kurs och "
         "klicka KÖP. Max 1–2 st.",
         "Lägg stopen hos mäklaren direkt, och logga affären i journalen. "
         "Bocka av veckochecklistan.",

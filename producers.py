@@ -312,18 +312,28 @@ def _save(data: dict) -> None:
 
 
 # ── UI ───────────────────────────────────────────────────────────────────────
-def render_producers_page() -> None:
+def render_producers_page(sheet: Optional[str] = None) -> None:
+    """Ett av de två granskningsarken.
+
+    sheet väljer arket direkt. Utan det ritas en egen väljare, så funktionen
+    fungerar både som underflik och fristående — panelen skickar in valet
+    eftersom arken numera är egna underflikar under GRANSKNING.
+    """
     data = _load()
+    title = sheet if sheet in (SHEET_RULE, SHEET_ROYALTY) else "GRANSKNINGSARKEN"
     st.markdown(
         f"<div style='text-align:center;padding:10px 0 4px;'>"
         f"<h2 style='color:{CYAN};letter-spacing:0.12em;margin:0;'>"
-        f"GRANSKNINGSARKEN</h2>"
+        f"{title.upper()}</h2>"
         f"<p style='color:{DIM};font-size:0.78rem;margin:6px 0 0;'>"
-        f"Rotationen säger var kapitalet ska. De här säger vilket bolag."
-        f"</p></div>", unsafe_allow_html=True)
+        f"Rotationen säger var kapitalet ska, screenern vilka bolag som kvalar. "
+        f"Det här säger vilket av dem du köper.</p></div>",
+        unsafe_allow_html=True)
 
-    which = st.radio("Ark", [SHEET_RULE, SHEET_ROYALTY], horizontal=True,
-                     key="pr_which", label_visibility="collapsed")
+    which = sheet
+    if which not in (SHEET_RULE, SHEET_ROYALTY):
+        which = st.radio("Ark", [SHEET_RULE, SHEET_ROYALTY], horizontal=True,
+                         key="pr_which", label_visibility="collapsed")
     if which == SHEET_RULE:
         _producers(data)
     else:

@@ -88,10 +88,10 @@ ROUTINES: tuple[Routine, ...] = (
                  "SCREENING → Swing Screener"),
             Step("Uppdatera bevakningslistan: skicka nya kandidater dit, "
                  "rensa dem som tappat setupen.",
-                 "SCREENING → Swing"),
+                 "PORTFOLIO → Swing"),
             Step("Gå igenom öppna positioner mot säljreglerna: stängning under "
                  "MA50, −10 % stop, ur topp 40, +20 % = sälj halva.",
-                 "SCREENING → Swing"),
+                 "PORTFOLIO → Swing"),
             Step("Skanna veckans insynsköp — kluster, inte enstaka köp.",
                  ""),
             Step("Logga veckans affärer om något inte redan är loggat.",
@@ -119,7 +119,7 @@ ROUTINES: tuple[Routine, ...] = (
                  ""),
             Step("Kör AQS, DS och CSM på de seriösa kandidaterna — i den "
                  "omfattning proportionalitetsregeln kräver.",
-                 "SCREENING → 🎯 Scorecard"),
+                 "GRANSKNING → 🎯 Scorecard"),
             Step("Guld och royaltybenet ligger kvar oavsett betyg — de "
                  "roterar inte.",
                  "REGIME → Råvarurotation"),
@@ -146,7 +146,7 @@ ROUTINES: tuple[Routine, ...] = (
             Step("Rapportuppdatering: katalysatorerna — har någon flyttats?",
                  ""),
             Step("Kör Tiggre-screenern och uppdatera Lobo-arket.",
-                 "SCREENING → Tiggre"),
+                 "GRANSKNING → Tiggre"),
         ),
         note="Fast datum, satt i förväg. Kvartalsgenomgången är det enda "
              "tillfället då ramarna får ändras.",

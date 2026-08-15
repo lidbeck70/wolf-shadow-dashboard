@@ -1,41 +1,30 @@
 {
   "producers": [
     {
-      "id": "g1",
-      "ticker": "MINI",
-      "name": "Guidens exempel",
-      "commodity": "Guld",
-      "ev_ebitda": 3.8,
-      "nd_ebitda": -0.5,
-      "price": 2600,
-      "unit_cost": 1400,
-      "jurisdiktion": true,
-      "insyn": true,
-      "kapitaldisciplin": true,
-      "mine_life": 4.0,
-      "position_pct": 3.0,
+      "id": "p1",
+      "ticker": "AAA",
+      "price": 100.0,
+      "unit_cost": 50.0,
+      "ev_ebitda": 0.0,
+      "nd_ebitda": 0.0,
+      "mine_life": 0.0,
       "rp_ratio": 0.0,
+      "position_pct": 0.0,
       "fully_diluted_shares": 0.0,
-      "forvantad_utspadning": 0.0,
-      "aqs_jurisdiktion": 2,
-      "aqs_management": 2,
-      "csm": {
-        "Bear": {
-          "price": 0.0,
-          "fcf_musd": 0.0
-        },
-        "Base": {
-          "price": 0.0,
-          "fcf_musd": 0.0
-        },
-        "Bull": {
-          "price": 0.0,
-          "fcf_musd": 0.0
-        }
-      },
-      "csm_kind": "producent",
-      "is_core": false
+      "forvantad_utspadning": 0.0
     }
   ],
-  "royalty": []
+  "royalty": [
+    {
+      "id": "r1",
+      "ticker": "BBB",
+      "level": 1,
+      "pnav_now": 1.1,
+      "pnav_bottom": 1.0,
+      "ev_now": 18,
+      "ev_median": 20,
+      "geo_now": 0.05,
+      "geo_3y": 0.04
+    }
+  ]
 }

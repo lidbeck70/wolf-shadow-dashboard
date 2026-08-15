@@ -286,8 +286,8 @@ def test_panel_guides_point_at_tabs_that_exist():
     known = {n.strip() for n in real} | allowed_extra
     known |= {_plain(n) for n in known}
     # Uppercase top-level tokens that must resolve.
-    tops = {"HOME", "SCREENING", "REGIME", "INTELLIGENCE", "PORTFOLIO",
-            "ALERTS", "RULES", "STRATEGIES"}
+    tops = {"HOME", "SCREENING", "GRANSKNING", "REGIME", "INTELLIGENCE",
+            "PORTFOLIO", "ALERTS", "RULES", "STRATEGIES"}
     for _t in real:
         stripped = _t.strip().strip("🏠🔱📡👁💼🔔📋🧬 ")
         if stripped.isupper():
@@ -317,8 +317,9 @@ def test_panel_guide_table_uses_real_paths():
     for tab, _rules, _usage in _PANEL_GUIDE:
         parts = [p.strip() for p in tab.split("→")]
         head = parts[0]
-        assert head in {"HOME", "SCREENING", "REGIME", "INTELLIGENCE",
-                        "PORTFOLIO", "ALERTS", "RULES", "STRATEGIES"}, head
+        assert head in {"HOME", "SCREENING", "GRANSKNING", "REGIME",
+                        "INTELLIGENCE", "PORTFOLIO", "ALERTS", "RULES",
+                        "STRATEGIES"}, head
         for part in parts[1:]:
             clean = "".join(c for c in part if c.isalnum() or c in " &'-").strip()
             assert part in real or clean in plain, (
@@ -381,7 +382,71 @@ def test_no_strategy_claims_to_be_fully_manual_anymore():
 def test_rule_points_at_its_own_review_sheet():
     """Guiden kallar det "Producenter A-arket" — panelen ska säga samma sak."""
     pb = sr.PLAYBOOKS["rule"]
-    assert "Granskningsark" in pb.where
+    assert "GRANSKNING → Rick Rule" in pb.where
     assert "Producenter A" in pb.where
     assert "Producenter A" in pb.support_note
     assert "gruvlivslängd" in pb.support_note.lower()
+
+
+# ── Flikstrukturen ───────────────────────────────────────────────────────────
+def _panel_src() -> str:
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return open(os.path.join(root, "wolf_panel.py"), encoding="utf-8").read()
+
+
+def _sub_tabs(state_key: str) -> set:
+    """The sub-tab labels of one top-level tab, straight from the source."""
+    src = _panel_src()
+    m = re.search(rf'st\.radio\(\s*""\s*,\s*(\[[^\]]+\])[^)]*key="{state_key}"',
+                  src, re.S)
+    assert m, f"hittade inte underflikarna för {state_key}"
+    return {n.strip() for n in re.findall(r'"([^"]+)"', m.group(1))}
+
+
+def test_screening_holds_only_screeners():
+    """The structural rule: nothing that merely reviews a candidate belongs
+    under SCREENING.
+
+    The review sheets are the decision layer AFTER screening — the screening
+    itself happens in Börsdata — so they live under GRANSKNING. This test is
+    what stops the next sheet from being dropped into SCREENING because that
+    is where the others used to be.
+    """
+    screening = _sub_tabs("sub_screening")
+    review = _sub_tabs("sub_review")
+
+    for sheet in ("Rick Rule", "Royalty C", "Poängmodell", "Tiggre", "Insider",
+                  "🎯 Scorecard"):
+        assert sheet in review, f"{sheet} saknas i GRANSKNING"
+        assert sheet not in screening, f"{sheet} granskar, den screenar inte"
+
+    # ...och SCREENING behåller det som faktiskt screenar
+    assert "Arc Screener" in screening
+    assert "Swing Screener" in screening
+
+
+def test_swing_is_a_position_manager_not_a_screener():
+    """Watchlist, open positions and sell-rule flags — that is portfolio work."""
+    assert "Swing" in _sub_tabs("sub_portfolio")
+    assert "Swing" not in _sub_tabs("sub_screening")
+    # Swing Screener är en annan sak och stannar
+    assert "Swing Screener" not in _sub_tabs("sub_portfolio")
+
+
+def test_regime_stays_about_market_state():
+    """The tab answers "how does the market look", not "is this company good".
+
+    Moving the review sheets here was the alternative considered; this records
+    why it was not done.
+    """
+    regime = _sub_tabs("sub_regime")
+    for sheet in ("Rick Rule", "Poängmodell", "Insider", "🎯 Scorecard"):
+        assert sheet not in regime
+    assert "Råvarurotation" in regime
+
+
+def test_the_three_steps_are_three_tabs():
+    """Guidens flöde: var (REGIME) -> vilka (SCREENING) -> vilket (GRANSKNING)."""
+    src = _panel_src()
+    for label in ("🔱 SCREENING", "🔬 GRANSKNING", "📡 REGIME"):
+        assert label in src, label
