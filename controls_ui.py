@@ -1,7 +1,7 @@
 """
 controls_ui.py — DS, AQS och CSM som återanvändbara sektioner.
 
-Skrivna en gång och anropade från Poängmodellen, Lobo-arket och Producenter A,
+Skrivna en gång och anropade från Poängmodellen, Lobo-arket och Rick Rule,
 så att en ändrad tröskel inte behöver hittas på tre ställen. All logik ligger i
 controls.py; det här är bara ytan.
 

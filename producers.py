@@ -1,15 +1,16 @@
 """
-producers.py — Producenter A + Royalty C (ur ravarurotation.xlsx).
+producers.py — Rick Rule + Royalty C (ur ravarurotation.xlsx).
 
 De två granskningsarken som ligger mellan rotationen och köpet: när
 rotationen sagt VAR kapitalet ska, säger de här VILKET bolag.
 
-  Producenter A — Rules granskningsark. Guiden kallar det så rakt ut ("2 p i
-                  Producenter A-arket"), och dess fyra granskningssteg —
-                  landrisk, kostnadsposition, ledning, kapitaldisciplin — är
-                  exakt arkets fyra fält. Marginalen mot kostnadskurvan plus
-                  tre disciplinfrågor: 0–5 poäng, ≥ 4 köpkandidat, 3 bevaka,
-                  under 3 passa.
+  Rick Rule     — Överlevarna. Guiden kallar arket "Producenter A" ("2 p i
+                  Producenter A-arket"); här heter det efter sin upphovsman
+                  som de andra granskningsarken gör. Dess fyra
+                  granskningssteg — landrisk, kostnadsposition, ledning,
+                  kapitaldisciplin — är exakt arkets fyra fält. Marginalen mot
+                  kostnadskurvan plus tre disciplinfrågor: 0–5 poäng, ≥ 4
+                  köpkandidat, 3 bevaka, under 3 passa.
   Royalty C     — rabatten mot egen historik, och om GEO per aktie växer.
                   En royalty som krymper per aktie är inte billig, den är
                   utspädd.
@@ -55,7 +56,13 @@ GREEN, AMBER, RED, CYAN, GOLD = "#2d8a4e", "#d4943a", "#c44545", "#00E5FF", "#c9
 
 PRODUCERS, ROYALTY = "producers", "royalty"
 
-# ── Producenter A ────────────────────────────────────────────────────────────
+# Fliknamn. Lagringsnycklarna ovan står kvar — de ligger i Gist och ett byte
+# där hade tappat sparade rader för att ändra en rubrik.
+SHEET_RULE = "Rick Rule"
+SHEET_ROYALTY = "Royalty C"
+GUIDE_NAME_RULE = "Producenter A"     # guidens eget namn, behålls som spårbarhet
+
+# ── Rick Rule — Överlevarna (arkets namn i guiden: Producenter A) ────────────────────────────────────────────────────────────
 MARGIN_STRONG, MARGIN_OK = 40.0, 25.0      # procent
 PROD_BUY_MIN, PROD_WATCH_MIN = 4, 3
 PROD_MAX_SCORE = 5
@@ -315,9 +322,9 @@ def render_producers_page() -> None:
         f"Rotationen säger var kapitalet ska. De här säger vilket bolag."
         f"</p></div>", unsafe_allow_html=True)
 
-    which = st.radio("Ark", ["Producenter A", "Royalty C"], horizontal=True,
+    which = st.radio("Ark", [SHEET_RULE, SHEET_ROYALTY], horizontal=True,
                      key="pr_which", label_visibility="collapsed")
-    if which == "Producenter A":
+    if which == SHEET_RULE:
         _producers(data)
     else:
         _royalty(data)
@@ -350,10 +357,12 @@ def _r1(v):
 
 def _producers(data: dict) -> None:
     st.markdown(f"<div style='color:{DIM};font-size:0.78rem;margin-bottom:4px;'>"
-                f"<b style='color:{TEXT};'>Rules granskningsark.</b> "
+                f"<b style='color:{TEXT};'>{SHEET_RULE} — Överlevarna.</b> "
                 f"Överlevar-screenern körs i Börsdata; de fyra "
                 f"granskningsstegen — landrisk, kostnadsposition, ledning, "
-                f"kapitaldisciplin — är fälten nedan.</div>",
+                f"kapitaldisciplin — är fälten nedan. "
+                f"<span style='color:{DIM};'>Guiden kallar arket "
+                f"{GUIDE_NAME_RULE}.</span></div>",
                 unsafe_allow_html=True)
     csv_export.download_button(
         [{**r["row"], "_margin": _r1(r["margin"]), "_score": r["score"],
@@ -364,7 +373,7 @@ def _producers(data: dict) -> None:
                                         r["row"].get("csm", {}),
                                         bool(r["row"].get("secured_cash")))}
          for r in ranked_producers(data[PRODUCERS])],
-        PROD_CSV, "producenter_a", key="csv_producers")
+        PROD_CSV, "rick_rule", key="csv_producers")
     st.caption(f"Marginal ≥ {MARGIN_STRONG:g} % ger 2 p, ≥ {MARGIN_OK:g} % ger "
                f"1 p. Tre disciplinfrågor ger 1 p var. "
                f"{PROD_BUY_MIN}–{PROD_MAX_SCORE} = köpkandidat · "

@@ -209,9 +209,9 @@ def aqs_band(total: Optional[int]) -> Optional[str]:
 
 
 # Återanvändning i stället för dubbelinmatning: jurisdiktion och management
-# frågas redan i Producenter A (0/1) och i Lobo (0–2).
+# frågas redan i Rick Rule-arket (0/1) och i Lobo (0–2).
 def aqs_prefill_from_producer(row: dict) -> dict:
-    """Producenter A: 0/1-kryssen skalas till AQS 0–2."""
+    """Rick Rule-arket: 0/1-kryssen skalas till AQS 0–2."""
     r = row or {}
     out = {}
     if r.get("jurisdiktion") is not None:

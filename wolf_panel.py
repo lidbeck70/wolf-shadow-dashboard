@@ -169,7 +169,7 @@ try:
 except ImportError:
     SCORECARD_AVAILABLE = False
 
-# Granskningsarken — Producenter A + Royalty C (ur ravarurotation.xlsx)
+# Granskningsarken — Rick Rule + Royalty C (ur ravarurotation.xlsx)
 try:
     from producers import render_producers_page
     PRODUCERS_AVAILABLE = True

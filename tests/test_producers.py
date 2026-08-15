@@ -1,11 +1,11 @@
 """
-Tests for producers.py — Producenter A + Royalty C.
+Tests for producers.py — Rick Rule + Royalty C.
 
 Asserted against migrationsspecen §6:
 
-  Producenter A: marginal = (pris−kostnad)/pris · poäng = (marginal >= 40 % ->
-  2p, >= 25 % -> 1p) + tre checkfält -> 0-5 · badge: >= 4 Köpkandidat ·
-  3 Bevaka · < 3 Passa.
+  Rick Rule (guidens "Producenter A"): marginal = (pris−kostnad)/pris ·
+  poäng = (marginal >= 40 % -> 2p, >= 25 % -> 1p) + tre checkfält -> 0-5 ·
+  badge: >= 4 Köpkandidat · 3 Bevaka · < 3 Passa.
 
   Royalty C: rabatt vs botten · vs median · GEO-tillväxt · signal:
   rabatt <= 15 % & vs median <= 0 & GEO-tillväxt > 0 -> "KÖPLÄGE" ·
@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import producers as p
 
 
-# ── Producenter A ────────────────────────────────────────────────────────────
+# ── Rick Rule ────────────────────────────────────────────────────────────────
 def test_margin_and_its_points_at_the_specs_boundaries():
     assert p.margin_pct(100, 60) == 40.0
     assert p.margin_points(40.0) == 2       # exakt 40 %
@@ -76,7 +76,7 @@ def test_jurisdiction_is_additive_here_not_a_veto():
     """Worth pinning, because the neighbouring sheet treats it differently.
 
     Lobo's criteria say a bottom-half jurisdiction is a pass regardless of the
-    project. Producenter A does not: the spec's model is a plain sum, so a
+    project. The Rick Rule sheet does not: the spec's model is a plain sum, so a
     low-cost producer can reach Köpkandidat on margin plus two other checks
     with the jurisdiction box unticked. That is the sheet's rule, not an
     oversight here — change it in one place if you want the veto.
@@ -182,7 +182,7 @@ def test_royalty_levels_match_the_playbooks_sell_rule():
 
 
 # ── Guidens egna exempel (Masterguiden 4.0, Del 4, Strategi 1: Rule) ─────────
-# Producenter A ÄR Rules granskningsark — guiden säger det rakt ut, och båda
+# Rick Rule-arket ÄR guidens "Producenter A" — den säger det rakt ut, och båda
 # exemplen nedan är dess egna siffror.
 def test_the_guides_aisc_example_scores_two_points():
     """"AISC $1 400 vid guld $2 600 = 46 % marginal = lågkostnad (2 p)"."""
@@ -250,3 +250,30 @@ def test_ranked_exposes_the_dying_flag():
     assert out[0]["dying"] is True
     assert out[0]["score"] == 5
     assert out[0]["verdict"].label == p.P_PASS
+
+
+# ── Namngivningen ────────────────────────────────────────────────────────────
+def test_the_sheet_is_named_after_its_author_like_the_others():
+    """Sprott, Durrett and Lobo Tiggre carry their names; this one now does too."""
+    assert p.SHEET_RULE == "Rick Rule"
+    assert p.SHEET_ROYALTY == "Royalty C"
+
+
+def test_the_guides_own_name_is_kept_for_traceability():
+    """Renaming the tab must not orphan the guide's wording — it is what you
+    search for when checking the panel against the PDF."""
+    assert p.GUIDE_NAME_RULE == "Producenter A"
+    import strategy_rules as sr
+    pb = sr.PLAYBOOKS["rule"]
+    assert p.SHEET_RULE in pb.where
+    assert p.GUIDE_NAME_RULE in pb.where
+    assert p.GUIDE_NAME_RULE in pb.support_note
+    # och guidens formulering står kvar i regeln som citerar den
+    cost_rule = [r for r in pb.entry if "AISC" in r.explanation][0]
+    assert p.GUIDE_NAME_RULE in cost_rule.panel_guide
+
+
+def test_the_storage_keys_did_not_change_with_the_label():
+    """Renaming a tab must not orphan saved rows in the Gist."""
+    assert p.PRODUCERS == "producers"
+    assert p.ROYALTY == "royalty"

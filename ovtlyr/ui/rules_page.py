@@ -1107,8 +1107,9 @@ _PANEL_GUIDE: list[tuple] = [
     ("SCREENING → Poängmodell", "Sprott · Durrett",
      "Fem faktorer 0–2, runway ur kassa/burn, MCap/uns och MCap/framtida "
      "vinst mot 10x-regeln. DS-sektionen låser köp vid hög utspädningsrisk."),
-    ("SCREENING → Granskningsark", "Producenter A · Royalty C",
-     "Marginal mot kostnadskurvan och de tre disciplinfrågorna. Royalty: "
+    ("SCREENING → Granskningsark", "Rick Rule · Royalty C",
+     "Rick Rule (guidens 'Producenter A'): marginal mot kostnadskurvan, de "
+     "tre disciplinfrågorna och strykregeln för döende tillgång. Royalty C: "
      "rabatt mot egen botten, mot median och GEO per aktie. AQS och CSM "
      "visas när positionen kräver dem."),
     ("RULES → 📚 SNABBREFERENS", "Alla — uppslag",

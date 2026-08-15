@@ -3,7 +3,7 @@ scorecard.py — Master Scorecard och köpgrinden (Masterguiden 4.0).
 
 Sista steget före ett köp. Fliken skriver inget eget om kandidaterna: den
 läser dem ur de flikar som redan gjort jobbet — Poängmodellen, Lobo,
-Producenter A, Royalty C, Insider — och sammanställer per bolag och ticker.
+Rick Rule, Royalty C, Insider — och sammanställer per bolag och ticker.
 Det enda som matas in här är beslutet: position, värdering, trigger, säljregel
 och de sju kryssen i köpgrinden.
 

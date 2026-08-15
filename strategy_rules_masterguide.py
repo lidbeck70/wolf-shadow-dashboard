@@ -12,9 +12,9 @@ readable — strategy_rules.PLAYBOOKS imports them, so there is still one regist
 and one source of truth.
 
 Each playbook states its `support` honestly, and the honest answer has changed:
-all six now have a tab. Rule has Producenter A, Sprott and Durrett the
-Poängmodell, Tiggre the Lobo sheet, Royalty the Royalty C sheet, Insider the
-Insiderbevakare. What is still manual in every case is the Börsdata screener
+all six now have a tab. Rule has the Rick Rule sheet (the guide calls it
+"Producenter A"), Sprott and Durrett the Poängmodell, Tiggre the Lobo sheet,
+Royalty the Royalty C sheet, Insider the Insiderbevakare. What is still manual in every case is the Börsdata screener
 itself — the panel fetches no fundamentals — and each support_note says so.
 Naming the gap remains the point of this module; the gap is just smaller.
 """
@@ -43,7 +43,7 @@ RULE = Playbook(
     level=LEVEL_MEDIUM,
     horizon="2–5 år",
     universe="Kanada, Australien, USA, Norden · Metals & Mining + Oil & Gas",
-    where="SCREENING → Granskningsark (Producenter A) — Rules granskningsark. "
+    where="SCREENING → Granskningsark → Rick Rule (guidens 'Producenter A'). "
           "Screenern körs i Börsdata; SCREENING → Contrarian Alpha ger "
           "hat-rankningen.",
     idea=(
@@ -82,7 +82,8 @@ RULE = Playbook(
         ("Kostnadsposition (5 min)",
          "Gruvor: AISC mot dagens metallpris (AISC $1 400 vid guld $2 600 = 46 % "
          "marginal = lågkostnad). Olja: corporate breakeven mot WTI.",
-         "Bolagspresentationens cost-sida. 2 poäng i Producenter A-arket."),
+         "Bolagspresentationens cost-sida. 2 poäng i Rick Rule-arket "
+         "(guidens Producenter A)."),
         ("Ledning (5 min)",
          "Insynsägande i KRONOR (inte procent), och har någon i teamet drivit ett "
          "bolag genom en hel cykel förut?",
@@ -115,7 +116,7 @@ RULE = Playbook(
         "Gå igenom topp 15–20 på EV/EBITDA.",
         "Stryk bolag i länder du inte vill äga och bolag med döende tillgång.",
         "Kör de fyra granskningsstegen på resten (≈15 min per bolag).",
-        "5/5 i Producenter A-arket = full position.",
+        "5/5 i Rick Rule-arket = full position.",
     ),
     cheatsheet=(
         ("ND/EBITDA", "< 0,5 (olja/gas < 1,0)"),
@@ -135,8 +136,8 @@ RULE = Playbook(
         "Acceptera skuld 'för att bolaget är så bra'. Skulder dödar i väntan.",
     ),
     support=SUPPORT_PARTIAL,
-    support_note="SCREENING → Granskningsark (Producenter A) ÄR Rules "
-                 "granskningsark: marginalen mot kostnadskurvan, de tre "
+    support_note="SCREENING → Granskningsark → Rick Rule ÄR arket guiden "
+                 "kallar Producenter A: marginalen mot kostnadskurvan, de tre "
                  "disciplinfrågorna och strykregeln för döende tillgång "
                  "(gruvlivslängd < 5 år, R/P < 8 år). Contrarian "
                  "Alpha-screenern ger hat-rankning som överlappar Rules idé, "
