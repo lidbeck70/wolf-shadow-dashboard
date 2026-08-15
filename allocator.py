@@ -77,6 +77,40 @@ SLEEVES: tuple[Sleeve, ...] = (
 
 SLEEVE_BY_KEY = {s.key: s for s in SLEEVES}
 
+# ── Positionsregeln — två nivåer (Masterguiden 4.0) ──────────────────────────
+# "NORMAL POSITION anges inom strategidelen, HÅRT TAK mot hela portföljen."
+# De blandas aldrig ihop: 20 % av en optionalitetsdel som är 7 % av portföljen
+# är 1,4 % av totalen, och det är totalen taket mäts mot.
+
+
+@dataclass(frozen=True)
+class PositionRule:
+    key: str
+    name: str
+    sleeve: str
+    normal_lo: float       # % av strategidelen
+    normal_hi: float
+    hard_cap: float        # % av hela portföljen — bryts aldrig
+
+
+POSITION_RULES: tuple[PositionRule, ...] = (
+    PositionRule("royalty1", "Royalty nivå 1", "royalty", 5, 10, 10.0),
+    PositionRule("rule", "Rule-producent", "producenter", 5, 10, 4.0),
+    PositionRule("sprott", "Sprott", "optionalitet", 10, 20, 1.5),
+    PositionRule("tiggre", "Tiggre", "optionalitet", 15, 30, 4.0),
+    PositionRule("durrett", "Durrett", "durrett", 10, 20, 3.0),
+    PositionRule("swing", "Swing", "swing", 15, 30, 6.0),
+    PositionRule("insider", "Insider", "insider", 10, 20, 4.0),
+)
+RULE_BY_KEY = {r.key: r for r in POSITION_RULES}
+
+# Sleeves med exakt en regel kan härledas ur en gammal position; optionaliteten
+# kan inte, eftersom Sprott och Tiggre har olika tak (1,5 % mot 4 %).
+_RULES_PER_SLEEVE = {}
+for _r in POSITION_RULES:
+    _RULES_PER_SLEEVE.setdefault(_r.sleeve, []).append(_r)
+AMBIGUOUS_SLEEVES = tuple(k for k, v in _RULES_PER_SLEEVE.items() if len(v) > 1)
+
 COMMODITY_CAP = 55.0        # råvarutaket: royalty + producenter + optionalitet + durrett
 COMMODITY_WARN = 50.0       # arket varnar redan här — taket ska aldrig nås oplanerat
 CASH_LOW, CASH_HIGH = 5.0, 25.0
@@ -166,6 +200,45 @@ def commodity_state(values: dict, total: Optional[float] = None) -> tuple[str, s
     return POS_OK, f"Råvaruexponering {exp:.1f} % av {COMMODITY_CAP:g} %."
 
 
+def position_rule(row: dict) -> Optional[PositionRule]:
+    """Regeln för en position. None när den inte går att härleda.
+
+    En gammal position lagrar bara sin sleeve. För sex av sju sleeves finns
+    bara en regel och den kan härledas; optionaliteten kan inte, och att gissa
+    där vore att välja mellan 1,5 % och 4 % åt användaren.
+    """
+    r = row or {}
+    key = (r.get("rule") or "").strip().lower()
+    if key in RULE_BY_KEY:
+        return RULE_BY_KEY[key]
+    sleeve = (r.get("sleeve") or "").strip().lower()
+    candidates = _RULES_PER_SLEEVE.get(sleeve, [])
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def normal_pct(value, sleeve_value) -> Optional[float]:
+    """Positionens andel av sin egen strategidel."""
+    v, sv = _num(value), _num(sleeve_value)
+    if v is None or sv is None or sv <= 0:
+        return None
+    return round(v / sv * 100, 6)
+
+
+def normal_state(pct_of_sleeve: Optional[float],
+                 rule: Optional[PositionRule]) -> tuple[str, str]:
+    """NORMAL-intervallet inom strategidelen — vägledning, inte tak."""
+    if rule is None or pct_of_sleeve is None:
+        return "okänd", ""
+    if pct_of_sleeve < rule.normal_lo:
+        return "under normal", (f"Under {rule.normal_lo:g} % av "
+                                f"{rule.sleeve}-delen — får fyllas på")
+    if pct_of_sleeve > rule.normal_hi:
+        return "över normal", (f"Över {rule.normal_hi:g} % av "
+                               f"{rule.sleeve}-delen — dubbelsignal tillåter "
+                               f"övre delen, inte mer")
+    return "normal", "Inom normalintervallet"
+
+
 def position_state(pct: float, cap: Optional[float]) -> str:
     """inom tak / nära taket / över tak för en enskild position."""
     c = _num(cap)
@@ -229,17 +302,31 @@ def position_breaches(positions: list, total: Optional[float] = None) -> list:
     if not t or t <= 0:
         return out
     for p in positions:
-        s = SLEEVE_BY_KEY.get(p.get("sleeve", ""))
-        if s is None or s.position_cap is None:
+        rule = position_rule(p)
+        s = SLEEVE_BY_KEY.get((rule.sleeve if rule else p.get("sleeve", "")))
+        cap = rule.hard_cap if rule else (s.position_cap if s else None)
+        if cap is None:
             continue
-        pct = (max(0.0, _num(p.get("value"), 0.0) or 0.0)) / t * 100
-        cap = s.position_cap
+        pct = round((max(0.0, _num(p.get("value"), 0.0) or 0.0)) / t * 100, 6)
         # The royalty core is allowed to drift before it is trimmed.
-        effective = ROYALTY_DRIFT_CAP if s.key == "royalty" else cap
+        effective = ROYALTY_DRIFT_CAP if (s and s.key == "royalty") else cap
         if pct > effective:
-            out.append({"ticker": p.get("ticker", "?"), "sleeve": s.name,
+            out.append({"ticker": p.get("ticker", "?"),
+                        "sleeve": s.name if s else "?",
+                        "rule": rule.name if rule else None,
                         "pct": pct, "cap": cap, "effective": effective})
     return out
+
+
+def unresolved_positions(positions: list) -> list:
+    """Positioner vars tak inte går att avgöra — Sprott eller Tiggre?
+
+    De rapporteras hellre än att tilldelas det lösaste taket: skillnaden är
+    1,5 % mot 4 %, alltså mer än en faktor två i tillåten storlek.
+    """
+    return [p for p in positions or []
+            if position_rule(p) is None
+            and (p.get("sleeve") or "").strip().lower() in AMBIGUOUS_SLEEVES]
 
 
 # ── Lagring ──────────────────────────────────────────────────────────────────
@@ -300,8 +387,10 @@ SLEEVE_CSV = [("_name", "Strategi"), ("_value", "Värde"), ("_pct", "Andel %"),
               ("_status", "Status"), ("_action", "Åtgärd"),
               ("_cap", "Positionstak %")]
 
-POS_CSV = [("ticker", "Ticker"), ("sleeve", "Strategi"), ("value", "Värde"),
-           ("_pct", "Andel %"), ("_cap", "Tak %"), ("_state", "Läge")]
+POS_CSV = [("ticker", "Ticker"), ("_rule", "Typ"), ("sleeve", "Strategi"),
+           ("value", "Värde"), ("_pct", "Andel av total %"),
+           ("_of_sleeve", "Andel av delen %"), ("_normal", "Normalintervall"),
+           ("_cap", "Tak %"), ("_state", "Läge")]
 
 
 def _export(data: dict) -> None:
@@ -321,13 +410,20 @@ def _export(data: dict) -> None:
                          for p in positions)
     pos_rows = []
     for p in positions:
-        s = SLEEVE_BY_KEY.get(p.get("sleeve", ""))
+        rule = position_rule(p)
+        s = SLEEVE_BY_KEY.get((rule.sleeve if rule else p.get("sleeve", "")))
         pct = ((max(0.0, _num(p.get("value"), 0.0) or 0.0) / total * 100)
                if total else 0.0)
-        eff = (ROYALTY_DRIFT_CAP if s and s.key == "royalty"
-               else (s.position_cap if s else None))
-        pos_rows.append({**p, "_pct": round(pct, 1), "_cap": eff,
-                         "_state": position_state(pct, eff)})
+        cap = rule.hard_cap if rule else (s.position_cap if s else None)
+        eff = (ROYALTY_DRIFT_CAP if s and s.key == "royalty" else cap)
+        of_sleeve = normal_pct(p.get("value"),
+                               _num(vals.get(s.key), 0.0) if s else None)
+        pos_rows.append({**p, "_rule": rule.name if rule else "OKÄND",
+                         "_pct": round(pct, 1),
+                         "_of_sleeve": None if of_sleeve is None else round(of_sleeve, 1),
+                         "_normal": (f"{rule.normal_lo:g}–{rule.normal_hi:g} %"
+                                     if rule else ""),
+                         "_cap": eff, "_state": position_state(pct, eff)})
 
     c1, c2 = st.columns(2)
     with c1:
@@ -464,22 +560,27 @@ def _positions(data: dict) -> None:
                 f"margin:18px 0 6px;'>POSITIONSTAK PER BOLAG</div>",
                 unsafe_allow_html=True)
 
-    caps = " · ".join(f"{s.name.split(' (')[0]}: {s.position_cap:g} %"
-                      for s in SLEEVES if s.position_cap)
-    st.caption(caps + f" — dubbelsignal tillåter övre delen av intervallet, "
-                      f"men taket bryts aldrig.")
+    st.caption("Två nivåer som aldrig blandas ihop: NORMAL anges inom "
+               "strategidelen, HÅRT TAK mot hela portföljen. Dubbelsignal "
+               "tillåter övre delen av NORMAL — taket bryts aldrig, av "
+               "något skäl.")
+    caps = " · ".join(f"{r.name}: {r.normal_lo:g}–{r.normal_hi:g} % av delen, "
+                      f"tak {r.hard_cap:g} %" for r in POSITION_RULES)
+    st.caption(caps)
 
     a1, a2, a3, a4 = st.columns([1.2, 1.6, 1.2, 0.8])
     tkr = a1.text_input("Ticker", key="al_p_tkr")
-    sleeve = a2.selectbox("Strategi", [s.key for s in SLEEVES if s.position_cap],
-                          format_func=lambda k: SLEEVE_BY_KEY[k].name,
-                          key="al_p_sleeve")
+    rule_key = a2.selectbox("Typ", [r.key for r in POSITION_RULES],
+                            format_func=lambda k: RULE_BY_KEY[k].name,
+                            key="al_p_rule")
     val = a3.number_input("Värde (SEK)", min_value=0.0, value=0.0, step=10000.0,
                           key="al_p_val")
     if a4.button("Lägg till", key="al_p_add"):
         if tkr.strip() and val > 0:
             data["positions"].append({"ticker": tkr.upper().strip(),
-                                      "sleeve": sleeve, "value": val})
+                                      "rule": rule_key,
+                                      "sleeve": RULE_BY_KEY[rule_key].sleeve,
+                                      "value": val})
             _save(data)
             st.rerun()
 
@@ -494,21 +595,34 @@ def _positions(data: dict) -> None:
 
     for i, p in enumerate(list(positions)):
         pct = (max(0.0, _num(p.get("value"), 0.0) or 0.0) / total * 100) if total else 0
-        s = SLEEVE_BY_KEY.get(p.get("sleeve", ""))
+        rule = position_rule(p)
+        s = SLEEVE_BY_KEY.get((rule.sleeve if rule else p.get("sleeve", "")))
         over = p.get("ticker") in breaches
-        eff = (ROYALTY_DRIFT_CAP if s and s.key == "royalty"
-               else (s.position_cap if s else None))
+        cap = rule.hard_cap if rule else (s.position_cap if s else None)
+        eff = (ROYALTY_DRIFT_CAP if s and s.key == "royalty" else cap)
         state = POS_OVER if over else position_state(pct, eff)
         c = RED if over else (AMBER if state == POS_NEAR else TEXT)
+
+        sleeve_value = _num(data["values"].get(s.key), 0.0) if s else None
+        of_sleeve = normal_pct(p.get("value"), sleeve_value)
+        nstate, nwhy = normal_state(of_sleeve, rule)
+
         r1, r2, r3, r4 = st.columns([1.2, 1.6, 1.2, 0.8])
         r1.markdown(f"<span style='color:{c};font-weight:700;'>{p.get('ticker','?')}"
                     f"</span>", unsafe_allow_html=True)
         r2.markdown(f"<span style='color:{DIM};font-size:0.8rem;'>"
-                    f"{s.name if s else '?'}</span>", unsafe_allow_html=True)
+                    f"{rule.name if rule else (s.name if s else '?')}</span>",
+                    unsafe_allow_html=True)
+        of_sleeve_txt = (f"<div style='color:{DIM};font-size:0.68rem;'>"
+                         f"{of_sleeve:.0f} % av delen · normal "
+                         f"{rule.normal_lo:g}–{rule.normal_hi:g} %</div>"
+                         if of_sleeve is not None and rule else "")
         r3.markdown(f"<span style='color:{c};font-size:0.82rem;'>{pct:.1f} % "
                     f"<span style='color:{DIM};'>/ tak "
-                    f"{s.position_cap:g} %</span></span>" if s and s.position_cap
+                    f"{cap:g} %</span></span>{of_sleeve_txt}" if cap
                     else f"{pct:.1f} %", unsafe_allow_html=True)
+        if nstate == "över normal":
+            st.caption(f"↳ {p.get('ticker','?')}: {nwhy}")
         if r4.button("✕", key=f"al_p_del_{i}"):
             data["positions"] = [x for j, x in enumerate(positions) if j != i]
             _save(data)
@@ -516,7 +630,15 @@ def _positions(data: dict) -> None:
 
     for b in position_breaches(positions, total):
         st.error(f"{b['ticker']} är {b['pct']:.1f} % — över taket {b['cap']:g} % "
-                 f"({b['sleeve']}). Trimma ner.")
+                 f"({b.get('rule') or b['sleeve']}). Trimma ner.")
+
+    # Gamla positioner i optionaliteten: Sprott eller Tiggre? Taken skiljer
+    # sig med mer än en faktor två, så de gissas inte.
+    for p in unresolved_positions(positions):
+        st.warning(f"{p.get('ticker','?')} ligger i optionaliteten utan typ — "
+                   f"välj Sprott (tak {RULE_BY_KEY['sprott'].hard_cap:g} %) "
+                   f"eller Tiggre (tak {RULE_BY_KEY['tiggre'].hard_cap:g} %). "
+                   f"Tills dess kontrolleras den inte mot något tak.")
 
     # Förvarning: en position som passerat 90 % av taket ska inte fyllas på.
     for p in positions:

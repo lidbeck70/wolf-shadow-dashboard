@@ -104,19 +104,22 @@ ROUTINES: tuple[Routine, ...] = (
         key="monthly",
         cadence=MONTHLY,
         when="Första helgen i månaden",
-        title="Råvarurotationen",
+        title="Rotationen: Triple Signal + kontroller på seriösa kandidater",
         minutes="1–2 h",
         tools="Rotation-fliken, poängmodeller",
         color=GOLD,
         steps=(
-            Step("Betygsätt varje råvara: hat-poäng 1–5, case intakt Ja/Nej, "
-                 "timing-signal Ja/Delvis/Nej.",
+            Step("Triple Signal per råvara: hat räknas ur checklistan, "
+                 "fundamenta och katalysator bedöms 1–5, case intakt Ja/Nej.",
                  "REGIME → Råvarurotation"),
             Step("Läs av vilka som hamnar på AGERA — kapitalet går till de 2–3 "
                  "mest hatade med intakta case.",
                  "REGIME → Råvarurotation"),
             Step("Kör screenern för de råvarorna och poängsätt kandidaterna.",
                  ""),
+            Step("Kör AQS, DS och CSM på de seriösa kandidaterna — i den "
+                 "omfattning proportionalitetsregeln kräver.",
+                 "SCREENING → 🎯 Scorecard"),
             Step("Guld och royaltybenet ligger kvar oavsett betyg — de "
                  "roterar inte.",
                  "REGIME → Råvarurotation"),

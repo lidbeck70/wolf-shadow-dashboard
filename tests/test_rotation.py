@@ -226,9 +226,25 @@ def test_no_agera_is_a_valid_state():
     assert r.capital_targets(quiet) == []
 
 
-def test_the_hatred_checklist_survived_the_upgrade():
+def test_the_hatred_checklist_is_five_statements():
     """It is how the hatred axis is set — it did not become obsolete."""
     assert len(r.HATRED_CHECKLIST) == 5
-    joined = " ".join(r.HATRED_CHECKLIST).lower()
+    joined = " ".join(t for _k, t in r.HATRED_CHECKLIST).lower()
     for word in ("incitament", "utbudet", "kapitalet", "screener", "media"):
         assert word in joined
+    assert len({k for k, _t in r.HATRED_CHECKLIST}) == 5      # unika nycklar
+
+
+def test_hatred_is_counted_not_judged():
+    """Guiden 4.0: "Antal Ja ger poängen"."""
+    keys = [k for k, _t in r.HATRED_CHECKLIST]
+    assert r.hatred_from_checklist({k: True for k in keys}) == 5
+    assert r.hatred_from_checklist({keys[0]: True, keys[1]: True}) == 2
+    assert r.hatred_from_checklist({keys[0]: True}) == 1
+
+
+def test_an_unticked_checklist_is_the_bottom_of_the_scale_not_zero():
+    """The axes are 1–5, so no ticks is 1 — there is no zero reading."""
+    assert r.hatred_from_checklist({}) == r.SIGNAL_MIN == 1
+    assert r.hatred_from_checklist(None) == 1
+    assert r.hatred_from_checklist({"finns_inte": True}) == 1

@@ -62,12 +62,13 @@ GATES: tuple[Gate, ...] = (
          "Bolaget kom ur rätt screener, inte ur ett nyhetsflöde."),
     Gate("granskning_klar", "Granskningen är klar",
          "Strategipoängen är satt och räcker."),
-    Gate("inga_roda_flaggor", "Kontrollerna utan röd flagga",
-         "DS, AQS och CSM i den omfattning positionen kräver."),
-    Gate("sakerhetsmarginal", "Säkerhetsmarginal finns",
+    Gate("inga_roda_flaggor", "Kontrollerna utan permanent-risk-flagga",
+         "AQS/DS/CSM enligt proportionalitetsregeln. Flaggan gäller just "
+         "permanent kapitalförlust — utspädning, skuld, tillgångsförstörelse."),
+    Gate("sakerhetsmarginal", "Värderingen ger säkerhetsmarginal",
          "Priset ger utrymme för att du har fel om en del av caset."),
-    Gate("trigger_definierad", "Triggern är definierad",
-         "Vad ska hända, och när? Utan svar är det en förhoppning."),
+    Gate("trigger_definierad", "Trigger definierad där strategin kräver det",
+         "Vad ska hända, och när? Tiggre kräver det alltid; Rule gör det inte."),
     Gate("position_saljregel", "Position och säljregel satta",
          "Storleken och exitregeln bestämda före köpet, inte efter."),
 )

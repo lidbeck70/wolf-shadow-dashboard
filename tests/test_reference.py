@@ -146,3 +146,45 @@ def test_glossary_search():
     # searches the meaning too, not only the term
     assert any(t.term == "Realränta" for t in ref.find_terms("inflation"))
     assert ref.find_terms("zzz") == []
+
+
+# ── Riskdoktrinen (Masterguiden 4.0, Del 2) ──────────────────────────────────
+def test_the_three_loss_types_and_which_one_is_fatal():
+    assert [lt.name for lt in ref.LOSS_TYPES] == [
+        "Marknadsförlust", "Modellförlust", "Permanent kapitalförlust"]
+    fatal = ref.LOSS_TYPES[2]
+    assert "aldrig kommer tillbaka" in fatal.what
+    assert "enda förlust systemet inte tål" in fatal.response
+    for lt in ref.LOSS_TYPES:
+        assert lt.what and lt.response, lt.name
+
+
+def test_the_two_cross_strategy_rules():
+    assert "snitta aldrig ner" in ref.AVERAGING_RULE.lower()
+    assert "ursprungstesen" in ref.AVERAGING_RULE
+    assert "inget enskilt verktyg" in ref.TOOL_RULE.lower()
+
+
+def test_control_signals_cover_all_three_controls_plus_averaging():
+    labels = [a for a, _b in ref.CONTROL_SIGNALS]
+    assert labels == ["AQS svag", "DS hög", "CSM Bear-katastrof",
+                      "Kontrollerna försämrade"]
+    for _label, action in ref.CONTROL_SIGNALS:
+        assert action
+
+
+def test_the_nine_questions_are_nine():
+    assert len(ref.NINE_QUESTIONS) == 9
+    joined = " ".join(ref.NINE_QUESTIONS).lower()
+    for topic in ("sektorn", "tillgången", "råvarupriset", "utspädd",
+                  "katalysator", "säljer jag om jag har rätt",
+                  "säljer jag om jag har fel", "positionen"):
+        assert topic in joined
+
+
+def test_the_control_signals_agree_with_the_control_engine():
+    """DS high means smaller or wait — the same rule controls.py enforces."""
+    import controls as ctl
+    ds_action = dict(ref.CONTROL_SIGNALS)["DS hög"]
+    assert "finansieringsbesked" in ds_action
+    assert ctl.DS_BLOCK_TEXT.endswith("finansieringsbeskedet")

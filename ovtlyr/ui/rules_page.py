@@ -1313,6 +1313,52 @@ def _ref_table(headers: tuple, rows: list, color: str,
     return html + "</table>"
 
 
+def _page_risk_doctrine() -> None:
+    """Riskdoktrinen, kontrollsignalerna och de nio frågorna (4.0)."""
+    st.markdown(_section_header_html(
+        "Tre typer av förlust", "Bara en av dem är dödlig", _RED),
+        unsafe_allow_html=True)
+    for lt in reference.LOSS_TYPES:
+        fatal = lt.name.startswith("Permanent")
+        c = _RED if fatal else _DIM
+        st.markdown(
+            f"<div style='border-left:3px solid {c};background:{c}0d;"
+            f"border-radius:0 6px 6px 0;padding:10px 14px;margin-bottom:8px;'>"
+            f"<b style='color:{c};'>{_esc(lt.name)}</b>"
+            f"<div style='color:{_TEXT};font-size:0.84rem;margin-top:3px;'>"
+            f"{_esc(lt.what)}</div>"
+            f"<div style='color:{_DIM};font-size:0.8rem;margin-top:4px;'>"
+            f"→ {_esc(lt.response)}</div></div>", unsafe_allow_html=True)
+
+    st.markdown(_section_header_html(
+        "Två regler över alla strategier", "Gäller oavsett vilken flik du står i",
+        _YELLOW), unsafe_allow_html=True)
+    for rule in (reference.AVERAGING_RULE, reference.TOOL_RULE):
+        st.markdown(
+            f"<div style='color:{_TEXT};font-size:0.86rem;padding:6px 0 6px 18px;"
+            f"border-left:2px solid {_YELLOW}55;margin-bottom:6px;'>"
+            f"{_esc(rule)}</div>", unsafe_allow_html=True)
+
+    st.markdown(_section_header_html(
+        "Kontrollsignalerna", "Vad ett dåligt utfall ska leda till", _CYAN),
+        unsafe_allow_html=True)
+    st.markdown(_ref_table(
+        ("UTFALL", "ÅTGÄRD"), list(reference.CONTROL_SIGNALS), _CYAN,
+        ("34%", "66%")), unsafe_allow_html=True)
+
+    st.markdown(_section_header_html(
+        "De nio frågorna",
+        "Varje större investering ska kunna svara på dem", _GREEN),
+        unsafe_allow_html=True)
+    st.markdown("".join(
+        f"<div style='display:flex;gap:10px;margin-bottom:6px;'>"
+        f"<span style='color:{_GREEN};font-weight:800;font-size:0.78rem;"
+        f"min-width:18px;'>{n}.</span>"
+        f"<span style='color:{_TEXT};font-size:0.85rem;'>{_esc(q)}</span></div>"
+        for n, q in enumerate(reference.NINE_QUESTIONS, start=1)),
+        unsafe_allow_html=True)
+
+
 def _page_reference() -> None:
     """Snabbreferens — the four lookup tables, for mid-trade questions."""
     st.markdown(
@@ -1327,7 +1373,7 @@ def _page_reference() -> None:
 
     view = st.radio("Referens",
                     ["🔻 Säljregler", "🔍 Screeners", "🔗 Datakällor",
-                     "📕 Ordlista"],
+                     "📕 Ordlista", "🛡 Riskdoktrinen"],
                     horizontal=True, key="rules_ref_view",
                     label_visibility="collapsed")
 
@@ -1361,6 +1407,9 @@ def _page_reference() -> None:
             ("SIFFRA", "KÄLLA", "VAR / SÖKORD"),
             [(s.number, s.source, s.where) for s in reference.SOURCES],
             _GREEN, ("34%", "26%", "40%")), unsafe_allow_html=True)
+
+    elif view == "🛡 Riskdoktrinen":
+        _page_risk_doctrine()
 
     else:
         st.markdown(_section_header_html(

@@ -179,6 +179,63 @@ GLOSSARY: tuple[Term, ...] = (
 )
 
 
+# ── Riskdoktrinen (Masterguiden 4.0, Del 2) ──────────────────────────────────
+# De tre förlusttyperna. Poängen är att bara en av dem är dödlig, och att alla
+# kontrollsystem finns för att förhindra just den.
+
+@dataclass(frozen=True)
+class LossType:
+    name: str
+    what: str
+    response: str
+
+
+LOSS_TYPES: tuple[LossType, ...] = (
+    LossType("Marknadsförlust",
+             "Priset faller men tesen är intakt.",
+             "Uthärdas — eller stoppas mekaniskt i swing."),
+    LossType("Modellförlust",
+             "Antagandet var fel.",
+             "Omvärdera från noll. Oftast sälj."),
+    LossType("Permanent kapitalförlust",
+             "Skuld, utspädning eller tillgångsförstörelse gör att kapitalet "
+             "aldrig kommer tillbaka.",
+             "Den enda förlust systemet inte tål — och den alla kontroll"
+             "system finns för att förhindra."),
+)
+
+# Två regler som gäller över alla strategier.
+AVERAGING_RULE = (
+    "Snittningsregeln: snitta aldrig ner bara för att priset fallit. "
+    "Snittning kräver att ursprungstesen är giltig OCH att kvalitets- och "
+    "utspädningskontrollerna inte försämrats.")
+
+TOOL_RULE = (
+    "Verktygsregeln: inget enskilt verktyg får ensamt ge ett automatiskt köp. "
+    "Kandidaten måste klara strategi, kvalitet/värdering och relevant trigger.")
+
+# Kontrollsignalerna — vad ett dåligt utfall i varje kontroll ska leda till.
+CONTROL_SIGNALS: tuple[tuple[str, str], ...] = (
+    ("AQS svag", "Kräv rabatt — eller passa."),
+    ("DS hög", "Mindre position, eller vänta på finansieringsbeskedet."),
+    ("CSM Bear-katastrof", "Passa."),
+    ("Kontrollerna försämrade", "Snitta aldrig ner."),
+)
+
+# De nio frågorna varje större investering ska kunna svara på (Del 7).
+NINE_QUESTIONS: tuple[str, ...] = (
+    "Varför är sektorn attraktiv just nu?",
+    "Är själva tillgången bra?",
+    "Vad händer om råvarupriset går åt fel håll?",
+    "Hur mycket kapital krävs till nästa katalysator?",
+    "Hur mycket kan jag bli utspädd?",
+    "Vilken konkret händelse ger omvärdering?",
+    "När säljer jag om jag har rätt?",
+    "När säljer jag om jag har fel?",
+    "Hur stor får positionen vara innan den hotar hela systemet?",
+)
+
+
 # ── Uppslag ──────────────────────────────────────────────────────────────────
 def sell_rule(key: str) -> SellRule | None:
     """The sell row for a playbook key, or None."""

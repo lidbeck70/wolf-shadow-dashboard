@@ -91,7 +91,7 @@ def test_a_single_unchecked_box_blocks_and_names_itself():
     card["sakerhetsmarginal"] = False
     state = sc.gate_state(card, entry)
     assert not state["ready"]
-    assert state["missing"] == ["Säkerhetsmarginal finns"]
+    assert state["missing"] == ["Värderingen ger säkerhetsmarginal"]
 
 
 def test_an_empty_card_lists_every_missing_check():
@@ -104,7 +104,7 @@ def test_a_card_without_candidate_data_never_signs_off():
     """No source row is a gap, not a pass — the controls cannot be read."""
     state = sc.gate_state(_full_card())
     assert not state["ready"]
-    assert "Kontrollerna utan röd flagga" in state["missing"]
+    assert "Kontrollerna utan permanent-risk-flagga" in state["missing"]
     assert state["gaps"] == ["Kandidatdata saknas — kontrollerna går inte att läsa"]
 
 
@@ -133,7 +133,7 @@ def test_the_control_check_cannot_be_ticked_past():
     card["inga_roda_flaggor"] = True          # försök kryssa förbi
     state = sc.gate_state(card, entry)
     assert state["checks"]["inga_roda_flaggor"] is False
-    assert "Kontrollerna utan röd flagga" in state["missing"]
+    assert "Kontrollerna utan permanent-risk-flagga" in state["missing"]
 
 
 def test_a_complete_workup_clears_the_gaps():

@@ -221,3 +221,90 @@ def test_an_exactly_full_commodity_budget_is_not_a_breach():
              "swing": 45, "insider": 0, "kassa": 0}
     assert a.commodity_exposure(split) == 55.0
     assert not a.commodity_breach(split)
+
+
+# ── Positionsregeln, två nivåer (Masterguiden 4.0) ───────────────────────────
+# "NORMAL POSITION anges inom strategidelen, HÅRT TAK mot hela portföljen."
+def test_the_seven_position_rules_match_the_guide():
+    got = {r.key: (r.normal_lo, r.normal_hi, r.hard_cap) for r in a.POSITION_RULES}
+    assert got == {
+        "royalty1": (5, 10, 10.0),
+        "rule":     (5, 10, 4.0),
+        "sprott":   (10, 20, 1.5),
+        "tiggre":   (15, 30, 4.0),
+        "durrett":  (10, 20, 3.0),
+        "swing":    (15, 30, 6.0),
+        "insider":  (10, 20, 4.0),
+    }
+
+
+def test_sprott_and_tiggre_share_a_sleeve_but_not_a_cap():
+    """The defect this rule fixes: one sleeve cap let a Sprott lot run to 4 %."""
+    sprott = a.RULE_BY_KEY["sprott"]
+    tiggre = a.RULE_BY_KEY["tiggre"]
+    assert sprott.sleeve == tiggre.sleeve == "optionalitet"
+    assert sprott.hard_cap == 1.5 and tiggre.hard_cap == 4.0
+
+
+def test_a_sprott_lot_over_one_and_a_half_percent_now_breaches():
+    positions = [{"ticker": "SPR", "rule": "sprott", "sleeve": "optionalitet",
+                  "value": 3.0}]
+    breaches = a.position_breaches(positions, total=100.0)
+    assert [b["ticker"] for b in breaches] == ["SPR"]
+    assert breaches[0]["cap"] == 1.5
+    assert breaches[0]["rule"] == "Sprott"
+    # samma storlek som Tiggre är inom taket
+    positions[0]["rule"] = "tiggre"
+    assert a.position_breaches(positions, total=100.0) == []
+
+
+def test_the_rule_is_derived_from_the_sleeve_where_it_is_unambiguous():
+    """Old positions store only a sleeve; six of seven can be resolved."""
+    for sleeve, expected in (("royalty", "royalty1"), ("producenter", "rule"),
+                             ("durrett", "durrett"), ("swing", "swing"),
+                             ("insider", "insider")):
+        assert a.position_rule({"sleeve": sleeve}).key == expected
+
+
+def test_an_old_optionality_position_is_reported_not_guessed():
+    """Guessing would pick between 1,5 % and 4 % on the user's behalf."""
+    old = {"ticker": "OLD", "sleeve": "optionalitet", "value": 3.0}
+    assert a.position_rule(old) is None
+    assert a.unresolved_positions([old]) == [old]
+    assert a.AMBIGUOUS_SLEEVES == ("optionalitet",)
+    # ...och den flaggas inte som brott mot ett tak den inte har
+    assert a.position_breaches([old], total=100.0) == []
+
+
+def test_resolved_positions_are_not_reported_as_unresolved():
+    assert a.unresolved_positions([{"sleeve": "swing"}]) == []
+    assert a.unresolved_positions([{"rule": "sprott",
+                                    "sleeve": "optionalitet"}]) == []
+    assert a.unresolved_positions([]) == []
+    assert a.unresolved_positions(None) == []
+
+
+def test_normal_pct_measures_against_the_sleeve_not_the_portfolio():
+    """20 % of a 7 % sleeve is 1,4 % of the total — different questions."""
+    assert a.normal_pct(20.0, 100.0) == 20.0
+    assert a.normal_pct(1.4, 7.0) == 20.0
+    assert a.normal_pct(5, 0) is None
+    assert a.normal_pct(None, 100) is None
+
+
+def test_normal_state_bands():
+    sprott = a.RULE_BY_KEY["sprott"]
+    assert a.normal_state(5.0, sprott)[0] == "under normal"
+    assert a.normal_state(10.0, sprott)[0] == "normal"
+    assert a.normal_state(20.0, sprott)[0] == "normal"
+    assert a.normal_state(25.0, sprott)[0] == "över normal"
+    assert a.normal_state(None, sprott)[0] == "okänd"
+    assert a.normal_state(15.0, None)[0] == "okänd"
+
+
+def test_normal_and_cap_are_independent():
+    """A position can be normal inside its sleeve and still break the cap."""
+    # Tiggre 30 % av en optionalitetsdel som är 12 % av portföljen = 3,6 %
+    assert a.normal_state(30.0, a.RULE_BY_KEY["tiggre"])[0] == "normal"
+    assert a.position_breaches(
+        [{"ticker": "T", "rule": "tiggre", "value": 4.5}], total=100.0)

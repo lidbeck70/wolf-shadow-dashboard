@@ -73,15 +73,25 @@ AGERA_MIN = 13           # 13–15 AGERA
 BEVAKA_MIN = 10          # 10–12 Bevaka, <= 9 Vila
 CAPITAL_SLOTS = 3        # "de 2–3 mest hatade med intakta case"
 
-# Hat-checklistan lever kvar som hjälp för att sätta hatred 1–5: ett kryss
-# per uppfyllt påstående.
+# Hat-checklistan. Guiden 4.0: "Antal Ja ger poängen" — hatred är alltså inte
+# en bedömning utan en räkning, och kryssen är fältet.
 HATRED_CHECKLIST = (
-    "Priset ligger under incitamentspriset",
-    "Utbudet krymper av nöd — stängningar, inte planer",
-    "Kapitalet är stängt: inga emissioner, inga nya projekt",
-    "Screener-listan är lång",
-    "Media är tyst",
+    ("pris", "Priset ligger under incitamentspriset"),
+    ("utbud", "Utbudet krymper av nöd — stängningar, inte planer"),
+    ("kapital", "Kapitalet är stängt: inga emissioner, inga nya projekt"),
+    ("lista", "Screener-listan är lång"),
+    ("media", "Media är tyst eller negativ"),
 )
+
+
+def hatred_from_checklist(checks: dict) -> int:
+    """Antal Ja, klämt till skalan 1–5.
+
+    Noll kryss ger 1, inte 0: guiden anger dimensionerna som 1–5, så en helt
+    okryssad checklista är skalans botten och inte ett eget nolläge.
+    """
+    n = sum(1 for key, _text in HATRED_CHECKLIST if (checks or {}).get(key))
+    return max(SIGNAL_MIN, min(SIGNAL_MAX, n))
 
 # ── Varningsbadges (Masterguiden 4.0) ────────────────────────────────────────
 # Två sätt att ha hög summa av fel skäl.
@@ -452,13 +462,9 @@ def _grid(data: dict) -> None:
                 f"KATALYSATOR (1–5 var) · CASE INTAKT</div>",
                 unsafe_allow_html=True)
 
-    with st.expander("Hat-checklistan — ett kryss per uppfyllt påstående",
-                     expanded=False):
-        st.markdown("".join(
-            f"<div style='color:{TEXT};font-size:0.82rem;padding:2px 0 2px 16px;'>"
-            f"· {c}</div>" for c in HATRED_CHECKLIST), unsafe_allow_html=True)
-        st.caption("Fem kryss = hat 5. Noll kryss = hat 1. Checklistan är "
-                   "hjälpen, siffran är din bedömning.")
+    st.caption("Hat räknas, det bedöms inte: kryssa checklistan under varje "
+               "råvara så sätts siffran av antalet Ja. Fundamenta och "
+               "katalysator är dina bedömningar.")
 
     for r in rows:
         c = r["commodity"]
@@ -481,8 +487,19 @@ def _grid(data: dict) -> None:
             unsafe_allow_html=True)
 
         opts = list(range(SIGNAL_MIN, SIGNAL_MAX + 1))
-        cols = (h2, h3, h4)
-        for (skey, slabel, shelp), col in zip(SIGNALS, cols):
+        # Hat räknas ur checklistan (i expandern nedan), inte ur en dropdown.
+        hat_now = hatred_from_checklist(g.get("hatred_checks", {}))
+        if g.get("hatred") != hat_now and g.get("hatred_checks") is not None:
+            g["hatred"] = hat_now
+            changed = True
+        h2.markdown(
+            f"<div style='padding-top:6px;text-align:center;'>"
+            f"<span style='color:{TEXT};font-size:1.05rem;font-weight:700;'>"
+            f"{_signal(g.get('hatred'))}</span>"
+            f"<div style='color:{DIM};font-size:0.6rem;'>hat</div></div>",
+            unsafe_allow_html=True)
+
+        for (skey, slabel, shelp), col in zip(SIGNALS[1:], (h3, h4)):
             cur = _signal(g.get(skey))
             v = col.selectbox(slabel, opts, index=opts.index(cur),
                               key=f"rot_{skey}_{c.key}", help=shelp,
@@ -529,6 +546,19 @@ def _grid(data: dict) -> None:
         hist = g.get("hits_history") or []
         if len(hist) > 1:
             h6.line_chart(hist, height=40)
+
+        with st.expander(f"Hat-checklistan — {c.name} "
+                         f"({_signal(g.get('hatred'))}/5)", expanded=False):
+            checks = g.setdefault("hatred_checks", {})
+            for hkey, htext in HATRED_CHECKLIST:
+                v = st.checkbox(htext, value=bool(checks.get(hkey)),
+                                key=f"rot_hc_{c.key}_{hkey}")
+                if v != bool(checks.get(hkey)):
+                    checks[hkey] = v
+                    g["hatred"] = hatred_from_checklist(checks)
+                    changed = True
+            st.caption("Antal Ja ger poängen. Noll kryss är skalans botten "
+                       "(1), inte ett eget nolläge.")
 
         ch = commodity_book.chapter(c.key)
         label = (f"📖 Kartboken — {c.name}" if ch
