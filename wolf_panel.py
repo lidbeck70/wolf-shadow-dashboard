@@ -162,6 +162,13 @@ try:
 except ImportError:
     TIGGRE_AVAILABLE = False
 
+# Poängmodellen (ersätter poangmodell_sprott_durrett.xlsx)
+try:
+    from scoring import render_scoring_page
+    SCORING_AVAILABLE = True
+except ImportError:
+    SCORING_AVAILABLE = False
+
 # Insiderbevakaren (ersätter insiderbevakaren.xlsx)
 try:
     from insider import render_insider_page
@@ -268,7 +275,7 @@ def main():
     with tab_screening:
         sub = st.radio(
             "", ["Arc Screener", "Contrarian Alpha", "Market Cycle", "Swing",
-                 "Swing Screener", "Tiggre", "Insider"],
+                 "Swing Screener", "Tiggre", "Insider", "Poängmodell"],
             horizontal=True, key="sub_screening",
         )
         st.markdown("---")
@@ -335,6 +342,12 @@ def main():
                 render_insider_page()
             else:
                 tab_not_found("Insiderbevakaren", "insider")
+
+        elif sub == "Poängmodell":
+            if SCORING_AVAILABLE:
+                render_scoring_page()
+            else:
+                tab_not_found("Poängmodellen", "scoring")
 
     # ── REGIME ───────────────────────────────────────────────────────────────
     with tab_regime_main:

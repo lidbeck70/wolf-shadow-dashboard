@@ -158,7 +158,7 @@ SPROTT = Playbook(
     level=LEVEL_ADVANCED,
     horizon="1–5 år",
     universe="Kanada, Australien (TSX-V och ASX) · Metals & Mining, sub-industri per metall",
-    where="Utanför panelen: Börsdata-screener + Poängmodellen (Sprott-fliken).",
+    where="SCREENING → Poängmodell (Sprott). Screenern körs i Börsdata.",
     idea=(
         "Eric Sprott: i prospekteringsbolag är förlusten begränsad till insatsen men "
         "vinsten obegränsad — spelet handlar inte om att gissa rätt utan om att "
@@ -235,9 +235,11 @@ SPROTT = Playbook(
         "Sälja vinnaren vid +100 % — korgens hela resultat sitter i den.",
         "Kompromissa med nettoskuldsfiltret.",
     ),
-    support=SUPPORT_MANUAL,
-    support_note="Ingen del av Sprott finns i panelen. Screenern körs i Börsdata, "
-                 "runway och poäng räknas i Poängmodellen (Excel).",
+    support=SUPPORT_PARTIAL,
+    support_note="SCREENING → Poängmodell räknar runwayen ur kassa och burn, "
+                 "poängsätter de fem faktorerna och ger bedömningen. Screenern "
+                 "körs fortfarande i Börsdata — panelen hämtar inga "
+                 "kvartalssiffror, de matas in för hand.",
     source=_SRC,
 )
 
@@ -254,7 +256,7 @@ DURRETT = Playbook(
     level=LEVEL_ADVANCED,
     horizon="1–3 år",
     universe="Kanada, Australien, USA · Metals & Mining → Gold / Silver",
-    where="Utanför panelen: Börsdata-screener + Poängmodellen (Durrett-fliken).",
+    where="SCREENING → Poängmodell (Durrett). Screenern körs i Börsdata.",
     idea=(
         "Don Durrett värderar mot en enda fråga: vad tjänar bolaget vid nästa "
         "guldpris-platå, och vad betalar jag för den vinsten idag? Motorn är operativ "
@@ -334,10 +336,11 @@ DURRETT = Playbook(
         "Köpa silverbolag när guld/silver-kvoten är låg — då är silvertesen redan spelad.",
         "Glömma att hävstången verkar lika brutalt nedåt.",
     ),
-    support=SUPPORT_MANUAL,
-    support_note="Ingen del finns i panelen. Guld/silver-kvoten och metallpriser "
-                 "syns delvis i EMBER-regimen (Ädelmetaller), men screener och "
-                 "poängmodell är helt manuella.",
+    support=SUPPORT_PARTIAL,
+    support_note="SCREENING → Poängmodell räknar MCap/uns, MCap/framtida vinst "
+                 "och köpregeln under 10x, med hjälpräknaren produktion × "
+                 "(målpris − AISC). Guld/silver-kvoten syns i EMBER-regimen "
+                 "(Ädelmetaller). Screenern körs i Börsdata.",
     source=_SRC,
 )
 
