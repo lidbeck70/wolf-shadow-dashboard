@@ -162,6 +162,13 @@ try:
 except ImportError:
     TIGGRE_AVAILABLE = False
 
+# Granskningsarken — Producenter A + Royalty C (ur ravarurotation.xlsx)
+try:
+    from producers import render_producers_page
+    PRODUCERS_AVAILABLE = True
+except ImportError:
+    PRODUCERS_AVAILABLE = False
+
 # Poängmodellen (ersätter poangmodell_sprott_durrett.xlsx)
 try:
     from scoring import render_scoring_page
@@ -275,7 +282,8 @@ def main():
     with tab_screening:
         sub = st.radio(
             "", ["Arc Screener", "Contrarian Alpha", "Market Cycle", "Swing",
-                 "Swing Screener", "Tiggre", "Insider", "Poängmodell"],
+                 "Swing Screener", "Tiggre", "Insider", "Poängmodell",
+                 "Granskningsark"],
             horizontal=True, key="sub_screening",
         )
         st.markdown("---")
@@ -348,6 +356,12 @@ def main():
                 render_scoring_page()
             else:
                 tab_not_found("Poängmodellen", "scoring")
+
+        elif sub == "Granskningsark":
+            if PRODUCERS_AVAILABLE:
+                render_producers_page()
+            else:
+                tab_not_found("Granskningsarken", "producers")
 
     # ── REGIME ───────────────────────────────────────────────────────────────
     with tab_regime_main:
