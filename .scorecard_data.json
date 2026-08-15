@@ -1,0 +1,22 @@
+{
+  "cards": {
+    "alfa|AAA": {
+      "strategy": "sprott",
+      "position_pct_total": 4.0,
+      "strategi_aktiv": true,
+      "screener_kval": true,
+      "granskning_klar": true,
+      "inga_roda_flaggor": true,
+      "sakerhetsmarginal": true,
+      "trigger_definierad": true,
+      "position_saljregel": true,
+      "last_decision": "2024-01-01",
+      "position_pct_strategy": 0.0
+    },
+    "gamma|CCC": {
+      "strategy": "tiggre",
+      "position_pct_total": 0.0,
+      "position_pct_strategy": 0.0
+    }
+  }
+}

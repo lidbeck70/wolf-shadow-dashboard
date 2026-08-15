@@ -162,6 +162,13 @@ try:
 except ImportError:
     TIGGRE_AVAILABLE = False
 
+# Master Scorecard + köpgrinden (Masterguiden 4.0)
+try:
+    from scorecard import render_scorecard_page
+    SCORECARD_AVAILABLE = True
+except ImportError:
+    SCORECARD_AVAILABLE = False
+
 # Granskningsarken — Producenter A + Royalty C (ur ravarurotation.xlsx)
 try:
     from producers import render_producers_page
@@ -283,7 +290,7 @@ def main():
         sub = st.radio(
             "", ["Arc Screener", "Contrarian Alpha", "Market Cycle", "Swing",
                  "Swing Screener", "Tiggre", "Insider", "Poängmodell",
-                 "Granskningsark"],
+                 "Granskningsark", "🎯 Scorecard"],
             horizontal=True, key="sub_screening",
         )
         st.markdown("---")
@@ -362,6 +369,12 @@ def main():
                 render_producers_page()
             else:
                 tab_not_found("Granskningsarken", "producers")
+
+        elif sub == "🎯 Scorecard":
+            if SCORECARD_AVAILABLE:
+                render_scorecard_page()
+            else:
+                tab_not_found("Master Scorecard", "scorecard")
 
     # ── REGIME ───────────────────────────────────────────────────────────────
     with tab_regime_main:
