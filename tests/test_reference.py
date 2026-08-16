@@ -27,10 +27,16 @@ def test_every_keyed_row_names_a_real_playbook():
             assert s.key in sr.PLAYBOOKS, f"screener utan playbook: {s.key}"
 
 
-def test_the_two_unkeyed_rows_are_the_cross_strategy_ones():
-    """They are portfolio- and commodity-level, so they belong to no playbook."""
+def test_the_unkeyed_rows_are_the_cross_strategy_ones():
+    """De hör till ingen enskild playbook.
+
+    Palladium/Portföljnivå är råvaru- och portföljnivå. Lukacs FV är en
+    värderingsmodul som läggs ovanpå producentstrategierna — den ägs av Rule
+    lika lite som av Durrett, och därför av ingen av dem.
+    """
     unkeyed = [s.strategy for s in ref.SELL_RULES if not s.key]
-    assert unkeyed == ["Palladium / Litium / Silver", "Portföljnivå"]
+    assert unkeyed == ["Palladium / Litium / Silver", "Lukacs FV",
+                       "Portföljnivå"]
 
 
 def test_every_masterguide_strategy_has_a_sell_row():
@@ -38,7 +44,7 @@ def test_every_masterguide_strategy_has_a_sell_row():
     for key in ("rule", "sprott", "durrett", "tiggre", "royalty", "momentum",
                 "insider"):
         assert ref.sell_rule(key) is not None, key
-    assert len(ref.SELL_RULES) == 9
+    assert len(ref.SELL_RULES) == 10
 
 
 def test_lookup_helpers():
@@ -113,12 +119,12 @@ def test_the_screener_table_supplies_what_the_playbooks_only_refer_to():
 
 
 # ── Tabellerna ───────────────────────────────────────────────────────────────
-def test_all_seven_screeners_are_here():
-    assert len(ref.SCREENERS) == 7
+def test_all_eight_screeners_are_here():
+    assert len(ref.SCREENERS) == 8
     assert [s.name for s in ref.SCREENERS] == [
         "Överlevarna (Rule)", "Optionalitet (Sprott)", "Durrett",
         "Tiggre (sweet spot)", "Royalty", "Swing – universum",
-        "Insider – grind"]
+        "Insider – grind", "Lukacs Discovery"]
     for s in ref.SCREENERS:
         assert s.filters and s.where
 
@@ -188,3 +194,21 @@ def test_the_control_signals_agree_with_the_control_engine():
     ds_action = dict(ref.CONTROL_SIGNALS)["DS hög"]
     assert "finansieringsbesked" in ds_action
     assert ctl.DS_BLOCK_TEXT.endswith("finansieringsbeskedet")
+
+
+def test_the_lukacs_discovery_screener_is_flagged_as_a_discovery_tool():
+    """Skuldtaket 3,5 är lösare än Rules 0,5 — medvetet, för deleveraging-case.
+
+    Utan den markeringen läses raden som ett köpfilter, och då har man just
+    släppt igenom bolag Rule-screenern finns för att stoppa.
+    """
+    s = ref.screener_by_name("Lukacs Discovery")
+    assert s is not None
+    assert "3,5" in s.filters
+    assert "ALDRIG köpfilter" in s.where
+
+
+def test_the_lukacs_sell_row_carries_both_thresholds():
+    row = [r for r in ref.SELL_RULES if r.strategy == "Lukacs FV"][0]
+    assert "20 %" in row.rule and "25 %" in row.rule
+    assert "modellförlust" in row.rule

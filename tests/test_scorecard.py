@@ -13,7 +13,18 @@ from datetime import date
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import controls as ctl
+import lukacs as lk
 import scorecard as sc
+
+
+def _fv_filled() -> dict:
+    """Lukacs FV ifylld så att köpgrindens steg 5 blir mekaniskt grönt."""
+    return {"fcf_kvalitet": "B", "framtida_antal_aktier": 1200.0,
+            "aktuell_kurs": 5.0,
+            "what_must_go_right": "Guld $2 400 · 500 koz · capex $180M",
+            "fv": {ctl.BEAR: {"forward_fcf_musd": 400, "target_yield": 9},
+                   ctl.BASE: {"forward_fcf_musd": 900, "target_yield": 9},
+                   ctl.BULL: {"forward_fcf_musd": 1600, "target_yield": 9}}}
 
 
 def _sources() -> dict:
@@ -136,16 +147,100 @@ def test_the_control_check_cannot_be_ticked_past():
     assert "Kontrollerna utan permanent-risk-flagga" in state["missing"]
 
 
-def test_a_complete_workup_clears_the_gaps():
+def _producer_row() -> dict:
     row = {f.key: 0 for f in ctl.DS_FIELDS}
     row.update({f.key: 2 for f in ctl.AQS_FIELDS})
     row["csm"] = {s: {"price": 100, "fcf_musd": 10} for s in ctl.SCENARIOS_3}
     row["csm_kind"] = ctl.PRODUCER
+    return row
+
+
+def test_a_complete_workup_clears_the_gaps():
+    row = {**_producer_row(), **_fv_filled()}
     entry = _entry_with(row, "producenter")
     card = _full_card(strategy="producenter", position_pct_total=4.0)
     state = sc.gate_state(card, entry)
     assert state["gaps"] == []
+    assert state["valuation_gaps"] == []
     assert state["ready"]
+
+
+# ── Steg 5: säkerhetsmarginalen ──────────────────────────────────────────────
+def test_step_five_cannot_be_ticked_past_where_lukacs_fv_is_required():
+    """Över 2 % av totalen är säkerhetsmarginalen en uträkning, inte ett omdöme."""
+    entry = _entry_with(_producer_row(), "producenter")
+    card = _full_card(strategy="producenter", position_pct_total=4.0)
+    card["sakerhetsmarginal"] = True          # försök kryssa förbi
+    state = sc.gate_state(card, entry)
+    assert state["fv_mechanical"] is True
+    assert state["checks"]["sakerhetsmarginal"] is False
+    assert "Värderingen ger säkerhetsmarginal" in state["missing"]
+    assert state["valuation_gaps"]
+
+
+def test_step_five_stays_manual_where_the_module_does_not_apply():
+    """Insider och swing värderas inte på forward FCF — krysset står kvar."""
+    entry = _entry_with({}, "insider")
+    card = _full_card(strategy="insider", position_pct_total=4.0)
+    state = sc.gate_state(card, entry)
+    assert state["fv_mechanical"] is False
+    assert state["checks"]["sakerhetsmarginal"] is True
+    assert state["valuation_gaps"] == []
+
+
+def test_step_five_stays_manual_under_two_percent():
+    """Proportionalitetsregeln: en liten position kostar inte fullt arbete."""
+    entry = _entry_with(_producer_row(), "producenter")
+    card = _full_card(strategy="producenter", position_pct_total=1.5)
+    state = sc.gate_state(card, entry)
+    assert state["fv_mechanical"] is False
+    assert state["checks"]["sakerhetsmarginal"] is True
+
+
+def test_a_thin_margin_of_safety_blocks_the_gate():
+    row = {**_producer_row(), **_fv_filled()}
+    row["aktuell_kurs"] = 7.5                 # FV base 8,33 -> MoS ~10 %
+    entry = _entry_with(row, "producenter")
+    card = _full_card(strategy="producenter", position_pct_total=4.0)
+    state = sc.gate_state(card, entry)
+    assert not state["ready"]
+    assert any("Säkerhetsmarginal" in g for g in state["valuation_gaps"])
+
+
+def test_what_must_go_right_is_required_for_green():
+    row = {**_producer_row(), **_fv_filled(), "what_must_go_right": ""}
+    entry = _entry_with(row, "producenter")
+    card = _full_card(strategy="producenter", position_pct_total=4.0)
+    state = sc.gate_state(card, entry)
+    assert state["valuation_gaps"] == [lk.WMGR_MISSING]
+    assert not state["ready"]
+
+
+# ── Deleveraging-taket ───────────────────────────────────────────────────────
+def test_debt_over_one_halves_the_position_cap():
+    """Rule-benets tak är 4 % — med skuld över 1,0x blir det 2 %."""
+    row = {**_producer_row(), **_fv_filled(),
+           "nd_ebitda": 1.8, "ar_till_lag_skuld": 2.0}
+    entry = _entry_with(row, "producenter")
+    card = _full_card(strategy="producenter", position_pct_total=4.0)
+    assert sc.deleveraging_cap(entry, card) == 2.0
+    state = sc.gate_state(card, entry)
+    assert state["position_gaps"]
+    assert state["checks"]["position_saljregel"] is False
+    assert not state["ready"]
+    # inom taket passerar samma kort
+    card["position_pct_total"] = 2.0
+    ok = sc.gate_state(card, entry)
+    assert ok["position_gaps"] == []
+    assert ok["ready"]
+
+
+def test_low_debt_leaves_the_cap_alone():
+    row = {**_producer_row(), **_fv_filled(), "nd_ebitda": 0.15}
+    entry = _entry_with(row, "producenter")
+    card = _full_card(strategy="producenter", position_pct_total=4.0)
+    assert sc.deleveraging_cap(entry, card) is None
+    assert sc.gate_state(card, entry)["position_gaps"] == []
 
 
 def test_a_red_flag_is_a_gap_even_when_everything_is_filled_in():
