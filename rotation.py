@@ -37,15 +37,11 @@ from html import escape as _esc
 import commodity_book
 
 import csv_export
+import storage
+import storage_ui
 
-try:
-    from gist_storage import load_blob as _blob_load, save_blob as _blob_save
-    _HAS_GIST = True
-except Exception:
-    _HAS_GIST = False
-
-_STORE_FILE = "rotation_data.json"
 _CACHE_KEY = "rotation_data"
+STORE = "rotation"   # data/rotation.json
 
 TEXT, DIM = "#e8e4dc", "#8a8578"
 GREEN, AMBER, RED, CYAN, GOLD = "#2d8a4e", "#d4943a", "#c44545", "#00E5FF", "#c9a84c"
@@ -297,32 +293,33 @@ def _default() -> dict:
 
 
 def _load() -> dict:
-    if _CACHE_KEY in st.session_state:
-        return st.session_state[_CACHE_KEY]
-    data = _blob_load(_STORE_FILE, None) if _HAS_GIST else None
+    """Laddas EN gång per session; därefter äger sessionen sanningen."""
+    data = storage.session_load(STORE, _default(),
+                                legacy_file="rotation_data.json")
     if not isinstance(data, dict):
         data = _default()
+        st.session_state[STORE] = data
     for k, v in _default().items():
         data.setdefault(k, v)
-    if not isinstance(data.get("grades"), dict):
-        data["grades"] = {}
-    if not isinstance(data.get("history"), list):
-        data["history"] = []
-    st.session_state[_CACHE_KEY] = data
     return data
 
 
 def _save(data: dict) -> None:
-    st.session_state[_CACHE_KEY] = data
-    if _HAS_GIST:
-        _blob_save(_STORE_FILE, data)
+    """Skriver till sessionen. Persistensen sker via 💾 Spara.
+
+    Medvetet ingen nätverkstrafik här: en commit per
+    tangenttryckning skulle slå i GitHubs rate limits, och en
+    tyst misslyckad sådan var precis den bugg det här ersätter.
+    """
+    st.session_state[STORE] = data
 
 
 # ── UI ───────────────────────────────────────────────────────────────────────
 def render_rotation_page() -> None:
     """Huvud-entry point för Råvarurotationen."""
+    data = _load()
+    storage_ui.save_bar(STORE, "Råvarurotationen")
     try:
-        data = _load()
         st.markdown(
             f"<h1 style='color:{TEXT};margin:0;letter-spacing:0.06em;'>"
             f"Råvarurotationen <span style='color:{GOLD};'>· vart kapitalet ska</span></h1>"

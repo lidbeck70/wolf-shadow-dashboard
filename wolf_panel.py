@@ -162,6 +162,9 @@ try:
 except ImportError:
     TIGGRE_AVAILABLE = False
 
+# Persistens — data/<flik>.json via GitHub Contents API
+import storage_ui
+
 # Master Scorecard + köpgrinden (Masterguiden 4.0)
 try:
     from scorecard import render_scorecard_page
@@ -547,6 +550,8 @@ def main():
     with tab_strat_overview:
         tab_strategy_overview()
 
+    # Senast sparad, och vad som ligger osparat i sessionen.
+    storage_ui.footer()
     render_footer()
 
 
