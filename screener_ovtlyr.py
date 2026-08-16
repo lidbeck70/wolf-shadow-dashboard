@@ -96,6 +96,7 @@ UNIVERSES = {
 def _ema(series: pd.Series, span: int) -> pd.Series:
     return series.ewm(span=span, adjust=False).mean()
 
+
 def _macd(close: pd.Series) -> Tuple[pd.Series, pd.Series, pd.Series]:
     """Return (macd_line, signal_line, histogram)."""
     fast = _ema(close, 12)
@@ -105,12 +106,14 @@ def _macd(close: pd.Series) -> Tuple[pd.Series, pd.Series, pd.Series]:
     hist = macd_line - signal
     return macd_line, signal, hist
 
+
 def _rsi(close: pd.Series, period: int = 14) -> pd.Series:
     delta = close.diff()
     gain = delta.clip(lower=0).rolling(period).mean()
     loss = (-delta.clip(upper=0)).rolling(period).mean()
     rs = gain / loss.replace(0, float("nan"))
     return (100 - (100 / (1 + rs))).fillna(50)
+
 
 def _adx(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
     """Average Directional Index."""
@@ -169,6 +172,7 @@ def _score_trend(df: pd.DataFrame) -> float:
 
     return min(100, max(0, score))
 
+
 def _score_momentum(df: pd.DataFrame) -> float:
     """Score 0-100 based on RSI + price change."""
     close = df["Close"]
@@ -202,6 +206,7 @@ def _score_momentum(df: pd.DataFrame) -> float:
 
     return min(100, max(0, score))
 
+
 def _score_volatility(df: pd.DataFrame) -> float:
     """Score 0-100: lower volatility = higher score (safer for entries)."""
     close = df["Close"]
@@ -231,6 +236,7 @@ def _score_volatility(df: pd.DataFrame) -> float:
 
     return score
 
+
 def _score_volume(df: pd.DataFrame) -> float:
     """Score 0-100 based on volume vs 20-day average."""
     if "Volume" not in df.columns:
@@ -256,6 +262,7 @@ def _score_volume(df: pd.DataFrame) -> float:
         return 35  # Below average
     else:
         return 15  # Very low volume
+
 
 def _score_adx(df: pd.DataFrame) -> float:
     """Score 0-100 based on ADX trend strength."""
@@ -492,6 +499,7 @@ WEIGHTS = {
     "adx": 0.15,
 }
 
+
 def score_single_ticker(df: pd.DataFrame) -> dict:
     """Score a single ticker's DataFrame. Returns dict of raw sub-scores."""
     if df is None or df.empty or len(df) < 50:
@@ -589,11 +597,11 @@ def _compute_ranking_cols(df_results: pd.DataFrame, all_data: dict) -> pd.DataFr
     # Build index benchmark 3-month returns
     _INDEX_BENCH: dict = {}
     for idx_ticker, suffixes in [
-        ("^OMX",    [".ST"]),
-        ("^OSEBX",  [".OL"]),
+        ("^OMX", [".ST"]),
+        ("^OSEBX", [".OL"]),
         ("^OMXC20", [".CO"]),
         ("^OMXHPI", [".HE"]),
-        ("SPY",     [""]),
+        ("SPY", [""]),
     ]:
         idx_df = all_data.get(idx_ticker)
         if idx_df is not None and not idx_df.empty and len(idx_df) >= 63:
@@ -609,7 +617,9 @@ def _compute_ranking_cols(df_results: pd.DataFrame, all_data: dict) -> pd.DataFr
         df = all_data.get(ticker)
 
         if df is None or df.empty or len(df) < 20:
-            rs_scores.append(50.0); high_prox.append(50.0); vol_trend.append(50.0)
+            rs_scores.append(50.0)
+            high_prox.append(50.0)
+            vol_trend.append(50.0)
             continue
 
         close = df["Close"].squeeze()
@@ -650,9 +660,9 @@ def _compute_ranking_cols(df_results: pd.DataFrame, all_data: dict) -> pd.DataFr
     df_results["HighProx"] = [round(v, 1) for v in high_prox]
     df_results["VolTrend"] = [round(v, 1) for v in vol_trend]
     df_results["Rank_Composite"] = (
-        df_results["RS_score"] * 0.40 +
-        df_results["HighProx"] * 0.30 +
-        df_results["VolTrend"] * 0.30
+        df_results["RS_score"] * 0.40
+        + df_results["HighProx"] * 0.30
+        + df_results["VolTrend"] * 0.30
     ).round(1)
     df_results["Rank"] = (
         df_results["Rank_Composite"].rank(ascending=False, method="min").astype(int)
@@ -770,9 +780,9 @@ def run_ovtlyr_screener(
 
             # Viking's Nine
             try:
-                v9_count, v9_factors = _vikings_nine(df, retail_score, fg_score)
+                v9_count, _ = _vikings_nine(df, retail_score, fg_score)
             except Exception:
-                v9_count, v9_factors = 0, []
+                v9_count = 0
 
             # Overhead Clusters
             try:
@@ -809,11 +819,11 @@ def run_ovtlyr_screener(
 
     # Weighted composite
     df_results["Composite"] = (
-        df_results["trend_z"] * WEIGHTS["trend"] +
-        df_results["momentum_z"] * WEIGHTS["momentum"] +
-        df_results["volatility_z"] * WEIGHTS["volatility"] +
-        df_results["volume_z"] * WEIGHTS["volume"] +
-        df_results["adx_z"] * WEIGHTS["adx"]
+        df_results["trend_z"] * WEIGHTS["trend"]
+        + df_results["momentum_z"] * WEIGHTS["momentum"]
+        + df_results["volatility_z"] * WEIGHTS["volatility"]
+        + df_results["volume_z"] * WEIGHTS["volume"]
+        + df_results["adx_z"] * WEIGHTS["adx"]
     ).round(1)
 
     # Rank
