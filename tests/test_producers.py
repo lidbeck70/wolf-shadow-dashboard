@@ -242,6 +242,56 @@ def test_an_unanswered_life_question_is_not_a_clean_bill_of_health():
     assert p.producer_verdict(5, None).label == p.P_BUY
 
 
+def test_an_empty_year_field_is_not_zero_years():
+    """Buggen: EQX, 25 års gruvlivslängd, dömdes ut som döende tillgång.
+
+    Fälten ritas med number_input(min_value=0.0) och kan inte lämnas tomma, så
+    ett orört R/P sparas som 0,0. Läst bokstavligt är 0 < 8 och varje
+    guldproducent blev en passa — R/P gäller bara olja och gas och står därför
+    alltid kvar på noll.
+    """
+    eqx = {"ticker": "EQX", "price": 4250, "unit_cost": 2175,
+           "jurisdiktion": True, "insyn": True, "kapitaldisciplin": True,
+           "mine_life": 25.0, "rp_ratio": 0.0}
+    assert p.asset_dying(eqx) is False
+    assert p.producer_verdict(p.producer_score(eqx),
+                              p.asset_dying(eqx)).label == p.P_BUY
+    # ...och spegelfallet: ett oljebolag utan gruvlivslängd
+    assert p.asset_dying({"rp_ratio": 12.0, "mine_life": 0.0}) is False
+
+
+def test_both_year_fields_at_zero_means_unanswered_not_dying():
+    """0/tomt är EJ IFYLLT — hint i UI:t, inte röd varning."""
+    assert p.asset_dying({"mine_life": 0.0, "rp_ratio": 0.0}) is None
+    assert p.asset_dying({"mine_life": 0}) is None
+    assert p.asset_dying({"mine_life": ""}) is None
+    # obesvarad fråga sänker inte bolaget här
+    assert p.producer_verdict(5, None).label == p.P_BUY
+
+
+def test_the_strike_still_fires_on_a_real_short_life():
+    """Nollan får inte tystas genom att strykregeln slutar fungera."""
+    assert p.asset_dying({"mine_life": 4.0, "rp_ratio": 0.0}) is True
+    assert p.asset_dying({"mine_life": 0.0, "rp_ratio": 6.0}) is True
+    assert p.asset_dying({"mine_life": 25.0, "rp_ratio": 6.0}) is True
+    v = p.producer_verdict(5, p.asset_dying({"mine_life": 4.0}))
+    assert v.label == p.P_PASS
+
+
+def test_the_header_status_follows_the_recomputed_verdict():
+    """Headern läser ranked_producers, som räknar om vid varje rerun."""
+    rows = [{"id": "a", "ticker": "EQX", "price": 4250, "unit_cost": 2175,
+             "jurisdiktion": True, "insyn": True, "kapitaldisciplin": True,
+             "mine_life": 25.0, "rp_ratio": 0.0}]
+    out = p.ranked_producers(rows)
+    assert out[0]["score"] == 5
+    assert out[0]["dying"] is False
+    assert out[0]["verdict"].label == p.P_BUY
+    # samma rad, kort livslängd -> headern vänder i samma rerun
+    rows[0]["mine_life"] = 4.0
+    assert p.ranked_producers(rows)[0]["verdict"].label == p.P_PASS
+
+
 def test_ranked_exposes_the_dying_flag():
     rows = [{"id": "a", "ticker": "DYING", "price": 100, "unit_cost": 40,
              "jurisdiktion": True, "insyn": True, "kapitaldisciplin": True,
