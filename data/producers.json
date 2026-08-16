@@ -1,0 +1,29 @@
+{
+  "producers": [
+    {
+      "commodity": "Guld",
+      "date": "2026-08-16",
+      "ds_aktier_3ar": 2,
+      "ds_capex": 0,
+      "ds_historik": 2,
+      "ds_runway": 0,
+      "ds_warrants": 1,
+      "ev_ebitda": 8.0,
+      "forvantad_utspadning": 3.0,
+      "fully_diluted_shares": 1200.0,
+      "id": "8f260497",
+      "insyn": true,
+      "jurisdiktion": true,
+      "kapitaldisciplin": true,
+      "mine_life": 25.0,
+      "name": "",
+      "nd_ebitda": 0.15,
+      "position_pct": 0.0,
+      "price": 4250.0,
+      "rp_ratio": 0.0,
+      "ticker": "EQX",
+      "unit_cost": 2175.0
+    }
+  ],
+  "royalty": []
+}
