@@ -137,15 +137,32 @@ def margin_points(margin) -> int:
     return 1 if m >= MARGIN_OK else 0
 
 
+def _years(value) -> Optional[float]:
+    """Ett årsfält, eller None om det inte är ifyllt.
+
+    Noll är inte ett svar. Fälten ritas med number_input(min_value=0.0), som
+    startar på 0,0 och inte kan lämnas tomt — så en nolla betyder att frågan
+    aldrig ställdes. En gruva med noll års livslängd finns inte; en sådan är
+    stängd. Läser man nollan bokstavligt blir varje guldproducent en döende
+    tillgång så fort någon öppnat kortet, eftersom R/P bara gäller olja och
+    gas och därför alltid står kvar på noll.
+    """
+    v = _num(value)
+    return v if v is not None and v > 0 else None
+
+
 def asset_dying(row: dict) -> Optional[bool]:
     """Är den låga multipeln förklarad av att tillgången tar slut?
 
     None när varken gruvlivslängd eller R/P är ifylld — obesvarad fråga är
     inte ett friskintyg, men den ska heller inte döma ut bolaget här. Den
     fångas i stället av köpgrindens luck-regel om positionen är stor nog.
+
+    Ett bolag behöver bara ett av måtten: gruvor har gruvlivslängd, olja och
+    gas har R/P. Att det andra står tomt är normalfallet, inte en brist.
     """
-    life = _num(row.get("mine_life"))
-    rp = _num(row.get("rp_ratio"))
+    life = _years(row.get("mine_life"))
+    rp = _years(row.get("rp_ratio"))
     if life is None and rp is None:
         return None
     if life is not None and life < LIFE_MIN_YEARS:
@@ -452,9 +469,15 @@ def _producers(data: dict) -> None:
             if life != row.get("mine_life") or rp != row.get("rp_ratio"):
                 row["mine_life"], row["rp_ratio"] = life, rp
                 changed = True
-            if asset_dying(row):
+            dying = asset_dying(row)
+            if dying:
                 st.error(f"{DYING_ASSET} — den låga multipeln förklaras av "
                          f"att tillgången tar slut. Passa.")
+            elif dying is None:
+                st.caption(f"Fyll i gruvlivslängd — eller R/P för olja och gas. "
+                           f"Strykregeln (under {LIFE_MIN_YEARS:g} respektive "
+                           f"{RP_MIN_YEARS:g} år) kan inte prövas utan den, och "
+                           f"poängen ensam ser inte att tillgången tar slut.")
 
             ccols = st.columns(3)
             for (ckey, clabel, chelp), col in zip(CHECKS, ccols):
