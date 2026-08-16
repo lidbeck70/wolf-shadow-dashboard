@@ -31,17 +31,13 @@ from datetime import date
 from typing import Optional
 
 import csv_export
+import storage
+import storage_ui
 import controls as ctl
 import controls_ui
 
-try:
-    from gist_storage import load_blob as _blob_load, save_blob as _blob_save
-    _HAS_GIST = True
-except Exception:
-    _HAS_GIST = False
-
-_STORE_FILE = "tiggre_data.json"
 _CACHE_KEY = "tiggre_data"
+STORE = "tiggre"   # data/tiggre.json
 
 # ── Krav ur Masterguiden (ändras här, syns överallt) ─────────────────────────
 UN_MIN = 3.0              # U/N-kvot: krav >= 3
@@ -255,27 +251,33 @@ def _normalize(data: dict) -> dict:
 
 
 def _load() -> dict:
-    if _CACHE_KEY in st.session_state:
-        return st.session_state[_CACHE_KEY]
-    data = _blob_load(_STORE_FILE, None) if _HAS_GIST else None
+    """Laddas EN gång per session; därefter äger sessionen sanningen."""
+    data = storage.session_load(STORE, _default(),
+                                legacy_file="tiggre_data.json")
     if not isinstance(data, dict):
         data = _default()
-    _normalize(data)
-    st.session_state[_CACHE_KEY] = data
+        st.session_state[STORE] = data
+    for k, v in _default().items():
+        data.setdefault(k, v)
     return data
 
 
 def _save(data: dict) -> None:
-    st.session_state[_CACHE_KEY] = data
-    if _HAS_GIST:
-        _blob_save(_STORE_FILE, data)
+    """Skriver till sessionen. Persistensen sker via 💾 Spara.
+
+    Medvetet ingen nätverkstrafik här: en commit per
+    tangenttryckning skulle slå i GitHubs rate limits, och en
+    tyst misslyckad sådan var precis den bugg det här ersätter.
+    """
+    st.session_state[STORE] = data
 
 
 # ── Entry point ──────────────────────────────────────────────────────────────
 def render_tiggre_page() -> None:
     """Huvud-entry point för Tiggre-fliken."""
+    data = _load()
+    storage_ui.save_bar(STORE, "Tiggre")
     try:
-        data = _load()
         st.markdown(
             f"<div style='display:flex;justify-content:space-between;"
             f"align-items:baseline;flex-wrap:wrap;gap:8px;'>"

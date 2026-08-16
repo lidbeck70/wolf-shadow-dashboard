@@ -27,15 +27,11 @@ import streamlit as st
 
 import controls as ctl
 import csv_export
+import storage
+import storage_ui
 
-try:
-    from gist_storage import load_blob as _blob_load, save_blob as _blob_save
-    _HAS_GIST = True
-except Exception:
-    _HAS_GIST = False
-
-_STORE_FILE = "scorecard_data.json"
 _CACHE_KEY = "scorecard_data"
+STORE = "scorecard"   # data/scorecard.json
 
 TEXT, DIM = "#e8e4dc", "#8a8578"
 GREEN, AMBER, RED, CYAN, GOLD = "#2d8a4e", "#d4943a", "#c44545", "#00E5FF", "#c9a84c"
@@ -230,29 +226,25 @@ def _default() -> dict:
 
 
 def _load() -> dict:
-    if _CACHE_KEY in st.session_state:
-        return st.session_state[_CACHE_KEY]
-    data = _default()
-    if _HAS_GIST:
-        try:
-            loaded = _blob_load(_STORE_FILE)
-            if isinstance(loaded, dict) and "cards" in loaded:
-                data = loaded
-        except Exception:
-            pass
-    data.setdefault("cards", {})
-    st.session_state[_CACHE_KEY] = data
+    """Laddas EN gång per session; därefter äger sessionen sanningen."""
+    data = storage.session_load(STORE, _default(),
+                                legacy_file="scorecard_data.json")
+    if not isinstance(data, dict):
+        data = _default()
+        st.session_state[STORE] = data
+    for k, v in _default().items():
+        data.setdefault(k, v)
     return data
 
 
 def _save(data: dict) -> None:
-    st.session_state[_CACHE_KEY] = data
-    if _HAS_GIST:
-        try:
-            _blob_save(_STORE_FILE, data)
-        except Exception:
-            st.warning("Kunde inte spara till Gist — ändringen finns kvar i "
-                       "sessionen men överlever inte en omstart.")
+    """Skriver till sessionen. Persistensen sker via 💾 Spara.
+
+    Medvetet ingen nätverkstrafik här: en commit per
+    tangenttryckning skulle slå i GitHubs rate limits, och en
+    tyst misslyckad sådan var precis den bugg det här ersätter.
+    """
+    st.session_state[STORE] = data
 
 
 def _gather() -> dict:
@@ -279,6 +271,7 @@ def _gather() -> dict:
 # ── UI ───────────────────────────────────────────────────────────────────────
 def render_scorecard_page() -> None:
     data = _load()
+    storage_ui.save_bar(STORE, "Master Scorecard")
     st.markdown(
         f"<div style='text-align:center;padding:10px 0 4px;'>"
         f"<h2 style='color:{GOLD};letter-spacing:0.12em;margin:0;'>"

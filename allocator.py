@@ -27,15 +27,11 @@ from datetime import date
 from typing import Optional
 
 import csv_export
+import storage
+import storage_ui
 
-try:
-    from gist_storage import load_blob as _blob_load, save_blob as _blob_save
-    _HAS_GIST = True
-except Exception:
-    _HAS_GIST = False
-
-_STORE_FILE = "allocator_data.json"
 _CACHE_KEY = "allocator_data"
+STORE = "allocator"   # data/allocator.json
 
 TEXT, DIM = "#e8e4dc", "#8a8578"
 GREEN, AMBER, RED, CYAN = "#2d8a4e", "#d4943a", "#c44545", "#00E5FF"
@@ -337,34 +333,33 @@ def _default() -> dict:
 
 
 def _load() -> dict:
-    if _CACHE_KEY in st.session_state:
-        return st.session_state[_CACHE_KEY]
-    data = _blob_load(_STORE_FILE, None) if _HAS_GIST else None
+    """Laddas EN gång per session; därefter äger sessionen sanningen."""
+    data = storage.session_load(STORE, _default(),
+                                legacy_file="allocator_data.json")
     if not isinstance(data, dict):
         data = _default()
-    base = _default()
-    for k, v in base.items():
+        st.session_state[STORE] = data
+    for k, v in _default().items():
         data.setdefault(k, v)
-    if not isinstance(data.get("values"), dict):
-        data["values"] = base["values"]
-    if not isinstance(data.get("positions"), list):
-        data["positions"] = []
-    st.session_state[_CACHE_KEY] = data
     return data
 
 
 def _save(data: dict) -> None:
-    data["updated"] = date.today().isoformat()
-    st.session_state[_CACHE_KEY] = data
-    if _HAS_GIST:
-        _blob_save(_STORE_FILE, data)
+    """Skriver till sessionen. Persistensen sker via 💾 Spara.
+
+    Medvetet ingen nätverkstrafik här: en commit per
+    tangenttryckning skulle slå i GitHubs rate limits, och en
+    tyst misslyckad sådan var precis den bugg det här ersätter.
+    """
+    st.session_state[STORE] = data
 
 
 # ── UI ───────────────────────────────────────────────────────────────────────
 def render_allocator_page() -> None:
     """Huvud-entry point för Portföljallokeraren."""
+    data = _load()
+    storage_ui.save_bar(STORE, "Portföljallokeraren")
     try:
-        data = _load()
         st.markdown(
             f"<h1 style='color:{TEXT};margin:0;letter-spacing:0.06em;'>"
             f"Portföljallokeraren <span style='color:{CYAN};'>· ramarna</span></h1>"

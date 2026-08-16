@@ -18,18 +18,15 @@ med lokal fallback, cachad per session (en nätverkshämtning, inte per rerun).
 from __future__ import annotations
 
 import streamlit as st
+
+import storage
+import storage_ui
 from datetime import date
 from typing import Optional
 
 # ── Persistens (Gist + lokal fallback, som holdings) ──────────────────────────
-try:
-    from gist_storage import load_blob as _blob_load, save_blob as _blob_save
-    _HAS_GIST = True
-except Exception:
-    _HAS_GIST = False
-
-_STORE_FILE = "swing_data.json"
 _CACHE_KEY = "swing_data"
+STORE = "swing"   # data/swing.json
 
 # ── Tema (mörkt, grön swing-accent — matchar panelens palett) ─────────────────
 BG_CARD  = "#14141e"
@@ -125,21 +122,25 @@ def _normalize(data: dict) -> dict:
 
 
 def _load() -> dict:
-    """Ladda en gång per session (cachad i session_state)."""
-    if _CACHE_KEY in st.session_state:
-        return st.session_state[_CACHE_KEY]
-    data = _blob_load(_STORE_FILE, None) if _HAS_GIST else None
+    """Laddas EN gång per session; därefter äger sessionen sanningen."""
+    data = storage.session_load(STORE, _default(),
+                                legacy_file="swing_data.json")
     if not isinstance(data, dict):
         data = _default()
-    _normalize(data)
-    st.session_state[_CACHE_KEY] = data
+        st.session_state[STORE] = data
+    for k, v in _default().items():
+        data.setdefault(k, v)
     return data
 
 
 def _save(data: dict) -> None:
-    st.session_state[_CACHE_KEY] = data
-    if _HAS_GIST:
-        _blob_save(_STORE_FILE, data)
+    """Skriver till sessionen. Persistensen sker via 💾 Spara.
+
+    Medvetet ingen nätverkstrafik här: en commit per
+    tangenttryckning skulle slå i GitHubs rate limits, och en
+    tyst misslyckad sådan var precis den bugg det här ersätter.
+    """
+    st.session_state[STORE] = data
 
 
 def add_to_watchlist(ticker: str, mom6="", note: str = "") -> bool:
@@ -166,8 +167,9 @@ def add_to_watchlist(ticker: str, mom6="", note: str = "") -> bool:
 # ── Entry point ───────────────────────────────────────────────────────────────
 def render_swing_page() -> None:
     """Huvud-entry point för Swing-fliken (anropas från wolf_panel.py)."""
+    data = _load()
+    storage_ui.save_bar(STORE, "Swing")
     try:
-        data = _load()
 
         st.markdown(
             f"<div style='display:flex;justify-content:space-between;"
