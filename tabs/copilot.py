@@ -155,25 +155,75 @@ def _status_to_color(s: str) -> str:
     }.get(s, _DIM)
 
 
-# ── AI comment stub ───────────────────────────────────────────────────────────
+# ── AI comment (OpenAI GPT) ───────────────────────────────────────────────────
 
 def _ai_comment(ticker: str, pb: Playbook, results: list[RuleResult],
                 entry: float, stop: float, target: float) -> str:
     """
-    Stub — returnerar deterministiskt genererad kommentar.
-    Ersätt med ett GPT-anrop när du vill ha riktig AI-text.
+    Anropar OpenAI Chat Completions och returnerar en kort analys på svenska.
 
-    Byt ut denna funktion mot:
-        import openai
-        response = openai.chat.completions.create(...)
-        return response.choices[0].message.content
+    Kräver att OPENAI_API_KEY är satt i st.secrets (Streamlit Cloud / secrets.toml)
+    eller som miljövariabel. Faller tillbaka till en deterministisk kommentar om
+    nyckeln saknas eller anropet misslyckas.
     """
-    passed  = [r.text for r in results if r.status == "PASS"]
-    failed  = [r.text for r in results if r.status == "FAIL"]
-    manual  = [r.text for r in results if r.status == "MANUAL"]
-    rr      = abs(target - entry) / abs(entry - stop) if (entry and stop and entry != stop) else 0
-    risk_p  = abs(entry - stop) / entry * 100 if entry else 0
+    passed = [r.text for r in results if r.status == "PASS"]
+    failed = [r.text for r in results if r.status == "FAIL"]
+    manual = [r.text for r in results if r.status == "MANUAL"]
+    rr     = abs(target - entry) / abs(entry - stop) if (entry and stop and entry != stop) else 0
+    risk_p = abs(entry - stop) / entry * 100 if entry else 0
 
+    # Hämta API-nyckel från Streamlit secrets eller miljövariabel
+    api_key: Optional[str] = (
+        st.secrets.get("OPENAI_API_KEY")
+        if hasattr(st, "secrets")
+        else None
+    ) or os.environ.get("OPENAI_API_KEY")
+
+    if not api_key:
+        return _fallback_comment(ticker, pb, passed, failed, manual, rr, risk_p)
+
+    prompt = (
+        f"Du är en professionell swing-trading-analytiker.\n\n"
+        f"Ticker: {ticker}\n"
+        f"Strategi: {pb.name} ({pb.tagline})\n"
+        f"Entry: {entry:.2f} · Stop: {stop:.2f} · Target: {target:.2f}\n"
+        f"R:R: {rr:.1f}x · Risk från entry: {risk_p:.1f}%\n"
+        f"Godkända regler ({len(passed)}): {', '.join(passed) or 'inga'}\n"
+        f"Manuella regler ({len(manual)}): {', '.join(manual) or 'inga'}\n"
+        f"Misslyckade regler ({len(failed)}): {', '.join(failed) or 'inga'}\n\n"
+        f"Ge en kort analys (3–5 meningar) på svenska:\n"
+        f"- Är affären värd att gå vidare med?\n"
+        f"- Vad bör kontrolleras manuellt?\n"
+        f"- Är R:R acceptabelt?\n"
+    )
+
+    try:
+        import openai  # noqa: PLC0415 — lazy import to keep startup fast
+        client = openai.OpenAI(api_key=api_key)
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=350,
+            temperature=0.4,
+        )
+        return response.choices[0].message.content or "Inget svar från AI."
+    except Exception as exc:  # pragma: no cover
+        return (
+            f"{_fallback_comment(ticker, pb, passed, failed, manual, rr, risk_p)}\n\n"
+            f"_⚠️ OpenAI-anropet misslyckades: {exc}_"
+        )
+
+
+def _fallback_comment(
+    ticker: str,
+    pb: Playbook,
+    passed: list[str],
+    failed: list[str],
+    manual: list[str],
+    rr: float,
+    risk_p: float,
+) -> str:
+    """Deterministisk fallback-kommentar när OpenAI ej är tillgängligt."""
     lines = [f"**{ticker}** analyseras mot **{pb.name}**.", ""]
 
     if passed:
@@ -198,7 +248,7 @@ def _ai_comment(ticker: str, pb: Playbook, results: list[RuleResult],
 
     lines += [
         "",
-        "_💡 AI-kommentar är en deterministisk stub — koppla OpenAI API för full analys._",
+        "_💡 Sätt OPENAI_API_KEY i Streamlit Secrets för att aktivera GPT-analys._",
     ]
 
     return "\n".join(lines)
@@ -423,7 +473,8 @@ def render_copilot_page() -> None:
 
     # ── AI-kommentar ──────────────────────────────────────────────────────────
     section_title("AI-kommentar", "💬")
-    comment = _ai_comment(ticker, pb, results, entry, stop, target)
+    with st.spinner("Hämtar AI-kommentar…"):
+        comment = _ai_comment(ticker, pb, results, entry, stop, target)
     st.markdown(comment)
 
     st.markdown("<hr style='border-color:rgba(255,255,255,0.06);margin:28px 0;'>",

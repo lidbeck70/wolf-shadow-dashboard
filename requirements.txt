@@ -12,3 +12,4 @@ numpy==2.4.6
 requests==2.33.1
 joblib==1.5.3
 beautifulsoup4==4.15.0
+openai>=1.0.0
