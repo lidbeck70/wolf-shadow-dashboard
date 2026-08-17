@@ -259,6 +259,57 @@ except ImportError:
 
 
 # =============================================================================
+# COPILOT STUB — rendered until tabs/copilot.py is built
+# =============================================================================
+
+def _render_copilot_stub() -> None:
+    """Placeholder for the AI Trading Copilot tab."""
+    from ui.theme import section_title, PALETTE as _P
+
+    _DIM  = _P["text_dim"]
+    _CYAN = _P["gold"]
+
+    section_title("AI Trading Copilot", "🤖")
+    st.markdown(
+        f'<p style="color:{_DIM};font-size:0.82rem;margin:-8px 0 20px;">'
+        f'Kandidatanalys · Regelkontroll · AI-kommentarer · Riskkontroll</p>',
+        unsafe_allow_html=True,
+    )
+
+    _coming_soon_items = [
+        ("🔍 Kandidatupptäckt",     "Screena och ranka kandidater baserat på regim + regler."),
+        ("✅ Regelkontroll",         "Deterministisk kontroll — PASS / WATCH / REJECT per kandidat."),
+        ("💬 AI-kommentarer",        "GPT-analys med klartext-motivering per kandidat."),
+        ("🛡 Riskgating",            "Stopp om regim är röd, R:R < 1:2 eller max förluster nåtts."),
+        ("📓 Trade Journal AI",      "Post-trade review med AI — följde du planen?"),
+        ("📅 Veckosetup Review",     "Strukturerad veckorutin med aktiva kandidater och regimstatus."),
+    ]
+
+    cols = st.columns(2)
+    for i, (title, desc) in enumerate(_coming_soon_items):
+        with cols[i % 2]:
+            st.markdown(
+                f'<div style="background:#1A1F25;border:1px solid rgba(255,255,255,0.06);'
+                f'border-left:3px solid {_CYAN}33;border-radius:8px;padding:14px 16px;'
+                f'margin-bottom:12px;">'
+                f'<div style="font-size:13px;font-weight:700;color:#E8EDF2;margin-bottom:4px;">{title}</div>'
+                f'<div style="font-size:11px;color:{_DIM};line-height:1.5;">{desc}</div>'
+                f'<div style="margin-top:10px;font-size:10px;letter-spacing:2px;'
+                f'color:{_CYAN}66;text-transform:uppercase;">Kommer snart</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.info(
+        "🤖 **AI Copilot är under konstruktion.**  \n"
+        "Modulen byggs i `tabs/copilot.py` och integreras med befintliga "
+        "strategi-, regim- och journalmoduler.",
+        icon=None,
+    )
+
+
+# =============================================================================
 # MAIN APP
 # =============================================================================
 
@@ -281,11 +332,12 @@ def main():
         "  🔔 ALERTS  ",
         "  📋 RULES  ",
         "  🧬 STRATEGIES  ",
+        "  🤖 COPILOT  ",
     ]
     (tab_home_page, tab_screening, tab_review, tab_regime_main,
      tab_intelligence, tab_portfolio,
      tab_alerts_page, tab_rules,
-     tab_strat_overview) = st.tabs(tab_labels)
+     tab_strat_overview, tab_copilot) = st.tabs(tab_labels)
 
     # ── HOME ─────────────────────────────────────────────────────────────────
     with tab_home_page:
@@ -294,15 +346,17 @@ def main():
     # ── SCREENING ─────────────────────────────────────────────────────────────
     with tab_screening:
         sub = st.radio(
-            "", ["Arc Screener", "Contrarian Alpha", "Market Cycle",
+            "",
+            ["Arc Screener", "Contrarian Alpha", "Market Cycle",
                  "Swing Screener"],
-            horizontal=True, key="sub_screening",
+            label_visibility="collapsed", horizontal=True, key="sub_screening",
         )
         st.markdown("---")
         if sub == "Arc Screener":
             inner = st.radio(
-                "", ["Wolf", "Viking", "🔥 EMBER"],
-                horizontal=True, key="sub_screening_arc",
+                "",
+            ["Wolf", "Viking", "🔥 EMBER"],
+                label_visibility="collapsed", horizontal=True, key="sub_screening_arc",
             )
             if inner == "Wolf":
                 tab_screener()
@@ -319,8 +373,9 @@ def main():
 
         elif sub == "Contrarian Alpha":
             inner = st.radio(
-                "", ["Contrarian Alpha", "Long Screener"],
-                horizontal=True, key="sub_screening_contrarian",
+                "",
+            ["Contrarian Alpha", "Long Screener"],
+                label_visibility="collapsed", horizontal=True, key="sub_screening_contrarian",
             )
             if inner == "Contrarian Alpha":
                 if CONTRARIAN_ALPHA_AVAILABLE:
@@ -350,9 +405,10 @@ def main():
     # sker i Börsdata; det här är arken som avgör vilket bolag som köps.
     with tab_review:
         sub = st.radio(
-            "", ["Rick Rule", "Royalty C", "Poängmodell", "Tiggre", "Insider",
+            "",
+            ["Rick Rule", "Royalty C", "Poängmodell", "Tiggre", "Insider",
                  "🎯 Scorecard"],
-            horizontal=True, key="sub_review",
+            label_visibility="collapsed", horizontal=True, key="sub_review",
         )
         st.markdown("---")
         if sub in ("Rick Rule", "Royalty C"):
@@ -388,9 +444,10 @@ def main():
     # ── REGIME ───────────────────────────────────────────────────────────────
     with tab_regime_main:
         sub = st.radio(
-            "", ["Arc Regime", "Alpha Regime", "Flow Divergence", "Swing Regime",
+            "",
+            ["Arc Regime", "Alpha Regime", "Flow Divergence", "Swing Regime",
                  "Råvarurotation"],
-            horizontal=True, key="sub_regime",
+            label_visibility="collapsed", horizontal=True, key="sub_regime",
         )
         st.markdown("---")
         if sub == "Råvarurotation":
@@ -405,8 +462,9 @@ def main():
                 tab_not_found("Swing Regime", "wolf_regime_ui")
         elif sub == "Arc Regime":
             inner = st.radio(
-                "", ["Wolf Regime", "Viking Regime", "🌍 EMBER Regime"],
-                horizontal=True, key="sub_regime_arc",
+                "",
+            ["Wolf Regime", "Viking Regime", "🌍 EMBER Regime"],
+                label_visibility="collapsed", horizontal=True, key="sub_regime_arc",
             )
             if inner == "Wolf Regime":
                 tab_regime()
@@ -433,8 +491,9 @@ def main():
 
         elif sub == "Alpha Regime":
             inner = st.radio(
-                "", ["Quality & Contrarian", "Long Trend"],
-                horizontal=True, key="sub_regime_alpha",
+                "",
+            ["Quality & Contrarian", "Long Trend"],
+                label_visibility="collapsed", horizontal=True, key="sub_regime_alpha",
             )
             if inner == "Quality & Contrarian":
                 if ALPHA_REGIME_AVAILABLE:
@@ -461,8 +520,9 @@ def main():
     # ── INTELLIGENCE ─────────────────────────────────────────────────────────
     with tab_intelligence:
         sub = st.radio(
-            "", ["Odin's Blindspot", "Sentiment", "Retail Pulse", "Heatmap"],
-            horizontal=True, key="sub_intel",
+            "",
+            ["Odin's Blindspot", "Sentiment", "Retail Pulse", "Heatmap"],
+            label_visibility="collapsed", horizontal=True, key="sub_intel",
         )
         st.markdown("---")
         if sub == "Odin's Blindspot":
@@ -489,12 +549,17 @@ def main():
     # ── PORTFOLIO ─────────────────────────────────────────────────────────────
     with tab_portfolio:
         sub = st.radio(
-            "", ["Holdings", "Swing", "Allokering", "Trade Journal",
-                 "Backtest"],
-            horizontal=True, key="sub_portfolio",
+            "",
+            ["📓 Trade Journal", "Holdings", "Swing", "Allokering", "Backtest"],
+            label_visibility="collapsed", horizontal=True, key="sub_portfolio",
         )
         st.markdown("---")
-        if sub == "Holdings":
+        if sub == "📓 Trade Journal":
+            if JOURNAL_AVAILABLE:
+                render_trade_journal_page()
+            else:
+                tab_not_found("Trade Journal", "trade_journal")
+        elif sub == "Holdings":
             if HOLDINGS_AVAILABLE:
                 render_holdings_page()
             else:
@@ -509,11 +574,6 @@ def main():
                 render_allocator_page()
             else:
                 tab_not_found("Portföljallokeraren", "allocator")
-        elif sub == "Trade Journal":
-            if JOURNAL_AVAILABLE:
-                render_trade_journal_page()
-            else:
-                tab_not_found("Trade Journal", "trade_journal")
         elif sub == "Backtest":
             tab_backtest_consolidated()
 
@@ -524,8 +584,9 @@ def main():
     # ── RULES ────────────────────────────────────────────────────────────────
     with tab_rules:
         sub_rules = st.radio(
-            "", ["Regler & Guider", "Position Sizing", "Data Health"],
-            horizontal=True, key="sub_rules",
+            "",
+            ["Regler & Guider", "Position Sizing", "Data Health"],
+            label_visibility="collapsed", horizontal=True, key="sub_rules",
         )
         st.markdown("---")
         if sub_rules == "Regler & Guider":
@@ -549,6 +610,14 @@ def main():
     # ── STRATEGIES ───────────────────────────────────────────────────────────
     with tab_strat_overview:
         tab_strategy_overview()
+
+    # ── COPILOT ──────────────────────────────────────────────────────────────
+    with tab_copilot:
+        try:
+            from tabs.copilot import render_copilot_page
+            render_copilot_page()
+        except ImportError:
+            _render_copilot_stub()
 
     # Senast sparad, och vad som ligger osparat i sessionen.
     storage_ui.footer()

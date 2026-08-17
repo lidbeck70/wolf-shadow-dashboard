@@ -64,7 +64,68 @@ def _nav_card(title: str, desc: str, color: str) -> str:
     )
 
 
-# ── System Pulse ──────────────────────────────────────────────────────────────
+# ── Daily Briefing ────────────────────────────────────────────────────────────
+
+def _render_daily_briefing() -> None:
+    """Compact daily status block: regime summary + alert count + next step."""
+    wolf   = st.session_state.get("wolf_regime_status", "UNKNOWN")
+    viking = st.session_state.get("viking_regime_status", "UNKNOWN")
+    cycle  = st.session_state.get("market_cycle_phase", "UNKNOWN")
+
+    try:
+        from alerts.engine import ALERT_LOG
+        n_alerts = len(ALERT_LOG)
+    except Exception:
+        n_alerts = 0
+
+    def _regime_dot(status: str) -> str:
+        s = status.upper()
+        if any(k in s for k in ("BULL", "OPTIMISM", "BELIEF", "HOPE")):
+            return f'<span style="color:#2d8a4e;">●</span>'
+        if any(k in s for k in ("BEAR", "PANIC", "CAPITULATION")):
+            return f'<span style="color:#FF6B3D;">●</span>'
+        return f'<span style="color:#6B7280;">●</span>'
+
+    def _next_step(wolf: str, viking: str, n_alerts: int) -> str:
+        w = wolf.upper()
+        v = viking.upper()
+        both_bull = any(k in w for k in ("BULL",)) and any(k in v for k in ("BULL",))
+        either_bear = any(k in w for k in ("BEAR", "PANIC")) or any(k in v for k in ("BEAR", "PANIC"))
+        if either_bear:
+            return "⚠️ Undvik nya positioner — ett eller båda regimen är björnaktiga."
+        if both_bull:
+            return "✅ Bägge regimen bullish — screena kandidater och kontrollera setup."
+        if n_alerts > 0:
+            return f"🔔 {n_alerts} aktiva alerts — granska ALERTS-fliken."
+        return "🔍 Kontrollera regim och kör screener för att hitta kandidater."
+
+    summary_html = (
+        f'<div style="background:#1A1F25;border:1px solid rgba(255,255,255,0.06);'
+        f'border-left:3px solid {_CYAN};border-radius:8px;padding:14px 18px;margin-bottom:16px;">'
+        f'<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;'
+        f'color:{_DIM};margin-bottom:10px;">DAGLIG BRIEFING</div>'
+        f'<div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:10px;">'
+        f'  <div style="font-size:12px;color:#E8EDF2;">'
+        f'    {_regime_dot(wolf)} Wolf&nbsp;<span style="color:{_DIM};">{wolf}</span>'
+        f'  </div>'
+        f'  <div style="font-size:12px;color:#E8EDF2;">'
+        f'    {_regime_dot(viking)} Viking&nbsp;<span style="color:{_DIM};">{viking}</span>'
+        f'  </div>'
+        f'  <div style="font-size:12px;color:#E8EDF2;">'
+        f'    📈 Cykel&nbsp;<span style="color:{_DIM};">{cycle}</span>'
+        f'  </div>'
+        f'  <div style="font-size:12px;color:#E8EDF2;">'
+        f'    🔔 Alerts&nbsp;<span style="color:{"#FF6B3D" if n_alerts else _DIM};">{n_alerts}</span>'
+        f'  </div>'
+        f'</div>'
+        f'<div style="font-size:12px;color:{_CYAN};border-top:1px solid rgba(255,255,255,0.06);'
+        f'padding-top:8px;">{_next_step(wolf, viking, n_alerts)}</div>'
+        f'</div>'
+    )
+    st.markdown(summary_html, unsafe_allow_html=True)
+
+
+
 
 def _render_system_pulse() -> None:
     wolf   = st.session_state.get("wolf_regime_status", "UNKNOWN")
@@ -210,6 +271,7 @@ def tab_home() -> None:
     )
 
     section_title("System Pulse", "📡")
+    _render_daily_briefing()
     _render_system_pulse()
     st.markdown("<br>", unsafe_allow_html=True)
 
