@@ -16,6 +16,8 @@ from typing import Optional
 import streamlit as st
 
 import controls as ctl
+import lukacs
+import lukacs_ui
 
 TEXT, DIM = "#e8e4dc", "#8a8578"
 
@@ -146,8 +148,12 @@ def render_aqs(row: dict, key: str, prefill: Optional[dict] = None,
 
 # ── CSM ──────────────────────────────────────────────────────────────────────
 def render_csm(row: dict, key: str, kind: str = ctl.PRODUCER,
-               prefix: str = "csm") -> bool:
-    """Commodity Sensitivity Matrix. Tre scenarier, fem för kärninnehav."""
+               prefix: str = "csm", with_fv: bool = False) -> bool:
+    """Commodity Sensitivity Matrix. Tre scenarier, fem för kärninnehav.
+
+    with_fv lägger Lukacs FV-modulen sist i sektionen: CSM säger om bolaget
+    överlever varje scenario, FV vad det är värt där.
+    """
     changed = False
     matrix = row.setdefault("csm", {})
 
@@ -241,6 +247,14 @@ def render_csm(row: dict, key: str, kind: str = ctl.PRODUCER,
     elif new_kind == ctl.PRODUCER:
         st.caption("Hävstångskvoten kräver ett positivt Bear-kassaflöde — "
                    "en kvot mot noll är inte oändlig hävstång.")
+
+    if with_fv and new_kind == ctl.PRODUCER:
+        st.markdown("<hr style='border-color:rgba(138,133,120,0.2);"
+                    "margin:14px 0 8px;'>", unsafe_allow_html=True)
+        changed |= lukacs_ui.render_fv(row, key)
+    elif with_fv:
+        st.caption("Lukacs FV värderar producenters kassaflöde — en utvecklare "
+                   "värderas på NAV och finansieringsbehov i matrisen ovan.")
     return changed
 
 
@@ -257,9 +271,27 @@ def render_all(row: dict, key: str, position_pct=None, strategy: str = "",
     if ctl.SEC_AQS in req:
         with st.expander("⛏ AQS — tillgångskvalitet", expanded=False):
             changed |= render_aqs(row, key, aqs_prefill)
+    fv_req = lukacs.fv_required(position_pct, strategy)
     if ctl.SEC_CSM in req:
-        with st.expander("📉 CSM — råvarukänslighet", expanded=False):
-            changed |= render_csm(row, key, kind)
+        with st.expander("📉 CSM — råvarukänslighet"
+                         + (" · Lukacs FV" if fv_req else ""), expanded=False):
+            changed |= render_csm(row, key, kind, with_fv=fv_req)
+    elif lukacs.fv_applicable(strategy):
+        # Under 2 % är FV frivillig — proportionalitetsregeln. Men den ska gå
+        # att öppna ändå: en liten position i ett case man vill räkna på är
+        # inte ett skäl att stänga verktyget.
+        open_fv = st.checkbox(
+            "Räkna Lukacs FV ändå", value=bool(row.get("fv_manual")),
+            key=f"fvman_{key}",
+            help=f"FV krävs först över {ctl.FULL_WORK_MIN_PCT:g} % av totalen. "
+                 f"Under det är den frivillig — och räknas inte in i "
+                 f"köpgrinden.")
+        if open_fv != bool(row.get("fv_manual")):
+            row["fv_manual"] = open_fv
+            changed = True
+        if open_fv:
+            with st.expander("💵 Lukacs FV — fair value", expanded=True):
+                changed |= lukacs_ui.render_fv(row, key)
     if req == {ctl.SEC_STRATEGY}:
         st.caption("Proportionalitetsregeln: den här strategin behöver ingen "
                    "AQS eller CSM. Kryssa emissionsrisk om DS ska visas.")

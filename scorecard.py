@@ -27,6 +27,7 @@ import streamlit as st
 
 import controls as ctl
 import csv_export
+import lukacs
 import storage
 import storage_ui
 
@@ -173,11 +174,92 @@ def control_gaps(entry: dict, position_pct, strategy: str) -> list:
     return gaps
 
 
+def valuation_gaps(entry: Optional[dict], card: dict) -> list:
+    """Steg 5, säkerhetsmarginalen — mekaniskt där Lukacs FV krävs.
+
+    Guiden gör modulen obligatorisk för producentköp över 2 % av totalen. Där
+    är steg 5 inte längre ett omdöme utan en uträkning: MoS >= 25 % och ett
+    ifyllt 'what must go right'. Utanför det området finns ingen FV att räkna
+    på, och steget faller tillbaka på det manuella krysset.
+    """
+    c = card or {}
+    pos, strategy = c.get("position_pct_total"), c.get("strategy", "")
+    if not lukacs.fv_required(pos, strategy):
+        return []
+    if entry is None:
+        return ["Kandidatdata saknas — fair value går inte att läsa"]
+    return lukacs.gate_gaps(source_row(entry, strategy), pos, strategy)
+
+
+def deleveraging_cap(entry: Optional[dict], card: dict) -> Optional[float]:
+    """Positionstaket efter deleveraging-regeln, i % av totalen.
+
+    None när regeln inte slår eller strategin saknar ett känt tak.
+    """
+    if entry is None:
+        return None
+    c = card or {}
+    strategy = c.get("strategy", "")
+    row = source_row(entry, strategy)
+    cap = _strategy_cap(strategy)
+    state = lukacs.deleveraging_state(row.get("nd_ebitda"),
+                                      row.get("ar_till_lag_skuld"))
+    if not state["half_position"] or cap is None:
+        return None
+    return lukacs.max_position_pct(row.get("nd_ebitda"), cap,
+                                   row.get("ar_till_lag_skuld"))
+
+
+def position_gaps(entry: Optional[dict], card: dict) -> list:
+    """Att positionen är "satt" räcker inte — den måste rymmas i taket.
+
+    Deleveraging-regeln halverar taket så fort skulden är över 1,0× vid köp.
+    Utan den här kontrollen kan man kryssa "position bestämd" med en storlek
+    som regeln förbjuder.
+    """
+    cap = deleveraging_cap(entry, card)
+    pos = _num((card or {}).get("position_pct_total"))
+    if cap is None or pos is None:
+        return []
+    if round(pos, 6) > round(cap, 6):
+        return [f"Position {pos:g} % av totalen överstiger taket {cap:g} % — "
+                f"skulden är över {lukacs.DELEV_ND_MIN:g}× och halverar "
+                f"positionen."]
+    return []
+
+
+def _mechanical_gate(gate: Gate, ok: bool, gaps: list, note: str) -> None:
+    """Ett grindsteg som räknas fram i stället för att kryssas."""
+    st.markdown(
+        f"<div style='color:{GREEN if ok else RED};font-size:0.86rem;"
+        f"padding:3px 0;'>{'☑' if ok else '☐'} {gate.label} "
+        f"<span style='color:{DIM};font-size:0.76rem;'>— {note}</span></div>",
+        unsafe_allow_html=True)
+    for gap in gaps:
+        st.markdown(
+            f"<div style='color:{RED};font-size:0.78rem;padding-left:22px;'>"
+            f"• {gap}</div>", unsafe_allow_html=True)
+
+
+def _strategy_cap(strategy: str) -> Optional[float]:
+    """Strategins hårda positionstak ur allokeringsreglerna."""
+    try:
+        import allocator
+    except Exception:                                    # pragma: no cover
+        return None
+    key = (strategy or "").strip().lower()
+    caps = [r.hard_cap for r in allocator.POSITION_RULES if r.sleeve == key]
+    return min(caps) if caps else None
+
+
 def gate_state(card: dict, entry: Optional[dict] = None) -> dict:
     """Köpgrindens sju kryss plus kontrollernas luckor.
 
-    Kontrollgrinden (inga_roda_flaggor) kan inte kryssas förbi: den sätts av
-    control_gaps, för det är precis den rutan man annars kryssar av vana.
+    Två av stegen kan inte kryssas förbi. Kontrollgrinden
+    (inga_roda_flaggor) sätts av control_gaps, för det är precis den rutan man
+    annars kryssar av vana. Säkerhetsmarginalen (sakerhetsmarginal) sätts av
+    Lukacs FV där modulen är obligatorisk — över 2 % av totalen är steget en
+    uträkning, inte ett omdöme.
     """
     c = card or {}
     if entry is None:
@@ -188,15 +270,25 @@ def gate_state(card: dict, entry: Optional[dict] = None) -> dict:
     else:
         gaps = control_gaps(entry, c.get("position_pct_total"),
                             c.get("strategy", ""))
+    val_gaps = valuation_gaps(entry, c)
+    pos_gaps = position_gaps(entry, c)
+    mechanical_fv = lukacs.fv_required(c.get("position_pct_total"),
+                                       c.get("strategy", ""))
+
     checks = {}
     for g in GATES:
         if g.key == "inga_roda_flaggor":
             checks[g.key] = not gaps
+        elif g.key == "sakerhetsmarginal" and mechanical_fv:
+            checks[g.key] = not val_gaps
+        elif g.key == "position_saljregel":
+            checks[g.key] = bool(c.get(g.key)) and not pos_gaps
         else:
             checks[g.key] = bool(c.get(g.key))
     missing = [GATE_BY_KEY[k].label for k, ok in checks.items() if not ok]
     return {"checks": checks, "missing": missing, "gaps": gaps,
-            "ready": not missing}
+            "valuation_gaps": val_gaps, "position_gaps": pos_gaps,
+            "fv_mechanical": mechanical_fv, "ready": not missing}
 
 
 def is_ready(card: dict, entry: Optional[dict] = None) -> bool:
@@ -360,24 +452,26 @@ def _card(data: dict, cards: dict, entry: dict) -> None:
                     unsafe_allow_html=True)
         for g in GATES:
             if g.key == "inga_roda_flaggor":
-                ok = not state["gaps"]
-                st.markdown(
-                    f"<div style='color:{GREEN if ok else RED};font-size:0.86rem;"
-                    f"padding:3px 0;'>{'☑' if ok else '☐'} {g.label} "
-                    f"<span style='color:{DIM};font-size:0.76rem;'>"
-                    f"— sätts av kontrollerna, kan inte kryssas förbi</span></div>",
-                    unsafe_allow_html=True)
-                for gap in state["gaps"]:
-                    st.markdown(
-                        f"<div style='color:{RED};font-size:0.78rem;"
-                        f"padding-left:22px;'>• {gap}</div>",
-                        unsafe_allow_html=True)
+                _mechanical_gate(g, not state["gaps"], state["gaps"],
+                                 "sätts av kontrollerna, kan inte kryssas förbi")
+                continue
+            if g.key == "sakerhetsmarginal" and state["fv_mechanical"]:
+                _mechanical_gate(g, not state["valuation_gaps"],
+                                 state["valuation_gaps"],
+                                 "räknas av Lukacs FV — obligatorisk över "
+                                 f"{ctl.FULL_WORK_MIN_PCT:g} % av totalen")
                 continue
             v = st.checkbox(g.label, value=bool(card.get(g.key)),
                             key=f"sc_g_{entry['key']}_{g.key}", help=g.help)
             if v != bool(card.get(g.key)):
                 card[g.key] = v
                 changed = True
+            if g.key == "position_saljregel":
+                for gap in state["position_gaps"]:
+                    st.markdown(
+                        f"<div style='color:{RED};font-size:0.78rem;"
+                        f"padding-left:22px;'>• {gap}</div>",
+                        unsafe_allow_html=True)
 
         state = gate_state(card, entry)
         if state["ready"]:
@@ -466,7 +560,7 @@ def _export(entries: list, cards: dict) -> None:
             "_ready": gs["ready"],
         })
     csv_export.download_button(rows, CSV_COLUMNS, "master_scorecard",
-                              key="csv_scorecard")
+                               key="csv_scorecard")
 
 
 def _stale(cards: dict) -> None:

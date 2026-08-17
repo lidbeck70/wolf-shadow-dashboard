@@ -74,6 +74,12 @@ SCREENERS: tuple[Screener, ...] = (
     Screener("Insider – grind", "insider",
              "Norden · MCap > 300 MSEK · F-score ≥ 5 · skuld/EBITDA < 2 · "
              "FCF positivt eller på väg"),
+    Screener("Lukacs Discovery", "",
+             "MCap > 1 mdkr · P/FCF < 12,5 (FCF-yield > 8 %) · EV/FCF < 12,5 · "
+             "skuld/EBITDA < 3,5 · FCF-marginal > 5 % · ROIC > 8 % · "
+             "sortera på FCF-yield",
+             "Börsdata · upptäcktsverktyg, ALDRIG köpfilter — skuldtaket 3,5 "
+             "är medvetet lösare än Rules för att fånga deleveraging-case"),
 )
 
 
@@ -106,6 +112,9 @@ SELL_RULES: tuple[SellRule, ...] = (
              "+50–100 % · 18 mån tidsstopp"),
     SellRule("Palladium / Litium / Silver", "",
              "ALLTID i euforin — ägs aldrig genom en mani-topp"),
+    SellRule("Lukacs FV", "",
+             "Trimma när uppsidan mot Base-FV < ~20 % · MoS < 25 % = inget "
+             "nytt köp · Base-antagande brutet = modellförlust, agera"),
     SellRule("Portföljnivå", "",
              "Strömbrytaren: −10 % skärpt · −20 % halverad risk"),
 )
@@ -248,6 +257,16 @@ def sell_rule(key: str) -> SellRule | None:
 def screener(key: str) -> Screener | None:
     for s in SCREENERS:
         if s.key and s.key == key:
+            return s
+    return None
+
+
+def screener_by_name(name: str) -> Screener | None:
+    """Uppslag på namn — de screeners som inte hör till en enskild playbook,
+    som Lukacs Discovery, har ingen nyckel att slå upp på."""
+    n = (name or "").strip().lower()
+    for s in SCREENERS:
+        if s.name.lower() == n:
             return s
     return None
 

@@ -33,6 +33,7 @@ from datetime import date
 from typing import Optional
 
 import csv_export
+import lukacs
 import storage
 import storage_ui
 import controls as ctl
@@ -359,7 +360,9 @@ PROD_CSV = [("date", "Datum"), ("ticker", "Ticker"), ("name", "Bolag"),
             ("position_pct", "Position % av total"),
             ("mine_life", "Gruvlivslängd (år)"), ("rp_ratio", "R/P (år)"),
             ("_dying", "Döende tillgång"),
-            ("_ds", "DS"), ("_aqs", "AQS"), ("_csm_flag", "CSM röd flagga")]
+            ("_ds", "DS"), ("_aqs", "AQS"), ("_csm_flag", "CSM röd flagga"),
+            ("fcf_kvalitet", "FCF-klass"), ("_fv_base", "Fair value Base"),
+            ("_mos", "Säkerhetsmarginal %"), ("_mos_band", "MoS-bedömning")]
 
 ROYALTY_CSV = [("date", "Datum"), ("ticker", "Ticker"), ("name", "Bolag"),
                ("level", "Nivå"), ("pnav_now", "P/NAV nu"),
@@ -374,6 +377,21 @@ def _r1(v):
     return None if v is None else round(v, 1)
 
 
+def _csv_row(r: dict) -> dict:
+    """En rad i Rick Rule-exporten: arket, kontrollerna och Lukacs FV."""
+    row = r["row"]
+    fv = lukacs.evaluate(row)
+    return {**row, "_margin": _r1(r["margin"]), "_score": r["score"],
+            "_verdict": r["verdict"].label if r["verdict"] else None,
+            "_dying": r["dying"],
+            "_ds": ctl.ds_total(row), "_aqs": ctl.aqs_total(row),
+            "_csm_flag": ctl.csm_red_flag(row.get("csm_kind", ctl.PRODUCER),
+                                          row.get("csm", {}),
+                                          bool(row.get("secured_cash"))),
+            "_fv_base": _r1(fv["fv_base"]), "_mos": _r1(fv["mos"]),
+            "_mos_band": fv["mos_band"]}
+
+
 def _producers(data: dict) -> None:
     st.markdown(f"<div style='color:{DIM};font-size:0.78rem;margin-bottom:4px;'>"
                 f"<b style='color:{TEXT};'>{SHEET_RULE} — Överlevarna.</b> "
@@ -383,16 +401,9 @@ def _producers(data: dict) -> None:
                 f"<span style='color:{DIM};'>Guiden kallar arket "
                 f"{GUIDE_NAME_RULE}.</span></div>",
                 unsafe_allow_html=True)
-    csv_export.download_button(
-        [{**r["row"], "_margin": _r1(r["margin"]), "_score": r["score"],
-          "_verdict": r["verdict"].label if r["verdict"] else None,
-          "_dying": r["dying"],
-          "_ds": ctl.ds_total(r["row"]), "_aqs": ctl.aqs_total(r["row"]),
-          "_csm_flag": ctl.csm_red_flag(r["row"].get("csm_kind", ctl.PRODUCER),
-                                        r["row"].get("csm", {}),
-                                        bool(r["row"].get("secured_cash")))}
-         for r in ranked_producers(data[PRODUCERS])],
-        PROD_CSV, "rick_rule", key="csv_producers")
+    csv_export.download_button([_csv_row(r)
+                                for r in ranked_producers(data[PRODUCERS])],
+                               PROD_CSV, "rick_rule", key="csv_producers")
     st.caption(f"Marginal ≥ {MARGIN_STRONG:g} % ger 2 p, ≥ {MARGIN_OK:g} % ger "
                f"1 p. Tre disciplinfrågor ger 1 p var. "
                f"{PROD_BUY_MIN}–{PROD_MAX_SCORE} = köpkandidat · "
