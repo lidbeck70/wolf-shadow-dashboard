@@ -25,6 +25,7 @@ import streamlit as st
 
 from strategy_rules import PLAYBOOKS, Playbook
 from ui.theme import section_title, PALETTE as _P
+from ai import copilot_prompt, openai_client
 
 # ── Palette shortcuts ─────────────────────────────────────────────────────────
 _GREEN  = _P.get("green",    "#2d8a4e")
@@ -198,10 +199,96 @@ def _ai_comment(ticker: str, pb: Playbook, results: list[RuleResult],
 
     lines += [
         "",
-        "_💡 AI-kommentar är en deterministisk stub — koppla OpenAI API för full analys._",
+        "_Deterministisk sammanfattning — räknad av panelen, inte skriven av "
+        "en modell._",
     ]
 
     return "\n".join(lines)
+
+
+# ── AI-kommentar: knappstyrd, aldrig i renderingsvägen ────────────────────────
+
+def _ai_cache_key(ticker: str, strategy_key: str,
+                  entry: float, stop: float, target: float) -> str:
+    """Ändras underlaget blir det gamla svaret ogiltigt.
+
+    Utan detta ligger en kommentar om entry 100 kvar när du ändrat till 120,
+    och den ser lika auktoritativ ut som när den skrevs.
+    """
+    return f"{strategy_key}|{ticker.upper()}|{entry:g}|{stop:g}|{target:g}"
+
+
+def _render_ai_section(ticker: str, strategy_key: str, pb: Playbook,
+                       results: list[RuleResult],
+                       entry: float, stop: float, target: float) -> None:
+    """Deterministisk sammanfattning alltid; modellsvar på knapptryck.
+
+    Anropet ligger BAKOM en knapp med flit. Streamlit kör om hela skriptet vid
+    varje widget-interaktion — ett anrop i renderingsvägen hade blivit ett
+    betalt API-anrop varje gång du rör ett reglage.
+    """
+    st.markdown(_ai_comment(ticker, pb, results, entry, stop, target))
+
+    cache_key = _ai_cache_key(ticker, strategy_key, entry, stop, target)
+    store = st.session_state.setdefault("copilot_ai", {})
+    stale = store.get("key") and store["key"] != cache_key
+
+    col_b, col_s = st.columns([1, 3])
+    with col_b:
+        asked = st.button("🤖 Fråga modellen", key="copilot_ask",
+                          type="secondary",
+                          disabled=not openai_client.configured())
+    with col_s:
+        if not openai_client.configured():
+            st.caption(f"Modellen är inte påslagen — {openai_client.KEY_NAME} "
+                       f"saknas i secrets. Panelen fungerar utan den.")
+        elif stale:
+            st.caption("Underlaget har ändrats sedan svaret nedan skrevs.")
+
+    if asked:
+        with st.spinner("Analyserar…"):
+            try:
+                reply = openai_client.complete(
+                    copilot_prompt.SYSTEM,
+                    copilot_prompt.build_prompt(
+                        ticker=ticker, strategy=pb.name,
+                        status=_overall_status(results),
+                        entry=entry, stop=stop, target=target,
+                        rr=_rr(entry, stop, target),
+                        risk_pct=_risk_pct(entry, stop),
+                        passed=[r.text for r in results if r.status == "PASS"],
+                        manual=[r.text for r in results if r.status == "MANUAL"],
+                        failed=[r.text for r in results if r.status == "FAIL"],
+                        risk_per_trade=pb.risk.risk_per_trade))
+            except openai_client.AIError as exc:
+                # Ingen tyst fallback. Uteblir svaret ska det synas att det
+                # uteblev — annars läses stubben ovanför som modelltext.
+                st.error(f"Ingen AI-kommentar: {exc}")
+                return
+            store.update({"key": cache_key, "text": reply.text,
+                          "model": reply.model})
+            stale = False
+
+    if store.get("text"):
+        st.markdown(
+            f"<div style='border:1px solid {_BORDER};background:{_BG};"
+            f"border-radius:10px;padding:14px 16px;margin-top:12px;"
+            f"opacity:{'0.55' if stale else '1'};'>"
+            f"<div style='font-size:11px;color:{_DIM};margin-bottom:6px;'>"
+            f"{store.get('model', '')}"
+            f"{' · gäller ett tidigare underlag' if stale else ''}</div></div>",
+            unsafe_allow_html=True)
+        st.markdown(store["text"])
+
+
+def _rr(entry: float, stop: float, target: float) -> float:
+    if not entry or entry == stop:
+        return 0.0
+    return abs(target - entry) / abs(entry - stop)
+
+
+def _risk_pct(entry: float, stop: float) -> float:
+    return abs(entry - stop) / entry * 100 if entry else 0.0
 
 
 # ── Journal section ───────────────────────────────────────────────────────────
@@ -423,8 +510,7 @@ def render_copilot_page() -> None:
 
     # ── AI-kommentar ──────────────────────────────────────────────────────────
     section_title("AI-kommentar", "💬")
-    comment = _ai_comment(ticker, pb, results, entry, stop, target)
-    st.markdown(comment)
+    _render_ai_section(ticker, strategy_key, pb, results, entry, stop, target)
 
     st.markdown("<hr style='border-color:rgba(255,255,255,0.06);margin:28px 0;'>",
                 unsafe_allow_html=True)
