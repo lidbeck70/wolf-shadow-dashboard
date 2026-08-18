@@ -224,3 +224,65 @@ def test_empty_rule_groups_read_as_none_not_as_a_blank():
     p = cp.build_prompt("X", "S", "REJECT", 1, 2, 3, 0.5, 5.0, [], [], [])
     assert p.count("(inga)") == 3
     assert "FÖLL (0)" in p
+
+
+# ── Marknadsdata i prompten ──────────────────────────────────────────────────
+class _Snap:
+    ticker = "ABB"
+    as_of = "2026-08-18"
+    bars = 250
+    price = 100.0
+    atr14 = 3.0
+    atr_pct = 3.0
+    ema50 = 96.0
+    ema200 = 90.0
+    dist_ema50_pct = 4.17
+    dist_ema200_pct = 11.1
+    rsi14 = 58.0
+    vol_ratio = 1.4
+    high_52w = 110.0
+    low_52w = 70.0
+    from_high_pct = -9.1
+    swing_low_20 = 93.0
+    swing_high_20 = 105.0
+    ret_1m_pct = 6.0
+    ret_3m_pct = 12.0
+
+
+def test_the_prompt_carries_the_market_numbers():
+    p = cp.build_prompt("ABB", "Momentum Swing", "WATCH", 100, 95, 115,
+                        3.0, 5.0, [], [], [], snapshot=_Snap())
+    assert "ATR(14) 3.00" in p and "EMA200 90.00" in p
+    assert "1.40×" in p and "RSI(14) 58" in p
+    assert "swing-low 93.00" in p
+
+
+def test_a_missing_snapshot_tells_the_model_not_to_guess():
+    """Utan kursdata får modellen inte uttala sig om trend eller volym."""
+    p = cp.build_prompt("ABB", "S", "WATCH", 100, 95, 115, 3.0, 5.0, [], [], [])
+    assert "Marknadsdata: SAKNAS" in p
+    assert "Kommentera\ninte trend" in p or "Kommentera inte trend" in p
+
+
+def test_the_prompt_survives_an_unfillable_rr():
+    """None ska bli ett streck, inte krascha formateringen."""
+    p = cp.build_prompt("ABB", "S", "WATCH", 100, 100, 0, None, None,
+                        [], [], [])
+    assert "R:R –" in p
+
+
+def test_the_level_alternatives_reach_the_model():
+    import levels as lv
+    alts = lv.stop_candidates(100, _Snap(), fixed_pct=10)
+    p = cp.build_prompt("ABB", "S", "WATCH", 100, 95, 115, 3.0, 5.0,
+                        [], [], [], snapshot=_Snap(),
+                        assessment=lv.assess(100, 95, 115, _Snap()),
+                        alternatives=alts)
+    assert "Alternativa stoppnivåer" in p
+    assert "Swing-low" in p and "% risk" in p
+
+
+def test_the_review_instruction_refuses_to_read_noise_as_signal():
+    s = cp.REVIEW_SYSTEM.lower()
+    assert "räkna aldrig om" in s
+    assert "20 avslutade affärer" in s and "brus" in s

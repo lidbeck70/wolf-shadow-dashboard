@@ -5,13 +5,20 @@ Interaktiv kandidatanalys med deterministisk regelkontroll och AI-kommentar.
 
 Flöde:
     1. Välj strategi + ange ticker
-    2. Fyll i prisdata (entry, stop, target)
-    3. Visa regelkontroll per regel (PASS / MANUAL / FAIL)
-    4. Visa kandidatkort med rekommendation
-    5. AI-kommentar (stub → redo för GPT-integration)
-    6. Snabb journal-logg
+    2. Marknadsdata hämtas (market_data) — ATR, EMA, volym, swing-nivåer
+    3. Fyll i prisdata; levels.py räknar fram alternativa stoppnivåer
+    4. Regelkontroll per regel (PASS / MANUAL / FAIL) mot verkliga tal
+    5. Kandidatkort med rekommendation
+    6. AI-kommentar på knapptryck — kommenterar, räknar inte om
+    7. Journal med utfall, statistik och AI-granskning
 
-Inga beroenden utanför panelen utöver strategy_rules.py och ui/theme.py.
+Arbetsdelningen är CLAUDE.md:s: motorerna äger besluten, AI:n förklarar dem.
+Varje siffra modellen ser är redan uträknad här, och prompten förbjuder den att
+räkna om R:R, risk eller regelutfall.
+
+Journalen ligger i data/copilot_journal.json via storage.py. Den låg tidigare i
+en lokal fil, vilket på Streamlit Cloud betydde att den försvann vid varje
+omstart — och omstart sker vid varje commit till deploy-branchen.
 """
 from __future__ import annotations
 
@@ -27,6 +34,12 @@ from strategy_rules import PLAYBOOKS, Playbook
 from ui.theme import section_title, PALETTE as _P
 from ai import copilot_prompt, openai_client
 
+import journal_stats
+import levels
+import market_data
+import storage
+import storage_ui
+
 # ── Palette shortcuts ─────────────────────────────────────────────────────────
 _GREEN  = _P.get("green",    "#2d8a4e")
 _RED    = _P.get("red",      "#c44545")
@@ -37,28 +50,55 @@ _BG     = "#1A1F25"
 _BORDER = "rgba(255,255,255,0.06)"
 
 # ── Journal storage ───────────────────────────────────────────────────────────
-_JOURNAL_PATH = os.path.join(
+STORE = "copilot_journal"       # data/copilot_journal.json
+
+# Den gamla lokala filen. Streamlit Cloud har ett flyktigt filsystem och startar
+# om appen vid varje commit till deploy-branchen, så allt som skrevs hit
+# försvann vid nästa deploy. Den läses fortfarande EN gång, för att rädda det
+# som råkar finnas kvar i en levande container.
+_LEGACY_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     ".copilot_journal.json",
 )
 
 
+def _legacy_entries() -> list[dict]:
+    if not os.path.exists(_LEGACY_PATH):
+        return []
+    try:
+        with open(_LEGACY_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
 def _load_journal() -> list[dict]:
-    if os.path.exists(_JOURNAL_PATH):
-        try:
-            with open(_JOURNAL_PATH, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return []
+    """Journalen ur sessionen; laddas en gång per session ur repot."""
+    data = storage.session_load(STORE, {"entries": []})
+    if not isinstance(data, dict):
+        data = {"entries": []}
+        st.session_state[STORE] = data
+    data.setdefault("entries", [])
+
+    if not data["entries"]:
+        rescued = _legacy_entries()
+        if rescued:
+            data["entries"] = rescued
+            st.info(f"Hittade {len(rescued)} poster i den gamla lokala "
+                    f"journalfilen. De ligger nu i sessionen — tryck 💾 Spara "
+                    f"så hamnar de i repot och överlever nästa omstart.")
+    return data["entries"]
 
 
 def _save_journal(entries: list[dict]) -> None:
-    try:
-        with open(_JOURNAL_PATH, "w", encoding="utf-8") as f:
-            json.dump(entries, f, ensure_ascii=False, indent=2)
-    except Exception as exc:
-        st.warning(f"Kunde inte spara journal: {exc}")
+    """Skriver till sessionen. Persistensen sker via 💾 Spara.
+
+    Medvetet ingen nätverkstrafik här — en commit per tangenttryck slår i
+    GitHubs rate limits.
+    """
+    data = st.session_state.setdefault(STORE, {"entries": []})
+    data["entries"] = entries
 
 
 # ── Rule check logic ──────────────────────────────────────────────────────────
@@ -72,41 +112,204 @@ class RuleResult:
     hard: bool = False
 
 
-def _check_rules(pb: Playbook, entry: float, stop: float, target: float) -> list[RuleResult]:
+def _trend_check(snap) -> Optional[tuple]:
+    """(status, notering) för en trendregel — eller None utan data."""
+    if snap is None or snap.dist_ema200_pct is None:
+        return None
+    above200 = snap.above_ema200
+    above50 = snap.above_ema50
+    if above200 and above50:
+        return ("PASS", f"Kurs {snap.dist_ema50_pct:+.1f} % mot EMA50, "
+                        f"{snap.dist_ema200_pct:+.1f} % mot EMA200")
+    if not above200:
+        return ("FAIL", f"Kurs {snap.dist_ema200_pct:+.1f} % mot EMA200 — "
+                        f"under den långa trenden")
+    return ("MANUAL", f"Över EMA200 men {snap.dist_ema50_pct:+.1f} % mot EMA50 "
+                      f"— trenden är inte entydig")
+
+
+def _volume_check(snap) -> Optional[tuple]:
+    if snap is None or snap.vol_ratio is None:
+        return None
+    if snap.vol_ratio >= 1.2:
+        return ("PASS", f"Volym {snap.vol_ratio:.2f}× 20-dagarssnittet")
+    if snap.vol_ratio < 0.8:
+        return ("FAIL", f"Volym {snap.vol_ratio:.2f}× snittet — ingen "
+                        f"bekräftelse i omsättningen")
+    return ("MANUAL", f"Volym {snap.vol_ratio:.2f}× snittet — varken "
+                      f"bekräftelse eller varning")
+
+
+def _check_rules(pb: Playbook, entry: float, stop: float, target: float,
+                 snap=None) -> list[RuleResult]:
     """
     Deterministisk regelkontroll.
-    Regler som kräver prisdata (R:R, stop-nivå) räknas automatiskt.
-    Regler som kräver extern information (regim, ranking) markeras MANUAL.
+
+    Regler som går att räkna räknas. Med en ögonblicksbild (market_data) kan
+    även trend- och volymreglerna avgöras mekaniskt i stället för att skickas
+    vidare som MANUAL — utan den föll de tidigare igenom obesvarade.
+
+    En regel markeras bara PASS eller FAIL när det finns ett tal bakom
+    beslutet. Saknas datan står den kvar som MANUAL: en obesvarad fråga får
+    inte se ut som ett godkännande.
     """
     results: list[RuleResult] = []
 
-    risk_pct = abs(entry - stop) / entry * 100 if entry else 0
-    rr = abs(target - entry) / abs(entry - stop) if (entry and stop and entry != stop) else 0
+    risk_pct = levels.risk_pct(entry, stop)
+    ratio = levels.rr(entry, stop, target)
 
     for r in pb.entry:
         text_lower = r.text.lower()
 
         # R:R-kontroll
         if "1:2" in r.text or "r:r" in text_lower or "reward" in text_lower:
-            if rr >= 2.0:
+            if ratio is None:
+                results.append(RuleResult(r.number, r.text, "MANUAL",
+                                          "Fyll i entry, stop och target", r.hard))
+            elif round(ratio, 6) >= levels.RR_MIN:
                 results.append(RuleResult(r.number, r.text, "PASS",
-                                           f"R:R = {rr:.1f}x ✓", r.hard))
+                                          f"R:R = {ratio:.1f}x ✓", r.hard))
             else:
+                need = levels.target_for_rr(entry, stop, levels.RR_MIN)
                 results.append(RuleResult(r.number, r.text, "FAIL",
-                                           f"R:R = {rr:.1f}x — kräver ≥ 2,0", r.hard))
+                                          f"R:R = {ratio:.1f}x — kräver "
+                                          f"≥ {levels.RR_MIN:g} (target {need:g})",
+                                          r.hard))
 
         # Stop-nivå
-        elif "stop" in text_lower and entry and stop:
+        elif "stop" in text_lower and risk_pct is not None:
             results.append(RuleResult(r.number, r.text, "PASS",
-                                       f"Stop = {risk_pct:.1f} % från entry", r.hard))
+                                      f"Stop = {risk_pct:.1f} % från entry", r.hard))
+
+        # Trend — går att avgöra så fort vi har kursdata
+        elif any(w in text_lower for w in ("trend", "ma200", "ma50", "ema")):
+            checked = _trend_check(snap)
+            results.append(RuleResult(
+                r.number, r.text, checked[0] if checked else "MANUAL",
+                checked[1] if checked else
+                "Kontrollera i panelen: " + r.panel_guide[:80], r.hard))
+
+        # Volym
+        elif "volym" in text_lower or "volume" in text_lower:
+            checked = _volume_check(snap)
+            results.append(RuleResult(
+                r.number, r.text, checked[0] if checked else "MANUAL",
+                checked[1] if checked else
+                "Kontrollera i panelen: " + r.panel_guide[:80], r.hard))
 
         # Allt annat kräver manuell koll
         else:
             results.append(RuleResult(r.number, r.text, "MANUAL",
-                                       "Kontrollera i panelen: " + r.panel_guide[:80],
-                                       r.hard))
+                                      "Kontrollera i panelen: " + r.panel_guide[:80],
+                                      r.hard))
 
     return results
+
+
+# ── Marknadsdata och nivåer ──────────────────────────────────────────────────
+
+def _render_market(snap, error: Optional[str]) -> None:
+    """Ögonblicksbilden. Uteblir den syns det — en tyst tom ruta läses som
+    att inget var anmärkningsvärt."""
+    if error:
+        st.warning(f"Ingen marknadsdata: {error}\n\nRegelkontrollen kör vidare, "
+                   f"men trend- och volymreglerna kan inte avgöras utan kurs.")
+        return
+    if snap is None:
+        return
+
+    def _m(col, label, value, suffix="", fmt="{:.2f}", color="#E8EDF2"):
+        text = "–" if value is None else fmt.format(value) + suffix
+        col.markdown(
+            f'<div style="text-align:center;">'
+            f'<div style="font-size:17px;font-weight:700;color:{color};">{text}</div>'
+            f'<div style="font-size:10px;color:{_DIM};">{label}</div></div>',
+            unsafe_allow_html=True)
+
+    with st.expander(f"📊 Marknadsdata — {snap.ticker} per {snap.as_of}",
+                     expanded=True):
+        c = st.columns(6)
+        _m(c[0], "Kurs", snap.price)
+        _m(c[1], "ATR(14)", snap.atr_pct, " %",
+           color=_AMBER if (snap.atr_pct or 0) > 5 else "#E8EDF2")
+        _m(c[2], "mot EMA50", snap.dist_ema50_pct, " %", "{:+.1f}",
+           _GREEN if snap.above_ema50 else _RED)
+        _m(c[3], "mot EMA200", snap.dist_ema200_pct, " %", "{:+.1f}",
+           _GREEN if snap.above_ema200 else _RED)
+        _m(c[4], "RSI(14)", snap.rsi14, "", "{:.0f}")
+        _m(c[5], "Volym", snap.vol_ratio, "×",
+           color=_GREEN if (snap.vol_ratio or 0) >= 1.2 else _DIM)
+        st.caption(f"52 v {snap.low_52w:.2f}–{snap.high_52w:.2f} · "
+                   f"{snap.from_high_pct:+.1f} % från toppen · "
+                   f"swing-low 20 d {snap.swing_low_20:.2f} · "
+                   f"EMA, inte SMA — samma definition som regimmotorn.")
+
+
+def _render_levels(entry: float, stop: float, target: float, snap,
+                   pb: Playbook) -> None:
+    """Räknade stoppnivåer och vad de valda innebär.
+
+    Panelen väljer inte åt dig. Att se att en ATR-stop kostar 8 % risk medan
+    swing-low kostar 4 % ÄR beslutsunderlaget.
+    """
+    fixed = _fixed_stop_pct(pb)
+    alts = (levels.stop_candidates(entry, snap, fixed, _atr_mult(pb))
+            if entry else [])
+    if not alts and not entry:
+        return
+
+    with st.expander("🎯 Entry- och exitnivåer — räknade", expanded=bool(alts)):
+        if not alts:
+            st.caption("Fyll i entry, och hämta kursdata, så räknas "
+                       "stoppnivåerna fram.")
+        for s in alts:
+            chosen = stop and abs(s.price - stop) / s.price < 0.005
+            mark = " ← din nivå" if chosen else ""
+            st.markdown(
+                f'<div style="border-left:2px solid '
+                f'{_CYAN if chosen else _BORDER};padding:6px 0 6px 12px;'
+                f'margin-bottom:8px;">'
+                f'<span style="font-size:13px;font-weight:700;color:#E8EDF2;">'
+                f'{s.name} {s.price:g}</span>'
+                f'<span style="font-size:11px;color:{_AMBER};margin-left:10px;">'
+                f'{s.risk_pct:.1f} % risk</span>'
+                f'<span style="font-size:11px;color:{_CYAN};margin-left:10px;">'
+                f'{mark}</span>'
+                f'<div style="font-size:11px;color:{_DIM};margin-top:2px;">'
+                f'{s.why} Target {s.target_for_min_rr:g} för '
+                f'{levels.RR_MIN:g}:1 · {s.target_for_pref_rr:g} för '
+                f'{levels.RR_PREFERRED:g}:1.</div></div>',
+                unsafe_allow_html=True)
+
+        assessment = levels.assess(entry, stop, target, snap)
+        for note in assessment.notes:
+            st.warning(note)
+        if not assessment.notes and assessment.rr is not None:
+            st.success(f"R:R {assessment.rr:.1f}x — inga invändningar mot "
+                       f"nivåerna.")
+
+
+def _fixed_stop_pct(pb: Playbook) -> Optional[float]:
+    """Strategins fasta stoppavstånd, om den har ett.
+
+    Läses ur strategy_rules.py i stället för att hårdkodas här — den filen är
+    källan, och en ändrad tröskel ska slå igenom utan att någon minns att
+    Copiloten har en egen kopia.
+
+    Bara NEGATIVA procenttal räknas: momentums stop är "−10 % från entry", och
+    "+20 %" i samma mening är nivån där stoppen flyttas till break-even. Utan
+    tecknet hade den lästs som ett stoppavstånd.
+    """
+    import re
+    m = re.search(r"[-−]\s*(\d+(?:[.,]\d+)?)\s*%", str(pb.risk.stop))
+    return float(m.group(1).replace(",", ".")) if m else None
+
+
+def _atr_mult(pb: Playbook) -> Optional[float]:
+    """Strategins ATR-multipel: Viking 1,5×, Wolf 2,5×."""
+    import re
+    m = re.search(r"(\d+(?:[.,]\d+)?)\s*[×xX]\s*ATR", str(pb.risk.stop))
+    return float(m.group(1).replace(",", ".")) if m else None
 
 
 # ── Candidate card ────────────────────────────────────────────────────────────
@@ -209,18 +412,21 @@ def _ai_comment(ticker: str, pb: Playbook, results: list[RuleResult],
 # ── AI-kommentar: knappstyrd, aldrig i renderingsvägen ────────────────────────
 
 def _ai_cache_key(ticker: str, strategy_key: str,
-                  entry: float, stop: float, target: float) -> str:
+                  entry: float, stop: float, target: float,
+                  as_of: str = "") -> str:
     """Ändras underlaget blir det gamla svaret ogiltigt.
 
     Utan detta ligger en kommentar om entry 100 kvar när du ändrat till 120,
     och den ser lika auktoritativ ut som när den skrevs.
     """
-    return f"{strategy_key}|{ticker.upper()}|{entry:g}|{stop:g}|{target:g}"
+    return (f"{strategy_key}|{ticker.upper()}|{entry:g}|{stop:g}|{target:g}"
+            f"|{as_of}")
 
 
 def _render_ai_section(ticker: str, strategy_key: str, pb: Playbook,
                        results: list[RuleResult],
-                       entry: float, stop: float, target: float) -> None:
+                       entry: float, stop: float, target: float,
+                       snap=None) -> None:
     """Deterministisk sammanfattning alltid; modellsvar på knapptryck.
 
     Anropet ligger BAKOM en knapp med flit. Streamlit kör om hela skriptet vid
@@ -229,7 +435,8 @@ def _render_ai_section(ticker: str, strategy_key: str, pb: Playbook,
     """
     st.markdown(_ai_comment(ticker, pb, results, entry, stop, target))
 
-    cache_key = _ai_cache_key(ticker, strategy_key, entry, stop, target)
+    cache_key = _ai_cache_key(ticker, strategy_key, entry, stop, target,
+                              getattr(snap, 'as_of', '') or '')
     store = st.session_state.setdefault("copilot_ai", {})
     stale = store.get("key") and store["key"] != cache_key
 
@@ -254,12 +461,16 @@ def _render_ai_section(ticker: str, strategy_key: str, pb: Playbook,
                         ticker=ticker, strategy=pb.name,
                         status=_overall_status(results),
                         entry=entry, stop=stop, target=target,
-                        rr=_rr(entry, stop, target),
-                        risk_pct=_risk_pct(entry, stop),
+                        rr=levels.rr(entry, stop, target),
+                        risk_pct=levels.risk_pct(entry, stop),
                         passed=[r.text for r in results if r.status == "PASS"],
                         manual=[r.text for r in results if r.status == "MANUAL"],
                         failed=[r.text for r in results if r.status == "FAIL"],
-                        risk_per_trade=pb.risk.risk_per_trade))
+                        risk_per_trade=pb.risk.risk_per_trade,
+                        snapshot=snap,
+                        assessment=levels.assess(entry, stop, target, snap),
+                        alternatives=levels.stop_candidates(
+                            entry, snap, _fixed_stop_pct(pb), _atr_mult(pb))))
             except openai_client.AIError as exc:
                 # Ingen tyst fallback. Uteblir svaret ska det synas att det
                 # uteblev — annars läses stubben ovanför som modelltext.
@@ -279,16 +490,6 @@ def _render_ai_section(ticker: str, strategy_key: str, pb: Playbook,
             f"{' · gäller ett tidigare underlag' if stale else ''}</div></div>",
             unsafe_allow_html=True)
         st.markdown(store["text"])
-
-
-def _rr(entry: float, stop: float, target: float) -> float:
-    if not entry or entry == stop:
-        return 0.0
-    return abs(target - entry) / abs(entry - stop)
-
-
-def _risk_pct(entry: float, stop: float) -> float:
-    return abs(entry - stop) / entry * 100 if entry else 0.0
 
 
 # ── Journal section ───────────────────────────────────────────────────────────
@@ -311,6 +512,10 @@ def _render_journal_log(ticker: str, strategy_key: str,
                 index=list(PLAYBOOKS.keys()).index(strategy_key) if strategy_key in PLAYBOOKS else 0,
                 format_func=lambda k: PLAYBOOKS[k].name,
             )
+            log_shares = st.number_input(
+                "Antal aktier (valfritt)", min_value=0, step=1, value=0,
+                help="Krävs för vinstandel och payoff-kvot, som räknas i "
+                     "kronor. R-multipeln fungerar utan.")
             log_note   = st.text_input("Anteckning (valfri)")
 
         submitted = st.form_submit_button("💾 Spara till journal", type="primary")
@@ -323,6 +528,7 @@ def _render_journal_log(ticker: str, strategy_key: str,
                 "entry":    entry,
                 "stop":     stop,
                 "target":   target,
+                "shares":   int(log_shares) or None,
                 "note":     log_note,
                 "logged_at": datetime.datetime.utcnow().isoformat(),
             })
@@ -330,35 +536,183 @@ def _render_journal_log(ticker: str, strategy_key: str,
             st.success(f"✅ {log_ticker.upper()} loggad!")
 
 
+def _with_metrics(entries: list[dict]) -> list[dict]:
+    """Journalposterna med utfallen uträknade.
+
+    Räknas vid varje anrop i stället för att lagras: R-multipeln mäts mot
+    stoppen du faktiskt la, och en lagrad kopia hade blivit fel så fort en
+    rad rättades.
+    """
+    out = []
+    for e in entries or []:
+        if not isinstance(e, dict):
+            continue
+        row = dict(e)
+        entry, stop = e.get("entry"), e.get("stop")
+        exit_price = e.get("exit_price")
+        if exit_price:
+            row["pnl_pct"] = journal_stats.pnl_pct(entry, exit_price)
+            row["r_multiple"] = journal_stats.r_multiple(entry, stop,
+                                                         exit_price)
+            row["holding_days"] = journal_stats.holding_days(
+                e.get("date"), e.get("exit_date"))
+            # Vinstandel och payoff-kvot räknas i KRONOR i journal_stats, så de
+            # kräver antal aktier. Utan det förblir de None — och UI:t säger
+            # varför i stället för att visa ett streck utan förklaring.
+            row["pnl_amount"] = journal_stats.pnl_amount(
+                entry, exit_price, e.get("shares"), e.get("fees") or 0)
+        out.append(row)
+    return out
+
+
+def _render_journal_stats(entries: list[dict]) -> None:
+    """Statistikbladet plus AI-granskningen.
+
+    Det är HÄR avkastningen faktiskt mäts. En kommentar före ett köp är en
+    gissning; det här är utfallen.
+    """
+    rows = _with_metrics(entries)
+    stats = journal_stats.summary(rows)
+
+    if not stats["closed"]:
+        st.caption("Inga avslutade affärer ännu. Fyll i säljkurs på en post "
+                   "nedan, så börjar statistiken räknas.")
+        return
+
+    def _m(col, label, value, suffix="", fmt="{:.1f}"):
+        text = "–" if value is None else fmt.format(value) + suffix
+        col.metric(label, text)
+
+    c = st.columns(5)
+    _m(c[0], "Avslutade", stats["closed"], "", "{:.0f}")
+    _m(c[1], "Vinstandel", stats["win_rate"], " %")
+    _m(c[2], "Payoff", stats["payoff"], "", "{:.2f}")
+    _m(c[3], "Snitt-R", stats["avg_r"], "R", "{:.2f}")
+    _m(c[4], "Innehav", stats["avg_days"], " d", "{:.0f}")
+
+    if stats["win_rate"] is None:
+        st.caption("Vinstandel och payoff-kvot räknas i kronor och kräver "
+                   "antal aktier på posten. Fyll i det när du loggar, så "
+                   "börjar de räknas — R-multipeln fungerar redan utan.")
+    elif not stats["enough"]:
+        st.caption(f"Under {journal_stats.MIN_TRADES} avslutade affärer är "
+                   f"vinstandel och payoff-kvot brus. Siffrorna visas, men "
+                   f"dra inga slutsatser av dem än.")
+
+    closed = [r for r in rows if r.get("exit_price")]
+    _render_review_button(stats, closed)
+
+
+def _render_review_button(stats: dict, closed: list) -> None:
+    """AI-granskning av journalen. Knappstyrd, som allt annat som kostar."""
+    store = st.session_state.setdefault("copilot_review", {})
+    key = f"{stats['closed']}|{stats.get('win_rate')}|{stats.get('avg_r')}"
+
+    col_b, col_s = st.columns([1, 3])
+    with col_b:
+        asked = st.button("🔎 Granska journalen", key="copilot_review_btn",
+                          disabled=not openai_client.configured())
+    with col_s:
+        if not openai_client.configured():
+            st.caption("Kräver OPENAI_API_KEY i secrets.")
+        elif store.get("key") and store["key"] != key:
+            st.caption("Journalen har ändrats sedan granskningen nedan.")
+
+    if asked:
+        with st.spinner("Läser journalen…"):
+            try:
+                reply = openai_client.complete(
+                    copilot_prompt.REVIEW_SYSTEM,
+                    copilot_prompt.build_review_prompt(
+                        stats, list(reversed(closed))[:30],
+                        journal_stats.MIN_TRADES))
+            except openai_client.AIError as exc:
+                st.error(f"Ingen granskning: {exc}")
+                return
+            store.update({"key": key, "text": reply.text})
+
+    if store.get("text"):
+        st.markdown(store["text"])
+
+
 def _render_journal_history() -> None:
-    """Visa senaste journal-poster."""
+    """Posterna, med möjlighet att stänga en affär."""
     entries = _load_journal()
     if not entries:
         st.caption("Inga poster ännu.")
         return
 
-    recent = list(reversed(entries[-20:]))
-    for e in recent:
-        rr_val = abs(e.get("target", 0) - e.get("entry", 0)) / abs(
-            e.get("entry", 0) - e.get("stop", 1e-9) or 1e-9
-        ) if e.get("entry") else 0
-        st.markdown(
-            f'<div style="background:{_BG};border:1px solid {_BORDER};'
-            f'border-radius:6px;padding:10px 14px;margin-bottom:6px;'
-            f'display:flex;justify-content:space-between;align-items:center;">'
-            f'<span style="font-size:13px;font-weight:700;color:#E8EDF2;">'
-            f'{e.get("ticker","?")} '
-            f'<span style="font-size:11px;color:{_DIM};font-weight:400;">'
-            f'— {PLAYBOOKS.get(e.get("strategy",""), type("",(),{"name":e.get("strategy","")})()).name}'  # type: ignore[attr-defined]
-            f'</span></span>'
-            f'<span style="font-size:11px;color:{_DIM};">'
-            f'Entry {e.get("entry","—")} · Stop {e.get("stop","—")} · '
-            f'Target {e.get("target","—")} · R:R {rr_val:.1f}x'
-            f'</span>'
-            f'<span style="font-size:11px;color:{_DIM};">{e.get("date","")}</span>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
+    for idx in range(len(entries) - 1, max(len(entries) - 21, -1), -1):
+        e = entries[idx]
+        ratio = levels.rr(e.get("entry"), e.get("stop"), e.get("target"))
+        pb_name = PLAYBOOKS[e["strategy"]].name if e.get("strategy") in PLAYBOOKS \
+            else e.get("strategy", "")
+        closed = bool(e.get("exit_price"))
+        pnl = journal_stats.pnl_pct(e.get("entry"), e.get("exit_price"))
+        head = (f"{e.get('ticker', '?')} · {e.get('date', '')} · {pb_name}"
+                + (f" · {pnl:+.1f} %" if pnl is not None else " · öppen"))
+
+        with st.expander(head, expanded=False):
+            st.caption(f"Entry {e.get('entry', '—')} · Stop {e.get('stop', '—')} "
+                       f"· Target {e.get('target', '—')} · "
+                       f"R:R {ratio:.1f}x" if ratio is not None else
+                       f"Entry {e.get('entry', '—')} · Stop {e.get('stop', '—')}")
+            if e.get("note"):
+                st.caption(f"Anteckning: {e['note']}")
+
+            c1, c2, c3 = st.columns(3)
+            exit_price = c1.number_input(
+                "Säljkurs", min_value=0.0, step=0.5, format="%.2f",
+                value=float(e.get("exit_price") or 0.0),
+                key=f"cj_exit_{idx}")
+            exit_date = c2.date_input(
+                "Säljdatum", key=f"cj_date_{idx}",
+                value=datetime.date.fromisoformat(str(e["exit_date"])[:10])
+                if e.get("exit_date") else datetime.date.today())
+            sell_rule = c3.selectbox(
+                "Säljregel", [""] + list(journal_stats.SELL_RULES),
+                index=([""] + list(journal_stats.SELL_RULES)).index(
+                    e.get("sell_rule", "")) if e.get("sell_rule", "") in
+                journal_stats.SELL_RULES else 0,
+                format_func=lambda r: journal_stats.SELL_RULE_LABEL.get(r, "—"),
+                key=f"cj_rule_{idx}")
+
+            d1, d2, d3 = st.columns(3)
+            shares = d3.number_input(
+                "Antal aktier", min_value=0, step=1,
+                value=int(e.get("shares") or 0), key=f"cj_shares_{idx}",
+                help="Krävs för vinstandel och payoff-kvot.")
+            setup = d1.selectbox(
+                "Setup", [""] + list(journal_stats.SETUPS),
+                index=([""] + list(journal_stats.SETUPS)).index(e.get("setup", ""))
+                if e.get("setup", "") in journal_stats.SETUPS else 0,
+                format_func=lambda x: journal_stats.SETUP_LABEL.get(x, "—"),
+                key=f"cj_setup_{idx}")
+            followed = d2.selectbox(
+                "Följde du planen?", ["", "Ja", "Nej"],
+                index=["", "Ja", "Nej"].index(e.get("followed_plan", ""))
+                if e.get("followed_plan", "") in ("Ja", "Nej") else 0,
+                key=f"cj_plan_{idx}",
+                help="Den enda frågan som mäter dig och inte marknaden.")
+
+            new = {"exit_price": exit_price or None,
+                   "exit_date": str(exit_date) if exit_price else None,
+                   "sell_rule": sell_rule, "setup": setup,
+                   "followed_plan": followed, "shares": int(shares) or None}
+            if any(e.get(k) != v for k, v in new.items()):
+                e.update(new)
+                _save_journal(entries)
+
+            if closed:
+                r = journal_stats.r_multiple(e.get("entry"), e.get("stop"),
+                                             e.get("exit_price"))
+                st.caption(f"Resultat {pnl:+.1f} % · "
+                           + (f"{r:+.2f}R" if r is not None else "R saknas"))
+
+            if st.button("Ta bort posten", key=f"cj_del_{idx}"):
+                entries.pop(idx)
+                _save_journal(entries)
+                st.rerun()
 
 
 # ── Main render function ──────────────────────────────────────────────────────
@@ -371,6 +725,8 @@ def render_copilot_page() -> None:
         f'Kandidatanalys · Regelkontroll · Riskkontroll · Journal</p>',
         unsafe_allow_html=True,
     )
+    _load_journal()
+    storage_ui.save_bar(STORE, "Copilot-journalen")
 
     # ── Inmatning ─────────────────────────────────────────────────────────────
     col_a, col_b = st.columns([2, 3])
@@ -454,7 +810,11 @@ def render_copilot_page() -> None:
         st.warning("Denna strategi har inga definierade entry-regler ännu.")
         return
 
-    results = _check_rules(pb, entry, stop, target)
+    snap, snap_error = market_data.try_snapshot(ticker)
+    _render_market(snap, snap_error)
+    _render_levels(entry, stop, target, snap, pb)
+
+    results = _check_rules(pb, entry, stop, target, snap)
     overall = _overall_status(results)
     overall_color = _status_to_color(overall)
 
@@ -510,7 +870,8 @@ def render_copilot_page() -> None:
 
     # ── AI-kommentar ──────────────────────────────────────────────────────────
     section_title("AI-kommentar", "💬")
-    _render_ai_section(ticker, strategy_key, pb, results, entry, stop, target)
+    _render_ai_section(ticker, strategy_key, pb, results, entry, stop, target,
+                       snap)
 
     st.markdown("<hr style='border-color:rgba(255,255,255,0.06);margin:28px 0;'>",
                 unsafe_allow_html=True)
@@ -518,5 +879,9 @@ def render_copilot_page() -> None:
     # ── Journal ───────────────────────────────────────────────────────────────
     _render_journal_log(ticker, strategy_key, entry, stop, target)
 
+    section_title("Journalstatistik", "📊")
+    _render_journal_stats(_load_journal())
+
     with st.expander("📋 Senaste journal-poster", expanded=False):
         _render_journal_history()
+    storage_ui.footer()
