@@ -36,6 +36,7 @@ from ai import copilot_prompt, openai_client
 
 import cycle
 import journal_stats
+import review_link
 import levels
 import market_data
 import storage
@@ -267,6 +268,35 @@ def _render_cycle(ticker: str, strategy_key: str):
         st.caption(f"{name} är inte betygsatt i rotationsfliken ännu — "
                    f"cykelregeln står som MANUAL tills det är gjort.")
     return state, name
+
+
+def _render_review(ticker: str, strategy_key: str):
+    """Granskningsboxen: arkets eget utfall plus DS/AQS/CSM, läst ur samma
+    session som granskningsfliken skriver till. Returnerar review-dicten."""
+    if not review_link.has_review(strategy_key):
+        return None
+    store_name, _label = review_link.SHEET[strategy_key]
+    stores = {store_name: storage.session_load(
+        store_name, review_link.STORE_DEFAULTS[store_name])}
+    rev = review_link.review(strategy_key, ticker, stores)
+    if rev is None:
+        return None
+
+    color = {_c: v for _c, v in (("PASS", _GREEN), ("MANUAL", _AMBER),
+                                 ("FAIL", _RED))}[rev["status"]]
+    controls_line = " · ".join(
+        f"{label} {status}" for status, label, _n in rev["controls"]) or ""
+    st.markdown(
+        f'<div style="border:1px solid {color}55;background:{color}0d;'
+        f'border-radius:8px;padding:8px 12px;margin:4px 0 10px;">'
+        f'<span style="color:{color};font-weight:700;">Granskningen — '
+        f'{rev["sheet"]}: {rev["status"]}</span>'
+        f'<div style="color:{_DIM};font-size:11px;margin-top:2px;">'
+        f'{rev["note"]}</div>'
+        + (f'<div style="color:{_DIM};font-size:11px;">{controls_line}</div>'
+           if controls_line else "")
+        + '</div>', unsafe_allow_html=True)
+    return rev
 
 
 def _render_market(snap, error: Optional[str]) -> None:
@@ -510,7 +540,8 @@ def _ai_cache_key(ticker: str, strategy_key: str,
 def _render_ai_section(ticker: str, strategy_key: str, pb: Playbook,
                        results: list[RuleResult],
                        entry: float, stop: float, target: float,
-                       snap=None, cyc_state=None, bspot=None) -> None:
+                       snap=None, cyc_state=None, bspot=None,
+                       rev=None) -> None:
     """Deterministisk sammanfattning alltid; modellsvar på knapptryck.
 
     Anropet ligger BAKOM en knapp med flit. Streamlit kör om hela skriptet vid
@@ -555,7 +586,8 @@ def _render_ai_section(ticker: str, strategy_key: str, pb: Playbook,
                         assessment=levels.assess(entry, stop, target, snap),
                         alternatives=levels.stop_candidates(
                             entry, snap, _fixed_stop_pct(pb), _atr_mult(pb)),
-                        cycle_state=cyc_state, blindspot=bspot))
+                        cycle_state=cyc_state, blindspot=bspot,
+                        review_lines=review_link.prompt_lines(rev)))
             except openai_client.AIError as exc:
                 # Ingen tyst fallback. Uteblir svaret ska det synas att det
                 # uteblev — annars läses stubben ovanför som modelltext.
@@ -928,7 +960,19 @@ def render_copilot_page() -> None:
     bspot = cycle.blindspot_latest(ticker)
     _render_levels(entry, stop, target, snap, pb)
 
+    rev = _render_review(ticker, strategy_key)
+
     results = _check_rules(pb, entry, stop, target, snap)
+    if rev is not None:
+        # Granskningens utfall och kontroller som regelrader — arkets egen
+        # bedömning, läst, inte omräknad.
+        for status, label, note in reversed(rev["controls"]):
+            results.insert(0, RuleResult(0, f"Kontroll: {label}",
+                                         status, note,
+                                         hard=(status == "FAIL")))
+        results.insert(0, RuleResult(
+            0, f"Granskningen — {rev['sheet']}", rev["status"], rev["note"],
+            hard=(rev["status"] == "FAIL")))
     if cycle.requires_cycle(strategy_key):
         # Köpgrindens första fråga — mekanisk, ur rotationsfliken. Vila fäller
         # kandidaten oavsett hur bra bolaget är: fel fas är fel fas.
@@ -992,7 +1036,7 @@ def render_copilot_page() -> None:
     # ── AI-kommentar ──────────────────────────────────────────────────────────
     section_title("AI-kommentar", "💬")
     _render_ai_section(ticker, strategy_key, pb, results, entry, stop, target,
-                       snap, cyc_state, bspot)
+                       snap, cyc_state, bspot, rev)
 
     st.markdown("<hr style='border-color:rgba(255,255,255,0.06);margin:28px 0;'>",
                 unsafe_allow_html=True)

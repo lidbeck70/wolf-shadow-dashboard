@@ -112,7 +112,8 @@ def build_prompt(ticker: str, strategy: str, status: str,
                  passed: list, manual: list, failed: list,
                  risk_per_trade: str = "",
                  snapshot=None, assessment=None, alternatives=None,
-                 cycle_state=None, blindspot=None) -> str:
+                 cycle_state=None, blindspot=None,
+                 review_lines=None) -> str:
     """Underlaget, i klartext. Allt är redan räknat av motorn."""
     rr_txt = "–" if rr is None else f"{rr:.1f}x"
     risk_txt = "–" if risk_pct is None else f"{risk_pct:.1f} %"
@@ -130,6 +131,8 @@ Nivåer (satta av användaren, redan validerade av motorn):
 {_market_block(snapshot)}
 
 {_cycle_block(cycle_state, blindspot)}
+
+{chr(10).join(review_lines) if review_lines else ""}
 
 {_levels_block(assessment, alternatives)}
 
