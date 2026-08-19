@@ -132,3 +132,96 @@ def blindspot_latest(ticker: str) -> Optional[dict]:
     except Exception:
         return None
     return entries[-1] if entries else None
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  Marknadscykeln — contrarian och quality
+# ═════════════════════════════════════════════════════════════════════════════
+# De två strategiernas cykel är INTE rotationsflikens Triple Signal utan
+# Market Cycle Engines 14 psykologifaser — och deras playbooks namnger faserna
+# ordagrant ("ACCUMULATE 1/3 — fas CAPITULATION eller DEPRESSION"). Därför
+# PARSAS fasmängderna ur strategy_rules i stället för att definieras om här:
+# ändras playbooken följer grinden med, och de två kan inte glida isär.
+
+MARKET_CYCLE_STRATEGIES = ("contrarian", "quality")
+
+PHASE_UNKNOWN = ("Fasen kunde inte läsas — Market Cycle Engine gav inget "
+                 "svar för tickern. Kontrollera symbolen, eller läs fasen "
+                 "manuellt i REGIME → Market Cycle.")
+
+
+def requires_market_cycle(strategy: str) -> bool:
+    return (strategy or "").strip().lower() in MARKET_CYCLE_STRATEGIES
+
+
+def playbook_phases(strategy: str) -> dict:
+    """{'buy': set, 'hold': set, 'sell': set} — läst ur playbookens egna rader.
+
+    En entry-rad som nämner en fas lägger den i köpmängden; en exit-rad i
+    säljmängden — utom HOLD-raderna ("HOLD i OPTIMISM och BELIEF — sälj inte,
+    köp inte mer"), som är sitt eget läge: varken köp eller sälj.
+    """
+    import strategy_rules
+    from market_cycle.rules import PHASE_ORDER
+
+    pb = strategy_rules.PLAYBOOKS.get((strategy or "").strip().lower())
+    if pb is None:
+        return {"buy": set(), "hold": set(), "sell": set()}
+
+    def _phases_in(text: str) -> set:
+        return {p for p in PHASE_ORDER
+                if p in text.upper().replace(",", " ").split()}
+
+    out = {"buy": set(), "hold": set(), "sell": set()}
+    for r in pb.entry:
+        out["buy"] |= _phases_in(r.text)
+    for r in getattr(pb, "exit", []) or []:
+        text = getattr(r, "text", str(r))
+        bucket = "hold" if "HOLD" in text.upper() else "sell"
+        out[bucket] |= _phases_in(text)
+    out["buy"] -= out["hold"]          # en HOLD-fas är aldrig en köpfas
+    out["sell"] -= out["hold"]
+    return out
+
+
+def market_phase(ticker: str) -> tuple:
+    """(fas-dict, felmeddelande) ur Market Cycle Engine — cachad en timme.
+
+    Läser motorns cachade analys; själva beräkningen laddar kursdata, så den
+    hör hemma bakom st.cache_data (vilket cached_market_cycle_analysis är).
+    """
+    name = (ticker or "").strip().upper()
+    if not name:
+        return None, "Ingen ticker angiven."
+    try:
+        from market_cycle.cache import cached_market_cycle_analysis
+        analysis = cached_market_cycle_analysis(name, "1y")
+    except Exception as exc:
+        return None, f"Market Cycle Engine: {exc}"
+    result = (analysis or {}).get("result") or {}
+    if not result.get("phase"):
+        return None, PHASE_UNKNOWN
+    return {"phase": result["phase"],
+            "confidence": round(float(result.get("confidence") or 0), 1)}, None
+
+
+def gate_from_market_phase(phase_state, strategy: str) -> tuple:
+    """(status, notering) för köpgrindens fasregel.
+
+    Köpfas → PASS, säljfas → FAIL, HOLD → MANUAL ("köp inte mer" är inte
+    samma sak som "sälj"), okänd fas → MANUAL med instruktion.
+    """
+    sets = playbook_phases(strategy)
+    if phase_state is None:
+        return ("MANUAL", PHASE_UNKNOWN)
+    phase = phase_state["phase"]
+    line = (f"Fas {phase.replace('_', ' ')} "
+            f"({phase_state['confidence']:g} % säkerhet, Market Cycle Engine)")
+    if phase in sets["buy"]:
+        return ("PASS", f"{line} — köpfas enligt playbooken.")
+    if phase in sets["hold"]:
+        return ("MANUAL", f"{line} — HOLD: sälj inte, köp inte mer.")
+    if phase in sets["sell"]:
+        return ("FAIL", f"{line} — distributionsfas: här säljer playbooken, "
+                        f"den köper inte.")
+    return ("MANUAL", f"{line} — fasen nämns inte i playbookens regler.")

@@ -299,6 +299,34 @@ def _render_review(ticker: str, strategy_key: str):
     return rev
 
 
+def _render_market_phase(ticker: str, strategy_key: str):
+    """Fas-boxen för contrarian/quality. Returnerar fas-dicten eller None.
+
+    Motorn är densamma som REGIME → Market Cycle och cachas en timme — samma
+    fas där som här.
+    """
+    if not cycle.requires_market_cycle(strategy_key):
+        return None
+    state, err = cycle.market_phase(ticker)
+    if err:
+        st.warning(f"Marknadscykelfasen kunde inte läsas: {err}")
+        return None
+    sets = cycle.playbook_phases(strategy_key)
+    phase = state["phase"]
+    color = (_GREEN if phase in sets["buy"] else
+             _RED if phase in sets["sell"] else _AMBER)
+    st.markdown(
+        f'<div style="border:1px solid {color}55;background:{color}0d;'
+        f'border-radius:8px;padding:8px 12px;margin:4px 0 10px;">'
+        f'<span style="color:{color};font-weight:700;">Marknadscykelfas: '
+        f'{phase.replace("_", " ")} · {state["confidence"]:g} % säkerhet</span>'
+        f'<div style="color:{_DIM};font-size:11px;margin-top:2px;">'
+        f'Market Cycle Engine — samma motor som REGIME-fliken. Playbookens '
+        f'köpfaser: {", ".join(sorted(sets["buy"])) or "–"}.</div></div>',
+        unsafe_allow_html=True)
+    return state
+
+
 def _render_market(snap, error: Optional[str]) -> None:
     """Ögonblicksbilden. Uteblir den syns det — en tyst tom ruta läses som
     att inget var anmärkningsvärt."""
@@ -541,7 +569,7 @@ def _render_ai_section(ticker: str, strategy_key: str, pb: Playbook,
                        results: list[RuleResult],
                        entry: float, stop: float, target: float,
                        snap=None, cyc_state=None, bspot=None,
-                       rev=None) -> None:
+                       rev=None, phase_state=None) -> None:
     """Deterministisk sammanfattning alltid; modellsvar på knapptryck.
 
     Anropet ligger BAKOM en knapp med flit. Streamlit kör om hela skriptet vid
@@ -587,7 +615,8 @@ def _render_ai_section(ticker: str, strategy_key: str, pb: Playbook,
                         alternatives=levels.stop_candidates(
                             entry, snap, _fixed_stop_pct(pb), _atr_mult(pb)),
                         cycle_state=cyc_state, blindspot=bspot,
-                        review_lines=review_link.prompt_lines(rev)))
+                        review_lines=review_link.prompt_lines(rev),
+                        market_phase=phase_state))
             except openai_client.AIError as exc:
                 # Ingen tyst fallback. Uteblir svaret ska det synas att det
                 # uteblev — annars läses stubben ovanför som modelltext.
@@ -957,6 +986,7 @@ def render_copilot_page() -> None:
     _prefill_entry(ticker, snap, entry)
     _render_market(snap, snap_error)
     cyc_state, cyc_name = _render_cycle(ticker, strategy_key)
+    phase_state = _render_market_phase(ticker, strategy_key)
     bspot = cycle.blindspot_latest(ticker)
     _render_levels(entry, stop, target, snap, pb)
 
@@ -979,6 +1009,14 @@ def render_copilot_page() -> None:
         gate_status, gate_note = cycle.gate_from_cycle(cyc_state, cyc_name)
         results.insert(0, RuleResult(
             0, "Cykelläge — rotationsflikens Triple Signal",
+            gate_status, gate_note, hard=True))
+    if cycle.requires_market_cycle(strategy_key):
+        # Contrarian och quality namnger sina faser i playbooken — grinden
+        # läser dem därifrån, så en ändrad playbook flyttar grinden med sig.
+        gate_status, gate_note = cycle.gate_from_market_phase(phase_state,
+                                                              strategy_key)
+        results.insert(0, RuleResult(
+            0, "Marknadscykelfasen — Market Cycle Engine",
             gate_status, gate_note, hard=True))
     overall = _overall_status(results)
     overall_color = _status_to_color(overall)
@@ -1036,7 +1074,7 @@ def render_copilot_page() -> None:
     # ── AI-kommentar ──────────────────────────────────────────────────────────
     section_title("AI-kommentar", "💬")
     _render_ai_section(ticker, strategy_key, pb, results, entry, stop, target,
-                       snap, cyc_state, bspot, rev)
+                       snap, cyc_state, bspot, rev, phase_state)
 
     st.markdown("<hr style='border-color:rgba(255,255,255,0.06);margin:28px 0;'>",
                 unsafe_allow_html=True)

@@ -453,8 +453,10 @@ def _producers(data: dict) -> None:
             price = v4.number_input("Råvarupris nu", min_value=0.0, step=10.0,
                                     value=float(_num(row.get("price"), 0.0) or 0.0),
                                     key=f"pr_p_{row['id']}")
-            if (ev != row.get("ev_ebitda") or nd != row.get("nd_ebitda")
-                    or cost != row.get("unit_cost") or price != row.get("price")):
+            if (storage.differs(ev, row.get("ev_ebitda"), 0.0)
+                    or storage.differs(nd, row.get("nd_ebitda"), 0.0)
+                    or storage.differs(cost, row.get("unit_cost"), 0.0)
+                    or storage.differs(price, row.get("price"), 0.0)):
                 row["ev_ebitda"], row["nd_ebitda"] = ev, nd
                 row["unit_cost"], row["price"] = cost, price
                 changed = True
@@ -477,7 +479,8 @@ def _producers(data: dict) -> None:
                 key=f"pr_rp_{row['id']}",
                 help=f"Reserver ÷ produktion. Under {RP_MIN_YEARS:g} år = "
                      f"samma sak.")
-            if life != row.get("mine_life") or rp != row.get("rp_ratio"):
+            if (storage.differs(life, row.get("mine_life"), 0.0)
+                    or storage.differs(rp, row.get("rp_ratio"), 0.0)):
                 row["mine_life"], row["rp_ratio"] = life, rp
                 changed = True
             dying = asset_dying(row)
@@ -518,7 +521,7 @@ def _producers(data: dict) -> None:
                 key=f"pr_pos_{row['id']}",
                 help=f"Över {ctl.FULL_WORK_MIN_PCT:g} % krävs AQS och CSM. "
                      f"Under räcker DS.")
-            if pos != row.get("position_pct"):
+            if storage.differs(pos, row.get("position_pct"), 0.0):
                 row["position_pct"] = pos
                 changed = True
 
@@ -614,9 +617,12 @@ def _royalty(data: dict) -> None:
                       help="Per aktie. Krymper den är bolaget utspätt, inte "
                            "billigt.")
 
-            if (pn != row.get("pnav_now") or pb != row.get("pnav_bottom")
-                    or en != row.get("ev_now") or em != row.get("ev_median")
-                    or gn != row.get("geo_now") or g3y != row.get("geo_3y")):
+            if (storage.differs(pn, row.get("pnav_now"), 0.0)
+                    or storage.differs(pb, row.get("pnav_bottom"), 0.0)
+                    or storage.differs(en, row.get("ev_now"), 0.0)
+                    or storage.differs(em, row.get("ev_median"), 0.0)
+                    or storage.differs(gn, row.get("geo_now"), 0.0)
+                    or storage.differs(g3y, row.get("geo_3y"), 0.0)):
                 row["pnav_now"], row["pnav_bottom"] = pn, pb
                 row["ev_now"], row["ev_median"] = en, em
                 row["geo_now"], row["geo_3y"] = gn, g3y

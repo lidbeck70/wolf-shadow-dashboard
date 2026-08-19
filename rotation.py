@@ -501,14 +501,14 @@ def _grid(data: dict) -> None:
             v = col.selectbox(slabel, opts, index=opts.index(cur),
                               key=f"rot_{skey}_{c.key}", help=shelp,
                               label_visibility="collapsed")
-            if v != g.get(skey):
+            if v != cur:
                 g[skey] = v
                 changed = True
 
         intact = h5.checkbox("Case", value=bool(g.get("case_intact", True)),
                              key=f"rot_case_{c.key}",
                              help="Hård grind: nej = Vila oavsett summa.")
-        if intact != g.get("case_intact"):
+        if intact != bool(g.get("case_intact", True)):
             g["case_intact"] = intact
             changed = True
 
@@ -518,7 +518,7 @@ def _grid(data: dict) -> None:
                                label_visibility="collapsed",
                                help="Screener-träffar denna månad. En lång "
                                     "lista är i sig ett hat-tecken.")
-        if hits != g.get("screener_hits"):
+        if storage.differs(hits, g.get("screener_hits"), 0):
             g["screener_hits"] = hits
             g.setdefault("hits_history", [])
             g["hits_history"] = (g["hits_history"] + [hits])[-24:]
