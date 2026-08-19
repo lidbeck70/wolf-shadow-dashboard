@@ -37,6 +37,7 @@ from ai import copilot_prompt, openai_client
 import cycle
 import journal_stats
 import review_link
+import swing_verdict
 import levels
 import market_data
 import storage
@@ -142,8 +143,27 @@ def _volume_check(snap) -> Optional[tuple]:
                       f"bekräftelse eller varning")
 
 
+def _match_swing(text_lower: str, checks) -> Optional[tuple]:
+    """Momentum-regeln som matchar texten, ur swing_verdict.rule_checks."""
+    if not checks:
+        return None
+    if "positionsstorlek" in text_lower:
+        return checks.get("positionsstorlek")
+    if "marknadsfilt" in text_lower:      # "marknadsfiltret" böjs
+        return checks.get("marknadsfilter")
+    if "topp 20" in text_lower or "ranking" in text_lower:
+        return checks.get("ranking")
+    if "setup" in text_lower:
+        return checks.get("setup")
+    if "köp per vecka" in text_lower:
+        return checks.get("köp per vecka")
+    if "positioner" in text_lower:
+        return checks.get("positioner")
+    return None
+
+
 def _check_rules(pb: Playbook, entry: float, stop: float, target: float,
-                 snap=None) -> list[RuleResult]:
+                 snap=None, swing_checks=None) -> list[RuleResult]:
     """
     Deterministisk regelkontroll.
 
@@ -162,6 +182,14 @@ def _check_rules(pb: Playbook, entry: float, stop: float, target: float,
 
     for r in pb.entry:
         text_lower = r.text.lower()
+
+        # Momentum: regim, ranking, setup, veckotak och positionstak läses
+        # ur Swing Regime, Swing Screener och Swing-flikens positioner.
+        matched = _match_swing(text_lower, swing_checks)
+        if matched is not None:
+            results.append(RuleResult(r.number, r.text, matched[0],
+                                      matched[1], r.hard))
+            continue
 
         # R:R-kontroll
         if "1:2" in r.text or "r:r" in text_lower or "reward" in text_lower:
@@ -325,6 +353,46 @@ def _render_market_phase(ticker: str, strategy_key: str):
         f'köpfaser: {", ".join(sorted(sets["buy"])) or "–"}.</div></div>',
         unsafe_allow_html=True)
     return state
+
+
+def _swing_rule_checks(ticker: str, strategy_key: str):
+    """Momentum-reglernas underlag: regimljus, ranking, setup, veckotak.
+
+    Läser samma sessioncachade data som REGIME- och SCREENING-flikarna, plus
+    swing-lagret. Bara för momentum — övriga strategier får None och
+    regelkontrollen faller tillbaka på sina vanliga vägar.
+    """
+    if strategy_key != "momentum":
+        return None
+    try:
+        import wolf_regime_ui
+        import wolf_screener_ui
+        regime_data = wolf_regime_ui._get_data() or {}
+        screener_data = wolf_screener_ui._get_data() or {}
+    except Exception:
+        regime_data, screener_data = {}, {}
+    swing_data = storage.session_load(
+        "swing", {"positions": [], "market": {}, "watchlist": [],
+                  "closed": [], "checklist": {}})
+    checks = swing_verdict.rule_checks(ticker, screener_data, regime_data,
+                                       swing_data)
+
+    # Domboxen — samma funktion som Swing Regime-flikens ticker-koll.
+    v = swing_verdict.verdict(ticker, screener_data, regime_data, swing_data)
+    color = {swing_verdict.BUY: _GREEN, swing_verdict.HOLD: _GREEN,
+             swing_verdict.PARTIAL: _AMBER, swing_verdict.WATCH: _AMBER,
+             swing_verdict.SELL: _RED, swing_verdict.ABSTAIN: _RED,
+             swing_verdict.UNKNOWN: _DIM}.get(v["verdict"], _DIM)
+    tag = " · INNEHAV" if v["held"] else ""
+    st.markdown(
+        f'<div style="border:1px solid {color}55;background:{color}0d;'
+        f'border-radius:8px;padding:8px 12px;margin:4px 0 10px;">'
+        f'<span style="color:{color};font-weight:700;">Swing-dom{tag}: '
+        f'{v["verdict"]}</span>'
+        f'<div style="color:{_DIM};font-size:11px;margin-top:2px;">'
+        f'{v["reasons"][0] if v["reasons"] else ""}</div></div>',
+        unsafe_allow_html=True)
+    return checks
 
 
 def _render_market(snap, error: Optional[str]) -> None:
@@ -991,8 +1059,9 @@ def render_copilot_page() -> None:
     _render_levels(entry, stop, target, snap, pb)
 
     rev = _render_review(ticker, strategy_key)
+    swing_checks = _swing_rule_checks(ticker, strategy_key)
 
-    results = _check_rules(pb, entry, stop, target, snap)
+    results = _check_rules(pb, entry, stop, target, snap, swing_checks)
     if rev is not None:
         # Granskningens utfall och kontroller som regelrader — arkets egen
         # bedömning, läst, inte omräknad.
