@@ -1,0 +1,138 @@
+{
+  "grades": {
+    "gas": {
+      "catalyst": 5,
+      "hatred": 1,
+      "hatred_checks": {},
+      "hits_history": [
+        2
+      ],
+      "screener_hits": 2
+    },
+    "guld": {
+      "case_intact": false,
+      "catalyst": 5,
+      "fundamentals": 3,
+      "hatred": 2,
+      "hatred_checks": {
+        "media": true,
+        "pris": true
+      }
+    },
+    "jarnmalm": {
+      "hatred": 1,
+      "hatred_checks": {}
+    },
+    "kol": {
+      "hatred": 1,
+      "hatred_checks": {}
+    },
+    "koppar": {
+      "hatred": 1,
+      "hatred_checks": {}
+    },
+    "litium": {
+      "hatred": 1,
+      "hatred_checks": {}
+    },
+    "olja": {
+      "hatred": 1,
+      "hatred_checks": {}
+    },
+    "palladium": {
+      "hatred": 1,
+      "hatred_checks": {}
+    },
+    "platina": {
+      "hatred": 1,
+      "hatred_checks": {}
+    },
+    "royalty": {
+      "hatred": 1,
+      "hatred_checks": {}
+    },
+    "silver": {
+      "hatred": 1,
+      "hatred_checks": {}
+    },
+    "uran": {
+      "hatred": 1,
+      "hatred_checks": {}
+    },
+    "zink": {
+      "hatred": 1,
+      "hatred_checks": {}
+    }
+  },
+  "history": [
+    {
+      "grades": {
+        "gas": {
+          "catalyst": 5,
+          "hatred": 1,
+          "hatred_checks": {},
+          "hits_history": [
+            2
+          ],
+          "screener_hits": 2
+        },
+        "guld": {
+          "case_intact": false,
+          "catalyst": 5,
+          "fundamentals": 3,
+          "hatred": 2,
+          "hatred_checks": {
+            "media": true,
+            "pris": true
+          }
+        },
+        "jarnmalm": {
+          "hatred": 1,
+          "hatred_checks": {}
+        },
+        "kol": {
+          "hatred": 1,
+          "hatred_checks": {}
+        },
+        "koppar": {
+          "hatred": 1,
+          "hatred_checks": {}
+        },
+        "litium": {
+          "hatred": 1,
+          "hatred_checks": {}
+        },
+        "olja": {
+          "hatred": 1,
+          "hatred_checks": {}
+        },
+        "palladium": {
+          "hatred": 1,
+          "hatred_checks": {}
+        },
+        "platina": {
+          "hatred": 1,
+          "hatred_checks": {}
+        },
+        "royalty": {
+          "hatred": 1,
+          "hatred_checks": {}
+        },
+        "silver": {
+          "hatred": 1,
+          "hatred_checks": {}
+        },
+        "uran": {
+          "hatred": 1,
+          "hatred_checks": {}
+        },
+        "zink": {
+          "hatred": 1,
+          "hatred_checks": {}
+        }
+      },
+      "month": ""
+    }
+  ],
+  "month": "2026-08"
+}
