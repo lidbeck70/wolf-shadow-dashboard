@@ -391,8 +391,9 @@ def _signal_body(data: dict, sig: dict, r: dict, color: str) -> None:
                           key=f"ins_a_{sig['id']}",
                           help=f"≥ {AMOUNT_HIGH:g} tkr = 2p · "
                                f"≥ {AMOUNT_MID:g} tkr = 1p")
-    if (ins != sig.get("insiders") or role != sig.get("role")
-            or amt != sig.get("amount")):
+    if (storage.differs(ins, sig.get("insiders"), 0.0)
+            or storage.differs(role, sig.get("role"), ROLES[0])
+            or storage.differs(amt, sig.get("amount"), 0.0)):
         sig["insiders"], sig["role"], sig["amount"] = ins, role, amt
         changed = True
 
@@ -431,7 +432,8 @@ def _signal_body(data: dict, sig: dict, r: dict, color: str) -> None:
                                               else ""),
                         format_func=lambda x: x or "— ingen —",
                         key=f"ins_t_{sig['id']}")
-    if gate != sig.get("gate") or trig != sig.get("trigger"):
+    if (storage.differs(gate, sig.get("gate"), GATE_BLANK)
+            or storage.differs(trig, sig.get("trigger"), "")):
         sig["gate"], sig["trigger"] = gate, trig
         changed = True
 
@@ -443,7 +445,8 @@ def _signal_body(data: dict, sig: dict, r: dict, color: str) -> None:
     now = k2.number_input("Kurs nu", min_value=0.0, step=0.5,
                           value=float(_num(sig.get("price_now"), 0.0) or 0.0),
                           key=f"ins_pn_{sig['id']}")
-    if avg != sig.get("cluster_avg") or now != sig.get("price_now"):
+    if (storage.differs(avg, sig.get("cluster_avg"), 0.0)
+            or storage.differs(now, sig.get("price_now"), 0.0)):
         sig["cluster_avg"], sig["price_now"] = avg, now
         changed = True
 

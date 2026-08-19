@@ -380,7 +380,8 @@ def _sprott_math(data: dict, row: dict) -> None:
     c3.metric("Runway", f"{rw:.1f} år" if rw is not None else "–",
               help="Under 12 månader = emissionen kommer, och den äter din "
                    "uppsida.")
-    if cash != row.get("cash") or burn != row.get("burn"):
+    if (storage.differs(cash, row.get("cash"), 0.0)
+            or storage.differs(burn, row.get("burn"), 0.0)):
         row["cash"], row["burn"] = cash, burn
         _save(data)
 
@@ -405,8 +406,9 @@ def _durrett_math(data: dict, row: dict) -> None:
     profit = c3.number_input("Framtida vinst/år (MUSD)", min_value=0.0, step=5.0,
                              value=float(_num(row.get("profit"), 0.0) or 0.0),
                              key=f"sc_profit_{row['id']}")
-    if (mcap != row.get("mcap") or moz != row.get("moz")
-            or profit != row.get("profit")):
+    if (storage.differs(mcap, row.get("mcap"), 0.0)
+            or storage.differs(moz, row.get("moz"), 0.0)
+            or storage.differs(profit, row.get("profit"), 0.0)):
         row["mcap"], row["moz"], row["profit"] = mcap, moz, profit
         _save(data)
 
@@ -449,8 +451,9 @@ def _durrett_math(data: dict, row: dict) -> None:
                 row["profit"] = round(musd, 1)
                 _save(data)
                 st.rerun()
-        if (prod != row.get("prod") or tp != row.get("target")
-                or aisc != row.get("aisc")):
+        if (storage.differs(prod, row.get("prod"), 0.0)
+                or storage.differs(tp, row.get("target"), 0.0)
+                or storage.differs(aisc, row.get("aisc"), 0.0)):
             row["prod"], row["target"], row["aisc"] = prod, tp, aisc
             _save(data)
 

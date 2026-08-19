@@ -127,3 +127,55 @@ def test_blindspot_latest_is_none_for_unknown_or_empty():
     assert cycle.blindspot_latest("FINNSINTE123") is None
     assert cycle.blindspot_latest("") is None
     assert cycle.blindspot_latest(None) is None
+
+
+# ── Marknadscykelfasen (contrarian/quality) ──────────────────────────────────
+def test_phase_sets_are_read_from_the_playbooks_verbatim():
+    """Fasmängderna PARSAS ur strategy_rules — ändras playbooken följer
+    grinden med. Testet pinnar dagens innehåll så en oavsiktlig ändring syns."""
+    con = cycle.playbook_phases("contrarian")
+    assert con["buy"] == {"CAPITULATION", "DEPRESSION", "DISBELIEF",
+                          "ANGER", "PANIC", "HOPE"}
+    assert con["hold"] == {"OPTIMISM", "BELIEF"}
+    assert con["sell"] == {"THRILL", "EUPHORIA", "COMPLACENCY",
+                           "ANXIETY", "DENIAL"}
+    qua = cycle.playbook_phases("quality")
+    assert qua["buy"] == {"DISBELIEF", "HOPE", "OPTIMISM", "BELIEF",
+                          "DISBELIEF_NEW"}
+    assert qua["hold"] == set()
+    assert qua["sell"] == {"THRILL", "EUPHORIA", "COMPLACENCY",
+                           "ANXIETY", "DENIAL"}
+    # HOLD-faser får aldrig läcka in i köp- eller säljmängden
+    assert not con["buy"] & con["hold"] and not con["sell"] & con["hold"]
+
+
+def test_only_contrarian_and_quality_use_the_market_cycle():
+    assert cycle.requires_market_cycle("contrarian")
+    assert cycle.requires_market_cycle("quality")
+    for key in ("rule", "momentum", "insider", "", None):
+        assert not cycle.requires_market_cycle(key), key
+
+
+def test_the_phase_gate_translates_buy_hold_sell():
+    def st_(phase):
+        return {"phase": phase, "confidence": 70.0}
+    assert cycle.gate_from_market_phase(st_("CAPITULATION"),
+                                        "contrarian")[0] == "PASS"
+    status, note = cycle.gate_from_market_phase(st_("OPTIMISM"), "contrarian")
+    assert status == "MANUAL" and "HOLD" in note
+    status, note = cycle.gate_from_market_phase(st_("EUPHORIA"), "contrarian")
+    assert status == "FAIL" and "distributionsfas" in note
+    # quality köper i OPTIMISM — samma fas, olika playbook, olika svar
+    assert cycle.gate_from_market_phase(st_("OPTIMISM"), "quality")[0] == "PASS"
+
+
+def test_an_unknown_phase_is_manual_never_a_yes():
+    assert cycle.gate_from_market_phase(None, "contrarian")[0] == "MANUAL"
+    status, note = cycle.gate_from_market_phase(
+        {"phase": "PÅHITTAD", "confidence": 50.0}, "quality")
+    assert status == "MANUAL" and "nämns inte" in note
+
+
+def test_market_phase_reports_errors_instead_of_hiding_them(monkeypatch):
+    state, err = cycle.market_phase("")
+    assert state is None and err

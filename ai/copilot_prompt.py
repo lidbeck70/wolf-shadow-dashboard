@@ -80,7 +80,7 @@ def _levels_block(assessment, alternatives) -> str:
     return "\n".join(lines)
 
 
-def _cycle_block(cycle_state, blindspot) -> str:
+def _cycle_block(cycle_state, blindspot, market_phase=None) -> str:
     """Cykelläget ur rotationsfliken och senaste Blindspot-raden.
 
     Modellen får läget som fakta med källa och datum — inte som en åsikt den
@@ -96,6 +96,12 @@ def _cycle_block(cycle_state, blindspot) -> str:
             f"{cycle_state.get('commodity')} = {cycle_state.get('status')} "
             f"{cycle_state.get('sum')}/{cycle_state.get('max')} — "
             f"{cycle_state.get('why')}{warn}")
+    if market_phase is not None:
+        lines.append(
+            f"Marknadscykelfas (Market Cycle Engine): "
+            f"{market_phase.get('phase', '?').replace('_', ' ')} med "
+            f"{market_phase.get('confidence')} % säkerhet. Playbookens "
+            f"fasregler avgör köp/håll/sälj — motsäg dem inte.")
     if blindspot is not None:
         lines.append(
             f"Blindspot (senast sparade rapport, {str(blindspot.get('timestamp', ''))[:10]}): "
@@ -113,7 +119,7 @@ def build_prompt(ticker: str, strategy: str, status: str,
                  risk_per_trade: str = "",
                  snapshot=None, assessment=None, alternatives=None,
                  cycle_state=None, blindspot=None,
-                 review_lines=None) -> str:
+                 review_lines=None, market_phase=None) -> str:
     """Underlaget, i klartext. Allt är redan räknat av motorn."""
     rr_txt = "–" if rr is None else f"{rr:.1f}x"
     risk_txt = "–" if risk_pct is None else f"{risk_pct:.1f} %"
@@ -130,7 +136,7 @@ Nivåer (satta av användaren, redan validerade av motorn):
 
 {_market_block(snapshot)}
 
-{_cycle_block(cycle_state, blindspot)}
+{_cycle_block(cycle_state, blindspot, market_phase)}
 
 {chr(10).join(review_lines) if review_lines else ""}
 
