@@ -34,6 +34,7 @@ from strategy_rules import PLAYBOOKS, Playbook
 from ui.theme import section_title, PALETTE as _P
 from ai import copilot_prompt, openai_client
 
+import cycle
 import journal_stats
 import levels
 import market_data
@@ -208,6 +209,66 @@ def _check_rules(pb: Playbook, entry: float, stop: float, target: float,
 
 # ── Marknadsdata och nivåer ──────────────────────────────────────────────────
 
+def _prefill_entry(ticker: str, snap, entry: float) -> None:
+    """Förifyll entry med aktuell kurs — en gång per ticker.
+
+    Bara när fältet står orört på noll: har användaren skrivit ett eget värde,
+    eller nollat det med flit, ska panelen inte skriva över det.
+    """
+    if snap is None or entry:
+        return
+    if st.session_state.get(_PREFILL_KEY) == ticker:
+        return
+    st.session_state[_PREFILL_KEY] = ticker
+    _queue_prices(entry=snap.price)
+
+
+def _render_cycle(ticker: str, strategy_key: str):
+    """Cykelläget för råvarustrategierna: (state, råvarunamn).
+
+    Råvaran slås upp i Rick Rule-arket där den redan är ifylld; listan är
+    fallback. Statusen läses ur rotationsflikens sparade betyg — sätts den
+    om där, ändras den här.
+    """
+    if not cycle.requires_cycle(strategy_key):
+        return None, ""
+
+    import producers as prod_mod
+    import rotation as rot_mod
+    producers_data = storage.session_load(
+        prod_mod.STORE, {"producers": [], "royalty": []})
+    rotation_data = storage.session_load(
+        rot_mod.STORE, {"grades": {}, "history": [], "month": ""})
+
+    looked_up = cycle.commodity_for_ticker(ticker, producers_data)
+    names = ["– välj råvara –"] + [c.name for c in rot_mod.COMMODITIES]
+    idx = names.index(looked_up) if looked_up in names else 0
+    chosen = st.selectbox(
+        "Råvara (för cykelläget)", names, index=idx, key="copilot_commodity",
+        help="Hämtas från Rick Rule-arket när bolaget finns där. Cykelläget "
+             "kommer från rotationsflikens Triple Signal-betyg.")
+    name = "" if chosen == names[0] else chosen
+
+    state = cycle.cycle_state(name, rotation_data) if name else None
+    if state is not None:
+        color = rot_mod.STATUS_COLOR.get(state["status"], _DIM)
+        warn = "".join(f"<div style='color:{_AMBER};font-size:11px;'>⚠️ {w}"
+                       f"</div>" for w in state["warnings"])
+        st.markdown(
+            f'<div style="border:1px solid {color}55;background:{color}0d;'
+            f'border-radius:8px;padding:8px 12px;margin:4px 0 10px;">'
+            f'<span style="color:{color};font-weight:700;">Cykelläge '
+            f'{state["commodity"]}: {state["status"]} '
+            f'{state["sum"]}/{state["max"]}</span>'
+            f'<div style="color:{_DIM};font-size:11px;margin-top:2px;">'
+            f'{state["why"]} · betyg {state["month"] or "okänd månad"}</div>'
+            f'{warn}</div>', unsafe_allow_html=True)
+    elif name:
+        st.caption(f"{name} är inte betygsatt i rotationsfliken ännu — "
+                   f"cykelregeln står som MANUAL tills det är gjort.")
+    return state, name
+
+
 def _render_market(snap, error: Optional[str]) -> None:
     """Ögonblicksbilden. Uteblir den syns det — en tyst tom ruta läses som
     att inget var anmärkningsvärt."""
@@ -262,10 +323,11 @@ def _render_levels(entry: float, stop: float, target: float, snap,
         if not alts:
             st.caption("Fyll i entry, och hämta kursdata, så räknas "
                        "stoppnivåerna fram.")
-        for s in alts:
+        for i, s in enumerate(alts):
             chosen = stop and abs(s.price - stop) / s.price < 0.005
             mark = " ← din nivå" if chosen else ""
-            st.markdown(
+            c_txt, c_btn = st.columns([5, 1])
+            c_txt.markdown(
                 f'<div style="border-left:2px solid '
                 f'{_CYAN if chosen else _BORDER};padding:6px 0 6px 12px;'
                 f'margin-bottom:8px;">'
@@ -280,6 +342,28 @@ def _render_levels(entry: float, stop: float, target: float, snap,
                 f'{levels.RR_MIN:g}:1 · {s.target_for_pref_rr:g} för '
                 f'{levels.RR_PREFERRED:g}:1.</div></div>',
                 unsafe_allow_html=True)
+            if c_btn.button("Använd", key=f"copilot_use_stop_{i}",
+                            help=f"Sätter stop {s.price:g}"
+                                 + ("" if target else
+                                    f" och target {s.target_for_min_rr:g} "
+                                    f"({levels.RR_MIN:g}:1)")):
+                # Motorn räknade nivån; knappen bara flyttar den till fälten.
+                # Target fylls bara i när fältet är tomt — ett eget target
+                # skrivs aldrig över av en stoppändring.
+                _queue_prices(stop=s.price,
+                              target=None if target else s.target_for_min_rr)
+
+        if entry and stop:
+            t1, t2, t3 = st.columns([1, 1, 3])
+            if t1.button(f"Target {levels.RR_MIN:g}:1", key="copilot_t_min"):
+                _queue_prices(target=levels.target_for_rr(entry, stop,
+                                                          levels.RR_MIN))
+            if t2.button(f"Target {levels.RR_PREFERRED:g}:1",
+                         key="copilot_t_pref"):
+                _queue_prices(target=levels.target_for_rr(entry, stop,
+                                                          levels.RR_PREFERRED))
+            t3.caption("Räknat från din nuvarande stop — byter du stop, "
+                       "tryck igen.")
 
         assessment = levels.assess(entry, stop, target, snap)
         for note in assessment.notes:
@@ -426,7 +510,7 @@ def _ai_cache_key(ticker: str, strategy_key: str,
 def _render_ai_section(ticker: str, strategy_key: str, pb: Playbook,
                        results: list[RuleResult],
                        entry: float, stop: float, target: float,
-                       snap=None) -> None:
+                       snap=None, cyc_state=None, bspot=None) -> None:
     """Deterministisk sammanfattning alltid; modellsvar på knapptryck.
 
     Anropet ligger BAKOM en knapp med flit. Streamlit kör om hela skriptet vid
@@ -470,7 +554,8 @@ def _render_ai_section(ticker: str, strategy_key: str, pb: Playbook,
                         snapshot=snap,
                         assessment=levels.assess(entry, stop, target, snap),
                         alternatives=levels.stop_candidates(
-                            entry, snap, _fixed_stop_pct(pb), _atr_mult(pb))))
+                            entry, snap, _fixed_stop_pct(pb), _atr_mult(pb)),
+                        cycle_state=cyc_state, blindspot=bspot))
             except openai_client.AIError as exc:
                 # Ingen tyst fallback. Uteblir svaret ska det synas att det
                 # uteblev — annars läses stubben ovanför som modelltext.
@@ -717,8 +802,34 @@ def _render_journal_history() -> None:
 
 # ── Main render function ──────────────────────────────────────────────────────
 
+_APPLY_KEY = "copilot_apply"
+_PREFILL_KEY = "copilot_prefilled_for"
+
+
+def _queue_prices(**values) -> None:
+    """Lägg pris i väntkön och rita om.
+
+    Streamlit tillåter inte att ett widgetvärde sätts efter att widgeten
+    ritats i samma körning — därför går Använd-knapparna via en kö som töms
+    överst i nästa körning, innan fälten skapas.
+    """
+    pending = st.session_state.setdefault(_APPLY_KEY, {})
+    pending.update({k: v for k, v in values.items() if v is not None})
+    st.rerun()
+
+
+def _apply_queued_prices() -> None:
+    """Töm väntkön in i prisfälten. Körs FÖRE widgetarna ritas."""
+    pending = st.session_state.pop(_APPLY_KEY, None)
+    if not pending:
+        return
+    for name, value in pending.items():
+        st.session_state[f"copilot_{name}"] = round(float(value), 2)
+
+
 def render_copilot_page() -> None:
     """Entry point — anropas från wolf_panel.py."""
+    _apply_queued_prices()
     section_title("AI Trading Copilot", "🤖")
     st.markdown(
         f'<p style="color:{_DIM};font-size:0.82rem;margin:-8px 0 24px;">'
@@ -759,13 +870,13 @@ def render_copilot_page() -> None:
     with st.expander("📐 Prisdata & R:R-beräkning", expanded=True):
         c1, c2, c3 = st.columns(3)
         with c1:
-            entry  = st.number_input("Entry-kurs (kr)", min_value=0.0, value=0.0,
-                                     step=0.5, format="%.2f", key="copilot_entry")
+            entry = st.number_input("Entry-kurs (kr)", min_value=0.0,
+                                    step=0.5, format="%.2f", key="copilot_entry")
         with c2:
-            stop   = st.number_input("Stop-kurs (kr)", min_value=0.0, value=0.0,
-                                     step=0.5, format="%.2f", key="copilot_stop")
+            stop = st.number_input("Stop-kurs (kr)", min_value=0.0,
+                                   step=0.5, format="%.2f", key="copilot_stop")
         with c3:
-            target = st.number_input("Target-kurs (kr)", min_value=0.0, value=0.0,
+            target = st.number_input("Target-kurs (kr)", min_value=0.0,
                                      step=0.5, format="%.2f", key="copilot_target")
 
         if entry and stop and entry != stop:
@@ -811,10 +922,20 @@ def render_copilot_page() -> None:
         return
 
     snap, snap_error = market_data.try_snapshot(ticker)
+    _prefill_entry(ticker, snap, entry)
     _render_market(snap, snap_error)
+    cyc_state, cyc_name = _render_cycle(ticker, strategy_key)
+    bspot = cycle.blindspot_latest(ticker)
     _render_levels(entry, stop, target, snap, pb)
 
     results = _check_rules(pb, entry, stop, target, snap)
+    if cycle.requires_cycle(strategy_key):
+        # Köpgrindens första fråga — mekanisk, ur rotationsfliken. Vila fäller
+        # kandidaten oavsett hur bra bolaget är: fel fas är fel fas.
+        gate_status, gate_note = cycle.gate_from_cycle(cyc_state, cyc_name)
+        results.insert(0, RuleResult(
+            0, "Cykelläge — rotationsflikens Triple Signal",
+            gate_status, gate_note, hard=True))
     overall = _overall_status(results)
     overall_color = _status_to_color(overall)
 
@@ -871,7 +992,7 @@ def render_copilot_page() -> None:
     # ── AI-kommentar ──────────────────────────────────────────────────────────
     section_title("AI-kommentar", "💬")
     _render_ai_section(ticker, strategy_key, pb, results, entry, stop, target,
-                       snap)
+                       snap, cyc_state, bspot)
 
     st.markdown("<hr style='border-color:rgba(255,255,255,0.06);margin:28px 0;'>",
                 unsafe_allow_html=True)
