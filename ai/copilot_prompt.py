@@ -80,12 +80,39 @@ def _levels_block(assessment, alternatives) -> str:
     return "\n".join(lines)
 
 
+def _cycle_block(cycle_state, blindspot) -> str:
+    """Cykelläget ur rotationsfliken och senaste Blindspot-raden.
+
+    Modellen får läget som fakta med källa och datum — inte som en åsikt den
+    ska bilda sig. Är läget Vila ska den förklara varför kandidaten faller,
+    inte leta skäl runt det.
+    """
+    lines = []
+    if cycle_state is not None:
+        warn = "".join(f" · VARNING: {w}" for w in cycle_state.get("warnings", []))
+        lines.append(
+            f"Cykelläge (rotationsflikens Triple Signal, "
+            f"{cycle_state.get('month') or 'okänd månad'}): "
+            f"{cycle_state.get('commodity')} = {cycle_state.get('status')} "
+            f"{cycle_state.get('sum')}/{cycle_state.get('max')} — "
+            f"{cycle_state.get('why')}{warn}")
+    if blindspot is not None:
+        lines.append(
+            f"Blindspot (senast sparade rapport, {str(blindspot.get('timestamp', ''))[:10]}): "
+            f"opportunity {blindspot.get('opportunity')} · hat {blindspot.get('hat')} · "
+            f"styrka {blindspot.get('strength')} · katalysator {blindspot.get('catalyst')} "
+            f"· sektor {blindspot.get('sector', '–')}. Rapporten är en "
+            f"ögonblicksbild — kommentera dess ålder om den är gammal.")
+    return "\n".join(lines)
+
+
 def build_prompt(ticker: str, strategy: str, status: str,
                  entry: float, stop: float, target: float,
                  rr, risk_pct,
                  passed: list, manual: list, failed: list,
                  risk_per_trade: str = "",
-                 snapshot=None, assessment=None, alternatives=None) -> str:
+                 snapshot=None, assessment=None, alternatives=None,
+                 cycle_state=None, blindspot=None) -> str:
     """Underlaget, i klartext. Allt är redan räknat av motorn."""
     rr_txt = "–" if rr is None else f"{rr:.1f}x"
     risk_txt = "–" if risk_pct is None else f"{risk_pct:.1f} %"
@@ -101,6 +128,8 @@ Nivåer (satta av användaren, redan validerade av motorn):
   R:R {rr_txt} · risk mot entry {risk_txt}{frame}
 
 {_market_block(snapshot)}
+
+{_cycle_block(cycle_state, blindspot)}
 
 {_levels_block(assessment, alternatives)}
 

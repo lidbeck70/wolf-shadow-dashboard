@@ -286,3 +286,23 @@ def test_the_review_instruction_refuses_to_read_noise_as_signal():
     s = cp.REVIEW_SYSTEM.lower()
     assert "räkna aldrig om" in s
     assert "20 avslutade affärer" in s and "brus" in s
+
+
+def test_the_cycle_state_reaches_the_model_with_source_and_month():
+    state = {"commodity": "Guld", "status": "AGERA", "sum": 14, "max": 15,
+             "why": "Summa 14/15", "month": "2026-08",
+             "warnings": ["Värdefälla?"]}
+    bspot = {"timestamp": "2026-08-10T12:13:56", "opportunity": 62.0,
+             "hat": 80.0, "strength": 55.0, "catalyst": 40.0,
+             "sector": "Uranium"}
+    p = cp.build_prompt("CCJ", "Rule", "WATCH", 100, 90, 130, 3.0, 10.0,
+                        [], [], [], cycle_state=state, blindspot=bspot)
+    assert "Guld = AGERA 14/15" in p and "2026-08" in p
+    assert "VARNING: Värdefälla?" in p
+    assert "Blindspot" in p and "2026-08-10" in p and "Uranium" in p
+
+
+def test_no_cycle_data_adds_nothing_to_the_prompt():
+    p = cp.build_prompt("ABB", "S", "WATCH", 100, 90, 130, 3.0, 10.0,
+                        [], [], [])
+    assert "Cykelläge" not in p and "Blindspot" not in p
