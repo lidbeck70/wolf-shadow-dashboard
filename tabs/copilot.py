@@ -324,6 +324,13 @@ def _render_review(ticker: str, strategy_key: str):
         + (f'<div style="color:{_DIM};font-size:11px;">{controls_line}</div>'
            if controls_line else "")
         + '</div>', unsafe_allow_html=True)
+    if rev["found"]:
+        details = review_link.detail_lines(strategy_key, rev["row"])
+        if details:
+            with st.expander("Granskningens underlag — det arket redan svarat på",
+                             expanded=False):
+                for line in details:
+                    st.caption(line.strip())
     return rev
 
 
@@ -683,7 +690,7 @@ def _render_ai_section(ticker: str, strategy_key: str, pb: Playbook,
                         alternatives=levels.stop_candidates(
                             entry, snap, _fixed_stop_pct(pb), _atr_mult(pb)),
                         cycle_state=cyc_state, blindspot=bspot,
-                        review_lines=review_link.prompt_lines(rev),
+                        review_lines=review_link.prompt_lines(rev, strategy_key),
                         market_phase=phase_state))
             except openai_client.AIError as exc:
                 # Ingen tyst fallback. Uteblir svaret ska det synas att det

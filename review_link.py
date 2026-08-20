@@ -225,8 +225,127 @@ def review(strategy: str, ticker: str, stores: dict) -> Optional[dict]:
             "controls": control_findings(row, key)}
 
 
-def prompt_lines(rev: Optional[dict]) -> list:
-    """Granskningen som rader till AI-prompten."""
+def _ja(value) -> str:
+    return "Ja" if value else "Nej"
+
+
+def _n(value, suffix: str = "", zero_empty: bool = False) -> str:
+    """Talformat för promptraderna.
+
+    zero_empty=True för nummerfälten: de ritas med min_value=0.0 och kan inte
+    lämnas tomma, så en nolla där betyder EJ IFYLLT — samma semantik som
+    storage.differs och producers._years. Faktorpoäng skickar False: där är
+    0/2 ett riktigt betyg.
+    """
+    v = _numf(value)
+    if v is None or (zero_empty and v == 0):
+        return "–"
+    return f"{v:g}{suffix}"
+
+
+def _numf(value):
+    if value is None or value == "":
+        return None
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    return None if f != f else f
+
+
+def detail_lines(strategy: str, row: dict) -> list:
+    """Granskningens IFYLLDA fält, i klartext.
+
+    Utan de här raderna såg modellen bara summan ("PASS — 5/5 p") och bad
+    användaren kontrollera landrisk, kostnadsposition, ledning och
+    kapitaldisciplin — de fyra frågor som redan VAR besvarade i arket. Summan
+    utan komponenterna är en inbjudan att fråga om komponenterna.
+    """
+    key = (strategy or "").strip().lower()
+    r = row or {}
+    out = []
+
+    if key == "rule":
+        m = prod.margin_pct(r.get("price"), r.get("unit_cost"))
+        out.append(f"  Arkets fält: marginal "
+                   f"{_n(round(m, 1) if m is not None else None, ' %')} "
+                   f"(pris {_n(r.get('price'), zero_empty=True)} / kostnad "
+                   f"{_n(r.get('unit_cost'), zero_empty=True)}) · EV/EBITDA "
+                   f"{_n(r.get('ev_ebitda'), zero_empty=True)} · nettoskuld/EBITDA "
+                   f"{_n(r.get('nd_ebitda'), zero_empty=True)} · gruvlivslängd "
+                   f"{_n(r.get('mine_life'), ' år', zero_empty=True)} · R/P "
+                   f"{_n(r.get('rp_ratio'), ' år', zero_empty=True)}")
+        out.append(f"  Disciplinfrågorna (redan besvarade i arket): "
+                   f"jurisdiktion {_ja(r.get('jurisdiktion'))} · "
+                   f"kapitaldisciplin {_ja(r.get('kapitaldisciplin'))} · "
+                   f"insynsägande {_ja(r.get('insyn'))} · tänkt position "
+                   f"{_n(r.get('position_pct'), ' %', zero_empty=True)} av totalen")
+    elif key == "royalty":
+        disc = prod.discount_vs_bottom(r.get("pnav_now"), r.get("pnav_bottom"))
+        med = prod.vs_median(r.get("ev_now"), r.get("ev_median"))
+        geo = prod.geo_growth(r.get("geo_now"), r.get("geo_3y"))
+        out.append(f"  Arkets fält: nivå {_n(r.get('level'))} · mot egen "
+                   f"P/NAV-botten "
+                   f"{_n(round(disc, 1) if disc is not None else None, ' %')} · "
+                   f"mot egen EV/EBITDA-median "
+                   f"{_n(round(med, 1) if med is not None else None, ' %')} · "
+                   f"GEO/aktie-tillväxt 3 år "
+                   f"{_n(round(geo, 1) if geo is not None else None, ' %')}")
+    elif key in ("sprott", "durrett"):
+        factors = r.get("factors", {}) or {}
+        parts = [f"{f.label} {_n(factors.get(f.key))}/2"
+                 for f in sco.FACTORS if _numf(factors.get(f.key)) is not None]
+        if parts:
+            out.append("  Faktorpoängen (redan satta i arket): "
+                       + " · ".join(parts))
+    elif key == "tiggre":
+        up = tig.upside_pct(r.get("mcap"), r.get("nav"))
+        un = tig.un_ratio(up, r.get("downside"))
+        cats = [c for c in r.get("catalysts", [])
+                if isinstance(c, dict) and c.get("name") and c.get("date")]
+        out.append(f"  Arkets fält: U/N "
+                   f"{_n(round(un, 1) if un is not None else None, ':1')} · "
+                   f"{len(cats)} namngivna och tidsatta katalysatorer")
+    elif key == "insider":
+        out.append(f"  Signalens fält: {_n(r.get('insiders'), zero_empty=True)} insiders · "
+                   f"roll {r.get('role') or '–'} · belopp "
+                   f"{_n(r.get('amount'), ' MSEK', zero_empty=True)} · kurs mot klustersnitt "
+                   f"{_n(round(ins.vs_cluster(r), 1) if ins.vs_cluster(r) is not None else None, ' %')}")
+
+    # Kontrollernas komponenter — de svaga punkterna med namn, inte bara summan
+    aqs_weak = [f.label for f in ctl.AQS_FIELDS
+                if _numf(r.get(f.key)) == 0]
+    if ctl.aqs_total(r) is not None and aqs_weak:
+        out.append("  AQS svagast (0 p): " + " · ".join(aqs_weak))
+    ds_extra = []
+    for ikey, ilabel in ctl.DS_INFO_FIELDS:
+        if _numf(r.get(ikey)):
+            ds_extra.append(f"{ilabel} {_n(r.get(ikey))}")
+    if ds_extra:
+        out.append("  DS-underlag: " + " · ".join(ds_extra))
+    lev = ctl.leverage_ratio(r.get("csm", {}))
+    if lev is not None:
+        out.append(f"  CSM hävstångskvot (Bull/Bear FCF): {lev:g}×")
+
+    # Lukacs FV — bara när något är ifyllt
+    try:
+        import lukacs
+        if r.get("fv"):
+            ev = lukacs.evaluate(r)
+            if ev["fv_base"] is not None:
+                out.append(
+                    f"  Lukacs FV: fair value Base "
+                    f"{round(ev['fv_base'], 2):g}/aktie · säkerhetsmarginal "
+                    f"{_n(round(ev['mos'], 1) if ev['mos'] is not None else None, ' %')} "
+                    f"({ev['mos_band'] or '–'}) · klass "
+                    f"{r.get('fcf_kvalitet') or '–'}")
+    except Exception:
+        pass
+    return out
+
+
+def prompt_lines(rev: Optional[dict], strategy: str = "") -> list:
+    """Granskningen som rader till AI-prompten — verdiktet OCH underlaget."""
     if rev is None:
         return []
     if not rev["found"]:
@@ -234,4 +353,14 @@ def prompt_lines(rev: Optional[dict]) -> list:
     out = [f"Granskning ({rev['sheet']}): {rev['status']} — {rev['note']}"]
     for status, label, note in rev["controls"]:
         out.append(f"  {label}: {status} — {note}")
+    out += detail_lines(strategy or _strategy_of(rev), rev["row"])
     return out
+
+
+def _strategy_of(rev: dict) -> str:
+    """Strategin ur arknamnet, för anropare som inte skickar den."""
+    sheet = (rev or {}).get("sheet", "")
+    for key, (_store, label) in SHEET.items():
+        if label == sheet:
+            return key
+    return ""

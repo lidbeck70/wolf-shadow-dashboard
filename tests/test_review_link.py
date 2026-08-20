@@ -203,3 +203,49 @@ def test_prompt_lines_for_a_missing_company_say_so():
     lines = rl.prompt_lines(rl.review("rule", "SAKNAS", _stores()))
     assert len(lines) == 1 and "SAKNAS" in lines[0]
     assert rl.prompt_lines(None) == []
+
+
+# ── Underlaget — komponenterna, inte bara summan ─────────────────────────────
+def test_detail_lines_carry_the_sheets_answered_fields():
+    """Utan komponenterna bad modellen användaren kontrollera landrisk,
+    kostnadsposition, ledning och kapitaldisciplin — de fyra frågor som
+    redan VAR besvarade i arket. Summan utan delarna bjuder in frågan."""
+    row = _rule_row(ev_ebitda=4.2, nd_ebitda=0.15, position_pct=4.0)
+    lines = "\n".join(rl.detail_lines("rule", row))
+    assert "marginal 48.8 %" in lines
+    assert "jurisdiktion Ja" in lines and "insynsägande Ja" in lines
+    assert "gruvlivslängd 25 år" in lines
+    assert "EV/EBITDA 4.2" in lines
+
+
+def test_detail_lines_name_the_weak_aqs_factors():
+    row = _rule_row(aqs_kostnad=1, aqs_livslangd=2, aqs_metallurgi=1,
+                    aqs_capex=1, aqs_jurisdiktion=1, aqs_infrastruktur=0,
+                    aqs_management=0, aqs_expansion=0)
+    lines = "\n".join(rl.detail_lines("rule", row))
+    assert "AQS svagast (0 p)" in lines
+    assert "Infrastruktur / tillstånd" in lines
+
+
+def test_detail_lines_include_lukacs_fv_when_filled():
+    row = _rule_row(fcf_kvalitet="B", framtida_antal_aktier=1200.0,
+                    aktuell_kurs=5.0,
+                    fv={"Base": {"forward_fcf_musd": 900, "target_yield": 9}})
+    lines = "\n".join(rl.detail_lines("rule", row))
+    assert "fair value Base 8.33/aktie" in lines
+    assert "säkerhetsmarginal 40 %" in lines
+
+
+def test_prompt_lines_append_the_details():
+    stores = _stores(producers={"producers": [_rule_row()], "royalty": []})
+    lines = rl.prompt_lines(rl.review("rule", "EQX", stores), "rule")
+    assert any("Disciplinfrågorna" in ln for ln in lines)
+    # och strategin kan härledas ur arknamnet när den inte skickas
+    lines2 = rl.prompt_lines(rl.review("rule", "EQX", stores))
+    assert any("Disciplinfrågorna" in ln for ln in lines2)
+
+
+def test_unfilled_fields_show_as_dashes_not_zeros():
+    """R/P är olje- och gasmåttet — orört ska det stå som streck, inte 0."""
+    lines = "\n".join(rl.detail_lines("rule", _rule_row(rp_ratio=0.0)))
+    assert "R/P –" in lines
