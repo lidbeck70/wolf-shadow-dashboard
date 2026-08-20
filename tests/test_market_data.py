@@ -199,3 +199,81 @@ def test_an_undefined_rsi_becomes_none_not_nan():
     odefinierad. Den ska bli None, inte NaN som smyger vidare i prompten."""
     assert md.build(_frame(300), "ABB").rsi14 is None
     assert md.build(_zigzag(300), "ABB").rsi14 is not None
+
+
+# ── Före börsöppning: dagens tomma rad får inte fälla gårdagens data ─────────
+def test_a_trailing_nan_row_uses_the_last_real_trading_day():
+    """Kl 05:41 skickar yfinance med dagens rad utan kurs. Ögonblicksbilden
+    ska byggas på senaste RIKTIGA handelsdagen — inte fela på NaN."""
+    df = _frame(300)
+    df.loc[df.index[-1], ["Open", "High", "Low", "Close", "Volume"]] = np.nan
+    snap = md.build(df, "ABB.ST")
+    assert snap.price == round(100.0 + 298 * 0.1, 4)     # näst sista raden
+    assert snap.as_of == "2025-10-26"
+    assert snap.bars == 299
+
+
+def test_a_frame_with_only_nan_closes_still_raises():
+    df = _frame(20)
+    df["Close"] = np.nan
+    with pytest.raises(md.MarketDataError):
+        md.build(df, "ABB")
+
+
+# ── Suffixupplösningen: skriv ABB, få ABB.ST ─────────────────────────────────
+def test_fetch_resolves_the_stockholm_suffix(monkeypatch):
+    have = {"ABB.ST": _frame(50)}
+    monkeypatch.setattr(md, "_cached_download",
+                        lambda name: have.get(name, pd.DataFrame()))
+    df, resolved = md.fetch("abb")
+    assert resolved == "ABB.ST" and len(df) == 50
+    # och ögonblicksbilden bär symbolen som fungerade
+    assert md.snapshot("abb").ticker == "ABB.ST"
+
+
+def test_fetch_converts_borsdata_form_to_yfinance(monkeypatch):
+    """"ERIC B" (Börsdata) ska hitta ERIC-B.ST (yfinance)."""
+    have = {"ERIC-B.ST": _frame(50)}
+    monkeypatch.setattr(md, "_cached_download",
+                        lambda name: have.get(name, pd.DataFrame()))
+    _df, resolved = md.fetch("ERIC B")
+    assert resolved == "ERIC-B.ST"
+
+
+def test_fetch_tries_the_other_nordic_markets_in_order(monkeypatch):
+    have = {"EQNR.OL": _frame(50)}
+    monkeypatch.setattr(md, "_cached_download",
+                        lambda name: have.get(name, pd.DataFrame()))
+    assert md.fetch("EQNR")[1] == "EQNR.OL"
+
+
+def test_a_dotted_ticker_is_never_rewritten(monkeypatch):
+    """Den som skrivit ett suffix menade det — CCJ.TO ska inte bli CCJ.TO.ST."""
+    tried = []
+
+    def _dl(name):
+        tried.append(name)
+        return pd.DataFrame()
+    monkeypatch.setattr(md, "_cached_download", _dl)
+    with pytest.raises(md.MarketDataError) as e:
+        md.fetch("CCJ.TO")
+    assert tried == ["CCJ.TO"]
+    assert "CCJ.TO" in str(e.value)
+
+
+def test_an_unresolvable_ticker_lists_what_was_tried(monkeypatch):
+    monkeypatch.setattr(md, "_cached_download", lambda name: pd.DataFrame())
+    with pytest.raises(md.MarketDataError) as e:
+        md.fetch("XYZQ")
+    msg = str(e.value)
+    assert "XYZQ.ST" in msg and "XYZQ.HE" in msg
+
+
+def test_a_candidate_with_only_nan_closes_is_not_a_hit(monkeypatch):
+    """Ett svar utan en enda stängningskurs är inte ett fynd — pröva nästa."""
+    junk = _frame(10)
+    junk["Close"] = np.nan
+    have = {"ABB": junk, "ABB.ST": _frame(50)}
+    monkeypatch.setattr(md, "_cached_download",
+                        lambda name: have.get(name, pd.DataFrame()))
+    assert md.fetch("ABB")[1] == "ABB.ST"
