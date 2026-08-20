@@ -23,6 +23,64 @@
       "rp_ratio": 0.0,
       "ticker": "EQX",
       "unit_cost": 2175.0
+    },
+    {
+      "aqs_expansion": 0,
+      "aqs_infrastruktur": 1,
+      "aqs_jurisdiktion": 2,
+      "aqs_kostnad": 0,
+      "aqs_livslangd": 1,
+      "aqs_management": 2,
+      "aqs_metallurgi": 0,
+      "commodity": "Olja",
+      "csm": {
+        "Base": {},
+        "Bear": {},
+        "Bull": {}
+      },
+      "date": "2026-08-20",
+      "ds_aktier_3ar": 0,
+      "ds_capex": 0,
+      "ds_historik": 1,
+      "ds_runway": 0,
+      "ds_warrants": 1,
+      "ev_ebitda": 4.0,
+      "forvantad_utspadning": 0.0,
+      "fully_diluted_shares": 2496406246.0,
+      "fv": {
+        "Base": {
+          "forward_fcf_musd": 12.0,
+          "target_yield": 12.0
+        },
+        "Bear": {
+          "forward_fcf_musd": 14.0,
+          "target_yield": 14.0
+        },
+        "Bull": {
+          "forward_fcf_musd": 10.0,
+          "target_yield": 10.0
+        }
+      },
+      "fv_manual": true,
+      "id": "3c393fe0",
+      "insyn": true,
+      "is_holding": true,
+      "jurisdiktion": true,
+      "kapitaldisciplin": true,
+      "mine_life": 10.4,
+      "name": "",
+      "nd_ebitda": 0.4,
+      "position_pct": 25.0,
+      "price": 95.0,
+      "prob_deviation": true,
+      "probs": {
+        "Base": 12.0,
+        "Bear": 14.0,
+        "Bull": 10.0
+      },
+      "rp_ratio": 17.3,
+      "ticker": "VAR.OL",
+      "unit_cost": 10.3
     }
   ],
   "royalty": []
