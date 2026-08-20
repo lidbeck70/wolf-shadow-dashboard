@@ -130,6 +130,15 @@ def build(df, ticker: str = "") -> Snapshot:
             f"Kursdatan för {ticker or 'tickern'} saknar kolumnerna "
             f"{', '.join(missing)}.")
 
+    # Före börsöppning skickar yfinance med DAGENS rad utan kurs (NaN). Läses
+    # den bokstavligt blir "senaste kursen" inget tal och hela fliken felar
+    # klockan 05:41 trots att gårdagens data är komplett. Rader utan Close är
+    # inte handelsdagar — bort med dem.
+    df = df[df["Close"].notna()]
+    if len(df) == 0:
+        raise MarketDataError(f"Kursdatan för {ticker or 'tickern'} saknar "
+                              f"stängningskurser helt.")
+
     close, high, low = df["Close"], df["High"], df["Low"]
     price = _f(close.iloc[-1])
     if price is None or price <= 0:
@@ -185,23 +194,55 @@ def _download(ticker: str):
                        multi_level_index=False)
 
 
-def fetch(ticker: str):
-    """OHLCV för tickern, cachad. Kastar MarketDataError."""
+# Suffixen som prövas när en ticker utan punkt inte hittas som den är.
+# Ordningen är panelens hemmamarknader: Stockholm först, sedan Oslo,
+# Köpenhamn och Helsingfors.
+NORDIC_SUFFIXES = (".ST", ".OL", ".CO", ".HE")
+
+
+def _usable(df) -> bool:
+    return (df is not None and len(df) > 0
+            and "Close" in df.columns and df["Close"].notna().any())
+
+
+def _candidates(name: str) -> list:
+    """Symbolformerna som prövas, i ordning.
+
+    Skriver man "ABB" ska panelen själv hitta ABB.ST — och "ERIC B"
+    (Börsdatas form) ska bli ERIC-B.ST. En ticker som redan har en punkt
+    prövas bara som den är: den som skrivit ett suffix menade det.
+    """
+    out = [name]
+    if "." not in name:
+        base = name.replace(" ", "-")
+        out += [base + sfx for sfx in NORDIC_SUFFIXES]
+    return out
+
+
+def fetch(ticker: str) -> tuple:
+    """(OHLCV, symbolen som fungerade), cachad. Kastar MarketDataError.
+
+    Ett nätverksfel kastas direkt — det gäller alla former lika. Bara ett
+    TOMT svar går vidare till nästa suffixkandidat.
+    """
     name = (ticker or "").strip().upper()
     if not name:
         raise MarketDataError("Ingen ticker angiven.")
-    try:
-        df = _cached_download(name)
-    except MarketDataError:
-        raise
-    except Exception as exc:
-        raise MarketDataError(f"Kunde inte hämta kursdata för {name}: "
-                              f"{exc}") from exc
-    if df is None or len(df) == 0:
-        raise MarketDataError(
-            f"Ingen kursdata för {name}. Kontrollera symbolen — nordiska "
-            f"tickers behöver börssuffix, t.ex. ERIC-B.ST eller VOLV-B.ST.")
-    return df
+    tried = _candidates(name)
+    for symbol in tried:
+        try:
+            df = _cached_download(symbol)
+        except MarketDataError:
+            raise
+        except Exception as exc:
+            raise MarketDataError(f"Kunde inte hämta kursdata för {symbol}: "
+                                  f"{exc}") from exc
+        if _usable(df):
+            return df, symbol
+    raise MarketDataError(
+        f"Ingen kursdata för {name} — prövade {', '.join(tried)}. "
+        f"Kontrollera symbolen; andra marknader behöver sitt börssuffix "
+        f"utskrivet (t.ex. .TO för Toronto).")
 
 
 def _cached_download(name: str):
@@ -215,8 +256,14 @@ def _cached_download(name: str):
 
 
 def snapshot(ticker: str) -> Snapshot:
-    """Hämta och räkna. Kastar MarketDataError med orsaken."""
-    return build(fetch(ticker), ticker)
+    """Hämta och räkna. Kastar MarketDataError med orsaken.
+
+    Ögonblicksbilden bär symbolen som FUNGERADE — skrev du ABB och panelen
+    hittade ABB.ST är det ABB.ST som visas, så du ser vad som faktiskt
+    hämtades.
+    """
+    df, resolved = fetch(ticker)
+    return build(df, resolved)
 
 
 def try_snapshot(ticker: str) -> tuple[Optional[Snapshot], Optional[str]]:
