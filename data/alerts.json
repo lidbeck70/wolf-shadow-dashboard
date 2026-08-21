@@ -1,0 +1,14 @@
+{
+  "blindspot": {
+    "channels": [
+      "discord"
+    ],
+    "enabled": true
+  },
+  "swing": {
+    "channels": [
+      "discord"
+    ],
+    "enabled": true
+  }
+}
