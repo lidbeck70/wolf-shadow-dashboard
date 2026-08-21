@@ -91,7 +91,10 @@ def send(message: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
     req  = urllib.request.Request(
         webhook_url,
         data=body,
-        headers={"Content-Type": "application/json"},
+        # Cloudflare framför Discord blockerar Pythons standard-urllib-
+        # identitet med 403 Forbidden — en egen User-Agent krävs.
+        headers={"Content-Type": "application/json",
+                 "User-Agent": "wolf-shadow-dashboard-alerts/1.0"},
         method="POST",
     )
 
@@ -99,10 +102,17 @@ def send(message: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
         with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
             status = resp.status
     except urllib.error.HTTPError as exc:
+        try:
+            detail = exc.read().decode("utf-8", "replace")[:200]
+        except Exception:
+            detail = ""
         hint = (" — fel eller ofullständig webhook-URL?"
-                if exc.code in (401, 403, 404) else "")
+                if exc.code in (401, 404) else "")
         last_error = f"Discord svarade HTTP {exc.code} {exc.reason}{hint}"
-        logger.error("discord channel: HTTP %d — %s", exc.code, exc.reason)
+        if detail:
+            last_error += f" · svar: {detail}"
+        logger.error("discord channel: HTTP %d — %s %s", exc.code, exc.reason,
+                     detail)
         return False
     except OSError as exc:
         last_error = f"nätverksfel: {exc}"

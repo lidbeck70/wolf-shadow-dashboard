@@ -73,8 +73,10 @@ def send(message: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
         or secret(_ENV_TOKEN)
     )
 
-    # Build headers
-    headers: Dict[str, str] = {"Content-Type": "application/json"}
+    # Build headers — egen User-Agent: Cloudflare-skyddade mottagare
+    # (Discord m.fl.) blockerar Pythons standard-urllib-identitet med 403.
+    headers: Dict[str, str] = {"Content-Type": "application/json",
+                               "User-Agent": "wolf-shadow-dashboard-alerts/1.0"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
     if isinstance(meta.get("headers"), dict):
