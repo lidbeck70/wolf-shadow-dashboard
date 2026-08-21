@@ -213,3 +213,25 @@ def test_email_sends_via_smtp(monkeypatch):
     assert sent["login"] == ("mig@gmail.com", "app-lösen")
     assert sent["to"] == ["till@example.com", "två@example.com"]
     assert "Larmtext" in sent["msg"] or "TGFybXRleHQ" in sent["msg"]
+
+
+def test_channels_read_streamlit_secrets_before_env(monkeypatch):
+    """Panelens testknapp felade: kanalerna läste bara os.environ, men på
+    Streamlit Cloud bor nycklarna i st.secrets. secret() ska ta secrets
+    först och miljön som reserv."""
+    from alerts import config
+
+    class _Secrets(dict):
+        def get(self, k, d=None):
+            return dict.get(self, k, d)
+
+    import streamlit as st
+    monkeypatch.setattr(st, "secrets", _Secrets(
+        {"DISCORD_WEBHOOK_URL": "https://discord/secrets-vägen"}))
+    monkeypatch.setenv("DISCORD_WEBHOOK_URL", "https://discord/env-vägen")
+    assert config.secret("DISCORD_WEBHOOK_URL") == "https://discord/secrets-vägen"
+    # saknas i secrets → miljön
+    monkeypatch.setenv("SMTP_HOST", "smtp.gmail.com")
+    assert config.secret("SMTP_HOST") == "smtp.gmail.com"
+    # finns ingenstans → default
+    assert config.secret("FINNS_INTE", "x") == "x"

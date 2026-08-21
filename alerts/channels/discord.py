@@ -28,6 +28,8 @@ import urllib.error
 import urllib.request
 from typing import Any, Dict, Optional
 
+from alerts.config import secret
+
 logger = logging.getLogger(__name__)
 
 _ENV_KEY = "DISCORD_WEBHOOK_URL"
@@ -40,7 +42,7 @@ def send(message: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
 
     Returns True on HTTP 2xx, False on any error.
     """
-    webhook_url = os.environ.get(_ENV_KEY, "").strip()
+    webhook_url = secret(_ENV_KEY)
     if not webhook_url:
         logger.warning("discord channel: %s not set — alert skipped", _ENV_KEY)
         return False

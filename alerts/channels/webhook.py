@@ -33,6 +33,8 @@ import urllib.error
 import urllib.request
 from typing import Any, Dict, Optional
 
+from alerts.config import secret
+
 logger = logging.getLogger(__name__)
 
 _ENV_URL   = "ALERT_WEBHOOK_URL"
@@ -53,7 +55,7 @@ def send(message: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
 
     target_url = (
         str(meta.get("url", "")).strip()
-        or os.environ.get(_ENV_URL, "").strip()
+        or secret(_ENV_URL)
     )
     if not target_url:
         logger.warning("webhook channel: no URL configured (%s unset) — alert skipped", _ENV_URL)
@@ -61,7 +63,7 @@ def send(message: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
 
     token = (
         str(meta.get("token", "")).strip()
-        or os.environ.get(_ENV_TOKEN, "").strip()
+        or secret(_ENV_TOKEN)
     )
 
     # Build headers

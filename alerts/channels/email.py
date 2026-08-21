@@ -32,6 +32,8 @@ import smtplib
 from email.mime.text import MIMEText
 from typing import Any, Dict, Optional
 
+from alerts.config import secret
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_SUBJECT = "Nordic Arc — larm"
@@ -40,10 +42,10 @@ DEFAULT_SUBJECT = "Nordic Arc — larm"
 def _smtp_send(subject: str, body: str, to_addrs: list[str],
                from_addr: str) -> bool:
     """Skicka via STARTTLS. False med tydlig logg på varje fel."""
-    host = os.environ.get("SMTP_HOST", "").strip()
-    port = int(os.environ.get("SMTP_PORT", "587") or 587)
-    user = os.environ.get("SMTP_USER", "").strip()
-    password = os.environ.get("SMTP_PASSWORD", "")
+    host = secret("SMTP_HOST")
+    port = int(secret("SMTP_PORT", "587") or 587)
+    user = secret("SMTP_USER")
+    password = secret("SMTP_PASSWORD")
 
     if not host:
         logger.warning("email channel: SMTP_HOST saknas — larmet skickades "
@@ -77,10 +79,9 @@ def send(message: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
     meta = metadata or {}
 
     subject = str(meta.get("subject", DEFAULT_SUBJECT))
-    user = os.environ.get("SMTP_USER", "").strip()
-    from_addr = os.environ.get("EMAIL_FROM", "").strip() or user or \
-        "alerts@wolf-shadow.local"
-    raw_to = str(meta.get("to", os.environ.get("EMAIL_TO", ""))).strip()
+    user = secret("SMTP_USER")
+    from_addr = secret("EMAIL_FROM") or user or "alerts@wolf-shadow.local"
+    raw_to = str(meta.get("to", secret("EMAIL_TO"))).strip()
     to_addrs = [a.strip() for a in raw_to.split(",") if a.strip()]
 
     if not to_addrs:
