@@ -64,3 +64,19 @@ jobs:
           # to target the run and make it fast; without it the full market is scanned.
           WOLF_UNIVERSE_CSV: universe.csv
         run: python wolf_data.py
+
+      # Larmen direkt efter datagenereringen: regimskiften och nya kandidater
+      # upptäcks medan datan är minuter gammal. Temakartan hoppas över här —
+      # den körs av scheduled-scan, och en hoppad karta rör inte baslinjen.
+      - name: Alert scan (swing)
+        if: always()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+          ALERT_REPO_TOKEN: ${{ secrets.ALERT_REPO_TOKEN }}
+        run: python alert_scan.py --no-blindspot

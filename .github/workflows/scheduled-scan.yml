@@ -40,3 +40,18 @@ jobs:
           CA_GIST_ID: ${{ secrets.CA_GIST_ID }}
           EMBER_GIST_ID: ${{ secrets.EMBER_GIST_ID }}
         run: python scheduled_scan.py
+
+      # Schemalagda larm — swing-övergångar plus Blindspots temakarta
+      # (tidig cykel). Bara övergångar larmar; tillståndet ligger i Gisten.
+      - name: Alert scan
+        if: always()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+          ALERT_REPO_TOKEN: ${{ secrets.ALERT_REPO_TOKEN }}
+        run: python alert_scan.py
