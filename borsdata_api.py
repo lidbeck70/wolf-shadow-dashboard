@@ -743,6 +743,60 @@ class BorsdataAPI:
             logger.debug("get_insider_transactions(%d) failed: %s", ins_id, e)
             return []
 
+    # ─── Short positions (FI blankningsregistret) ─────────────────────────
+
+    def get_short_positions(self) -> Dict[int, float]:
+        """
+        Fetch aggregated short positions for ALL instruments in ONE call.
+
+        Calls GET /holdings/shorts (Börsdata Holdings API), which mirrors
+        Finansinspektionens blankningsregister: every disclosed position
+        >= 0.5 % of shares outstanding, per holder. Returns {ins_id: total
+        short % of shares} where total sums the disclosed holders. An
+        instrument absent from the register is genuinely below the 0.5 %
+        disclosure floor — callers should treat "missing" as "low", not as
+        "unknown" (this is the whole point of using the registry over EODHD).
+
+        Payload shape is tolerated loosely (the API has shipped both "list"
+        and per-entry aggregates); anything unparsable yields {} so the
+        hate scorer falls back to its no-data path.
+        """
+        try:
+            data = self._get("/holdings/shorts")
+        except Exception as e:
+            logger.debug("get_short_positions failed: %s", e)
+            return {}
+
+        entries = []
+        for key in ("list", "shorts", "values"):
+            if isinstance(data, dict) and data.get(key):
+                entries = data[key]
+                break
+
+        totals: Dict[int, float] = {}
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            ins_id = entry.get("insId", entry.get("i"))
+            if ins_id is None:
+                continue
+            total = 0.0
+            positions = entry.get("positions")
+            if isinstance(positions, list):
+                for pos in positions:
+                    try:
+                        total += float((pos or {}).get("position", 0) or 0)
+                    except (TypeError, ValueError):
+                        pass
+            else:
+                try:
+                    total = float(entry.get("position", 0) or 0)
+                except (TypeError, ValueError):
+                    total = 0.0
+            if total > 0:
+                totals[int(ins_id)] = round(total, 2)
+        return totals
+
     # ─── Convenience: Multi-KPI snapshot ──────────────────────────────────
 
     def get_fundamentals_snapshot(self, ins_id: int) -> dict:

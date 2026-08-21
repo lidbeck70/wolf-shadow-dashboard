@@ -4,15 +4,18 @@ hate.py — Hat Score (0-100) for Contrarian Alpha Screener.
 Measures how hated / neglected / sold-off a stock is.
 Higher score = more contrarian opportunity. Threshold: HAT_THRESHOLD = 45.
 
-8 components (weights sum to 100):
-  1. Price vs SMA200          max 15p  (below SMA200 = institution-abandoned)
-  2. 52-week low proximity    max 12p  (near 52w low = max pain)
-  3. Retail sentiment silence max  5p  (StockTwits volume drought = forgotten)
-  4. Analyst downgrades 90d  max 12p  (recent cuts = Wall St. hate)
-  5. Short interest (EODHD)  max 15p  (high float short % = active hate)
-  6. Sector rotation outflow max 10p  (sector lagging market = nobody wants it)
-  7. StockTwits bear ratio   max 16p  (retail bears dominant = sentiment floor)
-  8. Cycle position (5y avg) max 15p  (distance below 5-year price avg = trough depth)
+7 kärnkomponenter (summa 100) — alla nåbara med Börsdata/yfinance/prisserien:
+  1. Pris vs SMA200            max 15p  (under SMA200 = institutionellt övergiven)
+  2. Nära 52v-lägsta           max 12p  (max smärta)
+  3. Cykelposition             max 15p  (under eget flerårssnitt = trough)
+  4. Blankning                 max 15p  (FI-registret via Börsdata / yfinance för US)
+  5. Värderingsdepression      max 15p  (botten av egen KPI-historik)
+  6. Volymtorka                max 13p  (bevakningen har dött)
+  7. Sektorrelativ svaghet     max 15p  (svagare än egna sektorn = utflöde)
+
+Poängen normaliseras mot NÅBART max (komponenter med riktig data), med
+skyddsräcket att minst 50p av rymden måste vara mätbar. EODHD/StockTwits
+(analytiker/sentiment) är en frivillig bonus, max +8 — aldrig ett krav.
 
 Adapted from blindspot/scoring/hat.py + retail_sentiment/sources/twitter.py.
 
@@ -67,15 +70,27 @@ VALUE_TRAP_HAT_MIN      = 85    # Hat score above this...
 VALUE_TRAP_STRENGTH_MAX = 50    # ...combined with strength below this → Value Trap
 
 # ─── Component max points (must sum to 100) ───────────────────────────────────
+# Omdesign: sju komponenter som ALLA går att nå med källor panelen redan har
+# (Börsdata + yfinance + den egna prisserien). Tidigare krävde 58 av 100 poäng
+# EODHD/StockTwits-data som aldrig hämtades, och saknad data gav "moderata
+# defaultpoäng" — 21 fabricerade poäng av tröskelns 45, så grinden sorterade
+# mest på brus. Nu ger saknad data 0 poäng och räknas BORT ur nåbart max i
+# stället (se normaliseringen i calculate_hate_score).
 
-_MAX_SMA200     = 15
-_MAX_52W_LOW    = 12
-_MAX_RETAIL_SIL =  5
+_MAX_SMA200     = 15   # pris vs SMA200 — institutionellt övergiven
+_MAX_52W_LOW    = 12   # nära 52v-lägsta — max smärta
+_MAX_CYCLE      = 15   # under eget flerårssnitt — cykeltrough
+_MAX_SHORT      = 15   # blankning — FI-registret (Börsdata) / yfinance för US
+_MAX_VALUATION  = 15   # värderingsdepression — botten av egen KPI-historik
+_MAX_VOLUME     = 13   # volymtorka — bevakningen har dött
+_MAX_SECTOR     = 15   # svagare än egna sektorn — utflöde
+
+# Frivillig förstärkning (EODHD/StockTwits när nyckeln finns) — begränsad
+# bonus ovanpå kärnan, aldrig ett krav för att nå tröskeln.
+_MAX_BONUS      = 8
+_MAX_RETAIL_SIL =  5   # legacy-skalor för bonusdelen
 _MAX_ANALYST    = 12
-_MAX_SHORT      = 15
-_MAX_SECTOR     = 10
 _MAX_BEAR_RATIO = 16
-_MAX_CYCLE      = 15   # distance below 5-year average price — trough depth
 
 # ─── Result model ────────────────────────────────────────────────────────────
 
@@ -113,7 +128,7 @@ def _score_sma200_gap(price_data: dict) -> tuple[float, bool]:
     close  = price_data.get("close",  0.0)
     sma200 = price_data.get("sma200", 0.0)
     if sma200 <= 0 or close <= 0:
-        return 8.0, False  # neutral default — moderate assume some discount
+        return 0.0, False  # ingen data — utesluts ur nåbart max, inga låtsaspoäng
     pct_below = (sma200 - close) / sma200 * 100
     pts = _clamp(pct_below / 20.0 * _MAX_SMA200, 0.0, float(_MAX_SMA200))
     return pts, True
@@ -128,7 +143,7 @@ def _score_52w_low_proximity(price_data: dict) -> tuple[float, bool]:
     high_52 = price_data.get("high_52w", 0.0)
     low_52  = price_data.get("low_52w",  0.0)
     if high_52 <= low_52 or close <= 0:
-        return 5.0, False  # neutral default
+        return 0.0, False
     position = (close - low_52) / (high_52 - low_52)   # 0=at low, 1=at high
     pts = _clamp((0.5 - position) / 0.5 * _MAX_52W_LOW, 0.0, float(_MAX_52W_LOW))
     return pts, True
@@ -142,11 +157,11 @@ def _score_retail_silence(sentiment_data: dict | None) -> tuple[float, bool]:
     Weighted by confidence.
     """
     if not sentiment_data:
-        return 3.0, False  # moderate default: assume some neglect
+        return 0.0, False
     count = sentiment_data.get("message_count", 0) or 0
     conf  = sentiment_data.get("confidence", 0.0)
     if conf == 0.0:
-        return 3.0, False
+        return 0.0, False
     if count == 0:
         raw = 5.0
     elif count < 5:
@@ -184,7 +199,7 @@ def _score_analyst_downgrades(analyst_data: dict | None) -> tuple[float, bool]:
       'Sell'       → +2p
     """
     if not analyst_data:
-        return 4.0, False  # moderate default
+        return 0.0, False
     downs = analyst_data.get("downgrades_90d", 0) or 0
     ups   = analyst_data.get("upgrades_90d",   0) or 0
     net   = max(0, downs - ups)
@@ -217,12 +232,18 @@ def _score_short_interest(short_data: dict | None) -> tuple[float, bool]:
     10-15%→ 11p
     15-20%→ 13p
     >20%  → 15p
+
+    Källor: Börsdata /holdings/shorts (FI:s blankningsregister, hela
+    universumet i ett anrop) för nordiska aktier; yfinance
+    shortPercentOfFloat för US; EODHD kvar som frivillig väg. En nordisk
+    aktie som SAKNAS i registret ligger under 0,5 %-golvet — motorn skickar
+    då {"short_float_pct": 0.0}, vilket är RIKTIG data (0 p), inte saknad.
     """
     if not short_data:
-        return 4.0, False  # moderate default
+        return 0.0, False
     pct = short_data.get("short_float_pct")
     if pct is None:
-        return 4.0, False
+        return 0.0, False
     pct = float(pct)
     if pct < 2:    return 0.0,  True
     if pct < 5:    return 4.0,  True
@@ -234,31 +255,45 @@ def _score_short_interest(short_data: dict | None) -> tuple[float, bool]:
 
 def _score_sector_outflow(sector_data: dict | None) -> tuple[float, bool]:
     """
-    Sector ETF relative performance vs market (3m primary, 6m secondary). (max 10p)
-    Underperforming sector = capital rotating away = sentiment headwind.
+    Relativ svaghet mot egna sektorn. (max 15p)
 
-    3m relative perf (pp vs SPY):
-      > 0%   → 0p
-      -5% to 0  → 2p
-      -10% to -5% → 5p
-      -15% to -10% → 8p
-      < -15% → 10p
+    Primär nyckel: stock_vs_sector_3m — aktiens 3-månadersavkastning minus
+    sektormedianens, i procentenheter, räknad ur universumets EGNA prisdata
+    (noll extra API-anrop). Negativt = svagare än sektorn = utflöde ur just
+    den här aktien, inte bara branschen.
 
-    6m secondary: adds up to 2p extra if also lagging.
+      >= 0 pe   → 0p
+      till −5   → 4p
+      till −12  → 8p
+      till −20  → 12p
+      < −20     → 15p
+
+    Fallback: de gamla ETF-nycklarna (sector_vs_market_3m/6m) skalas till
+    samma 15-poängsskala så EODHD-vägen fortfarande fungerar.
     """
     if not sector_data:
-        return 3.0, False  # moderate default
+        return 0.0, False
+
+    rel = sector_data.get("stock_vs_sector_3m")
+    if rel is not None:
+        rel = float(rel)
+        if rel >= 0:      pts = 0.0
+        elif rel > -5:    pts = 4.0
+        elif rel > -12:   pts = 8.0
+        elif rel > -20:   pts = 12.0
+        else:             pts = 15.0
+        return pts, True
+
     rel_3m = sector_data.get("sector_vs_market_3m")
     if rel_3m is None:
-        return 3.0, False
+        return 0.0, False
     rel_3m = float(rel_3m)
     if rel_3m > 0:      base = 0.0
-    elif rel_3m > -5:   base = 2.0
-    elif rel_3m > -10:  base = 5.0
-    elif rel_3m > -15:  base = 8.0
-    else:               base = 10.0
+    elif rel_3m > -5:   base = 3.0
+    elif rel_3m > -10:  base = 7.0
+    elif rel_3m > -15:  base = 11.0
+    else:               base = 13.0
 
-    # 6m bonus: up to 2p if 6m also weak
     bonus = 0.0
     rel_6m = sector_data.get("sector_vs_market_6m")
     if rel_6m is not None and float(rel_6m) < -10:
@@ -268,6 +303,68 @@ def _score_sector_outflow(sector_data: dict | None) -> tuple[float, bool]:
 
     pts = _clamp(base + bonus, 0.0, float(_MAX_SECTOR))
     return pts, True
+
+
+def _score_valuation_depression(valuation_data: dict | None) -> tuple[float, bool]:
+    """
+    Värderingsdepression: dagens multipel mot aktiens EGEN historik. (max 15p)
+
+    Ersätter analytikernedgraderingarna (ingen nordisk källa) med en ärligare
+    kontrarisk signal: en aktie i botten av sin egen värderingshistorik är
+    övergiven av marknaden — Dremen/Rule-logik, ur Börsdatas KPI-historik
+    som redan är 24h-cachad.
+
+    valuation_data = {"current": float, "history": [float, ...], "metric": str}
+    Percentilrank = andel historiska värden UNDER dagens. Lågt = billig mot
+    sig själv. Kräver minst 8 historikpunkter och positiv multipel (negativa
+    multiplar är förlustår — ingen värderingssignal).
+
+      rank <= 0.10 → 15p   (billigaste tiondelen av egen historik)
+      rank <= 0.20 → 12p
+      rank <= 0.35 →  8p
+      rank <= 0.50 →  4p
+      rank >  0.50 →  0p
+    """
+    if not valuation_data:
+        return 0.0, False
+    current = valuation_data.get("current")
+    history = [h for h in (valuation_data.get("history") or [])
+               if isinstance(h, (int, float)) and h > 0]
+    if current is None or float(current) <= 0 or len(history) < 8:
+        return 0.0, False
+    current = float(current)
+    rank = sum(1 for h in history if h < current) / len(history)
+    if rank <= 0.10:   return 15.0, True
+    if rank <= 0.20:   return 12.0, True
+    if rank <= 0.35:   return 8.0,  True
+    if rank <= 0.50:   return 4.0,  True
+    return 0.0, True
+
+
+def _score_volume_drought(price_data: dict) -> tuple[float, bool]:
+    """
+    Volymtorka: bevakningen har dött. (max 13p)
+
+    Ersätter StockTwits-tystnaden (hämtades aldrig) med samma signal ur data
+    vi redan har: 20-dagarsvolymen mot 6-månaderssnittet. En aktie vars
+    omsättning torkat ihop är bortglömd — ingen säljer ens längre.
+
+      kvot < 0.4  → 13p  (volymen mer än halverad)
+      kvot < 0.6  → 10p
+      kvot < 0.8  →  6p
+      kvot < 1.0  →  3p
+      kvot >= 1.0 →  0p  (aktiv handel — inte bortglömd)
+    """
+    v20 = price_data.get("avg_volume_20d")
+    v6m = price_data.get("avg_volume_6m")
+    if not v20 or not v6m or v6m <= 0:
+        return 0.0, False
+    ratio = float(v20) / float(v6m)
+    if ratio < 0.4:    return 13.0, True
+    if ratio < 0.6:    return 10.0, True
+    if ratio < 0.8:    return 6.0,  True
+    if ratio < 1.0:    return 3.0,  True
+    return 0.0, True
 
 
 def _score_stocktwits_bear(sentiment_data: dict | None) -> tuple[float, bool]:
@@ -283,11 +380,11 @@ def _score_stocktwits_bear(sentiment_data: dict | None) -> tuple[float, bool]:
     Scaled linearly 0-0.7+ capped at 20p, weighted by confidence.
     """
     if not sentiment_data:
-        return 7.0, False  # moderate default
+        return 0.0, False
     conf       = sentiment_data.get("confidence", 0.0)
     bear_ratio = sentiment_data.get("bear_ratio", 0.0) or 0.0
     if conf == 0.0:
-        return 7.0, False
+        return 0.0, False
     raw = _clamp(bear_ratio / 0.70 * _MAX_BEAR_RATIO, 0.0, float(_MAX_BEAR_RATIO))
     # Scale down by confidence — partial data should be treated with caution
     pts = raw * _clamp(conf, 0.5, 1.0)
@@ -316,7 +413,7 @@ def _score_cycle_position(price_data: dict) -> tuple[float, bool]:
     avg_5y = price_data.get("avg_price_5y")
 
     if not avg_5y or avg_5y <= 0 or close <= 0:
-        return 5.0, False   # moderate default — multi-year data not available
+        return 0.0, False
 
     pct_below = (avg_5y - close) / avg_5y * 100
 
@@ -345,17 +442,34 @@ def calculate_hate_score(
     short_data: dict | None = None,
     sector_data: dict | None = None,
     strength_score: float | None = None,
+    valuation_data: dict | None = None,
 ) -> HateResult:
     """
     Calculate Hat Score (0-100) for a single instrument.
 
+    Kärnan är sju komponenter (summa 100) som alla nås med Börsdata +
+    yfinance + prisserien. Saknad data ger 0 poäng OCH räknas bort ur
+    nåbart max — poängen normaliseras sedan mot det nåbara, så "Hat >= 45"
+    betyder 45 % av det som faktiskt gick att mäta. Utan normaliseringen
+    hade en rad med luckor aldrig kunnat nå tröskeln (den gamla buggen,
+    fast utan de fabricerade defaultpoängen).
+
+    Skyddsräcke: minst halva poängrymden (50 p) måste vara mätbar för att
+    normaliseringen ska användas — annars gäller råpoängen, så två mätta
+    komponenter aldrig ensamma kan blåsa upp ett 27/27-läge till 100.
+
+    EODHD/StockTwits (analyst/sentiment) är frivillig förstärkning: en
+    begränsad bonus (max +8) ovanpå kärnan, aldrig ett krav.
+
     Args:
         price_data:     Required. close, sma200, high_52w, low_52w.
-                        Optional: avg_price_5y for cycle position component.
-        sentiment_data: Optional. StockTwits bear_ratio, message_count, confidence.
-        analyst_data:   Optional. downgrades_90d, upgrades_90d, consensus.
-        short_data:     Optional. short_float_pct from EODHD.
-        sector_data:    Optional. sector_vs_market_3m, sector_vs_market_6m.
+                        Optional: avg_price_5y, avg_volume_20d, avg_volume_6m.
+        sentiment_data: Optional bonus. StockTwits bear_ratio, message_count.
+        analyst_data:   Optional bonus. downgrades_90d, upgrades_90d, consensus.
+        short_data:     short_float_pct — FI-registret via Börsdata (Norden),
+                        yfinance (US) eller EODHD.
+        sector_data:    stock_vs_sector_3m (primär) eller ETF-nycklarna.
+        valuation_data: {"current", "history", "metric"} — Börsdata KPI-historik.
         strength_score: Optional float (0-100) from strength.py — used for
                         Value Trap detection only.
 
@@ -369,45 +483,66 @@ def calculate_hate_score(
             confidence=0.0,
         )
 
-    # Score each component
-    sma_pts,      sma_real      = _score_sma200_gap(price_data)
-    low_pts,      low_real      = _score_52w_low_proximity(price_data)
-    sil_pts,      sil_real      = _score_retail_silence(sentiment_data)
-    analyst_pts,  analyst_real  = _score_analyst_downgrades(analyst_data)
-    short_pts,    short_real    = _score_short_interest(short_data)
-    sector_pts,   sector_real   = _score_sector_outflow(sector_data)
-    bear_pts,     bear_real     = _score_stocktwits_bear(sentiment_data)
-    cycle_pts,    cycle_real    = _score_cycle_position(price_data)
+    # Kärnkomponenterna (max-poäng, poäng, har riktig data)
+    sma_pts,    sma_real    = _score_sma200_gap(price_data)
+    low_pts,    low_real    = _score_52w_low_proximity(price_data)
+    cycle_pts,  cycle_real  = _score_cycle_position(price_data)
+    short_pts,  short_real  = _score_short_interest(short_data)
+    val_pts,    val_real    = _score_valuation_depression(valuation_data)
+    vol_pts,    vol_real    = _score_volume_drought(price_data)
+    sector_pts, sector_real = _score_sector_outflow(sector_data)
 
-    total = _clamp(
-        sma_pts + low_pts + sil_pts + analyst_pts + short_pts
-        + sector_pts + bear_pts + cycle_pts,
-        0.0, 100.0,
-    )
-    total = round(total, 1)
+    core = [
+        (_MAX_SMA200,    sma_pts,    sma_real),
+        (_MAX_52W_LOW,   low_pts,    low_real),
+        (_MAX_CYCLE,     cycle_pts,  cycle_real),
+        (_MAX_SHORT,     short_pts,  short_real),
+        (_MAX_VALUATION, val_pts,    val_real),
+        (_MAX_VOLUME,    vol_pts,    vol_real),
+        (_MAX_SECTOR,    sector_pts, sector_real),
+    ]
+    raw       = sum(p for _m, p, _r in core)
+    reachable = sum(m for m, _p, r in core if r)
 
-    # Confidence: fraction of components backed by real data (8 components)
-    real_count = sum([sma_real, low_real, sil_real, analyst_real,
-                      short_real, sector_real, bear_real, cycle_real])
-    confidence = round(real_count / 8, 2)
+    if reachable >= 50:
+        total = raw / reachable * 100.0
+    else:
+        total = raw   # för lite mätt för att normalisera — råpoäng + låg confidence
+
+    # Bonus: EODHD/StockTwits när de råkar finnas — skalas ihop, max +8.
+    analyst_pts, analyst_real = _score_analyst_downgrades(analyst_data)
+    sil_pts,     sil_real     = _score_retail_silence(sentiment_data)
+    bear_pts,    bear_real    = _score_stocktwits_bear(sentiment_data)
+    bonus_raw = (analyst_pts / _MAX_ANALYST * 5.0 if analyst_real else 0.0) \
+        + (bear_pts / _MAX_BEAR_RATIO * 2.0 if bear_real else 0.0) \
+        + (sil_pts / _MAX_RETAIL_SIL * 1.0 if sil_real else 0.0)
+    bonus = _clamp(bonus_raw, 0.0, float(_MAX_BONUS))
+
+    total = round(_clamp(total + bonus, 0.0, 100.0), 1)
+
+    confidence = round(reachable / 100.0, 2)
 
     breakdown = {
-        "sma200_gap":        round(sma_pts, 1),
-        "low_52w_proximity": round(low_pts, 1),
-        "retail_silence":    round(sil_pts, 1),
-        "analyst_downgrades":round(analyst_pts, 1),
-        "short_interest":    round(short_pts, 1),
-        "sector_outflow":    round(sector_pts, 1),
-        "stocktwits_bear":   round(bear_pts, 1),
-        "cycle_position":    round(cycle_pts, 1),
+        "sma200_gap":           round(sma_pts, 1),
+        "low_52w_proximity":    round(low_pts, 1),
+        "cycle_position":       round(cycle_pts, 1),
+        "short_interest":       round(short_pts, 1),
+        "valuation_depression": round(val_pts, 1),
+        "volume_drought":       round(vol_pts, 1),
+        "sector_outflow":       round(sector_pts, 1),
     }
+    if bonus > 0:
+        breakdown["sentiment_bonus"] = round(bonus, 1)
 
     flags: list[str] = []
     if not sma_real:    flags.append("PRICE_DATA_PARTIAL")
-    if not analyst_real: flags.append("ANALYST_DATA_MISSING")
     if not short_real:  flags.append("SHORT_DATA_MISSING")
+    if not val_real:    flags.append("VALUATION_DATA_MISSING")
+    if not vol_real:    flags.append("VOLUME_DATA_MISSING")
     if not sector_real: flags.append("SECTOR_DATA_MISSING")
     if not cycle_real:  flags.append("CYCLE_DATA_MISSING")
+    if reachable < 50:
+        flags.append("HATE_LOW_COVERAGE")
 
     if _check_value_trap(total, strength_score):
         flags.append("POTENTIAL_VALUE_TRAP")
