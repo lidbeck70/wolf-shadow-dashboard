@@ -41,6 +41,9 @@ _ENV_URL   = "ALERT_WEBHOOK_URL"
 _ENV_TOKEN = "ALERT_WEBHOOK_TOKEN"
 _TIMEOUT   = 10  # seconds
 
+# Senaste felorsaken i klartext — läses av panelens testknapp.
+last_error = ""
+
 # Keys consumed by the channel itself — not forwarded in the body metadata.
 _RESERVED_META_KEYS = {"url", "token", "headers", "payload"}
 
@@ -51,6 +54,8 @@ def send(message: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
 
     Returns True on HTTP 2xx, False on any error.
     """
+    global last_error
+    last_error = ""
     meta = metadata or {}
 
     target_url = (
@@ -58,6 +63,8 @@ def send(message: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
         or secret(_ENV_URL)
     )
     if not target_url:
+        last_error = (f"{_ENV_URL} hittas varken i Streamlit-secrets "
+                      f"eller miljön.")
         logger.warning("webhook channel: no URL configured (%s unset) — alert skipped", _ENV_URL)
         return False
 
@@ -95,9 +102,11 @@ def send(message: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
         with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
             status = resp.status
     except urllib.error.HTTPError as exc:
+        last_error = f"mottagaren svarade HTTP {exc.code} {exc.reason}"
         logger.error("webhook channel: HTTP %d %s — url=%s", exc.code, exc.reason, target_url)
         return False
     except OSError as exc:
+        last_error = f"nätverksfel: {exc}"
         logger.error("webhook channel: network error — %s", exc)
         return False
 

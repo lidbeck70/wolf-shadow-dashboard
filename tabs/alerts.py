@@ -271,10 +271,10 @@ def _render_test_alert(send_fn) -> None:
             ok_chs = [ch for ch, ok in results.items() if ok]
             if ok_chs:
                 st.success(f"Delivered: {', '.join(ok_chs)}")
-            st.error(
-                f"Failed: {', '.join(failed)} — "
-                f"check environment variables (e.g. DISCORD_WEBHOOK_URL)."
-            )
+            for ch in failed:
+                reason = _failure_reason(ch)
+                st.error(f"Failed: {ch} — "
+                         f"{reason or 'okänd orsak, se apploggen.'}")
 
 
 # ── Alert log ────────────────────────────────────────────────────────────────
@@ -446,16 +446,30 @@ def _render_scheduled_settings(send_fn) -> None:
                     if ok:
                         st.success(f"{ch}: levererat")
                     else:
-                        st.error(f"{ch}: MISSLYCKADES — kontrollera kanalens "
-                                 f"variabler under CHANNELS")
+                        reason = _failure_reason(ch)
+                        st.error(f"{ch}: MISSLYCKADES — "
+                                 f"{reason or 'okänd orsak, se apploggen.'}")
     st.caption("Glöm inte 💾 Spara — Actions-jobbet läser den SPARADE filen, "
                "inte sessionens kryssrutor.")
+
+
+def _failure_reason(channel: str) -> str:
+    """Kanalens egen felorsak i klartext — 'misslyckades' utan varför är
+    exakt det som gjorde webhook-felsökningen till gissningslek."""
+    try:
+        import importlib
+        mod = importlib.import_module(f"alerts.channels.{channel}")
+        return str(getattr(mod, "last_error", "") or "")
+    except Exception:
+        return ""
 
 
 def _render_channel_status() -> None:
     section_title("Channel Configuration Status")
 
-    import os
+    # secrets-först som kanalerna själva — os.environ ensamt visade NOT SET
+    # fast nyckeln låg i Streamlit-secrets.
+    from alerts.config import secret as _secret, source as _source
     checks = [
         ("discord", "DISCORD_WEBHOOK_URL",  "Discord webhook URL"),
         ("email",   "EMAIL_TO",             "Recipient email address"),
@@ -464,15 +478,14 @@ def _render_channel_status() -> None:
 
     cols = st.columns(len(checks))
     for col, (ch, env_key, label) in zip(cols, checks):
-        val      = os.environ.get(env_key, "").strip()
+        val      = _secret(env_key)
         is_set   = bool(val)
         color    = _GREEN if is_set else _RED
         icon     = _CHANNEL_ICONS.get(ch, "?")
         status   = "CONFIGURED" if is_set else "NOT SET"
-        preview  = (
-            val[:12] + "…" + val[-4:] if len(val) > 20
-            else val[:20]
-        ) if is_set else f"set {env_key}"
+        src      = {"secrets": "via Streamlit-secrets",
+                    "env": "via miljövariabel"}.get(_source(env_key), "")
+        preview  = src if is_set else f"set {env_key}"
 
         with col:
             _card(
@@ -487,6 +500,20 @@ def _render_channel_status() -> None:
                 f'margin-top:4px;">{preview}</div>',
                 border_color=f"{color}44",
             )
+
+    # Discord-URL:en är den vanligaste snubbeltråden: fel sak kopierad.
+    d_url = _secret("DISCORD_WEBHOOK_URL")
+    if d_url and not d_url.startswith(("https://discord.com/api/webhooks/",
+                                       "https://discordapp.com/api/webhooks/")):
+        st.warning("DISCORD_WEBHOOK_URL är satt men ser inte ut som en "
+                   "webhook-URL — den ska börja med "
+                   "https://discord.com/api/webhooks/. Kopiera om den: "
+                   "kanalen → Redigera kanal → Integrationer → Webhookar → "
+                   "Kopiera webhook-URL.", icon="⚠️")
+    if _secret("EMAIL_TO") and not _secret("SMTP_HOST"):
+        st.warning("EMAIL_TO är satt men SMTP_HOST saknas — mejl kan inte "
+                   "skickas utan server (för Gmail: smtp.gmail.com).",
+                   icon="⚠️")
 
 
 # ── Main entry point ─────────────────────────────────────────────────────────

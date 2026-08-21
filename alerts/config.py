@@ -25,3 +25,16 @@ def secret(name: str, default: str = "") -> str:
     except Exception:
         pass
     return (os.environ.get(name, default) or default).strip()
+
+
+def source(name: str) -> str:
+    """Var *name* hittades: "secrets", "env" eller "" — för statuskorten,
+    som ska kunna säga VAR nyckeln bor utan att visa värdet."""
+    try:
+        import streamlit as st
+        value = st.secrets.get(name, None)
+        if value is not None and str(value).strip():
+            return "secrets"
+    except Exception:
+        pass
+    return "env" if os.environ.get(name, "").strip() else ""

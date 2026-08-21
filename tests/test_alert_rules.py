@@ -235,3 +235,27 @@ def test_channels_read_streamlit_secrets_before_env(monkeypatch):
     assert config.secret("SMTP_HOST") == "smtp.gmail.com"
     # finns ingenstans → default
     assert config.secret("FINNS_INTE", "x") == "x"
+
+
+def test_discord_failures_explain_themselves(monkeypatch):
+    """'Misslyckades' utan varför gjorde felsökningen till gissningslek —
+    varje False-väg ska lämna en läsbar orsak i last_error."""
+    from alerts.channels import discord
+    monkeypatch.delenv("DISCORD_WEBHOOK_URL", raising=False)
+    assert discord.send("test") is False
+    assert "DISCORD_WEBHOOK_URL" in discord.last_error
+    # satt men fel sak kopierad (inte en webhook-URL): stoppas före anropet
+    monkeypatch.setenv("DISCORD_WEBHOOK_URL", "https://discord.gg/inbjudan")
+    assert discord.send("test") is False
+    assert "webhook-URL" in discord.last_error
+
+
+def test_email_failures_explain_themselves(monkeypatch):
+    from alerts.channels import email
+    monkeypatch.delenv("EMAIL_TO", raising=False)
+    assert email.send("test") is False
+    assert "EMAIL_TO" in email.last_error
+    monkeypatch.setenv("EMAIL_TO", "till@example.com")
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    assert email.send("test") is False
+    assert "SMTP_HOST" in email.last_error

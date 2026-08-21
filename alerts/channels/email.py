@@ -38,6 +38,9 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_SUBJECT = "Nordic Arc — larm"
 
+# Senaste felorsaken i klartext — läses av panelens testknapp.
+last_error = ""
+
 
 def _smtp_send(subject: str, body: str, to_addrs: list[str],
                from_addr: str) -> bool:
@@ -47,7 +50,10 @@ def _smtp_send(subject: str, body: str, to_addrs: list[str],
     user = secret("SMTP_USER")
     password = secret("SMTP_PASSWORD")
 
+    global last_error
     if not host:
+        last_error = ("SMTP_HOST hittas varken i Streamlit-secrets eller "
+                      "miljön (för Gmail: smtp.gmail.com).")
         logger.warning("email channel: SMTP_HOST saknas — larmet skickades "
                        "INTE. Sätt SMTP_HOST/SMTP_USER/SMTP_PASSWORD.")
         return False
@@ -68,6 +74,8 @@ def _smtp_send(subject: str, body: str, to_addrs: list[str],
         logger.info("email channel: skickat till %s (%r)", to_addrs, subject)
         return True
     except Exception as exc:
+        last_error = (f"SMTP-sändningen misslyckades ({type(exc).__name__}): "
+                      f"{exc} — för Gmail: app-lösenord, inte kontolösenordet.")
         logger.error("email channel: sändningen misslyckades (%s): %s",
                      type(exc).__name__, exc)
         return False
@@ -76,6 +84,8 @@ def _smtp_send(subject: str, body: str, to_addrs: list[str],
 def send(message: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
     """Skicka larmet som mejl. False när konfigurationen saknas — ett
     oskickat mejl får inte räknas som levererat."""
+    global last_error
+    last_error = ""
     meta = metadata or {}
 
     subject = str(meta.get("subject", DEFAULT_SUBJECT))
@@ -85,6 +95,8 @@ def send(message: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
     to_addrs = [a.strip() for a in raw_to.split(",") if a.strip()]
 
     if not to_addrs:
+        last_error = ("EMAIL_TO hittas varken i Streamlit-secrets eller "
+                      "miljön — ingen mottagare.")
         logger.warning("email channel: EMAIL_TO saknas — larmet skickades "
                        "INTE.")
         return False
