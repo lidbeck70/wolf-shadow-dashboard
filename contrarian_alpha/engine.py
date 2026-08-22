@@ -385,6 +385,9 @@ def _compute_price_metrics(df) -> dict:
         current_vol   = float(vol.iloc[-1])            if len(vol) > 0 else 0.0
         avg_vol_20d   = float(vol.tail(20).mean())     if len(vol) >= 20 else 0.0
         std_vol_20d   = float(vol.tail(20).std())      if len(vol) >= 20 else 0.0
+        # 6-månaderssnitt för volymtorkan (hate.py) — kräver rimlig historik
+        # så kvoten 20d/6m inte jämför fönstret med sig självt.
+        avg_vol_6m    = float(vol.tail(126).mean())    if len(vol) >= 60 else None
 
         # SMA50 slope (linear regression over last 10 bars of SMA50)
         sma50_slope = 0.0
@@ -411,6 +414,7 @@ def _compute_price_metrics(df) -> dict:
             "current_volume": current_vol,
             "avg_volume_20d": avg_vol_20d,
             "std_volume_20d": std_vol_20d,
+            "avg_volume_6m":  avg_vol_6m,
             "sma50_slope":    round(sma50_slope, 6),
             "close_history":  close_history,
             "avg_price_5y":   round(avg_price_5y, 4) if avg_price_5y is not None else None,
@@ -441,10 +445,12 @@ def _fetch_price_df(ticker: str, ins_id: int | None, api) -> object:
 
     df = None
 
-    # Börsdata path
+    # Börsdata path — 5 år (~1250 handelsdagar) så cykelpositionen i hate.py
+    # faktiskt mäter mot ett flerårssnitt (300 dagar gjorde "5y" till 14 mån).
+    # Samma antal API-anrop, bara större svar; yfinance-vägen hämtar redan 5y.
     if api is not None and ins_id is not None:
         try:
-            df = api.get_stockprices_df(ins_id, max_count=300)
+            df = api.get_stockprices_df(ins_id, max_count=1300)
             if df is not None and len(df) < 50:
                 df = None
         except Exception as e:
@@ -1076,6 +1082,96 @@ def _apply_existing_source_overlay(
 
 # ─── Single-ticker pipeline ───────────────────────────────────────────────────
 
+def _yf_short_pct(ticker: str) -> float | None:
+    """Blanknings-% via yfinance (US-tickers utan Börsdata-id). 24h-cachad
+    i fundamentals-cachen; None när yfinance saknar fältet (vanligt utanför
+    US) — då räknas komponenten som omätt, inte som noll."""
+    try:
+        from contrarian_alpha.cache import get_fundamentals, set_fundamentals
+        hit = get_fundamentals(f"yfshort:{ticker}")
+        if hit is not None:
+            return hit.get("pct")
+    except Exception:
+        get_fundamentals = set_fundamentals = None
+    pct = None
+    try:
+        import yfinance as yf
+        info = yf.Ticker(ticker).info or {}
+        raw = info.get("shortPercentOfFloat")
+        if raw is not None:
+            pct = round(float(raw) * 100.0, 2)   # yfinance ger andel, inte %
+    except Exception as e:
+        logger.debug("yf short fetch failed for %s: %s", ticker, e)
+    try:
+        if set_fundamentals is not None:
+            set_fundamentals(f"yfshort:{ticker}", {"pct": pct})
+    except Exception:
+        pass
+    return pct
+
+
+def _batch_valuation_data(
+    universe: list[dict],
+    fund_snapshots: dict,
+    api,
+) -> dict[int, dict]:
+    """Underlag för värderingsdepressionen — hela universumet batchvis.
+
+    EV/EBITDA-historiken hämtas via Börsdatas batch-endpoint (50 instrument
+    per anrop → ~15 anrop för hela Norden, inte ett per aktie). P/E som
+    reserv för rader med för tunn EV/EBITDA-historik. Returnerar
+    {ins_id: {"current", "history", "metric"}} för rader med >= 8 giltiga
+    historikpunkter; övriga utelämnas (komponenten räknas då som omätt).
+    """
+    if api is None or not getattr(api, "is_configured", False):
+        return {}
+    ins_ids = [u["ins_id"] for u in universe if u["ins_id"] is not None]
+    if not ins_ids:
+        return {}
+
+    def _histories(kpi_key: str, ids: list[int]) -> dict[int, list[float]]:
+        try:
+            raw = api.get_kpi_history_batch(ids, KPI[kpi_key])
+        except Exception as e:
+            logger.warning("valuation batch (%s) failed: %s", kpi_key, e)
+            return {}
+        out: dict[int, list[float]] = {}
+        for iid, entries in raw.items():
+            vals = []
+            for entry in entries or []:
+                v = (entry or {}).get("v")
+                if isinstance(v, (int, float)) and v > 0:
+                    vals.append(float(v))
+            out[iid] = vals
+        return out
+
+    result: dict[int, dict] = {}
+    ev_hist = _histories("ev_ebitda", ins_ids)
+    thin = []
+    for iid in ins_ids:
+        valid = ev_hist.get(iid, [])
+        if len(valid) >= 8:
+            current = (fund_snapshots.get(iid) or {}).get("ev_ebitda")
+            if not isinstance(current, (int, float)) or current <= 0:
+                current = valid[0]
+            result[iid] = {"current": current, "history": valid,
+                           "metric": "ev_ebitda"}
+        else:
+            thin.append(iid)
+
+    if thin:
+        pe_hist = _histories("pe", thin)
+        for iid in thin:
+            valid = pe_hist.get(iid, [])
+            if len(valid) >= 8:
+                current = (fund_snapshots.get(iid) or {}).get("pe")
+                if not isinstance(current, (int, float)) or current <= 0:
+                    current = valid[0]
+                result[iid] = {"current": current, "history": valid,
+                               "metric": "pe"}
+    return result
+
+
 def _run_single_ticker(
     ticker:       str,
     ins_id:       int | None,
@@ -1087,6 +1183,9 @@ def _run_single_ticker(
     config:       PipelineConfig,
     api,
     resource_macro_context: dict | None = None,
+    short_pct:    float | None = None,
+    sector_rel_3m: float | None = None,
+    valuation_data: dict | None = None,
 ) -> ContrairianAlphaResult:
     """
     Run the full 4-stage pipeline for a single instrument.
@@ -1207,10 +1306,29 @@ def _run_single_ticker(
         except Exception as e:
             logger.debug("short_data failed for %s: %s", ticker, e)
 
+    # Blankning utan EODHD: FI-registret (short_pct från batchanropet i
+    # run_pipeline) för Börsdata-rader — även 0.0 är RIKTIG data där (under
+    # registrets 0,5 %-golv). US-rader utan registervärde: yfinance.
+    if short_dict is None:
+        if short_pct is not None:
+            short_dict = {"short_float_pct": short_pct, "source": "fi_registry"}
+        elif ins_id is None:
+            yf_pct = _yf_short_pct(ticker)
+            if yf_pct is not None:
+                short_dict = {"short_float_pct": yf_pct, "source": "yfinance"}
+
+    # Sektorrelativ svaghet räknas ur universumets egna priser i run_pipeline;
+    # värderingsdepressionen kommer ur batch-hämtad KPI-historik. Båda skickas
+    # in färdiga — inga extra anrop per aktie här.
+    sector_dict = ({"stock_vs_sector_3m": sector_rel_3m}
+                   if sector_rel_3m is not None else None)
+
     hate_result = calculate_hate_score(
-        price_data    = price_dict,
-        analyst_data  = analyst_dict,
-        short_data    = short_dict,
+        price_data     = price_dict,
+        analyst_data   = analyst_dict,
+        short_data     = short_dict,
+        sector_data    = sector_dict,
+        valuation_data = valuation_data,
     )
     result.hat_score    = hate_result.score
     result.hate_result  = hate_result
@@ -1622,9 +1740,49 @@ def _build_universe(config: PipelineConfig, api) -> list[dict]:
         except Exception as e:
             logger.warning("Failed to build Börsdata universe: %s", e)
 
-    # Add / supplement with manual tickers
+    # Add / supplement with manual tickers — försök slå upp mot Börsdata
+    # först, så "BOL" blir Boliden med ins_id (fundamenta, rätt yf-suffix,
+    # sektormetadata) i stället för en suffixlös yfinance-sträng utan data.
+    _bd_by_ticker: dict[str, dict] = {}
+    _branch_meta2: dict[int, str] = {}
+    _sector_meta2: dict[int, str] = {}
+    if api is not None and api.is_configured:
+        try:
+            for inst in api.get_instruments():
+                if inst.get("instrumentType", 1) not in (1, None):
+                    continue
+                tk = str(inst.get("ticker", "")).upper()
+                if tk:
+                    _bd_by_ticker.setdefault(tk, inst)
+            for b in api.get_branches():
+                _branch_meta2[b["id"]] = b.get("name", "")
+            for s in api.get_sectors():
+                _sector_meta2[s["id"]] = s.get("name", "")
+        except Exception as e:
+            logger.debug("manual-ticker Börsdata lookup unavailable: %s", e)
+
     for t in config.manual_tickers:
-        if t not in {u["ticker"] for u in universe}:
+        if t in {u["ticker"] for u in universe}:
+            continue
+        # Kandidatformer: som skrivet, utan suffix, bindestreck→mellanslag
+        # ("ERIC-B" och "ERIC B.ST" ska båda träffa Börsdatas "ERIC B").
+        base = t.split(".")[0]
+        forms = [t.upper(), base.upper(), base.replace("-", " ").upper()]
+        inst = next((_bd_by_ticker[f] for f in forms if f in _bd_by_ticker), None)
+        if inst is not None:
+            ins_id = inst.get("insId")
+            mid = inst.get("marketId")
+            suffix = _MARKET_SUFFIX.get(mid, "")
+            # yfinance-form: "ERIC B" + ".ST" → "ERIC-B.ST" (mellanslag → bindestreck)
+            raw_tk = str(inst.get("ticker", base)).replace(" ", "-")
+            universe.append({
+                "ticker":      f"{raw_tk}{suffix}" if suffix else raw_tk,
+                "ins_id":      ins_id,
+                "inst_info":   inst,
+                "branch_name": _branch_meta2.get(inst.get("branchId", -1), ""),
+                "sector_name": _sector_meta2.get(inst.get("sectorId", -1), ""),
+            })
+        else:
             universe.append({
                 "ticker":      t,
                 "ins_id":      None,
@@ -1735,18 +1893,58 @@ def run_pipeline(config: PipelineConfig | None = None) -> PipelineResult:
             bs_passed=0, composite_ranked=0, run_duration_s=0.0, config=config,
         )
 
-    # ── Batch-fetch fundamentals (1 API call per KPI → all instruments) ───────
-    ins_ids = [u["ins_id"] for u in universe if u["ins_id"] is not None]
+    # ── NECESSITY-förgrind på metadata — FÖRE all datahämtning ───────────────
+    # Necessity behöver bara sektor/bransch, som redan följde med instrument-
+    # listan. Tidigare hämtades priser för HELA universumet (~2000 anrop mot
+    # Börsdatas 9 anrop/s-tak = minuter) innan grinden fällde majoriteten.
+    # Rader utan metadata (manuella tickers) avgörs i fullflödet som förut
+    # (yfinance-sektoruppslag); resurs-universumet grindas aldrig hårt.
+    eliminated: list[ContrairianAlphaResult] = []
+    scan_list: list[dict] = []
+    if config.universe == "us_ca_resource":
+        scan_list = list(universe)
+    else:
+        for u in universe:
+            info = u["inst_info"]
+            _sect = u["branch_name"] or u["sector_name"]
+            if not (info.get("sectorId") or info.get("branchId") or _sect):
+                scan_list.append(u)     # metadata saknas — avgör i fullflödet
+                continue
+            entry = get_necessity_score(
+                gics_industry=info.get("branchId"),
+                gics_sector=info.get("sectorId"),
+                sector_name=_sect,
+            )
+            if float(entry.score) < config.necessity_threshold:
+                eliminated.append(ContrairianAlphaResult(
+                    ticker=u["ticker"], ins_id=u["ins_id"],
+                    name=info.get("name", u["ticker"]),
+                    market=_MARKET_NAME.get(info.get("marketId", 0), "?"),
+                    sector=u["sector_name"], branch=u["branch_name"],
+                    composite_score=0.0, necessity_score=float(entry.score),
+                    necessity_entry=entry, eliminated=True,
+                    elimination_stage="NECESSITY",
+                    elimination_reason=(
+                        f"Necessity {entry.score:.0f} < "
+                        f"{config.necessity_threshold:.0f} ({entry.label})"),
+                    timestamp=datetime.now(tz=timezone.utc).isoformat(),
+                ))
+            else:
+                scan_list.append(u)
+    logger.info("Necessity pre-gate: %d/%d kvar — data hämtas bara för dem",
+                len(scan_list), universe_count)
+
+    # ── Batch-fetch fundamentals — bara för förgrind-överlevarna ─────────────
+    ins_ids = [u["ins_id"] for u in scan_list if u["ins_id"] is not None]
     fund_snapshots = _batch_fetch_fundamentals(ins_ids, api)
-    # Instruments without ins_id get empty snapshot
-    for u in universe:
+    for u in scan_list:
         if u["ins_id"] is None:
             fund_snapshots[None] = {}
 
-    # ── Per-ticker: fetch price data in parallel ───────────────────────────────
+    # ── Per-ticker: fetch price data in parallel (bara förgrind-överlevare) ───
     try:
         from contrarian_alpha.cache import is_delisted as _is_delisted, delisted_count as _delisted_count
-        _universe_tickers = frozenset(u["ticker"] for u in universe)
+        _universe_tickers = frozenset(u["ticker"] for u in scan_list)
         _pre_run_in_universe = sum(1 for t in _universe_tickers if _is_delisted(t))
         _pre_run_total = _delisted_count()
     except Exception:
@@ -1760,8 +1958,9 @@ def run_pipeline(config: PipelineConfig | None = None) -> PipelineResult:
         return u["ticker"], u["ins_id"], _fetch_price_df(u["ticker"], u["ins_id"], api)
 
     price_data: dict[str, object] = {}
+    _price_done = 0
     with ThreadPoolExecutor(max_workers=config.max_price_workers) as pool:
-        futures: dict[Future, dict] = {pool.submit(_fetch_price_task, u): u for u in universe}
+        futures: dict[Future, dict] = {pool.submit(_fetch_price_task, u): u for u in scan_list}
         for fut in as_completed(futures):
             try:
                 ticker, ins_id, df = fut.result()
@@ -1770,6 +1969,51 @@ def run_pipeline(config: PipelineConfig | None = None) -> PipelineResult:
                 u = futures[fut]
                 logger.debug("Price fetch failed for %s: %s", u["ticker"], e)
                 price_data[u["ticker"]] = None
+            _price_done += 1
+            if config.progress_cb:
+                try:
+                    config.progress_cb(_price_done, len(scan_list),
+                                       f"priser {_price_done}/{len(scan_list)}")
+                except Exception:
+                    pass
+
+    # ── Blankning (FI-registret) — HELA registret i ett anrop ────────────────
+    shorts_map: dict[int, float] = {}
+    if api is not None:
+        try:
+            shorts_map = api.get_short_positions() or {}
+            logger.info("FI-registret: %d instrument med blankning >= 0.5%%",
+                        len(shorts_map))
+        except Exception as e:
+            logger.warning("short positions fetch failed: %s", e)
+
+    # ── Värderingshistorik — batch (50 instrument/anrop) ─────────────────────
+    valuation_map = _batch_valuation_data(scan_list, fund_snapshots, api)
+
+    # ── Sektorrelativ 3m-avkastning ur de redan hämtade priserna ─────────────
+    def _ret_3m(df) -> float | None:
+        try:
+            close = df["Close"].dropna()
+            if len(close) < 64:
+                return None
+            return float(close.iloc[-1] / close.iloc[-64] - 1.0) * 100.0
+        except Exception:
+            return None
+
+    _returns: dict[str, float] = {}
+    _sector_groups: dict[str, list[float]] = {}
+    for u in scan_list:
+        df = price_data.get(u["ticker"])
+        if df is None or getattr(df, "empty", True):
+            continue
+        r = _ret_3m(df)
+        if r is None:
+            continue
+        _returns[u["ticker"]] = r
+        if u["sector_name"]:
+            _sector_groups.setdefault(u["sector_name"], []).append(r)
+    _sector_median = {s: float(np.median(v))
+                      for s, v in _sector_groups.items() if len(v) >= 3}
 
     delisted_skipped = _pre_run_in_universe + (_delisted_count() - _pre_run_total)
 
@@ -1780,40 +2024,42 @@ def run_pipeline(config: PipelineConfig | None = None) -> PipelineResult:
     if config.universe == "us_ca_resource":
         resource_macro_context = _fetch_resource_macro_context(api)
 
-    # ── Pipeline: run per ticker ───────────────────────────────────────────────
-    passing:   list[ContrairianAlphaResult] = []
-    eliminated: list[ContrairianAlphaResult] = []
+    # ── Pipeline: per ticker, parallellt ─────────────────────────────────────
+    # max_fund_workers fanns i konfigurationen men användes aldrig — steget
+    # körde sekventiellt. Trådpool är samma riskprofil som prishämtningen
+    # ovan (delad session + trådsäker rate limiter i borsdata_api).
+    passing: list[ContrairianAlphaResult] = []
     necessity_passed = hate_passed = bs_passed = 0
 
-    for i, u in enumerate(universe):
+    def _ticker_task(u: dict) -> ContrairianAlphaResult:
         ticker   = u["ticker"]
         ins_id   = u["ins_id"]
-        fund_snap = fund_snapshots.get(ins_id) or {}
-        df        = price_data.get(ticker)
-
-        if config.progress_cb:
-            try:
-                config.progress_cb(i + 1, universe_count, ticker)
-            except Exception:
-                pass
-
+        _rel = None
+        _r = _returns.get(ticker)
+        _med = _sector_median.get(u["sector_name"]) if u["sector_name"] else None
+        if _r is not None and _med is not None:
+            _rel = round(_r - _med, 2)
         try:
-            res = _run_single_ticker(
+            return _run_single_ticker(
                 ticker      = ticker,
                 ins_id      = ins_id,
                 inst_info   = u["inst_info"],
-                fund_snap   = fund_snap,
-                price_df    = df,
+                fund_snap   = fund_snapshots.get(ins_id) or {},
+                price_df    = price_data.get(ticker),
                 branch_name = u["branch_name"],
                 sector_name = u["sector_name"],
                 config      = config,
                 api         = api,
                 resource_macro_context = resource_macro_context,
+                short_pct   = (shorts_map.get(ins_id, 0.0)
+                               if ins_id is not None else None),
+                sector_rel_3m = _rel,
+                valuation_data = valuation_map.get(ins_id)
+                                 if ins_id is not None else None,
             )
         except Exception as e:
             logger.warning("Pipeline error for %s: %s", ticker, e)
-            # Build minimal elimination record
-            res = ContrairianAlphaResult(
+            return ContrairianAlphaResult(
                 ticker=ticker, ins_id=ins_id, name=u["inst_info"].get("name", ticker),
                 market=_MARKET_NAME.get(u["inst_info"].get("marketId", 0), "?"),
                 sector=u["sector_name"], branch=u["branch_name"],
@@ -1822,6 +2068,28 @@ def run_pipeline(config: PipelineConfig | None = None) -> PipelineResult:
                 timestamp=datetime.now(tz=timezone.utc).isoformat(),
             )
 
+    _scan_done = 0
+    with ThreadPoolExecutor(max_workers=max(1, config.max_fund_workers)) as pool:
+        futures = {pool.submit(_ticker_task, u): u for u in scan_list}
+        results_by_ticker: dict[str, ContrairianAlphaResult] = {}
+        for fut in as_completed(futures):
+            u = futures[fut]
+            res = fut.result()   # _ticker_task fångar själv sina fel
+            results_by_ticker[u["ticker"]] = res
+            _scan_done += 1
+            if config.progress_cb:
+                try:
+                    config.progress_cb(
+                        _scan_done, len(scan_list),
+                        f"analys {_scan_done}/{len(scan_list)} · {u['ticker']}")
+                except Exception:
+                    pass
+
+    # Stabil ordning (universumordningen) så körningar är jämförbara.
+    for u in scan_list:
+        res = results_by_ticker.get(u["ticker"])
+        if res is None:
+            continue
         if res.eliminated:
             eliminated.append(res)
             stage = res.elimination_stage
