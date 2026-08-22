@@ -30,7 +30,7 @@ LIQUIDITY_THRESHOLD_USD = 500_000.0  # Daglig omsättning < 500 k USD
 # ─── Data-gap-nyckelord i flagg-strängar från sub-modulerna ─────────────────
 
 _MISSING_KEYWORDS = ("MISSING", "NO_FUNDAMENTAL_DATA", "NO_PRICE_DATA", "PARTIAL",
-                     "UNKNOWN", "SHORT")
+                     "UNKNOWN", "SHORT", "COVERAGE")
 
 # ─── Flag-modell ─────────────────────────────────────────────────────────────
 
@@ -96,11 +96,28 @@ FLAG_DEFINITIONS: dict[str, dict] = {
         label    = "Data Gap",
         severity = "info",
         detail   = (
-            "En eller flera datapunkter saknas (Altman Z, short interest, "
-            "analystdata eller StockTwits). Poängen för berörda komponenter "
-            "är uppskattade med neutrala standardvärden. Lägre tillit."
+            "En eller flera datapunkter kunde inte mätas för det här bolaget. "
+            "Berörda komponenter får 0 poäng och räknas BORT ur nåbart max — "
+            "poängen normaliseras mot det som gick att mäta, inga neutrala "
+            "standardvärden. Lägre tillit än en fullt mätt rad."
         ),
     ),
+}
+
+# Läsbara namn för det som saknas — råa flaggnamn som VALUATION_DATA_MISSING
+# säger inget i ett flaggkort. Omappade namn visas som de är.
+_MISSING_LABELS = {
+    "SHORT_DATA_MISSING":     "blankning",
+    "VALUATION_DATA_MISSING": "värderingshistorik (EV/EBITDA·P/E)",
+    "VOLUME_DATA_MISSING":    "volymhistorik",
+    "SECTOR_DATA_MISSING":    "sektorjämförelse",
+    "CYCLE_DATA_MISSING":     "flerårig prishistorik",
+    "PRICE_DATA_PARTIAL":     "delvis prisdata",
+    "NO_PRICE_DATA":          "prisdata",
+    "NO_FUNDAMENTAL_DATA":    "fundamenta",
+    "ALTMAN_Z_MISSING":       "Altman Z",
+    "HATE_LOW_COVERAGE":      "hat-täckning under 50p",
+    "HATE_CONFIDENCE_LOW":    "låg hat-täckning",
 }
 
 
@@ -144,9 +161,12 @@ def _has_data_gap(result: ContrairianAlphaResult) -> tuple[bool, str]:
     if not missing_sources:
         return False, ""
 
-    # Bygg en kortfattad list av vad som saknas (deduplicated, max 4)
+    # Bygg en kortfattad list av vad som saknas (deduplicated, max 4) —
+    # med läsbara namn: "värderingshistorik" i stället för
+    # VALUATION_DATA_MISSING.
     unique = list(dict.fromkeys(missing_sources))[:4]
-    detail_suffix = " | Saknar: " + ", ".join(unique)
+    readable = [_MISSING_LABELS.get(f, f) for f in unique]
+    detail_suffix = " | Saknar: " + ", ".join(readable)
     return True, detail_suffix
 
 

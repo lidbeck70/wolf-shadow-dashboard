@@ -28,10 +28,16 @@ import urllib.error
 import urllib.request
 from typing import Any, Dict, Optional
 
+from alerts.config import secret
+
 logger = logging.getLogger(__name__)
 
 _ENV_KEY = "DISCORD_WEBHOOK_URL"
 _TIMEOUT = 10  # seconds
+
+# Senaste felorsaken i klartext — läses av panelens testknapp, som annars
+# bara kan säga "misslyckades" utan att veta varför.
+last_error = ""
 
 
 def send(message: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
@@ -40,9 +46,20 @@ def send(message: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
 
     Returns True on HTTP 2xx, False on any error.
     """
-    webhook_url = os.environ.get(_ENV_KEY, "").strip()
+    global last_error
+    last_error = ""
+
+    webhook_url = secret(_ENV_KEY)
     if not webhook_url:
+        last_error = (f"{_ENV_KEY} hittas varken i Streamlit-secrets "
+                      f"eller miljön.")
         logger.warning("discord channel: %s not set — alert skipped", _ENV_KEY)
+        return False
+    if not webhook_url.startswith(("https://discord.com/api/webhooks/",
+                                   "https://discordapp.com/api/webhooks/")):
+        last_error = (f"{_ENV_KEY} är satt men ser inte ut som en webhook-URL "
+                      f"(ska börja med https://discord.com/api/webhooks/).")
+        logger.error("discord channel: %s", last_error)
         return False
 
     meta = metadata or {}
@@ -74,7 +91,10 @@ def send(message: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
     req  = urllib.request.Request(
         webhook_url,
         data=body,
-        headers={"Content-Type": "application/json"},
+        # Cloudflare framför Discord blockerar Pythons standard-urllib-
+        # identitet med 403 Forbidden — en egen User-Agent krävs.
+        headers={"Content-Type": "application/json",
+                 "User-Agent": "wolf-shadow-dashboard-alerts/1.0"},
         method="POST",
     )
 
@@ -82,13 +102,25 @@ def send(message: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
         with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
             status = resp.status
     except urllib.error.HTTPError as exc:
-        logger.error("discord channel: HTTP %d — %s", exc.code, exc.reason)
+        try:
+            detail = exc.read().decode("utf-8", "replace")[:200]
+        except Exception:
+            detail = ""
+        hint = (" — fel eller ofullständig webhook-URL?"
+                if exc.code in (401, 404) else "")
+        last_error = f"Discord svarade HTTP {exc.code} {exc.reason}{hint}"
+        if detail:
+            last_error += f" · svar: {detail}"
+        logger.error("discord channel: HTTP %d — %s %s", exc.code, exc.reason,
+                     detail)
         return False
     except OSError as exc:
+        last_error = f"nätverksfel: {exc}"
         logger.error("discord channel: network error — %s", exc)
         return False
 
     if status not in range(200, 300):
+        last_error = f"Discord svarade oväntad status {status}"
         logger.error("discord channel: unexpected status %d", status)
         return False
 

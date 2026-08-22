@@ -408,3 +408,28 @@ def saved_stores() -> list:
         if info:
             out.append((store, info))
     return out
+
+
+def differs(new, old, default=None) -> bool:
+    """Har widgeten faktiskt ändrat värdet — eller visar den bara sin default?
+
+    Nummerfälten ritas med value=float(old eller 0.0): ett lagrat None VISAS
+    som 0,0. Jämför man sedan widgetens 0,0 mot det lagrade None läses blotta
+    öppnandet av kortet som en ändring, och osparat-varningen tänds av att man
+    tittar. Här jämförs i stället mot samma default som widgeten fick.
+
+    default är widgetens vilovärde: 0.0 för nummerfält, första alternativet
+    för en selectbox, None för textfält (där "" och None är samma tomhet).
+    """
+    def _norm(v):
+        return default if v is None or v == "" else v
+
+    a, b = _norm(new), _norm(old)
+    if a is None and b is None:
+        return False
+    if isinstance(a, bool) or isinstance(b, bool):
+        return bool(a) != bool(b)
+    try:
+        return float(a) != float(b)
+    except (TypeError, ValueError):
+        return a != b

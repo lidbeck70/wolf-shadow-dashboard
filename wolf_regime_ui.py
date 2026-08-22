@@ -132,8 +132,54 @@ def render_wolf_regime_page() -> None:
             st.caption("Krympande lista vecka för vecka = momentum smalnar.")
 
         _history(d.get("history", []))
+        _ticker_check(d)
     except Exception as e:
         st.error(f"Regim-fliken kunde inte renderas: {e}")
+
+
+def _ticker_check(regime_data: dict) -> None:
+    """Slå en ticker mot momentum-reglerna: köp, bevaka, håll eller sälj.
+
+    Samma dom som Copiloten ger — swing_verdict.verdict är EN funktion som
+    båda flikarna anropar, så de kan inte säga olika saker. Underlaget är
+    regimljuset ovan, screenerrankingen och dina positioner i Swing-fliken.
+    """
+    import storage
+    import swing_verdict
+    import wolf_screener_ui
+
+    st.markdown(f"<h3 style='color:{TEXT};margin:18px 0 4px;'>Kolla en "
+                f"ticker</h3>", unsafe_allow_html=True)
+    ticker = st.text_input("Ticker", key="swreg_ticker",
+                           placeholder="t.ex. ANOT, ERIC B eller ERIC-B.ST",
+                           label_visibility="collapsed").strip()
+    if not ticker:
+        st.caption("Skriv en ticker så prövas den mot regimljuset, "
+                   "screenerrankingen och säljreglerna för dina innehav.")
+        return
+
+    screener = wolf_screener_ui._get_data() or {}
+    swing_data = storage.session_load(
+        "swing", {"positions": [], "market": {}, "watchlist": [],
+                  "closed": [], "checklist": {}})
+    v = swing_verdict.verdict(ticker, screener, regime_data, swing_data)
+
+    colors = {swing_verdict.BUY: GREEN, swing_verdict.PARTIAL: "#d4943a",
+              swing_verdict.HOLD: GREEN, swing_verdict.WATCH: "#d4943a",
+              swing_verdict.SELL: RED, swing_verdict.ABSTAIN: RED,
+              swing_verdict.UNKNOWN: DIM}
+    c = colors.get(v["verdict"], DIM)
+    tag = " · INNEHAV" if v["held"] else ""
+    reasons = "".join(f"<li style='margin:2px 0;'>• {r}</li>"
+                      for r in v["reasons"])
+    st.markdown(
+        f"<div style='background:{c}14;border:1px solid {c};"
+        f"border-radius:12px;padding:14px;margin-top:6px;'>"
+        f"<div style='font-size:1.15rem;font-weight:800;color:{c};'>"
+        f"{ticker.upper()}{tag}: {v['verdict']}</div>"
+        f"<ul style='list-style:none;padding:6px 0 0;margin:0;color:{TEXT};"
+        f"font-size:0.85rem;'>{reasons}</ul></div>",
+        unsafe_allow_html=True)
 
 
 def _history(hist: list) -> None:

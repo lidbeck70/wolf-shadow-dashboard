@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import streamlit as st
 
+import storage
+
 import controls as ctl
 import lukacs as fv
 
@@ -42,7 +44,7 @@ def render_fv(row: dict, key: str, prefix: str = "fv") -> bool:
         "FCF-kvalitet", codes, index=idx, key=f"{prefix}_{key}_class",
         format_func=lambda c: f"{c} — {fv.CLASS_BY_CODE[c].name}",
         help="\n\n".join(_class_label(q) for q in fv.QUALITY_CLASSES))
-    if code != row.get("fcf_kvalitet"):
+    if code != cur_code:
         row["fcf_kvalitet"] = code
         changed = True
 
@@ -61,8 +63,8 @@ def render_fv(row: dict, key: str, prefix: str = "fv") -> bool:
         value=float(fv.num(row.get("aktuell_kurs"), 0.0) or 0.0),
         key=f"{prefix}_{key}_price",
         help="Samma valuta som forward FCF anges i.")
-    if (shares != row.get("framtida_antal_aktier")
-            or price != row.get("aktuell_kurs")):
+    if (storage.differs(shares, row.get("framtida_antal_aktier"), 0.0)
+            or storage.differs(price, row.get("aktuell_kurs"), 0.0)):
         row["framtida_antal_aktier"], row["aktuell_kurs"] = shares, price
         changed = True
 
@@ -94,7 +96,8 @@ def render_fv(row: dict, key: str, prefix: str = "fv") -> bool:
             help=(f"Låst till klass {q.code}: {band[0]:g}–{band[1]:g} %."
                   if band else fv.NOT_FCF_VALUED))
         vals = {"forward_fcf_musd": fcf, "target_yield": ty}
-        if any(sc.get(k) != v for k, v in vals.items()):
+        if any(storage.differs(v, sc.get(k), 0.0)
+               for k, v in vals.items()):
             sc.update(vals)
             changed = True
 
@@ -175,7 +178,7 @@ def render_fv(row: dict, key: str, prefix: str = "fv") -> bool:
             key=f"{prefix}_{key}_delev",
             help="Nettoskuld ÷ årlig amortering. Kravet är under "
                  f"{fv.DELEV_YEARS_MAX:g} år.")
-        if yrs != row.get("ar_till_lag_skuld"):
+        if storage.differs(yrs, row.get("ar_till_lag_skuld"), 0.0):
             row["ar_till_lag_skuld"] = yrs
             changed = True
         for gap in fv.deleveraging_state(row.get("nd_ebitda"), yrs)["gaps"]:

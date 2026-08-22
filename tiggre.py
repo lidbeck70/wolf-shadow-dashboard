@@ -427,8 +427,9 @@ def _candidate_card(data: dict, cand: dict) -> None:
         down = m3.number_input("Nedsida (%)", value=float(_num(cand.get("downside"), -40.0) or -40.0),
                                step=5.0, key=f"tg_down_{cand['id']}",
                                help="Värsta rimliga scenariot: utspädning, byggförsening.")
-        if (mcap != cand.get("mcap") or nav != cand.get("nav")
-                or down != cand.get("downside")):
+        if (storage.differs(mcap, cand.get("mcap"), 0.0)
+                or storage.differs(nav, cand.get("nav"), 0.0)
+                or storage.differs(down, cand.get("downside"), 0.0)):
             cand["mcap"], cand["nav"], cand["downside"] = mcap, nav, down
             changed = True
 
@@ -668,7 +669,8 @@ def _positions(data: dict) -> None:
         eq = equity_at_risk(new_entry, new_cur, p.get("shares", 0), p.get("half_sold"))
         c5.metric("Kapital i risk", "0 kr" if eq == 0 else (_fmt(eq, 0) if eq else "–"),
                   help="Efter free ride är insatsen uttagen — resten åker på husets pengar.")
-        if new_entry != entry or new_cur != cur:
+        if (storage.differs(new_entry, entry, 0.0)
+                or storage.differs(new_cur, cur, 0.0)):
             p["entry"], p["current"] = new_entry, new_cur
             _save(data)
 

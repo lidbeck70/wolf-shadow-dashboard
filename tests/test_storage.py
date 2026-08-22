@@ -321,3 +321,34 @@ def test_the_committed_files_hold_no_computed_fields():
     assert set(rotation) == {"month", "grades", "history"}
     assert "priority" not in json.dumps(rotation)
     assert "status" not in json.dumps(rotation)
+
+
+# ── differs — osparat-markeringen ska tändas av ändringar, inte av blickar ───
+def test_differs_reads_none_as_the_widgets_default():
+    """number_input visar ett lagrat None som 0,0. Jämför man widgetens 0,0
+    mot None läses blotta öppnandet av kortet som en ändring."""
+    assert storage.differs(0.0, None, 0.0) is False
+    assert storage.differs(0, None, 0.0) is False
+    assert storage.differs(5.0, None, 0.0) is True
+    assert storage.differs(0.0, 5.0, 0.0) is True
+
+
+def test_differs_treats_int_and_float_as_the_same_number():
+    assert storage.differs(5.0, 5, 0.0) is False
+    assert storage.differs(25.0, 25, 0.0) is False
+
+
+def test_differs_on_text_and_selectboxes():
+    # textfält: "" och None är samma tomhet
+    assert storage.differs("", None) is False
+    assert storage.differs("x", None) is True
+    # selectbox med default: att visa defaulten är ingen ändring
+    assert storage.differs("producent", None, "producent") is False
+    assert storage.differs("utvecklare", None, "producent") is True
+    assert storage.differs("utvecklare", "utvecklare", "producent") is False
+
+
+def test_differs_on_bools():
+    assert storage.differs(True, True) is False
+    assert storage.differs(False, None) is False     # okryssad mot osatt
+    assert storage.differs(True, None) is True

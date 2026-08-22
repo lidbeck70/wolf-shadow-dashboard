@@ -15,6 +15,8 @@ from typing import Optional
 
 import streamlit as st
 
+import storage
+
 import controls as ctl
 import lukacs
 import lukacs_ui
@@ -86,7 +88,7 @@ def render_ds(row: dict, key: str, runway_years=None,
         v = col.number_input(ilabel, min_value=0.0, step=1.0,
                              value=float(cur) if cur not in (None, "") else 0.0,
                              key=f"{prefix}_{key}_{ikey}")
-        if v != cur:
+        if storage.differs(v, cur, 0.0):
             row[ikey] = v
             changed = True
 
@@ -172,7 +174,9 @@ def render_csm(row: dict, key: str, kind: str = ctl.PRODUCER,
     is_core = k2.checkbox("Kärninnehav (fem scenarier)",
                           value=bool(row.get("is_core")),
                           key=f"{prefix}_{key}_core")
-    if new_kind != row.get("csm_kind") or is_core != bool(row.get("is_core")):
+    cur_kind = (row.get("csm_kind") if row.get("csm_kind") in kinds
+                else (kind if kind in kinds else ctl.PRODUCER))
+    if new_kind != cur_kind or is_core != bool(row.get("is_core")):
         row["csm_kind"], row["is_core"] = new_kind, is_core
         changed = True
 
@@ -204,7 +208,8 @@ def render_csm(row: dict, key: str, kind: str = ctl.PRODUCER,
                                         key=f"{prefix}_{key}_{s}_need",
                                         label_visibility="collapsed")
             vals = {"price": price, "nav_musd": nav, "financing_need": need}
-        if any(sc.get(k) != v for k, v in vals.items()):
+        if any(storage.differs(v, sc.get(k), 0.0)
+               for k, v in vals.items()):
             sc.update(vals)
             changed = True
 

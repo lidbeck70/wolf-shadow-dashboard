@@ -1,88 +1,104 @@
 """
 alerts/channels/email.py
 ========================
-Email channel — placeholder implementation.
+Email channel — riktig SMTP-leverans.
 
-No real SMTP is wired up.  The function logs the alert at INFO level so it
-appears in the application log and returns True so the engine counts it as
-delivered.  Replace the body of _smtp_send() with real SMTP logic when
-credentials are available.
+Var en attrapp som loggade och returnerade True — alltså exakt det mönster
+som gömde sparbuggen: ett misslyckande som ser ut som en leverans. Nu skickas
+mejlet på riktigt, och varje väg som INTE levererar returnerar False med en
+logg som säger vad som saknas.
 
-Environment variables (for future SMTP integration)
-----------------------------------------------------
-EMAIL_FROM    : Sender address.
-EMAIL_TO      : Comma-separated recipient addresses.
-SMTP_HOST     : SMTP server hostname  (default: localhost).
-SMTP_PORT     : SMTP server port      (default: 587).
-SMTP_USER     : SMTP login username   (optional).
-SMTP_PASSWORD : SMTP login password   (optional).
+Environment variables
+---------------------
+EMAIL_FROM    : Avsändaradress (default: SMTP_USER).
+EMAIL_TO      : Kommaseparerade mottagare. KRÄVS.
+SMTP_HOST     : SMTP-server. KRÄVS (t.ex. smtp.gmail.com).
+SMTP_PORT     : Port (default 587, STARTTLS).
+SMTP_USER     : Inloggning (för Gmail: adressen; lösenordet är ett
+                app-lösenord, inte kontolösenordet).
+SMTP_PASSWORD : Lösenord.
 
 Optional metadata keys
 ----------------------
-subject : Email subject line.  Defaults to "Wolf-Shadow Alert".
-to      : Override EMAIL_TO for this specific alert.
+subject : Ämnesrad. Default "Nordic Arc — larm".
+to      : Skriv över EMAIL_TO för ett enskilt larm.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import smtplib
+from email.mime.text import MIMEText
 from typing import Any, Dict, Optional
+
+from alerts.config import secret
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_SUBJECT = "Nordic Arc — larm"
 
-def _smtp_send(
-    subject: str,
-    body: str,
-    to_addrs: list[str],
-    from_addr: str,
-) -> bool:
-    """
-    Placeholder — replace with smtplib logic when SMTP credentials exist.
+# Senaste felorsaken i klartext — läses av panelens testknapp.
+last_error = ""
 
-    Expected implementation sketch::
 
-        import smtplib
-        from email.mime.text import MIMEText
+def _smtp_send(subject: str, body: str, to_addrs: list[str],
+               from_addr: str) -> bool:
+    """Skicka via STARTTLS. False med tydlig logg på varje fel."""
+    host = secret("SMTP_HOST")
+    port = int(secret("SMTP_PORT", "587") or 587)
+    user = secret("SMTP_USER")
+    password = secret("SMTP_PASSWORD")
 
-        msg = MIMEText(body)
-        msg["Subject"] = subject
-        msg["From"]    = from_addr
-        msg["To"]      = ", ".join(to_addrs)
+    global last_error
+    if not host:
+        last_error = ("SMTP_HOST hittas varken i Streamlit-secrets eller "
+                      "miljön (för Gmail: smtp.gmail.com).")
+        logger.warning("email channel: SMTP_HOST saknas — larmet skickades "
+                       "INTE. Sätt SMTP_HOST/SMTP_USER/SMTP_PASSWORD.")
+        return False
 
-        with smtplib.SMTP(host, port) as smtp:
+    msg = MIMEText(body, _charset="utf-8")
+    msg["Subject"] = subject
+    msg["From"] = from_addr
+    msg["To"] = ", ".join(to_addrs)
+
+    try:
+        with smtplib.SMTP(host, port, timeout=30) as smtp:
+            smtp.ehlo()
             if user:
                 smtp.starttls()
+                smtp.ehlo()
                 smtp.login(user, password)
             smtp.sendmail(from_addr, to_addrs, msg.as_string())
-    """
-    logger.info(
-        "email channel [PLACEHOLDER] to=%s subject=%r body=%r",
-        to_addrs, subject, body[:120],
-    )
-    return True
+        logger.info("email channel: skickat till %s (%r)", to_addrs, subject)
+        return True
+    except Exception as exc:
+        last_error = (f"SMTP-sändningen misslyckades ({type(exc).__name__}): "
+                      f"{exc} — för Gmail: app-lösenord, inte kontolösenordet.")
+        logger.error("email channel: sändningen misslyckades (%s): %s",
+                     type(exc).__name__, exc)
+        return False
 
 
 def send(message: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
-    """
-    Send (placeholder) email alert.
-
-    Returns True always unless required address configuration is missing
-    and strict mode is needed — currently always True.
-    """
+    """Skicka larmet som mejl. False när konfigurationen saknas — ett
+    oskickat mejl får inte räknas som levererat."""
+    global last_error
+    last_error = ""
     meta = metadata or {}
 
-    subject  = str(meta.get("subject", "Wolf-Shadow Alert"))
-    from_env = os.environ.get("EMAIL_FROM", "alerts@wolf-shadow.local").strip()
-    to_env   = os.environ.get("EMAIL_TO",   "").strip()
-
-    raw_to   = str(meta.get("to", to_env))
+    subject = str(meta.get("subject", DEFAULT_SUBJECT))
+    user = secret("SMTP_USER")
+    from_addr = secret("EMAIL_FROM") or user or "alerts@wolf-shadow.local"
+    raw_to = str(meta.get("to", secret("EMAIL_TO"))).strip()
     to_addrs = [a.strip() for a in raw_to.split(",") if a.strip()]
 
     if not to_addrs:
-        logger.warning("email channel: no recipient address configured — alert logged only")
-        logger.info("email channel [NO RECIPIENT]: subject=%r body=%r", subject, message[:120])
-        return True  # non-fatal; return True to avoid flooding error logs
+        last_error = ("EMAIL_TO hittas varken i Streamlit-secrets eller "
+                      "miljön — ingen mottagare.")
+        logger.warning("email channel: EMAIL_TO saknas — larmet skickades "
+                       "INTE.")
+        return False
 
-    return _smtp_send(subject, message, to_addrs, from_env)
+    return _smtp_send(subject, message, to_addrs, from_addr)

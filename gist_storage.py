@@ -19,7 +19,12 @@ _EMPTY = {"swing": [], "ovtlyr": [], "long": [], "cash": 0}
 
 
 def _get_github_token() -> Optional[str]:
-    """Get GitHub token from Streamlit secrets (multiple access methods)."""
+    """Get GitHub token from Streamlit secrets, then the environment.
+
+    Env-vägen är det som gör att alert_scan.py (GitHub Actions, ingen
+    Streamlit-session) kan skriva sitt tillstånd till Gisten — samma
+    GITHUB_TOKEN som datajobben redan får av workflowen.
+    """
     try:
         token = st.secrets.get("GITHUB_TOKEN", None)
         if token:
@@ -32,7 +37,8 @@ def _get_github_token() -> Optional[str]:
             return str(token).strip()
     except Exception:
         pass
-    return None
+    token = os.environ.get("GITHUB_TOKEN", "").strip()
+    return token or None
 
 
 def _auth_header(token: str) -> dict:

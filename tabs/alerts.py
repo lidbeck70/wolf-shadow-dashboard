@@ -271,10 +271,10 @@ def _render_test_alert(send_fn) -> None:
             ok_chs = [ch for ch, ok in results.items() if ok]
             if ok_chs:
                 st.success(f"Delivered: {', '.join(ok_chs)}")
-            st.error(
-                f"Failed: {', '.join(failed)} — "
-                f"check environment variables (e.g. DISCORD_WEBHOOK_URL)."
-            )
+            for ch in failed:
+                reason = _failure_reason(ch)
+                st.error(f"Failed: {ch} — "
+                         f"{reason or 'okänd orsak, se apploggen.'}")
 
 
 # ── Alert log ────────────────────────────────────────────────────────────────
@@ -372,10 +372,104 @@ def _render_log_entry(entry: Dict[str, Any]) -> None:
 
 # ── Channel status panel ─────────────────────────────────────────────────────
 
+def _render_scheduled_settings(send_fn) -> None:
+    """Schemalagda larm — Swing och Blindspot.
+
+    Inställningarna sparas till data/alerts.json via storage.py, för det är
+    DÄR alert_scan.py (GitHub Actions) läser dem. Kryssrutor i sessionen
+    styr ingenting som kör när panelen är stängd — bara den sparade filen
+    gör det.
+    """
+    import storage
+    import storage_ui
+
+    data = storage.session_load("alerts", {
+        "swing": {"enabled": True, "channels": ["discord"]},
+        "blindspot": {"enabled": True, "channels": ["discord"]},
+    })
+    if not isinstance(data, dict):
+        data = {"swing": {}, "blindspot": {}}
+        st.session_state["alerts"] = data
+    data.setdefault("swing", {"enabled": True, "channels": ["discord"]})
+    data.setdefault("blindspot", {"enabled": True, "channels": ["discord"]})
+
+    storage_ui.save_bar("alerts", "Schemalagda larm")
+    st.markdown(
+        f'<p style="color:{_DIM};font-size:0.8rem;">Utvärderas av GitHub '
+        f'Actions vardagar ~06/08/12/18 (Stockholm) — även när panelen är '
+        f'stängd. Bara ÖVERGÅNGAR larmar: ett regimskifte, en ny kandidat, '
+        f'ett tema som går in i tidig cykel. Lägen upprepas inte.</p>',
+        unsafe_allow_html=True)
+
+    all_channels = ["discord", "email", "webhook"]
+    for key, label, desc in (
+            ("swing", "Swing (Momentum)",
+             "Regimskiften GRÖN/GUL/RÖD · nya setup-kandidater i topp 20 · "
+             "säljsignaler på dina innehav (rank-exit, −10 %, MA50, "
+             "+20 % delvinst)."),
+            ("blindspot", "Odins Blindspot",
+             "Ett råvarutema som går in i TIDIG cykel — 10-årspercentil ≤ 30, "
+             "temakartans egen definition.")):
+        cfg = data[key]
+        c1, c2 = st.columns([1, 2])
+        enabled = c1.toggle(label, value=bool(cfg.get("enabled", True)),
+                            key=f"sched_{key}_on")
+        channels = c2.multiselect(
+            f"Kanaler — {label}", all_channels,
+            default=[c for c in cfg.get("channels", ["discord"])
+                     if c in all_channels],
+            key=f"sched_{key}_ch", label_visibility="collapsed")
+        if (enabled != bool(cfg.get("enabled", True))
+                or channels != cfg.get("channels", ["discord"])):
+            cfg["enabled"], cfg["channels"] = enabled, channels
+        st.caption(desc)
+        if enabled and not channels:
+            st.warning("Inga kanaler valda — larmen kommer att hoppas över.",
+                       icon="⚠️")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("Skicka testlarm till valda kanaler", key="sched_test"):
+        if send_fn is None:
+            st.error("alerts.engine är inte tillgänglig.")
+        else:
+            channels = sorted({c for cfg in data.values()
+                               if isinstance(cfg, dict) and cfg.get("enabled")
+                               for c in cfg.get("channels", [])})
+            if not channels:
+                st.warning("Inga kanaler att testa.")
+            else:
+                results = send_fn(
+                    "🐺 Testlarm från Nordic Arc — schemalagda larm är "
+                    "konfigurerade.", channels,
+                    metadata={"subject": "Nordic Arc — testlarm"})
+                for ch, ok in results.items():
+                    if ok:
+                        st.success(f"{ch}: levererat")
+                    else:
+                        reason = _failure_reason(ch)
+                        st.error(f"{ch}: MISSLYCKADES — "
+                                 f"{reason or 'okänd orsak, se apploggen.'}")
+    st.caption("Glöm inte 💾 Spara — Actions-jobbet läser den SPARADE filen, "
+               "inte sessionens kryssrutor.")
+
+
+def _failure_reason(channel: str) -> str:
+    """Kanalens egen felorsak i klartext — 'misslyckades' utan varför är
+    exakt det som gjorde webhook-felsökningen till gissningslek."""
+    try:
+        import importlib
+        mod = importlib.import_module(f"alerts.channels.{channel}")
+        return str(getattr(mod, "last_error", "") or "")
+    except Exception:
+        return ""
+
+
 def _render_channel_status() -> None:
     section_title("Channel Configuration Status")
 
-    import os
+    # secrets-först som kanalerna själva — os.environ ensamt visade NOT SET
+    # fast nyckeln låg i Streamlit-secrets.
+    from alerts.config import secret as _secret, source as _source
     checks = [
         ("discord", "DISCORD_WEBHOOK_URL",  "Discord webhook URL"),
         ("email",   "EMAIL_TO",             "Recipient email address"),
@@ -384,15 +478,14 @@ def _render_channel_status() -> None:
 
     cols = st.columns(len(checks))
     for col, (ch, env_key, label) in zip(cols, checks):
-        val      = os.environ.get(env_key, "").strip()
+        val      = _secret(env_key)
         is_set   = bool(val)
         color    = _GREEN if is_set else _RED
         icon     = _CHANNEL_ICONS.get(ch, "?")
         status   = "CONFIGURED" if is_set else "NOT SET"
-        preview  = (
-            val[:12] + "…" + val[-4:] if len(val) > 20
-            else val[:20]
-        ) if is_set else f"set {env_key}"
+        src      = {"secrets": "via Streamlit-secrets",
+                    "env": "via miljövariabel"}.get(_source(env_key), "")
+        preview  = src if is_set else f"set {env_key}"
 
         with col:
             _card(
@@ -407,6 +500,20 @@ def _render_channel_status() -> None:
                 f'margin-top:4px;">{preview}</div>',
                 border_color=f"{color}44",
             )
+
+    # Discord-URL:en är den vanligaste snubbeltråden: fel sak kopierad.
+    d_url = _secret("DISCORD_WEBHOOK_URL")
+    if d_url and not d_url.startswith(("https://discord.com/api/webhooks/",
+                                       "https://discordapp.com/api/webhooks/")):
+        st.warning("DISCORD_WEBHOOK_URL är satt men ser inte ut som en "
+                   "webhook-URL — den ska börja med "
+                   "https://discord.com/api/webhooks/. Kopiera om den: "
+                   "kanalen → Redigera kanal → Integrationer → Webhookar → "
+                   "Kopiera webhook-URL.", icon="⚠️")
+    if _secret("EMAIL_TO") and not _secret("SMTP_HOST"):
+        st.warning("EMAIL_TO är satt men SMTP_HOST saknas — mejl kan inte "
+                   "skickas utan server (för Gmail: smtp.gmail.com).",
+                   icon="⚠️")
 
 
 # ── Main entry point ─────────────────────────────────────────────────────────
@@ -441,6 +548,7 @@ def tab_alerts() -> None:
     # ── Tabs within the Alerts page ──────────────────────────────────────────
     inner_tabs = st.tabs([
         "  SETTINGS  ",
+        "  SCHEMALAGDA  ",
         "  ALERT LOG  ",
         "  CHANNELS  ",
     ])
@@ -453,9 +561,12 @@ def tab_alerts() -> None:
         _render_test_alert(send_fn)
 
     with inner_tabs[1]:
-        _render_alert_log(log)
+        _render_scheduled_settings(send_fn)
 
     with inner_tabs[2]:
+        _render_alert_log(log)
+
+    with inner_tabs[3]:
         _render_channel_status()
         st.markdown("<br>", unsafe_allow_html=True)
         st.markdown(
@@ -466,7 +577,9 @@ def tab_alerts() -> None:
             f'<code style="color:{_TEXT};">DISCORD_WEBHOOK_URL</code>'
             f'&nbsp;— Discord incoming webhook URL (from Server Settings → Integrations)<br>'
             f'<code style="color:{_TEXT};">EMAIL_FROM</code>'
-            f'&nbsp;— Sender address (placeholder — no SMTP wired yet)<br>'
+            f'&nbsp;— Sender address (default: SMTP_USER)<br>'
+            f'<code style="color:{_TEXT};">SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASSWORD</code>'
+            f'&nbsp;— SMTP-servern (Gmail: smtp.gmail.com, 587, app-lösenord)<br>'
             f'<code style="color:{_TEXT};">EMAIL_TO</code>'
             f'&nbsp;— Recipient address(es), comma-separated<br>'
             f'<code style="color:{_TEXT};">ALERT_WEBHOOK_URL</code>'

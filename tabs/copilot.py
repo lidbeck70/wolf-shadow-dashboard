@@ -5,13 +5,20 @@ Interaktiv kandidatanalys med deterministisk regelkontroll och AI-kommentar.
 
 Flöde:
     1. Välj strategi + ange ticker
-    2. Hämta live-data automatiskt (ATR-stop, ATR-target, teknisk kontext)
-    3. Fyll i / justera prisdata (entry, stop, target)
-    4. Regelkontroll per regel (PASS / MANUAL / FAIL) med auto-detektering
+    2. Marknadsdata hämtas (market_data) — ATR, EMA, volym, swing-nivåer
+    3. Fyll i prisdata; levels.py räknar fram alternativa stoppnivåer
+    4. Regelkontroll per regel (PASS / MANUAL / FAIL) mot verkliga tal
     5. Kandidatkort med rekommendation
-    6. AI-kommentar (GPT med rik teknisk kontext, fallback om nyckel saknas)
-    7. Watchlist — bevaka flera kandidater per session
-    8. Snabb journal-logg
+    6. AI-kommentar på knapptryck — kommenterar, räknar inte om
+    7. Journal med utfall, statistik och AI-granskning
+
+Arbetsdelningen är CLAUDE.md:s: motorerna äger besluten, AI:n förklarar dem.
+Varje siffra modellen ser är redan uträknad här, och prompten förbjuder den att
+räkna om R:R, risk eller regelutfall.
+
+Journalen ligger i data/copilot_journal.json via storage.py. Den låg tidigare i
+en lokal fil, vilket på Streamlit Cloud betydde att den försvann vid varje
+omstart — och omstart sker vid varje commit till deploy-branchen.
 """
 from __future__ import annotations
 
@@ -25,6 +32,16 @@ import streamlit as st
 
 from strategy_rules import PLAYBOOKS, Playbook
 from ui.theme import section_title, PALETTE as _P
+from ai import copilot_prompt, openai_client
+
+import cycle
+import journal_stats
+import review_link
+import swing_verdict
+import levels
+import market_data
+import storage
+import storage_ui
 
 # ── Palette shortcuts ─────────────────────────────────────────────────────────
 _GREEN  = _P.get("green",    "#2d8a4e")
@@ -36,171 +53,58 @@ _BG     = "#1A1F25"
 _BORDER = "rgba(255,255,255,0.06)"
 
 # ── Journal storage ───────────────────────────────────────────────────────────
-_JOURNAL_PATH = os.path.join(
+STORE = "copilot_journal"       # data/copilot_journal.json
+
+# Den gamla lokala filen. Streamlit Cloud har ett flyktigt filsystem och startar
+# om appen vid varje commit till deploy-branchen, så allt som skrevs hit
+# försvann vid nästa deploy. Den läses fortfarande EN gång, för att rädda det
+# som råkar finnas kvar i en levande container.
+_LEGACY_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     ".copilot_journal.json",
 )
 
-# ── Watchlist storage key ─────────────────────────────────────────────────────
-_WATCHLIST_KEY = "copilot_watchlist"
+
+def _legacy_entries() -> list[dict]:
+    if not os.path.exists(_LEGACY_PATH):
+        return []
+    try:
+        with open(_LEGACY_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
 
 
 def _load_journal() -> list[dict]:
-    if os.path.exists(_JOURNAL_PATH):
-        try:
-            with open(_JOURNAL_PATH, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return []
+    """Journalen ur sessionen; laddas en gång per session ur repot."""
+    data = storage.session_load(STORE, {"entries": []})
+    if not isinstance(data, dict):
+        data = {"entries": []}
+        st.session_state[STORE] = data
+    data.setdefault("entries", [])
+
+    if not data["entries"]:
+        rescued = _legacy_entries()
+        if rescued:
+            data["entries"] = rescued
+            st.info(f"Hittade {len(rescued)} poster i den gamla lokala "
+                    f"journalfilen. De ligger nu i sessionen — tryck 💾 Spara "
+                    f"så hamnar de i repot och överlever nästa omstart.")
+    return data["entries"]
 
 
 def _save_journal(entries: list[dict]) -> None:
-    try:
-        with open(_JOURNAL_PATH, "w", encoding="utf-8") as f:
-            json.dump(entries, f, ensure_ascii=False, indent=2)
-    except Exception as exc:
-        st.warning(f"Kunde inte spara journal: {exc}")
+    """Skriver till sessionen. Persistensen sker via 💾 Spara.
 
-
-# ── Nivå 1: Live-data fetcher ─────────────────────────────────────────────────
-
-@dataclass
-class LiveData:
-    """Teknisk snapshot hämtad från yfinance."""
-    ticker: str
-    close: float
-    atr14: float
-    # Suggested levels
-    suggested_stop: float      # 1 ATR under swing low (senaste 10-bars low)
-    suggested_target_2r: float # close + 2 ATR
-    suggested_target_3r: float # close + 3 ATR
-    # Trend
-    ema20: float
-    ema50: float
-    ema200: float
-    trend_state: str           # "Bullish" | "Bearish" | "Neutral"
-    price_above_ema200: bool
-    ema50_above_ema200: bool
-    # Momentum
-    rsi: float
-    ob_os_flag: str            # "Overbought" | "Oversold" | "Neutral"
-    roc_10: float
-    # Volume
-    volume_ratio: float        # current / 20d avg
-    volume_trend: str          # "Rising" | "Falling" | "Flat"
-    # Candlestick patterns (last 3 bars)
-    bullish_patterns: list[str] = field(default_factory=list)
-    bearish_patterns: list[str] = field(default_factory=list)
-    # ADX
-    adx: float = 0.0
-    error: str = ""
-
-
-def _compute_adx(df, period: int = 14) -> float:
-    """Simple ADX calculation (no external lib needed)."""
-    try:
-        import pandas as pd
-        import numpy as np
-        high = df["High"].astype(float)
-        low  = df["Low"].astype(float)
-        close = df["Close"].astype(float)
-        if len(close) < period * 2:
-            return float("nan")
-        tr = pd.concat([
-            high - low,
-            (high - close.shift(1)).abs(),
-            (low  - close.shift(1)).abs(),
-        ], axis=1).max(axis=1)
-        dm_plus  = (high.diff()).where((high.diff() > low.diff().abs()) & (high.diff() > 0), 0.0)
-        dm_minus = (low.diff().abs()).where((low.diff().abs() > high.diff()) & (low.diff() < 0), 0.0)
-        atr_s = tr.ewm(span=period, adjust=False).mean()
-        di_plus  = 100 * dm_plus.ewm(span=period, adjust=False).mean()  / atr_s.replace(0, float("nan"))
-        di_minus = 100 * dm_minus.ewm(span=period, adjust=False).mean() / atr_s.replace(0, float("nan"))
-        dx = (100 * (di_plus - di_minus).abs() / (di_plus + di_minus).replace(0, float("nan")))
-        adx = dx.ewm(span=period, adjust=False).mean()
-        return float(adx.iloc[-1])
-    except Exception:
-        return float("nan")
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def _fetch_live_data(ticker: str) -> LiveData:
-    """Hämtar OHLCV + beräknar alla tekniska indikatorer. Cachas 5 min."""
-    try:
-        import yfinance as yf
-        from ovtlyr.indicators.volatility import compute_volatility
-        from ovtlyr.indicators.trend import compute_trend
-        from ovtlyr.indicators.momentum import compute_momentum
-        from ovtlyr.indicators.volume import compute_volume
-        from ovtlyr.indicators.candlesticks import detect_patterns
-
-        raw = yf.download(ticker, period="1y", interval="1d", progress=False, auto_adjust=True)
-        if raw is None or raw.empty or len(raw) < 30:
-            return LiveData(ticker=ticker, close=0, atr14=0, suggested_stop=0,
-                            suggested_target_2r=0, suggested_target_3r=0,
-                            ema20=0, ema50=0, ema200=0, trend_state="Neutral",
-                            price_above_ema200=False, ema50_above_ema200=False,
-                            rsi=50, ob_os_flag="Neutral", roc_10=0,
-                            volume_ratio=1, volume_trend="Flat",
-                            error=f"Ingen data hittades för '{ticker}'")
-
-        # Flatten multi-level columns if needed
-        if isinstance(raw.columns, __import__("pandas").MultiIndex):
-            raw.columns = raw.columns.get_level_values(0)
-
-        vol   = compute_volatility(raw)
-        trend = compute_trend(raw)
-        mom   = compute_momentum(raw)
-        volm  = compute_volume(raw)
-        pats  = detect_patterns(raw, lookback=3)
-        adx   = _compute_adx(raw)
-
-        close     = float(raw["Close"].iloc[-1])
-        atr14     = float(vol["atr14"]) if vol["atr14"] == vol["atr14"] else 0.0
-        swing_low = float(raw["Low"].iloc[-10:].min())
-
-        # EMA 20 (not in compute_trend, compute manually)
-        import pandas as pd
-        ema20_series = raw["Close"].ewm(span=20, adjust=False).mean()
-        ema20 = float(ema20_series.iloc[-1])
-        ema50 = float(trend["ema50"].iloc[-1]) if not trend["ema50"].empty else 0.0
-        ema200 = float(trend["ema200"].iloc[-1]) if not trend["ema200"].empty else 0.0
-
-        return LiveData(
-            ticker=ticker,
-            close=close,
-            atr14=atr14,
-            suggested_stop=round(swing_low - atr14 * 0.5, 2),
-            suggested_target_2r=round(close + atr14 * 2, 2),
-            suggested_target_3r=round(close + atr14 * 3, 2),
-            ema20=round(ema20, 2),
-            ema50=round(ema50, 2),
-            ema200=round(ema200, 2),
-            trend_state=trend["trend_state"],
-            price_above_ema200=bool(trend["price_above_200"]),
-            ema50_above_ema200=bool(trend["ema50_above_200"]),
-            rsi=round(float(mom["rsi"]), 1),
-            ob_os_flag=mom["ob_os_flag"],
-            roc_10=round(float(mom["roc_10"]) if mom["roc_10"] == mom["roc_10"] else 0.0, 1),
-            volume_ratio=round(float(volm["volume_ratio"]) if volm["volume_ratio"] == volm["volume_ratio"] else 1.0, 2),
-            volume_trend=volm["volume_trend"],
-            bullish_patterns=[f"{p.visual} {p.name} ({p.confidence})" for p in pats["bullish"]],
-            bearish_patterns=[f"{p.visual} {p.name} ({p.confidence})" for p in pats["bearish"]],
-            adx=round(adx if adx == adx else 0.0, 1),
-        )
-    except Exception as exc:
-        return LiveData(ticker=ticker, close=0, atr14=0, suggested_stop=0,
-                        suggested_target_2r=0, suggested_target_3r=0,
-                        ema20=0, ema50=0, ema200=0, trend_state="Neutral",
-                        price_above_ema200=False, ema50_above_ema200=False,
-                        rsi=50, ob_os_flag="Neutral", roc_10=0,
-                        volume_ratio=1, volume_trend="Flat",
-                        error=str(exc))
+    Medvetet ingen nätverkstrafik här — en commit per tangenttryck slår i
+    GitHubs rate limits.
+    """
+    data = st.session_state.setdefault(STORE, {"entries": []})
+    data["entries"] = entries
 
 
 # ── Rule check logic ──────────────────────────────────────────────────────────
-
 
 @dataclass
 class RuleResult:
@@ -211,132 +115,418 @@ class RuleResult:
     hard: bool = False
 
 
-def _check_rules(
-    pb: Playbook,
-    entry: float,
-    stop: float,
-    target: float,
-    live: Optional[LiveData] = None,
-) -> list[RuleResult]:
+def _trend_check(snap) -> Optional[tuple]:
+    """(status, notering) för en trendregel — eller None utan data."""
+    if snap is None or snap.dist_ema200_pct is None:
+        return None
+    above200 = snap.above_ema200
+    above50 = snap.above_ema50
+    if above200 and above50:
+        return ("PASS", f"Kurs {snap.dist_ema50_pct:+.1f} % mot EMA50, "
+                        f"{snap.dist_ema200_pct:+.1f} % mot EMA200")
+    if not above200:
+        return ("FAIL", f"Kurs {snap.dist_ema200_pct:+.1f} % mot EMA200 — "
+                        f"under den långa trenden")
+    return ("MANUAL", f"Över EMA200 men {snap.dist_ema50_pct:+.1f} % mot EMA50 "
+                      f"— trenden är inte entydig")
+
+
+def _volume_check(snap) -> Optional[tuple]:
+    if snap is None or snap.vol_ratio is None:
+        return None
+    if snap.vol_ratio >= 1.2:
+        return ("PASS", f"Volym {snap.vol_ratio:.2f}× 20-dagarssnittet")
+    if snap.vol_ratio < 0.8:
+        return ("FAIL", f"Volym {snap.vol_ratio:.2f}× snittet — ingen "
+                        f"bekräftelse i omsättningen")
+    return ("MANUAL", f"Volym {snap.vol_ratio:.2f}× snittet — varken "
+                      f"bekräftelse eller varning")
+
+
+def _match_swing(text_lower: str, checks) -> Optional[tuple]:
+    """Momentum-regeln som matchar texten, ur swing_verdict.rule_checks."""
+    if not checks:
+        return None
+    if "positionsstorlek" in text_lower:
+        return checks.get("positionsstorlek")
+    if "marknadsfilt" in text_lower:      # "marknadsfiltret" böjs
+        return checks.get("marknadsfilter")
+    if "topp 20" in text_lower or "ranking" in text_lower:
+        return checks.get("ranking")
+    if "setup" in text_lower:
+        return checks.get("setup")
+    if "köp per vecka" in text_lower:
+        return checks.get("köp per vecka")
+    if "positioner" in text_lower:
+        return checks.get("positioner")
+    return None
+
+
+def _check_rules(pb: Playbook, entry: float, stop: float, target: float,
+                 snap=None, swing_checks=None) -> list[RuleResult]:
     """
     Deterministisk regelkontroll.
 
-    Med live-data (LiveData) konverteras MANUAL-regler automatiskt till
-    PASS/FAIL baserade på EMA-trend, ADX, volym, RSI och candlestick-mönster.
-    Utan live-data faller allt tillbaka till MANUAL-status.
+    Regler som går att räkna räknas. Med en ögonblicksbild (market_data) kan
+    även trend- och volymreglerna avgöras mekaniskt i stället för att skickas
+    vidare som MANUAL — utan den föll de tidigare igenom obesvarade.
+
+    En regel markeras bara PASS eller FAIL när det finns ett tal bakom
+    beslutet. Saknas datan står den kvar som MANUAL: en obesvarad fråga får
+    inte se ut som ett godkännande.
     """
     results: list[RuleResult] = []
 
-    risk_pct = abs(entry - stop) / entry * 100 if entry else 0
-    rr = abs(target - entry) / abs(entry - stop) if (entry and stop and entry != stop) else 0
+    risk_pct = levels.risk_pct(entry, stop)
+    ratio = levels.rr(entry, stop, target)
 
     for r in pb.entry:
         text_lower = r.text.lower()
 
-        # ── R:R-kontroll ──────────────────────────────────────────────────────
+        # Momentum: regim, ranking, setup, veckotak och positionstak läses
+        # ur Swing Regime, Swing Screener och Swing-flikens positioner.
+        matched = _match_swing(text_lower, swing_checks)
+        if matched is not None:
+            results.append(RuleResult(r.number, r.text, matched[0],
+                                      matched[1], r.hard))
+            continue
+
+        # R:R-kontroll
         if "1:2" in r.text or "r:r" in text_lower or "reward" in text_lower:
-            if rr >= 2.0:
+            if ratio is None:
+                results.append(RuleResult(r.number, r.text, "MANUAL",
+                                          "Fyll i entry, stop och target", r.hard))
+            elif round(ratio, 6) >= levels.RR_MIN:
                 results.append(RuleResult(r.number, r.text, "PASS",
-                                           f"R:R = {rr:.1f}x ✓", r.hard))
+                                          f"R:R = {ratio:.1f}x ✓", r.hard))
             else:
+                need = levels.target_for_rr(entry, stop, levels.RR_MIN)
                 results.append(RuleResult(r.number, r.text, "FAIL",
-                                           f"R:R = {rr:.1f}x — kräver ≥ 2,0", r.hard))
+                                          f"R:R = {ratio:.1f}x — kräver "
+                                          f"≥ {levels.RR_MIN:g} (target {need:g})",
+                                          r.hard))
 
-        # ── Stop-nivå ─────────────────────────────────────────────────────────
-        elif "stop" in text_lower and entry and stop:
+        # Stop-nivå
+        elif "stop" in text_lower and risk_pct is not None:
             results.append(RuleResult(r.number, r.text, "PASS",
-                                       f"Stop = {risk_pct:.1f} % från entry", r.hard))
+                                      f"Stop = {risk_pct:.1f} % från entry", r.hard))
 
-        # ── Trend/regime-kontroll (auto med live-data) ────────────────────────
-        elif live and live.close and (
-            "trend" in text_lower or "regime" in text_lower
-            or "bullish" in text_lower or "riktning" in text_lower
-            or "ema" in text_lower or "ma " in text_lower
-        ):
-            if live.price_above_ema200 and live.ema50_above_ema200:
-                results.append(RuleResult(r.number, r.text, "PASS",
-                    f"Trend: {live.trend_state} · pris {live.close:.2f} > EMA200 {live.ema200:.2f} ✓",
-                    r.hard))
-            elif live.trend_state == "Bearish":
-                results.append(RuleResult(r.number, r.text, "FAIL",
-                    f"Trend: Bearish · pris {live.close:.2f} < EMA200 {live.ema200:.2f}",
-                    r.hard))
-            else:
-                results.append(RuleResult(r.number, r.text, "MANUAL",
-                    f"Trend: Neutral · EMA50 {live.ema50:.2f} / EMA200 {live.ema200:.2f}",
-                    r.hard))
+        # Trend — går att avgöra så fort vi har kursdata
+        elif any(w in text_lower for w in ("trend", "ma200", "ma50", "ema")):
+            checked = _trend_check(snap)
+            results.append(RuleResult(
+                r.number, r.text, checked[0] if checked else "MANUAL",
+                checked[1] if checked else
+                "Kontrollera i panelen: " + r.panel_guide[:80], r.hard))
 
-        # ── Konsolidering/ADX-kontroll ────────────────────────────────────────
-        elif live and live.close and (
-            "konsolid" in text_lower or "consolidat" in text_lower
-            or "adx" in text_lower or "direkt" in text_lower
-        ):
-            if live.adx >= 25:
-                results.append(RuleResult(r.number, r.text, "PASS",
-                    f"ADX = {live.adx:.1f} (≥ 25 = trend aktiv) ✓", r.hard))
-            elif live.adx > 0:
-                results.append(RuleResult(r.number, r.text, "FAIL",
-                    f"ADX = {live.adx:.1f} (< 25 = konsolidering)", r.hard))
-            else:
-                results.append(RuleResult(r.number, r.text, "MANUAL",
-                    "ADX ej beräknat — kontrollera i panelen", r.hard))
+        # Volym
+        elif "volym" in text_lower or "volume" in text_lower:
+            checked = _volume_check(snap)
+            results.append(RuleResult(
+                r.number, r.text, checked[0] if checked else "MANUAL",
+                checked[1] if checked else
+                "Kontrollera i panelen: " + r.panel_guide[:80], r.hard))
 
-        # ── Volymkonfirmation ─────────────────────────────────────────────────
-        elif live and live.close and (
-            "volym" in text_lower or "volume" in text_lower
-        ):
-            if live.volume_ratio >= 1.2:
-                results.append(RuleResult(r.number, r.text, "PASS",
-                    f"Volym = {live.volume_ratio:.1f}× snitt · {live.volume_trend} ✓", r.hard))
-            elif live.volume_ratio < 0.8:
-                results.append(RuleResult(r.number, r.text, "FAIL",
-                    f"Volym = {live.volume_ratio:.1f}× snitt — låg volym", r.hard))
-            else:
-                results.append(RuleResult(r.number, r.text, "MANUAL",
-                    f"Volym = {live.volume_ratio:.1f}× snitt — gränsfall", r.hard))
-
-        # ── Candlestick trigger ───────────────────────────────────────────────
-        elif live and live.close and (
-            "candlestick" in text_lower or "candle" in text_lower
-            or "ljus" in text_lower or "trigger" in text_lower
-            or "engulf" in text_lower or "hammer" in text_lower
-            or "pinbar" in text_lower or "pin bar" in text_lower
-        ):
-            if live.bullish_patterns:
-                results.append(RuleResult(r.number, r.text, "PASS",
-                    f"Mönster: {live.bullish_patterns[0]} ✓", r.hard))
-            elif live.bearish_patterns:
-                results.append(RuleResult(r.number, r.text, "FAIL",
-                    f"Bearish mönster detekterat: {live.bearish_patterns[0]}", r.hard))
-            else:
-                results.append(RuleResult(r.number, r.text, "MANUAL",
-                    "Inget candlestick-mönster detekterat — kontrollera manuellt", r.hard))
-
-        # ── RSI/momentum ──────────────────────────────────────────────────────
-        elif live and live.close and (
-            "rsi" in text_lower or "momentum" in text_lower or "overbought" in text_lower
-            or "överköpt" in text_lower or "impulse" in text_lower
-        ):
-            if live.ob_os_flag == "Overbought":
-                results.append(RuleResult(r.number, r.text, "FAIL",
-                    f"RSI = {live.rsi:.0f} — överköpt, undvik entry", r.hard))
-            elif live.ob_os_flag == "Oversold":
-                results.append(RuleResult(r.number, r.text, "PASS",
-                    f"RSI = {live.rsi:.0f} — översålt, möjlig reversal ✓", r.hard))
-            elif 40 <= live.rsi <= 65:
-                results.append(RuleResult(r.number, r.text, "PASS",
-                    f"RSI = {live.rsi:.0f} — hälsosamt momentum ✓", r.hard))
-            else:
-                results.append(RuleResult(r.number, r.text, "MANUAL",
-                    f"RSI = {live.rsi:.0f} — kontrollera momentum-riktning", r.hard))
-
-        # ── Allt annat kräver manuell koll ────────────────────────────────────
+        # Allt annat kräver manuell koll
         else:
             results.append(RuleResult(r.number, r.text, "MANUAL",
-                                       "Kontrollera i panelen: " + r.panel_guide[:80],
-                                       r.hard))
+                                      "Kontrollera i panelen: " + r.panel_guide[:80],
+                                      r.hard))
 
     return results
+
+
+# ── Marknadsdata och nivåer ──────────────────────────────────────────────────
+
+def _prefill_entry(ticker: str, snap, entry: float) -> None:
+    """Förifyll entry med aktuell kurs — en gång per ticker.
+
+    Bara när fältet står orört på noll: har användaren skrivit ett eget värde,
+    eller nollat det med flit, ska panelen inte skriva över det.
+    """
+    if snap is None or entry:
+        return
+    if st.session_state.get(_PREFILL_KEY) == ticker:
+        return
+    st.session_state[_PREFILL_KEY] = ticker
+    _queue_prices(entry=snap.price)
+
+
+def _render_cycle(ticker: str, strategy_key: str):
+    """Cykelläget för råvarustrategierna: (state, råvarunamn).
+
+    Råvaran slås upp i Rick Rule-arket där den redan är ifylld; listan är
+    fallback. Statusen läses ur rotationsflikens sparade betyg — sätts den
+    om där, ändras den här.
+    """
+    if not cycle.requires_cycle(strategy_key):
+        return None, ""
+
+    import producers as prod_mod
+    import rotation as rot_mod
+    producers_data = storage.session_load(
+        prod_mod.STORE, {"producers": [], "royalty": []})
+    rotation_data = storage.session_load(
+        rot_mod.STORE, {"grades": {}, "history": [], "month": ""})
+
+    looked_up = cycle.commodity_for_ticker(ticker, producers_data)
+    names = ["– välj råvara –"] + [c.name for c in rot_mod.COMMODITIES]
+    idx = names.index(looked_up) if looked_up in names else 0
+    chosen = st.selectbox(
+        "Råvara (för cykelläget)", names, index=idx, key="copilot_commodity",
+        help="Hämtas från Rick Rule-arket när bolaget finns där. Cykelläget "
+             "kommer från rotationsflikens Triple Signal-betyg.")
+    name = "" if chosen == names[0] else chosen
+
+    state = cycle.cycle_state(name, rotation_data) if name else None
+    if state is not None:
+        color = rot_mod.STATUS_COLOR.get(state["status"], _DIM)
+        warn = "".join(f"<div style='color:{_AMBER};font-size:11px;'>⚠️ {w}"
+                       f"</div>" for w in state["warnings"])
+        st.markdown(
+            f'<div style="border:1px solid {color}55;background:{color}0d;'
+            f'border-radius:8px;padding:8px 12px;margin:4px 0 10px;">'
+            f'<span style="color:{color};font-weight:700;">Cykelläge '
+            f'{state["commodity"]}: {state["status"]} '
+            f'{state["sum"]}/{state["max"]}</span>'
+            f'<div style="color:{_DIM};font-size:11px;margin-top:2px;">'
+            f'{state["why"]} · betyg {state["month"] or "okänd månad"}</div>'
+            f'{warn}</div>', unsafe_allow_html=True)
+    elif name:
+        st.caption(f"{name} är inte betygsatt i rotationsfliken ännu — "
+                   f"cykelregeln står som MANUAL tills det är gjort.")
+    return state, name
+
+
+def _render_review(ticker: str, strategy_key: str):
+    """Granskningsboxen: arkets eget utfall plus DS/AQS/CSM, läst ur samma
+    session som granskningsfliken skriver till. Returnerar review-dicten."""
+    if not review_link.has_review(strategy_key):
+        return None
+    store_name, _label = review_link.SHEET[strategy_key]
+    stores = {store_name: storage.session_load(
+        store_name, review_link.STORE_DEFAULTS[store_name])}
+    rev = review_link.review(strategy_key, ticker, stores)
+    if rev is None:
+        return None
+
+    color = {_c: v for _c, v in (("PASS", _GREEN), ("MANUAL", _AMBER),
+                                 ("FAIL", _RED))}[rev["status"]]
+    controls_line = " · ".join(
+        f"{label} {status}" for status, label, _n in rev["controls"]) or ""
+    st.markdown(
+        f'<div style="border:1px solid {color}55;background:{color}0d;'
+        f'border-radius:8px;padding:8px 12px;margin:4px 0 10px;">'
+        f'<span style="color:{color};font-weight:700;">Granskningen — '
+        f'{rev["sheet"]}: {rev["status"]}</span>'
+        f'<div style="color:{_DIM};font-size:11px;margin-top:2px;">'
+        f'{rev["note"]}</div>'
+        + (f'<div style="color:{_DIM};font-size:11px;">{controls_line}</div>'
+           if controls_line else "")
+        + '</div>', unsafe_allow_html=True)
+    if rev["found"]:
+        details = review_link.detail_lines(strategy_key, rev["row"])
+        if details:
+            with st.expander("Granskningens underlag — det arket redan svarat på",
+                             expanded=False):
+                for line in details:
+                    st.caption(line.strip())
+    return rev
+
+
+def _render_market_phase(ticker: str, strategy_key: str):
+    """Fas-boxen för contrarian/quality. Returnerar fas-dicten eller None.
+
+    Motorn är densamma som REGIME → Market Cycle och cachas en timme — samma
+    fas där som här.
+    """
+    if not cycle.requires_market_cycle(strategy_key):
+        return None
+    state, err = cycle.market_phase(ticker)
+    if err:
+        st.warning(f"Marknadscykelfasen kunde inte läsas: {err}")
+        return None
+    sets = cycle.playbook_phases(strategy_key)
+    phase = state["phase"]
+    color = (_GREEN if phase in sets["buy"] else
+             _RED if phase in sets["sell"] else _AMBER)
+    st.markdown(
+        f'<div style="border:1px solid {color}55;background:{color}0d;'
+        f'border-radius:8px;padding:8px 12px;margin:4px 0 10px;">'
+        f'<span style="color:{color};font-weight:700;">Marknadscykelfas: '
+        f'{phase.replace("_", " ")} · {state["confidence"]:g} % säkerhet</span>'
+        f'<div style="color:{_DIM};font-size:11px;margin-top:2px;">'
+        f'Market Cycle Engine — samma motor som REGIME-fliken. Playbookens '
+        f'köpfaser: {", ".join(sorted(sets["buy"])) or "–"}.</div></div>',
+        unsafe_allow_html=True)
+    return state
+
+
+def _swing_rule_checks(ticker: str, strategy_key: str):
+    """Momentum-reglernas underlag: regimljus, ranking, setup, veckotak.
+
+    Läser samma sessioncachade data som REGIME- och SCREENING-flikarna, plus
+    swing-lagret. Bara för momentum — övriga strategier får None och
+    regelkontrollen faller tillbaka på sina vanliga vägar.
+    """
+    if strategy_key != "momentum":
+        return None
+    try:
+        import wolf_regime_ui
+        import wolf_screener_ui
+        regime_data = wolf_regime_ui._get_data() or {}
+        screener_data = wolf_screener_ui._get_data() or {}
+    except Exception:
+        regime_data, screener_data = {}, {}
+    swing_data = storage.session_load(
+        "swing", {"positions": [], "market": {}, "watchlist": [],
+                  "closed": [], "checklist": {}})
+    checks = swing_verdict.rule_checks(ticker, screener_data, regime_data,
+                                       swing_data)
+
+    # Domboxen — samma funktion som Swing Regime-flikens ticker-koll.
+    v = swing_verdict.verdict(ticker, screener_data, regime_data, swing_data)
+    color = {swing_verdict.BUY: _GREEN, swing_verdict.HOLD: _GREEN,
+             swing_verdict.PARTIAL: _AMBER, swing_verdict.WATCH: _AMBER,
+             swing_verdict.SELL: _RED, swing_verdict.ABSTAIN: _RED,
+             swing_verdict.UNKNOWN: _DIM}.get(v["verdict"], _DIM)
+    tag = " · INNEHAV" if v["held"] else ""
+    st.markdown(
+        f'<div style="border:1px solid {color}55;background:{color}0d;'
+        f'border-radius:8px;padding:8px 12px;margin:4px 0 10px;">'
+        f'<span style="color:{color};font-weight:700;">Swing-dom{tag}: '
+        f'{v["verdict"]}</span>'
+        f'<div style="color:{_DIM};font-size:11px;margin-top:2px;">'
+        f'{v["reasons"][0] if v["reasons"] else ""}</div></div>',
+        unsafe_allow_html=True)
+    return checks
+
+
+def _render_market(snap, error: Optional[str]) -> None:
+    """Ögonblicksbilden. Uteblir den syns det — en tyst tom ruta läses som
+    att inget var anmärkningsvärt."""
+    if error:
+        st.warning(f"Ingen marknadsdata: {error}\n\nRegelkontrollen kör vidare, "
+                   f"men trend- och volymreglerna kan inte avgöras utan kurs.")
+        return
+    if snap is None:
+        return
+
+    def _m(col, label, value, suffix="", fmt="{:.2f}", color="#E8EDF2"):
+        text = "–" if value is None else fmt.format(value) + suffix
+        col.markdown(
+            f'<div style="text-align:center;">'
+            f'<div style="font-size:17px;font-weight:700;color:{color};">{text}</div>'
+            f'<div style="font-size:10px;color:{_DIM};">{label}</div></div>',
+            unsafe_allow_html=True)
+
+    with st.expander(f"📊 Marknadsdata — {snap.ticker} per {snap.as_of}",
+                     expanded=True):
+        c = st.columns(6)
+        _m(c[0], "Kurs", snap.price)
+        _m(c[1], "ATR(14)", snap.atr_pct, " %",
+           color=_AMBER if (snap.atr_pct or 0) > 5 else "#E8EDF2")
+        _m(c[2], "mot EMA50", snap.dist_ema50_pct, " %", "{:+.1f}",
+           _GREEN if snap.above_ema50 else _RED)
+        _m(c[3], "mot EMA200", snap.dist_ema200_pct, " %", "{:+.1f}",
+           _GREEN if snap.above_ema200 else _RED)
+        _m(c[4], "RSI(14)", snap.rsi14, "", "{:.0f}")
+        _m(c[5], "Volym", snap.vol_ratio, "×",
+           color=_GREEN if (snap.vol_ratio or 0) >= 1.2 else _DIM)
+        st.caption(f"52 v {snap.low_52w:.2f}–{snap.high_52w:.2f} · "
+                   f"{snap.from_high_pct:+.1f} % från toppen · "
+                   f"swing-low 20 d {snap.swing_low_20:.2f} · "
+                   f"EMA, inte SMA — samma definition som regimmotorn.")
+
+
+def _render_levels(entry: float, stop: float, target: float, snap,
+                   pb: Playbook) -> None:
+    """Räknade stoppnivåer och vad de valda innebär.
+
+    Panelen väljer inte åt dig. Att se att en ATR-stop kostar 8 % risk medan
+    swing-low kostar 4 % ÄR beslutsunderlaget.
+    """
+    fixed = _fixed_stop_pct(pb)
+    alts = (levels.stop_candidates(entry, snap, fixed, _atr_mult(pb))
+            if entry else [])
+    if not alts and not entry:
+        return
+
+    with st.expander("🎯 Entry- och exitnivåer — räknade", expanded=bool(alts)):
+        if not alts:
+            st.caption("Fyll i entry, och hämta kursdata, så räknas "
+                       "stoppnivåerna fram.")
+        for i, s in enumerate(alts):
+            chosen = stop and abs(s.price - stop) / s.price < 0.005
+            mark = " ← din nivå" if chosen else ""
+            c_txt, c_btn = st.columns([5, 1])
+            c_txt.markdown(
+                f'<div style="border-left:2px solid '
+                f'{_CYAN if chosen else _BORDER};padding:6px 0 6px 12px;'
+                f'margin-bottom:8px;">'
+                f'<span style="font-size:13px;font-weight:700;color:#E8EDF2;">'
+                f'{s.name} {s.price:g}</span>'
+                f'<span style="font-size:11px;color:{_AMBER};margin-left:10px;">'
+                f'{s.risk_pct:.1f} % risk</span>'
+                f'<span style="font-size:11px;color:{_CYAN};margin-left:10px;">'
+                f'{mark}</span>'
+                f'<div style="font-size:11px;color:{_DIM};margin-top:2px;">'
+                f'{s.why} Target {s.target_for_min_rr:g} för '
+                f'{levels.RR_MIN:g}:1 · {s.target_for_pref_rr:g} för '
+                f'{levels.RR_PREFERRED:g}:1.</div></div>',
+                unsafe_allow_html=True)
+            if c_btn.button("Använd", key=f"copilot_use_stop_{i}",
+                            help=f"Sätter stop {s.price:g}"
+                                 + ("" if target else
+                                    f" och target {s.target_for_min_rr:g} "
+                                    f"({levels.RR_MIN:g}:1)")):
+                # Motorn räknade nivån; knappen bara flyttar den till fälten.
+                # Target fylls bara i när fältet är tomt — ett eget target
+                # skrivs aldrig över av en stoppändring.
+                _queue_prices(stop=s.price,
+                              target=None if target else s.target_for_min_rr)
+
+        if entry and stop:
+            t1, t2, t3 = st.columns([1, 1, 3])
+            if t1.button(f"Target {levels.RR_MIN:g}:1", key="copilot_t_min"):
+                _queue_prices(target=levels.target_for_rr(entry, stop,
+                                                          levels.RR_MIN))
+            if t2.button(f"Target {levels.RR_PREFERRED:g}:1",
+                         key="copilot_t_pref"):
+                _queue_prices(target=levels.target_for_rr(entry, stop,
+                                                          levels.RR_PREFERRED))
+            t3.caption("Räknat från din nuvarande stop — byter du stop, "
+                       "tryck igen.")
+
+        assessment = levels.assess(entry, stop, target, snap)
+        for note in assessment.notes:
+            st.warning(note)
+        if not assessment.notes and assessment.rr is not None:
+            st.success(f"R:R {assessment.rr:.1f}x — inga invändningar mot "
+                       f"nivåerna.")
+
+
+def _fixed_stop_pct(pb: Playbook) -> Optional[float]:
+    """Strategins fasta stoppavstånd, om den har ett.
+
+    Läses ur strategy_rules.py i stället för att hårdkodas här — den filen är
+    källan, och en ändrad tröskel ska slå igenom utan att någon minns att
+    Copiloten har en egen kopia.
+
+    Bara NEGATIVA procenttal räknas: momentums stop är "−10 % från entry", och
+    "+20 %" i samma mening är nivån där stoppen flyttas till break-even. Utan
+    tecknet hade den lästs som ett stoppavstånd.
+    """
+    import re
+    m = re.search(r"[-−]\s*(\d+(?:[.,]\d+)?)\s*%", str(pb.risk.stop))
+    return float(m.group(1).replace(",", ".")) if m else None
+
+
+def _atr_mult(pb: Playbook) -> Optional[float]:
+    """Strategins ATR-multipel: Viking 1,5×, Wolf 2,5×."""
+    import re
+    m = re.search(r"(\d+(?:[.,]\d+)?)\s*[×xX]\s*ATR", str(pb.risk.stop))
+    return float(m.group(1).replace(",", ".")) if m else None
 
 
 # ── Candidate card ────────────────────────────────────────────────────────────
@@ -386,115 +576,26 @@ def _status_to_color(s: str) -> str:
     }.get(s, _DIM)
 
 
-# ── AI comment (OpenAI GPT, Nivå 3 — rik teknisk kontext) ────────────────────
+# ── AI comment stub ───────────────────────────────────────────────────────────
 
-def _ai_comment(
-    ticker: str,
-    pb: Playbook,
-    results: list[RuleResult],
-    entry: float,
-    stop: float,
-    target: float,
-    live: Optional[LiveData] = None,
-) -> str:
+def _ai_comment(ticker: str, pb: Playbook, results: list[RuleResult],
+                entry: float, stop: float, target: float) -> str:
     """
-    Anropar OpenAI Chat Completions med rik teknisk kontext och returnerar
-    en analys på svenska (entry + exit + grannsteg-förslag).
+    Stub — returnerar deterministiskt genererad kommentar.
+    Ersätt med ett GPT-anrop när du vill ha riktig AI-text.
 
-    Kräver OPENAI_API_KEY i st.secrets eller miljövariabel.
-    Faller tillbaka till en deterministisk kommentar om nyckeln saknas.
+    Byt ut denna funktion mot:
+        import openai
+        response = openai.chat.completions.create(...)
+        return response.choices[0].message.content
     """
-    passed = [r.text for r in results if r.status == "PASS"]
-    failed = [r.text for r in results if r.status == "FAIL"]
-    manual = [r.text for r in results if r.status == "MANUAL"]
-    rr     = abs(target - entry) / abs(entry - stop) if (entry and stop and entry != stop) else 0
-    risk_p = abs(entry - stop) / entry * 100 if entry else 0
+    passed  = [r.text for r in results if r.status == "PASS"]
+    failed  = [r.text for r in results if r.status == "FAIL"]
+    manual  = [r.text for r in results if r.status == "MANUAL"]
+    rr      = abs(target - entry) / abs(entry - stop) if (entry and stop and entry != stop) else 0
+    risk_p  = abs(entry - stop) / entry * 100 if entry else 0
 
-    api_key: Optional[str] = (
-        st.secrets.get("OPENAI_API_KEY")
-        if hasattr(st, "secrets")
-        else None
-    ) or os.environ.get("OPENAI_API_KEY")
-
-    if not api_key:
-        return _fallback_comment(ticker, pb, passed, failed, manual, rr, risk_p, live)
-
-    # ── Bygg rik teknisk kontext-sträng ──────────────────────────────────────
-    tech_ctx = ""
-    if live and live.close:
-        bull_str = ", ".join(live.bullish_patterns[:2]) or "inga"
-        bear_str = ", ".join(live.bearish_patterns[:2]) or "inga"
-        tech_ctx = (
-            f"\nTeknisk snapshot ({ticker}):\n"
-            f"  Aktuellt pris: {live.close:.2f}\n"
-            f"  Trend: {live.trend_state} · EMA20={live.ema20:.2f} · EMA50={live.ema50:.2f} · EMA200={live.ema200:.2f}\n"
-            f"  Pris > EMA200: {'Ja' if live.price_above_ema200 else 'Nej'} · EMA50 > EMA200: {'Ja' if live.ema50_above_ema200 else 'Nej'}\n"
-            f"  ADX: {live.adx:.1f} ({'trend aktiv' if live.adx >= 25 else 'konsolidering'})\n"
-            f"  RSI(14): {live.rsi:.0f} ({live.ob_os_flag}) · ROC(10): {live.roc_10:+.1f}%\n"
-            f"  Volym: {live.volume_ratio:.1f}× snitt · {live.volume_trend}\n"
-            f"  ATR(14): {live.atr14:.2f}\n"
-            f"  Bullish mönster: {bull_str}\n"
-            f"  Bearish mönster: {bear_str}\n"
-            f"  Föreslaget stop (ATR): {live.suggested_stop:.2f}\n"
-            f"  Föreslaget target 2R: {live.suggested_target_2r:.2f} · 3R: {live.suggested_target_3r:.2f}\n"
-        )
-
-    prompt = (
-        f"Du är en professionell swing-trading-analytiker.\n\n"
-        f"Ticker: {ticker}\n"
-        f"Strategi: {pb.name} ({pb.tagline})\n"
-        f"Entry: {entry:.2f} · Stop: {stop:.2f} · Target: {target:.2f}\n"
-        f"R:R: {rr:.1f}x · Risk från entry: {risk_p:.1f}%\n"
-        f"Godkända regler ({len(passed)}): {', '.join(passed) or 'inga'}\n"
-        f"Manuella regler ({len(manual)}): {', '.join(manual) or 'inga'}\n"
-        f"Misslyckade regler ({len(failed)}): {', '.join(failed) or 'inga'}\n"
-        f"{tech_ctx}\n"
-        f"Ge en analys (5–7 meningar) på svenska med dessa fyra delar:\n"
-        f"1. ENTRY: Är entry-tillfället tekniskt motiverat? Stöds det av trend, volym och candlestick?\n"
-        f"2. EXIT: Finns det tekniska motstånd (EMA200, previous high, runda tal) nära target {target:.2f}?\n"
-        f"3. RISK: Om affären rör sig mot dig — var är rätt punkt att halvera positionen?\n"
-        f"4. SLUTSATS: Rekommendation i ett ord (BUY CANDIDATE / WATCH / REJECT) och motivering.\n"
-    )
-
-    try:
-        import openai  # noqa: PLC0415 — lazy import to keep startup fast
-        client = openai.OpenAI(api_key=api_key)
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=500,
-            temperature=0.4,
-        )
-        return response.choices[0].message.content or "Inget svar från AI."
-    except Exception as exc:  # pragma: no cover
-        return (
-            f"{_fallback_comment(ticker, pb, passed, failed, manual, rr, risk_p, live)}\n\n"
-            f"_⚠️ OpenAI-anropet misslyckades: {exc}_"
-        )
-
-
-def _fallback_comment(
-    ticker: str,
-    pb: Playbook,
-    passed: list[str],
-    failed: list[str],
-    manual: list[str],
-    rr: float,
-    risk_p: float,
-    live: Optional[LiveData] = None,
-) -> str:
-    """Deterministisk fallback-kommentar när OpenAI ej är tillgängligt."""
     lines = [f"**{ticker}** analyseras mot **{pb.name}**.", ""]
-
-    if live and live.close:
-        trend_icon = "🟢" if live.trend_state == "Bullish" else ("🔴" if live.trend_state == "Bearish" else "🟡")
-        lines.append(f"{trend_icon} **Trend:** {live.trend_state} · EMA20={live.ema20:.2f} · EMA50={live.ema50:.2f} · EMA200={live.ema200:.2f}")
-        adx_note = "trend aktiv" if live.adx >= 25 else "konsolidering"
-        lines.append(f"📊 **ADX:** {live.adx:.1f} ({adx_note}) · **RSI:** {live.rsi:.0f} ({live.ob_os_flag})")
-        lines.append(f"📦 **Volym:** {live.volume_ratio:.1f}× snitt ({live.volume_trend})")
-        if live.bullish_patterns:
-            lines.append(f"🕯️ **Mönster:** {live.bullish_patterns[0]}")
-        lines.append("")
 
     if passed:
         lines.append(f"✅ Automatiska kontroller godkända: {len(passed)} regler klarade.")
@@ -518,105 +619,101 @@ def _fallback_comment(
 
     lines += [
         "",
-        "_💡 Sätt OPENAI_API_KEY i Streamlit Secrets för att aktivera GPT-analys._",
+        "_Deterministisk sammanfattning — räknad av panelen, inte skriven av "
+        "en modell._",
     ]
 
     return "\n".join(lines)
 
 
-# ── Nivå 4: Watchlist ─────────────────────────────────────────────────────────
+# ── AI-kommentar: knappstyrd, aldrig i renderingsvägen ────────────────────────
 
-def _get_watchlist() -> list[dict]:
-    return st.session_state.get(_WATCHLIST_KEY, [])
+def _ai_cache_key(ticker: str, strategy_key: str,
+                  entry: float, stop: float, target: float,
+                  as_of: str = "") -> str:
+    """Ändras underlaget blir det gamla svaret ogiltigt.
 
-
-def _save_watchlist(wl: list[dict]) -> None:
-    st.session_state[_WATCHLIST_KEY] = wl
-
-
-def _add_to_watchlist(
-    ticker: str, strategy_key: str, entry: float, stop: float, target: float,
-    overall: str, live: Optional[LiveData]
-) -> None:
-    wl = _get_watchlist()
-    # Remove existing entry for same ticker+strategy
-    wl = [w for w in wl if not (w["ticker"] == ticker and w["strategy"] == strategy_key)]
-    wl.append({
-        "ticker": ticker,
-        "strategy": strategy_key,
-        "entry": entry,
-        "stop": stop,
-        "target": target,
-        "status": overall,
-        "rsi": live.rsi if live else None,
-        "trend": live.trend_state if live else None,
-        "adx": live.adx if live else None,
-        "added": datetime.datetime.utcnow().isoformat(),
-    })
-    _save_watchlist(wl)
+    Utan detta ligger en kommentar om entry 100 kvar när du ändrat till 120,
+    och den ser lika auktoritativ ut som när den skrevs.
+    """
+    return (f"{strategy_key}|{ticker.upper()}|{entry:g}|{stop:g}|{target:g}"
+            f"|{as_of}")
 
 
-def _render_watchlist() -> None:
-    """Visa alla bevakade kandidater med uppdaterade R:R och status."""
-    section_title("👁 Watchlist", "")
-    wl = _get_watchlist()
-    if not wl:
-        st.caption("Inga kandidater i watchlistan ännu — lägg till via knappen nedan.")
-        return
+def _render_ai_section(ticker: str, strategy_key: str, pb: Playbook,
+                       results: list[RuleResult],
+                       entry: float, stop: float, target: float,
+                       snap=None, cyc_state=None, bspot=None,
+                       rev=None, phase_state=None) -> None:
+    """Deterministisk sammanfattning alltid; modellsvar på knapptryck.
 
-    st.caption(f"{len(wl)} kandidat(er) bevakad(e) denna session.")
-    for w in reversed(wl):
-        pb_name = PLAYBOOKS[w["strategy"]].name if w["strategy"] in PLAYBOOKS else w["strategy"]
-        rr_val  = abs(w.get("target", 0) - w.get("entry", 0)) / abs(
-            w.get("entry", 0) - (w.get("stop", 0) or 1e-9)
-        ) if w.get("entry") else 0
-        s_color = {"BUY CANDIDATE": _GREEN, "WATCH": _AMBER, "REJECT": _RED}.get(w["status"], _DIM)
+    Anropet ligger BAKOM en knapp med flit. Streamlit kör om hela skriptet vid
+    varje widget-interaktion — ett anrop i renderingsvägen hade blivit ett
+    betalt API-anrop varje gång du rör ett reglage.
+    """
+    st.markdown(_ai_comment(ticker, pb, results, entry, stop, target))
 
-        # Breakeven reminder
-        be_note = ""
-        if w.get("entry") and w.get("stop"):
-            be_pct = abs(w["entry"] - w["stop"]) / w["entry"] * 100
-            be_note = f" · Flytta SL till BE om pris rör sig {be_pct:.1f}% i rätt riktning"
+    cache_key = _ai_cache_key(ticker, strategy_key, entry, stop, target,
+                              getattr(snap, 'as_of', '') or '')
+    store = st.session_state.setdefault("copilot_ai", {})
+    stale = store.get("key") and store["key"] != cache_key
 
-        trend_badge = ""
-        if w.get("trend"):
-            t_col = {"Bullish": _GREEN, "Bearish": _RED, "Neutral": _AMBER}.get(w["trend"], _DIM)
-            trend_badge = (
-                f'<span style="background:{t_col}22;color:{t_col};font-size:10px;'
-                f'font-weight:700;padding:1px 6px;border-radius:3px;margin-left:6px;">'
-                f'{w["trend"]}</span>'
-            )
+    col_b, col_s = st.columns([1, 3])
+    with col_b:
+        asked = st.button("🤖 Fråga modellen", key="copilot_ask",
+                          type="secondary",
+                          disabled=not openai_client.configured())
+    with col_s:
+        if not openai_client.configured():
+            st.caption(f"Modellen är inte påslagen — {openai_client.KEY_NAME} "
+                       f"saknas i secrets. Panelen fungerar utan den.")
+        elif stale:
+            st.caption("Underlaget har ändrats sedan svaret nedan skrevs.")
 
-        adx_str = f" · ADX {w['adx']:.0f}" if w.get("adx") else ""
-        rsi_str = f" · RSI {w['rsi']:.0f}" if w.get("rsi") else ""
+    if asked:
+        with st.spinner("Analyserar…"):
+            try:
+                reply = openai_client.complete(
+                    copilot_prompt.SYSTEM,
+                    copilot_prompt.build_prompt(
+                        ticker=ticker, strategy=pb.name,
+                        status=_overall_status(results),
+                        entry=entry, stop=stop, target=target,
+                        rr=levels.rr(entry, stop, target),
+                        risk_pct=levels.risk_pct(entry, stop),
+                        passed=[r.text for r in results if r.status == "PASS"],
+                        manual=[r.text for r in results if r.status == "MANUAL"],
+                        failed=[r.text for r in results if r.status == "FAIL"],
+                        risk_per_trade=pb.risk.risk_per_trade,
+                        snapshot=snap,
+                        assessment=levels.assess(entry, stop, target, snap),
+                        alternatives=levels.stop_candidates(
+                            entry, snap, _fixed_stop_pct(pb), _atr_mult(pb)),
+                        cycle_state=cyc_state, blindspot=bspot,
+                        review_lines=review_link.prompt_lines(rev, strategy_key),
+                        market_phase=phase_state))
+            except openai_client.AIError as exc:
+                # Ingen tyst fallback. Uteblir svaret ska det synas att det
+                # uteblev — annars läses stubben ovanför som modelltext.
+                st.error(f"Ingen AI-kommentar: {exc}")
+                return
+            store.update({"key": cache_key, "text": reply.text,
+                          "model": reply.model})
+            stale = False
 
+    if store.get("text"):
         st.markdown(
-            f'<div style="background:{_BG};border:1px solid {_BORDER};'
-            f'border-left:3px solid {s_color};border-radius:6px;'
-            f'padding:10px 14px;margin-bottom:6px;">'
-            f'<div style="display:flex;justify-content:space-between;align-items:center;">'
-            f'<div>'
-            f'<span style="font-size:14px;font-weight:700;color:#E8EDF2;">{w["ticker"]}</span>'
-            f'{trend_badge}'
-            f'<span style="font-size:11px;color:{_DIM};margin-left:8px;">{pb_name}</span>'
-            f'</div>'
-            f'<span style="background:{s_color}22;color:{s_color};font-size:10px;'
-            f'font-weight:700;padding:2px 8px;border-radius:4px;">{w["status"]}</span>'
-            f'</div>'
-            f'<div style="font-size:11px;color:{_DIM};margin-top:4px;">'
-            f'Entry {w.get("entry","—")} · Stop {w.get("stop","—")} · '
-            f'Target {w.get("target","—")} · R:R {rr_val:.1f}x'
-            f'{adx_str}{rsi_str}'
-            f'<span style="color:{_AMBER};">{be_note}</span>'
-            f'</div>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
+            f"<div style='border:1px solid {_BORDER};background:{_BG};"
+            f"border-radius:10px;padding:14px 16px;margin-top:12px;"
+            f"opacity:{'0.55' if stale else '1'};'>"
+            f"<div style='font-size:11px;color:{_DIM};margin-bottom:6px;'>"
+            f"{store.get('model', '')}"
+            f"{' · gäller ett tidigare underlag' if stale else ''}</div></div>",
+            unsafe_allow_html=True)
+        st.markdown(store["text"])
 
-    if st.button("🗑 Rensa watchlist", key="clear_watchlist"):
-        _save_watchlist([])
-        st.rerun()
 
+# ── Journal section ───────────────────────────────────────────────────────────
 
 def _render_journal_log(ticker: str, strategy_key: str,
                         entry: float, stop: float, target: float) -> None:
@@ -636,6 +733,10 @@ def _render_journal_log(ticker: str, strategy_key: str,
                 index=list(PLAYBOOKS.keys()).index(strategy_key) if strategy_key in PLAYBOOKS else 0,
                 format_func=lambda k: PLAYBOOKS[k].name,
             )
+            log_shares = st.number_input(
+                "Antal aktier (valfritt)", min_value=0, step=1, value=0,
+                help="Krävs för vinstandel och payoff-kvot, som räknas i "
+                     "kronor. R-multipeln fungerar utan.")
             log_note   = st.text_input("Anteckning (valfri)")
 
         submitted = st.form_submit_button("💾 Spara till journal", type="primary")
@@ -648,6 +749,7 @@ def _render_journal_log(ticker: str, strategy_key: str,
                 "entry":    entry,
                 "stop":     stop,
                 "target":   target,
+                "shares":   int(log_shares) or None,
                 "note":     log_note,
                 "logged_at": datetime.datetime.utcnow().isoformat(),
             })
@@ -655,47 +757,223 @@ def _render_journal_log(ticker: str, strategy_key: str,
             st.success(f"✅ {log_ticker.upper()} loggad!")
 
 
+def _with_metrics(entries: list[dict]) -> list[dict]:
+    """Journalposterna med utfallen uträknade.
+
+    Räknas vid varje anrop i stället för att lagras: R-multipeln mäts mot
+    stoppen du faktiskt la, och en lagrad kopia hade blivit fel så fort en
+    rad rättades.
+    """
+    out = []
+    for e in entries or []:
+        if not isinstance(e, dict):
+            continue
+        row = dict(e)
+        entry, stop = e.get("entry"), e.get("stop")
+        exit_price = e.get("exit_price")
+        if exit_price:
+            row["pnl_pct"] = journal_stats.pnl_pct(entry, exit_price)
+            row["r_multiple"] = journal_stats.r_multiple(entry, stop,
+                                                         exit_price)
+            row["holding_days"] = journal_stats.holding_days(
+                e.get("date"), e.get("exit_date"))
+            # Vinstandel och payoff-kvot räknas i KRONOR i journal_stats, så de
+            # kräver antal aktier. Utan det förblir de None — och UI:t säger
+            # varför i stället för att visa ett streck utan förklaring.
+            row["pnl_amount"] = journal_stats.pnl_amount(
+                entry, exit_price, e.get("shares"), e.get("fees") or 0)
+        out.append(row)
+    return out
+
+
+def _render_journal_stats(entries: list[dict]) -> None:
+    """Statistikbladet plus AI-granskningen.
+
+    Det är HÄR avkastningen faktiskt mäts. En kommentar före ett köp är en
+    gissning; det här är utfallen.
+    """
+    rows = _with_metrics(entries)
+    stats = journal_stats.summary(rows)
+
+    if not stats["closed"]:
+        st.caption("Inga avslutade affärer ännu. Fyll i säljkurs på en post "
+                   "nedan, så börjar statistiken räknas.")
+        return
+
+    def _m(col, label, value, suffix="", fmt="{:.1f}"):
+        text = "–" if value is None else fmt.format(value) + suffix
+        col.metric(label, text)
+
+    c = st.columns(5)
+    _m(c[0], "Avslutade", stats["closed"], "", "{:.0f}")
+    _m(c[1], "Vinstandel", stats["win_rate"], " %")
+    _m(c[2], "Payoff", stats["payoff"], "", "{:.2f}")
+    _m(c[3], "Snitt-R", stats["avg_r"], "R", "{:.2f}")
+    _m(c[4], "Innehav", stats["avg_days"], " d", "{:.0f}")
+
+    if stats["win_rate"] is None:
+        st.caption("Vinstandel och payoff-kvot räknas i kronor och kräver "
+                   "antal aktier på posten. Fyll i det när du loggar, så "
+                   "börjar de räknas — R-multipeln fungerar redan utan.")
+    elif not stats["enough"]:
+        st.caption(f"Under {journal_stats.MIN_TRADES} avslutade affärer är "
+                   f"vinstandel och payoff-kvot brus. Siffrorna visas, men "
+                   f"dra inga slutsatser av dem än.")
+
+    closed = [r for r in rows if r.get("exit_price")]
+    _render_review_button(stats, closed)
+
+
+def _render_review_button(stats: dict, closed: list) -> None:
+    """AI-granskning av journalen. Knappstyrd, som allt annat som kostar."""
+    store = st.session_state.setdefault("copilot_review", {})
+    key = f"{stats['closed']}|{stats.get('win_rate')}|{stats.get('avg_r')}"
+
+    col_b, col_s = st.columns([1, 3])
+    with col_b:
+        asked = st.button("🔎 Granska journalen", key="copilot_review_btn",
+                          disabled=not openai_client.configured())
+    with col_s:
+        if not openai_client.configured():
+            st.caption("Kräver OPENAI_API_KEY i secrets.")
+        elif store.get("key") and store["key"] != key:
+            st.caption("Journalen har ändrats sedan granskningen nedan.")
+
+    if asked:
+        with st.spinner("Läser journalen…"):
+            try:
+                reply = openai_client.complete(
+                    copilot_prompt.REVIEW_SYSTEM,
+                    copilot_prompt.build_review_prompt(
+                        stats, list(reversed(closed))[:30],
+                        journal_stats.MIN_TRADES))
+            except openai_client.AIError as exc:
+                st.error(f"Ingen granskning: {exc}")
+                return
+            store.update({"key": key, "text": reply.text})
+
+    if store.get("text"):
+        st.markdown(store["text"])
+
+
 def _render_journal_history() -> None:
-    """Visa senaste journal-poster."""
+    """Posterna, med möjlighet att stänga en affär."""
     entries = _load_journal()
     if not entries:
         st.caption("Inga poster ännu.")
         return
 
-    recent = list(reversed(entries[-20:]))
-    for e in recent:
-        rr_val = abs(e.get("target", 0) - e.get("entry", 0)) / abs(
-            e.get("entry", 0) - e.get("stop", 1e-9) or 1e-9
-        ) if e.get("entry") else 0
-        st.markdown(
-            f'<div style="background:{_BG};border:1px solid {_BORDER};'
-            f'border-radius:6px;padding:10px 14px;margin-bottom:6px;'
-            f'display:flex;justify-content:space-between;align-items:center;">'
-            f'<span style="font-size:13px;font-weight:700;color:#E8EDF2;">'
-            f'{e.get("ticker","?")} '
-            f'<span style="font-size:11px;color:{_DIM};font-weight:400;">'
-            f'— {PLAYBOOKS.get(e.get("strategy",""), type("",(),{"name":e.get("strategy","")})()).name}'  # type: ignore[attr-defined]
-            f'</span></span>'
-            f'<span style="font-size:11px;color:{_DIM};">'
-            f'Entry {e.get("entry","—")} · Stop {e.get("stop","—")} · '
-            f'Target {e.get("target","—")} · R:R {rr_val:.1f}x'
-            f'</span>'
-            f'<span style="font-size:11px;color:{_DIM};">{e.get("date","")}</span>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
+    for idx in range(len(entries) - 1, max(len(entries) - 21, -1), -1):
+        e = entries[idx]
+        ratio = levels.rr(e.get("entry"), e.get("stop"), e.get("target"))
+        pb_name = PLAYBOOKS[e["strategy"]].name if e.get("strategy") in PLAYBOOKS \
+            else e.get("strategy", "")
+        closed = bool(e.get("exit_price"))
+        pnl = journal_stats.pnl_pct(e.get("entry"), e.get("exit_price"))
+        head = (f"{e.get('ticker', '?')} · {e.get('date', '')} · {pb_name}"
+                + (f" · {pnl:+.1f} %" if pnl is not None else " · öppen"))
+
+        with st.expander(head, expanded=False):
+            st.caption(f"Entry {e.get('entry', '—')} · Stop {e.get('stop', '—')} "
+                       f"· Target {e.get('target', '—')} · "
+                       f"R:R {ratio:.1f}x" if ratio is not None else
+                       f"Entry {e.get('entry', '—')} · Stop {e.get('stop', '—')}")
+            if e.get("note"):
+                st.caption(f"Anteckning: {e['note']}")
+
+            c1, c2, c3 = st.columns(3)
+            exit_price = c1.number_input(
+                "Säljkurs", min_value=0.0, step=0.5, format="%.2f",
+                value=float(e.get("exit_price") or 0.0),
+                key=f"cj_exit_{idx}")
+            exit_date = c2.date_input(
+                "Säljdatum", key=f"cj_date_{idx}",
+                value=datetime.date.fromisoformat(str(e["exit_date"])[:10])
+                if e.get("exit_date") else datetime.date.today())
+            sell_rule = c3.selectbox(
+                "Säljregel", [""] + list(journal_stats.SELL_RULES),
+                index=([""] + list(journal_stats.SELL_RULES)).index(
+                    e.get("sell_rule", "")) if e.get("sell_rule", "") in
+                journal_stats.SELL_RULES else 0,
+                format_func=lambda r: journal_stats.SELL_RULE_LABEL.get(r, "—"),
+                key=f"cj_rule_{idx}")
+
+            d1, d2, d3 = st.columns(3)
+            shares = d3.number_input(
+                "Antal aktier", min_value=0, step=1,
+                value=int(e.get("shares") or 0), key=f"cj_shares_{idx}",
+                help="Krävs för vinstandel och payoff-kvot.")
+            setup = d1.selectbox(
+                "Setup", [""] + list(journal_stats.SETUPS),
+                index=([""] + list(journal_stats.SETUPS)).index(e.get("setup", ""))
+                if e.get("setup", "") in journal_stats.SETUPS else 0,
+                format_func=lambda x: journal_stats.SETUP_LABEL.get(x, "—"),
+                key=f"cj_setup_{idx}")
+            followed = d2.selectbox(
+                "Följde du planen?", ["", "Ja", "Nej"],
+                index=["", "Ja", "Nej"].index(e.get("followed_plan", ""))
+                if e.get("followed_plan", "") in ("Ja", "Nej") else 0,
+                key=f"cj_plan_{idx}",
+                help="Den enda frågan som mäter dig och inte marknaden.")
+
+            new = {"exit_price": exit_price or None,
+                   "exit_date": str(exit_date) if exit_price else None,
+                   "sell_rule": sell_rule, "setup": setup,
+                   "followed_plan": followed, "shares": int(shares) or None}
+            if any(e.get(k) != v for k, v in new.items()):
+                e.update(new)
+                _save_journal(entries)
+
+            if closed:
+                r = journal_stats.r_multiple(e.get("entry"), e.get("stop"),
+                                             e.get("exit_price"))
+                st.caption(f"Resultat {pnl:+.1f} % · "
+                           + (f"{r:+.2f}R" if r is not None else "R saknas"))
+
+            if st.button("Ta bort posten", key=f"cj_del_{idx}"):
+                entries.pop(idx)
+                _save_journal(entries)
+                st.rerun()
 
 
 # ── Main render function ──────────────────────────────────────────────────────
 
+_APPLY_KEY = "copilot_apply"
+_PREFILL_KEY = "copilot_prefilled_for"
+
+
+def _queue_prices(**values) -> None:
+    """Lägg pris i väntkön och rita om.
+
+    Streamlit tillåter inte att ett widgetvärde sätts efter att widgeten
+    ritats i samma körning — därför går Använd-knapparna via en kö som töms
+    överst i nästa körning, innan fälten skapas.
+    """
+    pending = st.session_state.setdefault(_APPLY_KEY, {})
+    pending.update({k: v for k, v in values.items() if v is not None})
+    st.rerun()
+
+
+def _apply_queued_prices() -> None:
+    """Töm väntkön in i prisfälten. Körs FÖRE widgetarna ritas."""
+    pending = st.session_state.pop(_APPLY_KEY, None)
+    if not pending:
+        return
+    for name, value in pending.items():
+        st.session_state[f"copilot_{name}"] = round(float(value), 2)
+
+
 def render_copilot_page() -> None:
     """Entry point — anropas från wolf_panel.py."""
+    _apply_queued_prices()
     section_title("AI Trading Copilot", "🤖")
     st.markdown(
         f'<p style="color:{_DIM};font-size:0.82rem;margin:-8px 0 24px;">'
-        f'Kandidatanalys · Regelkontroll · Riskkontroll · Journal · Watchlist</p>',
+        f'Kandidatanalys · Regelkontroll · Riskkontroll · Journal</p>',
         unsafe_allow_html=True,
     )
+    _load_journal()
+    storage_ui.save_bar(STORE, "Copilot-journalen")
 
     # ── Inmatning ─────────────────────────────────────────────────────────────
     col_a, col_b = st.columns([2, 3])
@@ -708,8 +986,8 @@ def render_copilot_page() -> None:
         )
     with col_b:
         ticker = st.text_input(
-            "Ticker (yfinance-format, t.ex. ABB.ST, ERIC-B.ST)",
-            placeholder="t.ex. ABB.ST, ERIC-B.ST, TSLA",
+            "Ticker",
+            placeholder="t.ex. ERIC B, ABB, VOLV B",
             key="copilot_ticker",
         ).strip().upper()
 
@@ -724,58 +1002,17 @@ def render_copilot_page() -> None:
         unsafe_allow_html=True,
     )
 
-    if not ticker:
-        st.info("👆 Ange en ticker ovan för att starta analysen.", icon="ℹ️")
-        _render_watchlist()
-        return
-
-    # ── Nivå 1: Hämta live-data ───────────────────────────────────────────────
-    live: Optional[LiveData] = None
-    fetch_col, _ = st.columns([2, 5])
-    with fetch_col:
-        if st.button("🔄 Hämta live-data", key="fetch_live", type="primary"):
-            with st.spinner(f"Hämtar data för {ticker}…"):
-                live = _fetch_live_data(ticker)
-                st.session_state["copilot_live"] = live
-        elif "copilot_live" in st.session_state:
-            cached: LiveData = st.session_state["copilot_live"]
-            if cached.ticker == ticker:
-                live = cached
-
-    # Visa teknisk snapshot om live-data finns
-    if live:
-        if live.error:
-            st.warning(f"⚠️ Kunde inte hämta data: {live.error}")
-            live = None
-        else:
-            _render_tech_snapshot(live)
-
-    # ── Nivå 1: Prisdata med auto-fill ────────────────────────────────────────
+    # ── Prisdata ──────────────────────────────────────────────────────────────
     with st.expander("📐 Prisdata & R:R-beräkning", expanded=True):
-        # Auto-fill suggestions
-        default_entry  = live.close              if live and live.close else 0.0
-        default_stop   = live.suggested_stop     if live and live.suggested_stop else 0.0
-        default_target = live.suggested_target_2r if live and live.suggested_target_2r else 0.0
-
-        if live and live.close:
-            st.caption(
-                f"💡 Förslag (ATR-baserat): Entry ≈ {default_entry:.2f} · "
-                f"Stop ≈ {default_stop:.2f} · Target 2R ≈ {default_target:.2f} / "
-                f"3R ≈ {live.suggested_target_3r:.2f}"
-            )
-
         c1, c2, c3 = st.columns(3)
         with c1:
-            entry  = st.number_input("Entry-kurs", min_value=0.0,
-                                     value=float(default_entry),
-                                     step=0.5, format="%.2f", key="copilot_entry")
+            entry = st.number_input("Entry-kurs (kr)", min_value=0.0,
+                                    step=0.5, format="%.2f", key="copilot_entry")
         with c2:
-            stop   = st.number_input("Stop-kurs", min_value=0.0,
-                                     value=float(default_stop),
-                                     step=0.5, format="%.2f", key="copilot_stop")
+            stop = st.number_input("Stop-kurs (kr)", min_value=0.0,
+                                   step=0.5, format="%.2f", key="copilot_stop")
         with c3:
-            target = st.number_input("Target-kurs", min_value=0.0,
-                                     value=float(default_target),
+            target = st.number_input("Target-kurs (kr)", min_value=0.0,
                                      step=0.5, format="%.2f", key="copilot_target")
 
         if entry and stop and entry != stop:
@@ -811,12 +1048,52 @@ def render_copilot_page() -> None:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # ── Regelkontroll (Nivå 2) ─────────────────────────────────────────────────
+    # ── Regelkontroll ─────────────────────────────────────────────────────────
+    if not ticker:
+        st.info("👆 Ange en ticker ovan för att starta analysen.", icon="ℹ️")
+        return
+
     if not pb.entry:
         st.warning("Denna strategi har inga definierade entry-regler ännu.")
         return
 
-    results = _check_rules(pb, entry, stop, target, live)
+    snap, snap_error = market_data.try_snapshot(ticker)
+    _prefill_entry(ticker, snap, entry)
+    _render_market(snap, snap_error)
+    cyc_state, cyc_name = _render_cycle(ticker, strategy_key)
+    phase_state = _render_market_phase(ticker, strategy_key)
+    bspot = cycle.blindspot_latest(ticker)
+    _render_levels(entry, stop, target, snap, pb)
+
+    rev = _render_review(ticker, strategy_key)
+    swing_checks = _swing_rule_checks(ticker, strategy_key)
+
+    results = _check_rules(pb, entry, stop, target, snap, swing_checks)
+    if rev is not None:
+        # Granskningens utfall och kontroller som regelrader — arkets egen
+        # bedömning, läst, inte omräknad.
+        for status, label, note in reversed(rev["controls"]):
+            results.insert(0, RuleResult(0, f"Kontroll: {label}",
+                                         status, note,
+                                         hard=(status == "FAIL")))
+        results.insert(0, RuleResult(
+            0, f"Granskningen — {rev['sheet']}", rev["status"], rev["note"],
+            hard=(rev["status"] == "FAIL")))
+    if cycle.requires_cycle(strategy_key):
+        # Köpgrindens första fråga — mekanisk, ur rotationsfliken. Vila fäller
+        # kandidaten oavsett hur bra bolaget är: fel fas är fel fas.
+        gate_status, gate_note = cycle.gate_from_cycle(cyc_state, cyc_name)
+        results.insert(0, RuleResult(
+            0, "Cykelläge — rotationsflikens Triple Signal",
+            gate_status, gate_note, hard=True))
+    if cycle.requires_market_cycle(strategy_key):
+        # Contrarian och quality namnger sina faser i playbooken — grinden
+        # läser dem därifrån, så en ändrad playbook flyttar grinden med sig.
+        gate_status, gate_note = cycle.gate_from_market_phase(phase_state,
+                                                              strategy_key)
+        results.insert(0, RuleResult(
+            0, "Marknadscykelfasen — Market Cycle Engine",
+            gate_status, gate_note, hard=True))
     overall = _overall_status(results)
     overall_color = _status_to_color(overall)
 
@@ -836,11 +1113,11 @@ def render_copilot_page() -> None:
         f'</div>'
         f'<div style="margin-top:12px;display:flex;gap:24px;flex-wrap:wrap;">'
         f'<span style="font-size:12px;color:{_DIM};">Entry <b style="color:#E8EDF2;">'
-        f'{entry:.2f}</b></span>'
+        f'{entry:.2f} kr</b></span>'
         f'<span style="font-size:12px;color:{_DIM};">Stop <b style="color:{_RED};">'
-        f'{stop:.2f}</b></span>'
+        f'{stop:.2f} kr</b></span>'
         f'<span style="font-size:12px;color:{_DIM};">Target <b style="color:{_GREEN};">'
-        f'{target:.2f}</b></span>'
+        f'{target:.2f} kr</b></span>'
         f'<span style="font-size:12px;color:{_DIM};">Risk '
         f'<b style="color:{_AMBER};">{pb.risk.risk_per_trade}</b></span>'
         f'</div>'
@@ -850,10 +1127,9 @@ def render_copilot_page() -> None:
 
     # Regelrader
     section_title("Regelkontroll — Entry", "✅")
-    auto_note = " · Auto-kontrollerat med live-data" if live and live.close else ""
     st.markdown(
         f'<p style="font-size:11px;color:{_DIM};margin:-6px 0 10px;">'
-        f'🔒 = hård regel (aldrig bruten) · MANUAL = kräver kontroll i panelen{auto_note}</p>',
+        f'🔒 = hård regel (aldrig bruten) · MANUAL = kräver kontroll i panelen</p>',
         unsafe_allow_html=True,
     )
     for res in results:
@@ -871,23 +1147,10 @@ def render_copilot_page() -> None:
         unsafe_allow_html=True,
     )
 
-    # ── AI-kommentar (Nivå 3) ─────────────────────────────────────────────────
+    # ── AI-kommentar ──────────────────────────────────────────────────────────
     section_title("AI-kommentar", "💬")
-    with st.spinner("Hämtar AI-kommentar…"):
-        comment = _ai_comment(ticker, pb, results, entry, stop, target, live)
-    st.markdown(comment)
-
-    st.markdown("<hr style='border-color:rgba(255,255,255,0.06);margin:28px 0;'>",
-                unsafe_allow_html=True)
-
-    # ── Watchlist (Nivå 4) ────────────────────────────────────────────────────
-    wl_col1, wl_col2 = st.columns([3, 2])
-    with wl_col1:
-        if st.button(f"⭐ Lägg till {ticker} i watchlist", key="add_watchlist"):
-            _add_to_watchlist(ticker, strategy_key, entry, stop, target, overall, live)
-            st.success(f"✅ {ticker} tillagd i watchlistan!")
-
-    _render_watchlist()
+    _render_ai_section(ticker, strategy_key, pb, results, entry, stop, target,
+                       snap, cyc_state, bspot, rev, phase_state)
 
     st.markdown("<hr style='border-color:rgba(255,255,255,0.06);margin:28px 0;'>",
                 unsafe_allow_html=True)
@@ -895,56 +1158,9 @@ def render_copilot_page() -> None:
     # ── Journal ───────────────────────────────────────────────────────────────
     _render_journal_log(ticker, strategy_key, entry, stop, target)
 
+    section_title("Journalstatistik", "📊")
+    _render_journal_stats(_load_journal())
+
     with st.expander("📋 Senaste journal-poster", expanded=False):
         _render_journal_history()
-
-
-def _render_tech_snapshot(live: LiveData) -> None:
-    """Visa teknisk snapshot-panel med live-data."""
-    trend_color = {"Bullish": _GREEN, "Bearish": _RED, "Neutral": _AMBER}.get(
-        live.trend_state, _DIM)
-    adx_color = _GREEN if live.adx >= 25 else (_AMBER if live.adx >= 18 else _RED)
-    rsi_color = (_RED if live.ob_os_flag == "Overbought"
-                 else (_GREEN if live.ob_os_flag == "Oversold" else _AMBER))
-    vol_color = _GREEN if live.volume_ratio >= 1.2 else (_AMBER if live.volume_ratio >= 0.8 else _RED)
-
-    bull_str = " · ".join(live.bullish_patterns[:2]) if live.bullish_patterns else "—"
-    bear_str = " · ".join(live.bearish_patterns[:1]) if live.bearish_patterns else "—"
-
-    st.markdown(
-        f'<div style="background:{_BG};border:1px solid {_BORDER};border-radius:8px;'
-        f'padding:12px 16px;margin:8px 0 16px;">'
-        f'<div style="font-size:11px;font-weight:700;color:{_DIM};'
-        f'letter-spacing:1px;margin-bottom:8px;">📡 TEKNISK SNAPSHOT — {live.ticker}</div>'
-        f'<div style="display:flex;flex-wrap:wrap;gap:16px;">'
-        # Pris
-        f'<div><div style="font-size:18px;font-weight:800;color:#E8EDF2;">{live.close:.2f}</div>'
-        f'<div style="font-size:10px;color:{_DIM};">Aktuellt pris</div></div>'
-        # Trend
-        f'<div><div style="font-size:14px;font-weight:700;color:{trend_color};">{live.trend_state}</div>'
-        f'<div style="font-size:10px;color:{_DIM};">Trend · EMA200={live.ema200:.2f}</div></div>'
-        # EMA
-        f'<div><div style="font-size:12px;color:#E8EDF2;">EMA20={live.ema20:.2f} · EMA50={live.ema50:.2f}</div>'
-        f'<div style="font-size:10px;color:{_DIM};">EMA-nivåer</div></div>'
-        # ADX
-        f'<div><div style="font-size:14px;font-weight:700;color:{adx_color};">{live.adx:.1f}</div>'
-        f'<div style="font-size:10px;color:{_DIM};">ADX ({'aktiv' if live.adx >= 25 else 'konsolid.'})</div></div>'
-        # RSI
-        f'<div><div style="font-size:14px;font-weight:700;color:{rsi_color};">{live.rsi:.0f}</div>'
-        f'<div style="font-size:10px;color:{_DIM};">RSI · {live.ob_os_flag}</div></div>'
-        # Volym
-        f'<div><div style="font-size:14px;font-weight:700;color:{vol_color};">{live.volume_ratio:.1f}×</div>'
-        f'<div style="font-size:10px;color:{_DIM};">Volym vs snitt ({live.volume_trend})</div></div>'
-        # ATR
-        f'<div><div style="font-size:12px;color:#E8EDF2;">{live.atr14:.2f}</div>'
-        f'<div style="font-size:10px;color:{_DIM};">ATR(14)</div></div>'
-        f'</div>'
-        # Candlestick patterns
-        f'<div style="margin-top:8px;font-size:11px;">'
-        f'<span style="color:{_GREEN};">🕯️ Bullish: {bull_str}</span>'
-        f'&nbsp;&nbsp;'
-        f'<span style="color:{_RED};">⚠️ Bearish: {bear_str}</span>'
-        f'</div>'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
+    storage_ui.footer()

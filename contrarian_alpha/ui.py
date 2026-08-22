@@ -376,12 +376,26 @@ def _render_control_panel() -> tuple[dict, bool]:
     if market == "Custom":
         with c3:
             raw = st.text_area(
-                "Tickers (kommaseparerade)",
+                "Tickers (komma, mellanslag eller radbrytning)",
                 height=68,
                 key="ca_custom_tickers",
-                placeholder="FCX, NEM, UUUU, ...",
+                placeholder="FCX NEM UUUU  eller  BOL, SSAB B, EQNR",
+                help=(
+                    "Nordiska tickers slås upp mot Börsdata automatiskt — "
+                    "BOL hittar Boliden med fundamenta, inget .ST behövs. "
+                    "Tickers med mellanslag (SSAB B) skrivs med komma mellan "
+                    "bolagen."
+                ),
             )
-            custom_tickers = [t.strip().upper() for t in raw.split(",") if t.strip()]
+            # Kommatecken är avgränsare om de finns (skyddar "SSAB B");
+            # annars duger mellanslag/radbrytningar — "FCX NEM UUUU" ska
+            # bli tre sökningar, inte en obegriplig (gamla buggen).
+            import re as _re
+            if "," in raw:
+                parts = raw.split(",")
+            else:
+                parts = _re.split(r"[\s]+", raw)
+            custom_tickers = [t.strip().upper() for t in parts if t.strip()]
 
     with c4:
         top_n = st.slider("Visa topp-N", 5, 50, 20, key="ca_top_n")
@@ -506,12 +520,25 @@ def _get_or_run_pipeline(config_kwargs: dict, run_now: bool):
                             if k in PipelineConfig.__dataclass_fields__})
 
     label = "🌅 Morgonscan 07:30…" if auto_scan else "🔍 Scannar universum…"
-    with st.spinner(label):
+    # Riktig progress i stället för en stum spinner — långa scanningar såg
+    # frusna ut. Motorn rapporterar två faser: prishämtning och analys.
+    _bar = st.progress(0.0, text=label)
+
+    def _progress(done: int, total: int, what: str) -> None:
         try:
-            result = run_pipeline(cfg)
-        except Exception as e:
-            st.error(f"Pipeline-fel: {e}")
-            return None
+            frac = min(1.0, done / total) if total else 0.0
+            _bar.progress(frac, text=f"{label}  {what}")
+        except Exception:
+            pass
+
+    cfg.progress_cb = _progress
+    try:
+        result = run_pipeline(cfg)
+    except Exception as e:
+        _bar.empty()
+        st.error(f"Pipeline-fel: {e}")
+        return None
+    _bar.empty()
 
     attach_flags(result.results)
     st.session_state[cache_key] = result

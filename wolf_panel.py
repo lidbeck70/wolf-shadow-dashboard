@@ -266,7 +266,7 @@ def _render_copilot_stub() -> None:
     """Placeholder for the AI Trading Copilot tab."""
     from ui.theme import section_title, PALETTE as _P
 
-    _DIM  = _P["text_dim"]
+    _DIM = _P["text_dim"]
     _CYAN = _P["gold"]
 
     section_title("AI Trading Copilot", "🤖")
@@ -277,12 +277,12 @@ def _render_copilot_stub() -> None:
     )
 
     _coming_soon_items = [
-        ("🔍 Kandidatupptäckt",     "Screena och ranka kandidater baserat på regim + regler."),
-        ("✅ Regelkontroll",         "Deterministisk kontroll — PASS / WATCH / REJECT per kandidat."),
-        ("💬 AI-kommentarer",        "GPT-analys med klartext-motivering per kandidat."),
-        ("🛡 Riskgating",            "Stopp om regim är röd, R:R < 1:2 eller max förluster nåtts."),
-        ("📓 Trade Journal AI",      "Post-trade review med AI — följde du planen?"),
-        ("📅 Veckosetup Review",     "Strukturerad veckorutin med aktiva kandidater och regimstatus."),
+        ("🔍 Kandidatupptäckt", "Screena och ranka kandidater baserat på regim + regler."),
+        ("✅ Regelkontroll", "Deterministisk kontroll — PASS / WATCH / REJECT per kandidat."),
+        ("💬 AI-kommentarer", "GPT-analys med klartext-motivering per kandidat."),
+        ("🛡 Riskgating", "Stopp om regim är röd, R:R < 1:2 eller max förluster nåtts."),
+        ("📓 Trade Journal AI", "Post-trade review med AI — följde du planen?"),
+        ("📅 Veckosetup Review", "Strukturerad veckorutin med aktiva kandidater och regimstatus."),
     ]
 
     cols = st.columns(2)
@@ -348,14 +348,14 @@ def main():
         sub = st.radio(
             "",
             ["Arc Screener", "Contrarian Alpha", "Market Cycle",
-                 "Swing Screener"],
+             "Swing Screener"],
             label_visibility="collapsed", horizontal=True, key="sub_screening",
         )
         st.markdown("---")
         if sub == "Arc Screener":
             inner = st.radio(
                 "",
-            ["Wolf", "Viking", "🔥 EMBER"],
+                ["Wolf", "Viking", "🔥 EMBER"],
                 label_visibility="collapsed", horizontal=True, key="sub_screening_arc",
             )
             if inner == "Wolf":
@@ -374,7 +374,7 @@ def main():
         elif sub == "Contrarian Alpha":
             inner = st.radio(
                 "",
-            ["Contrarian Alpha", "Long Screener"],
+                ["Contrarian Alpha", "Long Screener"],
                 label_visibility="collapsed", horizontal=True, key="sub_screening_contrarian",
             )
             if inner == "Contrarian Alpha":
@@ -407,7 +407,7 @@ def main():
         sub = st.radio(
             "",
             ["Rick Rule", "Royalty C", "Poängmodell", "Tiggre", "Insider",
-                 "🎯 Scorecard"],
+             "🎯 Scorecard"],
             label_visibility="collapsed", horizontal=True, key="sub_review",
         )
         st.markdown("---")
@@ -446,7 +446,7 @@ def main():
         sub = st.radio(
             "",
             ["Arc Regime", "Alpha Regime", "Flow Divergence", "Swing Regime",
-                 "Råvarurotation"],
+             "Råvarurotation"],
             label_visibility="collapsed", horizontal=True, key="sub_regime",
         )
         st.markdown("---")
@@ -463,7 +463,7 @@ def main():
         elif sub == "Arc Regime":
             inner = st.radio(
                 "",
-            ["Wolf Regime", "Viking Regime", "🌍 EMBER Regime"],
+                ["Wolf Regime", "Viking Regime", "🌍 EMBER Regime"],
                 label_visibility="collapsed", horizontal=True, key="sub_regime_arc",
             )
             if inner == "Wolf Regime":
@@ -492,7 +492,7 @@ def main():
         elif sub == "Alpha Regime":
             inner = st.radio(
                 "",
-            ["Quality & Contrarian", "Long Trend"],
+                ["Quality & Contrarian", "Long Trend"],
                 label_visibility="collapsed", horizontal=True, key="sub_regime_alpha",
             )
             if inner == "Quality & Contrarian":
