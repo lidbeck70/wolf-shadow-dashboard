@@ -91,7 +91,8 @@ def _themes(skip: bool) -> list:
         return []
     try:
         from blindspot.theme_board import build_theme_board
-        return [{"name": t.name, "cykel_label": t.cykel_label,
+        # ThemeResult har label/key — inget name-fält (testet låser detta).
+        return [{"name": t.label or t.key, "cykel_label": t.cykel_label,
                  "blindspot_score": t.blindspot_score,
                  "hat_score": t.hat_score}
                 for t in build_theme_board()]

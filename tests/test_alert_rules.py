@@ -259,3 +259,21 @@ def test_email_failures_explain_themselves(monkeypatch):
     monkeypatch.delenv("SMTP_HOST", raising=False)
     assert email.send("test") is False
     assert "SMTP_HOST" in email.last_error
+
+
+def test_theme_board_mapping_uses_real_dataclass_fields(monkeypatch):
+    """Första skarpa körningen kraschade på t.name — ThemeResult har
+    label/key. Mappa genom den RIKTIGA dataklassen så attributdrift
+    fångas här och inte i Actions-loggen."""
+    from blindspot.theme_board import ThemeResult
+    import alert_scan
+
+    themes = [ThemeResult(key="uran", label="Uran", necessity=5,
+                          cykel_label="TIDIG", blindspot_score=42.0,
+                          hat_score=71.0)]
+    monkeypatch.setattr("blindspot.theme_board.build_theme_board",
+                        lambda: themes)
+    out = alert_scan._themes(skip=False)
+    assert out == [{"name": "Uran", "cykel_label": "TIDIG",
+                    "blindspot_score": 42.0, "hat_score": 71.0}]
+    assert alert_scan._themes(skip=True) == []
