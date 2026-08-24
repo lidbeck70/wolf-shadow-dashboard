@@ -1173,7 +1173,10 @@ try:
                 mid = row.get("marketId", 1)
                 if t:
                     suffix = _MARKET_SUFFIX.get(mid, ".ST")
-                    tickers.append(f"{t}{suffix}")
+                    # yfinance-form: Börsdatas "SKF A" ska bli "SKF-A.ST" —
+                    # med mellanslaget kvar failar nedladdningen och alla
+                    # A/B-aktier faller tyst ur Viking-universumet.
+                    tickers.append(f"{str(t).replace(' ', '-')}{suffix}")
             return sorted(set(tickers))
         except Exception as exc:
             logger.warning("_get_nordic_tickers failed: %s", exc)

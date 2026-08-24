@@ -191,3 +191,21 @@ def test_short_positions_parsing(monkeypatch):
                  {"insId": 11, "positions": []}]})
     out = api.get_short_positions()
     assert out == {5: 1.8, 9: 2.5}
+
+
+def test_nordic_tickers_are_yfinance_form(monkeypatch):
+    """Vikings universum byggs av _get_nordic_tickers — Börsdatas "SKF A"
+    måste bli "SKF-A.ST", annars failar yfinance-nedladdningen tyst och
+    alla A/B-aktier faller ur scanningen (12:00-körningen gav 7 rader)."""
+    import pandas as pd
+    import borsdata_api as bd
+
+    fake = pd.DataFrame([
+        {"ticker": "SKF A", "marketId": 1},
+        {"ticker": "BOL", "marketId": 1},
+        {"ticker": "EQNR", "marketId": 4},
+    ])
+    monkeypatch.setattr(bd, "get_all_instruments", lambda: fake)
+    out = bd._get_nordic_tickers()
+    assert "SKF-A.ST" in out and "BOL.ST" in out and "EQNR.OL" in out
+    assert not any(" " in t for t in out)
