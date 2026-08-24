@@ -1,4 +1,7 @@
 {
   "swing": {"enabled": true, "channels": ["discord"]},
-  "blindspot": {"enabled": true, "channels": ["discord"]}
+  "blindspot": {"enabled": true, "channels": ["discord"]},
+  "ember": {"enabled": true, "channels": ["discord"]},
+  "wolf": {"enabled": true, "channels": ["discord"], "min_score": 80},
+  "viking": {"enabled": true, "channels": ["discord"], "min_nine": 8}
 }

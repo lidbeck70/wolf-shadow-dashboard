@@ -383,33 +383,52 @@ def _render_scheduled_settings(send_fn) -> None:
     import storage
     import storage_ui
 
-    data = storage.session_load("alerts", {
-        "swing": {"enabled": True, "channels": ["discord"]},
+    _LEG_DEFAULTS = {
+        "swing":     {"enabled": True, "channels": ["discord"]},
         "blindspot": {"enabled": True, "channels": ["discord"]},
-    })
+        "ember":     {"enabled": True, "channels": ["discord"]},
+        "wolf":      {"enabled": True, "channels": ["discord"],
+                      "min_score": 80},
+        "viking":    {"enabled": True, "channels": ["discord"],
+                      "min_nine": 8},
+    }
+    data = storage.session_load("alerts", {k: dict(v)
+                                           for k, v in _LEG_DEFAULTS.items()})
     if not isinstance(data, dict):
-        data = {"swing": {}, "blindspot": {}}
+        data = {}
         st.session_state["alerts"] = data
-    data.setdefault("swing", {"enabled": True, "channels": ["discord"]})
-    data.setdefault("blindspot", {"enabled": True, "channels": ["discord"]})
+    for key, default in _LEG_DEFAULTS.items():
+        data.setdefault(key, dict(default))
 
     storage_ui.save_bar("alerts", "Schemalagda larm")
     st.markdown(
         f'<p style="color:{_DIM};font-size:0.8rem;">Utvärderas av GitHub '
-        f'Actions vardagar ~06/08/12/18 (Stockholm) — även när panelen är '
+        f'Actions vardagar ~08/12/18 svensk tid — även när panelen är '
         f'stängd. Bara ÖVERGÅNGAR larmar: ett regimskifte, en ny kandidat, '
-        f'ett tema som går in i tidig cykel. Lägen upprepas inte.</p>',
+        f'en ticker som når en ribba, ett tema som går in i tidig cykel. '
+        f'Lägen upprepas inte.</p>',
         unsafe_allow_html=True)
 
     all_channels = ["discord", "email", "webhook"]
-    for key, label, desc in (
+    for key, label, desc, threshold in (
             ("swing", "Swing (Momentum)",
              "Regimskiften GRÖN/GUL/RÖD · nya setup-kandidater i topp 20 · "
              "säljsignaler på dina innehav (rank-exit, −10 %, MA50, "
-             "+20 % delvinst)."),
+             "+20 % delvinst).", None),
             ("blindspot", "Odins Blindspot",
              "Ett råvarutema som går in i TIDIG cykel — 10-årspercentil ≤ 30, "
-             "temakartans egen definition.")):
+             "temakartans egen definition.", None),
+            ("ember", "🔥 EMBER",
+             "En ticker som klarar alla tre grindarna (trend + entry + "
+             "no-trade) — larmet bär entry, stopp, mål och R:R.", None),
+            ("wolf", "Wolf (Arc 4-lager)",
+             "En ticker som NYTT når regimscore-ribban (av 125) i Norden-"
+             "scanningen — Market · Sector · Stock · Ichimoku.",
+             ("min_score", "Larmribba (score)", 50, 125, 80)),
+            ("viking", "Viking (OVTLYR)",
+             "En ticker som NYTT når Vikings Nine-ribban OCH klarar absoluta "
+             "grinden (pris > EMA200, ADX ≥ 20).",
+             ("min_nine", "Larmribba (Nine av 9)", 5, 9, 8))):
         cfg = data[key]
         c1, c2 = st.columns([1, 2])
         enabled = c1.toggle(label, value=bool(cfg.get("enabled", True)),
@@ -422,6 +441,14 @@ def _render_scheduled_settings(send_fn) -> None:
         if (enabled != bool(cfg.get("enabled", True))
                 or channels != cfg.get("channels", ["discord"])):
             cfg["enabled"], cfg["channels"] = enabled, channels
+        if threshold is not None:
+            t_key, t_label, t_min, t_max, t_default = threshold
+            value = c1.number_input(
+                t_label, min_value=t_min, max_value=t_max,
+                value=int(cfg.get(t_key) or t_default), step=1,
+                key=f"sched_{key}_{t_key}")
+            if value != cfg.get(t_key):
+                cfg[t_key] = int(value)
         st.caption(desc)
         if enabled and not channels:
             st.warning("Inga kanaler valda — larmen kommer att hoppas över.",

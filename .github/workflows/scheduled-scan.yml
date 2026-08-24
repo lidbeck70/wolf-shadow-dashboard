@@ -41,8 +41,18 @@ jobs:
           EMBER_GIST_ID: ${{ secrets.EMBER_GIST_ID }}
         run: python scheduled_scan.py
 
-      # Schemalagda larm — swing-övergångar plus Blindspots temakarta
-      # (tidig cykel). Bara övergångar larmar; tillståndet ligger i Gisten.
+      # Arc-screenerna Wolf + Viking headless med fasta inställningar —
+      # resultatet till Gisten så larmsteget (och panelen) kan läsa det.
+      - name: Arc screeners (Wolf + Viking)
+        if: always()
+        env:
+          BORSDATA_API_KEY: ${{ secrets.BORSDATA_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+        run: python arc_scan.py
+
+      # Schemalagda larm — swing-övergångar, Blindspots temakarta (tidig
+      # cykel), EMBER eligible och Wolf/Viking-ribborna. Bara övergångar
+      # larmar; tillståndet ligger i Gisten.
       - name: Alert scan
         if: always()
         env:
@@ -54,4 +64,5 @@ jobs:
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
           GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
           ALERT_REPO_TOKEN: ${{ secrets.ALERT_REPO_TOKEN }}
+          EMBER_GIST_ID: ${{ secrets.EMBER_GIST_ID }}
         run: python alert_scan.py
