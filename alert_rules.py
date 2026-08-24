@@ -158,34 +158,201 @@ def blindspot_alerts(themes: list, prev: Optional[dict]) -> tuple:
     return alerts, {"themes": labels}
 
 
+# ── EMBER ────────────────────────────────────────────────────────────────────
+def ember_alerts(ember_data: Optional[dict], prev: Optional[dict]) -> tuple:
+    """(larm, nytt tillstånd) för EMBER-screenern.
+
+    ember_data är ember.cache.load_ember_results(): {"timestamp", "eligible",
+    "near_misses"}. timestamp None betyder att källan inte gick att läsa —
+    då behålls förra baslinjen orörd, annars skulle nästa lyckade läsning
+    "återupptäcka" hela listan och larma om allt igen.
+
+    Larmet gäller ÖVERGÅNGEN in i eligible (alla tre grindarna passerade) —
+    och kroppen bär hela setupen: entry, stopp, mål och R:R, för det är
+    exakt det EMBER redan räknat ut.
+    """
+    if not isinstance(ember_data, dict) or ember_data.get("timestamp") is None:
+        return [], (prev if isinstance(prev, dict) else {"eligible": {}})
+
+    eligible = {}
+    for row in ember_data.get("eligible", []) or []:
+        if not isinstance(row, dict):
+            continue
+        ticker = str(row.get("ticker", "")).strip()
+        if not ticker:
+            continue
+        eligible[ticker.upper()] = {
+            "entry": row.get("entry"), "stop": row.get("stop"),
+            "t1": row.get("t1"), "rr": row.get("rr"),
+            "cykel": row.get("cykel_label", ""),
+            "quality": row.get("setup_quality"),
+        }
+
+    state = {"eligible": eligible}
+    if prev is None:
+        return [], state
+
+    alerts = []
+    prev_eligible = set((prev or {}).get("eligible", {}) or {})
+    for ticker, d in eligible.items():
+        if ticker in prev_eligible:
+            continue
+
+        def _n(v):
+            return f"{v:.2f}" if isinstance(v, (int, float)) else "–"
+        alerts.append(_alert(
+            "ember_eligible",
+            f"🔥 EMBER: {ticker} klarade alla grindar",
+            f"Entry {_n(d['entry'])} · stopp {_n(d['stop'])} · mål "
+            f"{_n(d['t1'])} · R:R {_n(d['rr'])}"
+            f"{' · cykel ' + d['cykel'] if d['cykel'] else ''}. "
+            f"Setupen i sin helhet finns i EMBER-fliken."))
+    return alerts, state
+
+
+# ── Wolf (Arc, 4-lagers regimscore) ──────────────────────────────────────────
+WOLF_MIN_SCORE = 80.0    # av 125 — flikens default är 50, larmribban är högre
+VIKING_MIN_NINE = 8      # av 9 — fullträff 9/9 är sällsynt, 8+ fångar det viktiga
+
+
+def wolf_alerts(wolf_data: Optional[dict], prev: Optional[dict],
+                min_score: float = WOLF_MIN_SCORE) -> tuple:
+    """(larm, nytt tillstånd). Larm när en ticker NYTT når regimscore-ribban.
+
+    wolf_data: {"generated", "rows": [{"ticker","name","score"}]} från
+    arc_scan.py. None (källan oläsbar/aldrig körd) → behåll förra baslinjen.
+    Tillståndet sparar ALLA tickers över ribban, så en ribbändring i
+    inställningarna inte retro-larmar om gamla kvalificerade.
+    """
+    if not isinstance(wolf_data, dict):
+        return [], (prev if isinstance(prev, dict) else {"qualified": {}})
+
+    qualified = {}
+    for row in wolf_data.get("rows", []) or []:
+        if not isinstance(row, dict):
+            continue
+        score = row.get("score")
+        ticker = str(row.get("ticker", "")).strip().upper()
+        if not ticker or not isinstance(score, (int, float)):
+            continue
+        if float(score) >= float(min_score):
+            qualified[ticker] = {"score": round(float(score), 1),
+                                 "name": str(row.get("name", ""))}
+
+    state = {"qualified": qualified}
+    if prev is None:
+        return [], state
+
+    alerts = []
+    prev_q = set((prev or {}).get("qualified", {}) or {})
+    for ticker, d in qualified.items():
+        if ticker in prev_q:
+            continue
+        alerts.append(_alert(
+            "wolf_score",
+            f"🐺 Wolf-screenern: {ticker} nådde {d['score']:g}/125",
+            f"{d['name'] or ticker} klev över larmribban {min_score:g} i "
+            f"4-lagersscoren (Market · Sector · Stock · Ichimoku). "
+            f"Detaljer i SCREENING → Arc Screener → Wolf."))
+    return alerts, state
+
+
+def viking_alerts(viking_data: Optional[dict], prev: Optional[dict],
+                  min_nine: int = VIKING_MIN_NINE) -> tuple:
+    """(larm, nytt tillstånd). Larm när en ticker NYTT når Vikings Nine-ribban
+    OCH klarar den absoluta grinden (pris > EMA200, ADX >= 20) — utan den är
+    en hög Nine bara "bäst i en svag skara".
+    """
+    if not isinstance(viking_data, dict):
+        return [], (prev if isinstance(prev, dict) else {"qualified": {}})
+
+    qualified = {}
+    for row in viking_data.get("rows", []) or []:
+        if not isinstance(row, dict):
+            continue
+        ticker = str(row.get("ticker", "")).strip().upper()
+        nine = row.get("v9")
+        if not ticker or not isinstance(nine, (int, float)):
+            continue
+        if int(nine) >= int(min_nine) and row.get("eligible"):
+            qualified[ticker] = {"v9": int(nine),
+                                 "name": str(row.get("name", "")),
+                                 "signal": str(row.get("signal", ""))}
+
+    state = {"qualified": qualified}
+    if prev is None:
+        return [], state
+
+    alerts = []
+    prev_q = set((prev or {}).get("qualified", {}) or {})
+    for ticker, d in qualified.items():
+        if ticker in prev_q:
+            continue
+        extra = f" · signal {d['signal']}" if d["signal"] else ""
+        alerts.append(_alert(
+            "viking_nine",
+            f"⚔️ Viking: {ticker} på {d['v9']}/9",
+            f"{d['name'] or ticker} nådde Vikings Nine {d['v9']}/9 och "
+            f"klarar den absoluta grinden (pris > EMA200, ADX ≥ 20){extra}. "
+            f"Detaljer i SCREENING → Arc Screener → Viking."))
+    return alerts, state
+
+
 # ── Sammanvägningen ──────────────────────────────────────────────────────────
 def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
              themes: list, prev_state: Optional[dict],
-             settings: Optional[dict] = None) -> tuple:
+             settings: Optional[dict] = None,
+             ember_data: Optional[dict] = None,
+             wolf_data: Optional[dict] = None,
+             viking_data: Optional[dict] = None) -> tuple:
     """(larm-med-kanaler, nytt tillstånd) för hela körningen.
 
     settings: data/alerts.json — {"swing": {"enabled", "channels"},
-    "blindspot": {...}}. Saknas den gäller påslaget med Discord: hellre ett
+    "blindspot"/"ember"/"wolf"/"viking": {...}; wolf har även "min_score",
+    viking "min_nine"}. Saknas den gäller påslaget med Discord: hellre ett
     larm i en kanal som inte finns (loggas och hoppas över) än ett system som
     är tyst för att ingen sparat en inställningsfil.
+
+    ember/wolf/viking-källorna är None när de inte gick att läsa (eller
+    aldrig körts) — respektive ben behåller då sin gamla baslinje orörd.
+    Avstängda ben räknar ändå sitt tillstånd, så en återaktivering inte
+    exploderar i retro-larm.
     """
     cfg = settings or {}
-    swing_cfg = cfg.get("swing") or {}
-    blind_cfg = cfg.get("blindspot") or {}
     prev = prev_state if isinstance(prev_state, dict) and prev_state else None
 
+    def _prev(leg):
+        return (prev or {}).get(leg) if prev else None
+
+    def _route(leg, alerts):
+        leg_cfg = cfg.get(leg) or {}
+        if not leg_cfg.get("enabled", True):
+            return []
+        channels = leg_cfg.get("channels") or ["discord"]
+        return [{**a, "channels": channels} for a in alerts]
+
     out = []
-    s_alerts, s_state = swing_alerts(
-        regime_data, screener_data, swing_data,
-        (prev or {}).get("swing") if prev else None)
-    if swing_cfg.get("enabled", True):
-        channels = swing_cfg.get("channels") or ["discord"]
-        out += [{**a, "channels": channels} for a in s_alerts]
+    s_alerts, s_state = swing_alerts(regime_data, screener_data, swing_data,
+                                     _prev("swing"))
+    out += _route("swing", s_alerts)
 
-    b_alerts, b_state = blindspot_alerts(
-        themes, (prev or {}).get("blindspot") if prev else None)
-    if blind_cfg.get("enabled", True):
-        channels = blind_cfg.get("channels") or ["discord"]
-        out += [{**a, "channels": channels} for a in b_alerts]
+    b_alerts, b_state = blindspot_alerts(themes, _prev("blindspot"))
+    out += _route("blindspot", b_alerts)
 
-    return out, {"swing": s_state, "blindspot": b_state}
+    e_alerts, e_state = ember_alerts(ember_data, _prev("ember"))
+    out += _route("ember", e_alerts)
+
+    wolf_cfg = cfg.get("wolf") or {}
+    w_alerts, w_state = wolf_alerts(
+        wolf_data, _prev("wolf"),
+        min_score=float(wolf_cfg.get("min_score") or WOLF_MIN_SCORE))
+    out += _route("wolf", w_alerts)
+
+    viking_cfg = cfg.get("viking") or {}
+    v_alerts, v_state = viking_alerts(
+        viking_data, _prev("viking"),
+        min_nine=int(viking_cfg.get("min_nine") or VIKING_MIN_NINE))
+    out += _route("viking", v_alerts)
+
+    return out, {"swing": s_state, "blindspot": b_state, "ember": e_state,
+                 "wolf": w_state, "viking": v_state}

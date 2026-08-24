@@ -277,3 +277,95 @@ def test_theme_board_mapping_uses_real_dataclass_fields(monkeypatch):
     assert out == [{"name": "Uran", "cykel_label": "TIDIG",
                     "blindspot_score": 42.0, "hat_score": 71.0}]
     assert alert_scan._themes(skip=True) == []
+
+
+# ── EMBER-benet ──────────────────────────────────────────────────────────────
+def _ember(*tickers, ts="2026-08-24T08:00"):
+    return {"timestamp": ts,
+            "eligible": [{"ticker": t, "entry": 10.0, "stop": 9.0,
+                          "t1": 13.0, "rr": 3.0, "cykel_label": "TIDIG",
+                          "setup_quality": "A"} for t in tickers],
+            "near_misses": []}
+
+
+def test_ember_alerts_on_entering_eligible_once():
+    _a, state = ar.ember_alerts(_ember("FCX"), None)
+    assert _a == []                                   # baslinje tyst
+    alerts, state = ar.ember_alerts(_ember("FCX", "UUUU"), state)
+    assert len(alerts) == 1 and "UUUU" in alerts[0]["title"]
+    assert "R:R 3.00" in alerts[0]["body"]
+    alerts, _s = ar.ember_alerts(_ember("FCX", "UUUU"), state)
+    assert alerts == []                               # oförändrat tyst
+
+
+def test_ember_unreadable_source_preserves_baseline():
+    """timestamp None = källan gick inte att läsa — baslinjen får inte
+    nollas, annars 'återupptäcks' hela listan nästa lyckade läsning."""
+    _a, state = ar.ember_alerts(_ember("FCX"), None)
+    _a2, kept = ar.ember_alerts({"timestamp": None, "eligible": []}, state)
+    assert kept == state
+    alerts, _s = ar.ember_alerts(_ember("FCX"), kept)
+    assert alerts == []                               # FCX larmar INTE igen
+
+
+# ── Wolf- och Viking-benen ───────────────────────────────────────────────────
+def _wolf(*rows):
+    return {"generated": "2026-08-24T08:00",
+            "rows": [{"ticker": t, "name": t, "score": s} for t, s in rows]}
+
+
+def _viking(*rows):
+    return {"generated": "2026-08-24T08:00",
+            "rows": [{"ticker": t, "name": t, "v9": v, "eligible": e,
+                      "signal": "BUY", "composite": 1.0}
+                     for t, v, e in rows]}
+
+
+def test_wolf_alerts_when_a_ticker_newly_crosses_the_bar():
+    _a, state = ar.wolf_alerts(_wolf(("BOL", 85.0)), None)
+    assert _a == []
+    alerts, state = ar.wolf_alerts(_wolf(("BOL", 88.0), ("SSAB", 81.0)), state)
+    assert len(alerts) == 1 and "SSAB" in alerts[0]["title"]
+    assert "81/125" in alerts[0]["title"]
+    # under ribban räknas inte
+    alerts, _s = ar.wolf_alerts(_wolf(("BOL", 85.0), ("EQNR", 79.9)), state)
+    assert alerts == []
+
+
+def test_wolf_unreadable_source_preserves_baseline():
+    _a, state = ar.wolf_alerts(_wolf(("BOL", 85.0)), None)
+    _a2, kept = ar.wolf_alerts(None, state)
+    assert kept == state
+
+
+def test_viking_requires_both_nine_and_absolute_gate():
+    _a, state = ar.viking_alerts(_viking(), None)
+    high_not_eligible = _viking(("ANOT", 9, False))
+    alerts, state = ar.viking_alerts(high_not_eligible, state)
+    assert alerts == []                               # 9/9 men under EMA200
+    alerts, state = ar.viking_alerts(_viking(("ANOT", 8, True)), state)
+    assert len(alerts) == 1 and "8/9" in alerts[0]["title"]
+    alerts, _s = ar.viking_alerts(_viking(("ANOT", 9, True)), state)
+    assert alerts == []                               # redan kvalificerad
+
+
+def test_evaluate_routes_the_new_legs_and_reads_thresholds():
+    _a, state = ar.evaluate(_regime(), _screener(), _swing(), [], None, {})
+    settings = {"wolf": {"enabled": True, "channels": ["email"],
+                         "min_score": 100},
+                "viking": {"enabled": False},
+                "ember": {"enabled": True, "channels": ["discord"]}}
+    alerts, state2 = ar.evaluate(
+        _regime(), _screener(), _swing(), [], state, settings,
+        ember_data=_ember("FCX"),
+        wolf_data=_wolf(("BOL", 99.0), ("SSAB", 101.0)),
+        viking_data=_viking(("ANOT", 9, True)))
+    kinds = {a["kind"]: a for a in alerts}
+    # wolf: bara SSAB över den höjda ribban 100, till email
+    assert "SSAB" in kinds["wolf_score"]["title"]
+    assert kinds["wolf_score"]["channels"] == ["email"]
+    # viking avstängd: inget larm — men baslinjen räknad ändå
+    assert "viking_nine" not in kinds
+    assert "ANOT" in state2["viking"]["qualified"]
+    # ember: FCX in i eligible
+    assert "FCX" in kinds["ember_eligible"]["title"]

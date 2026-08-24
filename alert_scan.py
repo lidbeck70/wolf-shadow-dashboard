@@ -26,6 +26,7 @@ Env:
                     repot är privat)
   ALERT_REPO        ägare/repo (default lidbeck70/wolf-shadow-dashboard)
   ALERT_BRANCH   gren för data/-filerna (default panel-data)
+  EMBER_GIST_ID     EMBER-resultatens gist (för ember-benet)
   DISCORD_WEBHOOK_URL, SMTP_*, EMAIL_TO   kanalerna (se alerts/channels/)
 
 Flaggor:
@@ -119,10 +120,33 @@ def main() -> int:
     themes = _themes(args.no_blindspot)
     prev_state = load_blob(STATE_FILE, None)
 
+    # EMBER: gist-läsningen är oautentiserad och billig. timestamp None
+    # betyder oläsbar/aldrig sparad — ember_alerts behåller då baslinjen.
+    ember_data = None
+    try:
+        from ember.cache import load_ember_results
+        ember_data = load_ember_results()
+    except Exception:
+        log.warning("EMBER-resultaten kunde inte läsas — benet står stilla.")
+
+    # Wolf/Viking: arc_scan.py:s sparade blob. None → benen behåller sina
+    # baslinjer. En screener som felade har error satt — även den ger None,
+    # så en kraschad scanning aldrig ser ut som "alla åkte ur listan".
+    arc = load_blob("arc_screeners.json", None)
+    wolf_data = viking_data = None
+    if isinstance(arc, dict):
+        w = arc.get("wolf")
+        if isinstance(w, dict) and not w.get("error"):
+            wolf_data = w
+        v = arc.get("viking")
+        if isinstance(v, dict) and not v.get("error"):
+            viking_data = v
+
     # En hoppad temakarta får inte radera Blindspot-baslinjen: behåll den
     # gamla, annars larmar nästa fullkörning om övergångar som aldrig skett.
     alerts, new_state = alert_rules.evaluate(
-        regime_data, screener_data, swing_data, themes, prev_state, settings)
+        regime_data, screener_data, swing_data, themes, prev_state, settings,
+        ember_data=ember_data, wolf_data=wolf_data, viking_data=viking_data)
     if not themes and isinstance(prev_state, dict):
         new_state["blindspot"] = prev_state.get("blindspot",
                                                 new_state["blindspot"])
