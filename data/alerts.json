@@ -5,10 +5,30 @@
     ],
     "enabled": true
   },
+  "ember": {
+    "channels": [
+      "discord"
+    ],
+    "enabled": true
+  },
   "swing": {
     "channels": [
       "discord"
     ],
     "enabled": true
+  },
+  "viking": {
+    "channels": [
+      "discord"
+    ],
+    "enabled": true,
+    "min_nine": 8
+  },
+  "wolf": {
+    "channels": [
+      "discord"
+    ],
+    "enabled": true,
+    "min_score": 80
   }
 }
