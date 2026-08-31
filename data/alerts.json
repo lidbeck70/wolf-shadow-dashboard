@@ -22,13 +22,13 @@
       "discord"
     ],
     "enabled": true,
-    "min_nine": 8
+    "min_nine": 7
   },
   "wolf": {
     "channels": [
       "discord"
     ],
     "enabled": true,
-    "min_score": 80
+    "min_score": 115
   }
 }
