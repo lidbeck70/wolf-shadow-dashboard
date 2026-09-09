@@ -80,4 +80,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
           ALERT_REPO_TOKEN: ${{ secrets.ALERT_REPO_TOKEN }}
           EMBER_GIST_ID: ${{ secrets.EMBER_GIST_ID }}
+          CA_GIST_ID: ${{ secrets.CA_GIST_ID }}
         run: python alert_scan.py --no-blindspot

@@ -61,7 +61,9 @@ W_VIKING = 0.05   # VikingBonus: 100 if green else 0  →  flat +5p contribution
 
 # ─── Gate thresholds ─────────────────────────────────────────────────────────
 
-from contrarian_alpha.necessity import NECESSITY_THRESHOLD, get_necessity_score, NecessityEntry
+from contrarian_alpha.necessity import (
+    NECESSITY_THRESHOLD, get_necessity_score, get_necessity_for_borsdata, NecessityEntry,
+)
 from contrarian_alpha.hate      import HAT_THRESHOLD, calculate_hate_score, HateResult
 from contrarian_alpha.hate      import fetch_analyst_data, fetch_short_data
 from contrarian_alpha.strength  import calculate_strength_score, StrengthResult
@@ -103,6 +105,10 @@ except ImportError:
 # Quality-mode hate floor: compounders need NOT be hated, but we still skip
 # obvious blow-off names. 0 = effectively no hate requirement in quality mode.
 QUALITY_HATE_FLOOR: float = 0.0
+
+# deep_contrarian leverage gate: Net Debt/EBITDA (survival at the trough);
+# quality mode uses 3.5. Net cash (negative) always passes.
+DEEP_ND_EBITDA_MAX: float = 3.0
 
 
 @dataclass
@@ -514,14 +520,15 @@ def _build_fundamentals_dict(snapshot: dict, reports: list[dict] | None = None) 
     if fcf_m is not None:
         fund["fcf"] = float(fcf_m)   # MSEK — sign is what matters for the gate
 
-    # EBITDA margin %
+    # EBITDA margin — snapshot_fast delar Börsdatas procentvärde med 100
+    # (57.1 → 0.571); strength.py, grinden och kortet räknar i procent, så
+    # tillbaka till % här — samma konvention som _build_quality_data gör
+    # för ROIC och bruttomarginal. (Probe 2026-09-09: G5EN 57.09 = 57 %.)
     em = snapshot.get("ebitda_margin")
     if em is not None:
-        # borsdata_api divides by 100 for ebitda_margin (see get_fundamentals_snapshot_fast)
-        # but raw screener value is %, so check divisor applied upstream
-        fund["ebitda_margin"] = float(em)
+        fund["ebitda_margin"] = float(em) * 100.0
 
-    # D/E ratio — borsdata returns as raw ratio after /100 in snapshot_fast
+    # D/E — Börsdatas skuldsättningsgrad är redan en kvot (0.88); divisor 1.
     de = snapshot.get("debt_to_equity")
     if de is not None:
         fund["debt_to_equity"] = float(de)
@@ -624,7 +631,7 @@ def _critical_kpi_fallback() -> dict[str, tuple[int, float]]:
     return {
         "fcf_m":          (KPI["fcf_m"],          1),    # 63  FCF (TTM) gate
         "ebitda_margin":  (KPI["ebitda_margin"],  100),  # 32  EBITDA-margin gate
-        "debt_to_equity": (KPI["debt_to_equity"], 100),  # 40  D/E gate
+        "debt_to_equity": (KPI["debt_to_equity"], 1),    # 40  D/E gate (kvot, ej %)
         "total_equity_m": (KPI["total_equity_m"], 1),    # 58  Equity > 0 gate
         "total_assets_m": (KPI["total_assets_m"], 1),    # 57  Altman denominator
         "ebit_m":         (KPI["ebit_m"],         1),    # 55  Altman X3
@@ -1245,11 +1252,20 @@ def _run_single_ticker(
         else:
             _sect_name = yf_sector
 
-    necessity_entry = get_necessity_score(
-        gics_industry=gics_branch,
-        gics_sector=gics_sector,
-        sector_name=_sect_name,
-    )
+    # Börsdata-rader (ins_id) klassas på Börsdatas EGNA bransch-/sektor-id —
+    # de är löpnummer, inte GICS. Att skicka dem som GICS gjorde "Gaming &
+    # Spel" (55) till "Allmännyttiga tjänster" och eliminerade Boliden (17).
+    if ins_id is not None and not _is_resource:
+        necessity_entry = get_necessity_for_borsdata(
+            branch_id=gics_branch, sector_id=gics_sector,
+            branch_name=branch_name, sector_name=sector_name,
+        )
+    else:
+        necessity_entry = get_necessity_score(
+            gics_industry=gics_branch,
+            gics_sector=gics_sector,
+            sector_name=_sect_name,
+        )
     result.necessity_score = float(necessity_entry.score)
     result.necessity_entry = necessity_entry
 
@@ -1384,6 +1400,18 @@ def _run_single_ticker(
 
     fund_dict = _build_fundamentals_dict(fund_snap)
 
+    # Valutamix: Börsdata ger börsvärde i handelsvaluta men fundamenta i
+    # rapportvaluta (G5EN: omsättning 90 MUSD, börsvärde 498 MSEK). Då blir
+    # Altman X4 (börsvärde/skulder) och FCF-yield rena artefakter — Altman
+    # 27.7 för G5EN. Utan börsvärde räknar Altman på tillgängliga delar.
+    _rep_ccy = str(inst_info.get("reportCurrency") or "").upper()
+    _px_ccy = str(inst_info.get("stockPriceCurrency") or "").upper()
+    if _rep_ccy and _px_ccy and _rep_ccy != _px_ccy:
+        fund_dict.pop("market_cap", None)
+        fund_dict.pop("fcf_yield", None)
+        if "CURRENCY_MISMATCH" not in result.all_flags:
+            result.all_flags.append("CURRENCY_MISMATCH")
+
     # Store fundamental snapshot on result
     result.fcf_m       = fund_dict.get("fcf")
     result.ebitda_pct  = fund_dict.get("ebitda_margin")
@@ -1439,10 +1467,22 @@ def _run_single_ticker(
             bs_failures.append(f"Net Debt/EBITDA {nd_e:.1f} > 3.5")
         # nd_e <= 3.5 (including negative = net cash) → pass
     else:
-        if fund_dict.get("debt_to_equity") is None:
+        # deep_contrarian: Net Debt/EBITDA ≤ 3.0 i stället för D/E < 0.6.
+        # Börsdatas skuldsättningsgrad är totala skulder / eget kapital —
+        # med rätt enhet faller Boliden (0.88) och Equinor (2.27) på 0.6,
+        # trots nettoskuld/EBITDA på 0.7 och 0.2. Rule/Lukacs-frågan är
+        # "överlever balansräkningen botten?", och det mäter ND/EBITDA.
+        # Nettokassa (negativt) passerar automatiskt. D/E visas bara.
+        nd_e = fund_snap.get("net_debt_ebitda")
+        if nd_e is None:
+            nd_hist = _fetch_kpi_history(ins_id, KPI["net_debt_ebitda"], api)
+            if nd_hist:
+                nd_e = nd_hist[0]
+        result.net_debt_ebitda = nd_e
+        if nd_e is None:
             _bs_data_missing = True
-        elif not gates.get("debt_equity_low", False):
-            bs_failures.append("D/E ≥ 0.6")
+        elif float(nd_e) > DEEP_ND_EBITDA_MAX:
+            bs_failures.append(f"Net Debt/EBITDA {nd_e:.1f} > {DEEP_ND_EBITDA_MAX:g}")
 
     # 5. Positive equity
     if fund_dict.get("equity") is None:
@@ -1499,7 +1539,8 @@ def _run_single_ticker(
     result.all_flags.extend([f for f in value_result.flags if f not in result.all_flags])
 
     # Store KAP fundamental fields (populated only in quality mode via quality_data)
-    result.net_debt_ebitda   = fund_snap.get("net_debt_ebitda")
+    if result.net_debt_ebitda is None:      # grinden kan ha fyllt på ur historiken
+        result.net_debt_ebitda = fund_snap.get("net_debt_ebitda")
     result.dividend_yield_pct = quality_data.get("dividend_yield_pct")
     result.pe_ratio          = fund_snap.get("pe")
     result.ev_ebit_ratio     = fund_snap.get("ev_ebit")
@@ -1543,13 +1584,31 @@ def _run_single_ticker(
             )
             return result
     else:
-        if quality_result.roic is not None and not quality_result.passes_gate_deep:
+        # deep_contrarian: ROIC GENOM CYKELN. Ett hatat bolag vid cykelbotten
+        # har per definition usel ROIC just nu — Rules "best of breed" är
+        # avkastning över cykeln. Passera om dagens ROIC ELLER medianen av
+        # ROIC-historiken klarar 10 %. (Probe: 20 av 22 föll på dagens ROIC
+        # ~9–10 %, dvs grinden avrättade exakt de bolag den skulle hitta.)
+        _roic_now = quality_result.roic
+        _roic_hist = [v for v in (quality_data.get("roic_history") or [])
+                      if isinstance(v, (int, float))]
+        _roic_median = (float(np.median(_roic_hist))
+                        if len(_roic_hist) >= 3 else None)
+        _now_ok = _roic_now is not None and _roic_now > GATE_ROIC_DEEP
+        _cycle_ok = _roic_median is not None and _roic_median > GATE_ROIC_DEEP
+        if _roic_now is not None and not _now_ok and not _cycle_ok:
             result.eliminated        = True
             result.elimination_stage = "QUALITY_GATE"
+            _med = (f", median {_roic_median:.1f}%" if _roic_median is not None
+                    else ", ingen historik")
             result.elimination_reason = (
-                f"ROIC {quality_result.roic:.1f}% < 10% gate [deep_contrarian mode]"
+                f"ROIC {quality_result.roic:.1f}% < 10% gate [deep_contrarian mode"
+                f"{_med}]"
             )
             return result
+        if _roic_now is not None and not _now_ok and _cycle_ok:
+            if "ROIC_TROUGH" not in result.all_flags:
+                result.all_flags.append("ROIC_TROUGH")
 
     # ── 3.6. KAP BADGE (quality mode only) ───────────────────────────────────
 
@@ -1910,11 +1969,18 @@ def run_pipeline(config: PipelineConfig | None = None) -> PipelineResult:
             if not (info.get("sectorId") or info.get("branchId") or _sect):
                 scan_list.append(u)     # metadata saknas — avgör i fullflödet
                 continue
-            entry = get_necessity_score(
-                gics_industry=info.get("branchId"),
-                gics_sector=info.get("sectorId"),
-                sector_name=_sect,
-            )
+            if u["ins_id"] is not None:
+                # Börsdata-id:n är löpnummer, inte GICS — egen tabell.
+                entry = get_necessity_for_borsdata(
+                    branch_id=info.get("branchId"), sector_id=info.get("sectorId"),
+                    branch_name=u["branch_name"], sector_name=u["sector_name"],
+                )
+            else:
+                entry = get_necessity_score(
+                    gics_industry=info.get("branchId"),
+                    gics_sector=info.get("sectorId"),
+                    sector_name=_sect,
+                )
             if float(entry.score) < config.necessity_threshold:
                 eliminated.append(ContrairianAlphaResult(
                     ticker=u["ticker"], ins_id=u["ins_id"],

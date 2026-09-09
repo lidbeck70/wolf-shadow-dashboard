@@ -86,7 +86,7 @@ class TestNordicHateUnchanged:
         # data the Hat Score stays below 45 → must still hard-eliminate at HATE in
         # deep_contrarian mode, with no resource watchlist flags.
         cfg = PipelineConfig(universe="nordic", mode="deep_contrarian")
-        inst = {"name": "Equinor", "marketId": 4, "instrumentType": 1, "sectorId": 10}
+        inst = {"name": "Equinor", "marketId": 4, "instrumentType": 1, "sectorId": 3, "branchId": 4}
         r = _run_single_ticker("EQNR.OL", 456, inst, {}, None, "", "", cfg, None)
         assert r.eliminated
         assert r.elimination_stage == "HATE"

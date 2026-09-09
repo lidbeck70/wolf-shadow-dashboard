@@ -289,6 +289,167 @@ NECESSITY_MAP: dict[int, NecessityEntry] = {
     -10: NecessityEntry(6,  "Fintech / BNPL",         "Finansiell mjukvara, spekulativ"),
 }
 
+# ═══════════════════════════════════════════════════════════════════════════
+# BÖRSDATA — branschId/sektorId → NecessityEntry
+#
+# Börsdatas id:n är INTE GICS-koder: de är löpnummer 1–94 (bransch) och
+# 1–10 (sektor). Innan den här tabellen fanns skickades de rakt in i
+# NECESSITY_MAP och kolliderade med GICS-sektorerna 10/15/…/60 — så
+# "Gaming & Spel" (id 55) blev "Allmännyttiga tjänster" (90 p) och
+# "Gruv - Industrimetaller" (id 17) föll till fallback 40 och eliminerades.
+# Listan nedan är Börsdatas faktiska branschlista (probe 2026-09-09).
+#
+# Poängen följer Rule/Sprott/Durrett: fysiskt nödvändigt, svårt att
+# substituera, kapitaltungt → högt. Underhållning, marknadsföring,
+# mjukvara-som-tjänst → lågt. Tröskeln är 60.
+# ═══════════════════════════════════════════════════════════════════════════
+
+BORSDATA_BRANCH_MAP: dict[int, NecessityEntry] = {
+    # Energi (sektor 3)
+    1:  NecessityEntry(87, "Olja & Gas - Borrning",      "Uppströmsvärdekedja, cyklisk men nödvändig"),
+    2:  NecessityEntry(90, "Olja & Gas - Exploatering",  "Utvinning av fysisk råvara, ingen digital substitut"),
+    3:  NecessityEntry(88, "Olja & Gas - Transport",     "Pipelines & tankers, kritisk energiinfrastruktur"),
+    4:  NecessityEntry(90, "Olja & Gas - Försäljning",   "Integrerade majors (Equinor), kassaflödesmaskiner"),
+    5:  NecessityEntry(84, "Olja & Gas - Service",       "Servicebolag, nödvändig stödinfrastruktur"),
+    6:  NecessityEntry(70, "Bränsle - Kol",              "Basenergi i utfasning — behövd men krympande"),
+    7:  NecessityEntry(98, "Bränsle - Uran",             "Strategisk energiråvara, noll digital substitut"),
+    # Kraftförsörjning (sektor 10)
+    8:  NecessityEntry(92, "Elförsörjning",              "Elnät och produktion — samhällets grundfunktion"),
+    9:  NecessityEntry(90, "Gasförsörjning",             "Distribution av bränsle till hushåll & industri"),
+    10: NecessityEntry(94, "Vattenförsörjning",          "Livsnödvändig infrastruktur"),
+    11: NecessityEntry(78, "Förnybarenergi",             "Kraftproduktion, subventionsberoende"),
+    12: NecessityEntry(72, "Vindkraft",                  "Kraftproduktion, projekt- och räntekänslig"),
+    13: NecessityEntry(68, "Solkraft",                   "Kraftproduktion, hård konkurrens"),
+    14: NecessityEntry(74, "Bioenergi",                  "Fjärrvärme & bränsle"),
+    # Material (sektor 7) — KÄRNAN i Contrarian Alpha
+    15: NecessityEntry(70, "Kemikalier",                 "Industriinsatsvaror"),
+    16: NecessityEntry(86, "Gruv - Prospekt & Drift",    "Nya fyndigheter — Rules jaktmark"),
+    17: NecessityEntry(90, "Gruv - Industrimetaller",    "Koppar, zink, nickel — elektrifieringens råvaror"),
+    18: NecessityEntry(90, "Gruv - Guld & Silver",       "Monetär hedge + industriell efterfrågan"),
+    19: NecessityEntry(40, "Gruv - Ädelstenar",          "Lyx, ej nödvändigt"),
+    20: NecessityEntry(78, "Gruv - Service",             "Borrning, utrustning — gruvornas hackor och spadar"),
+    21: NecessityEntry(68, "Skogsbolag",                 "Trä, massa, byggmaterial"),
+    22: NecessityEntry(58, "Förpackning",                "Viktig men lättare substituerbar"),
+    # Industri (sektor 5)
+    23: NecessityEntry(64, "Industrimaskiner",           "Kapitalvaror till basindustrin"),
+    24: NecessityEntry(62, "Industrikomponenter",        "Insatsvaror, cykliskt"),
+    25: NecessityEntry(58, "Elektroniska komponenter",   "Insatsvaror, snabb teknikväxling"),
+    26: NecessityEntry(76, "Militär & Försvar",          "Nationell säkerhet, strategisk industri"),
+    27: NecessityEntry(66, "Energi & Återvinning",       "Avfall, återvinning, energiservice"),
+    28: NecessityEntry(66, "Byggnation & Infrastruktur", "Vägar, sjukhus, kraftnät"),
+    29: NecessityEntry(55, "Bostadsbyggnation",          "Projektbolag, mycket cykliskt"),
+    30: NecessityEntry(64, "Installation & VVS",         "Byggnaders grundfunktioner"),
+    31: NecessityEntry(64, "Byggmaterial",               "Cement, isolering, infrastruktur"),
+    32: NecessityEntry(45, "Bygginredning",              "Kök, golv — uppskjutbart"),
+    33: NecessityEntry(40, "Bemanning",                  "Konjunkturkänslig tjänst"),
+    34: NecessityEntry(38, "Affärskonsulter",            "Uppskjutbar tjänst"),
+    35: NecessityEntry(55, "Säkerhet",                   "Bevakning, lås"),
+    36: NecessityEntry(50, "Utbildning",                 "Privat utbildning"),
+    37: NecessityEntry(45, "Stödtjänster & Service",     "Outsourcing, facility"),
+    38: NecessityEntry(60, "Mätning & Analys",           "Instrument till industri och lab"),
+    39: NecessityEntry(35, "Information & Data",         "Datatjänster"),
+    40: NecessityEntry(60, "Flygtransport",              "Kritisk logistik, bräcklig ekonomi"),
+    41: NecessityEntry(74, "Sjöfart & Rederi",           "Världshandelns blodomlopp — djupt cykliskt"),
+    42: NecessityEntry(70, "Tåg- & Lastbilstransport",   "Landlogistik"),
+    # Sällanköpsvaror (sektor 8)
+    43: NecessityEntry(30, "Kläder & Skor",              "Konsumtion, uppskjutbar"),
+    44: NecessityEntry(20, "Accessoarer",                "Lyx"),
+    45: NecessityEntry(25, "Hemelektronik",              "Uppskjutbar konsumtion"),
+    46: NecessityEntry(30, "Möbler & Inredning",         "Uppskjutbar konsumtion"),
+    47: NecessityEntry(22, "Fritid & Sport",             "Fritidskonsumtion"),
+    48: NecessityEntry(45, "Bil & Motor",                "Fordon och service"),
+    49: NecessityEntry(30, "Konsumentservice",           "Tjänster till hushåll"),
+    50: NecessityEntry(35, "Detaljhandel",               "Sällanköp"),
+    51: NecessityEntry(25, "Hotell & Camping",           "Resekonsumtion"),
+    52: NecessityEntry(25, "Restaurang & Café",          "Uppskjutbar konsumtion"),
+    53: NecessityEntry(20, "Resor & Nöjen",              "Nöjeskonsumtion"),
+    54: NecessityEntry(5,  "Betting & Casino",           "Ingen fysisk nytta"),
+    55: NecessityEntry(8,  "Gaming & Spel",              "Underhållning, ren diskretionär"),
+    56: NecessityEntry(10, "Marknadsföring",             "Först att kapas i lågkonjunktur"),
+    57: NecessityEntry(12, "Media & Publicering",        "Annonsberoende"),
+    # Dagligvaror (sektor 2)
+    58: NecessityEntry(55, "Bryggeri",                   "Konsumtionsvara, stabil men ej nödvändig"),
+    59: NecessityEntry(55, "Drycker",                    "Konsumtionsvara"),
+    60: NecessityEntry(87, "Jordbruk",                   "Mat — absolut nödvändigt"),
+    61: NecessityEntry(80, "Fiskodling",                 "Protein, exportråvara"),
+    62: NecessityEntry(45, "Tobak",                      "Beroendevara i utfasning"),
+    63: NecessityEntry(85, "Livsmedel",                  "Mat — absolut nödvändigt"),
+    64: NecessityEntry(70, "Hygienprodukter",            "Vardagsnödvändighet"),
+    65: NecessityEntry(55, "Hälsoprodukter",             "Kosttillskott, delvis diskretionärt"),
+    66: NecessityEntry(75, "Apotek",                     "Läkemedelsdistribution"),
+    67: NecessityEntry(80, "Livsmedelsbutiker",          "Matdistribution"),
+    # Finans & Fastighet (sektor 1)
+    68: NecessityEntry(70, "Banker",                     "Betalsystem & kreditförsörjning"),
+    69: NecessityEntry(45, "Nischbanker",                "Konsumentkredit, riskabel"),
+    70: NecessityEntry(40, "Kredit & Finansiering",      "Finansiell mellanhand"),
+    71: NecessityEntry(35, "Kapitalförvaltning",         "Avgiftsbaserat, cykliskt"),
+    72: NecessityEntry(35, "Fondförvaltning",            "Avgiftsbaserat, cykliskt"),
+    73: NecessityEntry(50, "Investmentbolag",            "Beror på innehaven — neutral"),
+    74: NecessityEntry(68, "Försäkring",                 "Riskspridning, samhällsfunktion"),
+    75: NecessityEntry(62, "Fastighetsbolag",            "Tak över huvudet, men räntekänsligt"),
+    76: NecessityEntry(62, "Fastighet - REIT",           "Hyresfastigheter"),
+    # Hälsovård (sektor 4)
+    77: NecessityEntry(88, "Läkemedel",                  "Sjukdomsbehandling — ej uppskjutbart"),
+    78: NecessityEntry(45, "Biotech",                    "Förhoppningsbolag utan intäkter — spekulativt"),
+    79: NecessityEntry(78, "Medicinsk Utrustning",       "Vårdens verktyg"),
+    80: NecessityEntry(75, "Hälsovård & Hjälpmedel",     "Vårdnära produkter"),
+    81: NecessityEntry(85, "Sjukhus & Vårdhem",          "Vårdproduktion"),
+    # Informationsteknik (sektor 6)
+    82: NecessityEntry(50, "Elektronik & Tillverkning",  "Kontraktstillverkning"),
+    83: NecessityEntry(40, "Datorer & Hårdvara",         "Snabb teknikväxling"),
+    84: NecessityEntry(45, "Elektronisk Utrustning",     "Nischhårdvara"),
+    85: NecessityEntry(30, "Biometri",                   "Nischteknik"),
+    86: NecessityEntry(45, "Kommunikation",              "Nätverksutrustning"),
+    87: NecessityEntry(55, "Rymd- & Satellitteknik",     "Strategisk nisch"),
+    88: NecessityEntry(40, "Säkerhet & Bevakning",       "IT-säkerhet, mjukvara"),
+    89: NecessityEntry(20, "IT-Konsulter",               "Uppskjutbar tjänst"),
+    90: NecessityEntry(15, "Affärs- & IT-System",        "Mjukvara — ej fysisk nödvändighet"),
+    91: NecessityEntry(8,  "Internettjänster",           "Plattformar, annonsberoende"),
+    92: NecessityEntry(15, "Betalning & E-handel",       "Fintech, spekulativt"),
+    # Telekommunikation (sektor 9)
+    93: NecessityEntry(78, "Bredband & Telefoni",        "Kommunikationsinfrastruktur"),
+    94: NecessityEntry(75, "Telekomtjänster",            "Nätoperatörer"),
+}
+
+# Sektorfallback när branschen saknas/okänd (Börsdatas sektorId 1–10)
+BORSDATA_SECTOR_MAP: dict[int, NecessityEntry] = {
+    1:  NecessityEntry(55, "Finans & Fastighet",  "Blandad sektor — branschen avgör"),
+    2:  NecessityEntry(75, "Dagligvaror",         "Mat och vardagsvaror"),
+    3:  NecessityEntry(88, "Energi",              "Fossil energi, kritisk infrastruktur"),
+    4:  NecessityEntry(75, "Hälsovård",           "Vård och läkemedel"),
+    5:  NecessityEntry(58, "Industri",            "Kapitalvaror och tjänster"),
+    6:  NecessityEntry(20, "Informationsteknik",  "Mjukvara och hårdvara"),
+    7:  NecessityEntry(78, "Material",            "Råvaror och insatsvaror"),
+    8:  NecessityEntry(25, "Sällanköpsvaror",     "Diskretionär konsumtion"),
+    9:  NecessityEntry(75, "Telekommunikation",   "Kommunikationsinfrastruktur"),
+    10: NecessityEntry(88, "Kraftförsörjning",    "El, gas, vatten"),
+}
+
+
+def get_necessity_for_borsdata(
+    branch_id: int | None = None,
+    sector_id: int | None = None,
+    branch_name: str | None = None,
+    sector_name: str | None = None,
+) -> NecessityEntry:
+    """Necessity för en Börsdata-rad: bransch → sektor → namn → fallback.
+
+    Används för alla rader med Börsdata-id (ins_id). GICS-vägen i
+    get_necessity_score() är BARA för riktiga GICS-koder — Börsdatas
+    löpnummer får aldrig gå dit igen.
+    """
+    if branch_id is not None and branch_id in BORSDATA_BRANCH_MAP:
+        return BORSDATA_BRANCH_MAP[branch_id]
+    if sector_id is not None and sector_id in BORSDATA_SECTOR_MAP:
+        return BORSDATA_SECTOR_MAP[sector_id]
+    for name in (branch_name, sector_name):
+        if name:
+            entry = get_necessity_score(sector_name=name)
+            if entry.score != FALLBACK_SCORE.score:
+                return entry
+    return FALLBACK_SCORE
+
+
 # Bekväm lookup: GICS-textsträng → score (Börsdata returnerar ibland sektorsnamn, ej kod)
 SECTOR_NAME_MAP: dict[str, int] = {
     # Energi
