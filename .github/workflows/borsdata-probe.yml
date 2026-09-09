@@ -8,7 +8,7 @@ on:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,4 +27,5 @@ jobs:
       - name: Probe Börsdata
         env:
           BORSDATA_API_KEY: ${{ secrets.BORSDATA_API_KEY }}
+          PROBE_PIPELINE: "1"
         run: python borsdata_probe.py
