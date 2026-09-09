@@ -245,3 +245,19 @@ def test_roic_sanity_cap_treats_artifacts_as_missing():
     assert "roic" not in data and data["roic_artifact"] > 500
     data = eng._build_quality_data({"roic": 0.106}, None, None)
     assert abs(data["roic"] - 10.6) < 1e-6
+
+
+def test_kpi_history_batch_parses_the_real_kpislist_shape(monkeypatch):
+    """Probe 2026-09-09: batch-endpointen svarar kpisList/instrument/values —
+    inte en platt values-lista med i. Parsern gav {} för alla → ingen
+    värderingsdepression för något bolag."""
+    import borsdata_api as bd
+    api = bd.BorsdataAPI(api_key="x")
+    monkeypatch.setattr(api, "_get", lambda path, params=None, **kw: {
+        "kpiId": 11, "reportTime": "year", "priceValue": "mean",
+        "kpisList": [{"instrument": 40, "values": [{"y": 2026, "p": 2, "v": 6.76},
+                                                   {"y": 2025, "p": 5, "v": 9.23}]},
+                     {"instrument": 904, "values": [{"y": 2026, "p": 2, "v": 2.4}]}]})
+    out = api.get_kpi_history_batch([40, 904], 11)
+    assert [v["v"] for v in out[40]] == [6.76, 9.23]
+    assert len(out[904]) == 1

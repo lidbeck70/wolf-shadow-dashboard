@@ -1680,11 +1680,15 @@ def _run_single_ticker(
     result.viking_bonus_raw = viking_raw
     result.viking_bonus_pts = viking_raw * W_VIKING
 
-    # Value Trap check (requires both hat and strength)
+    # Value Trap check (requires both hat and strength). Samma indata som
+    # grinden — utan sektor/värdering fick varje rankad rad falska
+    # VALUATION/SECTOR_DATA_MISSING-flaggor och en felaktig breakdown.
     hate_result_enriched = calculate_hate_score(
         price_data     = price_dict,
         analyst_data   = analyst_dict,
         short_data     = short_dict,
+        sector_data    = sector_dict,
+        valuation_data = valuation_data,
         strength_score = result.strength_score,
     )
     result.hate_result = hate_result_enriched
