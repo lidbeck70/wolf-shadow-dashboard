@@ -99,16 +99,16 @@ class TestNonEmptyUniverse:
 class TestNordicUnchanged:
     def test_nordic_low_necessity_still_hard_eliminates(self):
         cfg = PipelineConfig(universe="nordic", mode="quality")
-        inst = {"name": "SomeSaaS", "marketId": 1, "instrumentType": 1, "sectorId": 45}
+        inst = {"name": "SomeSaaS", "marketId": 1, "instrumentType": 1, "sectorId": 6, "branchId": 90}
         r = _run_single_ticker("SAAS.ST", 123, inst, {}, None, "", "", cfg, None)
         assert r.eliminated
         assert r.elimination_stage == "NECESSITY"
         assert "NECESSITY_BELOW_THRESHOLD" not in r.all_flags
 
     def test_nordic_high_necessity_passes_gate(self):
-        # A Nordic energy name (GICS 10) clears necessity exactly as before.
+        # A Nordic energy name (Börsdata sektor 3 Energi, bransch 4) clears necessity.
         cfg = PipelineConfig(universe="nordic", mode="quality")
-        inst = {"name": "Equinor", "marketId": 4, "instrumentType": 1, "sectorId": 10}
+        inst = {"name": "Equinor", "marketId": 4, "instrumentType": 1, "sectorId": 3, "branchId": 4}
         r = _run_single_ticker("EQNR.OL", 456, inst, {}, None, "", "", cfg, None)
         # Passes necessity; may still be eliminated later, but NOT at NECESSITY.
         assert r.elimination_stage != "NECESSITY"

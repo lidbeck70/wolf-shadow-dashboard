@@ -298,13 +298,67 @@ def viking_alerts(viking_data: Optional[dict], prev: Optional[dict],
     return alerts, state
 
 
+# ── Contrarian Alpha (Deep Contrarian) ───────────────────────────────────────
+def contrarian_alerts(ca_data: Optional[dict], prev: Optional[dict]) -> tuple:
+    """(larm, nytt tillstånd) för Deep Contrarian-listan.
+
+    ca_data är contrarian_alpha.cache.load_screener_results("deep_contrarian"):
+    {"timestamp", "results": [{ticker, name, composite_score, rank,
+    necessity_score, hat_score, ...}]}. Tom/oläsbar källa (ingen timestamp)
+    fryser baslinjen. Larmet gäller övergången IN i listan — hatat men
+    behövt, alla grindar passerade — och kroppen bär pelarpoängen så man
+    ser VARFÖR den kom in.
+    """
+    if not isinstance(ca_data, dict) or not ca_data.get("timestamp"):
+        return [], (prev if isinstance(prev, dict) else {"ranked": {}})
+
+    ranked = {}
+    for row in ca_data.get("results", []) or []:
+        if not isinstance(row, dict):
+            continue
+        ticker = str(row.get("ticker", "")).strip().upper()
+        if not ticker:
+            continue
+        ranked[ticker] = {
+            "name": str(row.get("name", "") or ""),
+            "score": row.get("composite_score"),
+            "rank": row.get("rank"),
+            "necessity": row.get("necessity_score"),
+            "hat": row.get("hat_score"),
+            "sector": str(row.get("sector", "") or ""),
+        }
+
+    state = {"ranked": ranked}
+    if prev is None:
+        return [], state
+
+    alerts = []
+    prev_ranked = set((prev or {}).get("ranked", {}) or {})
+
+    def _n(v, d=0):
+        return f"{v:.{d}f}" if isinstance(v, (int, float)) else "–"
+    for ticker, d in ranked.items():
+        if ticker in prev_ranked:
+            continue
+        sector = f" · {d['sector']}" if d["sector"] else ""
+        alerts.append(_alert(
+            "contrarian_deep",
+            f"🎯 Deep Contrarian: {ticker} in i listan (#{_n(d['rank'])})",
+            f"{d['name'] or ticker}{sector} · composite {_n(d['score'], 1)} · "
+            f"necessity {_n(d['necessity'])} · hat {_n(d['hat'])}. Hatat men "
+            f"behövt, alla grindar passerade — kör Rick Rule-granskningen "
+            f"innan du agerar."))
+    return alerts, state
+
+
 # ── Sammanvägningen ──────────────────────────────────────────────────────────
 def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
              themes: list, prev_state: Optional[dict],
              settings: Optional[dict] = None,
              ember_data: Optional[dict] = None,
              wolf_data: Optional[dict] = None,
-             viking_data: Optional[dict] = None) -> tuple:
+             viking_data: Optional[dict] = None,
+             contrarian_data: Optional[dict] = None) -> tuple:
     """(larm-med-kanaler, nytt tillstånd) för hela körningen.
 
     settings: data/alerts.json — {"swing": {"enabled", "channels"},
@@ -354,5 +408,8 @@ def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
         min_nine=int(viking_cfg.get("min_nine") or VIKING_MIN_NINE))
     out += _route("viking", v_alerts)
 
+    c_alerts, c_state = contrarian_alerts(contrarian_data, _prev("contrarian"))
+    out += _route("contrarian", c_alerts)
+
     return out, {"swing": s_state, "blindspot": b_state, "ember": e_state,
-                 "wolf": w_state, "viking": v_state}
+                 "wolf": w_state, "viking": v_state, "contrarian": c_state}

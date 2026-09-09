@@ -1139,13 +1139,12 @@ def _render_breakdown_chart(r) -> None:
             ("Equity > 0",     _strength_status("equity_positive")),
             ("Altman Z > 1.8", _strength_status("altman_z_ok")),
         ]
-        # Leverage gate label depends on mode
-        if _mode == "quality":
-            nd_e = getattr(r, "net_debt_ebitda", None)
-            _nd_status = "missing" if nd_e is None else ("pass" if float(nd_e) <= 3.5 else "fail")
-            gate_checks.append(("ND/EBITDA ≤ 3.5", _nd_status))
-        else:
-            gate_checks.append(("D/E < 0.6", _strength_status("debt_equity_low")))
+        # Leverage gate: ND/EBITDA i båda lägena (3.5 quality, 3.0 deep) —
+        # D/E-grinden är borta: Börsdatas skuldsättningsgrad fällde Boliden.
+        _nd_max = 3.5 if _mode == "quality" else 3.0
+        nd_e = getattr(r, "net_debt_ebitda", None)
+        _nd_status = "missing" if nd_e is None else ("pass" if float(nd_e) <= _nd_max else "fail")
+        gate_checks.append((f"ND/EBITDA ≤ {_nd_max:g}", _nd_status))
 
     # ROIC gate
     qr = getattr(r, "quality_result", None)
@@ -1214,12 +1213,14 @@ def _render_metrics_grid(r) -> None:
         ("D/E",         _fmt(r.debt_equity, ".2f"),   "Skuld/Eget kapital"),
     ]
 
+    # Net Debt / EBITDA — hävstångsgrinden i båda lägena
+    nd_e = getattr(r, "net_debt_ebitda", None)
+    nd_sub = ("≤ 3.5 OK  |  ≤ 0 nettokassa" if mode == "quality"
+              else "≤ 3.0 OK  |  ≤ 0 nettokassa")
+    metrics.append(("ND/EBITDA", _fmt(nd_e, ".1f"), nd_sub))
+
     # KAP metrics (quality mode only — shown when data is present)
     if mode == "quality":
-        # Net Debt / EBITDA (replaces D/E gate in quality mode)
-        nd_e = getattr(r, "net_debt_ebitda", None)
-        nd_sub = "≤ 3.5 OK  |  ≤ 0 nettokassa"
-        metrics.append(("ND/EBITDA", _fmt(nd_e, ".1f"), nd_sub))
 
         # P/E band status
         pe_val = getattr(r, "pe_ratio", None)

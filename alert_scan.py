@@ -142,11 +142,23 @@ def main() -> int:
         if isinstance(v, dict) and not v.get("error"):
             viking_data = v
 
+    # Deep Contrarian: scheduled_scan sparar listan till CA-gisten. Tom/
+    # oläsbar (ingen timestamp) → benet fryser sin baslinje.
+    contrarian_data = None
+    try:
+        from contrarian_alpha.cache import load_screener_results
+        _ca = load_screener_results(mode="deep_contrarian")
+        if isinstance(_ca, dict) and _ca.get("timestamp"):
+            contrarian_data = _ca
+    except Exception:
+        log.warning("Deep Contrarian-listan kunde inte läsas — benet står stilla.")
+
     # En hoppad temakarta får inte radera Blindspot-baslinjen: behåll den
     # gamla, annars larmar nästa fullkörning om övergångar som aldrig skett.
     alerts, new_state = alert_rules.evaluate(
         regime_data, screener_data, swing_data, themes, prev_state, settings,
-        ember_data=ember_data, wolf_data=wolf_data, viking_data=viking_data)
+        ember_data=ember_data, wolf_data=wolf_data, viking_data=viking_data,
+        contrarian_data=contrarian_data)
     if not themes and isinstance(prev_state, dict):
         new_state["blindspot"] = prev_state.get("blindspot",
                                                 new_state["blindspot"])

@@ -842,7 +842,9 @@ class BorsdataAPI:
             "revenue_growth":       (KPI["revenue_growth"], 100),
             "earnings_growth":      (KPI["earnings_growth"], 100),
             "equity_ratio":         (KPI["equity_ratio"], 100),
-            "debt_to_equity":       (KPI["debt_to_equity"], 100),
+            # Skuldsättningsgrad (KPI 40) är en KVOT (BOL 0.88, EQNR 2.27 —
+            # probe 2026-09-09), inte procent. /100 gav 0.00 för alla.
+            "debt_to_equity":       (KPI["debt_to_equity"], 1),
             "net_debt_ebitda":      (KPI["net_debt_ebitda"], 1),
             "current_ratio":        (KPI["current_ratio"], 1),
             "dividend_yield":       (KPI["dividend_yield"], 100),
@@ -918,7 +920,9 @@ class BorsdataAPI:
             "revenue_growth":       (KPI["revenue_growth"], 100),
             "earnings_growth":      (KPI["earnings_growth"], 100),
             "equity_ratio":         (KPI["equity_ratio"], 100),
-            "debt_to_equity":       (KPI["debt_to_equity"], 100),
+            # Skuldsättningsgrad (KPI 40) är en KVOT (BOL 0.88, EQNR 2.27 —
+            # probe 2026-09-09), inte procent. /100 gav 0.00 för alla.
+            "debt_to_equity":       (KPI["debt_to_equity"], 1),
             "net_debt_ebitda":      (KPI["net_debt_ebitda"], 1),
             "current_ratio":        (KPI["current_ratio"], 1),
             "dividend_yield":       (KPI["dividend_yield"], 100),
