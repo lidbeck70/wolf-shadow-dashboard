@@ -773,6 +773,10 @@ class BorsdataAPI:
                 entries = data[key]
                 break
 
+        # Verklig form (probe 2026-09-09): {"list": [{"insId": 2,
+        # "shortsProc": -7.89, "shortsHolders": 5.0, "dtcSum": 16.1, ...}]}
+        # — shortsProc är blankad andel i procent med negativt tecken.
+        # Äldre gissade former (positions/position) behålls som reserv.
         totals: Dict[int, float] = {}
         for entry in entries:
             if not isinstance(entry, dict):
@@ -781,9 +785,13 @@ class BorsdataAPI:
             if ins_id is None:
                 continue
             total = 0.0
-            positions = entry.get("positions")
-            if isinstance(positions, list):
-                for pos in positions:
+            if entry.get("shortsProc") is not None:
+                try:
+                    total = abs(float(entry["shortsProc"]))
+                except (TypeError, ValueError):
+                    total = 0.0
+            elif isinstance(entry.get("positions"), list):
+                for pos in entry["positions"]:
                     try:
                         total += float((pos or {}).get("position", 0) or 0)
                     except (TypeError, ValueError):

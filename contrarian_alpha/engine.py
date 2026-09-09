@@ -110,6 +110,9 @@ QUALITY_HATE_FLOOR: float = 0.0
 # quality mode uses 3.5. Net cash (negative) always passes.
 DEEP_ND_EBITDA_MAX: float = 3.0
 
+# ROIC utanför ±500 % är en dataartefakt (nära-noll kapitalbas), inte avkastning.
+ROIC_SANITY_MAX: float = 500.0
+
 
 @dataclass
 class PipelineConfig:
@@ -708,6 +711,11 @@ def _build_quality_data(
     roic_frac = fund_snap.get("roic")
     if roic_frac is not None:
         data["roic"] = roic_frac * 100
+        # Rimlighetsspärr: 2020 Bulkers fick ROIC 69 166 % (nästan noll
+        # investerat kapital → kvoten exploderar). Utanför ±500 % är det en
+        # artefakt, inte avkastning — behandla som saknad.
+        if abs(data["roic"]) > ROIC_SANITY_MAX:
+            data["roic_artifact"] = data.pop("roic")
 
     gm_frac = fund_snap.get("gross_margin")
     if gm_frac is not None:
@@ -726,7 +734,8 @@ def _build_quality_data(
         return data
 
     # ROIC history (KPI 37) — raw values are already in %, no conversion
-    roic_hist = _fetch_kpi_history(ins_id, KPI["roic"], api)
+    roic_hist = [v for v in _fetch_kpi_history(ins_id, KPI["roic"], api)
+                 if abs(v) <= ROIC_SANITY_MAX]
     if roic_hist:
         data["roic_history"] = roic_hist
         # Fallback: if the batch snapshot lacked current ROIC, use the most
@@ -1154,6 +1163,16 @@ def _batch_valuation_data(
 
     result: dict[int, dict] = {}
     ev_hist = _histories("ev_ebitda", ins_ids)
+    # Batch-endpointen gav tomt för ALLA i skarp körning (probe 2026-09-09:
+    # VALUATION_DATA_MISSING på 503/503) medan per-instrument-historiken
+    # fungerar. Reserv: hämta per instrument (24h-cachad) — ~1 anrop/bolag
+    # första gången, noll därefter.
+    if not any(ev_hist.values()):
+        logger.warning("valuation batch tom — faller tillbaka på per-instrument-historik "
+                       "(%d instrument)", len(ins_ids))
+        ev_hist = {iid: [v for v in _fetch_kpi_history(iid, KPI["ev_ebitda"], api)
+                         if isinstance(v, (int, float)) and v > 0]
+                   for iid in ins_ids}
     thin = []
     for iid in ins_ids:
         valid = ev_hist.get(iid, [])
@@ -1168,6 +1187,10 @@ def _batch_valuation_data(
 
     if thin:
         pe_hist = _histories("pe", thin)
+        if not any(pe_hist.values()):
+            pe_hist = {iid: [v for v in _fetch_kpi_history(iid, KPI["pe"], api)
+                             if isinstance(v, (int, float)) and v > 0]
+                       for iid in thin}
         for iid in thin:
             valid = pe_hist.get(iid, [])
             if len(valid) >= 8:
