@@ -252,3 +252,20 @@ def test_insider_direction_comes_from_the_sign_of_shares():
     assert d["insider_buy_count"] == 1
     assert d["insider_sell_count"] == 1
     assert d["insider_net_bought_12m"] == 700
+
+
+def test_insider_flag_only_when_nothing_could_be_measured():
+    """Holdings-API:t ger köp/sälj men ingen ägarandel — det är inte
+    'insiderdata saknas'. Flaggan ska bara sättas när båda delarna saknas."""
+    from contrarian_alpha.catalyst import calculate_catalyst_score
+    price = {"close": 10.0, "sma50": 9.0, "sma50_slope": 0.1, "current_volume": 100.0,
+             "avg_volume_20d": 100.0, "std_volume_20d": 10.0,
+             "close_history": [10.0, 9.8, 9.7, 9.9, 10.1]}
+    with_tx = calculate_catalyst_score(price_data=price, ticker="X",
+                                       insider_data={"insider_net_bought_12m": 700,
+                                                     "insider_buy_count": 1,
+                                                     "insider_sell_count": 1})
+    assert "INSIDER_DATA_MISSING" not in with_tx.flags
+    assert "INSIDER_OWNERSHIP_NA" in with_tx.flags
+    none = calculate_catalyst_score(price_data=price, ticker="X", insider_data={})
+    assert "INSIDER_DATA_MISSING" in none.flags
