@@ -588,7 +588,13 @@ def calculate_catalyst_score(
     if not slp_real:  flags.append("SMA50_SLOPE_MISSING")
     if not vol_real:  flags.append("VOLUME_DATA_MISSING")
     if not rev_real:  flags.append("CLOSE_HISTORY_SHORT")
-    if not own_real:  flags.append("INSIDER_DATA_MISSING")
+    # Börsdatas holdings-API ger transaktioner men ingen ägarandel — då är
+    # insiderdatan INTE saknad (köp/sälj räknas), bara ägarandelen. Flagga
+    # datalucka först när ingen av komponenterna kunde mätas.
+    if not own_real and not buy_real:
+        flags.append("INSIDER_DATA_MISSING")
+    elif not own_real:
+        flags.append("INSIDER_OWNERSHIP_NA")
 
     # Viking Regime
     is_green, color, nine = get_viking_regime(
