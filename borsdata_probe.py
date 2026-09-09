@@ -16,6 +16,7 @@ Skriver ingenting, ändrar ingenting. Exit 0 alltid.
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 from collections import Counter
@@ -97,6 +98,71 @@ def main() -> int:
         row = {ids[v.get('i')]: v.get("n") for v in vals if v.get("i") in ids}
         cells = "  ".join(f"{t}={row.get(t)}" for t in REF_TICKERS)
         print(f"  {key:18} (id {kid:>3}): {cells}")
+
+    # ── Blankningsregistret: rå form ───────────────────────────────────────
+    print("\n" + "=" * 72)
+    print("HOLDINGS/SHORTS — rå payload (scheduled-scan loggade 0 instrument)")
+    print("=" * 72)
+    try:
+        raw = api._get("/holdings/shorts")
+        print(f"  typ={type(raw).__name__} nycklar={list(raw)[:8] if isinstance(raw, dict) else '-'}")
+        txt = json.dumps(raw, ensure_ascii=False)
+        print(f"  längd={len(txt)} tecken; början: {txt[:600]}")
+        print(f"  get_short_positions() → {len(api.get_short_positions())} instrument")
+    except Exception as e:
+        print(f"  FEL: {e}")
+
+    # ── Deep Contrarian: hela pipelinen med elimineringsorsaker ────────────
+    if os.environ.get("PROBE_PIPELINE", "1") == "1":
+        print("\n" + "=" * 72)
+        print("DEEP CONTRARIAN — pipeline med elimineringsorsaker")
+        print("=" * 72)
+        import re as _re
+        from collections import Counter as _C
+        from contrarian_alpha.engine import PipelineConfig, run_pipeline
+        cfg = PipelineConfig(mode="deep_contrarian",
+                             market_ids=list(ALL_NORDIC_MARKETS), top_n=40)
+        res = run_pipeline(cfg)
+        print(f"  universum={res.universe_count} necessity={res.necessity_passed} "
+              f"hate={res.hate_passed} bs={res.bs_passed} rankade={res.composite_ranked} "
+              f"tid={res.run_duration_s}s")
+        print("\n  RANKADE:")
+        for r in res.results:
+            print(f"   #{r.rank:>2} {r.ticker:12} {r.name[:22]:22} comp={r.composite_score:5.1f} "
+                  f"N={r.necessity_score:3.0f} H={r.hat_score:4.1f} Q={r.quality_score or 0:4.1f} "
+                  f"V={r.value_score or 0:4.1f} C={r.catalyst_score or 0:4.1f} "
+                  f"nd/e={r.net_debt_ebitda} roic={r.roic} {r.branch[:22]} "
+                  f"flags={[f for f in r.all_flags][:4]}")
+        stages = _C(r.elimination_stage for r in res.eliminated)
+        print(f"\n  ELIMINERADE per steg: {dict(stages)}")
+        for stage in ("BALANCE_SHEET", "QUALITY_GATE"):
+            rows = [r for r in res.eliminated if r.elimination_stage == stage]
+            reasons = _C(_re.sub(r"-?\d+(\.\d+)?", "#", r.elimination_reason) for r in rows)
+            print(f"\n  {stage} ({len(rows)}) — orsaker:")
+            for reason, n in reasons.most_common(12):
+                print(f"    {n:>3}  {reason[:110]}")
+            print(f"  {stage} — de 40 första:")
+            for r in rows[:40]:
+                print(f"    {r.ticker:12} {r.name[:20]:20} {r.branch[:18]:18} N={r.necessity_score:3.0f} "
+                      f"H={r.hat_score:4.1f} | {r.elimination_reason[:90]}")
+        hated = [r for r in res.eliminated if r.elimination_stage == "HATE"]
+        hs = sorted(r.hat_score for r in hated)
+        if hs:
+            q = lambda p: hs[min(len(hs) - 1, int(p * len(hs)))]
+            print(f"\n  HATE-eliminerade ({len(hs)}): hat p25={q(.25):.1f} p50={q(.5):.1f} "
+                  f"p75={q(.75):.1f} p90={q(.9):.1f} max={hs[-1]:.1f}")
+            fl = _C(f for r in hated if r.hate_result for f in r.hate_result.flags)
+            print(f"  hat-flaggor bland dem: {dict(fl.most_common(8))}")
+            conf = sorted(r.hate_result.confidence for r in hated if r.hate_result)
+            if conf:
+                print(f"  hat-täckning (confidence) p50={conf[len(conf)//2]:.2f} "
+                      f"min={conf[0]:.2f}")
+            print("  HATE — högst hat som ändå föll (topp 25):")
+            for r in sorted(hated, key=lambda r: -r.hat_score)[:25]:
+                bd_ = r.hate_result.breakdown if r.hate_result else {}
+                print(f"    {r.ticker:12} {r.name[:20]:20} {r.branch[:18]:18} H={r.hat_score:4.1f} "
+                      f"conf={r.hate_result.confidence if r.hate_result else 0:.2f} "
+                      f"{ {k: v for k, v in bd_.items() if v} }")
     return 0
 
 
