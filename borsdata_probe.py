@@ -118,6 +118,7 @@ def main() -> int:
     print("=" * 72)
     try:
         ids = [i.get("insId") for t, i in refs.items() if t in ("BOL", "EQNR")]
+        bol_eqnr = ",".join(str(x) for x in ids)
         raw = api._get("/instruments/kpis/11/year/mean/history",
                        params={"instList": ",".join(str(x) for x in ids)})
         txt = json.dumps(raw, ensure_ascii=False)
@@ -129,11 +130,25 @@ def main() -> int:
         print(f"  per-instrument get_kpi_history(BOL, 11) → {len(one)} punkter; första: {str(one[:2])[:200]}")
         bol = refs.get("BOL", {}).get("insId")
         try:
-            hi = api._get("/holdings/insider", params={"instList": str(bol)})
+            hi = api._get("/holdings/insider", params={"instList": bol_eqnr})
             t2 = json.dumps(hi, ensure_ascii=False)
             print(f"  holdings/insider: typ={type(hi).__name__} "
                   f"nycklar={list(hi)[:8] if isinstance(hi, dict) else '-'} längd={len(t2)}; "
                   f"början: {t2[:500]}")
+            from collections import Counter as _Ct
+            for grp in (hi.get("list") or []):
+                vals = grp.get("values") or []
+                types = _Ct(v.get("transactionType") for v in vals)
+                print(f"  insId={grp.get('insId')} transaktioner={len(vals)} typkoder={dict(types)}")
+                seen = set()
+                for v in sorted(vals, key=lambda x: str(x.get("transactionDate")), reverse=True):
+                    tt = v.get("transactionType")
+                    if tt in seen:
+                        continue
+                    seen.add(tt)
+                    print(f"    typ {tt}: {v.get('transactionDate', '')[:10]} {v.get('ownerName')} "
+                          f"({v.get('ownerPosition')}) shares={v.get('shares')} price={v.get('price')} "
+                          f"amount={v.get('amount')} misc={v.get('misc')} eq={v.get('equityProgram')}")
         except Exception as e:
             print(f"  holdings/insider FEL: {e}")
         ins = api._get(f"/insiders/{bol}")
