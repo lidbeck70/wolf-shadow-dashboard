@@ -708,8 +708,15 @@ class BorsdataAPI:
                 f"/instruments/kpis/{kpi_id}/{report_type}/{price_type}/history",
                 params={"instList": id_list},
             )
-            # Response has values grouped by instrument
-            for entry in data.get("values", []):
+            # Verklig form (probe 2026-09-09): {"kpiId", "reportTime",
+            # "priceValue", "kpisList": [{"instrument": 40, "values":
+            # [{"y", "p", "v"}, ...]}]} — inte en platt "values"-lista med
+            # "i". Den gamla formen behålls som reserv.
+            for group in data.get("kpisList", []) or []:
+                iid = group.get("instrument", group.get("i"))
+                if iid is not None:
+                    results.setdefault(iid, []).extend(group.get("values", []) or [])
+            for entry in data.get("values", []) or []:
                 iid = entry.get("i")
                 if iid is not None:
                     results.setdefault(iid, []).append(entry)

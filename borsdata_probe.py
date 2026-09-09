@@ -128,6 +128,14 @@ def main() -> int:
         one = api.get_kpi_history(ids[0], 11, "year", "mean")
         print(f"  per-instrument get_kpi_history(BOL, 11) → {len(one)} punkter; första: {str(one[:2])[:200]}")
         bol = refs.get("BOL", {}).get("insId")
+        try:
+            hi = api._get("/holdings/insider", params={"instList": str(bol)})
+            t2 = json.dumps(hi, ensure_ascii=False)
+            print(f"  holdings/insider: typ={type(hi).__name__} "
+                  f"nycklar={list(hi)[:8] if isinstance(hi, dict) else '-'} längd={len(t2)}; "
+                  f"början: {t2[:500]}")
+        except Exception as e:
+            print(f"  holdings/insider FEL: {e}")
         ins = api._get(f"/insiders/{bol}")
         txt = json.dumps(ins, ensure_ascii=False)
         print(f"  insiders: typ={type(ins).__name__} nycklar={list(ins)[:8] if isinstance(ins, dict) else '-'} "
