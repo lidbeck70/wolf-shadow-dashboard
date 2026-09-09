@@ -332,7 +332,8 @@ def fetch_insider_data(ins_id: int | None, api=None) -> dict:
         for tx in transactions:
             # Börsdata insider fields: date, shares, transactionType, ownershipPct
             try:
-                tx_date_str = tx.get("verificationDate") or tx.get("date") or ""
+                tx_date_str = (tx.get("transactionDate") or tx.get("verificationDate")
+                               or tx.get("date") or "")
                 tx_date = datetime.fromisoformat(tx_date_str.replace("Z", "+00:00"))
                 if tx_date.tzinfo is None:
                     tx_date = tx_date.replace(tzinfo=timezone.utc)
@@ -341,6 +342,11 @@ def fetch_insider_data(ins_id: int | None, api=None) -> dict:
 
             tx_type   = str(tx.get("transactionType", "")).lower()
             tx_shares = tx.get("numberOfShares") or tx.get("shares") or 0
+            # Börsdatas holdings-API: typkoden är numerisk (19/18/9 förvärv,
+            # 25/24/0 avyttring) och riktningen sitter i TECKNET på shares.
+            # equityProgram = incitamentsprogram, inte ett övertygelseköp.
+            if tx.get("equityProgram"):
+                continue
 
             # Capture the most recent ownership % (any date)
             own = tx.get("ownershipChange") or tx.get("ownershipPct")
@@ -359,10 +365,16 @@ def fetch_insider_data(ins_id: int | None, api=None) -> dict:
                 shares = 0.0
 
             if "buy" in tx_type or "köp" in tx_type:
-                net_shares += shares
+                net_shares += abs(shares)
                 buy_count  += 1
             elif "sell" in tx_type or "sälj" in tx_type:
-                net_shares -= shares
+                net_shares -= abs(shares)
+                sell_count += 1
+            elif shares > 0:
+                net_shares += shares
+                buy_count  += 1
+            elif shares < 0:
+                net_shares += shares      # negativt → nettot minskar
                 sell_count += 1
 
         result = {
