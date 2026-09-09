@@ -206,3 +206,49 @@ def test_evaluate_routes_contrarian_leg():
     kinds = {a["kind"]: a for a in alerts}
     assert kinds["contrarian_deep"]["channels"] == ["email"]
     assert "BOL.ST" in state2["contrarian"]["ranked"]
+
+
+# ── Insiderregistret (holdings-API:t) ────────────────────────────────────────
+def _recent(days_ago):
+    from datetime import datetime, timedelta, timezone
+    return (datetime.now(tz=timezone.utc) - timedelta(days=days_ago)).strftime(
+        "%Y-%m-%dT00:00:00")
+
+
+def test_insider_transactions_come_from_holdings_api(monkeypatch):
+    """/insiders/{id} svarar 404; /holdings/insider?instList= är rätt väg
+    (probe 2026-09-09) och svarar list/insId/values."""
+    import borsdata_api as bd
+    api = bd.BorsdataAPI(api_key="x")
+    calls = []
+
+    def fake_get(path, params=None, **kw):
+        calls.append((path, params))
+        return {"list": [{"insId": 40, "values": [{"shares": 1000, "transactionType": 19}]},
+                         {"insId": 904, "values": [{"shares": -25, "transactionType": 25}]}]}
+    monkeypatch.setattr(api, "_get", fake_get)
+    out = api.get_insider_transactions(40)
+    assert out == [{"shares": 1000, "transactionType": 19}]
+    assert calls[0][0] == "/holdings/insider" and calls[0][1] == {"instList": "40"}
+
+
+def test_insider_direction_comes_from_the_sign_of_shares():
+    """Börsdatas typkoder är numeriska — riktningen sitter i tecknet på
+    shares; incitamentsprogram (equityProgram) räknas inte som köp."""
+    from contrarian_alpha import catalyst as cat
+
+    class _API:
+        def get_insider_transactions(self, ins_id):
+            return [
+                {"shares": 1000, "transactionType": 19, "transactionDate": _recent(30)},
+                {"shares": 500, "transactionType": 18, "transactionDate": _recent(60),
+                 "equityProgram": True},                       # program → ignoreras
+                {"shares": -300, "transactionType": 25, "transactionDate": _recent(90)},
+                {"shares": 9999, "transactionType": 19, "transactionDate": _recent(900)},  # >12m
+            ]
+
+    # unikt ins_id så cachen inte återanvänder ett tidigare test
+    d = cat.fetch_insider_data(777001, _API())
+    assert d["insider_buy_count"] == 1
+    assert d["insider_sell_count"] == 1
+    assert d["insider_net_bought_12m"] == 700

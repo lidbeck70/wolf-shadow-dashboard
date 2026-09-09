@@ -740,10 +740,18 @@ class BorsdataAPI:
         Returns empty list when the endpoint is unavailable (400/403) or
         when the instrument has no recorded insider transactions.
         """
+        # /insiders/{id} svarar 404 (probe 2026-09-09). Holdings-API:t är
+        # rätt väg: /holdings/insider?instList= → {"list": [{"insId",
+        # "values": [{ownerName, ownerPosition, shares (tecknet = riktning),
+        # price, amount, transactionType, equityProgram, misc,
+        # transactionDate, verificationDate}]}]}.
         try:
-            data = self._get(f"/insiders/{ins_id}")
+            data = self._get("/holdings/insider", params={"instList": str(ins_id)})
+            for group in (data.get("list") or []) if isinstance(data, dict) else []:
+                if group.get("insId") == ins_id:
+                    return list(group.get("values") or [])
             for key in ("insiders", "insider", "transactions"):
-                if key in data and data[key]:
+                if isinstance(data, dict) and data.get(key):
                     return data[key]
             return []
         except Exception as e:
