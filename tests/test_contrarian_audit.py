@@ -42,10 +42,10 @@ def test_every_borsdata_branch_and_sector_is_covered():
     assert set(nec.BORSDATA_BRANCH_MAP) == set(range(1, 95))
     assert set(nec.BORSDATA_SECTOR_MAP) == set(range(1, 11))
     # kärnan i strategin ligger över tröskeln, underhållning under
-    assert all(nec.BORSDATA_BRANCH_MAP[b].score >= 60 for b in (1, 2, 3, 4, 5, 7,
-                                                                 8, 10, 16, 17, 18))
-    assert all(nec.BORSDATA_BRANCH_MAP[b].score < 60 for b in (54, 55, 56, 57,
-                                                                89, 90, 91))
+    core = (1, 2, 3, 4, 5, 7, 8, 10, 16, 17, 18)
+    fluff = (54, 55, 56, 57, 89, 90, 91)
+    assert all(nec.BORSDATA_BRANCH_MAP[b].score >= 60 for b in core)
+    assert all(nec.BORSDATA_BRANCH_MAP[b].score < 60 for b in fluff)
 
 
 def test_engine_uses_borsdata_map_for_borsdata_rows():

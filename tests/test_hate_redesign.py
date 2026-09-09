@@ -184,13 +184,16 @@ def test_batch_valuation_uses_ev_ebitda_then_pe():
 def test_short_positions_parsing(monkeypatch):
     import borsdata_api as bd
     api = bd.BorsdataAPI(api_key="x")
+    # Verklig form (probe 2026-09-09): shortsProc med negativt tecken
     monkeypatch.setattr(api, "_get", lambda path, **kw: {
-        "list": [{"insId": 5, "positions": [{"position": 0.6},
+        "list": [{"insId": 2, "shortsProc": -7.89, "shortsHolders": 5.0},
+                 {"insId": 3, "shortsProc": -0.11, "shortsHolders": 0.0},
+                 {"insId": 4, "shortsProc": None},
+                 {"insId": 5, "positions": [{"position": 0.6},
                                             {"position": 1.2}]},
-                 {"insId": 9, "position": 2.5},
-                 {"insId": 11, "positions": []}]})
+                 {"insId": 9, "position": 2.5}]})
     out = api.get_short_positions()
-    assert out == {5: 1.8, 9: 2.5}
+    assert out == {2: 7.89, 3: 0.11, 5: 1.8, 9: 2.5}
 
 
 def test_nordic_tickers_are_yfinance_form(monkeypatch):
@@ -209,3 +212,36 @@ def test_nordic_tickers_are_yfinance_form(monkeypatch):
     out = bd._get_nordic_tickers()
     assert "SKF-A.ST" in out and "BOL.ST" in out and "EQNR.OL" in out
     assert not any(" " in t for t in out)
+
+
+class _BatchDeadAPI(_FakeAPI):
+    """Batch-historiken svarar tomt (som i skarp drift) — per-instrument funkar."""
+
+    def get_kpi_history_batch(self, ins_ids, kpi_id):
+        self.batch_calls.append((tuple(ins_ids), kpi_id))
+        return {}
+
+    def get_kpi_history(self, ins_id, kpi_id, report_type, price_type):
+        if kpi_id == 11 and ins_id == 5:
+            return [{"y": 2016 + i, "v": float(4 + i)} for i in range(10)]
+        if kpi_id == 2 and ins_id == 7:
+            return [{"y": 2016 + i, "v": float(10 + i)} for i in range(10)]
+        return []
+
+
+def test_batch_valuation_falls_back_to_per_instrument_history():
+    """Skarp körning: VALUATION_DATA_MISSING på 503/503 — batch-endpointen
+    gav tomt medan per-instrument-historiken fungerar. Reserven ska ge data."""
+    api = _BatchDeadAPI()
+    universe = [{"ticker": "BOL.ST", "ins_id": 5}, {"ticker": "E.ST", "ins_id": 7}]
+    out = eng._batch_valuation_data(universe, {5: {}, 7: {}}, api)
+    assert out[5]["metric"] == "ev_ebitda" and len(out[5]["history"]) == 10
+    assert out[7]["metric"] == "pe"
+
+
+def test_roic_sanity_cap_treats_artifacts_as_missing():
+    """2020 Bulkers: ROIC 69 166 % — nära-noll kapitalbas, inte avkastning."""
+    data = eng._build_quality_data({"roic": 691.6665}, None, None)
+    assert "roic" not in data and data["roic_artifact"] > 500
+    data = eng._build_quality_data({"roic": 0.106}, None, None)
+    assert abs(data["roic"] - 10.6) < 1e-6

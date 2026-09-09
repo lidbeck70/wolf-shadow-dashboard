@@ -112,6 +112,29 @@ def main() -> int:
     except Exception as e:
         print(f"  FEL: {e}")
 
+    # ── Batch-historik och insiders: rå form ───────────────────────────────
+    print("\n" + "=" * 72)
+    print("KPI-HISTORIK BATCH (ev_ebitda, BOL+EQNR) och INSIDERS (BOL) — rå form")
+    print("=" * 72)
+    try:
+        ids = [i.get("insId") for t, i in refs.items() if t in ("BOL", "EQNR")]
+        raw = api._get("/instruments/kpis/11/year/mean/history",
+                       params={"instList": ",".join(str(x) for x in ids)})
+        txt = json.dumps(raw, ensure_ascii=False)
+        print(f"  batch: typ={type(raw).__name__} nycklar={list(raw)[:8] if isinstance(raw, dict) else '-'} "
+              f"längd={len(txt)}; början: {txt[:500]}")
+        parsed = {k: len(v) for k, v in api.get_kpi_history_batch(ids, 11).items()}
+        print(f"  get_kpi_history_batch → {parsed}")
+        one = api.get_kpi_history(ids[0], 11, "year", "mean")
+        print(f"  per-instrument get_kpi_history(BOL, 11) → {len(one)} punkter; första: {str(one[:2])[:200]}")
+        bol = refs.get("BOL", {}).get("insId")
+        ins = api._get(f"/insiders/{bol}")
+        txt = json.dumps(ins, ensure_ascii=False)
+        print(f"  insiders: typ={type(ins).__name__} nycklar={list(ins)[:8] if isinstance(ins, dict) else '-'} "
+              f"längd={len(txt)}; början: {txt[:400]}")
+    except Exception as e:
+        print(f"  FEL: {e}")
+
     # ── Deep Contrarian: hela pipelinen med elimineringsorsaker ────────────
     if os.environ.get("PROBE_PIPELINE", "1") == "1":
         print("\n" + "=" * 72)

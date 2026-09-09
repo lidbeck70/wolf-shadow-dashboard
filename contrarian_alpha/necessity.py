@@ -389,10 +389,10 @@ BORSDATA_BRANCH_MAP: dict[int, NecessityEntry] = {
     75: NecessityEntry(62, "Fastighetsbolag",            "Tak över huvudet, men räntekänsligt"),
     76: NecessityEntry(62, "Fastighet - REIT",           "Hyresfastigheter"),
     # Hälsovård (sektor 4)
-    77: NecessityEntry(88, "Läkemedel",                  "Sjukdomsbehandling — ej uppskjutbart"),
+    77: NecessityEntry(80, "Läkemedel",                  "Sjukdomsbehandling — ej uppskjutbart"),
     78: NecessityEntry(45, "Biotech",                    "Förhoppningsbolag utan intäkter — spekulativt"),
-    79: NecessityEntry(78, "Medicinsk Utrustning",       "Vårdens verktyg"),
-    80: NecessityEntry(75, "Hälsovård & Hjälpmedel",     "Vårdnära produkter"),
+    79: NecessityEntry(60, "Medicinsk Utrustning",       "Vårdens verktyg — men branschen är full av mikrobolag utan kassaflöde"),
+    80: NecessityEntry(62, "Hälsovård & Hjälpmedel",     "Vårdnära produkter"),
     81: NecessityEntry(85, "Sjukhus & Vårdhem",          "Vårdproduktion"),
     # Informationsteknik (sektor 6)
     82: NecessityEntry(50, "Elektronik & Tillverkning",  "Kontraktstillverkning"),
@@ -407,8 +407,8 @@ BORSDATA_BRANCH_MAP: dict[int, NecessityEntry] = {
     91: NecessityEntry(8,  "Internettjänster",           "Plattformar, annonsberoende"),
     92: NecessityEntry(15, "Betalning & E-handel",       "Fintech, spekulativt"),
     # Telekommunikation (sektor 9)
-    93: NecessityEntry(78, "Bredband & Telefoni",        "Kommunikationsinfrastruktur"),
-    94: NecessityEntry(75, "Telekomtjänster",            "Nätoperatörer"),
+    93: NecessityEntry(72, "Bredband & Telefoni",        "Kommunikationsinfrastruktur"),
+    94: NecessityEntry(66, "Telekomtjänster",            "Nätoperatörer och IoT-bolag i samma bransch"),
 }
 
 # Sektorfallback när branschen saknas/okänd (Börsdatas sektorId 1–10)
