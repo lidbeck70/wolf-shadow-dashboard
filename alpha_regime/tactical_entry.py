@@ -24,6 +24,15 @@ logger = logging.getLogger(__name__)
 _ENTRY_NOW_MIN_PASS   = 5   # ≥5/6 checks → ENTRY NOW
 _WAIT_TREND_CHECKS    = {0, 1}  # check indices for trend filters (fail → INGEN ENTRY)
 
+# Deep Contrarian-läget: trendfiltren (pris > 50V EMA, 20D > 50D) säger nej
+# till precis de bolag screenern hittar — hatade bolag under SMA200. I stället
+# två vakter i Rule/Sprott-anda: inte redan älskad (samma SMA200-tak som
+# screenern) och bottnen håller (högre botten). Saknad SMA200 hoppar vakten
+# över, precis som screenern gör.
+_CONTRARIAN_MAX_ABOVE_SMA200_PCT = 5.0
+_HIGHER_LOW_RECENT_DAYS = 20     # senaste fönstret för "bottnen håller"
+_VOLUME_DROUGHT_RATIO   = 0.8    # 20d snittvolym / 6m snittvolym under detta = säljarna slut
+
 # Entry zone half-width around 20D EMA
 _ENTRY_ZONE_PCT = 0.02  # ±2%
 
@@ -140,6 +149,7 @@ def _download_robust(ticker: str, period: str) -> pd.DataFrame:
 def compute_tactical_entry(
     ticker: str,
     sector_etf: Optional[str] = None,
+    mode: str = "quality",
 ) -> TacticalEntryResult:
     """
     Compute tactical entry signals for a ticker.
@@ -148,6 +158,8 @@ def compute_tactical_entry(
     ----------
     ticker     : stock / ETF ticker (yfinance format)
     sector_etf : sector ETF for RS check; None = auto-default SPY
+    mode       : "quality" (trendfilter, 6 checkar) eller "contrarian"
+                 (vakter i stället för trendfilter, se _contrarian_checks)
 
     Returns
     -------
@@ -176,7 +188,8 @@ def compute_tactical_entry(
     price = float(close_d.iloc[-1])
 
     # ── 2. Download weekly data (5y) for 50W EMA ─────────────────────────────
-    weekly = _download_robust(ticker, "5y")
+    # (50V EMA används bara av quality-lägets trendfilter)
+    weekly = _download_robust(ticker, "5y") if mode != "contrarian" else pd.DataFrame()
     ema50w: Optional[float] = None
     if not weekly.empty and "Close" in weekly.columns:
         close_w = weekly["Close"].squeeze()
@@ -203,7 +216,7 @@ def compute_tactical_entry(
     rs_positive: Optional[bool] = None
     rs_detail   = f"Sektordata ej tillgänglig ({sector_etf})"
 
-    etf_daily = _download_robust(sector_etf, "3mo")
+    etf_daily = _download_robust(sector_etf, "3mo") if mode != "contrarian" else pd.DataFrame()
     if not etf_daily.empty and "Close" in etf_daily.columns:
         etf_close = etf_daily["Close"].squeeze()
         if isinstance(etf_close, pd.DataFrame):
@@ -223,8 +236,10 @@ def compute_tactical_entry(
     # ── Build checks ─────────────────────────────────────────────────────────
     checks: list[TacticalCheck] = []
 
+    if mode == "contrarian":
+        checks += _contrarian_checks(daily, close_d, price)
     # CHECK 0 — price > 50W EMA (trend filter)
-    if ema50w is not None:
+    elif ema50w is not None:
         c0_pass = price > ema50w
         checks.append(TacticalCheck(
             name="Pris > 50-veckors EMA",
@@ -240,14 +255,15 @@ def compute_tactical_entry(
             is_trend=True,
         ))
 
-    # CHECK 1 — 20D EMA > 50D EMA (trend filter)
-    c1_pass = ema20 > ema50_d
-    checks.append(TacticalCheck(
-        name="20D EMA > 50D EMA",
-        passed=c1_pass,
-        detail=f"20D EMA {ema20:.2f} {'>' if c1_pass else '<'} 50D EMA {ema50_d:.2f}",
-        is_trend=True,
-    ))
+    # CHECK 1 — 20D EMA > 50D EMA (trend filter, bara quality)
+    if mode != "contrarian":
+        c1_pass = ema20 > ema50_d
+        checks.append(TacticalCheck(
+            name="20D EMA > 50D EMA",
+            passed=c1_pass,
+            detail=f"20D EMA {ema20:.2f} {'>' if c1_pass else '<'} 50D EMA {ema50_d:.2f}",
+            is_trend=True,
+        ))
 
     # CHECK 2 — pullback: price within 3% of 20D EMA
     pct_from_ema20 = abs(price - ema20) / ema20 * 100
@@ -286,8 +302,10 @@ def compute_tactical_entry(
             is_trend=False,
         ))
 
-    # CHECK 5 — RS vs sector ETF positive (1 month)
-    if rs_positive is not None:
+    # CHECK 5 — contrarian: volymtorka (säljarna är slut); quality: RS vs ETF
+    if mode == "contrarian":
+        checks.append(_volume_drought_check(daily))
+    elif rs_positive is not None:
         checks.append(TacticalCheck(
             name=f"Relativ styrka vs {sector_etf} (1 mån)",
             passed=rs_positive,
@@ -333,6 +351,91 @@ def compute_tactical_entry(
     result.target_2r       = target_2r
     result.target_3r       = target_3r
     return result
+
+
+def _contrarian_checks(daily: pd.DataFrame, close_d: pd.Series, price: float) -> list[TacticalCheck]:
+    """
+    De två vakterna som ersätter trendfiltren i Deep Contrarian-läget.
+    Båda är is_trend=True (blockerande): faller de blir domen INGEN ENTRY.
+
+    K0  Högst 5 % över SMA200 — samma tak som screenern. Ett pris klart över
+        200-dagars betyder att marknaden redan börjat älska bolaget igen.
+        Saknas 200 dagars historik hoppas vakten över (passerar, med notis).
+    K1  Bottnen håller — lägsta stängning senaste 20 dagarna ligger över
+        3-månaderslägsta före det fönstret. Ny lägsta = fallande kniv.
+    """
+    out: list[TacticalCheck] = []
+
+    # K0 — unloved guard
+    if len(close_d) >= 200:
+        sma200 = float(close_d.iloc[-200:].mean())
+        above = (price / sma200 - 1) * 100 if sma200 > 0 else 0.0
+        ok = above <= _CONTRARIAN_MAX_ABOVE_SMA200_PCT
+        out.append(TacticalCheck(
+            name=f"Högst {_CONTRARIAN_MAX_ABOVE_SMA200_PCT:g}% över SMA200 (inte redan älskad)",
+            passed=ok,
+            detail=(f"Pris {price:.2f} är {above:+.1f}% mot SMA200 {sma200:.2f}"
+                    + ("" if ok else " — återhämtningen är prissatt, vänta på pullback")),
+            is_trend=True,
+        ))
+    else:
+        out.append(TacticalCheck(
+            name=f"Högst {_CONTRARIAN_MAX_ABOVE_SMA200_PCT:g}% över SMA200 (inte redan älskad)",
+            passed=True,
+            detail=f"SMA200 ej beräkningsbar ({len(close_d)} dagar) — vakten hoppas över",
+            is_trend=True,
+        ))
+
+    # K1 — higher low
+    n = len(close_d)
+    recent_n = min(_HIGHER_LOW_RECENT_DAYS, n)
+    prior_n = min(_SWING_LOOKBACK_DAYS, n) - recent_n
+    if prior_n >= 5:
+        low_recent = float(np.min(close_d.values[-recent_n:]))
+        low_prior = float(np.min(close_d.values[-(recent_n + prior_n):-recent_n]))
+        ok = low_recent > low_prior
+        out.append(TacticalCheck(
+            name="Bottnen håller (högre botten senaste 20 dagarna)",
+            passed=ok,
+            detail=(f"Lägsta 20d {low_recent:.2f} {'>' if ok else '≤'} tidigare 3m-lägsta {low_prior:.2f}"
+                    + ("" if ok else " — ny lägsta, fallande kniv")),
+            is_trend=True,
+        ))
+    else:
+        out.append(TacticalCheck(
+            name="Bottnen håller (högre botten senaste 20 dagarna)",
+            passed=False,
+            detail=f"För lite historik ({n} dagar) för att bedöma bottnen",
+            is_trend=True,
+        ))
+    return out
+
+
+def _volume_drought_check(daily: pd.DataFrame) -> TacticalCheck:
+    """Volymtorka: 20d snittvolym / 6m snittvolym < 0.8 → säljarna är slut."""
+    name = "Volymtorka (20d snitt < 80% av 6m snitt)"
+    if "Volume" not in daily.columns:
+        return TacticalCheck(name=name, passed=False, detail="Volymdata saknas", is_trend=False)
+    vol = daily["Volume"].squeeze()
+    if isinstance(vol, pd.DataFrame):
+        vol = vol.iloc[:, 0]
+    vol = vol.dropna()
+    vol = vol[vol > 0]
+    if len(vol) < 60:
+        return TacticalCheck(name=name, passed=False,
+                             detail=f"För lite volymhistorik ({len(vol)} dagar)", is_trend=False)
+    v20 = float(vol.iloc[-20:].mean())
+    v6m = float(vol.iloc[-126:].mean())
+    if v6m <= 0:
+        return TacticalCheck(name=name, passed=False, detail="Volym 6m = 0", is_trend=False)
+    ratio = v20 / v6m
+    ok = ratio < _VOLUME_DROUGHT_RATIO
+    return TacticalCheck(
+        name=name, passed=ok,
+        detail=f"20d {v20:,.0f} / 6m {v6m:,.0f} = {ratio:.2f}"
+               + ("" if ok else " — volymen har inte torkat ut än"),
+        is_trend=False,
+    )
 
 
 def resolve_sector_etf(detected_exposure: Optional[list]) -> str:

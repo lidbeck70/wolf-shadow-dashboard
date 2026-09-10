@@ -83,7 +83,8 @@ class RegimeResult:
     price: float = 0.0
     ema50: float = 0.0
     ema200: float = 0.0
-    price_vs_ma200: float = 0.0
+    sma200: float = 0.0          # samma snitt som Deep Contrarian-screenerns vakt
+    price_vs_ma200: float = 0.0  # (price / SMA200 - 1) * 100; EMA200 om SMA saknas
     trend_phase: str = "Neutral"
     sentiment_score: Optional[float] = None
     market_indicators: dict = field(default_factory=dict)
@@ -123,6 +124,13 @@ def _ema(series: pd.Series, span: int) -> float:
     if len(s) < span:
         return float("nan")
     return float(s.ewm(span=span, adjust=False).mean().iloc[-1])
+
+
+def _sma(series: pd.Series, window: int) -> float:
+    s = series.dropna()
+    if len(s) < window:
+        return float("nan")
+    return float(s.iloc[-window:].mean())
 
 
 def _fetch_price(ticker: str, period: str = "2y") -> pd.DataFrame:
@@ -329,8 +337,12 @@ def run_regime_analysis(
     result.ema50 = _ema(close, 50)
     result.ema200 = _ema(close, 200)
     result.trend_phase = _classify_trend_phase(result.price, result.ema50, result.ema200)
-    if result.ema200 != 0 and result.ema200 == result.ema200:
-        result.price_vs_ma200 = round((result.price / result.ema200 - 1) * 100, 2)
+    # Pris vs 200-dagars: SMA200, precis som screenerns unloved-vakt
+    # (deep_max_above_sma200_pct). EMA200 bara som reserv vid kort historik.
+    result.sma200 = _sma(close, 200)
+    _ma = result.sma200 if result.sma200 == result.sma200 else result.ema200
+    if _ma != 0 and _ma == _ma:
+        result.price_vs_ma200 = round((result.price / _ma - 1) * 100, 2)
 
     # 2. Fetch market price + compute market cycle ────────────────────────────
     market_df = _fetch_price(market_ticker, period="2y")

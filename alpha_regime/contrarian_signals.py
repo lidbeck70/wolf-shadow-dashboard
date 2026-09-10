@@ -8,6 +8,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
+# ── Harmoniserat med Deep Contrarian-screenern ───────────────────────────────
+# Screenern (contrarian_alpha.engine.PipelineConfig.deep_max_above_sma200_pct)
+# släpper igenom bolag högst så här många procent ÖVER SMA200 — därutöver är
+# återhämtningen prissatt. Samma tak här, så att regimfliken inte kallar det
+# "ackumuleringsfönster" som screenern just kastade ut.
+MAX_ABOVE_MA200_PCT: float = 5.0
+# Nedre gräns för "nära SMA200" i HOPE-fasen (priset på väg upp genom snittet).
+MIN_NEAR_MA200_PCT: float = -5.0
+
 # ── Phase sets ───────────────────────────────────────────────────────────────
 
 # Maximum pain / capitulation — strongest accumulate signal
@@ -87,7 +96,7 @@ def get_contrarian_stage(
     if phase in _PHASE_ACCUMULATE_1:
         rationale += [
             f"Market in {phase} — maximum pain / capitulation",
-            f"Price {price_vs_ma200_pct:+.1f}% vs 200D MA — distressed territory",
+            f"Price {price_vs_ma200_pct:+.1f}% vs SMA200 — distressed territory",
             "Rule/Sprott: greatest opportunity is at maximum pessimism",
         ]
         if sent_bearish:
@@ -108,11 +117,15 @@ def get_contrarian_stage(
         below_200 = price_vs_ma200_pct < 0
         rationale += [
             f"Market in {phase} — disbelief / anger after bear market",
-            f"Price {price_vs_ma200_pct:+.1f}% vs 200D MA",
-            "Sprott: accumulate in stages while below 200D MA",
+            f"Price {price_vs_ma200_pct:+.1f}% vs SMA200",
+            "Sprott: accumulate in stages while below SMA200",
         ]
-        if not below_200:
-            rationale.append("Price recrossing 200D — transition to phase 3 watch")
+        if price_vs_ma200_pct > MAX_ABOVE_MA200_PCT:
+            rationale.append(
+                f"Price already {price_vs_ma200_pct:+.1f}% above SMA200 (max "
+                f"{MAX_ABOVE_MA200_PCT:g}%) — recovery priced in, wait for pullback")
+        elif not below_200:
+            rationale.append("Price recrossing SMA200 — transition to phase 3 watch")
         if sent_bearish:
             rationale.append("Extreme retail fear confirms contrarian thesis")
         return ContrairianStageResult(
@@ -125,15 +138,19 @@ def get_contrarian_stage(
         )
 
     if phase in _PHASE_ACCUMULATE_3:
-        at_crossover = -5 <= price_vs_ma200_pct <= 15
+        at_crossover = MIN_NEAR_MA200_PCT <= price_vs_ma200_pct <= MAX_ABOVE_MA200_PCT
         rationale += [
             f"Market in {phase} — hope returning, early recovery",
-            f"Price {price_vs_ma200_pct:+.1f}% vs 200D MA",
+            f"Price {price_vs_ma200_pct:+.1f}% vs SMA200",
         ]
         if at_crossover:
-            rationale.append("Price near 200D MA crossover — final accumulation window")
+            rationale.append("Price near SMA200 crossover — final accumulation window")
+        elif price_vs_ma200_pct > MAX_ABOVE_MA200_PCT:
+            rationale.append(
+                f"Price {price_vs_ma200_pct:+.1f}% above SMA200 — more than "
+                f"{MAX_ABOVE_MA200_PCT:g}% means the recovery is priced in; wait for pullback")
         else:
-            rationale.append("Price extended from 200D — consider waiting for pullback")
+            rationale.append("Price still well below SMA200 — early, size the tranche small")
         return ContrairianStageResult(
             stage="ACCUMULATE_3",
             label="ACCUMULATE · Phase 3",
@@ -146,11 +163,11 @@ def get_contrarian_stage(
     if phase in _PHASE_HOLD:
         rationale += [
             f"Market in {phase} — trend confirmed, momentum running",
-            f"Price {price_vs_ma200_pct:+.1f}% vs 200D MA",
+            f"Price {price_vs_ma200_pct:+.1f}% vs SMA200",
             "Hold existing positions · no new accumulation at these levels",
         ]
         if price_vs_ma200_pct > 20:
-            rationale.append("Price extended >20% above 200D — watch for THRILL transition")
+            rationale.append("Price extended >20% above SMA200 — watch for THRILL transition")
         return ContrairianStageResult(
             stage="HOLD",
             label="HOLD · Monitor",
@@ -163,7 +180,7 @@ def get_contrarian_stage(
     if phase in _PHASE_DISTRIBUTE_1:
         rationale += [
             f"Market in {phase} — excitement and FOMO driving momentum",
-            f"Price {price_vs_ma200_pct:+.1f}% vs 200D MA — extended",
+            f"Price {price_vs_ma200_pct:+.1f}% vs SMA200 — extended",
             "Trim 25-33% of position into strength",
         ]
         if sent_bullish:
@@ -180,7 +197,7 @@ def get_contrarian_stage(
     if phase in _PHASE_DISTRIBUTE_2:
         rationale += [
             f"Market in {phase} — euphoria / complacency at cycle peak",
-            f"Price {price_vs_ma200_pct:+.1f}% vs 200D MA",
+            f"Price {price_vs_ma200_pct:+.1f}% vs SMA200",
             "Distribute 50-75% of position · Rule: sell when others are greedy",
         ]
         if sent_bullish:
@@ -200,11 +217,11 @@ def get_contrarian_stage(
     if phase in _PHASE_DISTRIBUTE_3:
         rationale += [
             f"Market in {phase} — trend breaking down, momentum deteriorating",
-            f"Price {price_vs_ma200_pct:+.1f}% vs 200D MA",
+            f"Price {price_vs_ma200_pct:+.1f}% vs SMA200",
             "Exit remaining long exposure · preserve capital for next cycle",
         ]
         if price_vs_ma200_pct < 0:
-            rationale.append("Price below 200D MA — trend confirmation of breakdown")
+            rationale.append("Price below SMA200 — trend confirmation of breakdown")
         return ContrairianStageResult(
             stage="DISTRIBUTE_3",
             label="DISTRIBUTE · Phase 3",
@@ -218,7 +235,7 @@ def get_contrarian_stage(
     if phase == "PANIC":
         rationale += [
             "Market in PANIC — fear-driven selling, volume spike",
-            f"Price {price_vs_ma200_pct:+.1f}% vs 200D MA",
+            f"Price {price_vs_ma200_pct:+.1f}% vs SMA200",
             "Watch for capitulation bottom · begin cautious accumulation if conviction high",
         ]
         return ContrairianStageResult(
@@ -232,7 +249,7 @@ def get_contrarian_stage(
 
     # Unknown / transitional phase
     rationale.append(f"Market phase {phase!r} — no clear directional signal")
-    rationale.append(f"Price {price_vs_ma200_pct:+.1f}% vs 200D MA · await clearer cycle confirmation")
+    rationale.append(f"Price {price_vs_ma200_pct:+.1f}% vs SMA200 · await clearer cycle confirmation")
     return ContrairianStageResult(
         stage="HOLD",
         label="HOLD · Await Clarity",
