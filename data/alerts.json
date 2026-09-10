@@ -4,5 +4,6 @@
   "ember": {"enabled": true, "channels": ["discord"]},
   "wolf": {"enabled": true, "channels": ["discord"], "min_score": 80},
   "viking": {"enabled": true, "channels": ["discord"], "min_nine": 8},
-  "contrarian": {"enabled": true, "channels": ["discord"]}
+  "contrarian": {"enabled": true, "channels": ["discord"]},
+  "insider": {"enabled": true, "channels": ["discord"], "min_score": 7}
 }

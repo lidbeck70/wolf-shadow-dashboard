@@ -50,6 +50,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
         run: python arc_scan.py
 
+      # Insiderbevakaren headless — kluster ur Börsdatas insynsregister med
+      # arkets poäng/grind/trigger. Resultatet till Gisten (insider_scan.json).
+      - name: Insider scan
+        if: always()
+        env:
+          BORSDATA_API_KEY: ${{ secrets.BORSDATA_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+        run: python insider_scan.py
+
       # Schemalagda larm — swing-övergångar, Blindspots temakarta (tidig
       # cykel), EMBER eligible och Wolf/Viking-ribborna. Bara övergångar
       # larmar; tillståndet ligger i Gisten.

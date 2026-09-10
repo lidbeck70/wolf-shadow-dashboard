@@ -309,7 +309,7 @@ def detail_lines(strategy: str, row: dict) -> list:
     elif key == "insider":
         out.append(f"  Signalens fält: {_n(r.get('insiders'), zero_empty=True)} insiders · "
                    f"roll {r.get('role') or '–'} · belopp "
-                   f"{_n(r.get('amount'), ' MSEK', zero_empty=True)} · kurs mot klustersnitt "
+                   f"{_n(r.get('amount'), ' tkr', zero_empty=True)} · kurs mot klustersnitt "
                    f"{_n(round(ins.vs_cluster(r), 1) if ins.vs_cluster(r) is not None else None, ' %')}")
 
     # Kontrollernas komponenter — de svaga punkterna med namn, inte bara summan

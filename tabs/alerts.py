@@ -392,6 +392,8 @@ def _render_scheduled_settings(send_fn) -> None:
         "viking":    {"enabled": True, "channels": ["discord"],
                       "min_nine": 8},
         "contrarian": {"enabled": True, "channels": ["discord"]},
+        "insider":   {"enabled": True, "channels": ["discord"],
+                      "min_score": 7},
     }
     data = storage.session_load("alerts", {k: dict(v)
                                            for k, v in _LEG_DEFAULTS.items()})
@@ -432,7 +434,12 @@ def _render_scheduled_settings(send_fn) -> None:
              ("min_nine", "Larmribba (Nine av 9)", 5, 9, 8)),
             ("contrarian", "🎯 Deep Contrarian",
              "En ticker som NYTT kommer in i Deep Contrarian-listan — hatad "
-             "men behövd, alla grindar passerade (Rule/Sprott/Durrett).", None)):
+             "men behövd, alla grindar passerade (Rule/Sprott/Durrett).", None),
+            ("insider", "👥 Insiderbevakaren",
+             "Ett insynskluster ur Börsdatas register (riktiga köp, 30 dagar) "
+             "som NYTT når poängribban — samma poäng, grind och trigger som "
+             "arket — samt KÖP-läge när grind och trigger är på plats.",
+             ("min_score", "Larmribba (insiderpoäng av 10)", 5, 10, 7))):
         cfg = data[key]
         c1, c2 = st.columns([1, 2])
         enabled = c1.toggle(label, value=bool(cfg.get("enabled", True)),
