@@ -3,7 +3,8 @@ engine.py — Contrarian Alpha Screener pipeline (Fas 5).
 
 Pipeline stages (in order):
   1. NECESSITY GATE   score >= 60    eliminates low-necessity sectors (SaaS, crypto…)
-  2. HATE FILTER      score >= 45    eliminates loved/trending stocks
+  2. HATE FILTER      score >= 40    eliminates loved/trending stocks
+     + UNLOVED GUARD  (deep) pris högst 5 % över SMA200 — 'innan marknaden älskar dem igen'
   3. BALANCE SHEET    FCF>0, D/E<0.6, EBITDA>0%, Equity>0  eliminates weak balance sheets
   4. COMPOSITE RANK   sorted descending
 
@@ -120,7 +121,7 @@ class PipelineConfig:
 
     # Scoring mode — controls pillar weights and quality ROIC gate
     # "quality"         → ROIC>15%, quality weight=30%, hate weight=20%
-    # "deep_contrarian" → ROIC>10%, quality weight=20%, hate weight=30%
+    # "deep_contrarian" → ROIC>8% genom cykeln, quality weight=20%, hate weight=30%
     mode: str = "quality"
 
     # Universe
@@ -134,7 +135,11 @@ class PipelineConfig:
 
     # Pipeline gates
     necessity_threshold: float = float(NECESSITY_THRESHOLD)   # 60
-    hate_threshold:      float = float(HAT_THRESHOLD)          # 45
+    hate_threshold:      float = float(HAT_THRESHOLD)          # 40
+    # deep_contrarian: 'innan marknaden älskar dem igen' — priset får ligga
+    # högst så här många procent ÖVER SMA200. Redan etablerad uppåttrend =
+    # återhämtningen är prissatt; None stänger av vakten.
+    deep_max_above_sma200_pct: float | None = 5.0
 
     # Output
     top_n: int = 25
@@ -1410,6 +1415,23 @@ def _run_single_ticker(
             )
             return result
 
+    # ── 2b. UNLOVED GUARD (deep_contrarian) ─────────────────────────────────
+    # "Hatade bolag med god ekonomi INNAN marknaden börjar älska dem igen":
+    # ett pris klart över SMA200 betyder att återhämtningen redan är
+    # prissatt — hat-poängen kan ändå nå tröskeln via blankning, volymtorka
+    # och sektorsvaghet. Vakten är matematisk: högst X % över 200-dagars.
+    _guard = config.deep_max_above_sma200_pct
+    if (config.mode == "deep_contrarian" and not _is_resource and _guard is not None
+            and result.close > 0 and result.sma200 > 0):
+        _above = (result.close - result.sma200) / result.sma200 * 100.0
+        if _above > float(_guard):
+            result.eliminated       = True
+            result.elimination_stage  = "HATE"
+            result.elimination_reason = (
+                f"Redan {_above:.1f}% över SMA200 (max {_guard:g}%) — marknaden har "
+                f"börjat älska den igen [deep_contrarian mode]")
+            return result
+
     # ── 3. BALANCE SHEET GATE ────────────────────────────────────────────────
 
     # Root-cause fix: the Börsdata batch screener returns 400 for several KPIs
@@ -1625,7 +1647,7 @@ def _run_single_ticker(
             _med = (f", median {_roic_median:.1f}%" if _roic_median is not None
                     else ", ingen historik")
             result.elimination_reason = (
-                f"ROIC {quality_result.roic:.1f}% < 10% gate [deep_contrarian mode"
+                f"ROIC {quality_result.roic:.1f}% < {GATE_ROIC_DEEP:g}% gate [deep_contrarian mode"
                 f"{_med}]"
             )
             return result

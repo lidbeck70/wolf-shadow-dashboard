@@ -343,7 +343,8 @@ def _render_control_panel() -> tuple[dict, bool]:
             key="ca_mode",
             help=(
                 "Quality — ROIC>15%, Quality-vikt 30%, Hat-vikt 20%.\n"
-                "Deep Contrarian — ROIC>10%, Hat-vikt 30%, Quality-vikt 20%."
+                "Deep Contrarian — Hat ≥ 40, ROIC ≥ 8% genom cykeln, högst 5% över SMA200, "
+                "Hat-vikt 30%, Quality-vikt 20%."
             ),
         )
 
