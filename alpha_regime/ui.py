@@ -19,6 +19,13 @@ from alpha_regime.contrarian_signals import (
     CYCLE_STRIP_ORDER,
     CYCLE_PHASE_COLORS,
 )
+from alpha_regime.screener_link import load_deep_contrarian_rows, find_row
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _cached_deep_rows():
+    """Senaste Deep Contrarian-körningen, cachad 10 min (Gist-läsning)."""
+    return load_deep_contrarian_rows()
 
 # ── Optional: direct commodity ratio helpers for custom builder ───────────────
 _CR_OK = False
@@ -161,7 +168,7 @@ def _render_market_context(r: RegimeResult) -> None:
             pct = r.price_vs_ma200
             color = "#1aaa5a" if pct > 0 else "#cc3333"
             st.markdown(
-                f"**Price vs 200D MA**<br>"
+                f"**Price vs SMA200**<br>"
                 f'<span style="color:{color};font-size:1.1rem;font-weight:700;">'
                 f'{pct:+.1f}%</span>',
                 unsafe_allow_html=True,
@@ -212,7 +219,7 @@ def _render_cycle_strip(current_phase: str) -> None:
 _STAGE_VERDICT: dict[str, dict] = {
     "ACCUMULATE_1": {"n": 1, "type": "ACCUMULATE", "sub": "Deploy first tranche of your planned position now"},
     "ACCUMULATE_2": {"n": 2, "type": "ACCUMULATE", "sub": "Deploy second tranche — despair/disbelief still present"},
-    "ACCUMULATE_3": {"n": 3, "type": "ACCUMULATE", "sub": "Final accumulation window — hope returning, price near 200D"},
+    "ACCUMULATE_3": {"n": 3, "type": "ACCUMULATE", "sub": "Final accumulation window — hope returning, price ≤5% over SMA200"},
     "HOLD":         {"n": 0, "type": "HOLD",        "sub": "Hold existing positions · no new accumulation at these levels"},
     "DISTRIBUTE_1": {"n": 1, "type": "DISTRIBUTE",  "sub": "Trim 25–33% of position into current strength"},
     "DISTRIBUTE_2": {"n": 2, "type": "DISTRIBUTE",  "sub": "Distribute 50–75% of position · sell into greed"},
@@ -345,7 +352,7 @@ def _render_next_trigger(r: RegimeResult, c) -> None:
     elif stage == "ACCUMULATE_2":
         label = "ACCUMULATE 3/3"
         text  = (f"Market must enter HOPE phase (currently: <b>{r.market_phase}</b>). "
-                 f"Price {r.price_vs_ma200:+.1f}% vs 200D MA — watch for upward recross toward 0%")
+                 f"Price {r.price_vs_ma200:+.1f}% vs SMA200 — watch for upward recross toward 0%")
     elif stage == "ACCUMULATE_3":
         label = "HOLD"
         low3  = f"3m low: <b>{r.price_3m_low:.2f}</b>" if r.price_3m_low else ""
@@ -355,7 +362,7 @@ def _render_next_trigger(r: RegimeResult, c) -> None:
     elif stage == "HOLD":
         label = "DISTRIBUTE 1/3"
         text  = (f"Cycle shift to THRILL triggers first distribution tranche. "
-                 f"Price currently <b>{r.price_vs_ma200:+.1f}%</b> above 200D MA — "
+                 f"Price currently <b>{r.price_vs_ma200:+.1f}%</b> above SMA200 — "
                  f"monitor cycle confidence ({r.market_confidence:.0f}%) and sentiment extremes")
     elif stage == "DISTRIBUTE_1":
         label = "DISTRIBUTE 2/3"
@@ -366,7 +373,7 @@ def _render_next_trigger(r: RegimeResult, c) -> None:
     elif stage == "DISTRIBUTE_3":
         label = "EXIT"
         text  = (f"<b>Exit remaining long exposure</b> — PANIC/CAPITULATION approaching. "
-                 f"Price {r.price_vs_ma200:+.1f}% vs 200D MA.")
+                 f"Price {r.price_vs_ma200:+.1f}% vs SMA200.")
     else:
         return
 
@@ -727,14 +734,15 @@ def _render_tactical_entry(r: RegimeResult) -> None:
         return
 
     sector_etf = resolve_sector_etf(r.detected_exposure)
+    _te_mode = "quality" if r.mode == "quality" else "contrarian"
 
-    cache_key = f"te_result_{r.ticker}_{sector_etf}"
+    cache_key = f"te_result_{r.ticker}_{sector_etf}_{_te_mode}"
     te: Optional[TacticalEntryResult] = st.session_state.get(cache_key)
 
     if te is None:
         with st.spinner(f"Beräknar taktisk entry för {r.ticker} …"):
             try:
-                te = compute_tactical_entry(r.ticker, sector_etf=sector_etf)
+                te = compute_tactical_entry(r.ticker, sector_etf=sector_etf, mode=_te_mode)
             except Exception as exc:
                 st.warning(f"Taktisk entry-beräkning misslyckades: {exc}")
                 return
@@ -744,6 +752,11 @@ def _render_tactical_entry(r: RegimeResult) -> None:
         return
 
     verdict_color = _TE_VERDICT_COLORS.get(te.verdict, "#607080")
+    _n_checks = len(te.checks) or 6
+    _context = (
+        f"Sektorjämförelse: {sector_etf}" if _te_mode == "quality"
+        else "Contrarian-vakter: högst 5% över SMA200 · bottnen håller (inga trendfilter)"
+    )
 
     st.markdown(
         f"""<div style="border:2px solid {verdict_color};border-radius:8px;
@@ -754,8 +767,8 @@ def _render_tactical_entry(r: RegimeResult) -> None:
           <div style="font-size:1.7rem;font-weight:900;color:{verdict_color};
               letter-spacing:0.06em;margin-bottom:8px;">{te.verdict}</div>
           <div style="font-size:0.8rem;color:#8899aa;margin-bottom:4px;">
-              Sektorjämförelse: {sector_etf} &nbsp;·&nbsp;
-              {te.passed_count}/6 villkor uppfyllda</div>
+              {_context} &nbsp;·&nbsp;
+              {te.passed_count}/{_n_checks} villkor uppfyllda</div>
         </div>""",
         unsafe_allow_html=True,
     )
@@ -772,12 +785,13 @@ def _render_tactical_entry(r: RegimeResult) -> None:
     )
 
     rows_html = ""
+    _badge_txt = "TREND" if _te_mode == "quality" else "VAKT"
     for chk in te.checks:
         icon  = "✅" if chk.passed else "❌"
         color = "#1aaa5a" if chk.passed else "#cc3333"
         trend_badge = (
             ' <span style="font-size:0.6rem;color:#607080;'
-            'border:1px solid #607080;padding:1px 4px;border-radius:3px;">TREND</span>'
+            f'border:1px solid #607080;padding:1px 4px;border-radius:3px;">{_badge_txt}</span>'
             if chk.is_trend else ""
         )
         rows_html += (
@@ -857,6 +871,62 @@ def _render_tactical_entry(r: RegimeResult) -> None:
                 f'</div>',
                 unsafe_allow_html=True,
             )
+
+
+# ── Screener card ─────────────────────────────────────────────────────────────
+
+def _render_screener_card(r: RegimeResult) -> None:
+    """Bolagets status i senaste Deep Contrarian-körningen (grindar + poäng)."""
+    try:
+        rows, ts = _cached_deep_rows()
+    except Exception as exc:
+        logger.debug("screener rows: %s", exc)
+        return
+    if not rows:
+        return
+    _ts = ts[:16].replace("T", " ")
+    row = find_row(rows, r.ticker)
+    if row is None:
+        st.caption(
+            f"{r.ticker} finns inte bland de {len(rows)} bolagen i senaste Deep Contrarian-"
+            f"körningen ({_ts}). Regimen nedan är ren tajming — inte en screener-bekräftelse."
+        )
+        return
+
+    def _fmt(v, f="{:.1f}", suffix=""):
+        return "—" if v is None else f.format(v) + suffix
+
+    items = [
+        ("Rank",       f"#{row.rank}"),
+        ("Composite",  _fmt(row.composite)),
+        ("Hat",        _fmt(row.hat)),
+        ("Necessity",  _fmt(row.necessity, "{:.0f}")),
+        ("ND/EBITDA",  _fmt(row.net_debt_ebitda, "{:.2f}")),
+        ("Altman Z",   _fmt(row.altman_z, "{:.2f}")),
+        ("ROIC",       _fmt(row.roic, "{:.1f}", "%")),
+        ("vs SMA200",  _fmt(row.pct_vs_sma200, "{:+.1f}", "%")),
+    ]
+    cells = "".join(
+        f'<div style="min-width:88px;"><div style="font-size:0.62rem;color:#607080;'
+        f'text-transform:uppercase;letter-spacing:0.08em;">{k}</div>'
+        f'<div style="font-size:0.95rem;font-weight:700;color:#e8e4dc;">{v}</div></div>'
+        for k, v in items
+    )
+    flags = "".join(
+        f'<span style="font-size:0.62rem;color:#8899aa;border:1px solid #2a3040;'
+        f'padding:1px 6px;border-radius:3px;margin-right:4px;">{f}</span>'
+        for f in row.flags[:6]
+    )
+    st.markdown(
+        f'<div style="border:1px solid #1a7a3a;border-radius:6px;padding:12px 16px;'
+        f'background:rgba(26,122,58,0.08);margin:8px 0 12px;">'
+        f'<div style="font-size:0.7rem;color:#8899aa;letter-spacing:0.1em;text-transform:uppercase;'
+        f'margin-bottom:6px;">✅ I Deep Contrarian-listan · {row.name} · {row.branch} · körning {_ts}</div>'
+        f'<div style="display:flex;flex-wrap:wrap;gap:14px;">{cells}</div>'
+        + (f'<div style="margin-top:8px;">{flags}</div>' if flags else "")
+        + '</div>',
+        unsafe_allow_html=True,
+    )
 
 
 # ── Action box ────────────────────────────────────────────────────────────────
@@ -1130,6 +1200,9 @@ def _render_contrarian_mode(r: RegimeResult, exposure_override=None) -> None:
     # 0. Action box (Swedish, beginner-friendly)
     _render_action_box(r)
 
+    # 0b. Screener-status: VAD (screenern) möter NÄR (regimen)
+    _render_screener_card(r)
+
     # Tactical entry — only for ACCUMULATE stages
     if c.stage.startswith("ACCUMULATE"):
         _render_tactical_entry(r)
@@ -1177,6 +1250,34 @@ def render_alpha_regime() -> None:
         "Deep Contrarian (Rule/Sprott)</div>",
         unsafe_allow_html=True,
     )
+
+    # ── Deep Contrarian-listan → ticker (bara i contrarian-läget) ────────────
+    # Screenern svarar på VAD, den här fliken på NÄR. Väljaren renderas före
+    # text-fältet så att callbacken får sätta ar_ticker innan widgeten skapas.
+    if st.session_state.get("ar_mode", "quality") == "contrarian":
+        try:
+            _rows, _ts = _cached_deep_rows()
+        except Exception:
+            _rows, _ts = [], ""
+        if _rows:
+            _opts = ["— skriv ticker manuellt —"] + [row.label for row in _rows]
+            _by_label = {row.label: row.yf_ticker for row in _rows}
+
+            def _pick_from_list() -> None:
+                t = _by_label.get(st.session_state.get("ar_pick"))
+                if t:
+                    st.session_state["ar_ticker"] = t
+
+            st.selectbox(
+                f"Från senaste Deep Contrarian-körningen ({len(_rows)} bolag · "
+                f"{_ts[:16].replace('T', ' ')})",
+                options=_opts, key="ar_pick", on_change=_pick_from_list,
+                help="Välj ett bolag ur screenerns lista så fylls tickern i. "
+                     "Tryck sedan ▶ ANALYSE.",
+            )
+        else:
+            st.caption("Ingen sparad Deep Contrarian-körning hittades — kör screenern under "
+                       "Screening → Contrarian Alpha så dyker listan upp här.")
 
     # ── Controls ─────────────────────────────────────────────────────────────
     ctrl1, ctrl2, ctrl3, ctrl4 = st.columns([1, 1, 1.5, 0.8])

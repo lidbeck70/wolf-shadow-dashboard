@@ -341,6 +341,10 @@ def _result_to_dict(r) -> dict:
         "ebitda_pct":       r.ebitda_pct,
         "debt_equity":      r.debt_equity,
         "altman_z":         r.altman_z,
+        # Deep-grindarna — läses av Alpha Regime-fliken (screener-kortet)
+        "branch":           getattr(r, "branch", ""),
+        "roic":             getattr(r, "roic", None),
+        "net_debt_ebitda":  getattr(r, "net_debt_ebitda", None),
         "viking_color":     (r.catalyst_result.viking_regime_color
                              if r.catalyst_result else "unknown"),
         "all_flags":        r.all_flags,
