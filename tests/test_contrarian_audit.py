@@ -278,6 +278,49 @@ def test_thresholds_follow_the_mandate():
     assert HAT_THRESHOLD == 40          # hatad — Borr/BW Offshore (44) ska in
     assert GATE_ROIC_DEEP == 8.0        # god ekonomi genom cykeln
     assert PipelineConfig().deep_max_above_sma200_pct == 5.0   # innan marknaden älskar
+    assert PipelineConfig().deep_min_altman_z == 1.8            # överlever botten
+
+
+def test_deep_altman_floor_only_for_non_financials():
+    """2020 Bulkers (Z 0.34) och Norwegian (Z 1.31) passerade ND/EBITDA tack
+    vare stor EBITDA. Deep-läget kräver Altman Z ≥ 1.8 — men bara för
+    icke-finansiella bolag; saknat Z flaggas i stället för att fälla."""
+    weak = _snap(revenue_m=8000.0, market_cap=5000.0)   # Z ≈ 0.5
+    r = _run_single_ticker("B.ST", 9501, _bol_inst(), weak, None,
+                           "Sjöfart & Rederi", "Industri",
+                           _deep_cfg(), _HistAPI(roic_hist=[12, 14, 11]))
+    assert r.eliminated and r.elimination_stage == "BALANCE_SHEET"
+    assert "Altman Z" in r.elimination_reason and "< 1.8" in r.elimination_reason
+
+    # samma siffror men Börsdata-sektor 1 (Finans & Fastighet) → Z tillämpas ej
+    bank = dict(_bol_inst(), sectorId=1, branchId=68)
+    f = _run_single_ticker("F.ST", 9502, bank, weak, None, "Banker",
+                           "Finans & Fastighet", _deep_cfg(),
+                           _HistAPI(roic_hist=[12, 14, 11]))
+    assert "Altman Z" not in (f.elimination_reason or "")
+
+    # Z kan inte räknas (inga tillgångar) → flagga, inte eliminering
+    nodata = _snap(total_assets_m=None, revenue_m=None, market_cap=None)
+    n = _run_single_ticker("N.ST", 9503, _bol_inst(), nodata, None,
+                           "Sjöfart & Rederi", "Industri",
+                           _deep_cfg(), _HistAPI(roic_hist=[12, 14, 11]))
+    assert "Altman Z" not in (n.elimination_reason or "")
+    assert "BS_DATA_SAKNAS" in n.all_flags
+
+    # golvet kan stängas av
+    off = PipelineConfig(universe="nordic", mode="deep_contrarian", hate_threshold=0,
+                         market_ids=[], deep_min_altman_z=None)
+    o = _run_single_ticker("O.ST", 9504, _bol_inst(), weak, None,
+                           "Sjöfart & Rederi", "Industri", off,
+                           _HistAPI(roic_hist=[12, 14, 11]))
+    assert "Altman Z" not in (o.elimination_reason or "")
+
+    # kvalitetsläget rörs inte
+    q = PipelineConfig(universe="nordic", mode="quality", hate_threshold=0, market_ids=[])
+    qr = _run_single_ticker("Q.ST", 9505, _bol_inst(), weak, None,
+                            "Sjöfart & Rederi", "Industri", q,
+                            _HistAPI(roic_hist=[12, 14, 11]))
+    assert "Altman Z" not in (qr.elimination_reason or "")
 
 
 def _flat_df(last_close: float, n: int = 260):
