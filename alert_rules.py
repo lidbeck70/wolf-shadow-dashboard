@@ -485,6 +485,33 @@ def screen_alerts(screens_data: Optional[dict], prev: Optional[dict]) -> tuple:
     return alerts, state
 
 
+# ── Arkens övergångar (sheets_refresh.py) ────────────────────────────────────
+def sheet_alerts(sheets_data: Optional[dict], prev: Optional[dict]) -> tuple:
+    """(larm, nytt tillstånd) för händelser räknade på arkens rader med
+    färska tal: Insider-stopp/passa, Tiggre free ride/NAV-mål, Royalty-
+    signal, Rick Rule-skuld, Durretts köpregel.
+
+    sheets_data: {"generated", "events": [{key, kind, ticker, title, body}],
+    "error"}. Tillståndet är de händelser som GÄLLER just nu; ett larm går
+    när en händelse är ny. Försvinner den och kommer igen larmar den igen.
+    None/error → baslinjen fryser.
+    """
+    if not isinstance(sheets_data, dict) or sheets_data.get("error"):
+        return [], (prev if isinstance(prev, dict) else {"events": {}})
+    cur = {}
+    for e in sheets_data.get("events", []) or []:
+        if isinstance(e, dict) and e.get("key"):
+            cur[str(e["key"])] = {"title": str(e.get("title") or ""),
+                                  "body": str(e.get("body") or ""),
+                                  "kind": str(e.get("kind") or "")}
+    state = {"events": cur}
+    if prev is None:
+        return [], state
+    seen = set((prev or {}).get("events", {}) or {})
+    return [_alert(f"sheet_{d['kind']}", d["title"], d["body"])
+            for k, d in cur.items() if k not in seen], state
+
+
 # ── Sammanvägningen ──────────────────────────────────────────────────────────
 def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
              themes: list, prev_state: Optional[dict],
@@ -494,7 +521,8 @@ def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
              viking_data: Optional[dict] = None,
              contrarian_data: Optional[dict] = None,
              insider_data: Optional[dict] = None,
-             screens_data: Optional[dict] = None) -> tuple:
+             screens_data: Optional[dict] = None,
+             sheets_data: Optional[dict] = None) -> tuple:
     """(larm-med-kanaler, nytt tillstånd) för hela körningen.
 
     settings: data/alerts.json — {"swing": {"enabled", "channels"},
@@ -556,6 +584,9 @@ def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
     sc_alerts, sc_state = screen_alerts(screens_data, _prev("screens"))
     out += _route("screens", sc_alerts)
 
+    sh_alerts, sh_state = sheet_alerts(sheets_data, _prev("sheets"))
+    out += _route("sheets", sh_alerts)
+
     return out, {"swing": s_state, "blindspot": b_state, "ember": e_state,
                  "wolf": w_state, "viking": v_state, "contrarian": c_state,
-                 "insider": i_state, "screens": sc_state}
+                 "insider": i_state, "screens": sc_state, "sheets": sh_state}

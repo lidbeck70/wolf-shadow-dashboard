@@ -39,6 +39,8 @@ def row_to_fields(row: dict, key: str) -> dict:
     m = row.get("m") or {}
     out = {"ticker": str(row.get("ticker") or "").upper(),
            "name": str(row.get("name") or "")}
+    if row.get("ins_id") is not None:
+        out["ins_id"] = row["ins_id"]          # så sifferuppdateringen hittar bolaget
     if key == "rule":
         if m.get("ev_ebitda") is not None:
             out["ev_ebitda"] = float(m["ev_ebitda"])

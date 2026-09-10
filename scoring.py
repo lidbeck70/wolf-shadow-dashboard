@@ -428,6 +428,12 @@ def _durrett_math(data: dict, row: dict) -> None:
             or storage.differs(profit, row.get("profit"), 0.0)):
         row["mcap"], row["moz"], row["profit"] = mcap, moz, profit
         _save(data)
+    try:
+        import refresh_ui
+        refresh_ui.suggest("scoring", row, "mcap", "mcap_musd", "börsvärde (MUSD)",
+                           f"sc_mcap_{row['id']}", lambda: _save(data), fmt="{:,.0f}")
+    except Exception:
+        pass
 
     per_oz = mcap_per_oz(mcap, moz)
     ratio = mcap_per_earnings(mcap, profit)

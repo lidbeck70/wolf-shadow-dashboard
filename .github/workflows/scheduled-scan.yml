@@ -68,6 +68,17 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
         run: python screens_scan.py
 
+      # Arkens sifferuppdatering — färska kurser/nyckeltal för raderna i
+      # Insider/Tiggre/Rick Rule/Royalty/Poängmodellen som FÖRSLAG (Gisten:
+      # sheets_refresh.json) + övergångar räknade med arkens egna regler.
+      - name: Sheets refresh
+        if: always()
+        env:
+          BORSDATA_API_KEY: ${{ secrets.BORSDATA_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+          ALERT_REPO_TOKEN: ${{ secrets.ALERT_REPO_TOKEN }}
+        run: python sheets_refresh.py
+
       # Schemalagda larm — swing-övergångar, Blindspots temakarta (tidig
       # cykel), EMBER eligible och Wolf/Viking-ribborna. Bara övergångar
       # larmar; tillståndet ligger i Gisten.

@@ -6,5 +6,6 @@
   "viking": {"enabled": true, "channels": ["discord"], "min_nine": 8},
   "contrarian": {"enabled": true, "channels": ["discord"]},
   "insider": {"enabled": true, "channels": ["discord"], "min_score": 7},
-  "screens": {"enabled": true, "channels": ["discord"]}
+  "screens": {"enabled": true, "channels": ["discord"]},
+  "sheets": {"enabled": true, "channels": ["discord"]}
 }
