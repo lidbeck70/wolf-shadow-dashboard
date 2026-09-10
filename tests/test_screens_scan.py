@@ -97,6 +97,16 @@ def test_metrics_convert_market_cap_to_musd():
     assert m["nd_ebitda"] is None
 
 
+def test_dedupe_keeps_largest_listing_and_sorts_big_first():
+    rows = [{"ticker": "BAI0", "name": "Cerrado Gold Inc", "mcap_musd": 231.0},
+            {"ticker": "CERT", "name": "Cerrado Gold Inc", "mcap_musd": 247.0},
+            {"ticker": "AWR", "name": "Shell Corp", "mcap_musd": 0.0},
+            {"ticker": "OGN", "name": "Orogen", "mcap_musd": None},
+            {"ticker": "CMCL", "name": "Caledonia", "mcap_musd": 485.0}]
+    out = sc.dedupe_rows(rows)
+    assert [r["ticker"] for r in out] == ["CMCL", "CERT", "AWR", "OGN"]
+
+
 def test_country_ids_resolve_by_name():
     c = sc.country_ids([{"id": 1, "name": "Sverige"}, {"id": 9, "name": "Kanada"},
                         {"id": 12, "name": "Australia"}, {"id": 30, "name": "USA"}])

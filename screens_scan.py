@@ -336,6 +336,24 @@ def run_universe(api, instruments: list, universe: str, kpi_fetch: Callable,
     return out
 
 
+_ROYALTY_NAME = __import__("re").compile(r"royalt|stream|trust", __import__("re").I)
+
+
+def dedupe_rows(rows: list) -> list:
+    """Störst först, och ett bolag en gång: dubbelnoteringar (Cerrado Gold
+    på två börser) ger samma namn två gånger — behåll raden med störst
+    börsvärde. Skalbolag på 0 MUSD kvalar in på pappret men hamnar sist."""
+    rows = sorted(rows, key=lambda r: (-(r.get("mcap_musd") or 0), r.get("ticker") or ""))
+    seen, out = set(), []
+    for r in rows:
+        key = str(r.get("name") or r.get("ticker") or "").strip().lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(r)
+    return out
+
+
 def scan(api) -> dict:
     out = {"generated": _now(), "global_available": False,
            "screens": {s.key: {"label": s.label, "criteria": s.criteria,
@@ -370,7 +388,10 @@ def scan(api) -> dict:
                         "Kräver Börsdata Pro+ global (Kanada/Australien/USA finns "
                         "inte i det nordiska universumet)")
         for k in out["screens"]:
-            out["screens"][k]["rows"].sort(key=lambda r: (r["mcap_musd"] or 0, r["ticker"]))
+            out["screens"][k]["rows"] = dedupe_rows(out["screens"][k]["rows"])
+        for r in out["screens"]["royalty"]["rows"]:
+            if _ROYALTY_NAME.search(r["name"]):
+                r["notes"].append("namnet säger royalty/streaming")
     except Exception as e:
         import traceback
         log.error("Håv-skanningen felade:\n%s", traceback.format_exc())
