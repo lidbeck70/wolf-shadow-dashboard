@@ -351,6 +351,82 @@ def contrarian_alerts(ca_data: Optional[dict], prev: Optional[dict]) -> tuple:
     return alerts, state
 
 
+# ── Insiderbevakaren (insider_scan.py) ───────────────────────────────────────
+INSIDER_MIN_SCORE = 7    # av 10 — arkets gräns för "går vidare till grinden"
+_S_INSIDER_BUY = "KÖP — logga i journalen"   # = insider.S_BUY (testad)
+
+
+def insider_alerts(insider_data: Optional[dict], prev: Optional[dict],
+                   min_score: int = INSIDER_MIN_SCORE) -> tuple:
+    """(larm, nytt tillstånd) för insynskluster.
+
+    insider_data är insider_scan.py:s blob: {"generated", "clusters": [{ticker,
+    name, insiders, role, amount, gate, trigger, cluster_avg, price_now,
+    score, status, vs_cluster, stop, chase, ...}], "error"}. None eller error
+    → baslinjen fryser. Två övergångar larmar: ett kluster som NYTT når
+    poängribban, och ett bolag som NYTT står i KÖP-läge (grind Ja, trigger
+    satt, inte över +30 % mot klustersnittet).
+    """
+    empty = {"qualified": {}, "buy": {}}
+    if not isinstance(insider_data, dict) or insider_data.get("error"):
+        return [], (prev if isinstance(prev, dict) else empty)
+
+    qualified, buy = {}, {}
+    for row in insider_data.get("clusters", []) or []:
+        if not isinstance(row, dict):
+            continue
+        ticker = str(row.get("ticker", "")).strip().upper()
+        score = row.get("score")
+        if not ticker or not isinstance(score, (int, float)):
+            continue
+        d = {"score": int(score), "status": str(row.get("status") or ""),
+             "name": str(row.get("name", "") or ""),
+             "insiders": row.get("insiders"), "role": row.get("role"),
+             "amount": row.get("amount"), "gate": row.get("gate"),
+             "trigger": row.get("trigger"), "cluster_avg": row.get("cluster_avg"),
+             "price_now": row.get("price_now"), "stop": row.get("stop"),
+             "vs_cluster": row.get("vs_cluster")}
+        if int(score) >= int(min_score):
+            qualified[ticker] = d
+        if d["status"] == _S_INSIDER_BUY and not row.get("chase"):
+            buy[ticker] = d
+
+    state = {"qualified": qualified, "buy": buy}
+    if prev is None:
+        return [], state
+
+    def _n(v, d=0, suffix=""):
+        return f"{v:,.{d}f}{suffix}" if isinstance(v, (int, float)) else "–"
+
+    def _body(d):
+        return (f"{d['name'] or '?'} · {_n(d['insiders'])} insiders · {d['role'] or '–'} · "
+                f"{_n(d['amount'])} tkr · grind {d['gate'] or 'kör själv'} · "
+                f"trigger {d['trigger'] or '–'} · klustersnitt {_n(d['cluster_avg'], 2)} · "
+                f"kurs {_n(d['price_now'], 2)} ({_n(d['vs_cluster'], 1, ' %')}) · "
+                f"stopp {_n(d['stop'], 2)}.")
+
+    alerts = []
+    prev_q = set((prev or {}).get("qualified", {}) or {})
+    prev_b = set((prev or {}).get("buy", {}) or {})
+    for ticker, d in qualified.items():
+        if ticker in prev_q:
+            continue
+        alerts.append(_alert(
+            "insider_cluster",
+            f"👥 Insiderkluster: {ticker} {d['score']}/10 p — {d['status']}",
+            _body(d) + " Öppna GRANSKNING → Insider → Automatisk skanning och "
+                       "lägg in klustret i arket."))
+    for ticker, d in buy.items():
+        if ticker in prev_b:
+            continue
+        alerts.append(_alert(
+            "insider_buy",
+            f"👥 Insider KÖP-läge: {ticker} ({d['score']}/10 p)",
+            _body(d) + " Grinden OK och teknisk trigger på plats — logga i journalen "
+                       "och lägg stoppen som order."))
+    return alerts, state
+
+
 # ── Sammanvägningen ──────────────────────────────────────────────────────────
 def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
              themes: list, prev_state: Optional[dict],
@@ -358,7 +434,8 @@ def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
              ember_data: Optional[dict] = None,
              wolf_data: Optional[dict] = None,
              viking_data: Optional[dict] = None,
-             contrarian_data: Optional[dict] = None) -> tuple:
+             contrarian_data: Optional[dict] = None,
+             insider_data: Optional[dict] = None) -> tuple:
     """(larm-med-kanaler, nytt tillstånd) för hela körningen.
 
     settings: data/alerts.json — {"swing": {"enabled", "channels"},
@@ -411,5 +488,12 @@ def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
     c_alerts, c_state = contrarian_alerts(contrarian_data, _prev("contrarian"))
     out += _route("contrarian", c_alerts)
 
+    insider_cfg = cfg.get("insider") or {}
+    i_alerts, i_state = insider_alerts(
+        insider_data, _prev("insider"),
+        min_score=int(insider_cfg.get("min_score") or INSIDER_MIN_SCORE))
+    out += _route("insider", i_alerts)
+
     return out, {"swing": s_state, "blindspot": b_state, "ember": e_state,
-                 "wolf": w_state, "viking": v_state, "contrarian": c_state}
+                 "wolf": w_state, "viking": v_state, "contrarian": c_state,
+                 "insider": i_state}

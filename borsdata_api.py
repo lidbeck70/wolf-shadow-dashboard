@@ -758,6 +758,31 @@ class BorsdataAPI:
             logger.debug("get_insider_transactions(%d) failed: %s", ins_id, e)
             return []
 
+    def get_insider_transactions_batch(self, ins_ids: List[int],
+                                       chunk: int = 50) -> Dict[int, List[dict]]:
+        """
+        Insynstransaktioner för många instrument i klump (instList tar upp
+        till 50 id per anrop). Returnerar {insId: [transaktioner]} — samma
+        radform som get_insider_transactions. Instrument utan registrerade
+        transaktioner saknas i svaret.
+        """
+        out: Dict[int, List[dict]] = {}
+        ids = [int(i) for i in ins_ids]
+        for k in range(0, len(ids), chunk):
+            part = ids[k:k + chunk]
+            try:
+                data = self._get("/holdings/insider",
+                                 params={"instList": ",".join(str(i) for i in part)})
+            except Exception as e:
+                logger.warning("holdings/insider batch %d–%d failed: %s", k, k + len(part), e)
+                continue
+            for group in (data.get("list") or []) if isinstance(data, dict) else []:
+                iid = group.get("insId")
+                if iid is None:
+                    continue
+                out[int(iid)] = list(group.get("values") or [])
+        return out
+
     # ─── Short positions (FI blankningsregistret) ─────────────────────────
 
     def get_short_positions(self) -> Dict[int, float]:

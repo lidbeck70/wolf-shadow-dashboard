@@ -287,8 +287,121 @@ def render_insider_page() -> None:
     _summary(data)
     _export(data)
     _new_signal(data)
+    _auto_scan(data)
     _signals(data)
     _criteria()
+
+
+# ── Automatisk skanning (insider_scan.py via GitHub Actions) ─────────────────
+# Fälten som kopieras in i arket — exakt arkets inmatningsfält, inget mer.
+AUTO_FIELDS = ("ticker", "name", "found", "insiders", "role", "amount",
+               "okar_25", "efter_fall", "aterkommande", "cluster_avg",
+               "price_now", "gate", "trigger")
+_CHECK_ICON = {"ok": "✅", "fail": "❌", "unknown": "⚪"}
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _load_auto_scan() -> dict:
+    try:
+        from gist_storage import load_blob
+        d = load_blob("insider_scan.json", None)
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def auto_to_signal(row: dict) -> dict:
+    """Skanningens kluster → en arkrad. Rena inmatningsfält + en kommentar
+    som säger vad som INTE bedömdes automatiskt."""
+    sig = {"id": _uid(), "comment": ""}
+    for k in AUTO_FIELDS:
+        v = row.get(k)
+        if v is not None:
+            sig[k] = v
+    sig.setdefault("role", ROLE_OTHER)
+    sig.setdefault("gate", GATE_BLANK)
+    sig.setdefault("trigger", "")
+    auto = row.get("auto") or {}
+    todo = [c["label"] for c in auto.get("gate_checks", [])
+            if c.get("status") == "unknown"]
+    note = f"Auto-skanning {row.get('found', _today())}"
+    if todo:
+        note += " · kolla själv: " + ", ".join(todo)
+    note += " · ökar > 25 % ej bedömt"
+    sig["comment"] = note
+    return sig
+
+
+def _auto_scan(data: dict) -> None:
+    auto = _load_auto_scan()
+    clusters = [c for c in auto.get("clusters", []) if isinstance(c, dict)]
+    ts = str(auto.get("generated") or "")[:16].replace("T", " ")
+    title = (f"🤖 Automatisk skanning — {len(clusters)} kluster ≥ 5 p"
+             + (f" · {ts}" if ts else ""))
+    with st.expander(title, expanded=bool(clusters) and not data.get("signals")):
+        st.caption(
+            "Börsdatas insynsregister, riktiga köp senaste 30 dagarna, samma "
+            "poäng/grind/trigger som arket (insider_scan.py, vardagar 08/12/18). "
+            "Grind '— ej körd —' betyder att något kräver dig: F-score ligger "
+            "inte i API-licensen, 'väg till FCF' och 'strukturellt fallande' är "
+            "bedömningar. 'Ökar innehav > 25 %' sätts aldrig automatiskt, "
+            "'efter fall' bara när F-score är känd. Lägg in klustret i arket och "
+            "fyll i resten.")
+        if auto.get("error"):
+            st.warning(f"Senaste skanningen felade: {auto['error']}")
+        if not clusters:
+            if not auto:
+                st.caption("Ingen skanning hittades i Gisten ännu — körs av "
+                           "scheduled-scan-workflowen.")
+            return
+        existing = {str(s.get("ticker", "")).strip().upper()
+                    for s in data.get("signals", [])}
+        for row in clusters:
+            t = str(row.get("ticker", "")).upper()
+            stat = row.get("status") or "–"
+            color = STATUS_COLOR.get(stat, DIM)
+            amt = _num(row.get("amount"))
+            vs = _num(row.get("vs_cluster"))
+            head = (f"{t} · {row.get('score', '–')}/{MAX_SCORE} p · {stat} · "
+                    f"{row.get('insiders', '–')} insiders · {row.get('role', '–')} · "
+                    f"{amt:,.0f} tkr" if amt is not None else
+                    f"{t} · {row.get('score', '–')}/{MAX_SCORE} p · {stat}")
+            with st.expander(head, expanded=False):
+                c1, c2 = st.columns([3, 1])
+                with c1:
+                    a = row.get("auto") or {}
+                    lines = [f"{_CHECK_ICON.get(c.get('status'), '⚪')} {c.get('label')} — "
+                             f"{c.get('detail')}" for c in a.get("gate_checks", [])]
+                    st.markdown(
+                        f"<div style='color:{color};font-weight:700;'>{row.get('name', '')}"
+                        f" · grind {row.get('gate') or '— ej körd —'} · trigger "
+                        f"{row.get('trigger') or '—'}</div>"
+                        f"<div style='color:{DIM};font-size:0.8rem;'>"
+                        f"klustersnitt {_num(row.get('cluster_avg')) or '–'} · kurs "
+                        f"{_num(row.get('price_now')) or '–'}"
+                        + (f" ({vs:+.1f} % vs kluster)" if vs is not None else "")
+                        + f" · stopp {_num(row.get('stop')) or '–'}"
+                        + (" · <b>över +30 % — passa</b>" if row.get("chase") else "")
+                        + "</div>", unsafe_allow_html=True)
+                    if lines:
+                        st.markdown("<br>".join(lines), unsafe_allow_html=True)
+                    st.caption(f"Trigger: {a.get('trigger_note', '–')} · Efter fall: "
+                               f"{a.get('efter_fall_note', '–')} · Återkommande: "
+                               f"{'ja' if row.get('aterkommande') else 'nej'}")
+                    buys = a.get("buys") or []
+                    if buys:
+                        st.caption(" · ".join(
+                            f"{b.get('date')} {b.get('owner')} ({b.get('position') or '–'}) "
+                            f"{_num(b.get('shares')) or 0:,.0f} st"
+                            + (f" @ {b.get('price'):g}" if _num(b.get('price')) is not None else "")
+                            for b in buys[:8]))
+                with c2:
+                    if t in existing:
+                        st.caption("Finns i arket.")
+                    elif st.button("➕ Lägg in i arket", key=f"ins_auto_add_{t}"):
+                        data["signals"].append(auto_to_signal(row))
+                        _save(data)
+                        st.rerun()
 
 
 def _summary(data: dict) -> None:
