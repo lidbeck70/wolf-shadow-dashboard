@@ -344,6 +344,7 @@ def _render_control_panel() -> tuple[dict, bool]:
             help=(
                 "Quality — ROIC>15%, Quality-vikt 30%, Hat-vikt 20%.\n"
                 "Deep Contrarian — Hat ≥ 40, ROIC ≥ 8% genom cykeln, högst 5% över SMA200, "
+                "ND/EBITDA ≤ 3, Altman Z ≥ 1.8 (ej finans/fastighet), "
                 "Hat-vikt 30%, Quality-vikt 20%."
             ),
         )
@@ -1150,7 +1151,7 @@ def _render_breakdown_chart(r) -> None:
     # ROIC gate
     qr = getattr(r, "quality_result", None)
     if qr is not None and qr.roic is not None:
-        _gate_pct = "15%" if _mode == "quality" else "10%"
+        _gate_pct = "15%" if _mode == "quality" else "8%"
         _roic_pass = qr.passes_gate_quality if _mode == "quality" else qr.passes_gate_deep
         gate_checks.append((f"ROIC > {_gate_pct}", "pass" if _roic_pass else "fail"))
 

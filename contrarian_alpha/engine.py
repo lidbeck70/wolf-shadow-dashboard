@@ -67,7 +67,9 @@ from contrarian_alpha.necessity import (
 )
 from contrarian_alpha.hate      import HAT_THRESHOLD, calculate_hate_score, HateResult
 from contrarian_alpha.hate      import fetch_analyst_data, fetch_short_data
-from contrarian_alpha.strength  import calculate_strength_score, StrengthResult
+from contrarian_alpha.strength  import (
+    calculate_strength_score, StrengthResult, GATE_ALTMAN_Z_MIN,
+)
 from contrarian_alpha.catalyst  import (
     calculate_catalyst_score, CatalystResult, compute_regime_color, fetch_insider_data,
 )
@@ -114,6 +116,24 @@ DEEP_ND_EBITDA_MAX: float = 3.0
 # ROIC utanför ±500 % är en dataartefakt (nära-noll kapitalbas), inte avkastning.
 ROIC_SANITY_MAX: float = 500.0
 
+# Altman Z (1968-modellen) är byggd för icke-finansiella bolag. Börsdatas
+# sektor 1 = Finans & Fastighet (banker, försäkring, investmentbolag,
+# fastighet) — där är balansräkningen själva affären och Z meningslöst.
+BORSDATA_FINANCIAL_SECTOR_IDS: frozenset[int] = frozenset({1})
+_FINANCIAL_NAME_HINTS = ("finans", "financ", "bank", "försäkring", "insurance",
+                         "fastighet", "real estate", "reit", "investmentbolag")
+
+
+def _is_financial(sector_id, sector_name: str = "", branch_name: str = "") -> bool:
+    """True för bolag där Altman Z inte är tillämplig (finans & fastighet)."""
+    try:
+        if sector_id is not None and int(sector_id) in BORSDATA_FINANCIAL_SECTOR_IDS:
+            return True
+    except (TypeError, ValueError):
+        pass
+    text = f"{sector_name or ''} {branch_name or ''}".lower()
+    return any(h in text for h in _FINANCIAL_NAME_HINTS)
+
 
 @dataclass
 class PipelineConfig:
@@ -140,6 +160,10 @@ class PipelineConfig:
     # högst så här många procent ÖVER SMA200. Redan etablerad uppåttrend =
     # återhämtningen är prissatt; None stänger av vakten.
     deep_max_above_sma200_pct: float | None = 5.0
+    # deep_contrarian: 'god ekonomi' — Altman Z måste vara minst så här hög
+    # för icke-finansiella bolag (finans & fastighet undantas, resursuniverset
+    # har egna stegvisa guardrails). None stänger av golvet.
+    deep_min_altman_z: float | None = float(GATE_ALTMAN_Z_MIN)   # 1.8
 
     # Output
     top_n: int = 25
@@ -1528,6 +1552,21 @@ def _run_single_ticker(
             _bs_data_missing = True
         elif float(nd_e) > DEEP_ND_EBITDA_MAX:
             bs_failures.append(f"Net Debt/EBITDA {nd_e:.1f} > {DEEP_ND_EBITDA_MAX:g}")
+
+        # Altman Z-golv (deep, icke-finansiella): 'god ekonomi' betyder att
+        # bolaget överlever botten. 2020 Bulkers (Z 0.34) och Norwegian
+        # (Z 1.31, D/E 6) passerade ND/EBITDA tack vare stor EBITDA — men
+        # balansräkningen är inte god. Finans & fastighet undantas (Z är
+        # inte tillämplig), resursuniverset sköts av stage-guardrails.
+        # Saknat Z → BS_DATA_SAKNAS, inte eliminering (samma policy som ovan).
+        _z_min = config.deep_min_altman_z
+        _fin = _is_financial(gics_sector, sector_name, branch_name)
+        if _z_min is not None and not _is_resource and not _fin:
+            _z = strength_result.altman_z
+            if _z is None:
+                _bs_data_missing = True
+            elif float(_z) < float(_z_min):
+                bs_failures.append(f"Altman Z {_z:.2f} < {_z_min:g}")
 
     # 5. Positive equity
     if fund_dict.get("equity") is None:
