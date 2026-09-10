@@ -292,11 +292,21 @@ def render_insider_page() -> None:
     _criteria()
 
 
+def _suggest(*args, **kw) -> None:
+    """Börsdata-förslag bredvid ett fält (sheets_refresh.py). Tyst utan blob."""
+    try:
+        import refresh_ui
+        refresh_ui.suggest(*args, **kw)
+    except Exception:
+        pass
+
+
 # ── Automatisk skanning (insider_scan.py via GitHub Actions) ─────────────────
-# Fälten som kopieras in i arket — exakt arkets inmatningsfält, inget mer.
+# Fälten som kopieras in i arket — exakt arkets inmatningsfält plus ins_id
+# (så sifferuppdateringen slipper gissa tickern), inget mer.
 AUTO_FIELDS = ("ticker", "name", "found", "insiders", "role", "amount",
                "okar_25", "efter_fall", "aterkommande", "cluster_avg",
-               "price_now", "gate", "trigger")
+               "price_now", "gate", "trigger", "ins_id")
 _CHECK_ICON = {"ok": "✅", "fail": "❌", "unknown": "⚪"}
 
 
@@ -558,6 +568,8 @@ def _signal_body(data: dict, sig: dict, r: dict, color: str) -> None:
     now = k2.number_input("Kurs nu", min_value=0.0, step=0.5,
                           value=float(_num(sig.get("price_now"), 0.0) or 0.0),
                           key=f"ins_pn_{sig['id']}")
+    _suggest("insider", sig, "price_now", "price", "kurs", f"ins_pn_{sig['id']}",
+             lambda: _save(data), with_currency=True)
     if (storage.differs(avg, sig.get("cluster_avg"), 0.0)
             or storage.differs(now, sig.get("price_now"), 0.0)):
         sig["cluster_avg"], sig["price_now"] = avg, now

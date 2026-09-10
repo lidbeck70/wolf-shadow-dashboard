@@ -249,8 +249,25 @@ def render_scoring_page() -> None:
 
     _export(data, key)
     _new_row(data, key)
+    _screen_section(data, key)
     _rows(data, key)
     _criteria()
+
+
+def _screen_section(data: dict, key: str) -> None:
+    """Håvens träffar (screens_scan.py: sprott/durrett) med "lägg in i arket"."""
+    try:
+        import screens_ui
+    except Exception:
+        return
+    existing = {str(r.get("ticker", "")).upper() for r in data.get(key, [])}
+
+    def _add(fields: dict) -> None:
+        data[key].append({"id": _uid(), "commodity": COMMODITIES[0],
+                          "date": _today(), "factors": {}, **fields})
+        _save(data)
+
+    screens_ui.render_screen_section(key, existing, _add, key_prefix=f"sc_{key}")
 
 
 CSV_COMMON = [("date", "Datum"), ("ticker", "Ticker"), ("name", "Bolag"),
@@ -411,6 +428,12 @@ def _durrett_math(data: dict, row: dict) -> None:
             or storage.differs(profit, row.get("profit"), 0.0)):
         row["mcap"], row["moz"], row["profit"] = mcap, moz, profit
         _save(data)
+    try:
+        import refresh_ui
+        refresh_ui.suggest("scoring", row, "mcap", "mcap_musd", "börsvärde (MUSD)",
+                           f"sc_mcap_{row['id']}", lambda: _save(data), fmt="{:,.0f}")
+    except Exception:
+        pass
 
     per_oz = mcap_per_oz(mcap, moz)
     ratio = mcap_per_earnings(mcap, profit)

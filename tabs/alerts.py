@@ -394,6 +394,8 @@ def _render_scheduled_settings(send_fn) -> None:
         "contrarian": {"enabled": True, "channels": ["discord"]},
         "insider":   {"enabled": True, "channels": ["discord"],
                       "min_score": 7},
+        "screens":   {"enabled": True, "channels": ["discord"]},
+        "sheets":    {"enabled": True, "channels": ["discord"]},
     }
     data = storage.session_load("alerts", {k: dict(v)
                                            for k, v in _LEG_DEFAULTS.items()})
@@ -439,7 +441,18 @@ def _render_scheduled_settings(send_fn) -> None:
              "Ett insynskluster ur Börsdatas register (riktiga köp, 30 dagar) "
              "som NYTT når poängribban — samma poäng, grind och trigger som "
              "arket — samt KÖP-läge när grind och trigger är på plats.",
-             ("min_score", "Larmribba (insiderpoäng av 10)", 5, 10, 7))):
+             ("min_score", "Larmribba (insiderpoäng av 10)", 5, 10, 7)),
+            ("screens", "🕸 Håvarna",
+             "Guidens fem Börsdata-screeners (Överlevarna, Sprott, Durrett, "
+             "Tiggre, Royalty) körda i API:t — ett larm per håv när NYA bolag "
+             "kvalar in. Sprott/Tiggre/Royalty kräver Börsdata Pro+ global.",
+             None),
+            ("sheets", "📋 Arkens övergångar",
+             "Färska kurser och nyckeltal mot dina arkrader: Insider-stopp "
+             "(−15 % under klustersnitt) och passa (+30 %), Tiggre +100 % "
+             "(sälj halva) och 0,8× NAV, Royalty-signal som byter, Rick Rule "
+             "skuld över 1,0×, Durretts 10×-regel. Förslagen syns i arken med "
+             "'Använd'.", None)):
         cfg = data[key]
         c1, c2 = st.columns([1, 2])
         enabled = c1.toggle(label, value=bool(cfg.get("enabled", True)),

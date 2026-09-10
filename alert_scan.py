@@ -159,12 +159,24 @@ def main() -> int:
     if isinstance(_ins, dict) and not _ins.get("error"):
         insider_data = _ins
 
+    # Håvarna: screens_scan.py:s blob. Saknas → benet fryser; en håv med
+    # error fryser bara sin egen baslinje.
+    screens_data = load_blob("screens.json", None)
+    if not isinstance(screens_data, dict):
+        screens_data = None
+
+    # Arkens övergångar: sheets_refresh.py:s blob. error → benet fryser.
+    sheets_data = load_blob("sheets_refresh.json", None)
+    if not isinstance(sheets_data, dict):
+        sheets_data = None
+
     # En hoppad temakarta får inte radera Blindspot-baslinjen: behåll den
     # gamla, annars larmar nästa fullkörning om övergångar som aldrig skett.
     alerts, new_state = alert_rules.evaluate(
         regime_data, screener_data, swing_data, themes, prev_state, settings,
         ember_data=ember_data, wolf_data=wolf_data, viking_data=viking_data,
-        contrarian_data=contrarian_data, insider_data=insider_data)
+        contrarian_data=contrarian_data, insider_data=insider_data,
+        screens_data=screens_data, sheets_data=sheets_data)
     if not themes and isinstance(prev_state, dict):
         new_state["blindspot"] = prev_state.get("blindspot",
                                                 new_state["blindspot"])

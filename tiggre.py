@@ -360,6 +360,34 @@ def _screener_card() -> None:
             f"presentationerna.</span></div>", unsafe_allow_html=True)
 
 
+def _suggest(*args, **kw) -> None:
+    """Börsdata-förslag bredvid ett fält (sheets_refresh.py). Tyst utan blob."""
+    try:
+        import refresh_ui
+        refresh_ui.suggest(*args, **kw)
+    except Exception:
+        pass
+
+
+def _screen_section(data: dict) -> None:
+    """Håvens träffar (screens_scan.py: tiggre) → kandidat med ett klick."""
+    try:
+        import screens_ui
+    except Exception:
+        return
+    existing = {str(c.get("ticker", "")).upper()
+                for c in data.get("candidates", []) + data.get("positions", [])}
+
+    def _add(fields: dict) -> None:
+        data["candidates"].append({
+            "id": _uid(), "added": _today(), "screen": {}, "nav": 0.0,
+            "downside": -40.0, "factors": {}, "catalysts": [],
+            "mcap": 0.0, **fields})
+        _save(data)
+
+    screens_ui.render_screen_section("tiggre", existing, _add, key_prefix="tg")
+
+
 # ── 2+3. Kandidater: grovsållning + Lobo-arket ───────────────────────────────
 def _candidates(data: dict) -> None:
     st.markdown(f"<div style='font-weight:700;color:{TEXT};margin:18px 0 6px;'>"
@@ -378,6 +406,8 @@ def _candidates(data: dict) -> None:
             })
             _save(data)
             st.rerun()
+
+    _screen_section(data)
 
     if not data["candidates"]:
         st.caption("Tom — kör håven i Börsdata och lägg in bolagen du vill grovsålla.")
@@ -663,6 +693,8 @@ def _positions(data: dict) -> None:
                                     step=0.5, key=f"tg_p_entry_{p['id']}")
         new_cur = c2.number_input("Kurs nu", min_value=0.0, value=float(cur),
                                   step=0.5, key=f"tg_p_cur_{p['id']}")
+        _suggest("tiggre", p, "current", "price", "kurs", f"tg_p_cur_{p['id']}",
+                 lambda: _save(data), with_currency=True)
         c3.metric("Avkastning", _pct(ret, 1) if ret is not None else "–")
         c4.metric("P/NAV nu", f"{pn_now:.2f}×" if pn_now is not None else "–",
                   help="Slutsälj i etapper vid 0,8–1,0× NAV eller produktionsstart.")

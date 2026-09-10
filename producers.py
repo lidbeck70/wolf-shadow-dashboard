@@ -320,6 +320,31 @@ def _save(data: dict) -> None:
     st.session_state[STORE] = data
 
 
+def _suggest(*args, **kw) -> None:
+    """Börsdata-förslag bredvid ett fält (sheets_refresh.py). Tyst utan blob."""
+    try:
+        import refresh_ui
+        refresh_ui.suggest(*args, **kw)
+    except Exception:
+        pass
+
+
+def _screen_section(screen_key: str, data: dict, bucket: str, extra) -> None:
+    """Håvens träffar (screens_scan.py) med "lägg in i arket"."""
+    try:
+        import screens_ui
+    except Exception:
+        return
+    existing = {str(r.get("ticker", "")).upper() for r in data.get(bucket, [])}
+
+    def _add(fields: dict) -> None:
+        data[bucket].append({"id": _uid(), "date": _today(), **extra(fields)})
+        _save(data)
+
+    screens_ui.render_screen_section(screen_key, existing, _add,
+                                     key_prefix=f"pr_{bucket}")
+
+
 # ── UI ───────────────────────────────────────────────────────────────────────
 def render_producers_page(sheet: Optional[str] = None) -> None:
     """Ett av de två granskningsarken.
@@ -425,6 +450,9 @@ def _producers(data: dict) -> None:
             else:
                 st.warning("Ticker krävs.")
 
+    _screen_section("rule", data, PRODUCERS,
+                    lambda f: {"commodity": COMMODITIES[0], **f})
+
     rows = ranked_producers(data[PRODUCERS])
     if not rows:
         st.caption("Inga bolag ännu. Överlevar-screenern körs i Börsdata — "
@@ -453,6 +481,10 @@ def _producers(data: dict) -> None:
             price = v4.number_input("Råvarupris nu", min_value=0.0, step=10.0,
                                     value=float(_num(row.get("price"), 0.0) or 0.0),
                                     key=f"pr_p_{row['id']}")
+            _suggest("producers", row, "ev_ebitda", "ev_ebitda", "EV/EBITDA",
+                     f"pr_ev_{row['id']}", lambda: _save(data), fmt="{:.1f}")
+            _suggest("producers", row, "nd_ebitda", "nd_ebitda", "nettoskuld/EBITDA",
+                     f"pr_nd_{row['id']}", lambda: _save(data), fmt="{:.2f}")
             if (storage.differs(ev, row.get("ev_ebitda"), 0.0)
                     or storage.differs(nd, row.get("nd_ebitda"), 0.0)
                     or storage.differs(cost, row.get("unit_cost"), 0.0)
@@ -566,6 +598,8 @@ def _royalty(data: dict) -> None:
             else:
                 st.warning("Ticker krävs.")
 
+    _screen_section("royalty", data, ROYALTY, lambda f: {"level": 2, **f})
+
     rows = ranked_royalty(data[ROYALTY])
     if not rows:
         st.caption("Inga bolag ännu. Royalty-screenern körs en gång i "
@@ -602,6 +636,8 @@ def _royalty(data: dict) -> None:
             med = vs_median(en, em)
             e3.metric("Mot median", f"{med:+.1f} %" if med is not None else "–",
                       help="Negativt = billigare än bolaget brukar vara.")
+            _suggest("producers", row, "ev_now", "ev_ebitda", "EV/EBITDA nu",
+                     f"ro_en_{row['id']}", lambda: _save(data), fmt="{:.1f}")
 
             g1, g2, g3 = st.columns(3)
             gn = g1.number_input("GEO/aktie nu", min_value=0.0, step=0.01,
