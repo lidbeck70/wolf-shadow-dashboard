@@ -203,12 +203,18 @@ def main() -> int:
             if conf:
                 print(f"  hat-täckning (confidence) p50={conf[len(conf)//2]:.2f} "
                       f"min={conf[0]:.2f}")
+            guard = [r for r in hated if "över SMA200" in (r.elimination_reason or "")]
+            print(f"  varav unloved guard (>max över SMA200): {len(guard)}")
+            for r in sorted(guard, key=lambda r: -r.hat_score)[:15]:
+                print(f"    {r.ticker:12} {r.name[:20]:20} H={r.hat_score:4.1f} | "
+                      f"{r.elimination_reason[:80]}")
             print("  HATE — högst hat som ändå föll (topp 25):")
             for r in sorted(hated, key=lambda r: -r.hat_score)[:25]:
                 bd_ = r.hate_result.breakdown if r.hate_result else {}
                 print(f"    {r.ticker:12} {r.name[:20]:20} {r.branch[:18]:18} H={r.hat_score:4.1f} "
                       f"conf={r.hate_result.confidence if r.hate_result else 0:.2f} "
-                      f"{ {k: v for k, v in bd_.items() if v} }")
+                      f"{ {k: v for k, v in bd_.items() if v} } | "
+                      f"{(r.elimination_reason or '')[:60]}")
     return 0
 
 
