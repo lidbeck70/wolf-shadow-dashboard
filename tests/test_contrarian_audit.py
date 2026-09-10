@@ -269,3 +269,48 @@ def test_insider_flag_only_when_nothing_could_be_measured():
     assert "INSIDER_OWNERSHIP_NA" in with_tx.flags
     none = calculate_catalyst_score(price_data=price, ticker="X", insider_data={})
     assert "INSIDER_DATA_MISSING" in none.flags
+
+
+# ── Trösklarna: hatade bolag med god ekonomi innan marknaden älskar dem ─────
+def test_thresholds_follow_the_mandate():
+    from contrarian_alpha.hate import HAT_THRESHOLD
+    from contrarian_alpha.quality import GATE_ROIC_DEEP
+    assert HAT_THRESHOLD == 40          # hatad — Borr/BW Offshore (44) ska in
+    assert GATE_ROIC_DEEP == 8.0        # god ekonomi genom cykeln
+    assert PipelineConfig().deep_max_above_sma200_pct == 5.0   # innan marknaden älskar
+
+
+def _flat_df(last_close: float, n: int = 260):
+    """Prisserie: 100 i 259 dagar, sista stängning = last_close → SMA200 ≈ 100."""
+    import numpy as np
+    import pandas as pd
+    idx = pd.bdate_range(end="2026-09-09", periods=n)
+    close = np.full(n, 100.0)
+    close[-1] = last_close
+    return pd.DataFrame({"Open": close, "High": close * 1.01, "Low": close * 0.99,
+                         "Close": close, "Volume": np.full(n, 50_000.0)}, index=idx)
+
+
+def test_unloved_guard_stops_stocks_already_in_recovery():
+    """Deep-läget: pris 15 % över SMA200 = återhämtningen är prissatt → ut,
+    även om hat-poängen släppte igenom. 2 % över → kvar."""
+    cfg = PipelineConfig(universe="nordic", mode="deep_contrarian",
+                         hate_threshold=0, market_ids=[])
+    loved = _run_single_ticker("L.ST", 9401, _bol_inst(), _snap(), _flat_df(115.0),
+                               "Gruv - Industrimetaller", "Material", cfg,
+                               _HistAPI(roic_hist=[12, 14, 11]))
+    assert loved.eliminated and loved.elimination_stage == "HATE"
+    assert "över SMA200" in loved.elimination_reason
+
+    still = _run_single_ticker("S.ST", 9402, _bol_inst(), _snap(), _flat_df(102.0),
+                               "Gruv - Industrimetaller", "Material", cfg,
+                               _HistAPI(roic_hist=[12, 14, 11]))
+    assert "över SMA200" not in (still.elimination_reason or "")
+
+    # vakten kan stängas av
+    off = PipelineConfig(universe="nordic", mode="deep_contrarian", hate_threshold=0,
+                         market_ids=[], deep_max_above_sma200_pct=None)
+    free = _run_single_ticker("F.ST", 9403, _bol_inst(), _snap(), _flat_df(115.0),
+                              "Gruv - Industrimetaller", "Material", off,
+                              _HistAPI(roic_hist=[12, 14, 11]))
+    assert "över SMA200" not in (free.elimination_reason or "")

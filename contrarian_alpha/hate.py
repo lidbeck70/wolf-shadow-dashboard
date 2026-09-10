@@ -2,7 +2,7 @@
 hate.py — Hat Score (0-100) for Contrarian Alpha Screener.
 
 Measures how hated / neglected / sold-off a stock is.
-Higher score = more contrarian opportunity. Threshold: HAT_THRESHOLD = 45.
+Higher score = more contrarian opportunity. Threshold: HAT_THRESHOLD = 40.
 
 7 kärnkomponenter (summa 100) — alla nåbara med Börsdata/yfinance/prisserien:
   1. Pris vs SMA200            max 15p  (under SMA200 = institutionellt övergiven)
@@ -63,7 +63,9 @@ logger = logging.getLogger(__name__)
 
 # ─── Pipeline constants ───────────────────────────────────────────────────────
 
-HAT_THRESHOLD = 45              # Hat Score >= 45 required to proceed
+HAT_THRESHOLD = 40              # Hat Score >= 40 (av nåbart max) för att gå vidare —
+                                # 45 lämnade Borr Drilling (44.1) och BW Offshore (43.9)
+                                # utanför: hatade råvarunamn med god ekonomi.
 HAT_COMPOSITE_WEIGHT = 0.40     # 40% of Composite Score (placeholder; set in composite.py)
 
 VALUE_TRAP_HAT_MIN      = 85    # Hat score above this...

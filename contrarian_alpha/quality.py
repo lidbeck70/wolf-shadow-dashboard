@@ -22,7 +22,7 @@ Composite weight: QUALITY_COMPOSITE_WEIGHT_QUALITY = 0.30 ("quality" mode)
 
 Hard gate (enforced by engine.py, mode-dependent):
   quality mode:        ROIC > 15%
-  deep_contrarian:     ROIC > 10%  (waived when hate_score > 70)
+  deep_contrarian:     ROIC > 8%   (dagens ELLER medianen genom cykeln)
 
 Börsdata KPI IDs used:
   ROIC             KPI 37
@@ -61,7 +61,8 @@ QUALITY_COMPOSITE_WEIGHT_DEEP    = 0.20   # "deep_contrarian" mode
 # ─── Hard-gate thresholds (enforced by engine.py) ────────────────────────────
 
 GATE_ROIC_QUALITY   = 15.0   # ROIC % required in quality mode
-GATE_ROIC_DEEP      = 10.0   # ROIC % required in deep_contrarian mode
+GATE_ROIC_DEEP      = 8.0    # ROIC % genom cykeln (median) i deep_contrarian —
+                             # 10 fällde 2020 Bulkers (9.3) och Norwegian (9.9)
 GATE_REVENUE_CAGR   = 0.0    # 5y CAGR must be positive (quality mode only)
 
 # ─── Component max points (must sum to 100) ───────────────────────────────────
