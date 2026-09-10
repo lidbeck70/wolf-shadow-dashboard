@@ -320,6 +320,22 @@ def _save(data: dict) -> None:
     st.session_state[STORE] = data
 
 
+def _screen_section(screen_key: str, data: dict, bucket: str, extra) -> None:
+    """Håvens träffar (screens_scan.py) med "lägg in i arket"."""
+    try:
+        import screens_ui
+    except Exception:
+        return
+    existing = {str(r.get("ticker", "")).upper() for r in data.get(bucket, [])}
+
+    def _add(fields: dict) -> None:
+        data[bucket].append({"id": _uid(), "date": _today(), **extra(fields)})
+        _save(data)
+
+    screens_ui.render_screen_section(screen_key, existing, _add,
+                                     key_prefix=f"pr_{bucket}")
+
+
 # ── UI ───────────────────────────────────────────────────────────────────────
 def render_producers_page(sheet: Optional[str] = None) -> None:
     """Ett av de två granskningsarken.
@@ -424,6 +440,9 @@ def _producers(data: dict) -> None:
                 st.rerun()
             else:
                 st.warning("Ticker krävs.")
+
+    _screen_section("rule", data, PRODUCERS,
+                    lambda f: {"commodity": COMMODITIES[0], **f})
 
     rows = ranked_producers(data[PRODUCERS])
     if not rows:
@@ -565,6 +584,8 @@ def _royalty(data: dict) -> None:
                 st.rerun()
             else:
                 st.warning("Ticker krävs.")
+
+    _screen_section("royalty", data, ROYALTY, lambda f: {"level": 2, **f})
 
     rows = ranked_royalty(data[ROYALTY])
     if not rows:

@@ -390,6 +390,28 @@ class BorsdataAPI:
 
         return self._instruments
 
+    def get_global_instruments_list(self) -> List[dict]:
+        """
+        Globala instrument (/instruments/global, kräver Pro+ global). Samma
+        radform som get_instruments. Tom lista när licensen saknas (400/403).
+        """
+        try:
+            data = self._get("/instruments/global")
+        except Exception as e:
+            logger.warning("instruments/global failed: %s", e)
+            return []
+        return list((data or {}).get("instruments", []) or [])
+
+    def get_kpi_screener_global(self, kpi_id: int, calc_group: str = "last",
+                                calc: str = "latest") -> List[dict]:
+        """KPI-screenern för globala instrument. Tom lista utan global licens."""
+        try:
+            data = self._get(f"/instruments/global/kpis/{kpi_id}/{calc_group}/{calc}")
+        except Exception as e:
+            logger.warning("global kpi screener %d failed: %s", kpi_id, e)
+            return []
+        return list((data or {}).get("values", []) or [])
+
     def get_markets(self) -> List[dict]:
         """Fetch market metadata (id → name mapping)."""
         data = self._get("/markets")
@@ -1119,7 +1141,7 @@ try:
         try:
             resp = requests.get(
                 f"{BASE_URL}/instruments",
-                params={"authKey": "3bbf0620da0f41dc963659e2118e1366"},
+                params={"authKey": _resolve_api_key()},
                 timeout=30,
             )
             resp.raise_for_status()
@@ -1169,7 +1191,7 @@ try:
         try:
             resp = requests.get(
                 f"{BASE_URL}/instruments/global",
-                params={"authKey": "3bbf0620da0f41dc963659e2118e1366"},
+                params={"authKey": _resolve_api_key()},
                 timeout=30,
             )
             resp.raise_for_status()

@@ -360,6 +360,25 @@ def _screener_card() -> None:
             f"presentationerna.</span></div>", unsafe_allow_html=True)
 
 
+def _screen_section(data: dict) -> None:
+    """Håvens träffar (screens_scan.py: tiggre) → kandidat med ett klick."""
+    try:
+        import screens_ui
+    except Exception:
+        return
+    existing = {str(c.get("ticker", "")).upper()
+                for c in data.get("candidates", []) + data.get("positions", [])}
+
+    def _add(fields: dict) -> None:
+        data["candidates"].append({
+            "id": _uid(), "added": _today(), "screen": {}, "nav": 0.0,
+            "downside": -40.0, "factors": {}, "catalysts": [],
+            "mcap": 0.0, **fields})
+        _save(data)
+
+    screens_ui.render_screen_section("tiggre", existing, _add, key_prefix="tg")
+
+
 # ── 2+3. Kandidater: grovsållning + Lobo-arket ───────────────────────────────
 def _candidates(data: dict) -> None:
     st.markdown(f"<div style='font-weight:700;color:{TEXT};margin:18px 0 6px;'>"
@@ -378,6 +397,8 @@ def _candidates(data: dict) -> None:
             })
             _save(data)
             st.rerun()
+
+    _screen_section(data)
 
     if not data["candidates"]:
         st.caption("Tom — kör håven i Börsdata och lägg in bolagen du vill grovsålla.")

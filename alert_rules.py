@@ -427,6 +427,64 @@ def insider_alerts(insider_data: Optional[dict], prev: Optional[dict],
     return alerts, state
 
 
+# ── Håvarna (screens_scan.py) ────────────────────────────────────────────────
+_SCREEN_ICON = {"rule": "🪨", "sprott": "🔭", "durrett": "🥇", "tiggre": "🎯",
+                "royalty": "👑"}
+
+
+def screen_alerts(screens_data: Optional[dict], prev: Optional[dict]) -> tuple:
+    """(larm, nytt tillstånd) för guidens fem Börsdata-håvar.
+
+    screens_data: {"generated", "screens": {key: {"label", "rows":
+    [{ticker, name, mcap_musd, universe}], "error"}}}. Larm när ett bolag
+    NYTT kvalar in i en håv — ett larm per håv med de nya tickrarna.
+    En håv med error behåller sin gamla baslinje; hela källan None →
+    allt fryser.
+    """
+    if not isinstance(screens_data, dict) or not isinstance(screens_data.get("screens"), dict):
+        return [], (prev if isinstance(prev, dict) else {})
+
+    prev = prev if isinstance(prev, dict) else None
+    state, alerts = {}, []
+    for key, s in screens_data["screens"].items():
+        if not isinstance(s, dict):
+            continue
+        if s.get("error"):
+            if prev is not None and key in prev:
+                state[key] = prev[key]
+            continue
+        cur = {}
+        for row in s.get("rows", []) or []:
+            if not isinstance(row, dict):
+                continue
+            t = str(row.get("ticker", "")).strip().upper()
+            if t:
+                cur[t] = {"name": str(row.get("name", "") or ""),
+                          "mcap_musd": row.get("mcap_musd"),
+                          "universe": str(row.get("universe", "") or "")}
+        state[key] = cur
+        if prev is None or key not in prev:
+            continue                                   # baslinje för håven
+        new = [t for t in cur if t not in (prev.get(key) or {})]
+        if not new:
+            continue
+        label = str(s.get("label") or key)
+        parts = []
+        for t in new[:12]:
+            d = cur[t]
+            mc = f" {d['mcap_musd']:,.0f} MUSD" if isinstance(d["mcap_musd"], (int, float)) else ""
+            parts.append(f"{t} ({d['name'] or '?'}{mc})")
+        more = f" … +{len(new) - 12}" if len(new) > 12 else ""
+        alerts.append(_alert(
+            f"screen_{key}",
+            f"{_SCREEN_ICON.get(key, '🕸')} Håven {label}: {len(new)} ny"
+            f"{'a' if len(new) > 1 else 'tt'} bolag",
+            f"{' · '.join(parts)}{more}. Kvalar in på håvens kriterier — "
+            f"öppna GRANSKNING → {s.get('sheet') or label} → Håven och lägg in "
+            f"den du vill granska."))
+    return alerts, state
+
+
 # ── Sammanvägningen ──────────────────────────────────────────────────────────
 def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
              themes: list, prev_state: Optional[dict],
@@ -435,7 +493,8 @@ def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
              wolf_data: Optional[dict] = None,
              viking_data: Optional[dict] = None,
              contrarian_data: Optional[dict] = None,
-             insider_data: Optional[dict] = None) -> tuple:
+             insider_data: Optional[dict] = None,
+             screens_data: Optional[dict] = None) -> tuple:
     """(larm-med-kanaler, nytt tillstånd) för hela körningen.
 
     settings: data/alerts.json — {"swing": {"enabled", "channels"},
@@ -494,6 +553,9 @@ def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
         min_score=int(insider_cfg.get("min_score") or INSIDER_MIN_SCORE))
     out += _route("insider", i_alerts)
 
+    sc_alerts, sc_state = screen_alerts(screens_data, _prev("screens"))
+    out += _route("screens", sc_alerts)
+
     return out, {"swing": s_state, "blindspot": b_state, "ember": e_state,
                  "wolf": w_state, "viking": v_state, "contrarian": c_state,
-                 "insider": i_state}
+                 "insider": i_state, "screens": sc_state}

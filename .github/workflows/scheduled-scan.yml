@@ -59,6 +59,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
         run: python insider_scan.py
 
+      # Håvarna — guidens fem Börsdata-screeners körda i API:t med exakt
+      # samma kriterier. Resultatet till Gisten (screens.json).
+      - name: Screens (håvarna)
+        if: always()
+        env:
+          BORSDATA_API_KEY: ${{ secrets.BORSDATA_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+        run: python screens_scan.py
+
       # Schemalagda larm — swing-övergångar, Blindspots temakarta (tidig
       # cykel), EMBER eligible och Wolf/Viking-ribborna. Bara övergångar
       # larmar; tillståndet ligger i Gisten.

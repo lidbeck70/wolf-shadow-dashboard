@@ -249,8 +249,25 @@ def render_scoring_page() -> None:
 
     _export(data, key)
     _new_row(data, key)
+    _screen_section(data, key)
     _rows(data, key)
     _criteria()
+
+
+def _screen_section(data: dict, key: str) -> None:
+    """Håvens träffar (screens_scan.py: sprott/durrett) med "lägg in i arket"."""
+    try:
+        import screens_ui
+    except Exception:
+        return
+    existing = {str(r.get("ticker", "")).upper() for r in data.get(key, [])}
+
+    def _add(fields: dict) -> None:
+        data[key].append({"id": _uid(), "commodity": COMMODITIES[0],
+                          "date": _today(), "factors": {}, **fields})
+        _save(data)
+
+    screens_ui.render_screen_section(key, existing, _add, key_prefix=f"sc_{key}")
 
 
 CSV_COMMON = [("date", "Datum"), ("ticker", "Ticker"), ("name", "Bolag"),
