@@ -50,6 +50,45 @@ def _auth_header(token: str) -> dict:
     }
 
 
+def _read_headers() -> dict:
+    """Läs med token när den finns: 5 000 anrop/h i stället för 60/h per IP
+    (Streamlit Cloud delar IP med andra appar). Utan token — oautentiserat."""
+    token = _get_github_token()
+    return _auth_header(token) if token else {"Accept": "application/vnd.github.v3+json"}
+
+
+def _gist_file_content(files: dict, name: str, timeout: int = 20) -> str:
+    """Filens innehåll ur ett GET /gists/{id}-svar — även när GitHub trunkerat.
+
+    API:t skickar med filinnehåll inline upp till ~1 MB för HELA gisten. Går
+    gisten över det (probe 2026-09-11: 1,13 MB i 18 filer) flaggas filerna
+    truncated=True: den första stora klipps mitt i, de efterföljande får
+    content="". Då är raw_url den enda vägen till hela filen — den är
+    publik och räknas inte mot API-kvoten.
+    """
+    f = (files or {}).get(name) or {}
+    content = f.get("content") or ""
+    if f.get("truncated") and f.get("raw_url"):
+        try:
+            rr = requests.get(f["raw_url"], timeout=timeout)
+            if rr.status_code == 200:
+                return rr.text
+        except Exception:
+            pass
+    return content
+
+
+def gist_file(name: str, timeout: int = 10) -> str:
+    """Hela innehållet i en fil i holdings-gisten, eller "" om den inte nås."""
+    try:
+        r = requests.get(GIST_API_URL, headers=_read_headers(), timeout=timeout)
+        if r.status_code == 200:
+            return _gist_file_content(r.json().get("files", {}), name)
+    except Exception:
+        pass
+    return ""
+
+
 def load_holdings() -> dict:
     """
     Load holdings. Priority: session_state > Gist > local file > empty.
@@ -60,16 +99,13 @@ def load_holdings() -> dict:
 
     data = None
 
-    # Try gist (no auth needed for reading)
+    # Try gist (token if available, otherwise unauthenticated)
     try:
-        r = requests.get(GIST_API_URL, timeout=10)
-        if r.status_code == 200:
-            gist = r.json()
-            content = gist.get("files", {}).get(GIST_FILENAME, {}).get("content", "")
-            if content:
-                parsed = json.loads(content)
-                if any(parsed.get(k) for k in ("swing", "ovtlyr", "long")):
-                    data = parsed
+        content = gist_file(GIST_FILENAME)
+        if content:
+            parsed = json.loads(content)
+            if any(parsed.get(k) for k in ("swing", "ovtlyr", "long")):
+                data = parsed
     except Exception:
         pass
 
@@ -136,11 +172,9 @@ def load_blob(filename: str, fallback):
     """
     local = f".{filename}"
     try:
-        r = requests.get(GIST_API_URL, timeout=10)
-        if r.status_code == 200:
-            content = r.json().get("files", {}).get(filename, {}).get("content", "")
-            if content:
-                return json.loads(content)
+        content = gist_file(filename)
+        if content:
+            return json.loads(content)
     except Exception:
         pass
     try:
@@ -170,7 +204,10 @@ def save_blob(filename: str, data) -> bool:
         return False
     try:
         headers = _auth_header(token)
-        payload = {"files": {filename: {"content": json.dumps(data, indent=2, default=str)}}}
+        # Kompakt JSON: gisten har ett ~1 MB-tak för inline-innehåll, och
+        # indent=2 fördubblade storleken på de stora blobbarna.
+        payload = {"files": {filename: {"content": json.dumps(
+            data, separators=(",", ":"), ensure_ascii=False, default=str)}}}
         r = requests.patch(GIST_API_URL, headers=headers, json=payload, timeout=10)
         return r.status_code == 200
     except Exception:
@@ -184,11 +221,9 @@ def load_wolf_json(name: str):
     Returns the parsed object or None when nothing is found.
     """
     try:
-        r = requests.get(GIST_API_URL, timeout=10)
-        if r.status_code == 200:
-            content = r.json().get("files", {}).get(name, {}).get("content", "")
-            if content:
-                return json.loads(content)
+        content = gist_file(name)
+        if content:
+            return json.loads(content)
     except Exception:
         pass
     for path in (name, f".{name}", os.path.join("public", name), os.path.join("data", name)):
