@@ -43,7 +43,7 @@
       "comment": "Auto-skanning 2026-09-11 · kolla själv: F-score ≥ 5, Ej strukturellt fallande omsättning · ökar > 25 % ej bedömt",
       "efter_fall": false,
       "found": "2026-09-11",
-      "gate": "",
+      "gate": "Ja",
       "id": "f9f52668",
       "ins_id": 2367,
       "insiders": 21,
