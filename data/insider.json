@@ -17,6 +17,42 @@
       "role": "VD/CFO",
       "ticker": "ARR.ST",
       "trigger": "Nej"
+    },
+    {
+      "amount": 311966.9,
+      "aterkommande": true,
+      "cluster_avg": 163.3676,
+      "comment": "Auto-skanning 2026-09-11 · kolla själv: F-score ≥ 5, Ej strukturellt fallande omsättning · ökar > 25 % ej bedömt",
+      "efter_fall": false,
+      "found": "2026-09-11",
+      "gate": "Nej",
+      "id": "a407d343",
+      "ins_id": 1470,
+      "insiders": 4,
+      "name": "Essity B",
+      "okar_25": false,
+      "price_now": 262.7,
+      "role": "Styrelse",
+      "ticker": "ESSITY-B.ST",
+      "trigger": "A"
+    },
+    {
+      "amount": 227.6,
+      "aterkommande": true,
+      "cluster_avg": 48.6796,
+      "comment": "Auto-skanning 2026-09-11 · kolla själv: F-score ≥ 5, Ej strukturellt fallande omsättning · ökar > 25 % ej bedömt",
+      "efter_fall": false,
+      "found": "2026-09-11",
+      "gate": "",
+      "id": "f9f52668",
+      "ins_id": 2367,
+      "insiders": 21,
+      "name": "Vår Energi",
+      "okar_25": false,
+      "price_now": 53.3,
+      "role": "VD/CFO",
+      "ticker": "VAR.ST",
+      "trigger": "A"
     }
   ]
 }
