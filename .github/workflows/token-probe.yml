@@ -19,8 +19,8 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install requests
-        run: pip install requests
+      - name: Install requests + streamlit (gist_storage importerar st)
+        run: pip install requests streamlit
 
       - name: Probe GIST_TOKEN against the Gists API
         env:
