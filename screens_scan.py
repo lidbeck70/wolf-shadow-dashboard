@@ -354,6 +354,28 @@ def dedupe_rows(rows: list) -> list:
     return out
 
 
+def mark_first_seen(result: dict, prev: Optional[dict]) -> dict:
+    """Sätt first_seen (datum) per rad så fliken kan visa vad som är NYTT.
+
+    Ett bolag som fanns i förra körningen ärver sitt first_seen därifrån
+    (eller förra körningens datum om fältet saknas — så att första körningen
+    efter den här ändringen inte märker alla Tiggre-rader som nya). Ett
+    bolag som inte fanns förra gången får dagens datum. Larmet listar samma
+    tickers, så det man ser i Discord går att hitta i fliken."""
+    today = str(result.get("generated") or "")[:10]
+    prev_ok = isinstance(prev, dict)
+    prev_screens = (prev.get("screens") or {}) if prev_ok else {}
+    prev_day = str(prev.get("generated") or today)[:10] if prev_ok else today
+    for key, s in (result.get("screens") or {}).items():
+        prev_rows = (prev_screens.get(key) or {}).get("rows") or []
+        seen = {str(r.get("ticker") or "").upper(): (r.get("first_seen") or prev_day)
+                for r in prev_rows if isinstance(r, dict)}
+        for r in s.get("rows") or []:
+            r["first_seen"] = seen.get(str(r.get("ticker") or "").upper(), today)
+        s["new"] = [r["ticker"] for r in s.get("rows") or [] if r["first_seen"] == today]
+    return result
+
+
 def scan(api) -> dict:
     out = {"generated": _now(), "global_available": False,
            "screens": {s.key: {"label": s.label, "criteria": s.criteria,
@@ -411,8 +433,14 @@ def main() -> int:
         log.error("BORSDATA_API_KEY saknas.")
         return 1
     result = scan(BorsdataAPI(api_key=key))
+    try:
+        from gist_storage import load_blob
+        prev = load_blob(BLOB_NAME, None)
+    except Exception:
+        prev = None
+    mark_first_seen(result, prev)
     for k, s in result["screens"].items():
-        log.info("%-8s %3d träffar%s", k, len(s["rows"]),
+        log.info("%-8s %3d träffar, %d nya%s", k, len(s["rows"]), len(s.get("new") or []),
                  f"  (FEL: {s['error']})" if s["error"] else "")
         for r in s["rows"][:12]:
             log.info("   %-14s %-26s %s  %s MUSD  %s", r["ticker"], r["name"][:26],

@@ -53,6 +53,13 @@ def row_to_fields(row: dict, key: str) -> dict:
     return out
 
 
+def sort_rows(rows: list, today: str) -> list:
+    """Nya (first_seen = senaste körningen) först, sedan störst börsvärde."""
+    return sorted(rows, key=lambda r: (
+        0 if (r.get("first_seen") and r["first_seen"] == today) else 1,
+        -(r.get("mcap_musd") or 0), str(r.get("ticker") or "")))
+
+
 def render_screen_section(key: str, existing: set, on_add: Callable[[dict], None],
                           key_prefix: Optional[str] = None) -> None:
     """Expander med håvens träffar och en knapp per rad."""
@@ -74,8 +81,24 @@ def render_screen_section(key: str, existing: set, on_add: Callable[[dict], None
         if not rows:
             st.caption("Inga träffar just nu.")
             return
-        for r in rows:
+        today = str(blob.get("generated") or "")[:10]
+        new = [r for r in rows if r.get("first_seen") and r["first_seen"] == today]
+        if new:
+            st.markdown(f"<span style='color:#2d8a4e;font-weight:700;'>NYA i senaste körningen "
+                        f"({len(new)}):</span> <span style='color:{DIM};'>"
+                        f"{' · '.join(str(r.get('ticker') or '').upper() for r in new)}</span>",
+                        unsafe_allow_html=True)
+        q = st.text_input("Filtrera (ticker eller namn)", key=f"scr_q_{kp}",
+                          placeholder="t.ex. KDK eller copper").strip().lower()
+        shown = sort_rows(rows, today)
+        if q:
+            shown = [r for r in shown
+                     if q in str(r.get("ticker") or "").lower()
+                     or q in str(r.get("name") or "").lower()]
+            st.caption(f"{len(shown)} av {len(rows)} matchar.")
+        for r in shown:
             t = str(r.get("ticker") or "").upper()
+            is_new = bool(r.get("first_seen")) and r["first_seen"] == today
             m = r.get("m") or {}
             bits = [f"{r.get('mcap_musd'):,.0f} MUSD" if r.get("mcap_musd") else None,
                     f"skuld/EBITDA {m['nd_ebitda']:g}" if m.get("nd_ebitda") is not None else None,
@@ -85,9 +108,13 @@ def render_screen_section(key: str, existing: set, on_add: Callable[[dict], None
                     f"brutto {m['gross_margin']:g} %" if m.get("gross_margin") is not None else None,
                     f"EBIT {m['ebit_margin']:g} %" if m.get("ebit_margin") is not None else None]
             c1, c2 = st.columns([4, 1])
+            badge = ("<span style='background:#2d8a4e;color:#fff;font-size:0.68rem;"
+                     "padding:1px 6px;border-radius:3px;margin-right:6px;'>NY</span>"
+                     if is_new else "")
+            since = (f" · sedan {r['first_seen']}" if r.get("first_seen") and not is_new else "")
             c1.markdown(
-                f"<span style='color:{TEXT};font-weight:700;'>{t}</span> "
-                f"<span style='color:{DIM};'>{r.get('name', '')} · "
+                f"{badge}<span style='color:{TEXT};font-weight:700;'>{t}</span> "
+                f"<span style='color:{DIM};'>{r.get('name', '')}{since} · "
                 f"{'Norden' if r.get('universe') == 'nordic' else 'Globalt'} · "
                 f"{' · '.join(b for b in bits if b)}</span>"
                 + (f"<br><span style='color:#d4943a;font-size:0.78rem;'>"
