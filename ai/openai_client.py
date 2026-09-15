@@ -136,21 +136,29 @@ def _extract(response) -> str:
 def complete(instructions: str, prompt: str,
              max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
              timeout: float = DEFAULT_TIMEOUT,
-             model: Optional[str] = None) -> Reply:
+             model: Optional[str] = None,
+             json_mode: bool = False) -> Reply:
     """Ett anrop, ett svar. Kastar AIError på allt annat än ett svar.
 
     Felen översätts till vad DU ska göra åt dem — ett rått
     "AuthenticationError" mitt i en tradingpanel säger ingenting om huruvida
     det är nyckeln, kvoten eller modellnamnet som är fel.
+
+    json_mode: be modellen svara med ett JSON-objekt (Copilot-extraktionen).
+    Texten parsas ändå tolerant av anroparen — läget minskar bara risken för
+    prosa runt objektet.
     """
     import openai
 
     name = model or get_model()
     client = _client(timeout)
+    kwargs = {}
+    if json_mode:
+        kwargs["text"] = {"format": {"type": "json_object"}}
     try:
         response = client.responses.create(
             model=name, instructions=instructions, input=prompt,
-            max_output_tokens=max_output_tokens)
+            max_output_tokens=max_output_tokens, **kwargs)
     except openai.AuthenticationError as exc:
         raise AIError(f"OpenAI avvisade nyckeln (401). Kontrollera "
                       f"{KEY_NAME} i secrets — den kan vara återkallad eller "

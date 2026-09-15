@@ -360,6 +360,22 @@ def _screener_card() -> None:
             f"presentationerna.</span></div>", unsafe_allow_html=True)
 
 
+def _extract_section(data: dict, cand: dict) -> None:
+    """Copilot-extraktion ur presentationen: NAV efter skatt, FS/tillstånd/
+    finansiering, katalysatorer — som förslag med sida och citat."""
+    try:
+        import extract_ui
+    except Exception:
+        return
+    cid = cand["id"]
+    extract_ui.render_extractor(
+        "tiggre", cand,
+        widget_keys={"nav": f"tg_nav_{cid}", "fs": f"tg_sc_{cid}_fs",
+                     "permits": f"tg_sc_{cid}_permits", "funded": f"tg_sc_{cid}_funded"},
+        nested={"fs": "screen", "permits": "screen", "funded": "screen"},
+        on_apply=lambda: _save(data), catalyst_status=CAT_WAITING)
+
+
 def _suggest(*args, **kw) -> None:
     """Börsdata-förslag bredvid ett fält (sheets_refresh.py). Tyst utan blob."""
     try:
@@ -462,6 +478,8 @@ def _candidate_card(data: dict, cand: dict) -> None:
                 or storage.differs(down, cand.get("downside"), 0.0)):
             cand["mcap"], cand["nav"], cand["downside"] = mcap, nav, down
             changed = True
+
+        _extract_section(data, cand)
 
         k1, k2, k3 = st.columns(3)
         k1.metric("P/NAV", f"{pn:.2f}×" if pn is not None else "–",
