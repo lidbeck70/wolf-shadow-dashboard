@@ -107,6 +107,30 @@ def test_dedupe_keeps_largest_listing_and_sorts_big_first():
     assert [r["ticker"] for r in out] == ["CMCL", "CERT", "AWR", "OGN"]
 
 
+def test_first_seen_marks_only_newcomers():
+    """Discord sa '3 nya bolag' men fliken visade 249 rader utan markering.
+    first_seen ärvs från förra körningen; nya får dagens datum."""
+    prev = {"generated": "2026-09-10T19:40:00", "screens": {
+        "tiggre": {"rows": [{"ticker": "KDK", "first_seen": "2026-09-01"},
+                            {"ticker": "DEF"}]}}}
+    cur = {"generated": "2026-09-11T10:00:00", "screens": {
+        "tiggre": {"rows": [{"ticker": "KDK", "mcap_musd": 54.0},
+                            {"ticker": "DEF", "mcap_musd": 52.0},
+                            {"ticker": "NEWCO", "mcap_musd": 60.0}]},
+        "rule": {"rows": [{"ticker": "BOL.ST"}]}}}
+    out = sc.mark_first_seen(cur, prev)
+    rows = {r["ticker"]: r["first_seen"] for r in out["screens"]["tiggre"]["rows"]}
+    assert rows == {"KDK": "2026-09-01", "DEF": "2026-09-10", "NEWCO": "2026-09-11"}
+    assert out["screens"]["tiggre"]["new"] == ["NEWCO"]
+    # håv utan tidigare körning: allt är nytt
+    assert out["screens"]["rule"]["new"] == ["BOL.ST"]
+    # ingen tidigare blob alls → allt nytt, men kraschar inte
+    assert sc.mark_first_seen(cur, None)["screens"]["tiggre"]["new"] == ["KDK", "DEF", "NEWCO"]
+    # fliken: nya först, sedan störst
+    assert [r["ticker"] for r in sui.sort_rows(out["screens"]["tiggre"]["rows"], "2026-09-11")] \
+        == ["NEWCO", "KDK", "DEF"]
+
+
 def test_country_ids_resolve_by_name():
     c = sc.country_ids([{"id": 1, "name": "Sverige"}, {"id": 9, "name": "Kanada"},
                         {"id": 12, "name": "Australia"}, {"id": 30, "name": "USA"}])
