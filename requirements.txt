@@ -15,3 +15,6 @@ beautifulsoup4==4.15.0
 # AI-kommentaren i Copilot-fliken. Panelen startar och fungerar utan nyckel —
 # knappen är då avstängd — men paketet måste finnas för att importen ska gå.
 openai==3.2.0
+# Copilot-extraktionen i granskningsarken: PDF → text med sidmarkeringar.
+# Utan paketet fungerar bara klistra-in-vägen.
+pypdf==5.4.0

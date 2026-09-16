@@ -320,6 +320,17 @@ def _save(data: dict) -> None:
     st.session_state[STORE] = data
 
 
+def _extract_section(data: dict, row: dict, sheet: str, widget_keys: dict) -> None:
+    """Copilot-extraktion ur presentationen (AISC, gruvlivslängd, R/P; GEO per
+    aktie) — som förslag med sida och citat. Disciplinfrågorna kryssar du."""
+    try:
+        import extract_ui
+    except Exception:
+        return
+    extract_ui.render_extractor(sheet, row, widget_keys=widget_keys,
+                                on_apply=lambda: _save(data))
+
+
 def _suggest(*args, **kw) -> None:
     """Börsdata-förslag bredvid ett fält (sheets_refresh.py). Tyst utan blob."""
     try:
@@ -515,6 +526,11 @@ def _producers(data: dict) -> None:
                     or storage.differs(rp, row.get("rp_ratio"), 0.0)):
                 row["mine_life"], row["rp_ratio"] = life, rp
                 changed = True
+
+            _extract_section(data, row, "rule",
+                             {"unit_cost": f"pr_c_{row['id']}",
+                              "mine_life": f"pr_life_{row['id']}",
+                              "rp_ratio": f"pr_rp_{row['id']}"})
             dying = asset_dying(row)
             if dying:
                 st.error(f"{DYING_ASSET} — den låga multipeln förklaras av "
@@ -652,6 +668,10 @@ def _royalty(data: dict) -> None:
             g3.metric("GEO-tillväxt", f"{geo:+.1f} %" if geo is not None else "–",
                       help="Per aktie. Krymper den är bolaget utspätt, inte "
                            "billigt.")
+
+            _extract_section(data, row, "royalty",
+                             {"geo_now": f"ro_gn_{row['id']}", "geo_3y": f"ro_g3_{row['id']}",
+                              "pnav_now": f"ro_pn_{row['id']}"})
 
             if (storage.differs(pn, row.get("pnav_now"), 0.0)
                     or storage.differs(pb, row.get("pnav_bottom"), 0.0)

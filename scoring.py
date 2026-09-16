@@ -254,6 +254,19 @@ def render_scoring_page() -> None:
     _criteria()
 
 
+def _extract_section(data: dict, row: dict, key: str) -> None:
+    """Copilot-extraktion ur rapporten: kassa/burn (Sprott), uns/produktion/
+    AISC (Durrett) — som förslag med sida och citat. Faktorerna sätter du."""
+    try:
+        import extract_ui
+    except Exception:
+        return
+    rid = row["id"]
+    keys = ({"cash": f"sc_cash_{rid}", "burn": f"sc_burn_{rid}"} if key == SPROTT
+            else {"moz": f"sc_moz_{rid}", "prod": f"sc_prod_{rid}", "aisc": f"sc_aisc_{rid}"})
+    extract_ui.render_extractor(key, row, widget_keys=keys, on_apply=lambda: _save(data))
+
+
 def _screen_section(data: dict, key: str) -> None:
     """Håvens träffar (screens_scan.py: sprott/durrett) med "lägg in i arket"."""
     try:
@@ -345,8 +358,10 @@ def _rows(data: dict, key: str) -> None:
         with st.expander(head, expanded=False):
             if key == SPROTT:
                 _sprott_math(data, row)
+                _extract_section(data, row, SPROTT)
             else:
                 _durrett_math(data, row)
+                _extract_section(data, row, DURRETT)
             _factors(data, row, key)
 
             # DS (Masterguiden 4.0) — utspädningen är den här strategifamiljens
