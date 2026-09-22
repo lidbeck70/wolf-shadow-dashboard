@@ -361,6 +361,13 @@ def test_durrett_tab_renders_all_subtabs_without_network(monkeypatch):
         from engines.durrett.ui import render_durrett_page
         render_durrett_page()
 
+    import refresh_ui
+    monkeypatch.setattr(refresh_ui, "load_refresh", lambda: {
+        "generated": "2026-09-22T06:00", "rows": {"confidence:GPR": {
+            "ticker": "GPR", "ins_id": 105, "price": 6.4, "asof": "2026-09-22", "currency": "USD",
+            "mcap_musd": 1600.0, "ev_musd": 1520.0, "ev_ebitda": 4.0, "nd_ebitda": -0.3, "pe": 8.0,
+            "revenue_musd": 600.0, "fcf_musd": 110.0, "rs_rank": 74.0, "fx_to_usd": 1.0,
+            "fx_table": "sheets_refresh.FX_TO_USD (fast tabell)"}}})
     import screens_ui
     blob = {"generated": "2026-09-22T06:00", "screens": {"durrett": {"label": "Durrett", "criteria": "Guld/silver …",
             "rows": [{"ticker": "NEWG", "name": "New Gold Corp", "ins_id": 4711, "mcap_musd": 240.0, "universe": "global",
@@ -400,6 +407,12 @@ def test_durrett_tab_renders_all_subtabs_without_network(monkeypatch):
             gpr = at.session_state["confidence"]["companies"]["GPR"]["fields"]
             assert gpr["aisc"]["value"] == 1500.0 and gpr["aisc"]["source"] == "MD&A Q2 2026"
             assert gpr["market_cap_musd"]["source"] == "Börsdata"          # oförändrat fält behåller sin källa
+            # sifferuppdateringen: förslagen syns, Använd skriver in börsvärdet med källa och datum
+            assert any("förslag ur sifferuppdateringen" in e.label for e in at.expander)
+            at.button(key="durrett_rf_GPR_market_cap_musd").click().run()
+            assert not at.exception, at.exception
+            mc = at.session_state["confidence"]["companies"]["GPR"]["fields"]["market_cap_musd"]
+            assert mc["value"] == 1600.0 and mc["source"].startswith("Börsdata (sifferuppdatering") and mc["pub_date"] == "2026-09-22"
     # en redan laddad confidence.ui utan de publika aliasen (Streamlit Cloud före
     # omstart) får inte fälla fliken — fallback till de privata namnen
     from confidence import ui as cui
@@ -409,6 +422,27 @@ def test_durrett_tab_renders_all_subtabs_without_network(monkeypatch):
     at2.session_state["durrett_row_sub_GPR"] = "Mer"
     at2.run()
     assert not at2.exception, at2.exception
+
+
+def test_refresh_proposals_only_differing_values_with_provenance():
+    from engines.durrett import refresh as dr
+    c = dcs.gold_producer()                                   # börsvärde 1 500, kurs 6.0, USD
+    blob = {"generated": "2026-09-22T06:00", "rows": {"confidence:GPR": {
+        "ticker": "GPR", "price": 6.0, "asof": "2026-09-22", "currency": "CAD", "mcap_musd": 1600.0,
+        "ev_ebitda": 4.0, "nd_ebitda": -0.3, "ebitda_margin": 0.48, "rs_rank": None, "fx_to_usd": 0.73,
+        "fx_table": "sheets_refresh.FX_TO_USD (fast tabell)"}}}
+    props = {k: (p, cur) for k, p, cur in dr.proposals(blob, c)}
+    assert set(props) == {"market_cap_musd", "ev_ebitda", "fx_to_usd", "market_currency",
+                          "ebitda_margin_pct"}                                             # kurs och ND/EBITDA lika
+    assert props["ebitda_margin_pct"][0].value == 48.0 and props["ebitda_margin_pct"][1] is None   # 0,48 → 48 %
+    p, cur = props["market_cap_musd"]
+    assert p.value == 1600.0 and cur == 1500.0 and p.kind == "ACTUAL" and p.pub_date == "2026-09-22"
+    assert p.source == "Börsdata (sifferuppdatering 2026-09-22)" and p.source_type == "secondary"
+    fx, _ = props["fx_to_usd"]
+    assert fx.kind == "ASSUMPTION" and "fast tabell" in fx.source and "kontrollera" in fx.note
+    assert props["market_currency"][0].value == "CAD" and props["market_currency"][1] == "USD"
+    assert dr.proposals({}, c) == [] and dr.proposals(None, c) == []
+    assert dr.refresh_row(blob, "gpr")["mcap_musd"] == 1600.0
 
 
 def test_screen_hit_becomes_a_sheet_row_and_sheet_apply_keeps_provenance():

@@ -219,6 +219,7 @@ def _render_sheet(data: dict, company: CompanyInput, a: DurrettAnalysis) -> None
                 f"Tomt = okänt (N/A), aldrig 0. Enheten för resurser/produktion väljs här; kostnad och pris i "
                 f"råvarans prisenhet ({a.commodity and com.REGISTRY.get(company.commodity).unit if company.commodity in com.REGISTRY else 'USD/enhet'}).</span>",
                 unsafe_allow_html=True)
+    _render_refresh(data, company)
     with st.form(f"durrett_sheet_{t}"):
         h1, h2, h3, h4 = st.columns([2, 1.2, 1.2, 1])
         source = h1.text_input("Källa för det du fyller i nu", value="Arket (manuell)", key=f"ds_src_{t}",
@@ -253,6 +254,47 @@ def _render_sheet(data: dict, company: CompanyInput, a: DurrettAnalysis) -> None
             st.success(f"{changed} fält uppdaterade — spara med 💾 när du är klar.")
             st.rerun()
     _sheet_summary(a)
+
+
+def _render_refresh(data: dict, company: CompanyInput) -> None:
+    """🤖 Börsdata-förslag ur sifferuppdateringen (sheets_refresh.json) — Använd per tal, eller alla."""
+    try:
+        import refresh_ui
+        from engines.durrett import refresh as dr
+    except Exception:                                   # pragma: no cover
+        return
+    blob = refresh_ui.load_refresh()
+    props = dr.proposals(blob, company)
+    t = company.ticker
+    if not props:
+        if dr.refresh_row(blob, t):
+            st.caption("🤖 Börsdata: sifferuppdateringen har inga nya tal för raden.")
+        elif company.ins_id is None:
+            st.caption("🤖 Börsdata: raden saknar ins_id — håven sätter det, eller ange det under Mer → Alla fält. "
+                       "Sifferuppdateringen körs schemalagt (sheets_refresh.py).")
+        return
+    asof = props[0][1].pub_date or ""
+    with st.expander(f"🤖 Börsdata {asof}: {len(props)} förslag ur sifferuppdateringen", expanded=True):
+        for key, point, cur in props:
+            label = ccfg.FIELD_BY_KEY[key].label
+            a, b = st.columns([4, 1])
+            val = point.value if not isinstance(point.value, (int, float)) else f"{point.value:,.4g}"
+            a.markdown(f"<span style='color:{TEXT};'>{label}: {val}{(' ' + point.unit) if point.unit else ''}</span>"
+                       + (f" <span style='color:{AMBER};font-size:0.78rem;'>ersätter {cur:,.4g}</span>" if isinstance(cur, (int, float))
+                          else (f" <span style='color:{AMBER};font-size:0.78rem;'>ersätter {cur}</span>" if cur else ""))
+                       + (f"<br><span style='color:{DIM};font-size:0.74rem;'>{point.note}</span>" if point.note else ""),
+                       unsafe_allow_html=True)
+            if b.button("Använd", key=f"durrett_rf_{t}_{key}"):
+                company.set(key, point)
+                cs.put(data, company)
+                _save(data)
+                st.rerun()
+        if st.button("Använd alla", key=f"durrett_rf_all_{t}"):
+            for key, point, _cur in props:
+                company.set(key, point)
+            cs.put(data, company)
+            _save(data)
+            st.rerun()
 
 
 def _apply_sheet(company: CompanyInput, widgets: dict, source: str, stype: str, kind: str, when: Optional[str]) -> int:

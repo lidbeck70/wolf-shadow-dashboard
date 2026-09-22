@@ -30,15 +30,30 @@ def _sheets():
                                    "geo_now": 1.1, "geo_3y": 1.0}]},
         "scoring": {"sprott": [], "durrett": [{"id": "d1", "ticker": "MJS", "ins_id": 104,
                                               "mcap": 300.0, "profit": 20.0}]},
+        "confidence": {"companies": {"GPR": _durrett_company()}, "commodity_overrides": {}},
     }
+
+
+def _durrett_company() -> dict:
+    """Durrett-arkets rad (data/confidence.json): 300 koz × (3 000 − 1 450) = 465 → FCF 349 MUSD;
+    börsvärde 5 000 = 14,3× → färskt 2 000 MUSD = 5,7× korsar 10×."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import durrett_cases as dcs
+    c = dcs.gold_producer()
+    c.ins_id = 105
+    c.set("market_cap_musd", type(c.get("aisc"))(value=5000.0, kind="ACTUAL", source="Börsdata"))
+    return c.as_dict()
 
 
 def test_collect_rows_finds_every_bucket():
     refs = sr.collect_rows(_sheets())
     assert {(r["sheet"], r["bucket"]) for r in refs} == {
         ("insider", "signals"), ("tiggre", "candidates"), ("tiggre", "positions"),
-        ("producers", "producers"), ("producers", "royalty"), ("scoring", "durrett")}
+        ("producers", "producers"), ("producers", "royalty"), ("scoring", "durrett"),
+        ("confidence", "companies")}
     assert sr.ref_key("insider", {"id": "i1"}) == "insider:i1"
+    conf = [r for r in refs if r["sheet"] == "confidence"][0]
+    assert conf["key"] == "confidence:GPR" and conf["ins_id"] == 105 and conf["ticker"] == "GPR"
 
 
 def test_ticker_forms_strip_suffix_and_dash():
@@ -48,11 +63,13 @@ def test_ticker_forms_strip_suffix_and_dash():
 
 class _API:
     def __init__(self):
-        self.prices = {1: 84.0, 2: 135.0, 40: 300.0, 102: 21.0, 103: 50.0, 104: 50.0}
+        self.prices = {1: 84.0, 2: 135.0, 40: 300.0, 102: 21.0, 103: 50.0, 104: 50.0, 105: 8.0}
         self.snaps = {40: {"ev_ebitda": 5.0, "net_debt_ebitda": 1.4, "market_cap": 90000.0},
                       102: {"market_cap": 400.0},
                       103: {"ev_ebitda": 12.0},
-                      104: {"market_cap": 150.0}}
+                      104: {"market_cap": 150.0},
+                      105: {"market_cap": 2000.0, "ev": 1900.0, "ev_ebitda": 4.1, "net_debt_ebitda": -0.3,
+                            "revenue_m": 600.0, "fcf_m": 110.0, "pe": 9.0, "rs_rank": 71.0, "ebitda_margin": 0.48}}
 
     def get_instruments(self):
         return [{"insId": 1, "ticker": "EKTA B", "stockPriceCurrency": "SEK"},
@@ -61,7 +78,8 @@ class _API:
 
     def get_global_instruments_list(self):
         return [{"insId": i, "ticker": t, "stockPriceCurrency": "CAD"}
-                for i, t in ((101, "JR"), (102, "AU"), (103, "FNV"), (104, "MJS"))]
+                for i, t in ((101, "JR"), (102, "AU"), (103, "FNV"), (104, "MJS"))] + \
+            [{"insId": 105, "ticker": "GPR", "stockPriceCurrency": "USD", "reportCurrency": "USD"}]
 
     def resolve_instrument_id(self, form):
         return {"EKTA B": 1, "HEXA B": 2, "BOL": 40}.get(form)
@@ -93,6 +111,14 @@ def test_refresh_builds_suggestions_and_sheet_rule_events():
     assert "rule_deleveraging:producers:r1" in kinds               # 0,7 → 1,4 korsar 1,0
     assert "durrett_buy_rule:scoring:d1" in kinds                  # 300/20 = 15× → 109/20 = 5.5×
     assert "sälj halva" in kinds["tiggre_free_ride:tiggre:p1"]["title"]
+    # Durrett-arket (confidence.json): fler tal ur snapshoten + motorns köpregel
+    g = rows["confidence:GPR"]
+    assert g["mcap_musd"] == 2000.0 and g["ev_musd"] == 1900.0 and g["revenue_musd"] == 600.0
+    assert g["fcf_musd"] == 110.0 and g["pe"] == 9.0 and g["rs_rank"] == 71.0 and g["fx_to_usd"] == 1.0
+    assert g["price"] == 8.0 and g["currency"] == "USD"
+    assert "producers:r1" in rows and "fx_to_usd" not in rows["producers:r1"]   # bara Durrett-arket
+    ev = kinds["durrett_engine_buy_rule:confidence:GPR"]                          # 14,3× → 5,7× korsar 10×
+    assert "köpregeln uppfylld" in ev["body"] and ev["ticker"] == "GPR" and ev["sheet"] == "confidence"
 
 
 def test_no_events_when_nothing_crosses():
@@ -104,6 +130,7 @@ def test_no_events_when_nothing_crosses():
     api.snaps[102]["market_cap"] = 100.0
     api.snaps[103]["ev_ebitda"] = 20.0
     api.snaps[104]["market_cap"] = 400.0       # 292/20 = 14.6× → fortfarande över 10
+    api.snaps[105]["market_cap"] = 5000.0      # Durrett-arket: 14,3× → 14,3×, ingen korsning
     out = sr.refresh(api, _sheets())
     assert out["events"] == []
 

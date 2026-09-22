@@ -82,10 +82,23 @@ Commodity price sensitivity.
 Inmatningar lagras i `data/confidence.json` (delat med Confidence score)
 via 💾 Spara. Varje datapunkt har value, kind (ACTUAL/ESTIMATE/GUIDANCE/
 MODELLED/ASSUMPTION), source, source_type, pub_date/data_date,
-confidence. Börsdata (market cap, EV, ND/EBITDA, marginaler, RS-rank)
-och Copilot-extraktion ur PDF (ark `confidence` i `ai/extract_prompt.py`)
-fyller fält som förslag; tekniska rapporter matas in manuellt. Motorn
-rör aldrig nätverket. Källhierarkin (filings > tekniska rapporter >
+confidence. Motorn rör aldrig nätverket. Tre vägar fyller fälten som
+FÖRSLAG (inget skrivs utan Använd):
+
+- **Håven** (`screens_scan.py`, Durrett-screenern i Börsdata) lägger in
+  bolaget med `ins_id` och börsvärde.
+- **Sifferuppdateringen** (`sheets_refresh.py`, GitHub Actions) läser
+  arket, hämtar färska tal ur Börsdata för rader med `ins_id` (eller
+  ticker som går att slå upp) och skriver dem till Gisten under
+  `confidence:<TICKER>`: kurs, valuta, börsvärde, EV, EV/EBITDA,
+  ND/EBITDA, P/E, omsättning, FCF, OCF, RS-rank, EBITDA-marginal och
+  jobbets FX-kurs (fast tabell, märkt ASSUMPTION). Arket visar dem via
+  `engines/durrett/refresh.py` med Använd per tal eller alla; källa
+  "Börsdata (sifferuppdatering ÅÅÅÅ-MM-DD)". Jobbet räknar också
+  händelsen `durrett_engine_buy_rule` (MCap/framtida vinst korsar 10× med
+  färskt börsvärde) med motorn själv — larmbenet "sheets" plockar upp den.
+- **Copilot-extraktion** ur PDF (ark `confidence` i `ai/extract_prompt.py`)
+  för tekniska rapporter; annars manuell inmatning i arket. Källhierarkin (filings > tekniska rapporter >
 43-101/JORC > FS > årsrapport > … > marknadsföring) uttrycks genom
 `source_type` (primary/independent/secondary/mixed/weak/unsupported).
 
