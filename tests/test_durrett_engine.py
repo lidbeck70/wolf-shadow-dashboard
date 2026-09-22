@@ -304,3 +304,43 @@ def test_config_weights_are_used_and_momentum_is_outside_quality():
     cfg["weights"] = {"valuation": 100, **{k: 0 for k in cfg["weights"] if k != "valuation"}}
     b = analyze(dcs.gold_producer(), config=cfg, today=T)
     assert b.quality_score.value == b.valuation_score.value
+
+
+# ── fliken ───────────────────────────────────────────────────────────────────
+def test_durrett_tab_renders_all_subtabs_without_network(monkeypatch):
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+    import storage
+    from confidence import store as cs
+
+    data = cs.default()
+    for mk in (dcs.gold_producer, dcs.copper_developer, dcs.lithium_explorer):
+        cs.put(data, mk())
+    stores = {"confidence": data, "producers": {}, "tiggre": {}}
+    monkeypatch.setattr(storage, "session_load", lambda name, default=None, legacy_file=None:
+                        st.session_state.setdefault(name, stores.get(name, default)))
+    monkeypatch.setattr(storage, "load_error", lambda name: None)
+    monkeypatch.setattr(storage, "is_dirty", lambda name: False)
+    monkeypatch.setattr(storage, "last_saved", lambda name: None)
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    monkeypatch.setenv("DURRETT_TEST_ROOT", root)
+
+    def app():
+        import os as _o
+        import sys as _s
+        _s.path.insert(0, _o.environ["DURRETT_TEST_ROOT"])
+        from engines.durrett.ui import render_durrett_page
+        render_durrett_page()
+
+    for sub in ("Analys", "Scenarier", "Indata", "Katalysatorer", "Peers"):
+        at = AppTest.from_function(app, default_timeout=60)
+        at.session_state["durrett_sub"] = sub
+        at.session_state["durrett_last"] = "GPR"
+        at.run()
+        assert not at.exception, (sub, at.exception)
+        if sub == "Analys":
+            text = " ".join(m.value for m in at.markdown) + " ".join(c.value for c in at.caption) + \
+                " ".join(c.value for c in at.code)
+            assert "DURRETT ANALYSIS" in text and "Properties" in text and "Red flags" in text
+            assert at.metric[3].label == "DURRETT SCORE" and at.metric[3].value != "N/A"
+            assert "BUY" not in text.replace("BUY CANDIDATE", "")

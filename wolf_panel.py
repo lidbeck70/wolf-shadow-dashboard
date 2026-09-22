@@ -200,6 +200,13 @@ try:
 except ImportError:
     CONFIDENCE_AVAILABLE = False
 
+# Durrett — Don Durretts 10-stegsmetod (engines/durrett), delar lagret med Confidence score
+try:
+    from engines.durrett.ui import render_durrett_page
+    DURRETT_AVAILABLE = True
+except ImportError:
+    DURRETT_AVAILABLE = False
+
 # Swing momentum-screener + regim (data från wolf_data.py)
 try:
     from wolf_screener_ui import render_wolf_screener_page
@@ -414,7 +421,7 @@ def main():
         sub = st.radio(
             "",
             ["Rick Rule", "Royalty C", "Poängmodell", "Tiggre", "Insider",
-             "🧭 Confidence score", "🎯 Scorecard"],
+             "🧭 Confidence score", "🐺 Durrett", "🎯 Scorecard"],
             label_visibility="collapsed", horizontal=True, key="sub_review",
         )
         st.markdown("---")
@@ -447,6 +454,12 @@ def main():
                 render_confidence_page()
             else:
                 tab_not_found("Confidence score", "confidence")
+
+        elif sub == "🐺 Durrett":
+            if DURRETT_AVAILABLE:
+                render_durrett_page()
+            else:
+                tab_not_found("Durrett", "engines/durrett/ui")
 
         elif sub == "🎯 Scorecard":
             if SCORECARD_AVAILABLE:
