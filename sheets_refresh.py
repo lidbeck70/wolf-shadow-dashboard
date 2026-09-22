@@ -47,9 +47,12 @@ log = logging.getLogger("sheets_refresh")
 
 BLOB_NAME = "sheets_refresh.json"
 SHEET_FILES = {"insider": "data/insider.json", "tiggre": "data/tiggre.json",
-               "producers": "data/producers.json", "scoring": "data/scoring.json"}
+               "producers": "data/producers.json", "scoring": "data/scoring.json",
+               "confidence": "data/confidence.json"}          # Durrett-/Confidence-arket
 _BUCKETS = {"insider": ("signals",), "tiggre": ("candidates", "positions"),
-            "producers": ("producers", "royalty"), "scoring": ("sprott", "durrett")}
+            "producers": ("producers", "royalty"), "scoring": ("sprott", "durrett"),
+            "confidence": ("companies",)}
+# confidence.json är {"companies": {TICKER: bolag}} — raden får ticker som id.
 _SUFFIX_RE = re.compile(r"\.(ST|OL|HE|CO)$", re.I)
 
 FX_TO_USD = {"SEK": 0.095, "NOK": 0.095, "DKK": 0.145, "EUR": 1.08, "USD": 1.0,
@@ -80,7 +83,10 @@ def collect_rows(sheets: dict) -> list:
     for sheet, buckets in _BUCKETS.items():
         data = sheets.get(sheet) or {}
         for b in buckets:
-            for row in data.get(b, []) or []:
+            rows = data.get(b, []) or []
+            if isinstance(rows, dict):                       # confidence: {TICKER: bolag}
+                rows = [dict(v, id=k) for k, v in rows.items() if isinstance(v, dict)]
+            for row in rows:
                 if not isinstance(row, dict) or not row.get("id"):
                     continue
                 t = str(row.get("ticker") or "").strip().upper()
@@ -182,9 +188,22 @@ def refresh(api, sheets: dict) -> dict:
                 snap = snaps.get(iid) or {}
                 s["ev_ebitda"] = _f(snap.get("ev_ebitda"))
                 s["nd_ebitda"] = _f(snap.get("net_debt_ebitda"))
+                fx = FX_TO_USD.get(ccy or "USD", 1.0)
                 mc = _f(snap.get("market_cap"))
                 if mc is not None:
-                    s["mcap_musd"] = round(mc * FX_TO_USD.get(ccy or "USD", 1.0), 1)
+                    s["mcap_musd"] = round(mc * fx, 1)
+                if r["sheet"] == "confidence":               # Durrett-arket: fler tal ur snapshoten
+                    rccy = str(meta.get("reportCurrency") or ccy or "USD").upper()
+                    rfx = FX_TO_USD.get(rccy, 1.0)
+                    s["fx_to_usd"] = fx if ccy else None
+                    s["fx_table"] = "sheets_refresh.FX_TO_USD (fast tabell)"
+                    for src_key, out_key, factor in (("ev", "ev_musd", fx), ("net_debt_m", "net_debt_musd", rfx),
+                                                     ("revenue_m", "revenue_musd", rfx), ("fcf_m", "fcf_musd", rfx),
+                                                     ("ocf_m", "ocf_musd", rfx)):
+                        v = _f(snap.get(src_key))
+                        s[out_key] = round(v * factor, 1) if v is not None else None
+                    for k in ("pe", "ps", "rs_rank", "ebitda_margin"):
+                        s[k] = _f(snap.get(k))
             else:
                 s["price"], s["asof"] = _yf_close(r["ticker"])
                 s["source"] = "yfinance" if s["price"] is not None else None
@@ -278,6 +297,9 @@ def build_events(sheets: dict, rows: dict) -> list:
                                        f"Skulden gick under {lukacs.DELEV_ND_MIN:g}× — "
                                        f"halveringen av positionen gäller inte längre.")))
 
+        elif sheet == "confidence":
+            events.extend(_durrett_engine_events(row, s))
+
         elif sheet == "scoring" and bucket == "durrett":
             mc = _f(s.get("mcap_musd"))
             profit = _f(row.get("profit"))
@@ -293,6 +315,46 @@ def build_events(sheets: dict, rows: dict) -> list:
                                        f"Börsvärde {mc:,.0f} MUSD — över 10× framtida vinst, "
                                        f"köpregeln gäller inte längre.")))
     return events
+
+
+def _durrett_engine_events(row: dict, s: dict) -> list:
+    """Durrett-arket (engines/durrett): köpregeln MCap/framtida vinst korsar 10×
+    med färskt börsvärde. Motorn är ren — bolaget byggs ur den sparade raden,
+    börsvärdet byts och analysen körs om. Inga regler ändras."""
+    mc = _f(s.get("mcap_musd"))
+    if mc is None:
+        return []
+    try:
+        from confidence.data.models import CompanyInput
+        from confidence.data.provenance import dp
+        from engines.durrett.engine import analyze
+        from scoring import DURRETT_BUY_MAX
+    except Exception:                                   # pragma: no cover
+        return []
+    try:
+        company = CompanyInput.from_dict({k: v for k, v in row.items() if k != "id"})
+        if not company.has("market_cap_musd"):
+            return []
+        before = (analyze(company).metrics.get("mcap_future_earnings") or {}).get("value")
+        fresh = CompanyInput.from_dict(company.as_dict())
+        fresh.set("market_cap_musd", dp(mc, kind="ACTUAL", source="Börsdata (sifferuppdatering)",
+                                        source_type="secondary", pub_date=s.get("asof"), unit="MUSD"))
+        after = (analyze(fresh).metrics.get("mcap_future_earnings") or {}).get("value")
+    except Exception as exc:                            # motorn får aldrig fälla jobbet
+        log.warning("Durrett-händelse för %s hoppades över: %s", row.get("ticker"), exc)
+        return []
+    if before is None or after is None:
+        return []
+    ok_before, ok_after = before < DURRETT_BUY_MAX, after < DURRETT_BUY_MAX
+    if ok_before == ok_after:
+        return []
+    t = str(row.get("ticker") or "").upper()
+    return [_ev("durrett_engine_buy_rule", "confidence", row,
+                f"🐺 Durrett-arket: {t} {after:.1f}× framtida vinst",
+                (f"Färskt börsvärde {mc:,.0f} MUSD — under {DURRETT_BUY_MAX:g}× framtida vinst, "
+                 f"köpregeln uppfylld (var {before:.1f}×)." if ok_after else
+                 f"Färskt börsvärde {mc:,.0f} MUSD — över {DURRETT_BUY_MAX:g}× framtida vinst, "
+                 f"köpregeln gäller inte längre (var {before:.1f}×)."))]
 
 
 def load_sheets() -> dict:
