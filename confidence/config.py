@@ -226,6 +226,29 @@ CONFIDENCE_BANDS = ((90, "VERIFIED"), (80, "HIGH CONFIDENCE"), (70, "GOOD CONFID
                     (60, "MODERATE"), (50, "SPECULATIVE"), (0, "LOW CONFIDENCE"))
 
 # ═══════════════════════════════════════════════════════════════════════════
+# SCENARIER, ASYMMETRI, 5×/10×, TIME-TO-MONEY (SPEC listar; talen är VAL och
+# syns som ASSUMPTION i varje scenariorapport — inga dolda multiplar)
+# ═══════════════════════════════════════════════════════════════════════════
+# (nyckel, etikett, prisändring %, capexändring %)
+SCENARIOS = (("bear", "Bear", -30.0, 20.0), ("base", "Base", 0.0, 0.0),
+             ("bull", "Bull", 30.0, 0.0), ("super_bull", "Super Bull", 80.0, 0.0))
+SCENARIO_PROBS = {"bear": 25.0, "base": 50.0, "bull": 20.0, "super_bull": 5.0}   # summa 100
+DEFAULT_TAX_RATE_PCT = 25.0            # ASSUMPTION när tax_rate_pct saknas
+DEFAULT_TARGET_EV_EBITDA = 5.0         # ASSUMPTION producenter: EV/EBITDA i scenariot
+DEFAULT_TARGET_P_NAV = 0.7             # ASSUMPTION developers: P/NAV vid omvärdering
+MULTIPLIER_TARGETS = (5.0, 10.0)       # "vad måste hända" för 5× och 10×
+ASYMMETRY_BANDS = ((3.0, "STARK ASYMMETRI"), (2.0, "ASYMMETRI"), (1.0, "SYMMETRISK"), (0.0, "NEGATIV"))
+# Time-to-money: typiska år kvar per mognadssteg (VAL, branschtypiskt) och
+# konfidens per steg. Bolagets eget årtal jämförs med detta.
+TTM_STAGE_YEARS = (("exploration", "Prospektering → PEA", 2.0, "låg"),
+                   ("pea", "PEA → PFS", 1.5, "låg"),
+                   ("pfs", "PFS → DFS", 1.5, "medel"),
+                   ("dfs", "DFS → tillstånd + finansiering (FID)", 1.5, "medel"),
+                   ("fid", "FID → byggstart", 0.5, "hög"),
+                   ("construction", "Byggnation → första kassaflöde", 2.5, "hög"))
+TTM_AGGRESSIVE_RATIO = 0.6             # bolagets plan < 60 % av typiskt → "aggressiv plan"
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Fältregister — allt en analys kan innehålla. Nyckel, etikett, enhet, typ,
 # vilka stages det gäller, vilken pelare/del som läser det.
 # ═══════════════════════════════════════════════════════════════════════════
@@ -308,6 +331,16 @@ FIELDS: tuple = (
     FieldSpec("nav_musd", "NAV (efter skatt)", "MUSD", "number", _ALL, "valuation"),
     FieldSpec("p_nav", "P/NAV", "×", "number", _ALL, "valuation",
               hint="Räknas som börsvärde / NAV om båda finns."),
+    # ── Scenarier (kedjan pris → produktion → EBITDA → FCF → EV/NAV → aktie) ──
+    FieldSpec("shares_outstanding_m", "Antal aktier (fullt utspätt)", "M", "number", _ALL, "scenarios"),
+    FieldSpec("share_price", "Aktiekurs", "valuta/aktie", "number", _ALL, "scenarios",
+              hint="Samma valuta som börsvärdet delat med aktier"),
+    FieldSpec("tax_rate_pct", "Skattesats", "%", "number", _ALL, "scenarios",
+              hint=f"Saknas → {DEFAULT_TAX_RATE_PCT:g} % (ASSUMPTION)"),
+    FieldSpec("target_ev_ebitda", "EV/EBITDA i scenariot", "×", "number", _PROD, "scenarios",
+              hint=f"Saknas → {DEFAULT_TARGET_EV_EBITDA:g}× (ASSUMPTION)"),
+    FieldSpec("target_p_nav", "P/NAV vid omvärdering", "×", "number", _PRE, "scenarios",
+              hint=f"Saknas → {DEFAULT_TARGET_P_NAV:g}× (ASSUMPTION)"),
     # ── Management (Case) ─────────────────────────────────────────────────
     FieldSpec("mgmt_track_record", "Byggmeriter", "p", "int", _ALL, "management", 1),
     FieldSpec("mgmt_capital_allocation", "Kapitalallokering", "p", "int", _ALL, "management", 1),

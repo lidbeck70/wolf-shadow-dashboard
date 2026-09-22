@@ -39,8 +39,10 @@ def producer_high_quality() -> CompanyInput:
     c = CompanyInput(ticker="PRD", name="Test Producer", commodity="copper", country="CA",
                      jurisdiction="Quebec", stage="producer", maturity="production")
     fill(c, dict(commodity_price=4.5, aisc=2.3, ebitda_margin_pct=48, fcf_yield_pct=11, roic_pct=18,
-                 breakeven_price=2.7, net_debt_ebitda=-0.2, **_RESOURCE_GOOD, **_MGMT_GOOD), **_PRIMARY)
-    fill(c, dict(ev_ebitda=3.8, pe=7.5, ev_ebit=5.5, market_cap_musd=5000, nav_musd=8000), **_MKT)
+                 breakeven_price=2.7, net_debt_ebitda=-0.2, annual_production=400e6, production_unit="lb",
+                 cash_musd=600, debt_musd=200, **_RESOURCE_GOOD, **_MGMT_GOOD), **_PRIMARY)
+    fill(c, dict(ev_ebitda=3.8, pe=7.5, ev_ebit=5.5, market_cap_musd=5000, nav_musd=8000,
+                 shares_outstanding_m=500, share_price=10.0), **_MKT)
     fill(c, _CERTAINTY_GOOD, **_STUDY)
     return c
 
@@ -142,7 +144,8 @@ def missing_everything() -> CompanyInput:
 def royalty() -> CompanyInput:
     c = CompanyInput(ticker="ROY", name="Test Royalty", commodity="gold", stage="royalty", maturity="production")
     fill(c, dict(ebitda_margin_pct=78, fcf_yield_pct=4, roic_pct=12, net_debt_ebitda=0.8, ev_ebitda=15, pe=25,
-                 ev_ebit=18, market_cap_musd=9000, nav_musd=7000, **_MGMT_GOOD), **_PRIMARY)
+                 ev_ebit=18, market_cap_musd=9000, nav_musd=7000, commodity_price=2500,
+                 annual_production=200_000, production_unit="oz (attributable)", **_MGMT_GOOD), **_PRIMARY)
     return c
 
 
