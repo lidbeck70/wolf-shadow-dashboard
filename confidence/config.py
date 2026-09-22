@@ -163,12 +163,55 @@ CONFIDENCE_PARTS = (
 )
 CONFIDENCE_MAX = {k: m for k, _l, m in CONFIDENCE_PARTS}
 
+# Data Quality 20 (SPEC: fyra delar à 0–5). Källkvalitet och färskhet räknas ur
+# proveniensen (snitt över alla giltiga fält); oberoende verifiering och
+# källkonsistens är bedömningar 0–5 (fält nedan) — de kan inte räknas ur en
+# datapunkt per fält utan att gissa.
+DATA_QUALITY_SUB = {"source_quality": 5, "freshness": 5, "independent_verification": 5,
+                    "cross_source_consistency": 5}
+
+# Resource Certainty 20 (SPEC listar faktorerna; VAL: 8/3/3/2/2/1/1)
+RESOURCE_CERTAINTY_SUB = {"resource_category": 8, "independent_resource_estimate": 3,
+                          "resource_verified_share_pct": 3, "drilling_density": 2,
+                          "resource_conversion_history": 2, "grade_consistency": 1,
+                          "metallurgy_confidence": 1}
+
 # Project Maturity 15 — grundnivå per mognad (SPEC), finjustering ±
 MATURITY_BASE = {"exploration": (0, 3), "pea": (3, 6), "pfs": (6, 9), "dfs": (9, 12),
                  "fid": (12, 14), "construction": (14, 15), "production": (15, 15)}
 MATURITY_ADJUSTERS = ("permits_granted", "engineering_done", "infrastructure_secured",
                       "financing_committed", "offtake_signed", "construction_contracts",
                       "procurement_started")
+
+# Economic Certainty 15 (SPEC: stress bas / pris −20 % / capex +20 %; rekordpris-
+# projekt kraftigt reducerade). VAL: prisstress 6, capexstress 5, studiekvalitet 4.
+# Överlevnad = stressat NPV / bas-NPV (0–1) × delpoäng. En MODELLED-bound är
+# mindre säker än FS-känsligheten → lägre tak.
+ECON_CERTAINTY_SUB = {"price_stress": 6, "capex_stress": 5, "study_quality": 4}
+ECON_CERTAINTY_MODELLED_CAP = {"price_stress": 4, "capex_stress": 3}
+STUDY_QUALITY_BY_MATURITY = {"exploration": 0, "pea": 1, "pfs": 3, "dfs": 4, "fid": 4,
+                             "construction": 4, "production": 4}
+NPV_PRICE_ABOVE_SPOT_PCT = 10.0        # NPV-pris > spot × 1,10 → avdrag
+NPV_PRICE_ABOVE_SPOT_PENALTY = 3
+RECORD_PRICE_FACTOR = 0.3              # record_price_dependent → Economic Certainty × 0,3
+
+# Financing Certainty 10 (VAL). Developers: åtagen andel av CapEx 7 + runway 3.
+# Explorers: runway (skalas). Producenter/royalty: nettoskuld/EBITDA.
+FIN_COMMITTED_SHARE_STEPS = ((1.0, 7), (0.5, 5), (0.25, 3), (0.01, 1))   # ≥ andel → p
+FIN_RUNWAY_STEPS = ((8, 3), (4, 2), (2, 1))                                # kvartal ≥ → p
+FIN_ND_EBITDA_STEPS = ((1.0, 10), (2.0, 7), (3.0, 4))                      # < → p, annars 1
+FIN_ND_EBITDA_BEYOND = 1
+
+# Timeline Certainty 10 (VAL). Developers: dokumenterad & finansierad plan 4,
+# förseningshistorik 0–2 → 0–4, mognad 0–2. Producenter: 8 + förseningar 0–2.
+TIMELINE_DOCUMENTED_POINTS = 4
+TIMELINE_DELAYS_FACTOR = 2             # historical_delays (0–2) × 2
+TIMELINE_MATURITY_POINTS = {"fid": 1, "construction": 2, "production": 2}
+TIMELINE_PRODUCER_BASE = 8
+
+# Management Track Record 10 (VAL: samma bedömningar som Case-Management, viktade)
+MGMT_TRACK_SUB = {"mgmt_track_record": 3, "mgmt_alignment_delivery": 3,
+                  "mgmt_dilution_history": 2, "mgmt_capital_allocation": 2}
 
 # Kill switches (SPEC) — appliceras EFTER summan
 KILL_CAPS = (
@@ -273,6 +316,11 @@ FIELDS: tuple = (
     FieldSpec("insider_ownership_pct", "Insynsägande", "%", "number", _ALL, "management"),
     FieldSpec("mgmt_alignment_delivery", "Alignment & leverans mot löften", "p", "int", _ALL,
               "management", 1),
+    # ── Confidence: Data Quality (bedömningar; källkvalitet/färskhet räknas) ──
+    FieldSpec("independent_verification", "Oberoende verifiering", "p", "int", _ALL, "data_quality", 5,
+              hint="0 bara bolagets ord · 3 nyckeltal bekräftade av QP/revisor · 5 alla nyckeltal oberoende"),
+    FieldSpec("cross_source_consistency", "Källkonsistens", "p", "int", _ALL, "data_quality", 5,
+              hint="0 motstridiga eller en enda källa · 3 huvudsak överens · 5 flera källor säger samma"),
     # ── Confidence: Resource Certainty ────────────────────────────────────
     FieldSpec("resource_category", "Högsta resurskategori", "", "choice", _ALL, "resource_certainty",
               choices=tuple(RESOURCE_CATEGORY_WEIGHT)),

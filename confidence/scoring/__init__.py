@@ -6,5 +6,6 @@ tillstånd; alla trösklar i confidence.config.
 """
 
 from confidence.scoring.case import case_score, rating_for
+from confidence.scoring.confidence import band_for, confidence_score, kill_caps
 
-__all__ = ["case_score", "rating_for"]
+__all__ = ["case_score", "rating_for", "confidence_score", "band_for", "kill_caps"]

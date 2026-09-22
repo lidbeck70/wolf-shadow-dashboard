@@ -64,7 +64,8 @@ def read_bool(company: CompanyInput, key: str, pillar: PillarScore) -> Optional[
 
 def note(pillar: PillarScore, name: str, pts: float, max_pts: float, text: str) -> None:
     """Delpoäng + en förklarande rad: 'AISC-marginal 3/4 — 31 % (…)'."""
-    pillar.components[name] = round(pts, 2)
+    pts = round(pts, 2)
+    pillar.components[name] = pts
     pillar.notes.append(f"{name} {pts:g}/{max_pts:g} — {text}")
 
 
