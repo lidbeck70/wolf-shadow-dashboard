@@ -35,3 +35,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
         run: python gist_probe.py
+
+      - name: Probe Discord webhook (metadata + testmeddelande)
+        if: always()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python discord_probe.py

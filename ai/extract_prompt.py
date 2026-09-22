@@ -97,10 +97,49 @@ FIELDS: dict[str, tuple] = {
         FieldSpec("jurisdiction", "Jurisdiktion", "text",
                   "Land/region för projektet.", apply=False),
     ),
+    # Confidence score — nycklarna är confidence.config.FIELDS-nycklar
+    "confidence": (
+        FieldSpec("npv_musd", "NPV efter skatt (MUSD)", "number",
+                  "After-tax NPV ur PEA/PFS/DFS. Säg i quote vilken studie, diskonteringsränta och pris."),
+        FieldSpec("npv_discount_pct", "Diskonteringsränta i NPV (%)", "number", "Den ränta NPV:n räknats med."),
+        FieldSpec("npv_price_assumption", "Råvarupris i NPV", "number",
+                  "Det långsiktiga pris studien använder, samma enhet som råvaran."),
+        FieldSpec("capex_musd", "Initial CapEx (MUSD)", "number", "Initial/pre-production capex, inte sustaining."),
+        FieldSpec("irr_pct", "IRR efter skatt (%)", "number", "After-tax IRR ur studien."),
+        FieldSpec("payback_years", "Payback (år)", "number", "Payback period ur studien."),
+        FieldSpec("annual_production", "Årsproduktion", "number",
+                  "Genomsnittlig årsproduktion (LOM average) — ange enheten (oz, lb, t, boe)."),
+        FieldSpec("mine_life_years", "Gruvlivslängd (år)", "number", "LOM / mine life."),
+        FieldSpec("aisc", "AISC per enhet", "number", "AISC eller C1 i samma enhet som råvarupriset."),
+        FieldSpec("breakeven_price", "Break-even råvarupris", "number",
+                  "Priset där NPV = 0 eller marginalen = 0, om studien anger det."),
+        FieldSpec("npv_stress_price_musd", "NPV vid pris −20 % (MUSD)", "number",
+                  "Ur känslighetstabellen: NPV vid −20 % pris (eller närmaste steg — säg vilket)."),
+        FieldSpec("npv_stress_capex_musd", "NPV vid CapEx +20 % (MUSD)", "number",
+                  "Ur känslighetstabellen: NPV vid +20 % capex."),
+        FieldSpec("cash_musd", "Kassa (MUSD)", "number", "Cash and equivalents senaste kvartal."),
+        FieldSpec("quarterly_burn_musd", "Burn per kvartal (MUSD)", "number",
+                  "Operativt kassaflöde per kvartal, positivt tal."),
+        FieldSpec("shares_outstanding_m", "Antal aktier, fullt utspätt (M)", "number",
+                  "Fully diluted shares outstanding."),
+        FieldSpec("insider_ownership_pct", "Insynsägande (%)", "number", "Ledning och styrelses andel."),
+        FieldSpec("first_cashflow_year", "Första kassaflöde (år)", "number",
+                  "Planerat år för första produktion/first pour."),
+        FieldSpec("independent_resource_estimate", "Oberoende resursuppskattning (43-101/JORC)", "bool",
+                  "Sant bara om en oberoende QP har signerat resursen."),
+        FieldSpec("permits_granted", "Nyckeltillstånd beviljade", "bool",
+                  "Sant bara om tillstånden är BEVILJADE, inte 'pending'."),
+        FieldSpec("financing_committed", "Finansiering åtagen", "bool",
+                  "Sant bara om byggfinansieringen är på plats."),
+        FieldSpec("offtake_signed", "Offtake signerat", "bool", "Bindande offtake-avtal, inte MoU."),
+        FieldSpec("resource_category", "Högsta resurskategori", "text",
+                  "proven / probable / measured / indicated / inferred / exploration_target.", apply=False),
+        FieldSpec("jurisdiction", "Jurisdiktion", "text", "Land/region för projektet.", apply=False),
+    ),
 }
 
 SHEET_LABEL = {"rule": "Rick Rule", "royalty": "Royalty C", "sprott": "Sprott",
-               "durrett": "Durrett", "tiggre": "Tiggre"}
+               "durrett": "Durrett", "tiggre": "Tiggre", "confidence": "Confidence score"}
 
 
 SYSTEM_EXTRACT = """Du läser en bolagspresentation eller rapport åt en svensk tradingpanel.
