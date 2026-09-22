@@ -193,6 +193,13 @@ try:
 except ImportError:
     INSIDER_AVAILABLE = False
 
+# Confidence score — Case Score + Confidence Score för gruv-/råvarubolag
+try:
+    from confidence import render_confidence_page
+    CONFIDENCE_AVAILABLE = True
+except ImportError:
+    CONFIDENCE_AVAILABLE = False
+
 # Swing momentum-screener + regim (data från wolf_data.py)
 try:
     from wolf_screener_ui import render_wolf_screener_page
@@ -407,7 +414,7 @@ def main():
         sub = st.radio(
             "",
             ["Rick Rule", "Royalty C", "Poängmodell", "Tiggre", "Insider",
-             "🎯 Scorecard"],
+             "🧭 Confidence score", "🎯 Scorecard"],
             label_visibility="collapsed", horizontal=True, key="sub_review",
         )
         st.markdown("---")
@@ -434,6 +441,12 @@ def main():
                 render_insider_page()
             else:
                 tab_not_found("Insiderbevakaren", "insider")
+
+        elif sub == "🧭 Confidence score":
+            if CONFIDENCE_AVAILABLE:
+                render_confidence_page()
+            else:
+                tab_not_found("Confidence score", "confidence")
 
         elif sub == "🎯 Scorecard":
             if SCORECARD_AVAILABLE:
