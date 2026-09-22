@@ -126,6 +126,9 @@ FUNDING_GAP_STEPS = ((0.0, 4), (0.25, 3), (0.5, 2), (0.75, 1))       # gap / tot
 RUNWAY_STEPS = ((8, 3), (4, 2), (2, 1))                                # kvartal ≥ → p
 COMMITMENT_POINTS = {"has_strategic_partner": 1, "has_offtake": 1, "committed_financing_ok": 1}
 COMMITTED_FINANCING_MIN_SHARE = 0.25   # committed / capex ≥ 25 % räknas som åtagande
+# Utspädning (SPEC listar "dilution" under Balance Sheet; VAL: DS ur controls.py —
+# DS ≥ 6 låser köp där, ≥ 8 är EXTREM → −1 / −2 p, aldrig under 0)
+DILUTION_PENALTY_STEPS = ((8, 2), (6, 1))                              # DS ≥ → avdrag
 
 # Valuation 10 — producenter (SPEC listar måtten; VAL: 3/3/1/1/2)
 EV_EBITDA_STEPS = ((4.0, 3), (6.0, 2), (8.0, 1))                       # ≤ → p
