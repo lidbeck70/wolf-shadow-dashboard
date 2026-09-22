@@ -40,7 +40,15 @@ class Commodity:
     geopolitical_scarcity: Datapoint = field(default_factory=Datapoint)    # 0–5
     supply_balance_pct: Datapoint = field(default_factory=Datapoint)       # underskott % (neg = överskott)
     adjustments: tuple = ()                 # config.SUPPLY_ADJUSTMENTS som gäller
+    # Regional knapphet — null tills sourcat (t.ex. USGS Mineral Commodity Summaries)
+    supply_concentration_pct: Datapoint = field(default_factory=Datapoint)  # största producentlandets andel %
+    top_supplier: str = ""                                                   # det landet
+    western_share_pct: Datapoint = field(default_factory=Datapoint)          # andel ur "västliga" jurisdiktioner %
     notes: str = ""
+
+
+OVERRIDE_POINTS = ("strategic_significance", "demand_growth", "geopolitical_scarcity", "supply_balance_pct",
+                   "supply_concentration_pct", "western_share_pct")
 
 
 def _seed(score_0_100: float) -> Datapoint:
@@ -142,11 +150,13 @@ def resolve(base: Commodity, override: Optional[dict]) -> Commodity:
     if not override:
         return base
     changes = {}
-    for f in ("strategic_significance", "demand_growth", "geopolitical_scarcity", "supply_balance_pct"):
+    for f in OVERRIDE_POINTS:
         if f in override and override[f] is not None:
             changes[f] = from_dict(override[f])
     if "adjustments" in override:
         changes["adjustments"] = tuple(override["adjustments"] or ())
+    if "top_supplier" in override:
+        changes["top_supplier"] = str(override["top_supplier"] or "")
     if "notes" in override:
         changes["notes"] = str(override["notes"] or "")
     return replace(base, **changes) if changes else base

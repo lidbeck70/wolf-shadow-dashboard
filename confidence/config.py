@@ -249,6 +249,33 @@ TTM_STAGE_YEARS = (("exploration", "Prospektering → PEA", 2.0, "låg"),
 TTM_AGGRESSIVE_RATIO = 0.6             # bolagets plan < 60 % av typiskt → "aggressiv plan"
 
 # ═══════════════════════════════════════════════════════════════════════════
+# WHY NOW 0–100 (SPEC listar; VAL: sex signaler ur repots egna moduler)
+# Signaler som saknas ger 0 och skalas pro rata; täckningen redovisas.
+# ═══════════════════════════════════════════════════════════════════════════
+WHY_NOW_SUB = {"cycle": 30, "triple_signal": 25, "ratio": 15, "complex": 10,
+               "supply": 10, "time_to_money": 10}
+WHY_NOW_CYCLE = {"TIDIG": 30, "MITTEN": 20, "SEN": 8, "TOPP": 0}           # blindspot 10y-percentil
+WHY_NOW_RATIO = {"RUBBER_BAND_STRETCHED": 15, "TENSION_BUILDING": 10, "NEUTRAL": 5}
+WHY_NOW_COMPLEX = {"PÅ": 10, "SELEKTIV": 5, "AV": 0}                       # ember-komplexets utlåtande
+WHY_NOW_TTM_STEPS = ((1.0, 10), (2.0, 7), (3.0, 4))                        # år ≤ → p, annars 1
+WHY_NOW_TTM_BEYOND = 1
+WHY_NOW_MIN_COVERAGE = 0.5             # under 50 % av signalerna: ingen uppskalning, flagga
+WHY_NOW_BANDS = ((75, "NU"), (55, "SNART"), (35, "BEVAKA"), (0, "INTE NU"))
+
+# ═══════════════════════════════════════════════════════════════════════════
+# REGIONAL KNAPPHET 0–100 (SPEC listar; VAL). Jurisdiktion ur repots
+# tabell (contrarian_alpha.resource_scoring); koncentration och västligt
+# utbud ur råvaruregistret (null tills sourcat).
+# ═══════════════════════════════════════════════════════════════════════════
+REGIONAL_SUB = {"jurisdiction": 50, "concentration": 30, "western_gap": 20}
+CONCENTRATION_STEPS = ((70.0, 30), (50.0, 22), (30.0, 12), (0.0, 5))      # största lands andel % ≥ → p
+SAFE_JURISDICTION_MIN = 75.0           # under detta halveras koncentrationspoängen (tillgången är inte "västlig")
+WESTERN_GAP_STEPS = ((10.0, 20), (25.0, 14), (50.0, 7))                    # västlig andel % ≤ → p, annars 2
+WESTERN_GAP_BEYOND = 2
+REGIONAL_BANDS = ((75, "KRITISK KNAPPHET"), (55, "KNAPP"), (35, "NORMAL"), (0, "RIKLIG"))
+REGIONAL_MIN_COVERAGE = 0.6            # jurisdiktion ensam (50 %) skalas inte upp — säger inget om knapphet
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Fältregister — allt en analys kan innehålla. Nyckel, etikett, enhet, typ,
 # vilka stages det gäller, vilken pelare/del som läser det.
 # ═══════════════════════════════════════════════════════════════════════════
