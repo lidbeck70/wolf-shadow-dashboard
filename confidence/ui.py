@@ -39,7 +39,11 @@ _BAND_COLOR = {"ELITE": GOLD, "PICK": GREEN, "STRONG CANDIDATE": GREEN, "WATCHLI
                "BUY CANDIDATE": GREEN, "WATCH": AMBER, "REJECT": RED}
 _SOURCE_TYPES = ("", "primary", "independent", "secondary", "mixed", "weak", "unsupported")
 _PILLAR_LABEL = {**{k: l for k, l, _m in cfg.PILLARS}, **{k: l for k, l, _m in cfg.CONFIDENCE_PARTS},
-                 "scenarios": "Scenarier", "kill": "Kill switches (bedömningar med belägg)"}
+                 "scenarios": "Scenarier", "kill": "Kill switches (bedömningar med belägg)",
+                 "durrett_shares": "Durrett · aktiestruktur & valuta", "durrett_resources": "Durrett · reserver & resurser",
+                 "durrett_production": "Durrett · produktion & kostnader", "durrett_balance": "Durrett · kassa & skuld",
+                 "durrett_management": "Durrett · management", "durrett_jurisdiction": "Durrett · projektrisk",
+                 "durrett_explorer": "Durrett · explorer", "durrett_momentum": "Durrett · momentum"}
 
 
 # ── lagring ──────────────────────────────────────────────────────────────────
@@ -491,6 +495,14 @@ def _render_extractor(data: dict, company: CompanyInput) -> None:
                 st.rerun()
         for n in res["notes"]:
             st.caption("📝 " + n)
+
+
+# Publika alias för andra flikar som delar lagret (Durrett-fliken)
+load_store = _load
+save_store = _save
+render_inputs = _render_inputs
+identity_widgets = _identity_widgets
+new_company_form = _new_company_form
 
 
 # ── Råvaror ──────────────────────────────────────────────────────────────────

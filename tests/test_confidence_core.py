@@ -37,7 +37,7 @@ def test_every_field_spec_is_consistent():
     assert len(keys) == len(set(keys))
     for f in cfg.FIELDS:
         assert f.kind in ("number", "int", "bool", "choice", "text", "date")
-        if f.kind == "int" and f.key != "first_cashflow_year":      # ett årtal har inget max
+        if f.kind == "int" and f.unit not in ("år", "st"):          # årtal och antal har inget max
             assert f.max is not None
         if f.kind == "choice":
             assert f.choices
