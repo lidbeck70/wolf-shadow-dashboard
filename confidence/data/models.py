@@ -31,6 +31,7 @@ class CompanyInput:
     ins_id: Optional[int] = None   # Börsdata-id när bolaget finns där
     fields: dict = field(default_factory=dict)   # {key: Datapoint}
     notes: str = ""
+    catalysts: list = field(default_factory=list)   # [{name, type, expected, importance, impact, confidence, source}]
 
     # ── läsning ───────────────────────────────────────────────────────────
     def get(self, key: str) -> Optional[Datapoint]:
