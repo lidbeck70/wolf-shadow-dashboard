@@ -361,29 +361,64 @@ def test_durrett_tab_renders_all_subtabs_without_network(monkeypatch):
         from engines.durrett.ui import render_durrett_page
         render_durrett_page()
 
-    for sub in ("Analys", "Scenarier", "Indata", "Katalysatorer", "Peers"):
+    import screens_ui
+    blob = {"generated": "2026-09-22T06:00", "screens": {"durrett": {"label": "Durrett", "criteria": "Guld/silver …",
+            "rows": [{"ticker": "NEWG", "name": "New Gold Corp", "ins_id": 4711, "mcap_musd": 240.0, "universe": "global",
+                      "first_seen": "2026-09-22", "m": {"ps": 1.4, "gross_margin": 31.0, "nd_ebitda": 0.8}}]}}}
+    monkeypatch.setattr(screens_ui, "load_screens", lambda: blob)
+
+    at = AppTest.from_function(app, default_timeout=60)
+    at.run()
+    assert not at.exception, at.exception
+    text = " ".join(m.value for m in at.markdown) + " ".join(c.value for c in at.caption)
+    labels = " ".join(e.label for e in at.expander)
+    assert "DURRETT ANALYSIS" in text and "Håven — Durrett" in labels and "Ny kandidat" in labels
+    assert any(e.label.startswith("GPR · Guld · PRODUCER · Durrett") for e in at.expander)
+    assert any("Jämför sida vid sida" in e.label for e in at.expander)
+    assert "BUY" not in text.replace("BUY CANDIDATE", "")
+    # Håven: "Lägg in" skapar ett bolag i arket med börsvärde ur håven
+    at.button(key="scr_add_durrett_NEWG").click().run()
+    assert not at.exception, at.exception
+    store = at.session_state["confidence"]
+    assert "NEWG" in store["companies"] and store["companies"]["NEWG"]["fields"]["market_cap_musd"]["value"] == 240.0
+    assert store["companies"]["NEWG"]["stage"] == "producer" and store["companies"]["NEWG"]["ins_id"] == 4711
+
+    for sub in ("Arket", "Analys", "Scenarier", "Mer"):
         at = AppTest.from_function(app, default_timeout=60)
-        at.session_state["durrett_sub"] = sub
-        at.session_state["durrett_last"] = "GPR"
+        at.session_state["durrett_row_sub_GPR"] = sub
         at.run()
         assert not at.exception, (sub, at.exception)
-        if sub == "Indata":
-            # en redan laddad confidence.ui utan de publika aliasen (Streamlit Cloud
-            # före omstart) får inte fälla fliken — fallback till de privata namnen
-            from confidence import ui as cui
-            for name in ("load_store", "save_store", "render_inputs", "new_company_form", "identity_widgets"):
-                monkeypatch.delattr(cui, name)
-            at2 = AppTest.from_function(app, default_timeout=60)
-            at2.session_state["durrett_sub"] = sub
-            at2.session_state["durrett_last"] = "GPR"
-            at2.run()
-            assert not at2.exception, at2.exception
-            for name, priv in (("load_store", "_load"), ("save_store", "_save"), ("render_inputs", "_render_inputs"),
-                               ("new_company_form", "_new_company_form"), ("identity_widgets", "_identity_widgets")):
-                monkeypatch.setattr(cui, name, getattr(cui, priv), raising=False)
         if sub == "Analys":
-            text = " ".join(m.value for m in at.markdown) + " ".join(c.value for c in at.caption) + \
-                " ".join(c.value for c in at.code)
-            assert "DURRETT ANALYSIS" in text and "Properties" in text and "Red flags" in text
-            assert at.metric[3].label == "DURRETT SCORE" and at.metric[3].value != "N/A"
-            assert "BUY" not in text.replace("BUY CANDIDATE", "")
+            t2 = " ".join(c.value for c in at.code)
+            assert "Properties" in t2 and any(m.label == "DURRETT SCORE" for m in at.metric)
+        if sub == "Arket":
+            # arket: skriv in ett tal, tomt fält lämnas okänt, källa/datum följer med
+            at.text_input(key="ds_GPR_aisc").set_value("1500").run()
+            at.text_input(key="ds_src_GPR").set_value("MD&A Q2 2026").run()
+            at.button(key="FormSubmitter:durrett_sheet_GPR-Uppdatera arket").click().run()
+            assert not at.exception, at.exception
+            gpr = at.session_state["confidence"]["companies"]["GPR"]["fields"]
+            assert gpr["aisc"]["value"] == 1500.0 and gpr["aisc"]["source"] == "MD&A Q2 2026"
+            assert gpr["market_cap_musd"]["source"] == "Börsdata"          # oförändrat fält behåller sin källa
+    # en redan laddad confidence.ui utan de publika aliasen (Streamlit Cloud före
+    # omstart) får inte fälla fliken — fallback till de privata namnen
+    from confidence import ui as cui
+    for name in ("load_store", "save_store", "render_inputs", "new_company_form", "identity_widgets"):
+        monkeypatch.delattr(cui, name)
+    at2 = AppTest.from_function(app, default_timeout=60)
+    at2.session_state["durrett_row_sub_GPR"] = "Mer"
+    at2.run()
+    assert not at2.exception, at2.exception
+
+
+def test_screen_hit_becomes_a_sheet_row_and_sheet_apply_keeps_provenance():
+    from engines.durrett.ui import _apply_sheet, _company_from_screen
+    c = _company_from_screen({"ticker": "SLVR", "name": "Silver Peak Mining", "ins_id": 9, "mcap": 120.0}, "2026-09-22")
+    assert c.commodity == "silver" and c.stage == "producer" and c.ins_id == 9
+    assert c.get("market_cap_musd").source.startswith("Börsdata-håven") and c.get("market_cap_musd").pub_date == "2026-09-22"
+    n = _apply_sheet(c, {"aisc": "1 450", "cash_musd": "", "resource_unit": "koz", "mgmt_track_verified": "—",
+                         "market_cap_musd": "120"}, "MD&A", "primary", "ACTUAL", "2026-09-22")
+    assert n == 2                                                          # aisc + resource_unit; mcap oförändrad
+    assert c.num("aisc") == 1450 and c.get("aisc").kind == "ACTUAL" and c.get("aisc").source == "MD&A"
+    assert c.get("market_cap_musd").source.startswith("Börsdata-håven")
+    assert _apply_sheet(c, {"aisc": ""}, "x", "mixed", "ESTIMATE", None) == 1 and not c.has("aisc")
