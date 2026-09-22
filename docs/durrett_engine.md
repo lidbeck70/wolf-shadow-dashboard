@@ -105,7 +105,10 @@ opex för litium (LCE).
   tills en trappa läggs in (TODO i config).
 - Halttrösklar per råvara är platshållare (`grade_low_by_unit`).
 - Historisk utspädning kräver aktieantal 1/3/5 år tillbaka.
-- Momentum-fälten matas in som data (fliken hämtar inte automatiskt än).
+- Momentum: fliken hämtar kurs mot MA200, 6-månadersutveckling och
+  volymtrend ur yfinance på knapp (Indata → "Hämta momentum",
+  `momentum_fetch.py`; volymtrend är MODELLED enligt regeln i noten).
+  RS-rank, sektor-/råvarumomentum och nyhetsflöde är bedömningar.
 - Model Confidence mäter inte "model agreement" mot andra motorer förrän
   multi-model-vyn finns.
 - Ingen händelsedriven omräkning i bakgrunden: analysen räknas om varje

@@ -86,6 +86,7 @@ def render_durrett_page() -> None:
     elif sub == "Indata":
         st.caption("Samma fält som Confidence score — Durrett-grupperna ligger sist. Fyll aktiestruktur, "
                    "reserver/resurser, produktion och management för full analys.")
+        _render_momentum_fetch(data, company)
         cui.render_inputs(data, company)
     elif sub == "Katalysatorer":
         _render_catalysts(data, company, a)
@@ -188,6 +189,36 @@ def _render_analysis(a: DurrettAnalysis) -> None:
         st.code("\n".join(a.log), language=None)
     st.download_button("⬇ EngineResult (JSON)", json.dumps(to_engine_result(a).as_dict(), ensure_ascii=False, indent=1),
                        file_name=f"durrett_{a.ticker}_{a.generated}.json", mime="application/json", key="durrett_dl")
+
+
+# ── Momentum ur kurshistorik ─────────────────────────────────────────────────
+def _render_momentum_fetch(data: dict, company) -> None:
+    from engines.durrett import momentum_fetch as mf
+
+    with st.expander("📈 Hämta momentum ur kurshistorik (yfinance)", expanded=False):
+        st.caption("Räknar kurs mot MA200, 6-månadersutveckling och volymtrend och skriver in dem som "
+                   "datapunkter med källa yfinance och dagens datum. RS-rank, sektor-/råvarumomentum och "
+                   "nyhetsflöde sätter du själv.")
+        c1, c2 = st.columns([2, 1])
+        yft = c1.text_input("Yahoo-ticker", value=st.session_state.get(f"durrett_yft_{company.ticker}", company.ticker),
+                            key=f"durrett_yft_in_{company.ticker}", help="T.ex. ABC.TO, ABC.V, ABC.AX, ABC")
+        if c2.button("Hämta", key=f"durrett_mom_{company.ticker}"):
+            st.session_state[f"durrett_yft_{company.ticker}"] = yft
+            with st.spinner("Hämtar två års kurshistorik …"):
+                pts, msg = mf.fetch_momentum(yft.strip())
+            if not pts:
+                st.error(msg)
+                return
+            for k, p in pts.items():
+                company.set(k, p)
+            cs.put(data, company)
+            cui.save_store(data)
+            st.success(msg + " — inskrivna i sessionen, spara med 💾")
+            st.rerun()
+        for k in ("price_vs_ma200_pct", "momentum_6m_pct", "volume_trend"):
+            p = company.get(k)
+            if p is not None and not p.missing:
+                st.caption(f"· {k}: {p.value:g} ({p.kind}, {p.source}, {p.pub_date})")
 
 
 # ── Scenarier ────────────────────────────────────────────────────────────────

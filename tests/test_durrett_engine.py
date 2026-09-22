@@ -306,6 +306,35 @@ def test_config_weights_are_used_and_momentum_is_outside_quality():
     assert b.quality_score.value == b.valuation_score.value
 
 
+# ── momentum ur kurshistorik ─────────────────────────────────────────────────
+def test_momentum_from_history_is_pure_and_honest_about_short_history():
+    from engines.durrett import momentum_fetch as mf
+    closes = [100 + i * 0.5 for i in range(300)]                  # stigande trend
+    vols = [1000] * 189 + [1500] * 63 + [1500] * 48
+    m = mf.momentum_from_history(closes, vols)
+    last, ma = closes[-1], sum(closes[-200:]) / 200
+    assert m["price_vs_ma200_pct"] == pytest.approx((last / ma - 1) * 100)
+    assert m["momentum_6m_pct"] == pytest.approx((last / closes[-127] - 1) * 100)
+    assert m["volume_trend"] == 2 and m["days"] == 300
+    short = mf.momentum_from_history(closes[:100])
+    assert short["price_vs_ma200_pct"] is None and short["momentum_6m_pct"] is None and short["volume_trend"] is None
+    assert mf.momentum_from_history([]) == {"price_vs_ma200_pct": None, "momentum_6m_pct": None,
+                                            "volume_trend": None, "days": 0}
+    pts = mf.as_datapoints(m, "GPR", date(2026, 9, 22))
+    assert set(pts) == {"price_vs_ma200_pct", "momentum_6m_pct", "volume_trend"}
+    assert pts["price_vs_ma200_pct"].kind == "ACTUAL" and pts["volume_trend"].kind == "MODELLED"
+    assert pts["momentum_6m_pct"].pub_date == "2026-09-22" and "yfinance GPR" in pts["momentum_6m_pct"].source
+    c = dcs.gold_producer()
+    for k in ("price_vs_ma200_pct", "momentum_6m_pct", "volume_trend", "rs_rank", "sector_momentum",
+              "commodity_momentum", "news_flow"):
+        c.fields.pop(k, None)
+    for k, p in pts.items():
+        c.set(k, p)
+    a = analyze(c, today=T)
+    assert a.momentum_score.value is not None and "price_trend" in a.momentum_score.components
+    assert "momentum" not in a.quality_score.components                # fortfarande utanför Quality
+
+
 # ── fliken ───────────────────────────────────────────────────────────────────
 def test_durrett_tab_renders_all_subtabs_without_network(monkeypatch):
     import streamlit as st
