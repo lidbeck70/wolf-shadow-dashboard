@@ -32,6 +32,16 @@ _LEVEL_COLOR = {"LOW": GREEN, "MODERATE": AMBER, "ELEVATED": AMBER, "HIGH": RED,
 _SCEN_KEY = "durrett_scenario_overrides"
 
 
+def _cui(public: str, private: str):
+    """Confidence-flikens funktioner via de publika aliasen, med fallback till de
+    privata namnen — så fliken fungerar även när en redan laddad confidence.ui
+    (utan aliasen) ligger kvar i processen tills appen startas om."""
+    fn = getattr(cui, public, None) or getattr(cui, private, None)
+    if fn is None:
+        raise RuntimeError(f"confidence.ui saknar {public}/{private} — starta om appen (Manage app → Reboot)")
+    return fn
+
+
 def _f(v, fmt="{:g}", na="N/A") -> str:
     return na if v is None else fmt.format(v)
 
@@ -50,7 +60,7 @@ def _badge(text: str, color: str) -> str:
 
 # ── sidan ────────────────────────────────────────────────────────────────────
 def render_durrett_page() -> None:
-    data = cui.load_store()
+    data = _cui("load_store", "_load")()
     storage_ui.save_bar(cs.STORE, "Confidence score / Durrett", key="save_durrett")
     st.markdown(
         f"<div style='text-align:center;padding:10px 0 4px;'>"
@@ -66,7 +76,7 @@ def render_durrett_page() -> None:
                               index=(tickers.index(st.session_state.get("durrett_last")) + 1
                                      if st.session_state.get("durrett_last") in tickers else (1 if tickers else 0)))
     if choice == "➕ Nytt bolag":
-        cui.new_company_form(data)
+        _cui("new_company_form", "_new_company_form")(data)
         return
     st.session_state["durrett_last"] = choice
     company = cs.get(data, choice)
@@ -87,7 +97,7 @@ def render_durrett_page() -> None:
         st.caption("Samma fält som Confidence score — Durrett-grupperna ligger sist. Fyll aktiestruktur, "
                    "reserver/resurser, produktion och management för full analys.")
         _render_momentum_fetch(data, company)
-        cui.render_inputs(data, company)
+        _cui("render_inputs", "_render_inputs")(data, company)
     elif sub == "Katalysatorer":
         _render_catalysts(data, company, a)
     else:
@@ -212,7 +222,7 @@ def _render_momentum_fetch(data: dict, company) -> None:
             for k, p in pts.items():
                 company.set(k, p)
             cs.put(data, company)
-            cui.save_store(data)
+            _cui("save_store", "_save")(data)
             st.success(msg + " — inskrivna i sessionen, spara med 💾")
             st.rerun()
         for k in ("price_vs_ma200_pct", "momentum_6m_pct", "volume_trend"):
@@ -286,12 +296,12 @@ def _render_catalysts(data: dict, company, a: DurrettAnalysis) -> None:
             company.catalysts.append({"name": name.strip(), "type": typ, "expected": exp.strip(), "importance": imp,
                                       "impact": impact.strip(), "confidence": conf, "source": src.strip()})
             cs.put(data, company)
-            cui.save_store(data)
+            _cui("save_store", "_save")(data)
             st.rerun()
     if a.catalysts and st.button("Ta bort sista katalysatorn", key=f"durrett_cat_del_{company.ticker}"):
         company.catalysts = company.catalysts[:-1]
         cs.put(data, company)
-        cui.save_store(data)
+        _cui("save_store", "_save")(data)
         st.rerun()
 
 

@@ -367,6 +367,20 @@ def test_durrett_tab_renders_all_subtabs_without_network(monkeypatch):
         at.session_state["durrett_last"] = "GPR"
         at.run()
         assert not at.exception, (sub, at.exception)
+        if sub == "Indata":
+            # en redan laddad confidence.ui utan de publika aliasen (Streamlit Cloud
+            # före omstart) får inte fälla fliken — fallback till de privata namnen
+            from confidence import ui as cui
+            for name in ("load_store", "save_store", "render_inputs", "new_company_form", "identity_widgets"):
+                monkeypatch.delattr(cui, name)
+            at2 = AppTest.from_function(app, default_timeout=60)
+            at2.session_state["durrett_sub"] = sub
+            at2.session_state["durrett_last"] = "GPR"
+            at2.run()
+            assert not at2.exception, at2.exception
+            for name, priv in (("load_store", "_load"), ("save_store", "_save"), ("render_inputs", "_render_inputs"),
+                               ("new_company_form", "_new_company_form"), ("identity_widgets", "_identity_widgets")):
+                monkeypatch.setattr(cui, name, getattr(cui, priv), raising=False)
         if sub == "Analys":
             text = " ".join(m.value for m in at.markdown) + " ".join(c.value for c in at.caption) + \
                 " ".join(c.value for c in at.code)
