@@ -81,7 +81,8 @@ def load_ember_results() -> dict:
             import requests
             r = requests.get(_GIST_API_URL, timeout=10)
             if r.status_code == 200:
-                content = r.json().get("files", {}).get(_GIST_FILENAME, {}).get("content", "")
+                from gist_storage import _gist_file_content    # hanterar truncated → raw_url
+                content = _gist_file_content(r.json().get("files", {}), _GIST_FILENAME)
                 if content:
                     data = json.loads(content)
                     if data.get("eligible") is not None:

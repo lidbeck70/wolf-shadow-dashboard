@@ -428,11 +428,8 @@ class BDClient:
                         return ticker_map[parts[0]]
                 break
 
-        # Partial match fallback
-        for key, iid in ticker_map.items():
-            if query in key or key in query:
-                return iid
-
+        # Ingen delsträngsmatchning: "GOLD", "X" eller "AG" matchade tidigare
+        # godtyckliga nordiska bolagsnamn och gav fel bolags kurser utan varning.
         return None
 
     # ------------------------------------------------------------------

@@ -473,11 +473,8 @@ class BorsdataAPI:
                         return self._ticker_map[parts[0]]
                 break
 
-        # Fuzzy: try partial match
-        for key, ins_id in self._ticker_map.items():
-            if query in key or key in query:
-                return ins_id
-
+        # Ingen delsträngsmatchning: "GOLD", "X" eller "AG" matchade tidigare
+        # godtyckliga bolagsnamn och gav fel bolags kurser utan varning.
         return None
 
     def get_instrument_info(self, ins_id: int) -> Optional[dict]:

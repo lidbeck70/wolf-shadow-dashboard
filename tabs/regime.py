@@ -752,35 +752,48 @@ def tab_regime():
             {"rule": "5. Candle trigger",        "passed": _g_has_candle,        "value": _g_pattern_name},
             {"rule": "6. Volymbekräftelse",      "passed": _g_vol_ratio >= 1.0,  "value": f"Vol ratio: {_g_vol_ratio:.1f}x"},
             {"rule": "7. R:R ≥ 1:2",             "passed": _g_rr >= 2.0,         "value": f"R:R 1:{_g_rr:.1f}"},
-            {"rule": "8. Max 2% risk (Wolf)",           "passed": True,                 "value": f"SL dist: {_g_half_atr:.2f} ({_g_sl_pct:.1f}%)"},
-            {"rule": "9. SL → BE efter HH",     "passed": True,                 "value": "Post-entry regel"},
-            {"rule": "10. Max 2 förluster/dag", "passed": True,                 "value": "Disciplin"},
-            {"rule": "11. Kijun trail + ½ATR", "passed": True,                 "value": f"Kijun: {_g_kijun:.2f}, EMA10: {_g_ema10:.2f}"},
+            # Grind 8–11 är process- och disciplinregler (positionsstorlek, flytt av
+            # stop, dagsförluster, exit). De går inte att räkna ur kursdata och
+            # visas som MANUELLA — de räknas inte som godkända av sig själva.
+            {"rule": "8. Max 2% risk (Wolf)",           "passed": None,                 "value": f"SL dist: {_g_half_atr:.2f} ({_g_sl_pct:.1f}%) — bedöm själv"},
+            {"rule": "9. SL → BE efter HH",     "passed": None,                 "value": "Post-entry regel — manuell"},
+            {"rule": "10. Max 2 förluster/dag", "passed": None,                 "value": "Disciplin — manuell"},
+            {"rule": "11. Kijun trail + ½ATR", "passed": None,                 "value": f"Kijun: {_g_kijun:.2f}, EMA10: {_g_ema10:.2f} — exit-regel"},
         ]
-    except Exception:
+    except Exception as _gate_exc:
+        # Data saknas → grinden är INTE godkänd. Tidigare blev 2–11 gröna vid fel,
+        # så ett datafel visade 10/11 klart.
+        _na = f"Data ej tillgänglig ({type(_gate_exc).__name__})"
         swing_gates = [
             {"rule": "1. Trendriktning",       "passed": total >= 50,  "value": f"Score: {total}/125"},
-            {"rule": "2. Ej konsolidering",     "passed": True,         "value": "Data ej tillgänglig"},
-            {"rule": "3. Key level (OB)",        "passed": True,         "value": "Data ej tillgänglig"},
-            {"rule": "4. Pullback entry",        "passed": True,         "value": "Data ej tillgänglig"},
-            {"rule": "5. Candle trigger",        "passed": True,         "value": "Data ej tillgänglig"},
-            {"rule": "6. Volymbekräftelse",      "passed": True,         "value": "Data ej tillgänglig"},
-            {"rule": "7. R:R ≥ 1:2",             "passed": True,         "value": "Data ej tillgänglig"},
-            {"rule": "8. Max 2% risk (Wolf)",           "passed": True,         "value": "Position sizing"},
-            {"rule": "9. SL → BE efter HH",     "passed": True,         "value": "Post-entry"},
-            {"rule": "10. Max 2 förluster/dag", "passed": True,         "value": "Disciplin"},
-            {"rule": "11. Kijun trail + ½ATR", "passed": True,         "value": "Exit-regel"},
+            {"rule": "2. Ej konsolidering",     "passed": False,        "value": _na},
+            {"rule": "3. Key level (OB)",        "passed": False,        "value": _na},
+            {"rule": "4. Pullback entry",        "passed": False,        "value": _na},
+            {"rule": "5. Candle trigger",        "passed": False,        "value": _na},
+            {"rule": "6. Volymbekräftelse",      "passed": False,        "value": _na},
+            {"rule": "7. R:R ≥ 1:2",             "passed": False,        "value": _na},
+            {"rule": "8. Max 2% risk (Wolf)",           "passed": None,         "value": "Position sizing — manuell"},
+            {"rule": "9. SL → BE efter HH",     "passed": None,         "value": "Post-entry — manuell"},
+            {"rule": "10. Max 2 förluster/dag", "passed": None,         "value": "Disciplin — manuell"},
+            {"rule": "11. Kijun trail + ½ATR", "passed": None,         "value": "Exit-regel — manuell"},
         ]
 
     if swing_gates:
-        passed = sum(1 for g in swing_gates if g["passed"])
-        total_gates = len(swing_gates)
-        gc = "#2d8a4e" if passed >= 8 else ("#d4943a" if passed >= 5 else "#c44545")
+        measurable = [g for g in swing_gates if g["passed"] is not None]
+        manual = len(swing_gates) - len(measurable)
+        passed = sum(1 for g in measurable if g["passed"])
+        total_gates = len(measurable)
+        # Grönt = högst en mätbar grind saknas; gult = minst hälften (VAL, samma
+        # proportion som förra 8/11 respektive 5/11).
+        gc = "#2d8a4e" if passed >= total_gates - 1 else ("#d4943a" if passed * 2 >= total_gates else "#c44545")
 
         gate_html = '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">'
         for g in swing_gates:
-            c = "#2d8a4e" if g["passed"] else "#c44545"
-            icon = "✓" if g["passed"] else "✗"
+            if g["passed"] is None:
+                c, icon = "#8a8578", "◌"
+            else:
+                c = "#2d8a4e" if g["passed"] else "#c44545"
+                icon = "✓" if g["passed"] else "✗"
             gate_html += (
                 f'<div style="background:#14141e;border:1px solid {c};border-radius:4px;'
                 f'padding:3px 8px;font-size:0.65rem;">'
@@ -790,7 +803,8 @@ def tab_regime():
                 f'</div>'
             )
         gate_html += '</div>'
-        gate_html += f'<div style="color:{gc};font-size:0.8rem;font-weight:700;">{passed}/{total_gates} GATES</div>'
+        gate_html += (f'<div style="color:{gc};font-size:0.8rem;font-weight:700;">{passed}/{total_gates} MÄTBARA GRINDAR'
+                      f' <span style="color:#8a8578;font-weight:400;">· {manual} manuella (◌) bedömer du själv</span></div>')
         st.markdown(gate_html, unsafe_allow_html=True)
 
     # ── Inline SL/TP Calculator ──────────────────────────────────────────────

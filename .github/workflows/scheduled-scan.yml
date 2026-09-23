@@ -3,9 +3,10 @@ name: Scheduled Screening
 on:
   schedule:
     # Weekdays 08:00, 12:00, 18:00 Europe/Stockholm.
-    # Cron is UTC. Stockholm = UTC+1 (winter) / UTC+2 (summer).
-    # We run at both winter and summer UTC hours; the panel only shows the
-    # latest result, so an extra off-by-one-hour run is harmless.
+    # Cron is UTC. Stockholm = UTC+1 (winter) / UTC+2 (summer). Both crons
+    # fire all year, so the "Gate on local hour" step below skips the run
+    # whose Stockholm hour is not 08/12/18 — otherwise every weekday got six
+    # full runs (Börsdata/Yahoo load and double alerts) instead of three.
     - cron: "0 6,10,16 * * 1-5"   # summer (CEST, UTC+2): 08/12/18 local
     - cron: "0 7,11,17 * * 1-5"   # winter (CET,  UTC+1): 08/12/18 local
   workflow_dispatch: {}            # allow manual trigger from the Actions tab
@@ -19,21 +20,35 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      - name: Gate on local hour
+        id: gate
+        run: |
+          H=$(TZ=Europe/Stockholm date +%H)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$H" = "08" ] || [ "$H" = "12" ] || [ "$H" = "18" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; echo "Stockholm $H:xx — kör."
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"; echo "Stockholm $H:xx — hoppar (den andra cronen täcker den här timmen)."
+          fi
+
       - name: Checkout
+        if: steps.gate.outputs.run == 'true'
         uses: actions/checkout@v4
 
       - name: Set up Python
+        if: steps.gate.outputs.run == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
 
       - name: Install dependencies
+        if: steps.gate.outputs.run == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Run scheduled screening
+        if: steps.gate.outputs.run == 'true'
         env:
           BORSDATA_API_KEY: ${{ secrets.BORSDATA_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
@@ -44,7 +59,7 @@ jobs:
       # Arc-screenerna Wolf + Viking headless med fasta inställningar —
       # resultatet till Gisten så larmsteget (och panelen) kan läsa det.
       - name: Arc screeners (Wolf + Viking)
-        if: always()
+        if: always() && steps.gate.outputs.run == 'true'
         env:
           BORSDATA_API_KEY: ${{ secrets.BORSDATA_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
@@ -53,7 +68,7 @@ jobs:
       # Insiderbevakaren headless — kluster ur Börsdatas insynsregister med
       # arkets poäng/grind/trigger. Resultatet till Gisten (insider_scan.json).
       - name: Insider scan
-        if: always()
+        if: always() && steps.gate.outputs.run == 'true'
         env:
           BORSDATA_API_KEY: ${{ secrets.BORSDATA_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
@@ -62,7 +77,7 @@ jobs:
       # Håvarna — guidens fem Börsdata-screeners körda i API:t med exakt
       # samma kriterier. Resultatet till Gisten (screens.json).
       - name: Screens (håvarna)
-        if: always()
+        if: always() && steps.gate.outputs.run == 'true'
         env:
           BORSDATA_API_KEY: ${{ secrets.BORSDATA_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
@@ -72,7 +87,7 @@ jobs:
       # Insider/Tiggre/Rick Rule/Royalty/Poängmodellen som FÖRSLAG (Gisten:
       # sheets_refresh.json) + övergångar räknade med arkens egna regler.
       - name: Sheets refresh
-        if: always()
+        if: always() && steps.gate.outputs.run == 'true'
         env:
           BORSDATA_API_KEY: ${{ secrets.BORSDATA_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
@@ -83,7 +98,7 @@ jobs:
       # cykel), EMBER eligible och Wolf/Viking-ribborna. Bara övergångar
       # larmar; tillståndet ligger i Gisten.
       - name: Alert scan
-        if: always()
+        if: always() && steps.gate.outputs.run == 'true'
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}

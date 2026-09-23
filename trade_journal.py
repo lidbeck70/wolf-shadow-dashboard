@@ -83,7 +83,8 @@ def load_journal() -> list:
         r = requests.get(GIST_API_URL, timeout=10)
         if r.status_code == 200:
             gist = r.json()
-            content = gist.get("files", {}).get(JOURNAL_FILENAME, {}).get("content", "")
+            from gist_storage import _gist_file_content        # hanterar truncated → raw_url
+            content = _gist_file_content(gist.get("files", {}), JOURNAL_FILENAME)
             if content:
                 parsed = json.loads(content)
                 if isinstance(parsed, list):

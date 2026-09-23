@@ -115,12 +115,24 @@ def test_warnings_reach_the_gate_note():
 
 
 # ── Blindspot-läsningen ──────────────────────────────────────────────────────
-def test_blindspot_latest_reads_the_committed_history():
-    """Historikfilen ligger i repot med riktiga rader — CCJ finns i den."""
-    row = cycle.blindspot_latest("CCJ")
-    assert row is not None
-    assert row["ticker"] == "CCJ"
-    assert "opportunity" in row and "timestamp" in row
+def test_blindspot_latest_reads_the_saved_history(tmp_path, monkeypatch):
+    """Historikfilen (blindspot_history.jsonl) är gitignorerad och skrivs av
+    motorn lokalt — testet skriver sin egen och pekar modulen dit."""
+    import json
+    from blindspot import history as bh
+    f = tmp_path / "blindspot_history.jsonl"
+    rows = [{"timestamp": "2026-09-01T06:00:00", "ticker": "CCJ", "opportunity": 61.0, "hat": 70.0,
+             "strength": 55.0, "catalyst": 40.0, "necessity": 95.0, "sector": "uran"},
+            {"timestamp": "2026-09-22T06:00:00", "ticker": "CCJ", "opportunity": 58.0, "hat": 66.0,
+             "strength": 57.0, "catalyst": 42.0, "necessity": 95.0, "sector": "uran"}]
+    f.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    monkeypatch.setattr(bh, "HISTORY_FILE", str(f))
+    row = cycle.blindspot_latest("ccj")
+    assert row is not None and row["ticker"] == "CCJ"
+    assert row["timestamp"] == "2026-09-22T06:00:00" and row["opportunity"] == 58.0   # senaste raden
+    assert cycle.blindspot_latest("NOPE") is None and cycle.blindspot_latest("") is None
+    monkeypatch.setattr(bh, "HISTORY_FILE", str(tmp_path / "saknas.jsonl"))
+    assert cycle.blindspot_latest("CCJ") is None                                      # ingen fil → None
 
 
 def test_blindspot_latest_is_none_for_unknown_or_empty():

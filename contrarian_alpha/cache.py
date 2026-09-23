@@ -205,7 +205,7 @@ try:
             _prev = _yf_log.level
             _yf_log.setLevel(_logging.CRITICAL)
             try:
-                df = yf.Ticker(ticker).history(period=period, auto_adjust=True, progress=False)
+                df = yf.Ticker(ticker).history(period=period, auto_adjust=True)
             finally:
                 _yf_log.setLevel(_prev)
             if df is None or df.empty:
@@ -274,7 +274,7 @@ except ImportError:
             _prev = _yf_log.level
             _yf_log.setLevel(_logging.CRITICAL)
             try:
-                df = yf.Ticker(ticker).history(period=period, auto_adjust=True, progress=False)
+                df = yf.Ticker(ticker).history(period=period, auto_adjust=True)
             finally:
                 _yf_log.setLevel(_prev)
             if df is None or df.empty:
@@ -410,7 +410,8 @@ def load_screener_results(mode: str = None) -> dict:
         if r.status_code == 200:
             gist = r.json()
             _fn = f"contrarian_alpha_results_{mode}.json" if mode else _GIST_FILENAME
-            content = gist.get("files", {}).get(_fn, {}).get("content", "")
+            from gist_storage import _gist_file_content        # hanterar truncated → raw_url
+            content = _gist_file_content(gist.get("files", {}), _fn)
             if content:
                 data = json.loads(content)
                 if data.get("results"):
