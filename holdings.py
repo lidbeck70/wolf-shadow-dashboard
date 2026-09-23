@@ -3,8 +3,10 @@ holdings.py — Portfolio Holdings Manager
 
 Multi-strategy portfolio with regime integration.
 Strategies: Quality, Deep Contrarian, Viking, Wolf, Untagged.
-Persistent storage via GitHub Gist (backward compatible — existing holdings
-load as Untagged if they have no 'strategy' field).
+
+Raderna bor i positions.py — panelens enda positionsregister
+(data/holdings.json via storage.py; den gamla Gisten läses in en gång).
+Den här modulen ritar dem.
 """
 
 import streamlit as st
@@ -14,6 +16,8 @@ import yfinance as yf
 import plotly.graph_objects as go
 import logging
 from typing import Dict, List, Optional
+
+import positions
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +33,7 @@ TEXT    = "#e8e4dc"
 DIM     = "#8a8578"
 
 # ── Strategy constants ────────────────────────────────────────────────────────
-STRATEGY_TAGS = ["Quality", "Deep Contrarian", "Viking", "Wolf", "Untagged"]
+STRATEGY_TAGS = list(positions.STRATEGIES)
 
 STRATEGY_COLORS: dict = {
     "Quality":         "#00E5FF",   # Arc Cyan  (PALETTE["gold"])
@@ -39,21 +43,13 @@ STRATEGY_COLORS: dict = {
     "Untagged":        "#6B7280",   # Text dim
 }
 
-# Portfolio_key used when adding a new holding, by strategy
-_STRATEGY_TO_KEY: dict = {
-    "Quality":         "long",
-    "Deep Contrarian": "long",
-    "Viking":          "ovtlyr",
-    "Wolf":            "swing",
-    "Untagged":        "long",
-}
+# Hink per strategi och taken bor i positions.py (registret) — här bara färg.
+_STRATEGY_TO_KEY: dict = dict(positions.STRATEGY_BUCKET)
 
-# ── Portfolio config ──────────────────────────────────────────────────────────
-# "long" max raised to 20 to accommodate Quality + Deep Contrarian + Untagged
 PORTFOLIOS: dict = {
-    "swing":  {"name": "Wolf Portfolio",   "max": 5,  "color": CYAN,    "strategy": "Wolf"},
-    "ovtlyr": {"name": "Viking Portfolio", "max": 5,  "color": MAGENTA, "strategy": "Viking"},
-    "long":   {"name": "Alpha Portfolio",  "max": 20, "color": GREEN,   "strategy": "Alpha"},
+    key: {**cfg, "color": {"swing": CYAN, "ovtlyr": MAGENTA, "long": GREEN}[key],
+          "strategy": {"swing": "Wolf", "ovtlyr": "Viking", "long": "Alpha"}[key]}
+    for key, cfg in positions.BUCKETS.items()
 }
 
 # ── Signal imports (with fallbacks) ──────────────────────────────────────────
@@ -77,85 +73,21 @@ except ImportError:
     _CAGR_OK = False
 
 
-# ── Persistent storage ────────────────────────────────────────────────────────
-import json
-import os
-
-try:
-    from gist_storage import load_holdings as _gist_load, save_holdings as _gist_save
-    _HAS_GIST = True
-except ImportError:
-    _HAS_GIST = False
-
-_HOLDINGS_DIR = os.path.dirname(os.path.abspath(__file__))
-_HOLDINGS_FILE = os.path.join(_HOLDINGS_DIR, ".holdings_data.json")
-
-
-# Session-state key for the cached Gist payload (see _load_all).
-_GIST_CACHE_KEY = "_holdings_all_cache"
+# ── Lagring: positions.py är registret ───────────────────────────────────────
+# Holdings ägde förut sina rader i en Gist som inget annat ark läste. Nu bor
+# de i data/holdings.json via positions.py (samma storage-väg som de andra
+# arken, Gisten som engångskälla), och de här hjälparna är tunna skal så att
+# resten av fliken kan vara oförändrad.
+STORE = positions.STORE
 
 
 def _load_all() -> dict:
-    """Load all portfolios via gist_storage (preferred) or local file.
-
-    The Gist fetch is a network round-trip, and render_holdings_page() calls
-    _load_all() ~8x per run (summary header, each strategy section, risk
-    dashboard). Without caching that is ~8 GETs to api.github.com on *every*
-    Streamlit rerun — i.e. every click. Memoise the payload in session_state so
-    it is fetched once per session; _save_all() refreshes the cache on write.
-    """
-    if _HAS_GIST:
-        cached = st.session_state.get(_GIST_CACHE_KEY)
-        if cached is not None:
-            return cached
-        data = _gist_load()
-        st.session_state[_GIST_CACHE_KEY] = data
-        return data
-    if "holdings_data" in st.session_state:
-        return st.session_state["holdings_data"]
-    try:
-        if os.path.exists(_HOLDINGS_FILE):
-            with open(_HOLDINGS_FILE, "r") as f:
-                data = json.load(f)
-                data.setdefault("cash", 0)
-                st.session_state["holdings_data"] = data
-                return data
-    except Exception:
-        pass
-    data = {"swing": [], "ovtlyr": [], "long": [], "cash": 0}
-    st.session_state["holdings_data"] = data
-    return data
-
-
-def _save_all(all_holdings: dict) -> None:
-    """Save all portfolios via gist_storage (preferred) or local file."""
-    if _HAS_GIST:
-        _gist_save(all_holdings)
-        # Keep the session cache in sync so the just-saved state is served
-        # without another network fetch on the next rerun.
-        st.session_state[_GIST_CACHE_KEY] = all_holdings
-    else:
-        st.session_state["holdings_data"] = all_holdings
-        try:
-            with open(_HOLDINGS_FILE, "w") as f:
-                json.dump(all_holdings, f, indent=2)
-        except Exception as e:
-            logger.warning("Failed to save holdings: %s", e)
+    """Registret: {swing, ovtlyr, long, closed, cash}."""
+    return positions.load()
 
 
 def _get_holdings(portfolio_key: str) -> List[dict]:
-    key = f"holdings_{portfolio_key}"
-    if key not in st.session_state:
-        all_data = _load_all()
-        st.session_state[key] = all_data.get(portfolio_key, [])
-    return st.session_state[key]
-
-
-def _set_holdings(portfolio_key: str, holdings: List[dict]) -> None:
-    st.session_state[f"holdings_{portfolio_key}"] = holdings
-    all_data = _load_all()
-    all_data[portfolio_key] = holdings
-    _save_all(all_data)
+    return positions.by_bucket().get(portfolio_key, [])
 
 
 def _strategy_of(h: dict) -> str:
@@ -163,46 +95,19 @@ def _strategy_of(h: dict) -> str:
     return h.get("strategy", "Untagged")
 
 
-def _num(value, default: float = 0.0) -> float:
-    """Coerce a persisted numeric field to a finite float.
-
-    Holdings loaded from the Gist or a legacy local file may carry null, missing,
-    or string values for shares / entry_price / tranches / cash. Numeric
-    comparisons (``shares > 0``, ``min(tranches, 3)``, ``float(cash)``) raise
-    TypeError on None and would crash the whole panel, so every render-time
-    numeric read is funnelled through this.
-    """
-    try:
-        f = float(value)
-    except (TypeError, ValueError):
-        return default
-    if f != f or f in (float("inf"), float("-inf")):  # NaN / ±inf
-        return default
-    return f
+_num = positions._num
 
 
 def _get_all_holdings_flat() -> List[dict]:
-    """Merge all portfolio keys into a flat list, each enriched with '_portfolio_key'.
-
-    Numeric fields are coerced to safe values here — this is the single read path
-    feeding the summary header and every strategy section, so a malformed
-    persisted row (null/str shares, entry_price or tranches from an old Gist)
-    can never crash the panel via a None comparison downstream. ``shares`` stays
-    an int when whole so the "· N st" label renders without a trailing ".0".
-    """
-    all_data = _load_all()
+    """Alla öppna positioner, platta, med '_portfolio_key' och Deep
+    Contrarian-trancherna lyfta ur extras — formen korten ritar."""
     result: List[dict] = []
-    for key in ("swing", "ovtlyr", "long"):
-        for h in all_data.get(key, []):
-            shares = _num(h.get("shares", 0))
-            tranches = int(_num(h.get("tranches_deployed", 0)))
-            result.append({
-                **h,
-                "_portfolio_key":    key,
-                "shares":            int(shares) if shares == int(shares) else shares,
-                "entry_price":       _num(h.get("entry_price", 0)),
-                "tranches_deployed": max(0, min(tranches, 3)),
-            })
+    for r in positions.all_positions():
+        result.append({
+            **r,
+            "_portfolio_key":    r["_bucket"],
+            "tranches_deployed": int(_num((r.get("extras") or {}).get("tranches_deployed", 0))),
+        })
     return result
 
 
@@ -215,48 +120,22 @@ def _add_holding(
     strategy: str = "Untagged",
     tranches_deployed: int = 0,
 ) -> bool:
-    holdings = _get_holdings(portfolio_key)
-    cfg = PORTFOLIOS[portfolio_key]
-
-    if len(holdings) >= cfg["max"]:
-        st.warning(f"Max {cfg['max']} holdings in {cfg['name']}. Remove one first.")
-        return False
-
-    if any(h["ticker"] == ticker.upper() for h in holdings):
-        st.warning(f"{ticker.upper()} already in portfolio.")
-        return False
-
-    from datetime import datetime
-    entry: dict = {
-        "ticker":      ticker.upper(),
-        "entry_price": entry_price,
-        "shares":      shares,
-        "sector":      sector,
-        "added":       datetime.now().strftime("%Y-%m-%d"),
-        "strategy":    strategy,
-    }
-    if strategy == "Deep Contrarian":
-        entry["tranches_deployed"] = max(0, min(3, tranches_deployed))
-
-    holdings.append(entry)
-    _set_holdings(portfolio_key, holdings)
-    return True
+    extras = {"tranches_deployed": max(0, min(3, tranches_deployed))} \
+        if strategy == "Deep Contrarian" else {}
+    ok, msg = positions.add(ticker, strategy, entry_price, shares, sector=sector,
+                            extras=extras, bucket=portfolio_key)
+    if not ok:
+        st.warning(msg)
+    return ok
 
 
 def _remove_holding(portfolio_key: str, ticker: str) -> None:
-    holdings = _get_holdings(portfolio_key)
-    holdings = [h for h in holdings if h["ticker"] != ticker.upper()]
-    _set_holdings(portfolio_key, holdings)
+    positions.remove(ticker, portfolio_key)
 
 
 def _edit_holding_field(portfolio_key: str, ticker: str, field: str, value) -> None:
     """Update a single field on a holding in place and persist."""
-    holdings = _get_holdings(portfolio_key)
-    for h in holdings:
-        if h["ticker"] == ticker.upper():
-            h[field] = value
-            break
-    _set_holdings(portfolio_key, holdings)
+    positions.update(ticker, portfolio_key, **{field: value})
 
 
 # ── Live data & signals ───────────────────────────────────────────────────────
@@ -857,8 +736,7 @@ def _render_strategy_section(strategy_tag: str) -> None:
 def _render_summary_header() -> None:
     """Top-of-page summary: total value, per-strategy allocation bars, cash input."""
     all_flat = _get_all_holdings_flat()
-    all_data = _load_all()
-    cash = _num(all_data.get("cash", 0))
+    cash = positions.cash()
 
     # Compute per-strategy invested values (uses cached price data)
     strat_vals: dict = {tag: 0.0 for tag in STRATEGY_TAGS}
@@ -894,8 +772,7 @@ def _render_summary_header() -> None:
             key="holdings_cash_input",
         )
         if new_cash != cash:
-            all_data["cash"] = new_cash
-            _save_all(all_data)
+            positions.set_cash(new_cash)
 
     # KPI row
     k1, k2, k3, k4 = st.columns(4)
@@ -1057,24 +934,12 @@ def _render_correlation_matrix(all_holdings: list) -> None:
 
 def render_holdings_page() -> None:
     """Full Holdings page with strategy-grouped sections."""
+    positions.load()
+    # Sparraden som de andra arken: läsfel, osparat (bara efter en
+    # Gist-migrering — ändringar sparas direkt) och senaste commit.
+    import storage_ui
+    storage_ui.save_bar(STORE, "Holdings")
     _render_summary_header()
-
-    # Cloud storage status
-    try:
-        from gist_storage import get_storage_status
-        # Cache per session — this is another network GET and only changes when
-        # credentials/config change, not between reruns.
-        if "_holdings_storage_status" not in st.session_state:
-            st.session_state["_holdings_storage_status"] = get_storage_status()
-        status = st.session_state["_holdings_storage_status"]
-        if status == "cloud_ok":
-            st.caption("☁ Cloud storage active — holdings saved permanently")
-        elif status == "local_only":
-            st.caption("💾 Local storage — add GITHUB_TOKEN to secrets for cloud sync")
-        else:
-            st.caption(f"Storage: {status}")
-    except Exception:
-        pass
 
     # Per-strategy sections
     all_flat = _get_all_holdings_flat()
@@ -1087,11 +952,7 @@ def render_holdings_page() -> None:
 
     # Risk dashboard
     st.markdown("<hr style='border-color:rgba(100,100,100,0.12);margin:20px 0;'/>", unsafe_allow_html=True)
-    holdings_data = {
-        "swing":  _get_holdings("swing"),
-        "ovtlyr": _get_holdings("ovtlyr"),
-        "long":   _get_holdings("long"),
-    }
+    holdings_data = positions.by_bucket()
     try:
         from risk_dashboard import render_risk_dashboard
         render_risk_dashboard(holdings_data)
