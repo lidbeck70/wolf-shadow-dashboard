@@ -20,6 +20,7 @@ import streamlit as st
 
 from ai import extract_prompt as xp
 from ai import document as doc
+import extract_store
 
 DIM, TEXT, GREEN, AMBER = "#8a8578", "#e8e4dc", "#2d8a4e", "#d4943a"
 _CONF_COLOR = {"high": GREEN, "medium": AMBER, "low": "#c44545"}
@@ -63,6 +64,7 @@ def render_extractor(sheet: str, row: dict, widget_keys: dict,
 
     rid = row.get("id", "x")
     skey = f"xt_{sheet}_{rid}"
+    ticker = str(row.get("ticker") or "")
     with st.expander("🤖 Läs ur presentationen (AI-förslag — inget skrivs in utan Använd)",
                      expanded=False):
         if not oc.configured():
@@ -70,12 +72,16 @@ def render_extractor(sheet: str, row: dict, widget_keys: dict,
                        "Arket fungerar som vanligt.")
             return
         st.caption("Ladda upp bolagspresentationen eller tekniska rapporten (PDF) eller "
-                   "klistra in text. Modellen letar upp arkets fält och anger sida + citat. "
+                   "klistra in text. Ett utdrag räcker: modellen letar upp ALLA arkens fält "
+                   "på en gång, och förslagen dyker upp i varje ark där bolaget finns. "
                    "Poäng, status och kryssrutor räknar och sätter du som förut.")
         c1, c2 = st.columns([1, 1])
         up = c1.file_uploader("PDF", type=["pdf"], key=f"{skey}_pdf")
         pasted = c2.text_area("… eller klistra in text", height=120, key=f"{skey}_txt",
                               placeholder="Text ur presentationen")
+        docname = st.text_input("Dokumentets namn (blir källa)",
+                                value=(up.name if up is not None else ""),
+                                key=f"{skey}_name", placeholder="DFS 2025 (Ausenco)")
         if st.button("Extrahera", key=f"{skey}_go"):
             try:
                 if up is not None:
@@ -88,26 +94,26 @@ def render_extractor(sheet: str, row: dict, widget_keys: dict,
                 if not text.strip():
                     st.warning("Ingen text hittades i dokumentet (skannad PDF utan textlager?).")
                     return
-                prompt = xp.build_extract_prompt(sheet, str(row.get("ticker") or ""),
+                prompt = xp.build_extract_prompt(xp.ALL_SHEETS, ticker,
                                                  str(row.get("name") or ""), text)
                 with st.spinner("Läser dokumentet …"):
-                    reply = oc.complete(xp.SYSTEM_EXTRACT, prompt, max_output_tokens=1800,
-                                        timeout=90.0, json_mode=True)
+                    reply = oc.complete(xp.SYSTEM_EXTRACT, prompt, max_output_tokens=3000,
+                                        timeout=120.0, json_mode=True)
                 parsed = xp.parse_extraction(reply.text)
-                st.session_state[skey] = {
-                    "proposals": xp.proposals(sheet, parsed),
-                    "catalysts": xp.catalysts(parsed) if sheet == "tiggre" else [],
-                    "notes": [str(n) for n in (parsed.get("notes") or [])][:6],
-                    "pages": doc.page_count(text), "chars": len(text), "model": reply.model,
-                }
+                extract_store.save(ticker, parsed, doc=docname, sheet=xp.SHEET_LABEL.get(sheet, sheet),
+                                   model=reply.model, pages=doc.page_count(text), chars=len(text))
             except (oc.AIError, xp.ExtractionError, RuntimeError) as exc:
                 st.error(str(exc))
                 return
 
-        res = st.session_state.get(skey)
-        if not res:
+        entry = extract_store.get(ticker)
+        if not entry:
             return
-        st.caption(f"{res['pages']} sidor · {res['chars']:,} tecken · {res['model']}")
+        res = {"proposals": xp.proposals(sheet, entry["parsed"]),
+               "catalysts": xp.catalysts(entry["parsed"]) if sheet == "tiggre" else [],
+               "notes": [str(n) for n in (entry["parsed"].get("notes") or [])][:6]}
+        st.caption(f"{extract_store.describe(entry, xp.SHEET_LABEL.get(sheet, sheet))} · "
+                   f"{entry.get('pages', 0)} sidor · {entry.get('chars', 0):,} tecken · {entry.get('model', '')}")
         if not res["proposals"] and not res["catalysts"]:
             st.info("Modellen hittade inget av arkets fält i dokumentet.")
         for p in res["proposals"]:

@@ -441,12 +441,16 @@ def _render_extractor(data: dict, company: CompanyInput) -> None:
     from ai import extract_prompt as xp
     from ai import openai_client as oc
 
+    import extract_store
+
     skey = f"cf_xt_{company.ticker}"
     with st.expander("🤖 Läs ur presentationen / tekniska rapporten (AI-förslag — inget skrivs in utan Använd)",
                      expanded=False):
         if not oc.configured():
             st.caption("OPENAI_API_KEY saknas i secrets — extraktionen är avstängd.")
             return
+        st.caption("Ett utdrag räcker: alla arkens fält ställs på en gång, och förslagen "
+                   "dyker upp även i Rick Rule, Poängmodellen och Tiggre där bolaget finns.")
         c1, c2 = st.columns(2)
         up = c1.file_uploader("PDF", type=["pdf"], key=f"{skey}_pdf")
         pasted = c2.text_area("… eller klistra in text", height=120, key=f"{skey}_txt")
@@ -461,21 +465,24 @@ def _render_extractor(data: dict, company: CompanyInput) -> None:
                 else:
                     st.warning("Ladda upp en PDF eller klistra in text först.")
                     return
-                prompt = xp.build_extract_prompt("confidence", company.ticker, company.name, text)
+                prompt = xp.build_extract_prompt(xp.ALL_SHEETS, company.ticker, company.name, text)
                 with st.spinner("Läser dokumentet …"):
-                    reply = oc.complete(xp.SYSTEM_EXTRACT, prompt, max_output_tokens=2500, timeout=120.0,
+                    reply = oc.complete(xp.SYSTEM_EXTRACT, prompt, max_output_tokens=3000, timeout=120.0,
                                         json_mode=True)
                 parsed = xp.parse_extraction(reply.text)
-                st.session_state[skey] = {"proposals": xp.proposals("confidence", parsed),
-                                          "notes": [str(n) for n in (parsed.get("notes") or [])][:6],
-                                          "model": reply.model, "doc": docname or "Presentation"}
+                extract_store.save(company.ticker, parsed, doc=docname, sheet="Durrett-arket",
+                                   model=reply.model, pages=doc.page_count(text), chars=len(text))
             except (oc.AIError, xp.ExtractionError, RuntimeError) as exc:
                 st.error(str(exc))
                 return
-        res = st.session_state.get(skey)
-        if not res:
+        entry = extract_store.get(company.ticker)
+        if not entry:
             return
-        st.caption(f"{res['model']} · {len(res['proposals'])} förslag")
+        res = {"proposals": xp.proposals("confidence", entry["parsed"]),
+               "notes": [str(n) for n in (entry["parsed"].get("notes") or [])][:6],
+               "model": entry.get("model", ""), "doc": entry.get("doc") or "Presentation"}
+        st.caption(f"{extract_store.describe(entry, 'Durrett-arket')} · {res['model']} · "
+                   f"{len(res['proposals'])} förslag")
         for p in res["proposals"]:
             a, b = st.columns([4, 1])
             page = f" · sida {p['page']}" if p["page"] else ""

@@ -140,6 +140,30 @@ FIELDS: dict[str, tuple] = {
 
 SHEET_LABEL = {"rule": "Rick Rule", "royalty": "Royalty C", "sprott": "Sprott",
                "durrett": "Durrett", "tiggre": "Tiggre", "confidence": "Confidence score"}
+ALL_SHEETS: tuple = tuple(FIELDS)
+
+# Samma tal under olika nycklar i olika ark. Ett utdrag gjort i ett ark ska
+# ge förslag i de andra, så proposals() faller tillbaka på aliasen när
+# arkets egen nyckel saknas i svaret: (annan nyckel, faktor). Burn per
+# kvartal × 4 = burn per år; annars 1.
+ALIASES: dict[str, tuple] = {
+    "unit_cost":            (("aisc", 1.0),),
+    "aisc":                 (("unit_cost", 1.0),),
+    "mine_life":            (("mine_life_years", 1.0),),
+    "mine_life_years":      (("mine_life", 1.0),),
+    "cash":                 (("cash_musd", 1.0),),
+    "cash_musd":            (("cash", 1.0),),
+    "burn":                 (("quarterly_burn_musd", 4.0),),
+    "quarterly_burn_musd":  (("burn", 0.25),),
+    "nav":                  (("npv_musd", 1.0),),
+    "npv_musd":             (("nav", 1.0),),
+    "permits":              (("permits_granted", 1.0),),
+    "permits_granted":      (("permits", 1.0),),
+    "funded":               (("financing_committed", 1.0),),
+    "financing_committed":  (("funded", 1.0),),
+    "insider_ownership":    (("insider_ownership_pct", 1.0),),
+    "insider_ownership_pct": (("insider_ownership", 1.0),),
+}
 
 
 SYSTEM_EXTRACT = """Du läser en bolagspresentation eller rapport åt en svensk tradingpanel.
@@ -162,34 +186,61 @@ Absoluta krav:
   användarmeddelandet."""
 
 
-def _schema(sheet: str) -> dict:
+def _sheets(sheet) -> list:
+    """Ett ark (sträng) eller flera (lista/tuple) — alltid en lista i FIELDS-ordning."""
+    wanted = [sheet] if isinstance(sheet, str) else list(sheet or [])
+    for w in wanted:
+        if w not in FIELDS:
+            raise ValueError(f"okänt ark: {w}")
+    return [k for k in FIELDS if k in wanted]
+
+
+def union_fields(sheets) -> list:
+    """Fälten för flera ark, varje nyckel en gång (första arkets etikett och
+    ledtråd vinner). Ett dokument, ett utdrag — förslag i alla ark."""
+    seen: set = set()
+    out = []
+    for sh in _sheets(sheets):
+        for f in FIELDS[sh]:
+            if f.key in seen:
+                continue
+            seen.add(f.key)
+            out.append(f)
+    return out
+
+
+def _schema(sheet) -> dict:
+    sheets = _sheets(sheet)
     fields = {}
-    for f in FIELDS[sheet]:
+    for f in union_fields(sheets):
         v = {"number": "tal eller null", "bool": "true/false eller null",
              "text": "kort text eller null"}[f.kind]
         fields[f.key] = {"value": v, "unit": "enhet eller null", "page": "heltal eller null",
                          "quote": "ordagrant citat, max 25 ord", "confidence": "high|medium|low"}
     schema = {"fields": fields, "notes": ["kort notis om något viktigt för arket"]}
-    if sheet == "tiggre":
+    if "tiggre" in sheets:
         schema["catalysts"] = [{"name": "händelse", "date": "ÅÅÅÅ-MM eller ÅÅÅÅ-Q1",
                                 "page": "heltal"}]
     return schema
 
 
-def build_extract_prompt(sheet: str, ticker: str, name: str, doc_text: str) -> str:
-    """Användarmeddelandet: fältlista med ledtrådar, JSON-schema, dokumentet."""
-    if sheet not in FIELDS:
-        raise ValueError(f"okänt ark: {sheet}")
-    lines = [f"Ark: {SHEET_LABEL[sheet]} · Bolag: {name or ticker} ({ticker})", "",
+def build_extract_prompt(sheet, ticker: str, name: str, doc_text: str) -> str:
+    """Användarmeddelandet: fältlista med ledtrådar, JSON-schema, dokumentet.
+    sheet är ett ark eller en lista av ark (ALL_SHEETS = alla fält på en gång)."""
+    sheets = _sheets(sheet)
+    if not sheets:
+        raise ValueError("inget ark angivet")
+    label = " + ".join(SHEET_LABEL[sh] for sh in sheets)
+    lines = [f"Ark: {label} · Bolag: {name or ticker} ({ticker})", "",
              "Fält att hitta:"]
-    for f in FIELDS[sheet]:
+    for f in union_fields(sheets):
         lines.append(f"- {f.key} — {f.label}. {f.hint}")
-    if sheet == "tiggre":
+    if "tiggre" in sheets:
         lines.append("- catalysts — namngivna, tidsatta händelser inom 12 månader "
                      "(tillstånd, finansieringsbesked, FID, byggstart, first pour). "
                      "Lista dem i 'catalysts'.")
     lines += ["", "Svara med exakt detta JSON-schema (fyll i värdena):",
-              json.dumps(_schema(sheet), ensure_ascii=False, indent=1), "",
+              json.dumps(_schema(sheets), ensure_ascii=False, indent=1), "",
               "DOKUMENT (sidmarkeringar [Sida N]):", "", clip_document(doc_text)]
     return "\n".join(lines)
 
@@ -252,7 +303,15 @@ def proposals(sheet: str, parsed: dict) -> list:
     out = []
     fields = parsed.get("fields") or {}
     for f in FIELDS[sheet]:
-        raw = fields.get(f.key)
+        raw, factor = fields.get(f.key), 1.0
+        if not isinstance(raw, dict) or raw.get("value") in (None, ""):
+            # arkets nyckel saknas — samma tal under ett annat arks nyckel?
+            raw = None
+            for other, fac in ALIASES.get(f.key, ()):
+                cand = fields.get(other)
+                if isinstance(cand, dict) and cand.get("value") not in (None, ""):
+                    raw, factor = cand, fac
+                    break
         if not isinstance(raw, dict):
             continue
         v = raw.get("value")
@@ -262,6 +321,7 @@ def proposals(sheet: str, parsed: dict) -> list:
             v = _num(v)
             if v is None:
                 continue
+            v = v * factor
         elif f.kind == "bool":
             if isinstance(v, str):
                 v = v.strip().lower() in ("true", "ja", "yes", "1")
