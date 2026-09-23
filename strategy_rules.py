@@ -118,7 +118,8 @@ MOMENTUM = Playbook(
     ),
     risk=RiskModel(
         risk_per_trade="≈1,2–2 % av kapitalet (12–20 % position × 10 % stop)",
-        position_size="12–20 % vid GRÖN regim · halv storlek vid GUL",
+        position_size="12–20 % av swing-kapitalet vid GRÖN regim · halv storlek vid GUL "
+                      "· aldrig över 6 % av totalportföljen (allocator.py: hard_cap = 6.0)",
         max_positions="6–8 st (hårt tak: 8)",
         stop="−10 % från entry · flyttas till entry vid +20 %",
         targets="Inget vinstmål — säljreglerna avgör. Halva säljs vid +20 %",

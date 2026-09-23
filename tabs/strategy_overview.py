@@ -55,8 +55,8 @@ _META: dict = {
             "CAGR composite score ≥ 55% of maximum",
         ],
         "exit": [
-            "Price closes below EMA200",
-            "Regime turns red (cycle_score = 0)",
+            "Price closes below EMA200  → reduce 50%",
+            "Regime turns red (cycle_score = 0)  → sell the rest",
         ],
         "risk": [
             "Risk per trade: 1.5% of capital",
@@ -277,7 +277,8 @@ def _render_strategy_card(display_name: str, strat: dict) -> None:
         ) if alert_channels else _pill("—", color=_DIM)
 
         risk_pct = params.get("risk_pct", 0)
-        atr_mult = params.get("atr_mult", params.get("atr_stop_mult", "—"))
+        # Alpha has no ATR multiplier any more (its stop is the EMA200).
+        atr_mult = params.get("atr_mult", params.get("atr_stop_mult"))
 
         st.markdown(
             _section_label("Sentiment plugins")

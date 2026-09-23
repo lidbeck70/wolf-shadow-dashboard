@@ -67,11 +67,29 @@ SLEEVES: tuple[Sleeve, ...] = (
            "Okorrelerad motor", False, 6.0),
     Sleeve("insider", "Insider (Norden)", 20, 10, 30,
            "Andra okorrelerade motorn", False, 4.0),
+    # Panelens långsiktiga portfölj (Alpha · Quality · Deep Contrarian) ligger
+    # utanför masterguidens fördelning — därför mål 0 och ingen undre ram. Den
+    # finns här så att positionerna ändå mäts mot ett tak (10 % per aktie är
+    # Alpha- och Quality-regeln) i stället för att vara osynliga.
+    Sleeve("langsiktigt", "Långsiktigt (Alpha · Quality · Deep Contrarian)", 0, 0, 30,
+           "Panelens långsiktiga innehav — utanför masterguidens modell, ramen "
+           "är ett tak", False, 10.0,
+           "Max 10 % per aktie · 8–10 innehav"),
     Sleeve("kassa", "Kassa", 10, 5, 25,
            "Ammunition — växer när inget är billigt", False),
 )
 
 SLEEVE_BY_KEY = {s.key: s for s in SLEEVES}
+
+# Var varje playbook (strategy_rules.PLAYBOOKS) hör hemma i fördelningen.
+# Wolf/Viking/Momentum/Ember är swing-motorn; Alpha/Quality/Deep Contrarian är
+# den långsiktiga portföljen; resten är masterguidens egna.
+STRATEGY_SLEEVE = {
+    "momentum": "swing", "wolf": "swing", "viking": "swing", "ember": "swing",
+    "alpha": "langsiktigt", "quality": "langsiktigt", "contrarian": "langsiktigt",
+    "rule": "producenter", "sprott": "optionalitet", "tiggre": "optionalitet",
+    "durrett": "durrett", "royalty": "royalty", "insider": "insider",
+}
 
 # ── Positionsregeln — två nivåer (Masterguiden 4.0) ──────────────────────────
 # "NORMAL POSITION anges inom strategidelen, HÅRT TAK mot hela portföljen."
@@ -90,22 +108,45 @@ class PositionRule:
 
 
 POSITION_RULES: tuple[PositionRule, ...] = (
+    # Masterguidens sju (oförändrade)
     PositionRule("royalty1", "Royalty nivå 1", "royalty", 5, 10, 10.0),
     PositionRule("rule", "Rule-producent", "producenter", 5, 10, 4.0),
     PositionRule("sprott", "Sprott", "optionalitet", 10, 20, 1.5),
     PositionRule("tiggre", "Tiggre", "optionalitet", 15, 30, 4.0),
     PositionRule("durrett", "Durrett", "durrett", 10, 20, 3.0),
-    PositionRule("swing", "Swing", "swing", 15, 30, 6.0),
+    PositionRule("swing", "Swing (Momentum)", "swing", 15, 30, 6.0),
     PositionRule("insider", "Insider", "insider", 10, 20, 4.0),
+    # Panelens egna: samma swing-tak som Momentum (6 % av totalen); den
+    # långsiktiga portföljens 8–10 innehav à max 10 % (Alpha/Quality-regeln).
+    PositionRule("wolf", "Wolf x Shadow", "swing", 15, 30, 6.0),
+    PositionRule("viking", "Viking (OVTLYR)", "swing", 15, 30, 6.0),
+    PositionRule("ember", "Ember", "swing", 15, 30, 6.0),
+    PositionRule("alpha", "Alpha Trend / Regim", "langsiktigt", 8, 12.5, 10.0),
+    PositionRule("quality", "Quality", "langsiktigt", 8, 12.5, 10.0),
+    PositionRule("contrarian", "Deep Contrarian", "langsiktigt", 8, 12.5, 10.0),
 )
 RULE_BY_KEY = {r.key: r for r in POSITION_RULES}
 
-# Sleeves med exakt en regel kan härledas ur en gammal position; optionaliteten
-# kan inte, eftersom Sprott och Tiggre har olika tak (1,5 % mot 4 %).
+# Playbook-nycklar som inte är regelnycklar rakt av.
+RULE_ALIASES = {"momentum": "swing", "royalty": "royalty1"}
+
+# En gammal position lagrar bara sin sleeve. Där sleeven har flera regler men
+# en självklar grundregel (swing-delen ÄR Momentum-swing i masterguiden) gäller
+# den; optionaliteten och den långsiktiga delen har ingen och rapporteras.
+SLEEVE_DEFAULT_RULE = {"swing": "swing"}
+
 _RULES_PER_SLEEVE = {}
 for _r in POSITION_RULES:
     _RULES_PER_SLEEVE.setdefault(_r.sleeve, []).append(_r)
-AMBIGUOUS_SLEEVES = tuple(k for k, v in _RULES_PER_SLEEVE.items() if len(v) > 1)
+AMBIGUOUS_SLEEVES = tuple(k for k, v in _RULES_PER_SLEEVE.items()
+                          if len(v) > 1 and k not in SLEEVE_DEFAULT_RULE)
+
+
+def rule_for_strategy(strategy: str) -> Optional[PositionRule]:
+    """Positionsregeln för en playbook-nyckel ('momentum' -> Swing-regeln)."""
+    key = (strategy or "").strip().lower()
+    key = RULE_ALIASES.get(key, key)
+    return RULE_BY_KEY.get(key)
 
 COMMODITY_CAP = 55.0        # råvarutaket: royalty + producenter + optionalitet + durrett
 COMMODITY_WARN = 50.0       # arket varnar redan här — taket ska aldrig nås oplanerat
@@ -204,10 +245,12 @@ def position_rule(row: dict) -> Optional[PositionRule]:
     där vore att välja mellan 1,5 % och 4 % åt användaren.
     """
     r = row or {}
-    key = (r.get("rule") or "").strip().lower()
-    if key in RULE_BY_KEY:
-        return RULE_BY_KEY[key]
+    rule = rule_for_strategy(r.get("rule") or "")
+    if rule is not None:
+        return rule
     sleeve = (r.get("sleeve") or "").strip().lower()
+    if sleeve in SLEEVE_DEFAULT_RULE:
+        return RULE_BY_KEY[SLEEVE_DEFAULT_RULE[sleeve]]
     candidates = _RULES_PER_SLEEVE.get(sleeve, [])
     return candidates[0] if len(candidates) == 1 else None
 
@@ -627,13 +670,17 @@ def _positions(data: dict) -> None:
         st.error(f"{b['ticker']} är {b['pct']:.1f} % — över taket {b['cap']:g} % "
                  f"({b.get('rule') or b['sleeve']}). Trimma ner.")
 
-    # Gamla positioner i optionaliteten: Sprott eller Tiggre? Taken skiljer
-    # sig med mer än en faktor två, så de gissas inte.
+    # Gamla positioner utan typ i en del med flera regler (optionaliteten:
+    # Sprott eller Tiggre?). Taken kan skilja mer än en faktor två, så de
+    # gissas inte.
     for p in unresolved_positions(positions):
-        st.warning(f"{p.get('ticker','?')} ligger i optionaliteten utan typ — "
-                   f"välj Sprott (tak {RULE_BY_KEY['sprott'].hard_cap:g} %) "
-                   f"eller Tiggre (tak {RULE_BY_KEY['tiggre'].hard_cap:g} %). "
-                   f"Tills dess kontrolleras den inte mot något tak.")
+        sleeve = (p.get("sleeve") or "").strip().lower()
+        options = " eller ".join(f"{r.name} (tak {r.hard_cap:g} %)"
+                                 for r in _RULES_PER_SLEEVE.get(sleeve, []))
+        st.warning(f"{p.get('ticker','?')} ligger i "
+                   f"{SLEEVE_BY_KEY[sleeve].name if sleeve in SLEEVE_BY_KEY else sleeve} "
+                   f"utan typ — välj {options}. Tills dess kontrolleras den inte "
+                   f"mot något tak.")
 
     # Förvarning: en position som passerat 90 % av taket ska inte fyllas på.
     for p in positions:
