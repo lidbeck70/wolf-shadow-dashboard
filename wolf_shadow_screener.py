@@ -97,7 +97,8 @@ STOCKHOLM_TICKERS = {
     "ESSITY-B.ST": "Essity", "EVO.ST": "Evolution",
     "GETI-B.ST": "Getinge", "HEXA-B.ST": "Hexagon",
     "HM-B.ST": "H&M", "INVE-B.ST": "Investor",
-    "KINV-B.ST": "Kinnevik", "LUND-B.ST": "Lundin Mining",
+    "KINV-B.ST": "Kinnevik", "LUND-B.ST": "Lundbergföretagen B",
+    "LUMI.ST": "Lundin Mining",
     "SAND.ST": "Sandvik", "SCA-B.ST": "SCA",
     "SEB-A.ST": "SEB", "SHB-A.ST": "Handelsbanken",
     "SKA-B.ST": "Skanska", "SKF-B.ST": "SKF",
@@ -164,7 +165,8 @@ HELSINKI_TICKERS = {
     "HUH1V.HE": "Huhtamäki",
     "ELISA.HE": "Elisa",
     "KEMIRA.HE": "Kemira",
-    "SSABBH.HE": "Outokumpu",
+    "SSABBH.HE": "SSAB B (Helsingfors)",
+    "OUT1V.HE": "Outokumpu",
     "OLVAS.HE": "Olvi",
 }
 
@@ -436,6 +438,17 @@ MARKETS = {
     "junior_miners": JUNIOR_MINERS_TICKERS,
 }
 
+# Omdöpta tickers byts (GOLD → B), uppköpta släpps (HES, X, MAG, SWN…) — i
+# alla listor ovan, på ett ställe (dead_tickers.py).
+try:
+    from dead_tickers import alive_map as _alive_map
+    for _k in list(MARKETS):
+        if isinstance(MARKETS[_k], dict):
+            MARKETS[_k] = _alive_map(MARKETS[_k])
+    COMMODITY_TICKERS = _alive_map(COMMODITY_TICKERS)
+except Exception:  # pragma: no cover
+    pass
+
 # =============================================================================
 # PRESET PARAMETERS (v3 — 21 presets: US Sector ETFs, Nordic, Individual, Universal)
 # =============================================================================
@@ -459,7 +472,7 @@ PRESET_PARAMS = {
     "OMX Helsinki": {"ema_pulse":13,"ema_fast":26,"ema_slow":84,"tenkan":10,"kijun":33,"spanb":61,"atr_mult":2.1,"adx_thresh":11,"tp1_rr":3.05,"tp1_pct":0.21,"tp2_rr":5.55,"tp2_pct":0.15,"core_pct":0.54,"min_regime":48},
     # Individual stocks
     "OXY": {"ema_pulse":6,"ema_fast":23,"ema_slow":40,"tenkan":7,"kijun":24,"spanb":65,"atr_mult":2.8,"adx_thresh":27,"tp1_rr":3.0,"tp1_pct":0.20,"tp2_rr":5.5,"tp2_pct":0.25,"core_pct":0.70,"min_regime":53},
-    "GOLD": {"ema_pulse":5,"ema_fast":18,"ema_slow":71,"tenkan":15,"kijun":36,"spanb":67,"atr_mult":1.5,"adx_thresh":16,"tp1_rr":1.75,"tp1_pct":0.20,"tp2_rr":5.75,"tp2_pct":0.05,"core_pct":0.50,"min_regime":49},
+    "B": {"ema_pulse":5,"ema_fast":18,"ema_slow":71,"tenkan":15,"kijun":36,"spanb":67,"atr_mult":1.5,"adx_thresh":16,"tp1_rr":1.75,"tp1_pct":0.20,"tp2_rr":5.75,"tp2_pct":0.05,"core_pct":0.50,"min_regime":49},
     "NEM": {"ema_pulse":11,"ema_fast":13,"ema_slow":99,"tenkan":9,"kijun":33,"spanb":41,"atr_mult":3.1,"adx_thresh":17,"tp1_rr":3.0,"tp1_pct":0.05,"tp2_rr":4.25,"tp2_pct":0.25,"core_pct":0.60,"min_regime":44},
     "XOM": {"ema_pulse":13,"ema_fast":23,"ema_slow":39,"tenkan":8,"kijun":39,"spanb":48,"atr_mult":2.7,"adx_thresh":27,"tp1_rr":3.5,"tp1_pct":0.10,"tp2_rr":5.5,"tp2_pct":0.10,"core_pct":0.70,"min_regime":60},
     "GLD": {"ema_pulse":7,"ema_fast":28,"ema_slow":37,"tenkan":13,"kijun":22,"spanb":59,"atr_mult":2.6,"adx_thresh":7,"tp1_rr":1.75,"tp1_pct":0.10,"tp2_rr":5.0,"tp2_pct":0.20,"core_pct":0.60,"min_regime":50},

@@ -102,54 +102,20 @@ def _close(ticker: str, period: str) -> pd.Series:
 
 
 # ── Commodity complex map ─────────────────────────────────────────────────────
+# Härledd ur ember/config.py: tema per ticker × THEME_TO_COMPLEX. Tidigare låg
+# en andra handskriven karta här som sa emot temakartan för 16 av 114 tickers
+# (uran under "agri", koppar/sällsynta under ädelmetaller, RIO/BHP som guld).
+from ember.config import TICKER_THEME_MAP as _TTM_SRC, THEME_TO_COMPLEX as _T2C
 
-TICKER_COMPLEX_MAP: dict[str, str] = {
-    # ENERGI — olja, gas, kol
-    "XOM": "energi", "CVX": "energi", "COP": "energi", "EOG": "energi",
-    "SLB": "energi", "MPC": "energi", "VLO": "energi", "PSX": "energi",
-    "OXY": "energi", "HAL": "energi", "DVN": "energi", "BKR": "energi",
-    "FANG": "energi", "APA": "energi", "MRO": "energi", "SHEL": "energi",
-    "EQNR.OL": "energi", "AKRBP.OL": "energi", "VAR.OL": "energi", "TGS.OL": "energi",
-    "XLE": "energi", "XOP": "energi", "USO": "energi", "UNG": "energi",
-    "BP.L": "energi", "SHEL.L": "energi",
-    "SU.TO": "energi", "CNQ.TO": "energi", "CVE.TO": "energi", "IMO.TO": "energi",
-    "WCP.TO": "energi", "ARX.TO": "energi", "BTE.TO": "energi", "TOU.TO": "energi",
-    "BTU": "energi", "ARCH": "energi", "CEIX": "energi", "AMR": "energi",
-    # ÄDELMETALLER — guld, silver, PGM, sällsynta jordartsmetaller
-    "NEM": "adelmetaller", "GOLD": "adelmetaller", "AEM": "adelmetaller",
-    "WPM": "adelmetaller", "KGC": "adelmetaller", "AGI": "adelmetaller",
-    "AU": "adelmetaller", "GFI": "adelmetaller", "BTG": "adelmetaller",
-    "EGO": "adelmetaller", "SSRM": "adelmetaller", "OR": "adelmetaller",
-    "SA": "adelmetaller", "HMY": "adelmetaller", "DRD": "adelmetaller",
-    "AG": "adelmetaller", "HL": "adelmetaller", "PAAS": "adelmetaller",
-    "CDE": "adelmetaller", "FSM": "adelmetaller", "EXK": "adelmetaller",
-    "MAG": "adelmetaller", "MUX": "adelmetaller", "GPL": "adelmetaller",
-    "SVM": "adelmetaller", "ASM": "adelmetaller", "NGD": "adelmetaller",
-    "GLD": "adelmetaller", "GDX": "adelmetaller", "GDXJ": "adelmetaller",
-    "SLV": "adelmetaller", "SIL": "adelmetaller", "SILJ": "adelmetaller",
-    "MP": "adelmetaller", "REMX": "adelmetaller",
-    "ABX.TO": "adelmetaller", "K.TO": "adelmetaller", "ERO.TO": "adelmetaller",
-    "AGI.TO": "adelmetaller", "BTO.TO": "adelmetaller", "EDV.TO": "adelmetaller",
-    "WPM.TO": "adelmetaller", "FNV.TO": "adelmetaller",
-    "RIO.L": "adelmetaller", "BHP.L": "adelmetaller", "AAL.L": "adelmetaller",
-    "FRES.L": "adelmetaller", "ANTO.L": "adelmetaller",
-    # BASMETALLER — koppar, nickel, zink, litium
-    "FCX": "basmetaller", "SCCO": "basmetaller", "TECK": "basmetaller",
-    "COPX": "basmetaller", "PICK": "basmetaller", "XME": "basmetaller",
-    "LIT": "basmetaller", "FM.TO": "basmetaller", "LUN.TO": "basmetaller",
-    "GLEN.L": "basmetaller",
-    # AGRI & ÖVRIGT — jordbruk + uran (diversified)
-    "MOS": "agri", "NTR": "agri", "CF": "agri", "UAN": "agri", "ADM": "agri",
-    "NTR.TO": "agri", "DBA": "agri",
-    "CCJ": "agri", "NXE": "agri", "DNN": "agri", "UUUU": "agri",
-    "LEU": "agri", "UEC": "agri", "URA": "agri", "URNM": "agri",
-    "CCO.TO": "agri", "DML.TO": "agri", "NXE.TO": "agri",
-}
+TICKER_COMPLEX_MAP: dict[str, str] = {t: _T2C[k] for t, k in _TTM_SRC.items() if k in _T2C}
 
 
-def detect_complex(ticker: str) -> str:
-    """Map a ticker to its commodity complex key. Defaults to 'energi'."""
-    return TICKER_COMPLEX_MAP.get(ticker.upper(), "energi")
+def detect_complex(ticker: str) -> Optional[str]:
+    """Ticker → komplexnyckel, eller None när tickern är okänd.
+
+    Förut blev allt okänt "energi" — så Boliden, SSAB och alla nordiska
+    tickers ur Börsdata-filtret lästes mot oljans regim. Okänt är okänt."""
+    return TICKER_COMPLEX_MAP.get(str(ticker or "").upper())
 
 
 # ── Shared generic pillar helpers ─────────────────────────────────────────────
@@ -713,6 +679,10 @@ def _render_ticker_analysis(
 ) -> None:
     """Show complex regime + EMBER trend gate analysis for a specific ticker."""
     complex_key = detect_complex(ticker)
+    if complex_key is None:
+        st.warning(f"{ticker} finns inte i EMBER:s temakarta — inget komplex att läsa "
+                   f"regimen ur. Lägg till tickern i ember/config.py TICKER_THEME_MAP.")
+        return
     result = all_regimes.get(complex_key)
     if result is None:
         st.warning(f"Ingen regimdata för komplex '{complex_key}'")

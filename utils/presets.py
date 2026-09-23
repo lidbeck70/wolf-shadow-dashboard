@@ -41,7 +41,7 @@ PRESET_PARAMS_BT = {
     "OMX Helsinki":   {"atr_mult": 2.1, "adx_thresh": 11, "tp1_r": 3.05, "tp1_pct": 0.21, "tp2_r": 5.55, "tp2_pct": 0.15, "core_pct": 0.54},
     # Individual stocks
     "OXY":  {"atr_mult": 2.8, "adx_thresh": 27, "tp1_r": 3.0,  "tp1_pct": 0.20, "tp2_r": 5.5,  "tp2_pct": 0.25, "core_pct": 0.70},
-    "GOLD": {"atr_mult": 1.5, "adx_thresh": 16, "tp1_r": 1.75, "tp1_pct": 0.20, "tp2_r": 5.75, "tp2_pct": 0.05, "core_pct": 0.50},
+    "B":    {"atr_mult": 1.5, "adx_thresh": 16, "tp1_r": 1.75, "tp1_pct": 0.20, "tp2_r": 5.75, "tp2_pct": 0.05, "core_pct": 0.50},
     "NEM":  {"atr_mult": 3.1, "adx_thresh": 17, "tp1_r": 3.0,  "tp1_pct": 0.05, "tp2_r": 4.25, "tp2_pct": 0.25, "core_pct": 0.60},
     "XOM":  {"atr_mult": 2.7, "adx_thresh": 27, "tp1_r": 3.5,  "tp1_pct": 0.10, "tp2_r": 5.5,  "tp2_pct": 0.10, "core_pct": 0.70},
     "GLD":  {"atr_mult": 2.6, "adx_thresh": 7,  "tp1_r": 1.75, "tp1_pct": 0.10, "tp2_r": 5.0,  "tp2_pct": 0.20, "core_pct": 0.60},
@@ -55,7 +55,7 @@ PRESET_LABELS = [
     "XLV Healthcare", "XLI Industrials", "XLY Consumer Disc",
     "XLP Consumer Staples", "XLRE Real Estate", "XLU Utilities", "XLC Communication",
     "OMX Stockholm", "OMX Copenhagen", "Oslo OSEBX", "OMX Helsinki",
-    "OXY", "GOLD", "NEM", "XOM", "GLD",
+    "OXY", "B", "NEM", "XOM", "GLD",
 ]
 
 

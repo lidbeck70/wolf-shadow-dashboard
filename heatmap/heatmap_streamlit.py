@@ -358,7 +358,7 @@ US_TICKERS: Dict[str, dict] = {
     "OXY":   {"name": "Occidental Petroleum", "country": "US", "sector": "Energy"},
     # ── Gold & Silver miners ──
     "NEM":   {"name": "Newmont",             "country": "US", "sector": "Materials"},
-    "GOLD":  {"name": "Barrick Gold",        "country": "US", "sector": "Materials"},
+    "B":     {"name": "Barrick Mining",      "country": "US", "sector": "Materials"},
     "FNV":   {"name": "Franco-Nevada",       "country": "US", "sector": "Materials"},
     "WPM":   {"name": "Wheaton Precious Metals", "country": "US", "sector": "Materials"},
     "AEM":   {"name": "Agnico Eagle Mines",  "country": "US", "sector": "Materials"},
@@ -410,7 +410,6 @@ CANADA_TICKERS: Dict[str, dict] = {
     "BTO.TO":  {"name": "B2Gold",               "country": "Canada", "sector": "Materials"},
     "FR.TO":   {"name": "First Majestic Silver", "country": "Canada", "sector": "Materials"},
     "LUG.TO":  {"name": "Lundin Gold",          "country": "Canada", "sector": "Materials"},
-    "SSL.TO":  {"name": "Sandstorm Gold",       "country": "Canada", "sector": "Materials"},
     # ── Banks ──
     "RY.TO":   {"name": "Royal Bank of Canada",  "country": "Canada", "sector": "Financials"},
     "TD.TO":   {"name": "Toronto-Dominion Bank", "country": "Canada", "sector": "Financials"},

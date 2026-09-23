@@ -26,7 +26,7 @@ ISIN_MAP: dict[str, str] = {
     "SE0000872305": "AZN.ST",      # AstraZeneca (Swedish listing)
     "SE0000148884": "SAND.ST",     # Sandvik
     "SE0000667925": "SCA-B.ST",    # SCA B
-    "SE0000869646": "ERICB.ST",    # Ericsson B
+    "SE0000869646": "ERIC-B.ST",   # Ericsson B
     "SE0000112724": "SKF-B.ST",    # SKF B
     "SE0001116761": "SSAB-A.ST",   # SSAB A
     "SE0000171100": "BOL.ST",      # Boliden

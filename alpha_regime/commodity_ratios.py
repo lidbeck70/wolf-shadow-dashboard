@@ -252,18 +252,28 @@ EXPOSURE_TO_RATIO: dict[str, list[str]] = {
     "silver":       ["gold_silver", "silver_juniors"],
     "oil":          ["gold_oil"],
     "copper":       ["copper_gold"],
+    # Ingen egen kvot ännu — exponeringen finns så att sektor-ETF:en (URA,
+    # LIT, UNG) blir rätt i stället för SPY. Tom lista = inga gauges.
+    "uranium":      [],
+    "lithium":      [],
+    "gas":          [],
 }
 
-# Ordered: most specific patterns first
+# Ordered: most specific patterns first. Koppar, uran, gas och litium står
+# FÖRE de generiska "mining"/"energi" — annars blev "Copper Mining" och
+# Bolidens "Gruvor" gold_miner, och "Förnybar energi" olja.
 _KEYWORD_EXPOSURE: list[tuple[list[str], str]] = [
     (["junior miner", "junior mine", "juniormine", "gdxj"],   "junior_miner"),
     (["silver miner", "silver mine", "silvr", "silber"],       "silver"),
     (["gold miner", "gold mine", "goldminer"],                 "gold_miner"),
+    (["uranium", "uran"],                                      "uranium"),
+    (["lithium", "litium"],                                    "lithium"),
+    (["natural gas", "naturgas", "lng"],                       "gas"),
+    (["copper", "koppar"],                                     "copper"),
     (["silver"],                                               "silver"),
     (["gold", "guld", "gld"],                                  "gold_miner"),
-    (["mining", "gruv"],                                       "gold_miner"),
-    (["oil", "olja", "petroleum", "petro", "crude", "energi"], "oil"),
-    (["copper", "koppar"],                                     "copper"),
+    (["mining", "gruv", "metals"],                             "gold_miner"),
+    (["oil", "olja", "petroleum", "petro", "crude"],           "oil"),
 ]
 
 

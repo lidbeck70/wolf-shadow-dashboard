@@ -52,24 +52,13 @@ BASE_URL = "https://apiservice.borsdata.se/v1"
 _RATE_WINDOW = 10.0     # seconds
 _RATE_MAX_CALLS = 90     # slightly below the hard 100 limit
 
-# All tradable Nordic market IDs from the Börsdata /instruments endpoint.
-# Use this constant everywhere instead of hardcoding partial lists.
-ALL_NORDIC_MARKETS: list[int] = [
-    1,   # Sweden Large Cap
-    2,   # Sweden Mid Cap
-    3,   # Sweden Small Cap
-    4,   # Norway Oslo Børs
-    5,   # Finland Helsinki
-    6,   # Denmark Copenhagen
-    7,   # Sweden First North
-    8,   # Sweden Spotlight
-    9,   # Sweden NGM
-    14,  # Norway Euronext Growth
-    15,  # Denmark First North
-    16,  # Finland First North
-    18,  # Sweden Mid Cap (alternate ID)
-    19,  # Sweden Small Cap (alternate ID)
-]
+# Alla handlade nordiska aktielistor. Tabellen bor i markets.py (en källa —
+# Börsdatas /markets när ett API finns, annars den avlästa FALLBACK-tabellen).
+# Den gamla handskrivna listan här sa 4 = Norge, 5 = Finland, 6 = Danmark och
+# "18/19 = alternativa svenska id", vilket inte stämde med ticker_universe.
+import markets as _markets  # noqa: E402
+
+ALL_NORDIC_MARKETS: list[int] = sorted(_markets.nordic_stock_ids(_markets.FALLBACK))
 
 
 # ---------------------------------------------------------------------------
@@ -1219,35 +1208,25 @@ try:
             logger.warning("get_complete_instrument_universe failed: %s", exc)
             return None
 
-    # Nordic market suffix mapping for yfinance
-    _MARKET_SUFFIX = {
-        1: ".ST",    # Sweden Large Cap
-        18: ".ST",   # Sweden Mid Cap
-        19: ".ST",   # Sweden Small Cap
-        4: ".OL",    # Norway (OSE)
-        5: ".HE",    # Finland (HEL)
-        6: ".CO",    # Denmark (CSE)
-    }
-
     @_st.cache_data(ttl=86400, show_spinner=False)
     def _get_nordic_tickers() -> List[str]:
         """Get all Nordic tickers from Börsdata with yfinance suffixes."""
         try:
-            nordic_market_ids = ALL_NORDIC_MARKETS
             df = get_all_instruments()
             if df is None or df.empty:
                 return []
-            nordic = df[df["marketId"].isin(nordic_market_ids)]
+            # Marknadstabellen ur Börsdata själva när nyckeln finns; annars
+            # den avlästa tabellen. Suffix och "SKF A" → "SKF-A.ST" görs på
+            # ett ställe (markets.to_yf) — med mellanslaget kvar failar
+            # nedladdningen och alla A/B-aktier faller tyst ur universumet.
+            api = get_api()
+            table = _markets.load(api=api) if api.is_configured else _markets.current()
+            nordic = df[df["marketId"].isin(_markets.nordic_stock_ids(table))]
             tickers = []
             for _, row in nordic.iterrows():
                 t = row.get("ticker", "")
-                mid = row.get("marketId", 1)
                 if t:
-                    suffix = _MARKET_SUFFIX.get(mid, ".ST")
-                    # yfinance-form: Börsdatas "SKF A" ska bli "SKF-A.ST" —
-                    # med mellanslaget kvar failar nedladdningen och alla
-                    # A/B-aktier faller tyst ur Viking-universumet.
-                    tickers.append(f"{str(t).replace(' ', '-')}{suffix}")
+                    tickers.append(_markets.to_yf(t, row.get("marketId"), table))
             return sorted(set(tickers))
         except Exception as exc:
             logger.warning("_get_nordic_tickers failed: %s", exc)

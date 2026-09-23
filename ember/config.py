@@ -111,9 +111,21 @@ EMBER_SECTOR_ETF: dict[str, str] = {
 
 DEFAULT_SECTOR_ETF = "GLD"
 
+# Tema → råvarukomplex (ember/regime.py). EN mappning i stället för två
+# handskrivna tickerkartor som sa olika saker om 16 av 114 tickers (uran låg
+# under "agri", koppar under ädelmetaller). Uran är energi — det är ett
+# bränsle, och komplexets pelare (olja, gas) säger mer om uran än DBA och
+# SPY gör. Sällsynta jordartsmetaller är basmetaller i den här indelningen.
+THEME_TO_COMPLEX: dict[str, str] = {
+    "guld": "adelmetaller", "silver": "adelmetaller",
+    "koppar": "basmetaller", "sallsynta": "basmetaller",
+    "uran": "energi", "olja": "energi", "naturgas": "energi", "kol": "energi",
+    "agri": "agri",
+}
+
 # ── Ticker → theme key map ────────────────────────────────────────────────────
 # Covers all universe members so cycle phase is never DATA_GAP for known tickers.
-TICKER_THEME_MAP: dict[str, str] = {
+_TICKER_THEME_RAW: dict[str, str] = {
     # ── Guld (GDX / GDXJ names + key majors) ──────────────────────────────
     "GLD":  "guld", "GDX": "guld", "GDXJ": "guld",
     "NEM": "guld", "GOLD": "guld", "AEM": "guld", "WPM": "guld",
@@ -124,8 +136,8 @@ TICKER_THEME_MAP: dict[str, str] = {
     # Canada gold
     "ABX.TO": "guld", "K.TO": "guld", "AGI.TO": "guld",
     "BTO.TO": "guld", "EDV.TO": "guld", "WPM.TO": "guld", "FNV.TO": "guld",
-    # UK gold/diversified miners (gold-driven)
-    "RIO.L": "guld", "BHP.L": "guld",
+    # UK diversified miners — järnmalm och koppar, inte guld
+    "RIO.L": "koppar", "BHP.L": "koppar",
     # ── Silver (SIL / SILJ names) ──────────────────────────────────────────
     "SLV": "silver", "SIL": "silver", "SILJ": "silver",
     "PAAS": "silver", "HL": "silver", "AG": "silver",
@@ -172,6 +184,15 @@ TICKER_THEME_MAP: dict[str, str] = {
     # ── Sällsynta jordartsmetaller ─────────────────────────────────────────
     "REMX": "sallsynta", "MP": "sallsynta",
 }
+
+# Omdöpta tickers byts (GOLD → B), uppköpta släpps (MRO, MAG, ARCH, CEIX…).
+try:
+    from dead_tickers import alive_map as _alive_map
+    TICKER_THEME_MAP: dict[str, str] = _alive_map(_TICKER_THEME_RAW)
+except Exception:  # pragma: no cover
+    TICKER_THEME_MAP = dict(_TICKER_THEME_RAW)
+
+assert set(TICKER_THEME_MAP.values()) <= set(THEME_TO_COMPLEX), "tema utan komplex"
 
 _THEME_LABEL: dict[str, str] = {
     "uran":      "Uran",

@@ -99,8 +99,11 @@ try:
     _BORSDATA_AVAILABLE = True
 except ImportError:
     _BORSDATA_AVAILABLE = False
-    ALL_NORDIC_MARKETS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 14, 15, 16, 18, 19]
+    import markets as _mk_fallback
+    ALL_NORDIC_MARKETS = sorted(_mk_fallback.nordic_stock_ids(_mk_fallback.FALLBACK))
     logger.warning("borsdata_api not found — universe will be limited to manual tickers")
+
+import markets as _markets  # noqa: E402  — en marknadstabell för hela panelen
 
 
 # ─── Config ───────────────────────────────────────────────────────────────────
@@ -325,41 +328,16 @@ class PipelineResult:
         }
 
 
-# ─── Market suffix map (Börsdata marketId → yfinance suffix) ──────────────────
+# ─── Market names (Börsdata marketId → label) ─────────────────────────────────
+# Suffix och namn kommer ur markets.py (Börsdatas /markets när API:t finns).
+# Den gamla lokala kartan hittade på 11 = US och 12 = CA, som krockade med de
+# riktiga id:na; NYSE är 32 och Toronto 35.
+_MARKET_US, _MARKET_CA = 32, 35
 
-_MARKET_SUFFIX: dict[int, str] = {
-    # Sweden
-    1:  ".ST",   # Large Cap
-    2:  ".ST",   # Mid Cap
-    3:  ".ST",   # Small Cap
-    7:  ".ST",   # First North
-    8:  ".ST",   # Spotlight
-    9:  ".ST",   # NGM
-    18: ".ST",   # Mid Cap (alt ID)
-    19: ".ST",   # Small Cap (alt ID)
-    # Norway
-    4:  ".OL",   # Oslo Børs
-    14: ".OL",   # Euronext Growth
-    # Finland
-    5:  ".HE",   # Helsinki
-    16: ".HE",   # First North
-    # Denmark
-    6:  ".CO",   # Copenhagen
-    15: ".CO",   # First North
-    # Global
-    11: "",      # US (no suffix)
-    12: ".TO",   # Canada TSX
-}
 
-_MARKET_NAME: dict[int, str] = {
-    1:  "SE Large",       2:  "SE Mid",         3:  "SE Small",
-    7:  "SE First North", 8:  "SE Spotlight",    9:  "SE NGM",
-    18: "SE Mid",         19: "SE Small",
-    4:  "NO",             14: "NO Euronext",
-    5:  "FI",             16: "FI First North",
-    6:  "DK",             15: "DK First North",
-    11: "US",             12: "CA",
-}
+def _market_name(mid) -> str:
+    return _markets.name(mid) if _markets.get(mid) else str(mid)
+
 
 # yfinance sector/industry → Börsdata-compatible name for necessity lookup
 _YF_SECTOR_MAP: dict[str, str] = {
@@ -1252,7 +1230,7 @@ def _run_single_ticker(
     """
     market_id  = inst_info.get("marketId", 1)
     name       = inst_info.get("name", ticker)
-    market_str = _MARKET_NAME.get(market_id, str(market_id))
+    market_str = _market_name(market_id)
 
     result = ContrairianAlphaResult(
         ticker=ticker,
@@ -1807,8 +1785,8 @@ def _build_universe(config: PipelineConfig, api) -> list[dict]:
     # metadata is attached to inst_info for future stage-aware scoring (PR2).
     if config.universe == "us_ca_resource":
         from contrarian_alpha.universe_static import load_resource_universe
-        # Country → Börsdata-compatible marketId for _MARKET_NAME display only.
-        _country_market = {"US": 11, "CA": 12}
+        # Country → Börsdatas riktiga marknads-id (bara för etiketten).
+        _country_market = {"US": _MARKET_US, "CA": _MARKET_CA}
         records = load_resource_universe()   # may raise; caller surfaces the error
         for rec in records:
             yf_ticker = rec.yf_ticker or rec.ticker
@@ -1816,7 +1794,7 @@ def _build_universe(config: PipelineConfig, api) -> list[dict]:
                 continue
             inst_info = {
                 "name": rec.name,
-                "marketId": _country_market.get(rec.country, 11),
+                "marketId": _country_market.get(rec.country, _MARKET_US),
                 "instrumentType": 1,
                 "resource_meta": rec.to_metadata(),
                 "stage": rec.stage,
@@ -1839,12 +1817,14 @@ def _build_universe(config: PipelineConfig, api) -> list[dict]:
                 universe.append({
                     "ticker":      t,
                     "ins_id":      None,
-                    "inst_info":   {"name": t, "marketId": 11, "instrumentType": 1},
+                    "inst_info":   {"name": t, "marketId": _MARKET_US, "instrumentType": 1},
                     "branch_name": "",
                     "sector_name": "",
                 })
         return universe
 
+    _table = _markets.load(api=api) if (api is not None and getattr(api, "is_configured", False)) \
+        else _markets.current()
     if api is not None and api.is_configured:
         try:
             instruments = api.get_instruments()
@@ -1874,8 +1854,8 @@ def _build_universe(config: PipelineConfig, api) -> list[dict]:
                     continue
                 seen_ids.add(ins_id)
                 ticker_raw = inst.get("ticker", "")
-                suffix = _MARKET_SUFFIX.get(mid, ".ST")
-                yf_ticker = f"{ticker_raw}{suffix}" if ticker_raw else ""
+                # "ERIC B" → "ERIC-B.ST": suffix ur marknadstabellen, mellanslag → bindestreck
+                yf_ticker = _markets.to_yf(ticker_raw, mid, _table) if ticker_raw else ""
 
                 universe.append({
                     "ticker":      yf_ticker or ticker_raw,
@@ -1919,11 +1899,9 @@ def _build_universe(config: PipelineConfig, api) -> list[dict]:
         if inst is not None:
             ins_id = inst.get("insId")
             mid = inst.get("marketId")
-            suffix = _MARKET_SUFFIX.get(mid, "")
             # yfinance-form: "ERIC B" + ".ST" → "ERIC-B.ST" (mellanslag → bindestreck)
-            raw_tk = str(inst.get("ticker", base)).replace(" ", "-")
             universe.append({
-                "ticker":      f"{raw_tk}{suffix}" if suffix else raw_tk,
+                "ticker":      _markets.to_yf(inst.get("ticker", base), mid, _table),
                 "ins_id":      ins_id,
                 "inst_info":   inst,
                 "branch_name": _branch_meta2.get(inst.get("branchId", -1), ""),
@@ -2073,7 +2051,7 @@ def run_pipeline(config: PipelineConfig | None = None) -> PipelineResult:
                 eliminated.append(ContrairianAlphaResult(
                     ticker=u["ticker"], ins_id=u["ins_id"],
                     name=info.get("name", u["ticker"]),
-                    market=_MARKET_NAME.get(info.get("marketId", 0), "?"),
+                    market=_market_name(info.get("marketId", 0)),
                     sector=u["sector_name"], branch=u["branch_name"],
                     composite_score=0.0, necessity_score=float(entry.score),
                     necessity_entry=entry, eliminated=True,
@@ -2215,7 +2193,7 @@ def run_pipeline(config: PipelineConfig | None = None) -> PipelineResult:
             logger.warning("Pipeline error for %s: %s", ticker, e)
             return ContrairianAlphaResult(
                 ticker=ticker, ins_id=ins_id, name=u["inst_info"].get("name", ticker),
-                market=_MARKET_NAME.get(u["inst_info"].get("marketId", 0), "?"),
+                market=_market_name(u["inst_info"].get("marketId", 0)),
                 sector=u["sector_name"], branch=u["branch_name"],
                 composite_score=0.0, eliminated=True,
                 elimination_stage="ERROR", elimination_reason=str(e),

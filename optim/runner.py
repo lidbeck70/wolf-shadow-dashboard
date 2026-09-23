@@ -48,7 +48,7 @@ np.random.seed(42)
 _SECTOR_MAP: dict[str, str] = {
     # Energy
     "XOM": "XLE",  "CVX": "XLE",  "COP": "XLE",  "DVN": "XLE",
-    "EOG": "XLE",  "MRO": "XLE",  "HAL": "XLE",  "SLB": "XLE",
+    "EOG": "XLE",  "HAL": "XLE",  "SLB": "XLE",
     "EQNR.OL": "XLE",
     # Materials
     "BOL.ST": "XLB",

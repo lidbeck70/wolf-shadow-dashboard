@@ -69,11 +69,9 @@ FALL_PCT = 20.0            # "Efter fall > 20 %"
 FX_TO_SEK = {"SEK": 1.0, "NOK": 0.95, "DKK": 1.55, "EUR": 11.3,
              "USD": 10.5, "GBP": 13.5}
 
-# Börsdatas marknads-id → yfinance-suffix (samma som ember/universe.py)
-_MARKET_SUFFIX = {1: ".ST", 2: ".ST", 3: ".ST", 7: ".ST", 8: ".ST", 9: ".ST",
-                  18: ".ST", 19: ".ST", 4: ".OL", 14: ".OL", 5: ".HE", 16: ".HE",
-                  6: ".CO", 15: ".CO"}
-_INDEX_MARKETS = {7, 8, 13, 19, 28, 31}
+# Marknadstabellen (id → land/suffix/index) bor i markets.py — ur Börsdatas
+# /markets när jobbet kör, annars den avlästa tabellen. Ingen egen kopia här.
+import markets as _markets  # noqa: E402
 
 ROLE_TOP, ROLE_BOARD, ROLE_OTHER = "VD/CFO", "Styrelse", "Övrig"
 _ROLE_RANK = {ROLE_TOP: 2, ROLE_BOARD: 1, ROLE_OTHER: 0}
@@ -115,9 +113,8 @@ def role_from_position(position) -> str:
     return ROLE_OTHER
 
 
-def yf_ticker(inst: dict) -> str:
-    t = str(inst.get("ticker") or "").strip().upper().replace(" ", "-")
-    return t + _MARKET_SUFFIX.get(inst.get("marketId"), "")
+def yf_ticker(inst: dict, table: Optional[dict] = None) -> str:
+    return _markets.to_yf(inst.get("ticker"), inst.get("marketId"), table)
 
 
 # ── Klustret ur transaktionerna ──────────────────────────────────────────────
@@ -298,10 +295,10 @@ def scan(api, today: Optional[date] = None) -> dict:
            "clusters": [], "error": None}
     today = today or date.today()
     try:
+        table = _markets.load(api=api)
+        nordic_ids = _markets.nordic_stock_ids(table)
         instruments = api.get_instruments()
-        nordic = [i for i in instruments
-                  if i.get("marketId") in _MARKET_SUFFIX
-                  and i.get("marketId") not in _INDEX_MARKETS]
+        nordic = [i for i in instruments if i.get("marketId") in nordic_ids]
         by_id = {int(i["insId"]): i for i in nordic if i.get("insId") is not None}
         out["universe"] = len(by_id)
         log.info("Universum: %d nordiska instrument", len(by_id))
@@ -321,7 +318,7 @@ def scan(api, today: Optional[date] = None) -> dict:
                 continue
             out["with_buys"] += 1
             sig = {
-                "ticker": yf_ticker(inst), "name": str(inst.get("name") or ""),
+                "ticker": yf_ticker(inst, table), "name": str(inst.get("name") or ""),
                 "ins_id": iid, "currency": ccy, "found": today.isoformat(),
                 "insiders": cl["insiders"], "role": cl["role"], "amount": cl["amount"],
                 "okar_25": False, "efter_fall": False,

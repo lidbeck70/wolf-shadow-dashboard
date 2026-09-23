@@ -11,11 +11,11 @@ BLINDSPOT_TICKERS = [
     # Copper & Metals
     "FCX", "SCCO", "TECK", "BOL.ST",
     # Steel
-    "CLF", "X", "NUE", "SSAB-A.ST",
+    "CLF", "NUE", "SSAB-A.ST",            # X (US Steel) uppköpt 2025
     # Fertilizers
-    "MOS", "NTR", "CF", "YARA.OL",
+    "MOS", "NTR", "CF", "YAR.OL",
     # Shipping
-    "GOGL", "SBLK", "DAC",
+    "SBLK", "DAC",                        # GOGL fusionerat 2025
     # Power
     "CEG", "VST", "NRG",
     # Defense

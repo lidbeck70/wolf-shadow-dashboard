@@ -143,9 +143,10 @@ def _render_setup_card(r: EmberSetupResult, idx: int) -> None:
     )
 
     # Read per-complex regime verdict from session state
-    _complex_key   = detect_complex(r.ticker)
+    _complex_key   = detect_complex(r.ticker)          # None = okänd ticker
     _all_regimes   = st.session_state.get("ember_complex_regimes", {})
-    _regime        = _all_regimes.get(_complex_key) or st.session_state.get("ember_regime")
+    _regime        = ((_all_regimes.get(_complex_key) if _complex_key else None)
+                      or st.session_state.get("ember_regime"))
     _rv            = _regime.verdict if _regime else ""
 
     with st.expander(title, expanded=(idx < 1)):

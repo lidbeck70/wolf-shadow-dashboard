@@ -94,16 +94,14 @@ TICKER_OVERRIDES = {
     "BOL.ST": ("Metals & Mining", 80),
     # Steel
     "CLF": ("Steel", 80),
-    "X": ("Steel", 80),
     "NUE": ("Steel", 80),
     "SSAB-A.ST": ("Steel", 80),
     # Fertilizers
     "MOS": ("Fertilizers", 100),
     "NTR": ("Fertilizers", 100),
     "CF": ("Fertilizers", 100),
-    "YARA.OL": ("Fertilizers", 100),
+    "YAR.OL": ("Fertilizers", 100),
     # Shipping
-    "GOGL": ("Shipping", 80),
     "SBLK": ("Shipping", 80),
     "DAC": ("Shipping", 80),
     # Power

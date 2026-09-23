@@ -123,12 +123,12 @@ class TestCsvSchema:
         recs = load_resource_universe()
         by_ticker = {r.ticker: r for r in recs}
         # A curated enriched row carries jurisdiction/project_region.
-        fcu = by_ticker["FCU.TO"]
-        assert fcu.jurisdiction == "Saskatchewan"
-        assert fcu.project_region == "Athabasca Basin"
+        nxe = by_ticker["NXE"]                  # FCU.TO är uppköpt (dead_tickers)
+        assert nxe.jurisdiction == "Saskatchewan"
+        assert nxe.project_region == "Athabasca Basin"
         # Financials remain blank + flagged (no fabrication).
-        assert fcu.cash_musd == ""
-        assert fcu.resource_notes == "needs_validation"
+        assert nxe.cash_musd == ""
+        assert nxe.resource_notes == "needs_validation"
 
     def test_metadata_exposes_new_fields(self):
         from contrarian_alpha.universe_static import load_resource_universe
