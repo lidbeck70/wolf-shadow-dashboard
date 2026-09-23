@@ -24,8 +24,9 @@ def _class_label(q) -> str:
     return f"{q.code} — {q.desc} Target-yield {band}"
 
 
-def render_fv(row: dict, key: str, prefix: str = "fv") -> bool:
-    """Lukacs FV-modulen för ett kandidatkort."""
+def render_fv(row: dict, key: str, prefix: str = "fv", sheet: str = "") -> bool:
+    """Lukacs FV-modulen för ett kandidatkort. sheet ("producers", …) gör
+    att aktuell kurs kan föreslås ur sifferuppdateringen."""
     changed = False
     data = row.setdefault("fv", {})
 
@@ -63,6 +64,14 @@ def render_fv(row: dict, key: str, prefix: str = "fv") -> bool:
         value=fv.num(row.get("aktuell_kurs")),
         key=f"{prefix}_{key}_price",
         help="Samma valuta som forward FCF anges i.")
+    if sheet:
+        try:
+            import refresh_ui
+            refresh_ui.suggest(sheet, row, "aktuell_kurs", "price", "kurs",
+                               f"{prefix}_{key}_price", None, with_currency=True,
+                               row_id=key)
+        except Exception:
+            pass
     if (storage.differs(shares, row.get("framtida_antal_aktier"))
             or storage.differs(price, row.get("aktuell_kurs"))):
         row["framtida_antal_aktier"], row["aktuell_kurs"] = shares, price

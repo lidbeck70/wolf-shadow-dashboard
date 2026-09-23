@@ -188,12 +188,23 @@ def refresh(api, sheets: dict) -> dict:
         if missing_meta:
             snaps.update(api.get_fundamentals_snapshot_fast(missing_meta, scope="global") or {})
 
+        # Råvarupriset till Rick Rule-arket: en hämtning per råvara (Yahoo-
+        # terminer), sedan på varje producentrad med samma råvara.
+        import commodity_prices as _cp
+        spots = _cp.spot_many(r["row"].get("commodity") for r in refs
+                              if r["sheet"] == "producers" and r["bucket"] == "producers")
         price_cache = {}
         for r in refs:
             iid = resolved.get(r["key"])
             s = {"ticker": r["ticker"], "ins_id": iid, "price": None, "asof": None,
                  "currency": None, "source": None, "ev_ebitda": None,
                  "nd_ebitda": None, "mcap_musd": None}
+            if r["sheet"] == "producers" and r["bucket"] == "producers":
+                sp = spots.get(_cp._key(r["row"].get("commodity")))
+                if sp:
+                    s["commodity_price"] = sp["price"]
+                    s["commodity_unit"] = sp["unit"]
+                    s["commodity_asof"] = sp["asof"]
             if iid is not None:
                 if iid not in price_cache:
                     price_cache[iid] = _last_close(api, iid)

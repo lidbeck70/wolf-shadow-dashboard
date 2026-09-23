@@ -155,7 +155,7 @@ def render_aqs(row: dict, key: str, prefill: Optional[dict] = None,
 
 # ── CSM ──────────────────────────────────────────────────────────────────────
 def render_csm(row: dict, key: str, kind: str = ctl.PRODUCER,
-               prefix: str = "csm", with_fv: bool = False) -> bool:
+               prefix: str = "csm", with_fv: bool = False, sheet: str = "") -> bool:
     """Commodity Sensitivity Matrix. Tre scenarier, fem för kärninnehav.
 
     with_fv lägger Lukacs FV-modulen sist i sektionen: CSM säger om bolaget
@@ -261,11 +261,17 @@ def render_csm(row: dict, key: str, kind: str = ctl.PRODUCER,
     if with_fv and new_kind == ctl.PRODUCER:
         st.markdown("<hr style='border-color:rgba(138,133,120,0.2);"
                     "margin:14px 0 8px;'>", unsafe_allow_html=True)
-        changed |= lukacs_ui.render_fv(row, key)
+        changed |= lukacs_ui.render_fv(row, key, sheet=sheet)
     elif with_fv:
         st.caption("Lukacs FV värderar producenters kassaflöde — en utvecklare "
                    "värderas på NAV och finansieringsbehov i matrisen ovan.")
     return changed
+
+
+# Vilket ark (sifferuppdateringens nyckel) en strategi granskas i.
+SHEET_BY_STRATEGY = {"producenter": "producers", "royalty": "producers",
+                     "tiggre": "tiggre", "sprott": "scoring", "durrett": "scoring",
+                     "insider": "insider"}
 
 
 def render_all(row: dict, key: str, position_pct=None, strategy: str = "",
@@ -285,7 +291,8 @@ def render_all(row: dict, key: str, position_pct=None, strategy: str = "",
     if ctl.SEC_CSM in req:
         with st.expander("📉 CSM — råvarukänslighet"
                          + (" · Lukacs FV" if fv_req else ""), expanded=False):
-            changed |= render_csm(row, key, kind, with_fv=fv_req)
+            changed |= render_csm(row, key, kind, with_fv=fv_req,
+                                  sheet=SHEET_BY_STRATEGY.get(strategy, ""))
     elif lukacs.fv_applicable(strategy):
         # Under 2 % är FV frivillig — proportionalitetsregeln. Men den ska gå
         # att öppna ändå: en liten position i ett case man vill räkna på är
@@ -301,7 +308,7 @@ def render_all(row: dict, key: str, position_pct=None, strategy: str = "",
             changed = True
         if open_fv:
             with st.expander("💵 Lukacs FV — fair value", expanded=True):
-                changed |= lukacs_ui.render_fv(row, key)
+                changed |= lukacs_ui.render_fv(row, key, sheet=SHEET_BY_STRATEGY.get(strategy, ""))
     if req == {ctl.SEC_STRATEGY}:
         st.caption("Proportionalitetsregeln: den här strategin behöver ingen "
                    "AQS eller CSM. Kryssa emissionsrisk om DS ska visas.")
