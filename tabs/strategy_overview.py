@@ -80,7 +80,7 @@ _META: dict = {
         ],
         "risk": [
             "Risk per trade: 1.5% of capital",
-            "Stop distance: ½× ATR14",
+            "Stop distance: 1.5× ATR14",
             "TP1 @ 2R (25% core)  ·  TP2 @ 4R (25% core)",
         ],
     },

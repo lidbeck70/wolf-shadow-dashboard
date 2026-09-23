@@ -286,8 +286,9 @@ WOLF = Playbook(
         ("Max två förluster per dag",
          "Stoppa dagen direkt efter två minus.",
          "Egen disciplin. Två förluster = stäng plattformen. Nordic Alpha analyserar — du handlar nästa dag.", True),
-        ("Exit: Kijun-sen trail + ½ ATR hård stop",
-         "Kijun-sen (26p) som dynamiskt trailing stop. Stäng om pris stänger under Kijun OCH under EMA 10. ½ ATR som nödstopp.",
+        ("Exit: Kijun-sen trail + 2,5 × ATR hård stop",
+         "Kijun-sen (26p) som dynamiskt trailing stop. Stäng om pris stänger under Kijun OCH under EMA 10. "
+         "Den hårda stopen är 2,5 × ATR14 från entry (strategies/wolf.py: atr_stop_mult = 2.5).",
          "REGIME → Arc Regime → Wolf Regime: Ichimoku-gaugen visar Kijun-nivå. Entry Checklist: Trend-kortet visar EMA10. Gate #11 visar båda nivåer."),
     ]),
     workflow=(
@@ -493,7 +494,7 @@ VIKING = Playbook(
         "Kolla marknadsbredden (Bull List %) och sektorn — båda ska stiga.",
         "Först därefter: analysera aktien mot krav 6–10.",
         "Alla tio kraven gröna? Först då är det en affär.",
-        "Sätt ½ ATR-stop direkt. Trail med EMA10.",
+        "Sätt 1,5 × ATR-stop direkt. Trail med EMA10.",
         "Kolla rapportdatum — stäng senast 5 handelsdagar före.",
     ),
     cheatsheet=(
@@ -655,7 +656,7 @@ DEEP_CONTRARIAN = Playbook(
         ("ACCUMULATE 2/3 — fas DISBELIEF, ANGER eller PANIC",
          "Tvivel och ilska. Kursen fortfarande under 200-dagars MA. Andra tredjedelen.",
          "REGIME → Alpha Regime → Quality & Contrarian (Deep Contrarian): stage ACCUMULATE 2/3."),
-        ("ACCUMULATE 3/3 — fas HOPE, kurs nära MA200 (−5 % till +15 %)",
+        ("ACCUMULATE 3/3 — fas HOPE, kurs nära MA200 (−5 % till +5 %)",
          "Sista chansen att ackumulera billigt innan trenden är uppenbar.",
          "REGIME → Alpha Regime → Quality & Contrarian (Deep Contrarian): stage ACCUMULATE 3/3."),
         ("Bygg ALLTID i tre lika delar",
@@ -701,7 +702,7 @@ DEEP_CONTRARIAN = Playbook(
     cheatsheet=(
         ("Köpfas 1/3", "CAPITULATION · DEPRESSION"),
         ("Köpfas 2/3", "DISBELIEF · ANGER · PANIC"),
-        ("Köpfas 3/3", "HOPE (kurs −5 % till +15 % vs MA200)"),
+        ("Köpfas 3/3", "HOPE (kurs −5 % till +5 % vs MA200)"),
         ("Håll", "OPTIMISM · BELIEF — rör ingenting"),
         ("Sälj 1/3", "THRILL"),
         ("Sälj 2/3", "EUPHORIA · COMPLACENCY"),

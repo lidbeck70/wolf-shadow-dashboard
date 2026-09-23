@@ -37,7 +37,7 @@ def run_backtest(
     Run EMA crossover backtest.
 
     Modes:
-      "swing"  — EMA 10/20 cross, exit on EMA 10 break, ½ ATR stop
+      "swing"  — EMA 10/20 cross, exit on EMA 10 break, ATR stop (Viking: 1.5 × ATR)
       "long"   — EMA 50/200 cross, exit on EMA 200 break
       "ovtlyr" — EMA 10/20 cross with ADX filter + volume confirm
 

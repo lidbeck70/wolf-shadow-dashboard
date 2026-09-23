@@ -8,6 +8,17 @@ from ui.theme import section_title
 from ui.charts import build_gauge
 from utils.presets import SECTOR_ETF_LIST, etf_from_display
 
+# Wolf's real stop distance and risk. The checklist, the 11 gates and the SL/TP
+# calculator used to compute on ½ ATR and a 5 % risk default while the engine
+# (strategies/wolf.py) trades 2.5 × ATR and 2 % — so R:R looked five times
+# better than the stop the strategy actually places.
+try:
+    from strategies.wolf import DEFAULT_PARAMS as _WOLF_P
+    _WOLF_ATR_MULT = float(_WOLF_P["atr_mult"])
+    _WOLF_RISK_PCT = float(_WOLF_P["risk_pct"]) * 100
+except Exception:  # pragma: no cover
+    _WOLF_ATR_MULT, _WOLF_RISK_PCT = 2.5, 2.0
+
 
 def tab_regime():
     section_title("Real-Time Regime Monitor — Live Market Intelligence")
@@ -588,12 +599,12 @@ def tab_regime():
         _is_pullback = (min(_ema10_dist, _ema21_dist) < 2.0) and (_chk_close > _chk_ema50)
         _has_candle = len(_candle_patterns) > 0
         _pattern_name = ", ".join(_candle_patterns) if _candle_patterns else "Inget mönster"
-        _half_atr = _chk_atr * 0.5
-        _sl_pct = (_half_atr / _chk_close * 100) if _chk_close > 0 else 0
+        _stop_dist = _chk_atr * _WOLF_ATR_MULT
+        _sl_pct = (_stop_dist / _chk_close * 100) if _chk_close > 0 else 0
         _rr_ratio = 0.0
-        if _nearest_bear_ob and _half_atr > 0:
+        if _nearest_bear_ob and _stop_dist > 0:
             _target_dist = abs(_nearest_bear_ob - _chk_close)
-            _rr_ratio = _target_dist / _half_atr
+            _rr_ratio = _target_dist / _stop_dist
 
         _risk_score = min(100, int((_hist_vol / 50) * 100)) if _hist_vol > 0 else 50
 
@@ -732,8 +743,8 @@ def tab_regime():
         except NameError:
             pass
 
-        _g_half_atr = _g_atr * 0.5
-        _g_sl_pct = (_g_half_atr / _g_close * 100) if _g_close > 0 else 0
+        _g_stop_dist = _g_atr * _WOLF_ATR_MULT
+        _g_sl_pct = (_g_stop_dist / _g_close * 100) if _g_close > 0 else 0
 
         _g_rr = 0.0
         try:
@@ -752,10 +763,10 @@ def tab_regime():
             # Grind 8–11 är process- och disciplinregler (positionsstorlek, flytt av
             # stop, dagsförluster, exit). De går inte att räkna ur kursdata och
             # visas som MANUELLA — de räknas inte som godkända av sig själva.
-            {"rule": "8. Max 2% risk (Wolf)",           "passed": None,                 "value": f"SL dist: {_g_half_atr:.2f} ({_g_sl_pct:.1f}%) — bedöm själv"},
+            {"rule": f"8. Max {_WOLF_RISK_PCT:g}% risk (Wolf)", "passed": None,          "value": f"SL {_WOLF_ATR_MULT:g}×ATR: {_g_stop_dist:.2f} ({_g_sl_pct:.1f}%) — bedöm själv"},
             {"rule": "9. SL → BE efter HH",     "passed": None,                 "value": "Post-entry regel — manuell"},
             {"rule": "10. Max 2 förluster/dag", "passed": None,                 "value": "Disciplin — manuell"},
-            {"rule": "11. Kijun trail + ½ATR", "passed": None,                 "value": f"Kijun: {_g_kijun:.2f}, EMA10: {_g_ema10:.2f} — exit-regel"},
+            {"rule": f"11. Kijun trail + {_WOLF_ATR_MULT:g}×ATR", "passed": None,      "value": f"Kijun: {_g_kijun:.2f}, EMA10: {_g_ema10:.2f} — exit-regel"},
         ]
     except Exception as _gate_exc:
         # Data saknas → grinden är INTE godkänd. Tidigare blev 2–11 gröna vid fel,
@@ -769,10 +780,10 @@ def tab_regime():
             {"rule": "5. Candle trigger",        "passed": False,        "value": _na},
             {"rule": "6. Volymbekräftelse",      "passed": False,        "value": _na},
             {"rule": "7. R:R ≥ 1:2",             "passed": False,        "value": _na},
-            {"rule": "8. Max 2% risk (Wolf)",           "passed": None,         "value": "Position sizing — manuell"},
+            {"rule": f"8. Max {_WOLF_RISK_PCT:g}% risk (Wolf)", "passed": None,  "value": "Position sizing — manuell"},
             {"rule": "9. SL → BE efter HH",     "passed": None,         "value": "Post-entry — manuell"},
             {"rule": "10. Max 2 förluster/dag", "passed": None,         "value": "Disciplin — manuell"},
-            {"rule": "11. Kijun trail + ½ATR", "passed": None,         "value": "Exit-regel — manuell"},
+            {"rule": f"11. Kijun trail + {_WOLF_ATR_MULT:g}×ATR", "passed": None, "value": "Exit-regel — manuell"},
         ]
 
     if swing_gates:
@@ -833,11 +844,11 @@ def tab_regime():
                 abs(_low_sl - _close_sl.shift(1)),
             ], axis=1).max(axis=1)
             _atr_sl = float(_tr_sl.rolling(14).mean().dropna().iloc[-1])
-            _half_atr_sl = _atr_sl / 2
+            _atr_stop_sl = _atr_sl * _WOLF_ATR_MULT
             _ema10_sl = float(_close_sl.ewm(span=10).mean().iloc[-1])
             _kijun_sl = float((_high_sl.rolling(26).max() + _low_sl.rolling(26).min()).iloc[-1] / 2)
 
-            _sl_atr = _price_sl - _half_atr_sl
+            _sl_atr = _price_sl - _atr_stop_sl
             _sl_val = max(_sl_atr, _kijun_sl)
             _sl_dist_sl = _price_sl - _sl_val
             _tp_2r_sl = _price_sl + _sl_dist_sl * 2
@@ -851,8 +862,10 @@ def tab_regime():
                 )
             with _sltp_c2:
                 _risk_wolf = st.number_input(
-                    "Risk %", value=5.0, min_value=0.5, max_value=10.0,
-                    step=0.5, key="sltp_risk_wolf_inline",
+                    "Risk %", value=float(_WOLF_RISK_PCT), min_value=0.5,
+                    max_value=10.0, step=0.5, key="sltp_risk_wolf_inline",
+                    help=f"Wolf riskerar {_WOLF_RISK_PCT:g} % per affär "
+                         f"(strategies/wolf.py: risk_pct).",
                 )
 
             _risk_amt_sl = _cap_wolf * (_risk_wolf / 100)
@@ -866,7 +879,7 @@ def tab_regime():
                     f'<div style="background:{_BG2_SL};border:2px solid rgba(196,69,69,0.3);border-radius:8px;padding:12px;">'
                     f'<div style="color:{_RED_SL};font-weight:700;font-size:0.8rem;">STOP LOSS</div>'
                     f'<div style="color:{_TEXT_SL};font-size:1.1rem;font-weight:700;">{_sl_val:.2f}</div>'
-                    f'<div style="color:{_DIM_SL};font-size:0.65rem;">½ ATR = {_half_atr_sl:.2f}</div>'
+                    f'<div style="color:{_DIM_SL};font-size:0.65rem;">{_WOLF_ATR_MULT:g} × ATR = {_atr_stop_sl:.2f}</div>'
                     f'<div style="color:{_RED_SL};font-size:0.72rem;">Risk: {_sl_dist_sl:.2f} ({_sl_dist_sl/_price_sl*100:.1f}%)</div>'
                     f'<div style="color:{_DIM_SL};font-size:0.6rem;margin-top:4px;">Trail: Kijun ({_kijun_sl:.2f}) / EMA10 ({_ema10_sl:.2f})</div>'
                     f'</div>',

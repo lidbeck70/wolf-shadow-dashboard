@@ -111,16 +111,26 @@ def _royalty_review(row: dict) -> tuple:
     return (MANUAL, note)          # Nära botten eller Neutral — beslut kvar
 
 
-def _scoring_review(row: dict) -> tuple:
+def _scoring_review(row: dict, key: str = sco.SPROTT) -> tuple:
+    """Poängmodellens bedömning efter strategins hårda grind (scoring.gated_verdict):
+    Sprott-runway under 18 mån är ett nej, Durrett-Kärninnehav kräver under 10×."""
     score = sco.total_score(row.get("factors", {}))
-    vd = sco.verdict(score)
+    vd, why = sco.gated_verdict(key, row)
     if vd is None:
         return (MANUAL, "Ej poängsatt — sätt de fem faktorerna i "
                         "Poängmodellen.")
-    note = f"{score}/{sco.MAX_SCORE} p — {vd}"
+    note = f"{score}/{sco.MAX_SCORE} p — {vd}" + (f". {why}" if why else "")
     if vd == sco.CORE:
         return (PASS, note)
     return (MANUAL if vd == sco.WATCH else FAIL, note)
+
+
+def _sprott_review(row: dict) -> tuple:
+    return _scoring_review(row, sco.SPROTT)
+
+
+def _durrett_review(row: dict) -> tuple:
+    return _scoring_review(row, sco.DURRETT)
 
 
 def _tiggre_review(row: dict) -> tuple:
@@ -152,8 +162,8 @@ def _insider_review(row: dict) -> tuple:
 _REVIEWERS = {
     "rule": _rule_review,
     "royalty": _royalty_review,
-    "sprott": _scoring_review,
-    "durrett": _scoring_review,
+    "sprott": _sprott_review,
+    "durrett": _durrett_review,
     "tiggre": _tiggre_review,
     "insider": _insider_review,
 }

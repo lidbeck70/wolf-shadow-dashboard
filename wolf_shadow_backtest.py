@@ -53,16 +53,18 @@ CONFIG = {
     "ext_pct": 2.7,
     # Order blocks
     "ob_lookback": 5,
-    # Exit
+    # Exit — same numbers as strategies/wolf.py DEFAULT_PARAMS (the "Universal"
+    # preset below). The old fallback (2.0×ATR, 2R/3R, 1.5 % risk) backtested a
+    # different strategy than the one the RULES tab describes.
     "atr_len": 14,
-    "atr_mult": 2.0,
-    "tp1_rr": 2.0,
-    "tp1_pct": 0.30,
-    "tp2_rr": 3.0,
-    "tp2_pct": 0.30,
+    "atr_mult": 2.5,
+    "tp1_rr": 2.6,
+    "tp1_pct": 0.13,
+    "tp2_rr": 5.2,
+    "tp2_pct": 0.17,
     # Position
-    "core_pct": 0.50,
-    "risk_pct": 0.015,
+    "core_pct": 0.62,
+    "risk_pct": 0.02,
     # Circuit breakers
     "daily_breaker": -0.05,
     "weekly_breaker": -0.10,
