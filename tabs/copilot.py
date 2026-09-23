@@ -737,9 +737,26 @@ def _render_journal_log(ticker: str, strategy_key: str,
                 help="Krävs för vinstandel och payoff-kvot, som räknas i "
                      "kronor. R-multipeln fungerar utan.")
             log_note   = st.text_input("Anteckning (valfri)")
+            log_open   = st.checkbox(
+                "Köpt — lägg in som öppen position i Holdings", value=True,
+                help="Registret (PORTFOLIO → Holdings) är panelens enda "
+                     "positionslista: allokeraren, larmen och journalen läser "
+                     "därifrån. Avmarkera om det bara är en kandidat.")
 
         submitted = st.form_submit_button("💾 Spara till journal", type="primary")
         if submitted:
+            import positions
+            holdings_id = None
+            if log_open:
+                ok, msg = positions.add(
+                    log_ticker, positions.tag_for_playbook(log_strat),
+                    entry_price=entry, shares=int(log_shares), stop=stop,
+                    target=target, notes=log_note, entry_date=str(log_date),
+                    source="copilot")
+                if ok:
+                    holdings_id = positions.find(log_ticker)["id"]
+                else:
+                    st.warning(f"Inte inlagd i Holdings: {msg}")
             entries = _load_journal()
             entries.append({
                 "date":     str(log_date),
@@ -750,10 +767,12 @@ def _render_journal_log(ticker: str, strategy_key: str,
                 "target":   target,
                 "shares":   int(log_shares) or None,
                 "note":     log_note,
+                "holdings_id": holdings_id,
                 "logged_at": datetime.datetime.utcnow().isoformat(),
             })
             _save_journal(entries)
-            st.success(f"✅ {log_ticker.upper()} loggad!")
+            st.success(f"✅ {log_ticker.upper()} loggad"
+                       + (" och inlagd i Holdings!" if holdings_id else "!"))
 
 
 def _with_metrics(entries: list[dict]) -> list[dict]:
@@ -920,8 +939,16 @@ def _render_journal_history() -> None:
                    "sell_rule": sell_rule, "setup": setup,
                    "followed_plan": followed, "shares": int(shares) or None}
             if any(e.get(k) != v for k, v in new.items()):
+                just_closed = bool(new["exit_price"]) and not e.get("exit_price")
                 e.update(new)
                 _save_journal(entries)
+                # Posten pekar på en position i registret: stäng den där också,
+                # så Holdings, allokeraren och Trade Journal ser samma affär.
+                if just_closed and e.get("holdings_id"):
+                    import positions
+                    positions.close(row_id=e["holdings_id"], exit_price=new["exit_price"],
+                                    exit_date=new["exit_date"] or "",
+                                    reason=sell_rule or "copilot")
 
             if closed:
                 r = journal_stats.r_multiple(e.get("entry"), e.get("stop"),

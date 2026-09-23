@@ -59,7 +59,9 @@ BUCKETS: dict = {
 BUCKET_KEYS: tuple = tuple(BUCKETS)
 
 STRATEGIES: tuple = ("Quality", "Deep Contrarian", "Viking", "Wolf", "Untagged",
-                     "Momentum", "Tiggre")
+                     "Momentum", "Tiggre",
+                     # masterguidens övriga (copiloten loggar dem hit sedan steg 3)
+                     "Alpha", "Ember", "Sprott", "Durrett", "Rule", "Royalty", "Insider")
 STRATEGY_BUCKET: dict = {
     "Quality":         "long",
     "Deep Contrarian": "long",
@@ -68,7 +70,75 @@ STRATEGY_BUCKET: dict = {
     "Untagged":        "long",
     "Momentum":        "momentum",
     "Tiggre":          "tiggre",
+    "Alpha":           "long",
+    "Ember":           "swing",
+    "Sprott":          "long",
+    "Durrett":         "long",
+    "Rule":            "long",
+    "Royalty":         "long",
+    "Insider":         "long",
 }
+
+# Strategitagg ↔ playbook-nyckel (strategy_rules.PLAYBOOKS, copiloten,
+# journalen) och ↔ allokerarens positionsregel (allocator.RULE_BY_KEY).
+PLAYBOOK_TAG: dict = {
+    "momentum": "Momentum", "wolf": "Wolf", "viking": "Viking", "ember": "Ember",
+    "alpha": "Alpha", "quality": "Quality", "contrarian": "Deep Contrarian",
+    "rule": "Rule", "sprott": "Sprott", "tiggre": "Tiggre", "durrett": "Durrett",
+    "royalty": "Royalty", "insider": "Insider",
+}
+TAG_PLAYBOOK: dict = {v: k for k, v in PLAYBOOK_TAG.items()}
+ALLOCATOR_RULE: dict = {**{tag: key for key, tag in PLAYBOOK_TAG.items()},
+                        "Momentum": "swing", "Royalty": "royalty1", "Untagged": None}
+
+
+def tag_for_playbook(key: str) -> str:
+    return PLAYBOOK_TAG.get(str(key or "").strip().lower(), "Untagged")
+
+
+# ── Värdering i SEK (allokeraren) ────────────────────────────────────────────
+# Samma kurser som sheets_refresh.FX_TO_USD, uttryckta i SEK per enhet;
+# testet låser att tabellerna stämmer överens. Grova tal — allokeraren
+# mäter procent av portföljen, inte ören.
+FX_TO_SEK: dict = {"SEK": 1.0, "NOK": 1.0, "DKK": 1.526, "EUR": 11.368, "USD": 10.526,
+                   "CAD": 7.684, "AUD": 6.947, "GBP": 13.368, "CHF": 11.895, "PLN": 2.632}
+_SUFFIX_CCY: tuple = ((".ST", "SEK"), (".OL", "NOK"), (".CO", "DKK"), (".HE", "EUR"),
+                      (".TO", "CAD"), (".V", "CAD"), (".CN", "CAD"), (".AX", "AUD"),
+                      (".L", "GBP"), (".SW", "CHF"), (".DE", "EUR"), (".PA", "EUR"),
+                      (".AS", "EUR"), (".MI", "EUR"), (".MC", "EUR"), (".WA", "PLN"))
+
+
+def currency_for(ticker: str) -> str:
+    t = str(ticker or "").upper()
+    for suf, ccy in _SUFFIX_CCY:
+        if t.endswith(suf):
+            return ccy
+    return "USD"
+
+
+def valuation(row: dict, fresh: Optional[dict] = None) -> dict:
+    """Positionens värde i SEK: antal × kurs. Kursen tas i ordning ur
+    sifferuppdateringen (holdings:<id> eller tiggre:<id>), arkets "Kurs nu"
+    (extras.current) och sist inköpskursen. Utan antal blir värdet None —
+    allokeraren kan inte mäta en position den inte vet storleken på."""
+    fresh = fresh or {}
+    rid = row.get("id")
+    f = fresh.get(f"holdings:{rid}") or fresh.get(f"tiggre:{rid}") or {}
+    price, ccy, source = _opt(f.get("price")), f.get("currency"), "sifferuppdateringen"
+    if price is None:
+        price = _opt((row.get("extras") or {}).get("current"))
+        source = "kurs nu i arket"
+    if price is None:
+        price = _opt(row.get("entry_price")) or None
+        source = "inköpskursen"
+    ccy = str(ccy or currency_for(row.get("ticker"))).upper()
+    # London noterar i pence
+    unit = 0.01 if (ccy in ("GBP", "GBX") and str(row.get("ticker", "")).upper().endswith(".L")) else 1.0
+    fx = FX_TO_SEK.get("GBP" if ccy == "GBX" else ccy, FX_TO_SEK["USD"])
+    shares = _num(row.get("shares"))
+    value = round(price * unit * fx * shares, 0) if (price and shares > 0) else None
+    return {"price": price, "currency": ccy, "source": source, "shares": shares,
+            "value_sek": value, "asof": str(f.get("asof") or "")[:10]}
 
 FIELDS: tuple = ("id", "ticker", "name", "strategy", "entry_price", "shares",
                  "entry_date", "stop", "target", "sector", "notes", "source", "extras")
@@ -326,6 +396,13 @@ def close(ticker: str = "", exit_price=None, exit_date: str = "", reason: str = 
                             if xp and closed["entry_price"] > 0 else None)
     data["closed"].append(closed)
     _commit(data)
+    # Journalraden — en stängd position ÄR en affär. Bäst-ansträngning:
+    # journalen bor i Gisten och får inte fälla stängningen.
+    try:
+        import journal_bridge
+        journal_bridge.record_close(closed)
+    except Exception as exc:                        # pragma: no cover
+        logger.warning("journalraden kunde inte skrivas: %s", exc)
     return closed
 
 

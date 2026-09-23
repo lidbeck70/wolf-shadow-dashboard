@@ -52,7 +52,10 @@ SHEET_FILES = {"insider": "data/insider.json", "tiggre": "data/tiggre.json",
                "holdings": "data/holdings.json"}              # registret (positions.py)
 _BUCKETS = {"insider": ("signals",), "tiggre": ("candidates", "positions"),
             "producers": ("producers", "royalty"), "scoring": ("sprott", "durrett"),
-            "confidence": ("companies",)}
+            "confidence": ("companies",),
+            # registrets övriga hinkar → kurs per position åt allokeraren
+            # (tiggre-hinken hämtas redan som tiggre:<id> ovan)
+            "holdings": ("swing", "ovtlyr", "long", "momentum")}
 # confidence.json är {"companies": {TICKER: bolag}} — raden får ticker som id.
 _SUFFIX_RE = re.compile(r"\.(ST|OL|HE|CO)$", re.I)
 

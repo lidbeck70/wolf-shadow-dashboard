@@ -408,6 +408,27 @@ def _strategy_card(name: str, stats: dict):
 # ---------------------------------------------------------------------------
 # Broker import UI
 # ---------------------------------------------------------------------------
+def import_open_positions(open_positions: list) -> tuple:
+    """Mäklarimportens öppna positioner → registret (positions.py) som
+    Untagged med antal, snittkurs och första köpdatum. Redan inlagda tickers
+    hoppas över. Returnerar (inlagda tickers, överhoppade tickers)."""
+    import positions
+    added, skipped = [], []
+    for p in open_positions or []:
+        ticker = (getattr(p, "ticker", None) or "").strip().upper()
+        if not ticker:
+            skipped.append(getattr(p, "isin", "") or "?")
+            continue
+        ok, _msg = positions.add(
+            ticker, "Untagged", entry_price=getattr(p, "avg_price", 0),
+            shares=getattr(p, "qty", 0), name=getattr(p, "name", "") or "",
+            entry_date=str(getattr(p, "earliest_entry_date", "") or ""),
+            notes=f"import · {getattr(p, 'account', '')} · {getattr(p, 'currency', '')}".strip(" ·"),
+            source="import")
+        (added if ok else skipped).append(ticker)
+    return added, skipped
+
+
 def _render_import_section(existing_trades: list) -> None:
     """Render the 'Import from Broker' expander at the bottom of the journal tab."""
     st.markdown(
@@ -515,7 +536,12 @@ def _render_import_section(existing_trades: list) -> None:
                     for p in report.open_positions
                 ]
                 st.dataframe(pd.DataFrame(op_rows), use_container_width=True, hide_index=True)
-                st.caption("These are still-open positions — they appear in Holdings, not Journal.")
+                st.caption("Öppna positioner hör hemma i Holdings (registret), inte i journalen.")
+                if st.button(f"Lägg till i Holdings ({len(report.open_positions)})",
+                             key="import_open_to_holdings"):
+                    added, skipped = import_open_positions(report.open_positions)
+                    st.success(f"{len(added)} inlagda i Holdings som Untagged — sätt strategi "
+                               f"där. {len(skipped)} hoppades över (fanns redan eller saknar ticker).")
 
         # ── Confirm ────────────────────────────────────────────────────────
         if report.preview:

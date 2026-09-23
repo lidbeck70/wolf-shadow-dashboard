@@ -98,7 +98,7 @@ def test_add_puts_the_row_in_the_strategys_bucket_and_saves_at_once(reg):
 def test_add_refuses_duplicates_caps_and_unknown_strategies(reg):
     assert positions.add("BOL.ST", "Deep Contrarian")[0] is False       # finns redan i long
     assert positions.add("", "Wolf") == (False, "Ticker saknas.")
-    assert positions.add("X", "Sprott")[0] is False
+    assert positions.add("X", "Okänd")[0] is False
     for i in range(4):                                                  # swing: 1 + 4 = 5 = taket
         assert positions.add(f"W{i}", "Wolf")[0]
     ok, msg = positions.add("W9", "Wolf")
