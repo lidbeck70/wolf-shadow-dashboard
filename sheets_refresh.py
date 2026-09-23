@@ -77,6 +77,10 @@ def _f(v) -> Optional[float]:
         return None
 
 
+def bucket_of(ref: dict) -> str:
+    return str(ref.get("bucket") or "")
+
+
 def ref_key(sheet: str, row: dict) -> str:
     return f"{sheet}:{row.get('id')}"
 
@@ -160,6 +164,70 @@ def _yf_close(ticker: str):
         return None, None
 
 
+def _median(vals: list) -> Optional[float]:
+    xs = sorted(v for v in vals if v is not None)
+    if not xs:
+        return None
+    n = len(xs)
+    return xs[n // 2] if n % 2 else (xs[n // 2 - 1] + xs[n // 2]) / 2
+
+
+def report_fields(api, ins_id: int, rfx: float = 1.0) -> dict:
+    """Talen ur Börsdatas rapporter (i miljoner, rapportvalutan × rfx → MUSD):
+    kassa och burn (Sprott), skuld = nettoskuld + kassa, antal aktier nu och
+    1/3/5 år tillbaka (Durrett-arket, DS "Aktier 3 år"). Tomt när rapporterna
+    inte går att läsa — jobbet fortsätter."""
+    out: dict = {}
+    try:
+        years = sorted((r for r in api.get_reports(ins_id, "year", max_count=7) or []
+                        if isinstance(r, dict) and r.get("year")), key=lambda r: r.get("year"))
+    except Exception as exc:
+        log.warning("rapporter (år) %s: %s", ins_id, exc)
+        years = []
+    try:
+        r12 = (api.get_reports(ins_id, "r12", max_count=1) or [None])[0]
+    except Exception as exc:
+        log.warning("rapporter (r12) %s: %s", ins_id, exc)
+        r12 = None
+    latest = r12 if isinstance(r12, dict) else (years[-1] if years else None)
+    if latest:
+        cash = _f(latest.get("cashAndEquivalents"))
+        nd = _f(latest.get("netDebt"))
+        fcf = _f(latest.get("freeCashFlow"))
+        if cash is not None:
+            out["cash_musd"] = round(cash * rfx, 1)
+        if cash is not None and nd is not None:
+            out["debt_musd"] = round(max(0.0, nd + cash) * rfx, 1)     # bruttoskuld ≈ nettoskuld + kassa
+        if fcf is not None:
+            out["burn_musd"] = round(max(0.0, -fcf) * rfx, 1)          # burn/år = negativt FCF r12
+    if years:
+        by_year = {int(r["year"]): _f(r.get("numberOfShares")) for r in years}
+        y_now = max(by_year)
+        now = by_year.get(y_now)
+        if now:
+            out["shares_now_m"] = round(now, 2)
+            for back in (1, 3, 5):
+                v = by_year.get(y_now - back)
+                if v:
+                    out[f"shares_{back}y_ago_m"] = round(v, 2)
+            if out.get("shares_3y_ago_m"):
+                out["shares_growth_3y_pct"] = round((now / out["shares_3y_ago_m"] - 1) * 100, 1)
+    return out
+
+
+def ev_ebitda_median(api, ins_id: int, years: int = 10) -> Optional[float]:
+    """Medianen av årliga EV/EBITDA (KPI 11) — Royalty C:s "EV/EBITDA median".
+    Negativa och saknade år räknas inte."""
+    try:
+        raw = api.get_kpi_history(ins_id, 11, "year", "mean") or []
+    except Exception as exc:
+        log.warning("EV/EBITDA-historik %s: %s", ins_id, exc)
+        return None
+    vals = [_f((e or {}).get("v")) for e in raw[-years:] if isinstance(e, dict)]
+    m = _median([v for v in vals if v is not None and v > 0])
+    return None if m is None else round(m, 1)
+
+
 def refresh(api, sheets: dict) -> dict:
     """Färska tal per arkrad + övergångar. Rena arkfunktioner för händelserna."""
     out = {"generated": _now(), "rows": {}, "events": [], "error": None}
@@ -194,6 +262,7 @@ def refresh(api, sheets: dict) -> dict:
         spots = _cp.spot_many(r["row"].get("commodity") for r in refs
                               if r["sheet"] == "producers" and r["bucket"] == "producers")
         price_cache = {}
+        report_cache: dict = {}
         for r in refs:
             iid = resolved.get(r["key"])
             s = {"ticker": r["ticker"], "ins_id": iid, "price": None, "asof": None,
@@ -220,9 +289,21 @@ def refresh(api, sheets: dict) -> dict:
                 mc = _f(snap.get("market_cap"))
                 if mc is not None:
                     s["mcap_musd"] = round(mc * fx, 1)
+                rccy = str(meta.get("reportCurrency") or ccy or "USD").upper()
+                rfx = FX_TO_USD.get(rccy, 1.0)
+                # Rapportfälten (kassa, burn, skuld, aktiehistorik) till Sprott,
+                # DS och Durrett-arket — en rapporthämtning per bolag.
+                if iid not in report_cache:
+                    report_cache[iid] = report_fields(api, iid, rfx)
+                s.update(report_cache[iid])
+                if r["sheet"] == "producers" and bucket_of(r) == "royalty":
+                    s["ev_ebitda_median"] = ev_ebitda_median(api, iid)
                 if r["sheet"] == "confidence":               # Durrett-arket: fler tal ur snapshoten
-                    rccy = str(meta.get("reportCurrency") or ccy or "USD").upper()
-                    rfx = FX_TO_USD.get(rccy, 1.0)
+                    roic = _f(snap.get("roic"))
+                    s["roic_pct"] = round(roic * 100, 1) if roic is not None else None
+                    pfcf = _f(snap.get("p_fcf"))
+                    s["fcf_yield_pct"] = round(100.0 / pfcf, 1) if pfcf and pfcf > 0 else None
+                    s["ev_ebit"] = _f(snap.get("ev_ebit"))
                     s["fx_to_usd"] = fx if ccy else None
                     s["fx_table"] = "sheets_refresh.FX_TO_USD (fast tabell)"
                     for src_key, out_key, factor in (("ev", "ev_musd", fx), ("net_debt_m", "net_debt_musd", rfx),

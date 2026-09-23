@@ -65,8 +65,9 @@ def _score_row(row: dict, fields, prefix: str, key: str,
 
 # ── DS ───────────────────────────────────────────────────────────────────────
 def render_ds(row: dict, key: str, runway_years=None,
-              prefix: str = "ds") -> bool:
-    """Dilution Score. runway_years ger ett förslag på första fältet."""
+              prefix: str = "ds", sheet: str = "") -> bool:
+    """Dilution Score. runway_years ger ett förslag på första fältet; sheet
+    gör att "Aktier 3 år" kan föreslås ur Börsdatas aktiehistorik."""
     changed = False
     st.markdown(
         f"<b style='color:{TEXT};'>DS — Dilution Score</b> "
@@ -78,6 +79,17 @@ def render_ds(row: dict, key: str, runway_years=None,
     if suggestion is not None and row.get("ds_runway") is None:
         st.caption(f"Runwayen motsvarar {suggestion} riskpoäng på första "
                    f"fältet — förslag, inte ifyllt åt dig.")
+    if sheet and row.get("ds_aktier_3ar") is None:
+        try:
+            import refresh_ui
+            sug = refresh_ui.suggestion(refresh_ui.load_refresh(), sheet, row,
+                                        "shares_growth_3y_pct", row_id=key)
+        except Exception:
+            sug = None
+        if sug is not None:
+            pts = ctl.ds_shares_suggestion(sug[0])
+            st.caption(f"Börsdata {sug[1]}: antalet aktier är {sug[0]:+.0f} % mot för tre år "
+                       f"sedan — motsvarar {pts} riskpoäng på Aktier 3 år. Förslag, inte ifyllt.")
 
     changed |= _score_row(row, ctl.DS_FIELDS, prefix, key)
 
@@ -283,7 +295,8 @@ def render_all(row: dict, key: str, position_pct=None, strategy: str = "",
     changed = False
     if ctl.SEC_DS in req:
         with st.expander("🧪 DS — utspädningsrisk", expanded=False):
-            changed |= render_ds(row, key, runway_years)
+            changed |= render_ds(row, key, runway_years,
+                                 sheet=SHEET_BY_STRATEGY.get(strategy, ""))
     if ctl.SEC_AQS in req:
         with st.expander("⛏ AQS — tillgångskvalitet", expanded=False):
             changed |= render_aqs(row, key, aqs_prefill)

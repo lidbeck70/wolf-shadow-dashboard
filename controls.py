@@ -123,6 +123,17 @@ def ds_runway_suggestion(runway_years) -> Optional[int]:
     return 1 if y >= 1 else 2
 
 
+def ds_shares_suggestion(growth_3y_pct) -> Optional[int]:
+    """Förslag på "Aktier 3 år" ur Börsdatas aktiehistorik: stabilt (< +10 %)
+    0, +10–25 % 1, över +25 % 2 — fältets egna trösklar."""
+    g = _num(growth_3y_pct)
+    if g is None:
+        return None
+    if g < 10:
+        return 0
+    return 1 if g <= 25 else 2
+
+
 def has_financing_catalyst(row: dict) -> bool:
     """Både vad och när krävs — 'kommer nog en emission snart' är inget besked."""
     r = row or {}
