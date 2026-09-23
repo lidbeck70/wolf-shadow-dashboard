@@ -999,6 +999,10 @@ class BorsdataAPI:
             "fcf_m":                (KPI["fcf_m"], 1),
             "net_debt_m":           (KPI["net_debt_m"], 1),
             "short_selling":        (KPI["short_selling"], 1),
+            # sheets_refresh läser ev och ocf_m för Durrett-arket (EV och
+            # operativt kassaflöde i MUSD) — saknades här, så förslagen kom aldrig.
+            "ev":                   (KPI["ev"], 1),
+            "ocf_m":                (KPI["ocf_m"], 1),
         }
 
         for key, (kpi_id, divisor) in kpi_fetch.items():

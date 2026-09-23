@@ -559,6 +559,10 @@ def _candidate_card(data: dict, cand: dict) -> None:
         mcap = m1.number_input("Börsvärde (MUSD)", min_value=0.0,
                                value=_num(cand.get("mcap")),
                                step=10.0, key=f"tg_mcap_{cand['id']}")
+        # Sifferuppdateringen räknar redan börsvärdet för kandidaterna
+        # (tiggre:<id>) — det visades bara för positionerna förut.
+        _suggest("tiggre", cand, "mcap", "mcap_musd", "börsvärde MUSD",
+                 f"tg_mcap_{cand['id']}", lambda: _save(data), fmt="{:,.0f}")
         nav = m2.number_input("NAV = NPV after tax (MUSD)", min_value=0.0,
                               value=_num(cand.get("nav")),
                               step=10.0, key=f"tg_nav_{cand['id']}",

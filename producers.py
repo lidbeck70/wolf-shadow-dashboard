@@ -491,6 +491,11 @@ def _producers(data: dict) -> None:
                      f"pr_ev_{row['id']}", lambda: _save(data), fmt="{:.1f}")
             _suggest("producers", row, "nd_ebitda", "nd_ebitda", "nettoskuld/EBITDA",
                      f"pr_nd_{row['id']}", lambda: _save(data), fmt="{:.2f}")
+            # Råvarupriset ur sifferuppdateringen (Yahoo-terminer, USD per
+            # oz/lb/fat) — kontrollera att AISC står i samma enhet.
+            _suggest("producers", row, "price", "commodity_price", "råvarupris",
+                     f"pr_p_{row['id']}", lambda: _save(data), fmt="{:,.2f}",
+                     unit_field="commodity_unit")
             if (storage.differs(ev, row.get("ev_ebitda"))
                     or storage.differs(nd, row.get("nd_ebitda"))
                     or storage.differs(cost, row.get("unit_cost"))
