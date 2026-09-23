@@ -185,6 +185,20 @@ def _num(value, default: Optional[float] = None) -> Optional[float]:
     return f
 
 
+CASH_MISSING_NOTE = ("Kassa är 0 — procenten räknas utan kontanter, så delarna ser "
+                     "större ut än de är. Totalen som ramar, råvarutak och positionstak "
+                     "mäts mot ska vara hela aktieportföljen inklusive kassan (bufferten "
+                     "utanför räknas inte). Fyll i kassan här, eller i Holdings och tryck "
+                     "\"Fyll i ur registret\".")
+
+
+def cash_missing(values: dict) -> bool:
+    """True när delarna har värden men kassan står på 0 — då är varje
+    procenttal för högt (två delar à 10 000 blir 50 % var)."""
+    vals = {s.key: max(0.0, _num(values.get(s.key), 0.0) or 0.0) for s in SLEEVES}
+    return vals.get("kassa", 0.0) <= 0 < sum(v for k, v in vals.items() if k != "kassa")
+
+
 def sleeve_pct(values: dict, total: Optional[float] = None) -> dict:
     """Andel av portföljen per sleeve. total=None -> summan av värdena."""
     vals = {s.key: max(0.0, _num(values.get(s.key), 0.0) or 0.0) for s in SLEEVES}
@@ -588,6 +602,8 @@ def _allocation(data: dict) -> None:
         st.info("Fyll i värdet per strategi ovan så räknas ramar, tak och "
                 "ombalansering automatiskt.")
         return
+    if cash_missing(vals):
+        st.warning(CASH_MISSING_NOTE)
 
     pcts = sleeve_pct(vals)
     rows = ""
