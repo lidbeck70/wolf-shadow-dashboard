@@ -418,9 +418,12 @@ def _render_control_panel() -> tuple[dict, bool]:
     if pills:
         st.markdown(f'<div style="margin-top:6px">{pills}</div>', unsafe_allow_html=True)
 
-    # Cache + Gist status (collapsed by default)
-    with st.expander("Cache & lagring", expanded=False):
-        _render_cache_status()
+    # Cache + Gist status — renderas BARA när expandern öppnas (on_change="rerun"
+    # sätter .open). Förr kördes Gist-anropet inuti vid varje omritning.
+    _exp = st.expander("Cache & lagring", expanded=False, on_change="rerun", key="ca_cache_status")
+    if _exp.open:
+        with _exp:
+            _render_cache_status()
 
     preset = _MARKETS[market].copy()
     if market == "Custom":
@@ -428,6 +431,15 @@ def _render_control_panel() -> tuple[dict, bool]:
     preset["top_n"] = top_n
     preset["mode"] = mode
     return preset, run_now
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _saved_results_cached(mode) -> dict:
+    """Sparade scanresultat ur Gisten, cachade 10 min. Förr gjordes en
+    oautentiserad ~1 MB Gist-GET vid varje omritning tills en scan fanns
+    (60 anrop/timme per IP på Streamlit Clouds delade adresser)."""
+    from contrarian_alpha.cache import load_screener_results
+    return load_screener_results(mode=mode) if mode else load_screener_results()
 
 
 def _render_cache_status() -> None:
@@ -503,8 +515,7 @@ def _get_or_run_pipeline(config_kwargs: dict, run_now: bool):
     if not run:
         if cache_key not in st.session_state:
             try:
-                from contrarian_alpha.cache import load_screener_results
-                saved = load_screener_results()
+                saved = _saved_results_cached(None)
                 if saved.get("timestamp"):
                     st.session_state["ca_last_run_ts"] = saved["timestamp"][:16] + " UTC (Gist)"
                     st.session_state["ca_last_stats"] = {
@@ -1419,8 +1430,7 @@ def _render_elimination_breakdown(pipeline_result) -> None:
 def _render_cached_preview(mode: str) -> None:
     """Show pre-computed scheduled scan results (from Gist) as an instant preview."""
     try:
-        from contrarian_alpha.cache import load_screener_results
-        saved = load_screener_results(mode=mode)
+        saved = _saved_results_cached(mode)
     except Exception:
         saved = {}
     results = saved.get("results", []) if saved else []

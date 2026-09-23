@@ -961,7 +961,7 @@ def render_heatmap_page() -> None:
         refresh_clicked = st.button("⟳  REFRESH DATA", use_container_width=True, key="heatmap_refresh")
 
     if refresh_clicked:
-        st.cache_data.clear()
+        _fetch_heatmap_data.clear()        # bara heatmapens cache, inte hela appens
 
     # ── Load data ──────────────────────────────────────────────────────────
     with st.spinner("Loading market data..."):

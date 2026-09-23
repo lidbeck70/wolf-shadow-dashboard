@@ -327,6 +327,12 @@ def _render_copilot_stub() -> None:
 # MAIN APP
 # =============================================================================
 
+def _is_open(tab) -> bool:
+    """Bara den öppna toppfliken renderas (st.tabs on_change="rerun" sätter
+    tab.open). None = spårning av; då renderas allt som förr."""
+    return tab.open is not False
+
+
 def main():
     if not render_login_gate():
         return
@@ -351,299 +357,309 @@ def main():
     (tab_home_page, tab_screening, tab_review, tab_regime_main,
      tab_intelligence, tab_portfolio,
      tab_alerts_page, tab_rules,
-     tab_strat_overview, tab_copilot) = st.tabs(tab_labels)
+     tab_strat_overview, tab_copilot) = st.tabs(tab_labels, on_change="rerun", key="main_tabs")
 
     # ── HOME ─────────────────────────────────────────────────────────────────
-    with tab_home_page:
-        tab_home()
+    if _is_open(tab_home_page):
+        with tab_home_page:
+            tab_home()
 
     # ── SCREENING ─────────────────────────────────────────────────────────────
-    with tab_screening:
-        sub = st.radio(
-            "",
-            ["Arc Screener", "Contrarian Alpha", "Market Cycle",
-             "Swing Screener"],
-            label_visibility="collapsed", horizontal=True, key="sub_screening",
-        )
-        st.markdown("---")
-        if sub == "Arc Screener":
-            inner = st.radio(
+    if _is_open(tab_screening):
+        with tab_screening:
+            sub = st.radio(
                 "",
-                ["Wolf", "Viking", "🔥 EMBER"],
-                label_visibility="collapsed", horizontal=True, key="sub_screening_arc",
+                ["Arc Screener", "Contrarian Alpha", "Market Cycle",
+                 "Swing Screener"],
+                label_visibility="collapsed", horizontal=True, key="sub_screening",
             )
-            if inner == "Wolf":
-                tab_screener()
-            elif inner == "Viking":
-                if OVTLYR_AVAILABLE:
-                    render_viking_screener()
-                else:
-                    tab_not_found("Viking Screener", "screener_ovtlyr")
-            elif inner == "🔥 EMBER":
-                if EMBER_AVAILABLE:
-                    render_ember_page()
-                else:
-                    tab_not_found("EMBER", "ember")
+            st.markdown("---")
+            if sub == "Arc Screener":
+                inner = st.radio(
+                    "",
+                    ["Wolf", "Viking", "🔥 EMBER"],
+                    label_visibility="collapsed", horizontal=True, key="sub_screening_arc",
+                )
+                if inner == "Wolf":
+                    tab_screener()
+                elif inner == "Viking":
+                    if OVTLYR_AVAILABLE:
+                        render_viking_screener()
+                    else:
+                        tab_not_found("Viking Screener", "screener_ovtlyr")
+                elif inner == "🔥 EMBER":
+                    if EMBER_AVAILABLE:
+                        render_ember_page()
+                    else:
+                        tab_not_found("EMBER", "ember")
 
-        elif sub == "Contrarian Alpha":
-            inner = st.radio(
-                "",
-                ["Contrarian Alpha", "Long Screener"],
-                label_visibility="collapsed", horizontal=True, key="sub_screening_contrarian",
-            )
-            if inner == "Contrarian Alpha":
-                if CONTRARIAN_ALPHA_AVAILABLE:
-                    render_contrarian_alpha_page()
-                else:
-                    tab_not_found("Contrarian Alpha", "contrarian_alpha")
-            elif inner == "Long Screener":
-                if CAGR_AVAILABLE:
-                    render_cagr_page()
-                else:
-                    tab_not_found("Long Screener", "cagr")
+            elif sub == "Contrarian Alpha":
+                inner = st.radio(
+                    "",
+                    ["Contrarian Alpha", "Long Screener"],
+                    label_visibility="collapsed", horizontal=True, key="sub_screening_contrarian",
+                )
+                if inner == "Contrarian Alpha":
+                    if CONTRARIAN_ALPHA_AVAILABLE:
+                        render_contrarian_alpha_page()
+                    else:
+                        tab_not_found("Contrarian Alpha", "contrarian_alpha")
+                elif inner == "Long Screener":
+                    if CAGR_AVAILABLE:
+                        render_cagr_page()
+                    else:
+                        tab_not_found("Long Screener", "cagr")
 
-        elif sub == "Market Cycle":
-            if MARKET_CYCLE_AVAILABLE:
-                render_market_cycle_page()
-            else:
-                tab_not_found("Market Cycle Engine", "tabs/market_cycle")
+            elif sub == "Market Cycle":
+                if MARKET_CYCLE_AVAILABLE:
+                    render_market_cycle_page()
+                else:
+                    tab_not_found("Market Cycle Engine", "tabs/market_cycle")
 
-        elif sub == "Swing Screener":
-            if WOLF_SCREENER_AVAILABLE:
-                render_wolf_screener_page()
-            else:
-                tab_not_found("Swing Screener", "wolf_screener_ui")
+            elif sub == "Swing Screener":
+                if WOLF_SCREENER_AVAILABLE:
+                    render_wolf_screener_page()
+                else:
+                    tab_not_found("Swing Screener", "wolf_screener_ui")
 
     # ── GRANSKNING ───────────────────────────────────────────────────────────
     # Beslutsunderlaget efter screeningen. Inget här screenar — screeningen
     # sker i Börsdata; det här är arken som avgör vilket bolag som köps.
-    with tab_review:
-        sub = st.radio(
-            "",
-            ["Rick Rule", "Royalty C", "Poängmodell", "Tiggre", "Insider",
-             "🧭 Confidence score", "🐺 Durrett", "🎯 Scorecard"],
-            label_visibility="collapsed", horizontal=True, key="sub_review",
-        )
-        st.markdown("---")
-        if sub in ("Rick Rule", "Royalty C"):
-            if PRODUCERS_AVAILABLE:
-                render_producers_page(sheet=sub)
-            else:
-                tab_not_found("Granskningsarken", "producers")
+    if _is_open(tab_review):
+        with tab_review:
+            sub = st.radio(
+                "",
+                ["Rick Rule", "Royalty C", "Poängmodell", "Tiggre", "Insider",
+                 "🧭 Confidence score", "🐺 Durrett", "🎯 Scorecard"],
+                label_visibility="collapsed", horizontal=True, key="sub_review",
+            )
+            st.markdown("---")
+            if sub in ("Rick Rule", "Royalty C"):
+                if PRODUCERS_AVAILABLE:
+                    render_producers_page(sheet=sub)
+                else:
+                    tab_not_found("Granskningsarken", "producers")
 
-        elif sub == "Poängmodell":
-            if SCORING_AVAILABLE:
-                render_scoring_page()
-            else:
-                tab_not_found("Poängmodellen", "scoring")
+            elif sub == "Poängmodell":
+                if SCORING_AVAILABLE:
+                    render_scoring_page()
+                else:
+                    tab_not_found("Poängmodellen", "scoring")
 
-        elif sub == "Tiggre":
-            if TIGGRE_AVAILABLE:
-                render_tiggre_page()
-            else:
-                tab_not_found("Tiggre", "tiggre")
+            elif sub == "Tiggre":
+                if TIGGRE_AVAILABLE:
+                    render_tiggre_page()
+                else:
+                    tab_not_found("Tiggre", "tiggre")
 
-        elif sub == "Insider":
-            if INSIDER_AVAILABLE:
-                render_insider_page()
-            else:
-                tab_not_found("Insiderbevakaren", "insider")
+            elif sub == "Insider":
+                if INSIDER_AVAILABLE:
+                    render_insider_page()
+                else:
+                    tab_not_found("Insiderbevakaren", "insider")
 
-        elif sub == "🧭 Confidence score":
-            if CONFIDENCE_AVAILABLE:
-                render_confidence_page()
-            else:
-                tab_not_found("Confidence score", "confidence")
+            elif sub == "🧭 Confidence score":
+                if CONFIDENCE_AVAILABLE:
+                    render_confidence_page()
+                else:
+                    tab_not_found("Confidence score", "confidence")
 
-        elif sub == "🐺 Durrett":
-            if DURRETT_AVAILABLE:
-                render_durrett_page()
-            else:
-                tab_not_found("Durrett", "engines/durrett/ui")
+            elif sub == "🐺 Durrett":
+                if DURRETT_AVAILABLE:
+                    render_durrett_page()
+                else:
+                    tab_not_found("Durrett", "engines/durrett/ui")
 
-        elif sub == "🎯 Scorecard":
-            if SCORECARD_AVAILABLE:
-                render_scorecard_page()
-            else:
-                tab_not_found("Master Scorecard", "scorecard")
+            elif sub == "🎯 Scorecard":
+                if SCORECARD_AVAILABLE:
+                    render_scorecard_page()
+                else:
+                    tab_not_found("Master Scorecard", "scorecard")
 
     # ── REGIME ───────────────────────────────────────────────────────────────
-    with tab_regime_main:
-        sub = st.radio(
-            "",
-            ["Arc Regime", "Alpha Regime", "Flow Divergence", "Swing Regime",
-             "Råvarurotation"],
-            label_visibility="collapsed", horizontal=True, key="sub_regime",
-        )
-        st.markdown("---")
-        if sub == "Råvarurotation":
-            if ROTATION_AVAILABLE:
-                render_rotation_page()
-            else:
-                tab_not_found("Råvarurotationen", "rotation")
-        elif sub == "Swing Regime":
-            if WOLF_REGIME_AVAILABLE:
-                render_wolf_regime_page()
-            else:
-                tab_not_found("Swing Regime", "wolf_regime_ui")
-        elif sub == "Arc Regime":
-            inner = st.radio(
+    if _is_open(tab_regime_main):
+        with tab_regime_main:
+            sub = st.radio(
                 "",
-                ["Wolf Regime", "Viking Regime", "🌍 EMBER Regime"],
-                label_visibility="collapsed", horizontal=True, key="sub_regime_arc",
+                ["Arc Regime", "Alpha Regime", "Flow Divergence", "Swing Regime",
+                 "Råvarurotation"],
+                label_visibility="collapsed", horizontal=True, key="sub_regime",
             )
-            if inner == "Wolf Regime":
-                tab_regime()
-                try:
-                    if render_inline_rules:
-                        render_inline_rules("wolf")
-                except Exception:
-                    pass
-            elif inner == "Viking Regime":
-                if OVTLYR_AVAILABLE:
-                    render_ovtlyr_page()
+            st.markdown("---")
+            if sub == "Råvarurotation":
+                if ROTATION_AVAILABLE:
+                    render_rotation_page()
                 else:
-                    tab_not_found("OVTLYR", "ovtlyr")
-                try:
-                    if render_inline_rules:
-                        render_inline_rules("viking")
-                except Exception:
-                    pass
-            elif inner == "🌍 EMBER Regime":
-                if EMBER_AVAILABLE:
-                    render_ember_regime_page()
+                    tab_not_found("Råvarurotationen", "rotation")
+            elif sub == "Swing Regime":
+                if WOLF_REGIME_AVAILABLE:
+                    render_wolf_regime_page()
                 else:
-                    tab_not_found("EMBER Regime", "ember")
+                    tab_not_found("Swing Regime", "wolf_regime_ui")
+            elif sub == "Arc Regime":
+                inner = st.radio(
+                    "",
+                    ["Wolf Regime", "Viking Regime", "🌍 EMBER Regime"],
+                    label_visibility="collapsed", horizontal=True, key="sub_regime_arc",
+                )
+                if inner == "Wolf Regime":
+                    tab_regime()
+                    try:
+                        if render_inline_rules:
+                            render_inline_rules("wolf")
+                    except Exception:
+                        pass
+                elif inner == "Viking Regime":
+                    if OVTLYR_AVAILABLE:
+                        render_ovtlyr_page()
+                    else:
+                        tab_not_found("OVTLYR", "ovtlyr")
+                    try:
+                        if render_inline_rules:
+                            render_inline_rules("viking")
+                    except Exception:
+                        pass
+                elif inner == "🌍 EMBER Regime":
+                    if EMBER_AVAILABLE:
+                        render_ember_regime_page()
+                    else:
+                        tab_not_found("EMBER Regime", "ember")
 
-        elif sub == "Alpha Regime":
-            inner = st.radio(
-                "",
-                ["Quality & Contrarian", "Long Trend"],
-                label_visibility="collapsed", horizontal=True, key="sub_regime_alpha",
-            )
-            if inner == "Quality & Contrarian":
-                if ALPHA_REGIME_AVAILABLE:
-                    render_alpha_regime()
-                else:
-                    tab_not_found("Alpha Regime Monitor", "alpha_regime")
-                try:
-                    if render_inline_rules:
-                        render_inline_rules("alpha")
-                except Exception:
-                    pass
-            elif inner == "Long Trend":
-                if LONG_REGIME_AVAILABLE:
-                    render_long_regime_monitor()
-                else:
-                    tab_not_found("Long Trend Monitor", "long_regime_monitor")
+            elif sub == "Alpha Regime":
+                inner = st.radio(
+                    "",
+                    ["Quality & Contrarian", "Long Trend"],
+                    label_visibility="collapsed", horizontal=True, key="sub_regime_alpha",
+                )
+                if inner == "Quality & Contrarian":
+                    if ALPHA_REGIME_AVAILABLE:
+                        render_alpha_regime()
+                    else:
+                        tab_not_found("Alpha Regime Monitor", "alpha_regime")
+                    try:
+                        if render_inline_rules:
+                            render_inline_rules("alpha")
+                    except Exception:
+                        pass
+                elif inner == "Long Trend":
+                    if LONG_REGIME_AVAILABLE:
+                        render_long_regime_monitor()
+                    else:
+                        tab_not_found("Long Trend Monitor", "long_regime_monitor")
 
-        elif sub == "Flow Divergence":
-            if SECTOR_CYCLE_AVAILABLE:
-                render_sector_cycle_page()
-            else:
-                tab_not_found("Sector & Global Regime", "sector_cycle")
+            elif sub == "Flow Divergence":
+                if SECTOR_CYCLE_AVAILABLE:
+                    render_sector_cycle_page()
+                else:
+                    tab_not_found("Sector & Global Regime", "sector_cycle")
 
     # ── INTELLIGENCE ─────────────────────────────────────────────────────────
-    with tab_intelligence:
-        sub = st.radio(
-            "",
-            ["Odin's Blindspot", "Sentiment", "Retail Pulse", "Heatmap"],
-            label_visibility="collapsed", horizontal=True, key="sub_intel",
-        )
-        st.markdown("---")
-        if sub == "Odin's Blindspot":
-            if BLINDSPOT_AVAILABLE:
-                render_blindspot_page()
-            else:
-                tab_not_found("Odin's Blindspot Index", "blindspot")
-        elif sub == "Sentiment":
-            if SENTIMENT_AVAILABLE:
-                render_sentiment_page()
-            else:
-                tab_not_found("Sentiment & Flow", "sentiment")
-        elif sub == "Retail Pulse":
-            if RETAIL_SENTIMENT_AVAILABLE:
-                render_retail_sentiment_page()
-            else:
-                tab_not_found("Retail Sentiment", "retail_sentiment")
-        elif sub == "Heatmap":
-            if HEATMAP_AVAILABLE:
-                render_heatmap_page()
-            else:
-                tab_not_found("Heatmap", "heatmap")
+    if _is_open(tab_intelligence):
+        with tab_intelligence:
+            sub = st.radio(
+                "",
+                ["Odin's Blindspot", "Sentiment", "Retail Pulse", "Heatmap"],
+                label_visibility="collapsed", horizontal=True, key="sub_intel",
+            )
+            st.markdown("---")
+            if sub == "Odin's Blindspot":
+                if BLINDSPOT_AVAILABLE:
+                    render_blindspot_page()
+                else:
+                    tab_not_found("Odin's Blindspot Index", "blindspot")
+            elif sub == "Sentiment":
+                if SENTIMENT_AVAILABLE:
+                    render_sentiment_page()
+                else:
+                    tab_not_found("Sentiment & Flow", "sentiment")
+            elif sub == "Retail Pulse":
+                if RETAIL_SENTIMENT_AVAILABLE:
+                    render_retail_sentiment_page()
+                else:
+                    tab_not_found("Retail Sentiment", "retail_sentiment")
+            elif sub == "Heatmap":
+                if HEATMAP_AVAILABLE:
+                    render_heatmap_page()
+                else:
+                    tab_not_found("Heatmap", "heatmap")
 
     # ── PORTFOLIO ─────────────────────────────────────────────────────────────
-    with tab_portfolio:
-        sub = st.radio(
-            "",
-            ["📓 Trade Journal", "Holdings", "Swing", "Allokering", "Backtest"],
-            label_visibility="collapsed", horizontal=True, key="sub_portfolio",
-        )
-        st.markdown("---")
-        if sub == "📓 Trade Journal":
-            if JOURNAL_AVAILABLE:
-                render_trade_journal_page()
-            else:
-                tab_not_found("Trade Journal", "trade_journal")
-        elif sub == "Holdings":
-            if HOLDINGS_AVAILABLE:
-                render_holdings_page()
-            else:
-                tab_not_found("Holdings", "holdings")
-        elif sub == "Swing":
-            if SWING_AVAILABLE:
-                render_swing_page()
-            else:
-                tab_not_found("Swing", "swing")
-        elif sub == "Allokering":
-            if ALLOCATOR_AVAILABLE:
-                render_allocator_page()
-            else:
-                tab_not_found("Portföljallokeraren", "allocator")
-        elif sub == "Backtest":
-            tab_backtest_consolidated()
+    if _is_open(tab_portfolio):
+        with tab_portfolio:
+            sub = st.radio(
+                "",
+                ["📓 Trade Journal", "Holdings", "Swing", "Allokering", "Backtest"],
+                label_visibility="collapsed", horizontal=True, key="sub_portfolio",
+            )
+            st.markdown("---")
+            if sub == "📓 Trade Journal":
+                if JOURNAL_AVAILABLE:
+                    render_trade_journal_page()
+                else:
+                    tab_not_found("Trade Journal", "trade_journal")
+            elif sub == "Holdings":
+                if HOLDINGS_AVAILABLE:
+                    render_holdings_page()
+                else:
+                    tab_not_found("Holdings", "holdings")
+            elif sub == "Swing":
+                if SWING_AVAILABLE:
+                    render_swing_page()
+                else:
+                    tab_not_found("Swing", "swing")
+            elif sub == "Allokering":
+                if ALLOCATOR_AVAILABLE:
+                    render_allocator_page()
+                else:
+                    tab_not_found("Portföljallokeraren", "allocator")
+            elif sub == "Backtest":
+                tab_backtest_consolidated()
 
     # ── ALERTS ───────────────────────────────────────────────────────────────
-    with tab_alerts_page:
-        tab_alerts()
+    if _is_open(tab_alerts_page):
+        with tab_alerts_page:
+            tab_alerts()
 
     # ── RULES ────────────────────────────────────────────────────────────────
-    with tab_rules:
-        sub_rules = st.radio(
-            "",
-            ["Regler & Guider", "Position Sizing", "Data Health"],
-            label_visibility="collapsed", horizontal=True, key="sub_rules",
-        )
-        st.markdown("---")
-        if sub_rules == "Regler & Guider":
-            if RULES_AVAILABLE:
-                render_rules_page()
+    if _is_open(tab_rules):
+        with tab_rules:
+            sub_rules = st.radio(
+                "",
+                ["Regler & Guider", "Position Sizing", "Data Health"],
+                label_visibility="collapsed", horizontal=True, key="sub_rules",
+            )
+            st.markdown("---")
+            if sub_rules == "Regler & Guider":
+                if RULES_AVAILABLE:
+                    render_rules_page()
+                else:
+                    tab_not_found("Rules", "ovtlyr/ui")
+            elif sub_rules == "Position Sizing":
+                try:
+                    from position_sizing import render_position_sizing
+                    render_position_sizing()
+                except Exception as _ps_e:
+                    st.error(f"Position Sizing kunde inte laddas: {_ps_e}")
             else:
-                tab_not_found("Rules", "ovtlyr/ui")
-        elif sub_rules == "Position Sizing":
-            try:
-                from position_sizing import render_position_sizing
-                render_position_sizing()
-            except Exception as _ps_e:
-                st.error(f"Position Sizing kunde inte laddas: {_ps_e}")
-        else:
-            try:
-                from data_health import render_data_health
-                render_data_health()
-            except Exception as _dh_e:
-                st.error(f"Data Health kunde inte laddas: {_dh_e}")
+                try:
+                    from data_health import render_data_health
+                    render_data_health()
+                except Exception as _dh_e:
+                    st.error(f"Data Health kunde inte laddas: {_dh_e}")
 
     # ── STRATEGIES ───────────────────────────────────────────────────────────
-    with tab_strat_overview:
-        tab_strategy_overview()
+    if _is_open(tab_strat_overview):
+        with tab_strat_overview:
+            tab_strategy_overview()
 
     # ── COPILOT ──────────────────────────────────────────────────────────────
-    with tab_copilot:
-        try:
-            from tabs.copilot import render_copilot_page
-            render_copilot_page()
-        except ImportError:
-            _render_copilot_stub()
+    if _is_open(tab_copilot):
+        with tab_copilot:
+            try:
+                from tabs.copilot import render_copilot_page
+                render_copilot_page()
+            except ImportError:
+                _render_copilot_stub()
 
     # Senast sparad, och vad som ligger osparat i sessionen.
     storage_ui.footer()

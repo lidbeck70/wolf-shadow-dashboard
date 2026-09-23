@@ -378,10 +378,9 @@ def inject_css():
 
 def wolf_banner():
     try:
-        _banner_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "banner.jpg")
-        if os.path.exists(_banner_path):
-            with open(_banner_path, "rb") as _bf:
-                _banner_b64 = base64.b64encode(_bf.read()).decode()
+        from ui.theme import _banner_b64 as _cached_banner   # kodas en gång per process
+        _banner_b64 = _cached_banner()
+        if _banner_b64:
             st.markdown(
                 f"<div style='text-align:center;margin:-1rem -1rem 1rem -1rem;padding:0;'>"
                 f"<img src='data:image/jpeg;base64,{_banner_b64}' "

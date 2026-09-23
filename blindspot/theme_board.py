@@ -139,71 +139,32 @@ class ThemeResult:
 # ── Download helper (reuses commodity_ratios pattern) ─────────────────────────
 
 def _download_close(ticker: str, period: str = "10y") -> pd.Series:
-    """Robust yfinance Close series download (mirrors commodity_ratios._download_close)."""
+    """Close-serie via den delade priscachen (market_prices). Förr en egen
+    yfinance-nedladdning per anrop — samma ticker laddades tre gånger per
+    tema och SPY nio gånger per körning."""
     try:
-        import yfinance as yf
-        try:
-            df = yf.download(
-                ticker, period=period, auto_adjust=True,
-                progress=False, show_errors=False, multi_level_index=False,
-            )
-        except TypeError:
-            df = yf.download(ticker, period=period, auto_adjust=True, progress=False)
-
-        if df is None or df.empty:
-            return pd.Series(dtype=float)
-
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-
-        col = "Close"
-        if col not in df.columns:
-            candidates = [c for c in df.columns if str(c).lower() == "close"]
-            if not candidates:
-                return pd.Series(dtype=float)
-            df = df.rename(columns={candidates[0]: col})
-
-        s = df[col].squeeze()
-        if isinstance(s, pd.DataFrame):
-            s = s.iloc[:, 0]
+        from market_prices import close
+        s = close(ticker, period)
         if hasattr(s.index, "tz") and s.index.tz is not None:
             s.index = s.index.tz_localize(None)
-        return s.dropna()
-
+        return s
     except Exception as exc:
         logger.debug("_download_close(%s): %s", ticker, exc)
         return pd.Series(dtype=float)
 
 
 def _download_volume(ticker: str, period: str = "2y") -> pd.Series:
-    """Download Volume series via yfinance."""
+    """Volume-serie ur samma cachade 10y-ram som Close — ingen extra nedladdning."""
     try:
-        import yfinance as yf
-        try:
-            df = yf.download(
-                ticker, period=period, auto_adjust=True,
-                progress=False, show_errors=False, multi_level_index=False,
-            )
-        except TypeError:
-            df = yf.download(ticker, period=period, auto_adjust=True, progress=False)
-
-        if df is None or df.empty:
+        from market_prices import ohlcv
+        df = ohlcv(ticker, "10y")
+        if df.empty or "Volume" not in df.columns:
             return pd.Series(dtype=float)
-
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-
-        col = "Volume"
-        if col not in df.columns:
-            return pd.Series(dtype=float)
-
-        s = df[col].squeeze()
-        if isinstance(s, pd.DataFrame):
-            s = s.iloc[:, 0]
+        s = df["Volume"].dropna()
         if hasattr(s.index, "tz") and s.index.tz is not None:
             s.index = s.index.tz_localize(None)
-        return s.dropna()
-
+        days = {"1y": 252, "2y": 504, "5y": 1260}.get(period)
+        return s.tail(days) if days else s
     except Exception as exc:
         logger.debug("_download_volume(%s): %s", ticker, exc)
         return pd.Series(dtype=float)

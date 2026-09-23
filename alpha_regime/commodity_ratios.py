@@ -14,7 +14,6 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
-import yfinance as yf
 
 logger = logging.getLogger(__name__)
 
@@ -93,42 +92,18 @@ class RatioResult:
 
 # ── Fetch helpers ─────────────────────────────────────────────────────────────
 def _download_close(ticker: str, period: str = "10y") -> pd.Series:
-    """Robust yfinance Close series download (multi_level_index pattern)."""
+    """Close-serie via den delade priscachen (market_prices). Förr en egen
+    nedladdning per kvotben — 23 nedladdningar för 13 symboler, och GLD/GDX/
+    SLV/SIL/SPY/DBA/COPX laddades igen av temabordet."""
     try:
-        df = yf.download(
-            ticker, period=period, auto_adjust=True,
-            progress=False, show_errors=False, multi_level_index=False,
-        )
-    except TypeError:
-        try:
-            df = yf.download(ticker, period=period, auto_adjust=True, progress=False)
-        except Exception as exc:
-            logger.debug("_download_close(%s): %s", ticker, exc)
-            return pd.Series(dtype=float)
+        from market_prices import close
+        s = close(ticker, period)
+        if hasattr(s.index, "tz") and s.index.tz is not None:
+            s.index = s.index.tz_localize(None)
+        return s
     except Exception as exc:
         logger.debug("_download_close(%s): %s", ticker, exc)
         return pd.Series(dtype=float)
-
-    if df is None or df.empty:
-        return pd.Series(dtype=float)
-
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-
-    if "Close" not in df.columns:
-        candidates = [c for c in df.columns if str(c).lower() == "close"]
-        if not candidates:
-            return pd.Series(dtype=float)
-        df = df.rename(columns={candidates[0]: "Close"})
-
-    s = df["Close"].squeeze()
-    if isinstance(s, pd.DataFrame):
-        s = s.iloc[:, 0]
-
-    if hasattr(s.index, "tz") and s.index.tz is not None:
-        s.index = s.index.tz_localize(None)
-
-    return s.dropna()
 
 
 def _percentile_of(arr: np.ndarray, val: float) -> float:

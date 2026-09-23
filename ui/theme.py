@@ -229,6 +229,22 @@ _HEADER_CSS = f"""
 """
 
 
+_BANNER_B64: dict = {}          # läses och kodas EN gång per process, inte per omritning
+
+
+def _banner_b64() -> str:
+    """Base64 för assets/banner.jpg (165 KB JPEG). Tidigare lästes och
+    kodades en 2 MB PNG vid varje rerun — ~2,7 MB extra per klick."""
+    if "b64" not in _BANNER_B64:
+        path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "banner.jpg")
+        try:
+            with open(path, "rb") as bf:
+                _BANNER_B64["b64"] = base64.b64encode(bf.read()).decode()
+        except OSError:
+            _BANNER_B64["b64"] = ""
+    return _BANNER_B64["b64"]
+
+
 def render_header() -> None:
     """
     Render the branded page header.
@@ -237,12 +253,8 @@ def render_header() -> None:
     falls back to the SVG triangle+eye header with tagline.
     """
     try:
-        _banner_path = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)), "assets", "banner.jpg"
-        )
-        if os.path.exists(_banner_path):
-            with open(_banner_path, "rb") as _bf:
-                _b64 = base64.b64encode(_bf.read()).decode()
+        _b64 = _banner_b64()
+        if _b64:
             st.markdown(
                 f"<div style='text-align:center;margin:-1rem -1rem 1rem -1rem;padding:0;'>"
                 f"<img src='data:image/jpeg;base64,{_b64}' "

@@ -316,7 +316,14 @@ def render_ovtlyr_page() -> None:
         st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
         refresh = st.button("↺ ANALYSERA", key="ovtlyr_refresh", width='stretch')
         if refresh:
-            st.cache_data.clear()
+            # Bara sidans egna cacher — st.cache_data.clear() tömde HELA appens
+            # cache (Blindspot, håven, holdings …) så nästa klick var som helst
+            # laddade om allt.
+            for _fn in (_load_ohlcv, _load_sentiment, _load_sector_breadth, _fetch_etf_data_for_bull_list):
+                try:
+                    _fn.clear()
+                except Exception:
+                    pass
 
     if quick_pick != "— custom —":
         ticker = quick_pick

@@ -23,8 +23,13 @@ logger = logging.getLogger(__name__)
 MAX_WORKERS = 4
 
 
-def _fetch_sentiment_data(ticker: str) -> dict:
-    """Try to get sentiment data from retail_sentiment sources."""
+def _fetch_sentiment_data(ticker: str, price_row: dict = None) -> dict:
+    """Try to get sentiment data from retail_sentiment sources.
+
+    Volymkvoten (dagens volym / 20-dagarssnitt) finns redan i batch-
+    nedladdningen från fetch_price_data — samma formel som
+    retail_sentiment.sources.volume. Förr gjordes en egen yfinance-
+    nedladdning per ticker här (46 seriella anrop per körning)."""
     sentiment = {}
     try:
         from retail_sentiment.sources.reddit import fetch_reddit, get_ticker_mentions
@@ -34,19 +39,24 @@ def _fetch_sentiment_data(ticker: str) -> dict:
     except Exception:
         sentiment["reddit_mentions"] = 0
 
-    try:
-        from retail_sentiment.sources.volume import fetch_volume, get_ticker_volume
-        vol_result = fetch_volume([ticker])
-        vol_data = get_ticker_volume(vol_result, ticker)
-        sentiment["retail_flow_score"] = 50  # Neutral default
-        if vol_data:
-            vol_ratio = vol_data.get("volume_ratio", 1.0)
-            if vol_ratio < 0.5:
-                sentiment["retail_flow_score"] = 10
-            elif vol_ratio < 0.8:
-                sentiment["retail_flow_score"] = 30
-    except Exception:
-        pass
+    sentiment["retail_flow_score"] = 50  # Neutral default
+    vol_ratio = None
+    pr = price_row or {}
+    if pr.get("avg_volume_20d"):
+        vol_ratio = float(pr.get("current_volume", 0.0)) / float(pr["avg_volume_20d"])
+    else:
+        try:
+            from retail_sentiment.sources.volume import fetch_volume, get_ticker_volume
+            vol_data = get_ticker_volume(fetch_volume([ticker]), ticker)
+            if vol_data:
+                vol_ratio = vol_data.get("volume_ratio", 1.0)
+        except Exception:
+            pass
+    if vol_ratio is not None:
+        if vol_ratio < 0.5:
+            sentiment["retail_flow_score"] = 10
+        elif vol_ratio < 0.8:
+            sentiment["retail_flow_score"] = 30
 
     return sentiment
 
@@ -73,10 +83,11 @@ def _fetch_all_data(tickers: list) -> dict:
                 fn_name = futures[future]
                 logger.warning("Data fetch %s failed: %s", fn_name, e)
 
-    # Fetch sentiment per-ticker (lightweight, uses cached reddit data)
+    # Fetch sentiment per-ticker (lightweight, uses cached reddit data + the
+    # volume already in the batch price frame — no per-ticker downloads)
     for ticker in tickers:
         try:
-            results["sentiment"][ticker] = _fetch_sentiment_data(ticker)
+            results["sentiment"][ticker] = _fetch_sentiment_data(ticker, results["price"].get(ticker))
         except Exception:
             results["sentiment"][ticker] = {}
 
