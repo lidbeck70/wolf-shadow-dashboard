@@ -31,6 +31,7 @@ from .cagr_loader import (
     fetch_insider_transactions,
     get_data_source,
     MAX_ALPHA_TICKERS,
+    cap_tickers,
 )
 from .cagr_fundamentals import score_fundamentals
 from .cagr_cycle import (
@@ -892,17 +893,20 @@ def render_cagr_page() -> None:
     except Exception:
         tickers_meta = {**nordic_tickers, **etf_tickers}
 
-    # Memory safety: cap large ticker sets
-    if len(tickers_meta) > MAX_ALPHA_TICKERS:
-        keys = sorted(tickers_meta.keys())[:MAX_ALPHA_TICKERS]
-        tickers_meta = {k: tickers_meta[k] for k in keys}
-        st.caption(f"Begransat till {MAX_ALPHA_TICKERS} tickers (minnesoptimering)")
-
+    # Landsfiltret FÖRE taket — förut kapades listan först, så ett land som
+    # låg sent i alfabetet kunde bli tomt fast det fanns tickers.
     if country_choice != "All" and market_choice != "UCITS ETFs":
         tickers_meta = {
             k: v for k, v in tickers_meta.items()
             if v.get("country") == country_choice
         }
+
+    # Minnestak: kurerade namn först, inte de 200 första i bokstavsordning.
+    _n_before = len(tickers_meta)
+    if _n_before > MAX_ALPHA_TICKERS:
+        tickers_meta = cap_tickers(tickers_meta, MAX_ALPHA_TICKERS)
+        st.caption(f"Begränsat till {MAX_ALPHA_TICKERS} av {_n_before} tickers — "
+                   f"kurerade namn först (minnestak)")
 
     # ── Session state ──────────────────────────────────────────────────────
     if "cagr_results" not in st.session_state:
