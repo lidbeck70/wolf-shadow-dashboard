@@ -510,7 +510,7 @@ def _fetch_price_df(ticker: str, ins_id: int | None, api) -> object:
                 _prev_level = _yf_log.level
                 _yf_log.setLevel(_std_logging.CRITICAL)
                 try:
-                    raw = yf.Ticker(ticker).history(period="5y", auto_adjust=True, progress=False)
+                    raw = yf.Ticker(ticker).history(period="5y", auto_adjust=True)
                 finally:
                     _yf_log.setLevel(_prev_level)
                 if raw is not None and not raw.empty:

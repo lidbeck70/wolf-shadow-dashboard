@@ -75,6 +75,22 @@ _MARKET_SUFFIX = {1: ".ST", 2: ".ST", 3: ".ST", 7: ".ST", 8: ".ST", 9: ".ST",
                   18: ".ST", 19: ".ST", 4: ".OL", 14: ".OL", 5: ".HE", 16: ".HE",
                   6: ".CO", 15: ".CO"}
 _INDEX_MARKETS = {7, 8, 13, 19, 28, 31}
+# Globala marknads-id (/instruments/global) → Yahoo-suffix. Samma tal som
+# ticker_universe.MARKET_SUFFIX (som importerar Streamlit och därför inte
+# används här). Utan suffix hittar varken yfinance eller sifferuppdateringen
+# en kanadensisk ticker. TODO PR 5: en gemensam marknadstabell ur get_markets().
+_GLOBAL_SUFFIX = {32: "", 33: "", 34: "", 35: ".TO", 36: ".V", 37: ".CN", 38: ".L", 39: ".DE",
+                  40: ".PA", 41: ".MC", 42: ".LS", 43: ".MI", 44: ".SW", 45: ".BR", 46: ".AS",
+                  50: ".WA", 52: ".TL", 53: ".TL", 54: ".TL"}
+
+
+def yahoo_ticker(inst: dict, universe: str) -> str:
+    """Börsdata-instrument → Yahoo-ticker: mellanslag → bindestreck, suffix per marknad."""
+    t = str(inst.get("ticker") or "").strip().upper().replace(" ", "-")
+    mid = inst.get("marketId")
+    if universe == "nordic":
+        return t + _MARKET_SUFFIX.get(mid, "")
+    return t + _GLOBAL_SUFFIX.get(mid, "")
 
 CA, AU, US = "canada", "australia", "usa"
 _COUNTRY_HINTS = {CA: ("canada", "kanada"), AU: ("australi",),
@@ -319,9 +335,7 @@ def run_universe(api, instruments: list, universe: str, kpi_fetch: Callable,
             fails, notes = s.check(m, meta)
             if fails:
                 continue
-            ticker = str(inst.get("ticker") or "").strip().upper()
-            if universe == "nordic":
-                ticker = ticker.replace(" ", "-") + _MARKET_SUFFIX.get(inst.get("marketId"), "")
+            ticker = yahoo_ticker(inst, universe)
             out[s.key].append({
                 "ticker": ticker, "name": str(inst.get("name") or ""), "ins_id": iid,
                 "universe": universe, "country_id": meta["country_id"],

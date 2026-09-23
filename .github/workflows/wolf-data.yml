@@ -4,9 +4,12 @@ on:
   schedule:
     # Every trading day (Mon–Fri) morning — each run reflects the previous
     # session's close, so mid-week regime shifts and setups are caught.
-    # Cron is UTC. 06:00 UTC = 08:00 CEST (summer) / 07:00 CET (winter), before
+    # Cron is UTC. 04:30 UTC = 06:30 CEST (summer) / 05:30 CET (winter), before
     # the Stockholm open. Weekends are skipped (no new market data).
-    - cron: "0 6 * * 1-5"
+    # Started 90 min before scheduled-scan (06:00 UTC) so the two alert_scan
+    # steps never run at the same time — they share alert_state in the Gist,
+    # and a parallel run could lose state or send the same alert twice.
+    - cron: "30 4 * * 1-5"
   workflow_dispatch: {}            # allow manual trigger from the Actions tab
 
 concurrency:

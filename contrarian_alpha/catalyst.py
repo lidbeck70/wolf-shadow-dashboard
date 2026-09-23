@@ -508,7 +508,7 @@ def get_viking_regime(
             _prev = _yf_log.level
             _yf_log.setLevel(_logging.CRITICAL)
             try:
-                df_fetched = yf.Ticker(ticker).history(period="1y", auto_adjust=True, progress=False)
+                df_fetched = yf.Ticker(ticker).history(period="1y", auto_adjust=True)
             finally:
                 _yf_log.setLevel(_prev)
             if df_fetched is not None and not df_fetched.empty:

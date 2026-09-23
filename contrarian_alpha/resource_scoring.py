@@ -71,11 +71,18 @@ _COMMODITY_SCORES: dict[str, float] = {
     # Agriculture / fertilizer necessity
     "potash": 80.0,
     "phosphate": 78.0,
+    # Bulk / industrial (samma tal som confidence.commodities)
+    "iron ore": 79.0,
+    "steel": 80.0,
+    "aluminum": 82.0,
+    "aluminium": 82.0,
     # Out of favor / lower necessity
     "coal": 55.0,
     "diamonds": 50.0,
 }
 _COMMODITY_DEFAULT = 55.0
+# CSV-stavningar med understreck (oil_gas, iron_ore, rare_earth, natural_gas)
+# normaliseras i _commodity_key() — poängtabellen ovan hålls i klartext.
 
 # Strategic set used only for a transparent STRATEGIC_COMMODITY flag.
 _STRATEGIC_COMMODITIES = {
@@ -266,7 +273,7 @@ def score_commodity(primary: str, secondary: str = "") -> tuple[float, list[str]
     score. Unknown commodity → neutral default + COMMODITY_UNKNOWN flag.
     """
     flags: list[str] = []
-    p = (primary or "").strip().lower()
+    p = _commodity_key(primary)
     if not p:
         return _COMMODITY_DEFAULT, ["COMMODITY_UNKNOWN"]
 
@@ -279,11 +286,27 @@ def score_commodity(primary: str, secondary: str = "") -> tuple[float, list[str]
 
     # A recognised strategic secondary nudges the score up slightly (diversified
     # optionality) but never above 98 — keep it transparent, not compounding.
-    s = (secondary or "").strip().lower()
+    s = _commodity_key(secondary)
     if s and s in _COMMODITY_SCORES and _COMMODITY_SCORES[s] >= 85.0:
         base = min(98.0, base + 3.0)
 
     return round(base, 1), flags
+
+
+def _commodity_key(name: str) -> str:
+    """CSV-stavning → tabellnyckel: 'Oil_Gas' → 'oil & gas', 'iron_ore' → 'iron ore',
+    'rare_earth' → 'rare earth', 'natural_gas' → 'natural gas'. Okänt → tomt."""
+    p = (name or "").strip().lower()
+    if not p:
+        return ""
+    if p in _COMMODITY_SCORES:
+        return p
+    spaced = p.replace("_", " ").replace("-", " ")
+    for cand in (spaced, spaced.replace(" gas", " & gas") if spaced == "oil gas" else spaced,
+                 spaced + "s", spaced.rstrip("s")):
+        if cand in _COMMODITY_SCORES:
+            return cand
+    return p
 
 
 def score_jurisdiction(
