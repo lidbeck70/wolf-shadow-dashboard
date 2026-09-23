@@ -27,6 +27,7 @@ from datetime import date
 from typing import Optional
 
 import csv_export
+import positions
 import storage
 import storage_ui
 
@@ -368,6 +369,41 @@ def unresolved_positions(positions: list) -> list:
             and (p.get("sleeve") or "").strip().lower() in AMBIGUOUS_SLEEVES]
 
 
+# ── Positionerna ur registret (positions.py, Holdings) ───────────────────────
+# Sedan steg 3 skrivs inga positioner in här: raderna härleds ur registret
+# (antal × kurs i SEK) och kontrolleras mot samma tak som förut.
+def derived_positions(fresh: Optional[dict] = None) -> list:
+    """[{ticker, rule, sleeve, value, _price, _source, _currency, _shares,
+    _strategy, _id}] ur registrets öppna positioner. value är None när
+    antalet saknas — då kan taket inte mätas, och det sägs i stället för
+    att räknas som noll."""
+    out = []
+    for r in positions.all_positions():
+        val = positions.valuation(r, fresh)
+        rule_key = positions.ALLOCATOR_RULE.get(r.get("strategy"))
+        rule = RULE_BY_KEY.get(rule_key) if rule_key else None
+        sleeve = rule.sleeve if rule else STRATEGY_SLEEVE.get(
+            positions.TAG_PLAYBOOK.get(r.get("strategy"), ""), "langsiktigt")
+        out.append({"ticker": r["ticker"], "rule": rule_key, "sleeve": sleeve,
+                    "value": val["value_sek"], "_price": val["price"],
+                    "_source": val["source"], "_currency": val["currency"],
+                    "_asof": val["asof"], "_shares": val["shares"],
+                    "_strategy": r.get("strategy"), "_id": r["id"]})
+    return out
+
+
+def sleeve_sums(rows: list, cash: Optional[float] = None) -> dict:
+    """Värde per strategidel ur de härledda raderna (+ kassan ur registret)."""
+    sums = {s.key: 0.0 for s in SLEEVES}
+    for p in rows or []:
+        v = _num(p.get("value"))
+        if v and p.get("sleeve") in sums:
+            sums[p["sleeve"]] += v
+    if cash is not None and "kassa" in sums:
+        sums["kassa"] = _num(cash, 0.0) or 0.0
+    return {k: round(v, 0) for k, v in sums.items()}
+
+
 # ── Lagring ──────────────────────────────────────────────────────────────────
 def _default() -> dict:
     return {"values": {s.key: 0.0 for s in SLEEVES}, "positions": [],
@@ -420,6 +456,15 @@ def render_allocator_page() -> None:
         st.error(f"Portföljallokeraren kunde inte renderas: {e}")
 
 
+def _fresh_rows() -> dict:
+    """Sifferuppdateringens rader ({'holdings:<id>': {price, currency, asof}})."""
+    try:
+        import refresh_ui
+        return dict((refresh_ui.load_refresh() or {}).get("rows") or {})
+    except Exception:
+        return {}
+
+
 SLEEVE_CSV = [("_name", "Strategi"), ("_value", "Värde"), ("_pct", "Andel %"),
               ("_target", "Mål %"), ("_lo", "Ram låg"), ("_hi", "Ram hög"),
               ("_status", "Status"), ("_action", "Åtgärd"),
@@ -442,12 +487,12 @@ def _export(data: dict) -> None:
             "_target": s.target, "_lo": s.lo, "_hi": s.hi, "_status": st_,
             "_action": action, "_cap": s.position_cap})
 
-    positions = data.get("positions", [])
+    rows_ = derived_positions(_fresh_rows())
     total = sum(max(0.0, _num(v, 0.0) or 0.0) for v in vals.values())
     total = total or sum(max(0.0, _num(p.get("value"), 0.0) or 0.0)
-                         for p in positions)
+                         for p in rows_)
     pos_rows = []
-    for p in positions:
+    for p in rows_:
         rule = position_rule(p)
         s = SLEEVE_BY_KEY.get((rule.sleeve if rule else p.get("sleeve", "")))
         pct = ((max(0.0, _num(p.get("value"), 0.0) or 0.0) / total * 100)
@@ -511,6 +556,21 @@ def _allocation(data: dict) -> None:
                 unsafe_allow_html=True)
 
     vals = data["values"]
+    # Registret räknar delarna åt dig: antal × kurs per position, kassan ur
+    # Holdings. Knappen skriver in summorna; fälten går fortfarande att
+    # justera för hand (delar som inte ligger i registret).
+    sums = sleeve_sums(derived_positions(_fresh_rows()), positions.cash())
+    if any(sums.values()):
+        hint = " · ".join(f"{SLEEVE_BY_KEY[k].name} {v:,.0f}" for k, v in sums.items() if v)
+        h1, h2 = st.columns([3, 1])
+        h1.caption(f"Ur registret: {hint} SEK")
+        if h2.button("Fyll i ur registret", key="al_fill_from_register"):
+            for k, v in sums.items():
+                if v:
+                    vals[k] = float(v)
+                    st.session_state.pop(f"al_v_{k}", None)
+            _save(data)
+            st.rerun()
     changed = False
     cols = st.columns(4)
     for i, s in enumerate(SLEEVES):
@@ -606,32 +666,35 @@ def _positions(data: dict) -> None:
                       f"tak {r.hard_cap:g} %" for r in POSITION_RULES)
     st.caption(caps)
 
-    a1, a2, a3, a4 = st.columns([1.2, 1.6, 1.2, 0.8])
-    tkr = a1.text_input("Ticker", key="al_p_tkr")
-    rule_key = a2.selectbox("Typ", [r.key for r in POSITION_RULES],
-                            format_func=lambda k: RULE_BY_KEY[k].name,
-                            key="al_p_rule")
-    val = a3.number_input("Värde (SEK)", min_value=0.0, value=0.0, step=10000.0,
-                          key="al_p_val")
-    if a4.button("Lägg till", key="al_p_add"):
-        if tkr.strip() and val > 0:
-            data["positions"].append({"ticker": tkr.upper().strip(),
-                                      "rule": rule_key,
-                                      "sleeve": RULE_BY_KEY[rule_key].sleeve,
-                                      "value": val})
+    # Positionerna kommer ur registret (PORTFOLIO → Holdings). Här skrivs
+    # inget in längre; värdet är antal × kurs i SEK med källan angiven.
+    fresh = _fresh_rows()
+    positions_ = derived_positions(fresh)
+    legacy = data.get("positions", [])
+    if legacy:
+        l1, l2 = st.columns([3, 1])
+        l1.warning(f"{len(legacy)} handskrivna rader från förr ignoreras — positionerna "
+                   f"kommer nu ur Holdings. Ta bort dem när du kontrollerat att "
+                   f"allt finns i registret.")
+        if l2.button("Rensa handskrivna", key="al_p_clear_legacy"):
+            data["positions"] = []
             _save(data)
             st.rerun()
-
-    positions = data.get("positions", [])
-    if not positions:
-        st.caption("Inga positioner inlagda — lägg in dem för att kontrollera taken.")
+    if not positions_:
+        st.caption("Inga öppna positioner i registret — lägg in dem under "
+                   "PORTFOLIO → Holdings så kontrolleras taken här.")
         return
 
     total = sum(max(0.0, _num(v, 0.0) or 0.0) for v in data["values"].values())
-    total = total or sum(max(0.0, _num(p.get("value"), 0.0) or 0.0) for p in positions)
-    breaches = {b["ticker"] for b in position_breaches(positions, total)}
+    total = total or sum(max(0.0, _num(p.get("value"), 0.0) or 0.0) for p in positions_)
+    measurable = [p for p in positions_ if p.get("value") is not None]
+    breaches = {b["ticker"] for b in position_breaches(measurable, total)}
 
-    for i, p in enumerate(list(positions)):
+    for p in positions_:
+        if p.get("value") is None:
+            st.caption(f"{p['ticker']} ({p.get('_strategy')}): antal saknas i Holdings — "
+                       f"kan inte mätas mot taket.")
+            continue
         pct = (max(0.0, _num(p.get("value"), 0.0) or 0.0) / total * 100) if total else 0
         rule = position_rule(p)
         s = SLEEVE_BY_KEY.get((rule.sleeve if rule else p.get("sleeve", "")))
@@ -645,7 +708,7 @@ def _positions(data: dict) -> None:
         of_sleeve = normal_pct(p.get("value"), sleeve_value)
         nstate, nwhy = normal_state(of_sleeve, rule)
 
-        r1, r2, r3, r4 = st.columns([1.2, 1.6, 1.2, 0.8])
+        r1, r2, r3, r4 = st.columns([1.2, 1.6, 1.2, 1.2])
         r1.markdown(f"<span style='color:{c};font-weight:700;'>{p.get('ticker','?')}"
                     f"</span>", unsafe_allow_html=True)
         r2.markdown(f"<span style='color:{DIM};font-size:0.8rem;'>"
@@ -659,21 +722,20 @@ def _positions(data: dict) -> None:
                     f"<span style='color:{DIM};'>/ tak "
                     f"{cap:g} %</span></span>{of_sleeve_txt}" if cap
                     else f"{pct:.1f} %", unsafe_allow_html=True)
+        r4.markdown(f"<span style='color:{DIM};font-size:0.72rem;'>"
+                    f"{p['value']:,.0f} SEK<br>{p['_shares']:g} × {p['_price']:g} "
+                    f"{p['_currency']} · {p['_source']}</span>", unsafe_allow_html=True)
         if nstate == "över normal":
             st.caption(f"↳ {p.get('ticker','?')}: {nwhy}")
-        if r4.button("✕", key=f"al_p_del_{i}"):
-            data["positions"] = [x for j, x in enumerate(positions) if j != i]
-            _save(data)
-            st.rerun()
 
-    for b in position_breaches(positions, total):
+    for b in position_breaches(measurable, total):
         st.error(f"{b['ticker']} är {b['pct']:.1f} % — över taket {b['cap']:g} % "
                  f"({b.get('rule') or b['sleeve']}). Trimma ner.")
 
     # Gamla positioner utan typ i en del med flera regler (optionaliteten:
     # Sprott eller Tiggre?). Taken kan skilja mer än en faktor två, så de
     # gissas inte.
-    for p in unresolved_positions(positions):
+    for p in unresolved_positions(measurable):
         sleeve = (p.get("sleeve") or "").strip().lower()
         options = " eller ".join(f"{r.name} (tak {r.hard_cap:g} %)"
                                  for r in _RULES_PER_SLEEVE.get(sleeve, []))
@@ -683,7 +745,7 @@ def _positions(data: dict) -> None:
                    f"mot något tak.")
 
     # Förvarning: en position som passerat 90 % av taket ska inte fyllas på.
-    for p in positions:
+    for p in measurable:
         s = SLEEVE_BY_KEY.get(p.get("sleeve", ""))
         if s is None or s.position_cap is None or p.get("ticker") in breaches:
             continue
