@@ -153,6 +153,11 @@ def render_data_health() -> None:
         return [(s.name, s.tier, s.status, s.detail, s.fallback) for s in run_all_probes()]
 
     rows = _cached_probes()
+    try:
+        import storage_ui
+        storage_ui.diagnostics()        # lagringens konfiguration — var aldrig anropad
+    except Exception:
+        pass
 
     for name, tier, status, detail, fallback in rows:
         color, label = _STATUS_STYLE.get(status, ("#6B7280", status))

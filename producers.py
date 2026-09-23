@@ -36,6 +36,7 @@ import csv_export
 import lukacs
 import storage
 import storage_ui
+from ui.components import confirm_delete, page_header
 import controls as ctl
 import controls_ui
 
@@ -366,15 +367,9 @@ def render_producers_page(sheet: Optional[str] = None) -> None:
     """
     data = _load()
     storage_ui.save_bar(STORE, "Granskningsarken")
-    title = sheet if sheet in (SHEET_RULE, SHEET_ROYALTY) else "GRANSKNINGSARKEN"
-    st.markdown(
-        f"<div style='text-align:center;padding:10px 0 4px;'>"
-        f"<h2 style='color:{CYAN};letter-spacing:0.12em;margin:0;'>"
-        f"{title.upper()}</h2>"
-        f"<p style='color:{DIM};font-size:0.78rem;margin:6px 0 0;'>"
-        f"Rotationen säger var kapitalet ska, screenern vilka bolag som kvalar. "
-        f"Det här säger vilket av dem du köper.</p></div>",
-        unsafe_allow_html=True)
+    title = sheet if sheet in (SHEET_RULE, SHEET_ROYALTY) else "Granskningsarken"
+    page_header(title, "Rotationen säger var kapitalet ska, screenern vilka bolag som "
+                "kvalar. Det här säger vilket av dem du köper.")
 
     which = sheet
     if which not in (SHEET_RULE, SHEET_ROYALTY):
@@ -479,27 +474,27 @@ def _producers(data: dict) -> None:
             changed = False
             v1, v2, v3, v4 = st.columns(4)
             ev = v1.number_input("EV/EBITDA", min_value=0.0, step=0.5,
-                                 value=float(_num(row.get("ev_ebitda"), 0.0) or 0.0),
+                                 value=_num(row.get("ev_ebitda")),
                                  key=f"pr_ev_{row['id']}")
             nd = v2.number_input("Nettoskuld/EBITDA", step=0.1,
-                                 value=float(_num(row.get("nd_ebitda"), 0.0) or 0.0),
+                                 value=_num(row.get("nd_ebitda")),
                                  key=f"pr_nd_{row['id']}",
                                  help="Negativt = nettokassa.")
             cost = v3.number_input("Kostnad per enhet", min_value=0.0, step=10.0,
-                                   value=float(_num(row.get("unit_cost"), 0.0) or 0.0),
+                                   value=_num(row.get("unit_cost")),
                                    key=f"pr_c_{row['id']}",
                                    help="AISC eller C1 — samma enhet som priset.")
             price = v4.number_input("Råvarupris nu", min_value=0.0, step=10.0,
-                                    value=float(_num(row.get("price"), 0.0) or 0.0),
+                                    value=_num(row.get("price")),
                                     key=f"pr_p_{row['id']}")
             _suggest("producers", row, "ev_ebitda", "ev_ebitda", "EV/EBITDA",
                      f"pr_ev_{row['id']}", lambda: _save(data), fmt="{:.1f}")
             _suggest("producers", row, "nd_ebitda", "nd_ebitda", "nettoskuld/EBITDA",
                      f"pr_nd_{row['id']}", lambda: _save(data), fmt="{:.2f}")
-            if (storage.differs(ev, row.get("ev_ebitda"), 0.0)
-                    or storage.differs(nd, row.get("nd_ebitda"), 0.0)
-                    or storage.differs(cost, row.get("unit_cost"), 0.0)
-                    or storage.differs(price, row.get("price"), 0.0)):
+            if (storage.differs(ev, row.get("ev_ebitda"))
+                    or storage.differs(nd, row.get("nd_ebitda"))
+                    or storage.differs(cost, row.get("unit_cost"))
+                    or storage.differs(price, row.get("price"))):
                 row["ev_ebitda"], row["nd_ebitda"] = ev, nd
                 row["unit_cost"], row["price"] = cost, price
                 changed = True
@@ -512,18 +507,18 @@ def _producers(data: dict) -> None:
                            f"prisfall.")
             life = l2.number_input(
                 "Gruvlivslängd (år)", min_value=0.0, step=1.0,
-                value=float(_num(row.get("mine_life"), 0.0) or 0.0),
+                value=_num(row.get("mine_life")),
                 key=f"pr_life_{row['id']}",
                 help=f"Under {LIFE_MIN_YEARS:g} år = passa oavsett poäng. "
                      f"Står i presentationen.")
             rp = l3.number_input(
                 "R/P-kvot (olja/gas, år)", min_value=0.0, step=1.0,
-                value=float(_num(row.get("rp_ratio"), 0.0) or 0.0),
+                value=_num(row.get("rp_ratio")),
                 key=f"pr_rp_{row['id']}",
                 help=f"Reserver ÷ produktion. Under {RP_MIN_YEARS:g} år = "
                      f"samma sak.")
-            if (storage.differs(life, row.get("mine_life"), 0.0)
-                    or storage.differs(rp, row.get("rp_ratio"), 0.0)):
+            if (storage.differs(life, row.get("mine_life"))
+                    or storage.differs(rp, row.get("rp_ratio"))):
                 row["mine_life"], row["rp_ratio"] = life, rp
                 changed = True
 
@@ -565,11 +560,11 @@ def _producers(data: dict) -> None:
             # Positionsstorleken styr vilka kontroller som krävs.
             pos = st.number_input(
                 "Tänkt position (% av total)", min_value=0.0, step=0.5,
-                value=float(_num(row.get("position_pct"), 0.0) or 0.0),
+                value=_num(row.get("position_pct")),
                 key=f"pr_pos_{row['id']}",
                 help=f"Över {ctl.FULL_WORK_MIN_PCT:g} % krävs AQS och CSM. "
                      f"Under räcker DS.")
-            if storage.differs(pos, row.get("position_pct"), 0.0):
+            if storage.differs(pos, row.get("position_pct")):
                 row["position_pct"] = pos
                 changed = True
 
@@ -579,7 +574,7 @@ def _producers(data: dict) -> None:
                     kind=ctl.PRODUCER):
                 changed = True
 
-            if st.button("Ta bort", key=f"pr_del_{row['id']}"):
+            if confirm_delete("Ta bort", key=f"pr_del_{row['id']}"):
                 data[PRODUCERS] = [x for x in data[PRODUCERS]
                                    if x["id"] != row["id"]]
                 _save(data)
@@ -632,10 +627,10 @@ def _royalty(data: dict) -> None:
 
             p1, p2, p3 = st.columns(3)
             pn = p1.number_input("P/NAV nu", min_value=0.0, step=0.05,
-                                 value=float(_num(row.get("pnav_now"), 0.0) or 0.0),
+                                 value=_num(row.get("pnav_now")),
                                  key=f"ro_pn_{row['id']}")
             pb = p2.number_input("P/NAV historisk botten", min_value=0.0, step=0.05,
-                                 value=float(_num(row.get("pnav_bottom"), 0.0) or 0.0),
+                                 value=_num(row.get("pnav_bottom")),
                                  key=f"ro_pb_{row['id']}")
             disc = discount_vs_bottom(pn, pb)
             p3.metric("Mot botten",
@@ -644,10 +639,10 @@ def _royalty(data: dict) -> None:
 
             e1, e2, e3 = st.columns(3)
             en = e1.number_input("EV/EBITDA nu", min_value=0.0, step=0.5,
-                                 value=float(_num(row.get("ev_now"), 0.0) or 0.0),
+                                 value=_num(row.get("ev_now")),
                                  key=f"ro_en_{row['id']}")
             em = e2.number_input("EV/EBITDA median", min_value=0.0, step=0.5,
-                                 value=float(_num(row.get("ev_median"), 0.0) or 0.0),
+                                 value=_num(row.get("ev_median")),
                                  key=f"ro_em_{row['id']}")
             med = vs_median(en, em)
             e3.metric("Mot median", f"{med:+.1f} %" if med is not None else "–",
@@ -658,11 +653,11 @@ def _royalty(data: dict) -> None:
             g1, g2, g3 = st.columns(3)
             gn = g1.number_input("GEO/aktie nu", min_value=0.0, step=0.01,
                                  format="%.4f",
-                                 value=float(_num(row.get("geo_now"), 0.0) or 0.0),
+                                 value=_num(row.get("geo_now")),
                                  key=f"ro_gn_{row['id']}")
             g3y = g2.number_input("GEO/aktie för 3 år sedan", min_value=0.0,
                                   step=0.01, format="%.4f",
-                                  value=float(_num(row.get("geo_3y"), 0.0) or 0.0),
+                                  value=_num(row.get("geo_3y")),
                                   key=f"ro_g3_{row['id']}")
             geo = geo_growth(gn, g3y)
             g3.metric("GEO-tillväxt", f"{geo:+.1f} %" if geo is not None else "–",
@@ -673,12 +668,12 @@ def _royalty(data: dict) -> None:
                              {"geo_now": f"ro_gn_{row['id']}", "geo_3y": f"ro_g3_{row['id']}",
                               "pnav_now": f"ro_pn_{row['id']}"})
 
-            if (storage.differs(pn, row.get("pnav_now"), 0.0)
-                    or storage.differs(pb, row.get("pnav_bottom"), 0.0)
-                    or storage.differs(en, row.get("ev_now"), 0.0)
-                    or storage.differs(em, row.get("ev_median"), 0.0)
-                    or storage.differs(gn, row.get("geo_now"), 0.0)
-                    or storage.differs(g3y, row.get("geo_3y"), 0.0)):
+            if (storage.differs(pn, row.get("pnav_now"))
+                    or storage.differs(pb, row.get("pnav_bottom"))
+                    or storage.differs(en, row.get("ev_now"))
+                    or storage.differs(em, row.get("ev_median"))
+                    or storage.differs(gn, row.get("geo_now"))
+                    or storage.differs(g3y, row.get("geo_3y"))):
                 row["pnav_now"], row["pnav_bottom"] = pn, pb
                 row["ev_now"], row["ev_median"] = en, em
                 row["geo_now"], row["geo_3y"] = gn, g3y
@@ -693,7 +688,7 @@ def _royalty(data: dict) -> None:
                 f"<div style='color:{TEXT};font-size:0.8rem;margin-top:3px;'>"
                 f"{vd2.why}</div></div>", unsafe_allow_html=True)
 
-            if st.button("Ta bort", key=f"ro_del_{row['id']}"):
+            if confirm_delete("Ta bort", key=f"ro_del_{row['id']}"):
                 data[ROYALTY] = [x for x in data[ROYALTY] if x["id"] != row["id"]]
                 _save(data)
                 st.rerun()

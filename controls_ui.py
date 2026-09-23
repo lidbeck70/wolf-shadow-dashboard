@@ -21,6 +21,11 @@ import controls as ctl
 import lukacs
 import lukacs_ui
 
+
+def _opt(v) -> Optional[float]:
+    """Nummerfältets startvärde: tomt när inget är ifyllt — 0 är ett svar."""
+    return ctl._num(v)
+
 TEXT, DIM = "#e8e4dc", "#8a8578"
 
 
@@ -86,9 +91,9 @@ def render_ds(row: dict, key: str, runway_years=None,
     for (ikey, ilabel), col in zip(ctl.DS_INFO_FIELDS, (i1, i2)):
         cur = row.get(ikey)
         v = col.number_input(ilabel, min_value=0.0, step=1.0,
-                             value=float(cur) if cur not in (None, "") else 0.0,
+                             value=_opt(cur),
                              key=f"{prefix}_{key}_{ikey}")
-        if storage.differs(v, cur, 0.0):
+        if storage.differs(v, cur):
             row[ikey] = v
             changed = True
 
@@ -188,27 +193,27 @@ def render_csm(row: dict, key: str, kind: str = ctl.PRODUCER,
                          unsafe_allow_html=True)
         price = cols[1].number_input(f"Råvarupris ({s})", min_value=0.0,
                                      step=1.0,
-                                     value=float(sc.get("price") or 0.0),
+                                     value=_opt(sc.get("price")),
                                      key=f"{prefix}_{key}_{s}_price",
                                      label_visibility="collapsed")
         if new_kind == ctl.PRODUCER:
             fcf = cols[2].number_input(f"FCF MUSD ({s})", step=1.0,
-                                       value=float(sc.get("fcf_musd") or 0.0),
+                                       value=_opt(sc.get("fcf_musd")),
                                        key=f"{prefix}_{key}_{s}_fcf",
                                        label_visibility="collapsed")
             vals = {"price": price, "fcf_musd": fcf}
         else:
             nav = cols[2].number_input(f"NAV MUSD ({s})", step=1.0,
-                                       value=float(sc.get("nav_musd") or 0.0),
+                                       value=_opt(sc.get("nav_musd")),
                                        key=f"{prefix}_{key}_{s}_nav",
                                        label_visibility="collapsed")
             need = cols[3].number_input(f"Finansieringsbehov ({s})",
                                         min_value=0.0, step=1.0,
-                                        value=float(sc.get("financing_need") or 0.0),
+                                        value=_opt(sc.get("financing_need")),
                                         key=f"{prefix}_{key}_{s}_need",
                                         label_visibility="collapsed")
             vals = {"price": price, "nav_musd": nav, "financing_need": need}
-        if any(storage.differs(v, sc.get(k), 0.0)
+        if any(storage.differs(v, sc.get(k))
                for k, v in vals.items()):
             sc.update(vals)
             changed = True

@@ -26,9 +26,9 @@ def test_only_the_open_top_tab_renders():
     src = _src("wolf_panel.py")
     assert 'st.tabs(tab_labels, on_change="rerun", key="main_tabs")' in src
     main = src[src.index("def main():"):]
-    tabs = re.findall(r"^    if _is_open\((tab_\w+)\):\n        with \1:", main, flags=re.M)
+    tabs = re.findall(r'^    if _is_open\(tabs\["(\w+)"\]\):\n        with tabs\["\1"\]:', main, flags=re.M)
     assert len(tabs) == 10 and len(set(tabs)) == 10, tabs
-    assert not re.search(r"^    with tab_\w+:", main, flags=re.M)        # ingen ovillkorad toppflik kvar
+    assert not re.search(r'^    with tabs\[', main, flags=re.M)          # ingen ovillkorad toppflik kvar
     import wolf_panel
     class _T:
         def __init__(self, o): self.open = o

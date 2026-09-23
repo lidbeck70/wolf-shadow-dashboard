@@ -321,8 +321,8 @@ def render_rotation_page() -> None:
     storage_ui.save_bar(STORE, "Råvarurotationen")
     try:
         st.markdown(
-            f"<h1 style='color:{TEXT};margin:0;letter-spacing:0.06em;'>"
-            f"Råvarurotationen <span style='color:{GOLD};'>· vart kapitalet ska</span></h1>"
+            f"<h2 style='color:{GOLD};margin:0;letter-spacing:0.12em;'>"
+            f"RÅVARUROTATION <span style='color:{DIM};font-size:0.8em;'>· vart kapitalet ska</span></h2>"
             f"<p style='color:{DIM};font-size:0.8rem;margin:6px 0 12px;'>"
             f"Poängen är inte att äga alla — det är att alltid ha någon sektor som är "
             f"hatad. Betygsätts en gång i månaden; kapitalet går till de 2–3 mest "

@@ -1,281 +1,154 @@
 """
-tabs/home.py
-============
-Home tab — Mission Control layout for Nordic Arc Systems.
+tabs/home.py — Mission Control.
 
-Shows: system pulse, four navigation zones, and recent alerts.
+Läget just nu ur det som faktiskt finns sparat (wolf_regime.json, EMBER-
+resultaten, håvarna, sifferuppdateringen och larmtillståndet), zonerna ur
+navigationsträdet (ui/nav.py) och de senaste larmhändelserna ur Gisten.
+
+Förut lästes tre session_state-nycklar som ingen satte, så pulsen sa alltid
+UNKNOWN, och "Recent alerts" var en processlista som var tom efter varje
+omstart och aldrig såg de schemalagda larmen.
 """
 
 from __future__ import annotations
 
-import streamlit as st
 from datetime import datetime
 
-from ui.theme import inject_css, section_title, PALETTE as _P
+import streamlit as st
 
-_DIM   = _P["text_dim"]
-_TEXT  = _P["text"]
+from ui import nav
+from ui.components import card, kpi
+from ui.theme import section_title
+from ui.tokens import ACCENT, DIM, EMBER, GREEN, GREY, PURPLE, TEXT, regime_color
 
-_CYAN   = "#00E5FF"
-_PURPLE = "#B400FF"
-_EMBER  = "#FF6B3D"
-_GREEN2 = "#2d8a4e"
-
-
-# ── Color logic ───────────────────────────────────────────────────────────────
-
-def _status_color(status: str) -> str:
-    s = status.upper()
-    if any(k in s for k in ("BULL", "OPTIMISM", "BELIEF", "HOPE")):
-        return _GREEN2
-    if any(k in s for k in ("BEAR", "PANIC", "CAPITULATION")):
-        return _EMBER
-    return _EMBER
+_ZONE_COLOR = {"regime": PURPLE, "screening": ACCENT, "review": "#c9a84c",
+               "intel": EMBER, "portfolio": GREEN}
+_WEEKDAYS = ("måndag", "tisdag", "onsdag", "torsdag", "fredag", "lördag", "söndag")
+_MONTHS = ("januari", "februari", "mars", "april", "maj", "juni", "juli",
+           "augusti", "september", "oktober", "november", "december")
 
 
-# ── HTML builders ─────────────────────────────────────────────────────────────
-
-def _pulse_card(label: str, value: str, color: str) -> str:
-    return (
-        f'<div style="background:#1A1F25;border:1px solid rgba(255,255,255,0.06);'
-        f'border-left:3px solid {color};border-radius:8px;padding:14px 16px;">'
-        f'<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;'
-        f'color:{_DIM};margin-bottom:6px;">{label}</div>'
-        f'<div style="font-size:16px;font-weight:700;color:{color};">{value}</div>'
-        f'</div>'
-    )
+def swedish_date(d: datetime) -> str:
+    return f"{_WEEKDAYS[d.weekday()]} {d.day} {_MONTHS[d.month - 1]} {d.year}"
 
 
-def _zone_label(text: str, color: str) -> str:
-    return (
-        f'<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;'
-        f'color:{color};border-left:2px solid {color};padding-left:8px;'
-        f'margin-bottom:12px;">{text}</div>'
-    )
-
-
-def _nav_card(title: str, desc: str, color: str) -> str:
-    return (
-        f'<div style="background:#1A1F25;border:1px solid rgba(255,255,255,0.06);'
-        f'border-left:2px solid {color};border-radius:8px;padding:14px;">'
-        f'<div style="font-size:13px;font-weight:700;color:#E8EDF2;margin-bottom:4px;">{title}</div>'
-        f'<div style="font-size:11px;color:#6B7280;line-height:1.5;">{desc}</div>'
-        f'</div>'
-    )
-
-
-# ── Daily Briefing ────────────────────────────────────────────────────────────
-
-def _render_daily_briefing() -> None:
-    """Compact daily status block: regime summary + alert count + next step."""
-    wolf   = st.session_state.get("wolf_regime_status", "UNKNOWN")
-    viking = st.session_state.get("viking_regime_status", "UNKNOWN")
-    cycle  = st.session_state.get("market_cycle_phase", "UNKNOWN")
-
+# ── Läget ur det sparade ─────────────────────────────────────────────────────
+@st.cache_data(ttl=600, show_spinner=False)
+def _load_status() -> dict:
+    """Ren läsning av det som redan ligger sparat. Saknas en källa blir den
+    'okänd' med orsak — aldrig ett gissat läge."""
+    out = {}
     try:
-        from alerts.engine import ALERT_LOG
-        n_alerts = len(ALERT_LOG)
+        from gist_storage import load_wolf_json
+        d = load_wolf_json("wolf_regime.json") or {}
+        out["swing"] = {"label": str(d.get("regime") or "OKÄND"),
+                        "asof": str(d.get("generated") or "")[:10]}
     except Exception:
-        n_alerts = 0
-
-    def _regime_dot(status: str) -> str:
-        s = status.upper()
-        if any(k in s for k in ("BULL", "OPTIMISM", "BELIEF", "HOPE")):
-            return f'<span style="color:#2d8a4e;">●</span>'
-        if any(k in s for k in ("BEAR", "PANIC", "CAPITULATION")):
-            return f'<span style="color:#FF6B3D;">●</span>'
-        return f'<span style="color:#6B7280;">●</span>'
-
-    def _next_step(wolf: str, viking: str, n_alerts: int) -> str:
-        w = wolf.upper()
-        v = viking.upper()
-        both_bull = any(k in w for k in ("BULL",)) and any(k in v for k in ("BULL",))
-        either_bear = any(k in w for k in ("BEAR", "PANIC")) or any(k in v for k in ("BEAR", "PANIC"))
-        if either_bear:
-            return "⚠️ Undvik nya positioner — ett eller båda regimen är björnaktiga."
-        if both_bull:
-            return "✅ Bägge regimen bullish — screena kandidater och kontrollera setup."
-        if n_alerts > 0:
-            return f"🔔 {n_alerts} aktiva alerts — granska ALERTS-fliken."
-        return "🔍 Kontrollera regim och kör screener för att hitta kandidater."
-
-    summary_html = (
-        f'<div style="background:#1A1F25;border:1px solid rgba(255,255,255,0.06);'
-        f'border-left:3px solid {_CYAN};border-radius:8px;padding:14px 18px;margin-bottom:16px;">'
-        f'<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;'
-        f'color:{_DIM};margin-bottom:10px;">DAGLIG BRIEFING</div>'
-        f'<div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:10px;">'
-        f'  <div style="font-size:12px;color:#E8EDF2;">'
-        f'    {_regime_dot(wolf)} Wolf&nbsp;<span style="color:{_DIM};">{wolf}</span>'
-        f'  </div>'
-        f'  <div style="font-size:12px;color:#E8EDF2;">'
-        f'    {_regime_dot(viking)} Viking&nbsp;<span style="color:{_DIM};">{viking}</span>'
-        f'  </div>'
-        f'  <div style="font-size:12px;color:#E8EDF2;">'
-        f'    📈 Cykel&nbsp;<span style="color:{_DIM};">{cycle}</span>'
-        f'  </div>'
-        f'  <div style="font-size:12px;color:#E8EDF2;">'
-        f'    🔔 Alerts&nbsp;<span style="color:{"#FF6B3D" if n_alerts else _DIM};">{n_alerts}</span>'
-        f'  </div>'
-        f'</div>'
-        f'<div style="font-size:12px;color:{_CYAN};border-top:1px solid rgba(255,255,255,0.06);'
-        f'padding-top:8px;">{_next_step(wolf, viking, n_alerts)}</div>'
-        f'</div>'
-    )
-    st.markdown(summary_html, unsafe_allow_html=True)
+        out["swing"] = {"label": "OKÄND", "asof": ""}
+    try:
+        from ember.cache import load_ember_results
+        e = load_ember_results() or {}
+        n = len(e.get("eligible") or [])
+        out["ember"] = {"label": f"{n} setup{'s' if n != 1 else ''}",
+                        "asof": str(e.get("timestamp") or "")[:10]}
+    except Exception:
+        out["ember"] = {"label": "–", "asof": ""}
+    try:
+        from gist_storage import load_blob
+        sc = load_blob("screens.json", None) or {}
+        hits = sum(len((v or {}).get("rows") or []) for v in (sc.get("screens") or {}).values())
+        new = sum(len((v or {}).get("new") or []) for v in (sc.get("screens") or {}).values())
+        out["screens"] = {"label": f"{hits} träffar · {new} nya" if sc else "–",
+                          "asof": str(sc.get("generated") or "")[:10]}
+        sr = load_blob("sheets_refresh.json", None) or {}
+        ev = sr.get("events") or []
+        out["events"] = {"label": f"{len(ev)} händelser" if sr else "–",
+                         "asof": str(sr.get("generated") or "")[:10],
+                         "rows": ev[:8]}
+    except Exception:
+        out["screens"] = {"label": "–", "asof": ""}
+        out["events"] = {"label": "–", "asof": "", "rows": []}
+    return out
 
 
+def _next_step(status: dict) -> str:
+    swing = status.get("swing", {}).get("label", "OKÄND").upper()
+    if swing == "RÖD":
+        return "⛔ Swing-regimen är RÖD — inga nya köp, bara exits. Gå igenom innehaven mot säljreglerna."
+    if swing == "GUL":
+        return "🟡 GUL regim — halv positionsstorlek. Kör screenern, men var selektiv."
+    if swing == "GRÖN":
+        return "🟢 GRÖN regim — kör SCREENING → Swing Screener och kontrollera setup A/B."
+    return "🔍 Ingen regimdata ännu — kör wolf_data.py eller vänta på nästa schemalagda körning."
 
 
-def _render_system_pulse() -> None:
-    wolf   = st.session_state.get("wolf_regime_status", "UNKNOWN")
-    viking = st.session_state.get("viking_regime_status", "UNKNOWN")
-    cycle  = st.session_state.get("market_cycle_phase", "UNKNOWN")
-
-    c1, c2, c3 = st.columns(3)
+def _render_pulse(status: dict) -> None:
+    section_title("Läget just nu", "📡")
+    sw, em, sc, ev = (status.get(k, {}) for k in ("swing", "ember", "screens", "events"))
+    c1, c2, c3, c4 = st.columns(4)
     with c1:
-        st.markdown(_pulse_card("Wolf Regime", wolf, _status_color(wolf)), unsafe_allow_html=True)
+        st.markdown(kpi("Swing-regim", sw.get("label", "OKÄND"),
+                        regime_color(sw.get("label")), sw.get("asof", "")), unsafe_allow_html=True)
     with c2:
-        st.markdown(_pulse_card("Viking Regime", viking, _status_color(viking)), unsafe_allow_html=True)
+        st.markdown(kpi("EMBER-setups", em.get("label", "–"), EMBER, em.get("asof", "")),
+                    unsafe_allow_html=True)
     with c3:
-        st.markdown(_pulse_card("Market Cycle Phase", cycle, _status_color(cycle)), unsafe_allow_html=True)
-
-
-# ── Navigation Zones ──────────────────────────────────────────────────────────
-
-def _render_zones() -> None:
-    # ZONE 1 — SCREENING
-    st.markdown(_zone_label("SCREENING — HITTA KANDIDATER", _CYAN), unsafe_allow_html=True)
-    z1 = st.columns(3)
-    zone1 = [
-        ("Arc Screener",     "Wolf (EMA/swing) · Viking (OVTLYR) · EMBER (råvaror)"),
-        ("Contrarian Alpha", "Contrarian Alpha (hatade bolag) · Long Screener (CAGR)"),
-        ("Market Cycle",     "14-fas psykologicykel för valfri ticker"),
-    ]
-    for col, (title, desc) in zip(z1, zone1):
-        with col:
-            st.markdown(_nav_card(title, desc, _CYAN), unsafe_allow_html=True)
-
-    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
-
-    # ZONE 2 — REGIME
-    st.markdown(_zone_label("REGIME — FÖRSTÅ MARKNADEN", _PURPLE), unsafe_allow_html=True)
-    z2 = st.columns(3)
-    zone2 = [
-        ("Arc Regime",      "Wolf (EMA-stack) · Viking (OVTLYR NINE) · EMBER (råvaruregim)"),
-        ("Alpha Regime",    "Quality & Contrarian · Long Trend (positionscykel)"),
-        ("Flow Divergence", "Global sektorsbredd och makrocykel"),
-    ]
-    for col, (title, desc) in zip(z2, zone2):
-        with col:
-            st.markdown(_nav_card(title, desc, _PURPLE), unsafe_allow_html=True)
-
-    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
-
-    # ZONE 3 — INTELLIGENCE
-    st.markdown(_zone_label("INTELLIGENCE — TOLKA SIGNALERNA", _EMBER), unsafe_allow_html=True)
-    z3 = st.columns(4)
-    zone3 = [
-        ("Odin's Blindspot", "Contrarian sektorintelligens"),
-        ("Sentiment",        "Fear, greed och kapitalflöden"),
-        ("Retail Pulse",     "Reddit, StockTwits, retail-flöde"),
-        ("Heatmap",          "Visuell marknadsvy"),
-    ]
-    for col, (title, desc) in zip(z3, zone3):
-        with col:
-            st.markdown(_nav_card(title, desc, _EMBER), unsafe_allow_html=True)
-
-    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
-
-    # ZONE 4 — PORTFOLIO
-    st.markdown(_zone_label("PORTFOLIO — HANTERA POSITIONER", _GREEN2), unsafe_allow_html=True)
-    z4 = st.columns(4)
-    zone4 = [
-        ("Holdings",      "Positioner och riskexponering"),
-        ("Trade Journal", "Logga trades och granska P&L"),
-        ("Backtest",      "Historisk signalvalidering"),
-        ("Alerts",        "Konfigurera och hantera notifieringar"),
-    ]
-    for col, (title, desc) in zip(z4, zone4):
-        with col:
-            st.markdown(_nav_card(title, desc, _GREEN2), unsafe_allow_html=True)
-
-
-# ── Recent alerts ─────────────────────────────────────────────────────────────
-
-def _render_recent_alerts(n: int = 5) -> None:
-    section_title("Recent Alerts", "🔔")
-
-    try:
-        from alerts.engine import ALERT_LOG
-    except Exception:
-        ALERT_LOG = []
-
-    if not ALERT_LOG:
-        st.markdown(
-            f'<div style="background:#1A1F25;border:1px solid rgba(255,255,255,0.06);'
-            f'border-radius:8px;padding:16px;color:{_DIM};font-size:0.76rem;text-align:center;">'
-            f'No alerts fired yet.</div>',
-            unsafe_allow_html=True,
-        )
-        return
-
-    for entry in reversed(ALERT_LOG[-n:]):
-        ts    = entry.get("timestamp", "")
-        msg   = entry.get("message", "")
-        chans = entry.get("channels", [])
-        meta  = entry.get("metadata", {}) or {}
-        sig   = meta.get("signal", "")
-
-        sig_color = {
-            "BUY":    _GREEN2,
-            "SELL":   _EMBER,
-            "REDUCE": _EMBER,
-        }.get(sig, _DIM)
-
-        chan_pills = "&nbsp;".join(
-            f'<span style="background:rgba(255,255,255,0.04);border:1px solid {_DIM}33;'
-            f'border-radius:3px;padding:1px 5px;font-size:0.62rem;color:{_DIM};">{c}</span>'
-            for c in chans
-        )
-
-        st.markdown(
-            f'<div style="background:#1A1F25;border:1px solid rgba(255,255,255,0.06);'
-            f'border-radius:8px;padding:10px 14px;margin-bottom:6px;">'
-            f'<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
-            f'  <div style="flex:1;min-width:0;">'
-            f'    <div style="color:{_TEXT};font-size:0.76rem;margin-bottom:4px;">{msg}</div>'
-            f'    <div>{chan_pills}</div>'
-            f'  </div>'
-            f'  <div style="text-align:right;flex-shrink:0;margin-left:12px;">'
-            + (f'<div style="color:{sig_color};font-size:0.7rem;font-weight:700;'
-               f'margin-bottom:4px;">{sig}</div>' if sig else "")
-            + f'<div style="color:{_DIM};font-size:0.63rem;">{ts[:16] if ts else ""}</div>'
-            f'  </div>'
-            f'</div></div>',
-            unsafe_allow_html=True,
-        )
-
-
-# ── Main entry point ──────────────────────────────────────────────────────────
-
-def tab_home() -> None:
-    inject_css()
-    section_title("Mission Control", "🔱")
-
+        st.markdown(kpi("Håvarna", sc.get("label", "–"), ACCENT, sc.get("asof", "")),
+                    unsafe_allow_html=True)
+    with c4:
+        st.markdown(kpi("Arkens händelser", ev.get("label", "–"), PURPLE, ev.get("asof", "")),
+                    unsafe_allow_html=True)
     st.markdown(
-        f'<p style="color:{_DIM};font-size:0.8rem;margin:-8px 0 20px;">'
-        f'Nordic Arc Systems — See What the Market Can’t.  '
-        f'<span style="font-size:0.72rem;">{datetime.now().strftime("%A %d %B %Y")}</span></p>',
-        unsafe_allow_html=True,
-    )
+        f"<div style='background:#1A1F25;border:1px solid rgba(255,255,255,0.06);"
+        f"border-left:3px solid {ACCENT};border-radius:8px;padding:12px 18px;margin:12px 0 4px;"
+        f"font-size:12px;color:{TEXT};'>{_next_step(status)}</div>", unsafe_allow_html=True)
 
-    section_title("System Pulse", "📡")
-    _render_daily_briefing()
-    _render_system_pulse()
-    st.markdown("<br>", unsafe_allow_html=True)
 
+# ── Zonerna ur navigationsträdet ─────────────────────────────────────────────
+def _render_zones() -> None:
+    for key, title, cards in nav.HOME_ZONES:
+        color = _ZONE_COLOR.get(key, GREY)
+        st.markdown(
+            f"<div style='font-size:10px;letter-spacing:3px;text-transform:uppercase;"
+            f"color:{color};border-left:2px solid {color};padding-left:8px;margin:18px 0 12px;'>"
+            f"{nav.TOP_LABEL[key]} · {title}</div>", unsafe_allow_html=True)
+        cols = st.columns(len(cards))
+        for col, (name, desc) in zip(cols, cards):
+            with col:
+                st.markdown(card(name, desc, color), unsafe_allow_html=True)
+
+
+# ── Senaste händelserna ur arken ─────────────────────────────────────────────
+def _render_recent_events(status: dict) -> None:
+    section_title("Senaste händelserna ur arken", "🔔")
+    rows = status.get("events", {}).get("rows") or []
+    if not rows:
+        st.markdown(
+            f"<div style='background:#1A1F25;border:1px solid rgba(255,255,255,0.06);"
+            f"border-radius:8px;padding:16px;color:{DIM};font-size:0.76rem;text-align:center;'>"
+            f"Inga händelser i senaste sifferuppdateringen. Larmen skickas till Discord av "
+            f"de schemalagda körningarna — se ALERTS.</div>", unsafe_allow_html=True)
+        return
+    for e in rows:
+        st.markdown(
+            f"<div style='background:#1A1F25;border:1px solid rgba(255,255,255,0.06);"
+            f"border-radius:8px;padding:10px 14px;margin-bottom:6px;'>"
+            f"<div style='color:{TEXT};font-size:0.8rem;font-weight:700;'>{e.get('title', '')}</div>"
+            f"<div style='color:{DIM};font-size:0.74rem;'>{e.get('body', '')}</div></div>",
+            unsafe_allow_html=True)
+
+
+# ── Sidan ────────────────────────────────────────────────────────────────────
+def tab_home() -> None:
+    section_title("Mission Control", "🔱")
+    st.markdown(
+        f'<p style="color:{DIM};font-size:0.8rem;margin:-8px 0 20px;">'
+        f'Nordic Arc Systems — regim → screening → granskning → köp.  '
+        f'<span style="font-size:0.72rem;">{swedish_date(datetime.now())}</span></p>',
+        unsafe_allow_html=True)
+
+    status = _load_status()
+    _render_pulse(status)
     _render_zones()
     st.markdown("<br>", unsafe_allow_html=True)
-
-    _render_recent_alerts()
+    _render_recent_events(status)

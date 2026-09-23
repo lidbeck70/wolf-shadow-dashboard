@@ -33,6 +33,7 @@ from typing import Optional
 import csv_export
 import storage
 import storage_ui
+from ui.tokens import GOLD as GOLD_H
 import controls as ctl
 import controls_ui
 
@@ -333,8 +334,8 @@ def render_tiggre_page() -> None:
         st.markdown(
             f"<div style='display:flex;justify-content:space-between;"
             f"align-items:baseline;flex-wrap:wrap;gap:8px;'>"
-            f"<h1 style='color:{TEXT};margin:0;letter-spacing:0.06em;'>"
-            f"Tiggre <span style='color:{EMBER};'>· sweet spot</span></h1>"
+            f"<h2 style='color:{GOLD_H};margin:0;letter-spacing:0.12em;'>"
+            f"TIGGRE <span style='color:{EMBER};font-size:0.8em;'>· sweet spot</span></h2>"
             f"<span style='color:{DIM};font-size:0.85rem;'>Lobo-arket · {_today()}</span>"
             f"</div>"
             f"<p style='color:{DIM};font-size:0.8rem;margin:6px 0 14px;'>"
@@ -528,18 +529,18 @@ def _candidate_card(data: dict, cand: dict) -> None:
                     f"Lobo-arket</b>", unsafe_allow_html=True)
         m1, m2, m3 = st.columns(3)
         mcap = m1.number_input("Börsvärde (MUSD)", min_value=0.0,
-                               value=float(_num(cand.get("mcap"), 0.0) or 0.0),
+                               value=_num(cand.get("mcap")),
                                step=10.0, key=f"tg_mcap_{cand['id']}")
         nav = m2.number_input("NAV = NPV after tax (MUSD)", min_value=0.0,
-                              value=float(_num(cand.get("nav"), 0.0) or 0.0),
+                              value=_num(cand.get("nav")),
                               step=10.0, key=f"tg_nav_{cand['id']}",
                               help="Alltid after-tax — pre-tax är 30–40 % för högt.")
         down = m3.number_input("Nedsida (%)", value=float(_num(cand.get("downside"), -40.0) or -40.0),
                                step=5.0, key=f"tg_down_{cand['id']}",
                                help="Värsta rimliga scenariot: utspädning, byggförsening.")
-        if (storage.differs(mcap, cand.get("mcap"), 0.0)
-                or storage.differs(nav, cand.get("nav"), 0.0)
-                or storage.differs(down, cand.get("downside"), 0.0)):
+        if (storage.differs(mcap, cand.get("mcap"))
+                or storage.differs(nav, cand.get("nav"))
+                or storage.differs(down, cand.get("downside"))):
             cand["mcap"], cand["nav"], cand["downside"] = mcap, nav, down
             changed = True
 
@@ -665,7 +666,7 @@ def _catalysts(data: dict, cand: dict) -> None:
                                 placeholder="ÅÅÅÅ-MM-DD",
                                 label_visibility="collapsed")
             rea = o2.number_input("Kursreaktion %",
-                                  value=float(_num(cat.get("reaction"), 0.0) or 0.0),
+                                  value=_num(cat.get("reaction")),
                                   step=1.0,
                                   key=f"tg_catrea_{cand['id']}_{cat.get('id','')}",
                                   label_visibility="collapsed")
@@ -791,8 +792,8 @@ def _positions(data: dict) -> None:
         eq = equity_at_risk(new_entry, new_cur, p.get("shares", 0), p.get("half_sold"))
         c5.metric("Kapital i risk", "0 kr" if eq == 0 else (_fmt(eq, 0) if eq else "–"),
                   help="Efter free ride är insatsen uttagen — resten åker på husets pengar.")
-        if (storage.differs(new_entry, entry, 0.0)
-                or storage.differs(new_cur, cur, 0.0)):
+        if (storage.differs(new_entry, entry)
+                or storage.differs(new_cur, cur)):
             p["entry"], p["current"] = new_entry, new_cur
             _save(data)
 

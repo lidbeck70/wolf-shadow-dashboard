@@ -314,7 +314,7 @@ def _guide_wolf() -> None:
         st.markdown(
             _gs("5. Var i panelen",
                 _ul([
-                    "<b>Screena kandidater:</b> SIGNALS → Arc Screener.",
+                    "<b>Screena kandidater:</b> SCREENING → Arc Screener.",
                     "<b>Kontrollera alla 11 regler:</b> REGIME → Wolf Regime → Entry Checklist (auto pass/fail).",
                     "<b>SL/TP-kalkylator:</b> REGIME → Wolf Regime → SL/TP-sektion.",
                     "<b>Trendfilter:</b> REGIME → Wolf Regime → Regime Score (grön badge = handla long).",
@@ -403,7 +403,7 @@ def _guide_viking() -> None:
             _gs("5. Var i panelen",
                 _ul([
                     "<b>Alla 10 entry-regler:</b> REGIME → Viking Regime (Vikings Nine-checklist).",
-                    "<b>Screena momentum:</b> SIGNALS → Arc Screener (Viking-filter).",
+                    "<b>Screena momentum:</b> SCREENING → Arc Screener (Viking-filter).",
                     "<b>Marknadsbreadd:</b> REGIME → Viking Regime → Bull List % gauge.",
                     "<b>Sektor:</b> INTELLIGENCE → Heatmap / Flow Divergence.",
                     "<b>F&amp;G per aktie:</b> REGIME → Viking Regime → Oscillator Direction.",
@@ -491,10 +491,10 @@ def _guide_ember() -> None:
                 + _ul([
                     "<b>1. INTELLIGENCE → Odin's Blindspot → Tema-tavlan:</b> "
                     "vilka råvarukategorier är TIDIG/MITTEN i cykeln just nu?",
-                    "<b>2. REGIME → 🌍 EMBER Regime:</b> "
+                    "<b>2. REGIME → Råvaror → 🌍 EMBER Regime:</b> "
                     "är makromiljön rätt? (PÅ / SELEKTIV / AV) — "
                     "handla aldrig mot regimen.",
-                    "<b>3. SIGNALS → 🔥 EMBER → SKANNA:</b> "
+                    "<b>3. SCREENING → Arc Screener → 🔥 EMBER → SKANNA:</b> "
                     "välj universum, tryck SKANNA, granska TOPP 3 — "
                     "bekräfta att alla 4 trendgates och båda entry-hårda gates är gröna.",
                     "<b>4. Discipline (i setup-kortet):</b> "
@@ -1052,61 +1052,46 @@ def _page_cheatsheet() -> None:
 
 
 _PANEL_GUIDE: list[tuple] = [
-    ("PORTFOLIO → Swing", "Momentum: alla regler",
-     "Veckochecklistan, bevakningslistan och positionerna med automatiska "
-     "säljregel-flaggor (MA50 / stop −10 % / ur topp 40). Köpknappar låses av "
-     "marknadsfiltret."),
+    # Sökvägarna är exakt navigationsträdets etiketter (ui/nav.py) — testet
+    # test_panel_guide_table_uses_real_paths läser dem därifrån.
+    ("REGIME → Marknad → Swing Regime", "Momentum: entry #1, #6",
+     "Trafikljus GRÖN/GUL/RÖD + regelverk, OMXSPI vs MA200, marknadsbredd "
+     "(dör före index) och regimhistorik."),
+    ("REGIME → Marknad → Arc Regime → Wolf Regime", "Wolf: alla regler",
+     "4-lagers regime + Entry Checklist (Trend/Volatilitet/Momentum/Candlestick/"
+     "OB) med auto-pass/fail. SL/TP-kalkylator. Benchmark RS."),
+    ("REGIME → Marknad → Arc Regime → Viking Regime", "Viking: alla + Vikings Nine",
+     "Prisgraf + EMA 10/20/50/200 + Order Blocks. Per-ticker Fear & Greed. "
+     "Overhead Clusters. SL/TP-kalkylator."),
+    ("REGIME → Marknad → Alpha Regime → Quality & Contrarian",
+     "Alpha #1-10 · Quality · Deep Contrarian",
+     "Alla regler som live gates. GRÖN/ORANGE/RÖD badge. Quality-läge och "
+     "Deep Contrarian-läge (cykelfas + ackumulerings-/distributionssteg)."),
+    ("REGIME → Marknad → Alpha Regime → Long Trend", "Alpha #2, #6, #9",
+     "Tio grindar för en långsiktig position: EMA200, sektor, F&G, "
+     "positionsstorlek på EMA200-stoppen."),
+    ("REGIME → Marknad → Flow Divergence", "Alpha #4 · Viking sektor",
+     "Global sektorsbredd och makrocykel — sektorhjulet grön/gul/röd."),
+    ("REGIME → Marknad → Market Cycle", "Quality · Deep Contrarian",
+     "Marknadsfas (CAPITULATION → EUPHORIA). Styr både Quality-cykelgaten och "
+     "Deep Contrarians ackumulerings-/distributionssteg."),
+    ("REGIME → Råvaror → 🌍 EMBER Regime", "Ember: makro/cykelfilter",
+     "Regimbadge per råvarukomplex som avgör om Ember-entries överhuvudtaget "
+     "är tillåtna. DATA_GAP blir aldrig GRÖN."),
+    ("REGIME → Råvaror → Råvarurotation", "Rule · Sprott · Durrett · Tiggre — var kapitalet ska",
+     "Hat-betyg per råvara en gång i månaden; AGERA-råvarorna styr vilka "
+     "screeners som är värda att köra."),
     ("SCREENING → Swing Screener", "Momentum: entry #2, #3",
      "Färdig momentum-ranking topp 40 med setup-flaggor A/B och RSI. "
      "'→ Bevakning' skickar kandidaten till Swing-fliken."),
-    ("REGIME → Swing Regime", "Momentum: entry #1, #6",
-     "Trafikljus GRÖN/GUL/RÖD + regelverk, OMXSPI vs MA200, marknadsbredd "
-     "(dör före index) och regimhistorik."),
     ("SCREENING → Arc Screener", "Wolf / Viking / Ember",
      "Wolf: Regime Score + volymbekräftelse. Viking: Z-score composite + Vikings "
      "Nine. Ember: råvarusetups med T/E-grindar och no-trade-flaggor."),
-    ("SCREENING → Contrarian Alpha", "Quality / Deep Contrarian",
+    ("SCREENING → Contrarian Alpha → Screener", "Quality / Deep Contrarian",
      "Kvalitetspoäng, KAP-badge, Hat Score + Necessity. Detaljkort med "
      "gate-checklista och score-breakdown."),
-    ("REGIME → Alpha Regime → Quality & Contrarian", "Alpha #1-10 · Quality · Deep Contrarian",
-     "Alla regler som live gates. GRÖN/ORANGE/RÖD badge. Quality-läge och "
-     "Deep Contrarian-läge (cykelfas + ackumulerings-/distributionssteg)."),
-    ("REGIME → Arc Regime → Wolf Regime", "Wolf: alla regler",
-     "4-lagers regime + Entry Checklist (Trend/Volatilitet/Momentum/Candlestick/"
-     "OB) med auto-pass/fail. SL/TP-kalkylator. Benchmark RS."),
-    ("REGIME → Arc Regime → Viking Regime", "Viking: alla + Vikings Nine",
-     "Prisgraf + EMA 10/20/50/200 + Order Blocks. Per-ticker Fear & Greed. "
-     "Overhead Clusters. SL/TP-kalkylator."),
-    ("REGIME → Arc Regime → 🌍 EMBER Regime", "Ember: makro/cykelfilter",
-     "Regimbadge som avgör om Ember-entries överhuvudtaget är tillåtna. "
-     "DATA_GAP blir aldrig GRÖN."),
-    ("PORTFOLIO → Holdings", "Alpha #8-9 · Quality · Deep Contrarian",
-     "Tre portföljer med live-signaler. Positionsstorlek >10 %-varning, "
-     "sektorexponering >25 %, tranches 0/3–3/3, korrelationsmatris."),
-    ("PORTFOLIO → Trade Journal", "Alla — disciplin",
-     "Logga varje affär: entry, exit, R, exit-anledning och om du följde planen. "
-     "Utan journal går strategin inte att utvärdera."),
-    ("INTELLIGENCE → Retail Pulse", "Deep Contrarian: sentiment-overlay",
-     "Retail sentiment 0-100. Under 30 = extrem rädsla (köpstöd). Över 70 = "
-     "extrem girighet (säljstöd)."),
-    ("INTELLIGENCE → Sentiment", "Alpha #5 · Viking #5, #9",
-     "Fear & Greed gauge 0-100. Under 60 = OK att köpa. Över 60 = vänta."),
-    ("SCREENING → Market Cycle", "Quality · Deep Contrarian",
-     "Marknadsfas (CAPITULATION → EUPHORIA). Styr både Quality-cykelgaten och "
-     "Deep Contrarians ackumulerings-/distributionssteg."),
-    ("RULES", "Alla regelverk",
-     "Denna sida. Läs före varje handelsdag. Reglerna finns även inline i varje "
-     "regime-flik."),
-    ("GRANSKNING → 🎯 Scorecard", "Alla — köpgrinden",
-     "Sista steget före köp. Läser kandidaterna ur de andra flikarna och "
-     "kräver sju gröna kryss. Luckor i tabellen = standardbeslut INGEN AFFÄR."),
-    ("GRANSKNING → Insider", "Insider: alla regler",
-     "Poängen 0–10, kvalitetsgrinden, teknisk trigger och statusflödet. "
-     "Visar vs klustersnittet och stoppen −15 %. Insynsflödet läses i "
-     "Börsdata."),
-    ("GRANSKNING → Poängmodell", "Sprott · Durrett",
-     "Fem faktorer 0–2, runway ur kassa/burn, MCap/uns och MCap/framtida "
-     "vinst mot 10x-regeln. DS-sektionen låser köp vid hög utspädningsrisk."),
+    ("SCREENING → Contrarian Alpha → Long Screener", "Alpha: kandidater",
+     "CAGR-composite för långsiktiga innehav — kandidaterna till Alpha Regime."),
     ("GRANSKNING → Rick Rule", "Rule: granskningen",
      "Guidens 'Producenter A': marginal mot kostnadskurvan, de tre "
      "disciplinfrågorna och strykregeln för döende tillgång (gruvlivslängd "
@@ -1114,17 +1099,65 @@ _PANEL_GUIDE: list[tuple] = [
     ("GRANSKNING → Royalty C", "Royalty: köpsignalen",
      "Rabatt mot egen P/NAV-botten, mot egen EV/EBITDA-median och "
      "GEO-tillväxt per aktie. Krympande GEO slår ut köpläget."),
+    ("GRANSKNING → Poängmodell", "Sprott · Durrett (snabbpoäng)",
+     "Fem faktorer 0–2, runway ur kassa/burn (18-månadersgrinden), MCap/uns "
+     "och MCap/framtida vinst mot 10x-regeln. DS-sektionen låser köp vid hög "
+     "utspädningsrisk."),
     ("GRANSKNING → Tiggre", "Tiggre: alla grindar",
      "Lobo-arket: grovsållning, U/N-kalkyl, fem faktorer, "
-     "katalysatorkalendern med säljregeln och free ride-larmet vid +100 %."),
-    ("RULES → 📚 SNABBREFERENS", "Alla — uppslag",
+     "katalysatorkalendern med säljregeln, free ride vid +100 %, 0,8–1,0× NAV "
+     "och −40 %-omvärderingen."),
+    ("GRANSKNING → Insider", "Insider: alla regler",
+     "Poängen 0–10, kvalitetsgrinden, teknisk trigger och statusflödet. "
+     "Visar vs klustersnittet och stoppen −15 %. Insynsflödet läses i "
+     "Börsdata."),
+    ("GRANSKNING → 🧭 Durrett & Confidence", "Durrett: 10 steg · Confidence-case",
+     "Samma ark, två vyer: Durretts 10-stegsmetod (kvalitet, risk, upside) "
+     "och Case/Confidence Score med källa per poäng. Håven fyller på."),
+    ("GRANSKNING → 🎯 Scorecard", "Alla — köpgrinden",
+     "Sista steget före köp. Läser kandidaterna ur de andra flikarna och "
+     "kräver sju gröna kryss. Luckor i tabellen = standardbeslut INGEN AFFÄR."),
+    ("INTELLIGENCE → Odin's Blindspot", "Rotation: hat-signalen",
+     "Contrarian sektorintelligens — vilka teman är mest hatade just nu."),
+    ("INTELLIGENCE → Sentiment", "Alpha #5 · Viking #5, #9",
+     "Fear & Greed gauge 0-100. Under 60 = OK att köpa. Över 60 = vänta."),
+    ("INTELLIGENCE → Retail Pulse", "Deep Contrarian: sentiment-overlay",
+     "Retail sentiment 0-100. Under 30 = extrem rädsla (köpstöd). Över 70 = "
+     "extrem girighet (säljstöd)."),
+    ("INTELLIGENCE → Heatmap", "Alla — överblick",
+     "Visuell marknadsvy per sektor och region."),
+    ("PORTFOLIO → Swing", "Momentum: alla regler",
+     "Veckochecklistan, bevakningslistan och positionerna med automatiska "
+     "säljregel-flaggor (MA50 / stop −10 % / ur topp 40). Köpknappar låses av "
+     "marknadsfiltret."),
+    ("PORTFOLIO → Holdings", "Alpha #8-9 · Quality · Deep Contrarian",
+     "Tre portföljer med live-signaler. Positionsstorlek >10 %-varning, "
+     "sektorexponering >25 %, tranches 0/3–3/3, korrelationsmatris."),
+    ("PORTFOLIO → Allokering", "Alla — ramar och tak",
+     "Fördelningsmodellen, råvarutaket 55 %, positionstak per strategi, "
+     "kassaregeln och strömbrytaren."),
+    ("PORTFOLIO → 📓 Trade Journal", "Alla — disciplin",
+     "Logga varje affär: entry, exit, R, exit-anledning och om du följde planen. "
+     "Utan journal går strategin inte att utvärdera."),
+    ("PORTFOLIO → Backtest", "Wolf · Alpha · Viking",
+     "Historisk signalvalidering med strategiernas egna parametrar."),
+    ("ALERTS", "Alla — larmen",
+     "Schemalagda körningar: regim, screeners, håvar, arkens händelser. "
+     "Discord-kanalerna och larmloggen."),
+    ("RULES → Regler & Guider → 📚 SNABBREFERENS", "Alla — uppslag",
      "Alla screeners med sina kärnfilter, alla säljregler på en sida, "
      "datakällorna och ordlistan. Sidan du slår upp i mitt i en affär "
      "istället för att läsa en hel playbook."),
-    ("RULES → 🗓 ÅRSHJULET", "Alla — exekvering",
+    ("RULES → Regler & Guider → 🗓 ÅRSHJULET", "Alla — exekvering",
      "När varje rutin ska köras och hur lång tid den tar: söndagsrutinen, "
      "råvarurotationen, kvartalsritualen och årsgenomgången. Visar vad som är "
      "dags i dag."),
+    ("RULES → Position Sizing", "Alla — storleken",
+     "Risk ÷ stoppavstånd för swing, tak per aktie för långsiktigt."),
+    ("RULES → Data Health", "Alla — datakällorna",
+     "Live-status för varje datakälla och lagringens konfiguration."),
+    ("COPILOT", "Alla — granskning med AI",
+     "Kandidatkort med regelkontroll, AI-kommentar och journal."),
 ]
 
 

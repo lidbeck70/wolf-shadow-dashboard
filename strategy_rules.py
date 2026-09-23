@@ -558,7 +558,7 @@ QUALITY = Playbook(
          "med spannet utsatt.", True),
         ("Marknadscykel: DISBELIEF, HOPE, OPTIMISM, BELIEF eller DISBELIEF_NEW",
          "Tidigt till mitt i en uppgång — aldrig i eufori.",
-         "SCREENING → Market Cycle: aktuell fas. Alpha Regime visar samma fas som "
+         "REGIME → Marknad → Market Cycle: aktuell fas. Alpha Regime visar samma fas som "
          "cykelgate."),
         ("Bolagskvalitet ≥ 55/100 eller KAP-badge",
          "ROIC, marginaler och tillväxt vägs till en kvalitetspoäng.",
@@ -583,7 +583,7 @@ QUALITY = Playbook(
          "SCREENING → Contrarian Alpha: värderingsband på detaljkortet."),
         ("Cykeln skiftar — THRILL, EUPHORIA, COMPLACENCY, ANXIETY eller DENIAL",
          "Sencykliska faser. Kvalitet skyddar inte mot en hel marknad som vänder.",
-         "SCREENING → Market Cycle: fasindikatorn."),
+         "REGIME → Marknad → Market Cycle: fasindikatorn."),
         ("Bolagskvaliteten faller",
          "Kvalitetspoängen rasar eller marginalerna försämras konsekvent.",
          "SCREENING → Contrarian Alpha: kvalitetspoäng över tid + gate-checklistan "
@@ -751,7 +751,7 @@ EMBER_PB = Playbook(
     level=LEVEL_ADVANCED,
     horizon="Swing — dagar till veckor",
     universe="Börsdata råvarufilter + GDX/GDXJ/SIL/COPX/URA/XLE-konstituenter",
-    where="SCREENING → Arc Screener → 🔥 EMBER  ·  REGIME → Arc Regime → 🌍 EMBER Regime",
+    where="SCREENING → Arc Screener → 🔥 EMBER  ·  REGIME → Råvaror → 🌍 EMBER Regime",
     idea=(
         "Ember tar Deep Contrarians cykeltänk och lägger teknisk precision ovanpå: "
         "makro/cykelfilter avgör OM du får handla, fyra hårda trendgrindar avgör VAD, "
@@ -774,7 +774,7 @@ EMBER_PB = Playbook(
          "regim med 5 pelare: ≥4 gröna = PÅ (full storlek), 3 = SELEKTIV (halverad, "
          "endast topp-1 och topp-2), ≤2 = AV (inga nya trades). DATA_GAP räknas "
          "aldrig som grön.",
-         "REGIME → Arc Regime → 🌍 EMBER Regime: ett verdikt per komplex. Screenern "
+         "REGIME → Råvaror → 🌍 EMBER Regime: ett verdikt per komplex. Screenern "
          "grindar varje setup mot sitt eget komplex — ett guldcase mot ÄDELMETALLER, "
          "inte mot ENERGI.", True),
         ("Fyra trendgrindar (T1–T4) — alla hårda, alla måste passera",
@@ -807,10 +807,10 @@ EMBER_PB = Playbook(
         ("Komplexets regim slår om till AV",
          "Inga nya entries i det komplexet; befintliga hanteras enligt stop och "
          "invalidering. Övriga komplex påverkas inte.",
-         "REGIME → Arc Regime → 🌍 EMBER Regime: verdikt per komplex."),
+         "REGIME → Råvaror → 🌍 EMBER Regime: verdikt per komplex."),
     ]),
     workflow=(
-        "REGIME → Arc Regime → 🌍 EMBER Regime: vilket verdikt har komplexet du är "
+        "REGIME → Råvaror → 🌍 EMBER Regime: vilket verdikt har komplexet du är "
         "intresserad av? AV = läs bara, handla inte.",
         "SCREENING → Arc Screener → 🔥 EMBER: gå igenom topp-korten uppifrån.",
         "Kontrollera T1–T4 (alla PASS) och att inga F1–F4-flaggor är aktiva.",

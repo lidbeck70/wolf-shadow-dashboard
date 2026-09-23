@@ -54,17 +54,17 @@ def render_fv(row: dict, key: str, prefix: str = "fv") -> bool:
 
     shares = c2.number_input(
         "Framtida antal aktier (miljoner)", min_value=0.0, step=1.0,
-        value=float(fv.num(row.get("framtida_antal_aktier"), 0.0) or 0.0),
+        value=fv.num(row.get("framtida_antal_aktier")),
         key=f"{prefix}_{key}_shares",
         help="Prognos inklusive återköp och utspädning — återköp är DS:ens "
              "spegelbild.")
     price = c3.number_input(
         "Aktuell kurs", min_value=0.0, step=0.1,
-        value=float(fv.num(row.get("aktuell_kurs"), 0.0) or 0.0),
+        value=fv.num(row.get("aktuell_kurs")),
         key=f"{prefix}_{key}_price",
         help="Samma valuta som forward FCF anges i.")
-    if (storage.differs(shares, row.get("framtida_antal_aktier"), 0.0)
-            or storage.differs(price, row.get("aktuell_kurs"), 0.0)):
+    if (storage.differs(shares, row.get("framtida_antal_aktier"))
+            or storage.differs(price, row.get("aktuell_kurs"))):
         row["framtida_antal_aktier"], row["aktuell_kurs"] = shares, price
         changed = True
 
@@ -85,18 +85,18 @@ def render_fv(row: dict, key: str, prefix: str = "fv") -> bool:
                          f"font-weight:600;'>{s}</div>", unsafe_allow_html=True)
         fcf = cols[1].number_input(
             f"Forward FCF MUSD ({s})", step=1.0,
-            value=float(fv.num(sc.get("forward_fcf_musd"), 0.0) or 0.0),
+            value=fv.num(sc.get("forward_fcf_musd")),
             key=f"{prefix}_{key}_{s}_fcf", label_visibility="collapsed",
             help="Normaliserat råvarupris, aldrig toppår.")
         ty = cols[2].number_input(
             f"Target-yield % ({s})", min_value=0.0, step=0.5,
-            value=float(fv.num(sc.get("target_yield"), 0.0) or 0.0),
+            value=fv.num(sc.get("target_yield")),
             key=f"{prefix}_{key}_{s}_yield", label_visibility="collapsed",
             disabled=locked,
             help=(f"Låst till klass {q.code}: {band[0]:g}–{band[1]:g} %."
                   if band else fv.NOT_FCF_VALUED))
         vals = {"forward_fcf_musd": fcf, "target_yield": ty}
-        if any(storage.differs(v, sc.get(k), 0.0)
+        if any(storage.differs(v, sc.get(k))
                for k, v in vals.items()):
             sc.update(vals)
             changed = True
@@ -174,11 +174,11 @@ def render_fv(row: dict, key: str, prefix: str = "fv") -> bool:
         st.warning(fv.DELEV_TEXT)
         yrs = st.number_input(
             "År till låg skuld", min_value=0.0, step=0.5,
-            value=float(fv.num(row.get("ar_till_lag_skuld"), 0.0) or 0.0),
+            value=fv.num(row.get("ar_till_lag_skuld")),
             key=f"{prefix}_{key}_delev",
             help="Nettoskuld ÷ årlig amortering. Kravet är under "
                  f"{fv.DELEV_YEARS_MAX:g} år.")
-        if storage.differs(yrs, row.get("ar_till_lag_skuld"), 0.0):
+        if storage.differs(yrs, row.get("ar_till_lag_skuld")):
             row["ar_till_lag_skuld"] = yrs
             changed = True
         for gap in fv.deleveraging_state(row.get("nd_ebitda"), yrs)["gaps"]:

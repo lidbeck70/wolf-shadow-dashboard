@@ -79,9 +79,7 @@ def _bar(value: Optional[float], width: int = 10) -> str:
     return "█" * n + "░" * (width - n)
 
 
-def _badge(text: str, color: str) -> str:
-    return (f"<span style='background:{color}22;color:{color};border:1px solid {color};"
-            f"border-radius:4px;padding:2px 8px;font-size:0.78rem;font-weight:700;'>{text}</span>")
+from ui.components import badge as _badge, confirm_delete, page_header  # noqa: E402
 
 
 def _num_or_none(s) -> Optional[float]:
@@ -106,13 +104,10 @@ def _save(data: dict) -> None:
 def render_durrett_page() -> None:
     data = _load()
     storage_ui.save_bar(cs.STORE, "Durrett / Confidence score", key="save_durrett")
-    st.markdown(
-        f"<div style='text-align:center;padding:10px 0 4px;'>"
-        f"<h2 style='color:{GOLD};letter-spacing:0.12em;margin:0;'>🐺 DURRETT ANALYSIS</h2>"
-        f"<p style='color:{DIM};font-size:0.78rem;margin:6px 0 0;'>Don Durretts 10-stegsmetod. Håven håvar in "
-        f"screenerns träffar, arket tar dina tal. Alla poäng 0–100 (50 = neutralt), N/A när det inte går att "
-        f"räkna. Risk Score 100 = lägst risk. Ingen köp- eller säljrekommendation.</p></div>",
-        unsafe_allow_html=True)
+    page_header("Durrett 10-steg", "Don Durretts 10-stegsmetod. Håven håvar in screenerns "
+                "träffar, arket tar dina tal. Alla poäng 0–100 (50 = neutralt), N/A när det "
+                "inte går att räkna. Risk Score 100 = lägst risk. Ingen köp- eller "
+                "säljrekommendation. Samma ark som Confidence-caset.")
     _new_candidate(data)
     _screen_section(data)
     _rows(data)
@@ -495,7 +490,7 @@ def _render_more(data: dict, company: CompanyInput, a: DurrettAnalysis) -> None:
     with st.expander("Alla fält (Confidence score + Durrett) med proveniens", expanded=False):
         _cui("render_inputs", "_render_inputs")(data, company)
     _render_catalysts(data, company, a)
-    if st.button("🗑 Ta bort bolaget ur arket", key=f"durrett_del_{company.ticker}"):
+    if confirm_delete("Ta bort bolaget ur arket", key=f"durrett_del_{company.ticker}"):
         cs.remove(data, company.ticker)
         _save(data)
         st.rerun()

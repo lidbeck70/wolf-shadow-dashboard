@@ -26,6 +26,7 @@ from typing import Optional
 import csv_export
 import storage
 import storage_ui
+from ui.components import confirm_delete, page_header
 
 _CACHE_KEY = "insider_data"
 STORE = "insider"   # data/insider.json
@@ -275,14 +276,8 @@ def _save(data: dict) -> None:
 def render_insider_page() -> None:
     data = _load()
     storage_ui.save_bar(STORE, "Insiderbevakaren")
-    st.markdown(
-        f"<div style='text-align:center;padding:10px 0 4px;'>"
-        f"<h2 style='color:{CYAN};letter-spacing:0.12em;margin:0;'>"
-        f"INSIDERBEVAKAREN</h2>"
-        f"<p style='color:{DIM};font-size:0.78rem;margin:6px 0 0;'>"
-        f"Poängsätt varje kluster. Endast riktiga marknadsköp räknas — inte "
-        f"optionslösen, program, arv eller interna omflyttningar.</p></div>",
-        unsafe_allow_html=True)
+    page_header("Insider", "Poängsätt varje kluster. Endast riktiga marknadsköp räknas — "
+                "inte optionslösen, program, arv eller interna omflyttningar.")
 
     _summary(data)
     _export(data)
@@ -510,13 +505,13 @@ def _signal_body(data: dict, sig: dict, r: dict, color: str) -> None:
                         key=f"ins_r_{sig['id']}",
                         help="VD/CFO = 2p · Styrelse = 1p · Övrig = 0p")
     amt = p3.number_input("Belopp totalt (tkr)", min_value=0.0, step=100.0,
-                          value=float(_num(sig.get("amount"), 0.0) or 0.0),
+                          value=_num(sig.get("amount")),
                           key=f"ins_a_{sig['id']}",
                           help=f"≥ {AMOUNT_HIGH:g} tkr = 2p · "
                                f"≥ {AMOUNT_MID:g} tkr = 1p")
-    if (storage.differs(ins, sig.get("insiders"), 0.0)
+    if (storage.differs(ins, sig.get("insiders"))
             or storage.differs(role, sig.get("role"), ROLES[0])
-            or storage.differs(amt, sig.get("amount"), 0.0)):
+            or storage.differs(amt, sig.get("amount"))):
         sig["insiders"], sig["role"], sig["amount"] = ins, role, amt
         changed = True
 
@@ -563,15 +558,15 @@ def _signal_body(data: dict, sig: dict, r: dict, color: str) -> None:
     # Kurser
     k1, k2, k3, k4 = st.columns(4)
     avg = k1.number_input("Klustrets snittkurs", min_value=0.0, step=0.5,
-                          value=float(_num(sig.get("cluster_avg"), 0.0) or 0.0),
+                          value=_num(sig.get("cluster_avg")),
                           key=f"ins_ca_{sig['id']}")
     now = k2.number_input("Kurs nu", min_value=0.0, step=0.5,
-                          value=float(_num(sig.get("price_now"), 0.0) or 0.0),
+                          value=_num(sig.get("price_now")),
                           key=f"ins_pn_{sig['id']}")
     _suggest("insider", sig, "price_now", "price", "kurs", f"ins_pn_{sig['id']}",
              lambda: _save(data), with_currency=True)
-    if (storage.differs(avg, sig.get("cluster_avg"), 0.0)
-            or storage.differs(now, sig.get("price_now"), 0.0)):
+    if (storage.differs(avg, sig.get("cluster_avg"))
+            or storage.differs(now, sig.get("price_now"))):
         sig["cluster_avg"], sig["price_now"] = avg, now
         changed = True
 
@@ -591,7 +586,7 @@ def _signal_body(data: dict, sig: dict, r: dict, color: str) -> None:
         sig["comment"] = com
         changed = True
 
-    if st.button("Ta bort signalen", key=f"ins_del_{sig['id']}"):
+    if confirm_delete("Ta bort signalen", key=f"ins_del_{sig['id']}"):
         data["signals"] = [s for s in data["signals"] if s["id"] != sig["id"]]
         _save(data)
         st.rerun()

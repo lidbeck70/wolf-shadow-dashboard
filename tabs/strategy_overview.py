@@ -263,7 +263,7 @@ def _render_strategy_card(display_name: str, strat: dict) -> None:
     st.markdown(_divider(), unsafe_allow_html=True)
 
     # ── Bottom row: plugins + params + alerts ────────────────────────────────
-    left, right = st.columns([3, 2])
+    left, right = st.columns([3, 2])   # noqa: F841 — right används nedan
 
     with left:
         plugin_pills = "&nbsp;".join(
@@ -295,60 +295,13 @@ def _render_strategy_card(display_name: str, strat: dict) -> None:
         )
 
     with right:
-        # Navigation buttons
-        st.markdown(_section_label("Quick actions"), unsafe_allow_html=True)
-
-        b1, b2 = st.columns(2)
-        with b1:
-            if st.button(
-                "📡 Screener",
-                key=f"ov_screener_{key}",
-                width='stretch',
-                help="Open this strategy in the Screener tab",
-            ):
-                st.session_state["overview_goto_tab"]     = "screener"
-                st.session_state["overview_active_strat"] = key
-                st.toast(f"Navigate to the SCREENER tab to scan with {name}.", icon="📡")
-
-        with b2:
-            if st.button(
-                "📊 Backtest",
-                key=f"ov_backtest_{key}",
-                width='stretch',
-                help="Open this strategy in the Backtest tab",
-            ):
-                st.session_state["overview_goto_tab"]     = "backtest"
-                st.session_state["overview_active_strat"] = key
-                st.toast(f"Navigate to the BACKTEST tab to test {name}.", icon="📊")
-
-        if st.button(
-            "🔔 Alert Settings",
-            key=f"ov_alerts_{key}",
-            width='stretch',
-            help="Open this strategy's alert configuration",
-        ):
-            st.session_state["overview_goto_tab"]     = "alerts"
-            st.session_state["overview_active_strat"] = key
-            st.toast(f"Navigate to the ALERTS tab to configure {name} alerts.", icon="🔔")
+        st.markdown(_section_label("Var i panelen"), unsafe_allow_html=True)
+        st.markdown(
+            f'<div style="color:{_DIM};font-size:0.76rem;">'
+            f'{meta.get("where", "RULES → Regler & Guider → 📖 STRATEGIGUIDER")}</div>',
+            unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
-
-    # ── Premium placeholders ─────────────────────────────────────────────────
-    with st.expander(f"📖  Full Rulebook — {name}", expanded=False):
-        st.info(
-            "Premium feature: Full rulebook — step-by-step entry checklist, "
-            "annotated chart examples, parameter tuning guide, and historical "
-            "regime context for this strategy.",
-            icon="🔒",
-        )
-
-    with st.expander(f"⚡  Advanced Alerts — {name}", expanded=False):
-        st.info(
-            "Premium feature: Advanced alerts — conditional alert chains, "
-            "multi-ticker watchlist monitoring, Telegram / SMS delivery, "
-            "and AI-generated alert summaries.",
-            icon="🔒",
-        )
 
 
 # ── Summary header ────────────────────────────────────────────────────────────
@@ -460,24 +413,3 @@ def tab_strategy_overview() -> None:
     # One card per code-backed strategy
     for display_name, strat in STRATEGIES.items():
         _render_strategy_card(display_name, strat)
-
-    # ── Session navigation hint ──────────────────────────────────────────────
-    goto = st.session_state.get("overview_goto_tab")
-    if goto:
-        tab_labels = {
-            "screener": "SCREENER",
-            "backtest": "BACKTEST",
-            "alerts":   "ALERTS",
-        }
-        label = tab_labels.get(goto, goto.upper())
-        strat_name = st.session_state.get("overview_active_strat", "")
-        st.markdown(
-            f'<div style="border:1px solid {_CYAN}33;border-radius:6px;'
-            f'background:{_BG3};padding:10px 14px;margin-top:8px;'
-            f'font-size:0.78rem;color:{_DIM};">'
-            f'<span style="color:{_CYAN};">↗ Shortcut</span>&nbsp; '
-            f'Click the <b style="color:{_TEXT};">{label}</b> tab above '
-            f'to continue with <b style="color:{_TEXT};">{strat_name}</b>.'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
