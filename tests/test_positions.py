@@ -80,7 +80,7 @@ def test_default_store_has_every_bucket_and_no_save_happens_on_read(reg):
     state, saves = reg
     state.clear()
     positions.load()
-    assert set(state["holdings"]) == {"swing", "ovtlyr", "long", "closed", "cash"}
+    assert set(state["holdings"]) == set(positions.BUCKET_KEYS) | {"closed", "cash"}
     assert saves == []
 
 
@@ -123,7 +123,9 @@ def test_remove_close_and_cash(reg):
     assert closed["exit_price"] == 341.0 and closed["result_pct"] == 10.0
     assert closed["exit_reason"] == "EMA200" and closed["exit_date"]
     assert positions.find("BOL.ST") is None
-    assert state["holdings"]["closed"][0]["ticker"] == "BOL.ST"
+    c0 = state["holdings"]["closed"][0]
+    assert c0["ticker"] == "BOL.ST" and c0["exit_reason"] == "EMA200"   # exit-fälten överlever omläsning
+    assert c0["result_pct"] == 10.0 and "exit_reason" not in c0["extras"]
     assert positions.close("BOL.ST") is None                             # redan stängd
     assert positions.remove("VOLV-B.ST") and positions.find("VOLV-B.ST") is None
     assert positions.remove("VOLV-B.ST") is False

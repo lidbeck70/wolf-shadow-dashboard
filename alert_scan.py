@@ -49,6 +49,7 @@ log = logging.getLogger("alert_scan")
 STATE_FILE = "alert_state.json"
 SETTINGS_PATH = "data/alerts.json"
 SWING_PATH = "data/swing.json"
+HOLDINGS_PATH = "data/holdings.json"    # registret — positionerna bor här sedan PR 10
 
 
 def _repo_file(path: str, default):
@@ -117,6 +118,13 @@ def main() -> int:
     regime_data = load_wolf_json("wolf_regime.json") or {}
     screener_data = load_wolf_json("wolf_screener.json") or {}
     swing_data = _repo_file(SWING_PATH, {"positions": [], "market": {}})
+    # Positionerna ur registret (Holdings); en gammal lista i swing.json
+    # räknas med tills panelen flyttat den (idempotent på id).
+    import positions as _positions
+    held = _positions.view_rows_from(_repo_file(HOLDINGS_PATH, {}), "Momentum")
+    have = {p.get("id") for p in held}
+    swing_data["positions"] = held + [p for p in swing_data.get("positions") or []
+                                      if isinstance(p, dict) and p.get("id") not in have]
     themes = _themes(args.no_blindspot)
     prev_state = load_blob(STATE_FILE, None)
 

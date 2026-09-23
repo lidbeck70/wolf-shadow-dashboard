@@ -31,6 +31,7 @@ from datetime import date
 from typing import Optional
 
 import csv_export
+import positions
 import storage
 import storage_ui
 from ui.tokens import GOLD as GOLD_H
@@ -303,8 +304,15 @@ def _normalize(data: dict) -> dict:
     return data
 
 
+STRATEGY = "Tiggre"      # positionernas strategitagg i registret (positions.py)
+
+
 def _load() -> dict:
-    """Laddas EN gång per session; därefter äger sessionen sanningen."""
+    """Laddas EN gång per session; därefter äger sessionen sanningen.
+
+    Positionerna bor sedan steg 2 i registret (positions.py, Holdings).
+    En sparad "positions"-lista i data/tiggre.json flyttas dit första
+    gången och töms här — kandidater, parkerade och historiken stannar."""
     data = storage.session_load(STORE, _default(),
                                 legacy_file="tiggre_data.json")
     if not isinstance(data, dict):
@@ -312,7 +320,27 @@ def _load() -> dict:
         st.session_state[STORE] = data
     for k, v in _default().items():
         data.setdefault(k, v)
+    _migrate_positions(data)
     return data
+
+
+def _migrate_positions(data: dict) -> None:
+    rows = data.get("positions") or []
+    if not rows:
+        return
+    positions.migrate_rows(STRATEGY, rows, source="tiggre")
+    data["positions"] = []
+    try:                                   # engångsskrivning av tömningen
+        storage.save_session(STORE)
+    except Exception:
+        pass
+
+
+def open_positions() -> list:
+    """Tiggre-positionerna ur registret, i arkets form (entry, current,
+    shares, mcap, nav, half_sold, triggers, catalysts). Läs den här i
+    stället för _load()["positions"]."""
+    return positions.view_rows(STRATEGY)
 
 
 def _save(data: dict) -> None:
@@ -369,7 +397,7 @@ CAT_CSV = [("_ticker", "Bolag"), ("name", "Katalysator"), ("date", "Förväntad"
 def _export(data: dict) -> None:
     """Positionerna och katalysatorkalendern — arkets två viktigaste blad."""
     pos_rows = []
-    for p in data.get("positions", []):
+    for p in open_positions():
         entry = _num(p.get("entry"), 0.0) or 0.0
         cur = _num(p.get("current"), 0.0) or 0.0
         ret = (cur / entry - 1) * 100 if entry > 0 and cur > 0 else None
@@ -386,7 +414,7 @@ def _export(data: dict) -> None:
         })
 
     cat_rows = []
-    for p in data.get("positions", []) + data.get("candidates", []):
+    for p in open_positions() + data.get("candidates", []):
         for c in p.get("catalysts", []) or []:
             cat_rows.append({**c, "_ticker": p.get("ticker", "?")})
 
@@ -457,7 +485,7 @@ def _screen_section(data: dict) -> None:
     except Exception:
         return
     existing = {str(c.get("ticker", "")).upper()
-                for c in data.get("candidates", []) + data.get("positions", [])}
+                for c in data.get("candidates", []) + open_positions()}
 
     def _add(fields: dict) -> None:
         data["candidates"].append({
@@ -606,7 +634,7 @@ def _candidate_card(data: dict, cand: dict) -> None:
             f"padding:10px 14px;'>{gate_html}</div>", unsafe_allow_html=True)
 
         b1, b2, b3 = st.columns([1.4, 1, 1])
-        n_pos = len(data["positions"])
+        n_pos = len(open_positions())
         room = n_pos < MAX_POSITIONS
         entry = b1.number_input("Entry-kurs", min_value=0.0, value=0.0, step=0.5,
                                 key=f"tg_entry_{cand['id']}")
@@ -711,20 +739,20 @@ def _promote(data: dict, cand: dict, entry: Optional[float]) -> None:
     if entry is None or entry <= 0:
         st.warning("Ange en entry-kurs > 0.")
         return
-    data["positions"].append({
+    positions.put(STRATEGY, {
         "id": _uid(), "ticker": cand.get("ticker", "?"), "name": cand.get("name", ""),
         "entry": entry, "current": entry, "shares": 0.0,
         "mcap": cand.get("mcap"), "nav": cand.get("nav"),
         "date": _today(), "half_sold": False,
         "triggers": {}, "catalysts": cand.get("catalysts", []),
-    })
+    }, "tiggre")
     data["candidates"] = [c for c in data["candidates"] if c["id"] != cand["id"]]
     _save(data)
 
 
 # ── 5. Positioner ────────────────────────────────────────────────────────────
 def _positions(data: dict) -> None:
-    pos = data["positions"]
+    pos = open_positions()
     st.markdown(
         f"<div style='font-weight:700;color:{TEXT};margin-bottom:4px;'>"
         f"Positioner ({len(pos)}/4–6)</div>"
@@ -745,8 +773,9 @@ def _positions(data: dict) -> None:
         # Kalendern styr sin egen trigger: en katalysator satt till "Försenad
         # 2:a ggn" ÄR säljregeln, så den ska inte behöva kryssas i för hand.
         cat_sell = catalyst_sell_signal(p.get("catalysts", []))
-        if cat_sell:
+        if cat_sell and not (p.get("triggers") or {}).get("delayed_twice"):
             p.setdefault("triggers", {})["delayed_twice"] = True
+            positions.put(STRATEGY, p, "tiggre")
         fired = [lbl for k, lbl in SELL_ALL_TRIGGERS if p.get("triggers", {}).get(k)]
         # Färskt börsvärde och kurs ur sifferuppdateringen: P/NAV och −40 %
         # räknas på dagens läge, inte på talen från köpdagen.
@@ -781,7 +810,7 @@ def _positions(data: dict) -> None:
         new_cur = c2.number_input("Kurs nu", min_value=0.0, value=float(cur),
                                   step=0.5, key=f"tg_p_cur_{p['id']}")
         _suggest("tiggre", p, "current", "price", "kurs", f"tg_p_cur_{p['id']}",
-                 lambda: _save(data), with_currency=True)
+                 lambda: positions.put(STRATEGY, p, "tiggre"), with_currency=True)
         c3.metric("Avkastning", _pct(ret, 1) if ret is not None else "–")
         c4.metric("P/NAV nu", f"{pn_now:.2f}×" if pn_now is not None else "–",
                   help=(f"Slutsälj i etapper vid {NAV_EXIT_LO:g}–{NAV_EXIT_HI:g}× NAV eller "
@@ -795,7 +824,7 @@ def _positions(data: dict) -> None:
         if (storage.differs(new_entry, entry)
                 or storage.differs(new_cur, cur)):
             p["entry"], p["current"] = new_entry, new_cur
-            _save(data)
+            positions.put(STRATEGY, p, "tiggre")
 
         t_cols = st.columns(len(SELL_ALL_TRIGGERS) + 2)
         trig = p.setdefault("triggers", {})
@@ -804,12 +833,12 @@ def _positions(data: dict) -> None:
                              key=f"tg_t_{p['id']}_{tkey}")
             if v != bool(trig.get(tkey)):
                 trig[tkey] = v
-                _save(data)
+                positions.put(STRATEGY, p, "tiggre")
         hs = t_cols[-2].checkbox("Halva såld (+100 %)", value=bool(p.get("half_sold")),
                                  key=f"tg_half_{p['id']}")
         if hs != bool(p.get("half_sold")):
             p["half_sold"] = hs
-            _save(data)
+            positions.put(STRATEGY, p, "tiggre")
         if t_cols[-1].button("Stäng", key=f"tg_close_{p['id']}"):
             data["closed"].append({
                 "id": p["id"], "ticker": p.get("ticker", "?"),
@@ -818,7 +847,8 @@ def _positions(data: dict) -> None:
                 "reason": fired[0] if fired else "manuell",
                 "catalysts": p.get("catalysts", []),
             })
-            data["positions"] = [x for x in data["positions"] if x["id"] != p["id"]]
+            positions.close(row_id=p["id"], exit_price=new_cur,
+                            reason=fired[0] if fired else "manuell")
             _save(data)
             st.rerun()
 

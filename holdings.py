@@ -41,14 +41,19 @@ STRATEGY_COLORS: dict = {
     "Viking":          "#B400FF",   # Aurora Purple (PALETTE["silver"])
     "Wolf":            "#2d8a4e",   # Green
     "Untagged":        "#6B7280",   # Text dim
+    "Momentum":        "#d4943a",   # Amber — Swing-flikens positioner
+    "Tiggre":          "#c9a84c",   # Guld — Lobo-arkets positioner
 }
 
 # Hink per strategi och taken bor i positions.py (registret) — här bara färg.
 _STRATEGY_TO_KEY: dict = dict(positions.STRATEGY_BUCKET)
 
 PORTFOLIOS: dict = {
-    key: {**cfg, "color": {"swing": CYAN, "ovtlyr": MAGENTA, "long": GREEN}[key],
-          "strategy": {"swing": "Wolf", "ovtlyr": "Viking", "long": "Alpha"}[key]}
+    key: {**cfg,
+          "color": {"swing": CYAN, "ovtlyr": MAGENTA, "long": GREEN,
+                    "momentum": YELLOW, "tiggre": CYAN}[key],
+          "strategy": {"swing": "Wolf", "ovtlyr": "Viking", "long": "Alpha",
+                       "momentum": "Momentum", "tiggre": "Tiggre"}[key]}
     for key, cfg in positions.BUCKETS.items()
 }
 

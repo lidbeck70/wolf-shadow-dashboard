@@ -47,24 +47,33 @@ STORE = "holdings"                    # data/holdings.json
 LEGACY_FILE = "holdings_init.json"    # Gisten — läses bara när repofilen saknas
 
 # Hinkarna och deras tak. Nycklarna är lagringens och får inte byta namn.
+# momentum (Swing-flikens 6–8) och tiggre (Lobo-arkets 4–6) kom in i steg 2;
+# taken är de flikarna hade.
 BUCKETS: dict = {
-    "swing":  {"name": "Wolf Portfolio",   "max": 5},
-    "ovtlyr": {"name": "Viking Portfolio", "max": 5},
-    "long":   {"name": "Alpha Portfolio",  "max": 20},
+    "swing":    {"name": "Wolf Portfolio",     "max": 5},
+    "ovtlyr":   {"name": "Viking Portfolio",   "max": 5},
+    "long":     {"name": "Alpha Portfolio",    "max": 20},
+    "momentum": {"name": "Momentum Swing",     "max": 8},
+    "tiggre":   {"name": "Tiggre (Lobo-arket)", "max": 6},
 }
 BUCKET_KEYS: tuple = tuple(BUCKETS)
 
-STRATEGIES: tuple = ("Quality", "Deep Contrarian", "Viking", "Wolf", "Untagged")
+STRATEGIES: tuple = ("Quality", "Deep Contrarian", "Viking", "Wolf", "Untagged",
+                     "Momentum", "Tiggre")
 STRATEGY_BUCKET: dict = {
     "Quality":         "long",
     "Deep Contrarian": "long",
     "Viking":          "ovtlyr",
     "Wolf":            "swing",
     "Untagged":        "long",
+    "Momentum":        "momentum",
+    "Tiggre":          "tiggre",
 }
 
 FIELDS: tuple = ("id", "ticker", "name", "strategy", "entry_price", "shares",
                  "entry_date", "stop", "target", "sector", "notes", "source", "extras")
+# Bara på rader i closed — behålls på toppnivå, inte i extras.
+EXIT_FIELDS: tuple = ("exit_price", "exit_date", "exit_reason", "result_pct")
 
 
 # ── Hjälpare ─────────────────────────────────────────────────────────────────
@@ -116,6 +125,9 @@ def normalize_row(raw: dict, bucket: str = "") -> dict:
         "source":      str(raw.pop("source", None) or "holdings"),
     }
     raw.pop("added", None)
+    for k in EXIT_FIELDS:
+        if k in raw:
+            row[k] = raw.pop(k)
     if row["strategy"] not in STRATEGIES:
         row["strategy"] = "Untagged"
     if row["shares"] == int(row["shares"]):
@@ -185,6 +197,13 @@ def find(ticker: str, bucket: Optional[str] = None) -> Optional[dict]:
     t = str(ticker or "").strip().upper()
     for r in all_positions():
         if r["ticker"] == t and (bucket is None or r["_bucket"] == bucket):
+            return r
+    return None
+
+
+def find_id(row_id) -> Optional[dict]:
+    for r in all_positions():
+        if r["id"] == str(row_id):
             return r
     return None
 
@@ -287,12 +306,12 @@ def remove(ticker: str, bucket: Optional[str] = None) -> bool:
     return True
 
 
-def close(ticker: str, exit_price=None, exit_date: str = "", reason: str = "",
-          bucket: Optional[str] = None) -> Optional[dict]:
-    """Stänger en position: raden flyttas till closed med exit-fält och
-    resultat i procent. Returnerar den stängda raden (journalen får den i
-    ett senare steg)."""
-    row = find(ticker, bucket)
+def close(ticker: str = "", exit_price=None, exit_date: str = "", reason: str = "",
+          bucket: Optional[str] = None, row_id=None) -> Optional[dict]:
+    """Stänger en position (på ticker, eller på row_id från arkens vy): raden
+    flyttas till closed med exit-fält och resultat i procent. Returnerar den
+    stängda raden (journalen får den i ett senare steg)."""
+    row = find_id(row_id) if row_id is not None else find(ticker, bucket)
     if row is None:
         return None
     data = load()
@@ -320,3 +339,116 @@ def counts() -> dict:
     """{hink: (antal, tak)} för rubriker och grindar."""
     data = load()
     return {k: (len(data[k]), BUCKETS[k]["max"]) for k in BUCKET_KEYS}
+
+
+# ── Arkens vy: samma rad i den form Swing och Tiggre alltid ritat ────────────
+# Swing- och Tiggre-flikarna (och deras läsare: swing_verdict, alert_scan,
+# sheets_refresh, scorecard, review_link, confidence/prefill) tar rader med
+# entry/date/current/half_sold osv. Vyn är den formen; registret är källan.
+# Fälten i VIEW_MAP byter namn åt båda hållen, resten bor i extras.
+VIEW_MAP: dict = {"entry": "entry_price", "date": "entry_date"}
+
+
+def to_view(row: dict) -> dict:
+    """Registerrad → arkrad: {id, ticker, name, shares, entry, date, stop,
+    target, strategy, **extras}."""
+    out = {"id": row.get("id"), "ticker": row.get("ticker"), "name": row.get("name", ""),
+           "shares": row.get("shares", 0), "stop": row.get("stop"),
+           "target": row.get("target"), "strategy": row.get("strategy")}
+    for view_key, reg_key in VIEW_MAP.items():
+        out[view_key] = row.get(reg_key)
+    for k, v in (row.get("extras") or {}).items():
+        out.setdefault(k, v)
+    return out
+
+
+def from_view(view_row: dict, strategy: str, source: str) -> dict:
+    """Arkrad → registerrad (normaliserad). Okända fält → extras."""
+    raw = dict(view_row or {})
+    reg = {"id": raw.pop("id", None), "ticker": raw.pop("ticker", ""),
+           "name": raw.pop("name", ""), "shares": raw.pop("shares", 0),
+           "stop": raw.pop("stop", None), "target": raw.pop("target", None),
+           "strategy": strategy, "source": source,
+           "sector": raw.pop("sector", None), "notes": raw.pop("notes", "")}
+    for view_key, reg_key in VIEW_MAP.items():
+        reg[reg_key] = raw.pop(view_key, None)
+    raw.pop("strategy", None)
+    raw.pop("source", None)
+    extras = dict(raw.pop("extras", None) or {})
+    for k, v in raw.items():
+        if not k.startswith("_"):
+            extras[k] = v
+    reg["extras"] = extras
+    return normalize_row(reg)
+
+
+def view_rows_from(data, strategy: str) -> List[dict]:
+    """Vyn ur en redan laddad lagring (jobben läser data/holdings.json utan
+    session). Tolerant mot None/fel form."""
+    if not isinstance(data, dict):
+        return []
+    out = []
+    for bucket in BUCKET_KEYS:
+        for r in data.get(bucket) or []:
+            if isinstance(r, dict) and (r.get("strategy") or "Untagged") == strategy:
+                out.append(to_view(normalize_row(r)))
+    return out
+
+
+def view_rows(strategy: str) -> List[dict]:
+    """Strategins öppna positioner i arkets form, ur sessionen."""
+    return [to_view(r) for r in open_positions(strategy)]
+
+
+def put(strategy: str, view_row: dict, source: str) -> dict:
+    """Upsert av en arkrad (matchas på id, annars ticker inom strategin).
+    Inga tak här — arket håller sitt eget (Swing 8, Tiggre 6)."""
+    reg = from_view(view_row, strategy, source)
+    data = load()
+    bucket = bucket_for(strategy)
+    rows = data[bucket]
+    for i, r in enumerate(rows):
+        if r["id"] == reg["id"] or (not view_row.get("id") and r["ticker"] == reg["ticker"]):
+            reg["id"] = r["id"]
+            reg["source"] = r.get("source") or source
+            rows[i] = reg
+            break
+    else:
+        rows.append(reg)
+    _commit(data)
+    return to_view(reg)
+
+
+def drop(strategy: str, row_id: str) -> bool:
+    """Tar bort en rad på id (arkets "Stäng" utan att skriva closed —
+    arket har sin egen historik med sina egna fält)."""
+    data = load()
+    bucket = bucket_for(strategy)
+    before = len(data[bucket])
+    data[bucket] = [r for r in data[bucket] if r["id"] != row_id]
+    if len(data[bucket]) == before:
+        return False
+    _commit(data)
+    return True
+
+
+def migrate_rows(strategy: str, rows: List[dict], source: str) -> int:
+    """Engångsflytt av ett arks egen positionslista in i registret. Rader
+    med ett id som redan finns hoppas över (idempotent); returnerar antalet
+    som flyttades. En sparning för hela flytten."""
+    data = load()
+    bucket = bucket_for(strategy)
+    have = {r["id"] for r in data[bucket]}
+    moved = 0
+    for vr in rows or []:
+        if not isinstance(vr, dict) or not vr.get("ticker"):
+            continue
+        reg = from_view(vr, strategy, source)
+        if reg["id"] in have:
+            continue
+        data[bucket].append(reg)
+        have.add(reg["id"])
+        moved += 1
+    if moved:
+        _commit(data)
+    return moved
