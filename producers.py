@@ -654,6 +654,8 @@ def _royalty(data: dict) -> None:
                       help="Negativt = billigare än bolaget brukar vara.")
             _suggest("producers", row, "ev_now", "ev_ebitda", "EV/EBITDA nu",
                      f"ro_en_{row['id']}", lambda: _save(data), fmt="{:.1f}")
+            _suggest("producers", row, "ev_median", "ev_ebitda_median", "EV/EBITDA median (10 år)",
+                     f"ro_em_{row['id']}", lambda: _save(data), fmt="{:.1f}")
 
             g1, g2, g3 = st.columns(3)
             gn = g1.number_input("GEO/aktie nu", min_value=0.0, step=0.01,

@@ -459,6 +459,16 @@ def _sprott_math(data: dict, row: dict) -> None:
     c3.metric("Runway", f"{rw:.1f} år" if rw is not None else "–",
               help=f"Under {SPROTT_RUNWAY_MIN_MONTHS} månader = stopp oavsett "
                    f"projekt — nyemissionen som kommer äter din uppsida.")
+    # Kassa och burn ur Börsdatas rapporter (sifferuppdateringen): kassa ur
+    # senaste rapporten, burn = negativt FCF rullande 12 mån. Förslag, "Använd".
+    try:
+        import refresh_ui
+        refresh_ui.suggest("scoring", row, "cash", "cash_musd", "kassa (MUSD)",
+                           f"sc_cash_{row['id']}", lambda: _save(data), fmt="{:,.1f}")
+        refresh_ui.suggest("scoring", row, "burn", "burn_musd", "burn/år (MUSD)",
+                           f"sc_burn_{row['id']}", lambda: _save(data), fmt="{:,.1f}")
+    except Exception:
+        pass
     if (storage.differs(cash, row.get("cash"))
             or storage.differs(burn, row.get("burn"))):
         row["cash"], row["burn"] = cash, burn

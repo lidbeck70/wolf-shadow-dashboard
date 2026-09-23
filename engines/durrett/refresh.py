@@ -22,7 +22,15 @@ _MAP = (("mcap_musd", "market_cap_musd", "MUSD", "ACTUAL"), ("price", "share_pri
         ("nd_ebitda", "net_debt_ebitda", "×", "ACTUAL"), ("pe", "pe", "×", "ACTUAL"),
         ("revenue_musd", "revenue_musd", "MUSD", "ACTUAL"), ("fcf_musd", "free_cash_flow_musd", "MUSD", "ACTUAL"),
         ("ocf_musd", "operating_cash_flow_musd", "MUSD", "ACTUAL"), ("rs_rank", "rs_rank", "", "ACTUAL"),
-        ("ebitda_margin", "ebitda_margin_pct", "%", "ACTUAL"), ("fx_to_usd", "fx_to_usd", "USD per enhet", "ASSUMPTION"))
+        ("ebitda_margin", "ebitda_margin_pct", "%", "ACTUAL"), ("fx_to_usd", "fx_to_usd", "USD per enhet", "ASSUMPTION"),
+        # rapportfälten (PR 15): kassa, skuld, aktiehistorik, ROIC, FCF-yield, EV/EBIT
+        ("cash_musd", "cash_musd", "MUSD", "ACTUAL"), ("debt_musd", "debt_musd", "MUSD", "ESTIMATE"),
+        ("shares_now_m", "basic_shares_m", "M", "ACTUAL"), ("shares_1y_ago_m", "shares_1y_ago_m", "M", "ACTUAL"),
+        ("shares_3y_ago_m", "shares_3y_ago_m", "M", "ACTUAL"), ("shares_5y_ago_m", "shares_5y_ago_m", "M", "ACTUAL"),
+        ("roic_pct", "roic_pct", "%", "ACTUAL"), ("fcf_yield_pct", "fcf_yield_pct", "%", "ACTUAL"),
+        ("ev_ebit", "ev_ebit", "×", "ACTUAL"))
+_NOTES = {"debt_musd": "bruttoskuld ≈ nettoskuld + kassa ur senaste rapporten",
+          "shares_now_m": "numberOfShares ur senaste årsrapporten (miljoner)"}
 _PCT_FIELDS = {"ebitda_margin": 100.0}          # snapshoten ger decimaltal → %
 
 
@@ -52,7 +60,7 @@ def proposals(blob: Optional[dict], company: CompanyInput) -> list:
         cur = company.num(fkey) if company.has(fkey) else None
         if cur is not None and abs(cur - v) < 1e-6:
             continue
-        note = ""
+        note = _NOTES.get(bkey, "")
         source = src
         if bkey == "fx_to_usd":
             source = str(s.get("fx_table") or "sheets_refresh FX-tabell")
