@@ -87,27 +87,15 @@ class ComplexRegimeResult:
 # ── Download helper ───────────────────────────────────────────────────────────
 
 def _close(ticker: str, period: str) -> pd.Series:
+    """Close-serie via den delade priscachen (market_prices). Pelarna är
+    cachade per komplex men inte inbördes: DXY laddades tre gånger, SPY
+    fyra och DBA tre gånger per körning."""
     try:
-        import yfinance as yf
-        try:
-            df = yf.download(
-                ticker, period=period, auto_adjust=True,
-                progress=False, show_errors=False, multi_level_index=False,
-            )
-        except TypeError:
-            df = yf.download(ticker, period=period, auto_adjust=True, progress=False)
-        if df is None or df.empty:
-            return pd.Series(dtype=float)
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-        if "Close" not in df.columns:
-            return pd.Series(dtype=float)
-        s = df["Close"].squeeze()
-        if isinstance(s, pd.DataFrame):
-            s = s.iloc[:, 0]
+        from market_prices import close
+        s = close(ticker, period)
         if hasattr(s.index, "tz") and s.index.tz is not None:
             s.index = s.index.tz_localize(None)
-        return s.dropna()
+        return s
     except Exception as exc:
         logger.debug("_close(%s, %s): %s", ticker, period, exc)
         return pd.Series(dtype=float)

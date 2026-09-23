@@ -42,12 +42,9 @@ def tab_regime():
     benchmark_ticker = _BENCHMARK_OPTIONS[selected_bm_label]
 
     try:
-        bm_data = yf.download(benchmark_ticker, period="3mo", auto_adjust=True, progress=False)
-        stk_data = yf.download(watch_ticker, period="3mo", auto_adjust=True, progress=False)
-        if isinstance(bm_data.columns, pd.MultiIndex):
-            bm_data.columns = bm_data.columns.get_level_values(0)
-        if isinstance(stk_data.columns, pd.MultiIndex):
-            stk_data.columns = stk_data.columns.get_level_values(0)
+        from market_prices import ohlcv as _mp_ohlcv          # cachad 6 h — kördes förr vid varje klick i hela appen
+        bm_data = _mp_ohlcv(benchmark_ticker, "3mo")
+        stk_data = _mp_ohlcv(watch_ticker, "3mo")
         if not bm_data.empty and not stk_data.empty and len(bm_data) >= 20 and len(stk_data) >= 20:
             stk_ret = float(stk_data["Close"].iloc[-1] / stk_data["Close"].iloc[-20])
             bm_ret = float(bm_data["Close"].iloc[-1] / bm_data["Close"].iloc[-20])

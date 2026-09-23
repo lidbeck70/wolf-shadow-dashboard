@@ -13,7 +13,7 @@ from market_cycle.indicators import compute_indicators, download_ohlcv, _compute
 from market_cycle.engine import detect_market_cycle
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False, max_entries=100)
 def cached_market_cycle_analysis(ticker: str, period: str) -> dict:
     """Return {indicators, result} for the current state of ticker."""
     indicators = compute_indicators(ticker, period)
@@ -23,7 +23,7 @@ def cached_market_cycle_analysis(ticker: str, period: str) -> dict:
     return {"indicators": indicators, "result": result}
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False, max_entries=100)
 def cached_market_cycle_history(ticker: str, period: str) -> list[dict]:
     """
     Compute rolling phase detection over time.
