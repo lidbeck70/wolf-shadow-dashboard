@@ -30,6 +30,7 @@ from typing import Optional
 import csv_export
 import storage
 import storage_ui
+from ui.components import confirm_delete, page_header
 import controls as ctl
 import controls_ui
 
@@ -279,15 +280,12 @@ def _save(data: dict) -> None:
 def render_scoring_page() -> None:
     data = _load()
     storage_ui.save_bar(STORE, "Poängmodellen")
-    st.markdown(
-        f"<div style='text-align:center;padding:10px 0 4px;'>"
-        f"<h2 style='color:{GOLD};letter-spacing:0.12em;margin:0;'>POÄNGMODELLEN</h2>"
-        f"<p style='color:{DIM};font-size:0.78rem;margin:6px 0 0;'>"
-        f"Fem faktorer 0–2. {CORE_MIN}–10 = kärninnehav · {WATCH_MIN}–7 = "
-        f"bevakningslista · 0–{WATCH_MIN - 1} = passa.</p></div>",
-        unsafe_allow_html=True)
+    page_header("Poängmodell", f"Fem faktorer 0–2. {CORE_MIN}–10 = kärninnehav · "
+                f"{WATCH_MIN}–7 = bevakningslista · 0–{WATCH_MIN - 1} = passa. "
+                f"Durrett-delen är snabbpoängen — hela 10-stegsmetoden ligger i "
+                f"GRANSKNING → 🧭 Durrett & Confidence.")
 
-    which = st.radio("Modell", ["Sprott (optionalitet)", "Durrett (hävstång)"],
+    which = st.radio("Modell", ["Sprott (optionalitet)", "Durrett (snabbpoäng)"],
                      horizontal=True, key="sc_which",
                      label_visibility="collapsed")
     key = SPROTT if which.startswith("Sprott") else DURRETT
@@ -439,7 +437,7 @@ def _rows(data: dict, key: str) -> None:
             if com != row.get("comment", ""):
                 row["comment"] = com
                 _save(data)
-            if st.button("Ta bort", key=f"sc_del_{row['id']}"):
+            if confirm_delete("Ta bort", key=f"sc_del_{row['id']}"):
                 data[key] = [x for x in data[key] if x["id"] != row["id"]]
                 _save(data)
                 st.rerun()
@@ -452,17 +450,17 @@ def _sprott_math(data: dict, row: dict) -> None:
                 unsafe_allow_html=True)
     c1, c2, c3 = st.columns(3)
     cash = c1.number_input("Kassa (MUSD)", min_value=0.0, step=1.0,
-                           value=float(_num(row.get("cash"), 0.0) or 0.0),
+                           value=_num(row.get("cash")),
                            key=f"sc_cash_{row['id']}")
     burn = c2.number_input("Burn/år (MUSD)", min_value=0.0, step=1.0,
-                           value=float(_num(row.get("burn"), 0.0) or 0.0),
+                           value=_num(row.get("burn")),
                            key=f"sc_burn_{row['id']}")
     rw = runway_years(cash, burn)
     c3.metric("Runway", f"{rw:.1f} år" if rw is not None else "–",
               help=f"Under {SPROTT_RUNWAY_MIN_MONTHS} månader = stopp oavsett "
                    f"projekt — nyemissionen som kommer äter din uppsida.")
-    if (storage.differs(cash, row.get("cash"), 0.0)
-            or storage.differs(burn, row.get("burn"), 0.0)):
+    if (storage.differs(cash, row.get("cash"))
+            or storage.differs(burn, row.get("burn"))):
         row["cash"], row["burn"] = cash, burn
         _save(data)
 
@@ -488,17 +486,17 @@ def _durrett_math(data: dict, row: dict) -> None:
                 unsafe_allow_html=True)
     c1, c2, c3 = st.columns(3)
     mcap = c1.number_input("Börsvärde (MUSD)", min_value=0.0, step=10.0,
-                           value=float(_num(row.get("mcap"), 0.0) or 0.0),
+                           value=_num(row.get("mcap")),
                            key=f"sc_mcap_{row['id']}")
     moz = c2.number_input("Uns (Moz AuEq)", min_value=0.0, step=0.1,
-                          value=float(_num(row.get("moz"), 0.0) or 0.0),
+                          value=_num(row.get("moz")),
                           key=f"sc_moz_{row['id']}")
     profit = c3.number_input("Framtida vinst/år (MUSD)", min_value=0.0, step=5.0,
-                             value=float(_num(row.get("profit"), 0.0) or 0.0),
+                             value=_num(row.get("profit")),
                              key=f"sc_profit_{row['id']}")
-    if (storage.differs(mcap, row.get("mcap"), 0.0)
-            or storage.differs(moz, row.get("moz"), 0.0)
-            or storage.differs(profit, row.get("profit"), 0.0)):
+    if (storage.differs(mcap, row.get("mcap"))
+            or storage.differs(moz, row.get("moz"))
+            or storage.differs(profit, row.get("profit"))):
         row["mcap"], row["moz"], row["profit"] = mcap, moz, profit
         _save(data)
     try:
@@ -534,13 +532,13 @@ def _durrett_math(data: dict, row: dict) -> None:
     with st.expander("🧮 Hjälpräknare — framtida vinst", expanded=False):
         h1, h2, h3 = st.columns(3)
         prod = h1.number_input("Produktion (koz/år)", min_value=0.0, step=10.0,
-                               value=float(_num(row.get("prod"), 0.0) or 0.0),
+                               value=_num(row.get("prod")),
                                key=f"sc_prod_{row['id']}")
         tp = h2.number_input("Målpris ($/oz)", min_value=0.0, step=50.0,
                              value=float(_num(row.get("target"), 3000.0) or 3000.0),
                              key=f"sc_tp_{row['id']}")
         aisc = h3.number_input("AISC ($/oz)", min_value=0.0, step=50.0,
-                               value=float(_num(row.get("aisc"), 0.0) or 0.0),
+                               value=_num(row.get("aisc")),
                                key=f"sc_aisc_{row['id']}")
         fp = future_profit(prod, tp, aisc)
         if fp is not None:
@@ -552,9 +550,9 @@ def _durrett_math(data: dict, row: dict) -> None:
                 row["profit"] = round(musd, 1)
                 _save(data)
                 st.rerun()
-        if (storage.differs(prod, row.get("prod"), 0.0)
-                or storage.differs(tp, row.get("target"), 0.0)
-                or storage.differs(aisc, row.get("aisc"), 0.0)):
+        if (storage.differs(prod, row.get("prod"))
+                or storage.differs(tp, row.get("target"))
+                or storage.differs(aisc, row.get("aisc"))):
             row["prod"], row["target"], row["aisc"] = prod, tp, aisc
             _save(data)
 

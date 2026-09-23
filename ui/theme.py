@@ -51,10 +51,12 @@ PALETTE: dict = {
     "ice_blue":     "#8A00CC",
     "ice_faint":    "rgba(180,0,255,0.12)",
 
-    # Contrarian Ember
+    # Semantik (ui/tokens.py är källan). "red" och "amber" var samma orange,
+    # så fel och varning gick inte att skilja åt.
     "green":        "#2d8a4e",
-    "red":          "#FF6B3D",
-    "amber":        "#FF6B3D",
+    "red":          "#c44545",
+    "amber":        "#d4943a",
+    "ember":        "#FF6B3D",
     "text":         "#E8EDF2",
     "text_dim":     "#6B7280",
 

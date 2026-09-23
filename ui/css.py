@@ -114,7 +114,10 @@ code, pre, .stCode, [class*="monospace"] {
 }
 
 /* ── Buttons ─────────────────────────────────────────────────── */
-.stButton > button {
+/* Bara sekundära knappar får panelens cyanram. type="primary" lämnas i fred,
+   så sparradens "osparat = primär" faktiskt syns och en bekräfta-radera-knapp
+   inte ser ut som "Lägg till". */
+.stButton > button[kind="secondary"] {
     background: linear-gradient(135deg, rgba(0,229,255,0.15) 0%, rgba(0,168,191,0.1) 100%);
     border: 1px solid #00E5FF;
     border-radius: 4px;
@@ -129,11 +132,11 @@ code, pre, .stCode, [class*="monospace"] {
     box-shadow: 0 2px 8px rgba(0,0,0,0.3);
 }
 
-.stButton > button:hover {
+.stButton > button[kind="secondary"]:hover {
     background: linear-gradient(135deg, rgba(0,229,255,0.25) 0%, rgba(0,168,191,0.2) 100%);
-    border-color: #00E5FF !important;
-    color: #00E5FF !important;
-    box-shadow: 0 0 12px rgba(0,229,255,0.4) !important;
+    border-color: #00E5FF;
+    color: #00E5FF;
+    box-shadow: 0 0 12px rgba(0,229,255,0.4);
     text-shadow: 0 1px 2px rgba(0,0,0,0.3);
 }
 
@@ -175,8 +178,10 @@ code, pre, .stCode, [class*="monospace"] {
 }
 
 /* ── Headers ─────────────────────────────────────────────────── */
+/* Ingen !important: sidorna sätter sin egen rubrikfärg (guld i arken, EMBER-
+   orange, magenta i RULES) och den ska få synas. Cyan är bara standard. */
 h1, h2, h3 {
-    color: #00E5FF !important;
+    color: #00E5FF;
     text-shadow: 0 1px 2px rgba(0,0,0,0.3);
     letter-spacing: 3px;
 }
@@ -186,12 +191,8 @@ h1, h2, h3 {
     background: linear-gradient(90deg, #00E5FF, #00A8BF);
 }
 
-/* ── Alerts/info ─────────────────────────────────────────────── */
-.stAlert {
-    background-color: rgba(0,229,255,0.07) !important;
-    border: 1px solid rgba(0,229,255,0.25) !important;
-    color: #00E5FF !important;
-}
+/* (st.error/st.warning/st.success behåller sina egna färger — en cyan
+   !important på .stAlert gjorde fel, varning och OK omöjliga att skilja.) */
 
 /* ── Dividers ────────────────────────────────────────────────── */
 hr {

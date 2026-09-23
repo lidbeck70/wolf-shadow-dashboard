@@ -59,9 +59,7 @@ def _save(data: dict) -> None:
 
 
 # ── hjälpare ─────────────────────────────────────────────────────────────────
-def _badge(text: str, color: str) -> str:
-    return (f"<span style='background:{color}22;color:{color};border:1px solid {color};"
-            f"border-radius:4px;padding:2px 8px;font-size:0.78rem;font-weight:700;'>{text}</span>")
+from ui.components import badge as _badge, confirm_delete, page_header  # noqa: E402
 
 
 def _num_or_none(s: str) -> Optional[float]:
@@ -99,13 +97,10 @@ def _signals_for(commodity) -> Signals:
 def render_confidence_page() -> None:
     data = _load()
     storage_ui.save_bar(cs.STORE, "Confidence score")
-    st.markdown(
-        f"<div style='text-align:center;padding:10px 0 4px;'>"
-        f"<h2 style='color:{CYAN};letter-spacing:0.12em;margin:0;'>CONFIDENCE SCORE</h2>"
-        f"<p style='color:{DIM};font-size:0.78rem;margin:6px 0 0;'>"
-        f"Case Score 0–100 (hur bra är caset) och Confidence Score 0–100 (hur säkra är vi). "
-        f"Varje poäng har en förklaringsrad med källa. Saknad data ger 0 och DATA_MISSING — "
-        f"aldrig ett gissat tal.</p></div>", unsafe_allow_html=True)
+    page_header("Confidence-case", "Case Score 0–100 (hur bra är caset) och Confidence Score "
+                "0–100 (hur säkra är vi). Varje poäng har en förklaringsrad med källa. "
+                "Tomt = okänt (DATA_MISSING), aldrig 0 och aldrig ett gissat tal. "
+                "Samma ark som Durrett 10-steg.")
 
     tickers = list(cs.companies(data))
     c1, c2 = st.columns([2, 3])
@@ -306,7 +301,7 @@ def _render_inputs(data: dict, company: CompanyInput) -> None:
                 cs.put(data, company)
                 _save(data)
                 st.rerun()
-        if st.button("🗑 Ta bort bolaget", key=f"conf_del_{company.ticker}"):
+        if confirm_delete("Ta bort bolaget", key=f"conf_del_{company.ticker}"):
             cs.remove(data, company.ticker)
             _save(data)
             st.session_state.pop("conf_last", None)

@@ -279,24 +279,14 @@ def test_legacy_aliases_preserve_original_rule_counts():
 
 
 def _real_tab_names() -> set:
-    """Parse the actual tab + sub-tab labels straight out of the panel source.
+    """The actual tab + sub-tab labels, from the navigation tree (ui/nav.py).
 
     Ground truth, so a renamed or moved tab makes the rules fail rather than
     silently sending the user to a path that no longer exists. wolf_panel.py
-    owns the top-level tabs and most sub-tabs; the RULES sub-tabs (KOM IGÅNG,
-    ÅRSHJULET, …) are declared inside rules_page.py, so both are read.
+    renders its radios from the same tree, so the two cannot drift.
     """
-    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    src = "\n".join(
-        open(os.path.join(root, f), encoding="utf-8").read()
-        for f in ("wolf_panel.py", os.path.join("ovtlyr", "ui", "rules_page.py")))
-    names = set()
-    block = re.search(r"tab_labels\s*=\s*\[(.*?)\]", src, re.S)
-    if block:
-        names |= {n.strip() for n in re.findall(r'"([^"]+)"', block.group(1))}
-    for m in re.finditer(r'st\.radio\(\s*""\s*,\s*(\[[^\]]+\])', src, re.S):
-        names |= {n.strip() for n in re.findall(r'"([^"]+)"', m.group(1))}
-    return {n for n in names if n}
+    from ui import nav
+    return {n for n in nav.leaves() if n}
 
 
 def test_panel_guides_point_at_tabs_that_exist():
@@ -314,6 +304,7 @@ def test_panel_guides_point_at_tabs_that_exist():
         "Contrarian Alpha", "Market Cycle", "Arc Screener", "Arc Regime",
         "Alpha Regime", "Flow Divergence", "Wolf Regime", "Viking Regime",
         "Quality & Contrarian", "Long Trend", "Odin's Blindspot",
+        "Marknad", "Råvaror", "Screener",
     }
     # Tab labels carry emoji ("🔥 EMBER"); the extractor below sees only the
     # letters, so index both forms.
@@ -356,7 +347,7 @@ def test_panel_guide_table_uses_real_paths():
         head = parts[0]
         assert head in {"HOME", "SCREENING", "GRANSKNING", "REGIME",
                         "INTELLIGENCE", "PORTFOLIO", "ALERTS", "RULES",
-                        "STRATEGIES"}, head
+                        "STRATEGIES", "COPILOT"}, head
         for part in parts[1:]:
             clean = "".join(c for c in part if c.isalnum() or c in " &'-").strip()
             assert part in real or clean in plain, (
@@ -364,14 +355,14 @@ def test_panel_guide_table_uses_real_paths():
 
 
 def test_ember_paths_include_their_intermediate_tab():
-    """Ember lives one level deeper than SCREENING/REGIME."""
+    """Ember lives one level deeper than SCREENING/REGIME (Arc Screener resp. Råvaror)."""
     pb = sr.PLAYBOOKS["ember"]
     texts = [pb.where] + list(pb.workflow) + [r.panel_guide for r in pb.entry + pb.exit]
     for t in texts:
         if "🔥 EMBER" in t:
             assert "Arc Screener" in t, f"missing 'Arc Screener' level: {t[:70]}"
         if "🌍 EMBER Regime" in t:
-            assert "Arc Regime" in t, f"missing 'Arc Regime' level: {t[:70]}"
+            assert "Råvaror" in t, f"missing 'Råvaror' level: {t[:70]}"
 
 
 def test_no_rules_section_is_orphaned():
@@ -432,12 +423,17 @@ def _panel_src() -> str:
 
 
 def _sub_tabs(state_key: str) -> set:
-    """The sub-tab labels of one top-level tab, straight from the source."""
-    src = _panel_src()
-    m = re.search(rf'st\.radio\(\s*""\s*,\s*(\[[^\]]+\])[^)]*key="{state_key}"',
-                  src, re.S)
-    assert m, f"hittade inte underflikarna för {state_key}"
-    return {n.strip() for n in re.findall(r'"([^"]+)"', m.group(1))}
+    """The sub-tab labels of one top-level tab, from the navigation tree
+    (ui/nav.py) that wolf_panel renders its radios from."""
+    from ui import nav
+    paths = {"sub_screening": ["screening"], "sub_review": ["review"],
+             "sub_portfolio": ["portfolio"],
+             "sub_regime": ["regime", "regime/Marknad", "regime/Råvaror"]}[state_key]
+    out = set()
+    for p in paths:
+        out |= set(nav.options(p))
+    assert out, f"hittade inte underflikarna för {state_key}"
+    return out
 
 
 def test_screening_holds_only_screeners():
@@ -484,6 +480,8 @@ def test_regime_stays_about_market_state():
 
 def test_the_three_steps_are_three_tabs():
     """Guidens flöde: var (REGIME) -> vilka (SCREENING) -> vilket (GRANSKNING)."""
-    src = _panel_src()
+    from ui import nav
+    labels = [label for _k, label in nav.TOP]
     for label in ("🔱 SCREENING", "🔬 GRANSKNING", "📡 REGIME"):
-        assert label in src, label
+        assert label in labels, label
+    assert "nav.TOP" in _panel_src()

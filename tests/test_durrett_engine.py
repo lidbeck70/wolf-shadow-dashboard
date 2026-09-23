@@ -379,7 +379,7 @@ def test_durrett_tab_renders_all_subtabs_without_network(monkeypatch):
     assert not at.exception, at.exception
     text = " ".join(m.value for m in at.markdown) + " ".join(c.value for c in at.caption)
     labels = " ".join(e.label for e in at.expander)
-    assert "DURRETT ANALYSIS" in text and "Håven — Durrett" in labels and "Ny kandidat" in labels
+    assert "DURRETT 10-STEG" in text and "Håven — Durrett" in labels and "Ny kandidat" in labels
     assert any(e.label.startswith("GPR · Guld · PRODUCER · Durrett") for e in at.expander)
     assert any("Jämför sida vid sida" in e.label for e in at.expander)
     assert "BUY" not in text.replace("BUY CANDIDATE", "")

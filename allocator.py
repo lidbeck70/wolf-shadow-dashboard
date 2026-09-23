@@ -404,8 +404,8 @@ def render_allocator_page() -> None:
     storage_ui.save_bar(STORE, "Portföljallokeraren")
     try:
         st.markdown(
-            f"<h1 style='color:{TEXT};margin:0;letter-spacing:0.06em;'>"
-            f"Portföljallokeraren <span style='color:{CYAN};'>· ramarna</span></h1>"
+            f"<h2 style='color:{CYAN};margin:0;letter-spacing:0.12em;'>"
+            f"ALLOKERING <span style='color:{DIM};font-size:0.8em;'>· ramarna</span></h2>"
             f"<p style='color:{DIM};font-size:0.8rem;margin:6px 0 14px;'>"
             f"Strategierna bestämmer VAD du köper — det här bestämmer hur mycket som "
             f"får finnas. Procenten avser aktieportföljen; bufferten ligger utanför."
@@ -478,10 +478,10 @@ def _breaker(data: dict) -> None:
                 unsafe_allow_html=True)
     c1, c2, c3 = st.columns([1, 1, 2.4])
     peak = c1.number_input("Topp (SEK)", min_value=0.0,
-                           value=float(_num(data.get("peak"), 0.0) or 0.0),
+                           value=_num(data.get("peak")),
                            step=10000.0, key="al_peak")
     cur = c2.number_input("Nuvarande (SEK)", min_value=0.0,
-                          value=float(_num(data.get("current"), 0.0) or 0.0),
+                          value=_num(data.get("current")),
                           step=10000.0, key="al_cur")
     if peak != data.get("peak") or cur != data.get("current"):
         data["peak"], data["current"] = peak, cur
@@ -515,7 +515,7 @@ def _allocation(data: dict) -> None:
     cols = st.columns(4)
     for i, s in enumerate(SLEEVES):
         v = cols[i % 4].number_input(s.name, min_value=0.0,
-                                     value=float(_num(vals.get(s.key), 0.0) or 0.0),
+                                     value=_num(vals.get(s.key)),
                                      step=10000.0, key=f"al_v_{s.key}")
         if v != vals.get(s.key):
             vals[s.key] = v

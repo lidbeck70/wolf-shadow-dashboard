@@ -413,13 +413,14 @@ def saved_stores() -> list:
 def differs(new, old, default=None) -> bool:
     """Har widgeten faktiskt ändrat värdet — eller visar den bara sin default?
 
-    Nummerfälten ritas med value=float(old eller 0.0): ett lagrat None VISAS
-    som 0,0. Jämför man sedan widgetens 0,0 mot det lagrade None läses blotta
-    öppnandet av kortet som en ändring, och osparat-varningen tänds av att man
-    tittar. Här jämförs i stället mot samma default som widgeten fick.
+    Nummerfälten ritas sedan PR 6 med value=None när inget är ifyllt: tomt är
+    tomt, och ett inskrivet 0 är ett svar (nettoskuld/EBITDA = 0 är giltigt).
+    Därför jämförs None mot None som "ingen ändring" och 0,0 mot None som en
+    ändring. Äldre widgets som fortfarande ritar 0,0 för tomt skickar med
+    default=0.0 och får den gamla jämförelsen.
 
-    default är widgetens vilovärde: 0.0 för nummerfält, första alternativet
-    för en selectbox, None för textfält (där "" och None är samma tomhet).
+    default är widgetens vilovärde: None för nummerfält och textfält (där ""
+    och None är samma tomhet), första alternativet för en selectbox.
     """
     def _norm(v):
         return default if v is None or v == "" else v

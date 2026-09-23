@@ -30,6 +30,7 @@ import csv_export
 import lukacs
 import storage
 import storage_ui
+from ui.components import confirm_delete, page_header
 
 _CACHE_KEY = "scorecard_data"
 STORE = "scorecard"   # data/scorecard.json
@@ -427,13 +428,8 @@ def engine_summary(ticker: str) -> Optional[str]:
 def render_scorecard_page() -> None:
     data = _load()
     storage_ui.save_bar(STORE, "Master Scorecard")
-    st.markdown(
-        f"<div style='text-align:center;padding:10px 0 4px;'>"
-        f"<h2 style='color:{GOLD};letter-spacing:0.12em;margin:0;'>"
-        f"MASTER SCORECARD</h2>"
-        f"<p style='color:{DIM};font-size:0.78rem;margin:6px 0 0;'>"
-        f"Sista steget före köp. Kandidaterna läses ur de andra flikarna — "
-        f"här fattas bara beslutet.</p></div>", unsafe_allow_html=True)
+    page_header("Scorecard", "Sista steget före köp. Kandidaterna läses ur de andra "
+                "flikarna — här fattas bara beslutet.")
 
     entries = collect(_gather())
     if not entries:
