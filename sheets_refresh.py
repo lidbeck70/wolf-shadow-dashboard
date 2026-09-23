@@ -268,7 +268,15 @@ def build_events(sheets: dict, rows: dict) -> list:
                                   f"🎯 Tiggre: {t} vid {pn:.2f}× NAV",
                                   f"Börsvärde {mc:,.0f} MUSD mot NAV {nav:,.0f} MUSD — "
                                   f"{tig.NAV_TARGET:g}× nått. Slutsälj i etapper vid "
-                                  f"0,8–1,0× NAV eller produktionsstart."))
+                                  f"{tig.NAV_EXIT_LO:g}–{tig.NAV_EXIT_HI:g}× NAV eller "
+                                  f"produktionsstart."))
+            # −40 % från entry = omvärdera från noll (reference.py: Tiggres säljregel).
+            if price is not None and entry and tig.drawdown_review(entry, price):
+                events.append(_ev("tiggre_drawdown", sheet, row,
+                                  f"⚠️ Tiggre: {t} −{tig.REVIEW_DRAWDOWN_PCT:g} % från entry",
+                                  f"Kurs {price:.2f} mot entry {entry:.2f} "
+                                  f"({(price / entry - 1) * 100:+.0f} %). Omvärdera positionen "
+                                  f"från noll: köp mer, behåll eller sälj — inte vänta."))
 
         elif sheet == "producers" and bucket == "royalty":
             ev = _f(s.get("ev_ebitda"))

@@ -226,8 +226,9 @@ def test_an_exactly_full_commodity_budget_is_not_a_breach():
 # ── Positionsregeln, två nivåer (Masterguiden 4.0) ───────────────────────────
 # "NORMAL POSITION anges inom strategidelen, HÅRT TAK mot hela portföljen."
 def test_the_seven_position_rules_match_the_guide():
+    """Masterguidens sju är oförändrade; panelens egna (PR 4) ligger bredvid."""
     got = {r.key: (r.normal_lo, r.normal_hi, r.hard_cap) for r in a.POSITION_RULES}
-    assert got == {
+    guide = {
         "royalty1": (5, 10, 10.0),
         "rule":     (5, 10, 4.0),
         "sprott":   (10, 20, 1.5),
@@ -236,6 +237,9 @@ def test_the_seven_position_rules_match_the_guide():
         "swing":    (15, 30, 6.0),
         "insider":  (10, 20, 4.0),
     }
+    assert {k: got[k] for k in guide} == guide
+    assert set(got) - set(guide) == {"wolf", "viking", "ember",
+                                     "alpha", "quality", "contrarian"}
 
 
 def test_sprott_and_tiggre_share_a_sleeve_but_not_a_cap():
@@ -271,7 +275,10 @@ def test_an_old_optionality_position_is_reported_not_guessed():
     old = {"ticker": "OLD", "sleeve": "optionalitet", "value": 3.0}
     assert a.position_rule(old) is None
     assert a.unresolved_positions([old]) == [old]
-    assert a.AMBIGUOUS_SLEEVES == ("optionalitet",)
+    # ...och den långsiktiga delen (Alpha/Quality/Deep Contrarian delar tak,
+    # men typen ska ändå väljas). Swing-delen är INTE tvetydig: en gammal
+    # swing-position är Momentum-swing precis som förut.
+    assert set(a.AMBIGUOUS_SLEEVES) == {"optionalitet", "langsiktigt"}
     # ...och den flaggas inte som brott mot ett tak den inte har
     assert a.position_breaches([old], total=100.0) == []
 

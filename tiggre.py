@@ -48,6 +48,8 @@ NAV_TARGET = 0.8          # uppsidan räknas till 0,8× NAV
 MAX_POSITIONS = 6         # 4–6 bolag
 POS_MIN_PCT, POS_MAX_PCT = 2.0, 4.0
 FREE_RIDE_PCT = 100.0     # +100 % -> sälj halva
+NAV_EXIT_LO, NAV_EXIT_HI = 0.8, 1.0   # slutsälj i etapper vid 0,8–1,0× NAV
+REVIEW_DRAWDOWN_PCT = 40.0            # −40 % från entry = omvärdera från noll
 
 TEXT, DIM = "#e8e4dc", "#8a8578"
 EMBER, GREEN, AMBER, RED = "#FF6B3D", "#2d8a4e", "#d4943a", "#c44545"
@@ -226,6 +228,56 @@ def free_ride_reached(entry: float, current: float) -> bool:
     return bool(e and c and e > 0 and (c / e - 1) * 100 >= FREE_RIDE_PCT)
 
 
+def nav_exit_stage(pn: Optional[float]) -> Optional[str]:
+    """Slutsäljregeln ur P/NAV: None under 0,8×, 'etapp' i 0,8–1,0×, 'klar'
+    över 1,0× (omvärderingen är gjord — inget kvar att vänta på)."""
+    v = _num(pn)
+    if v is None:
+        return None
+    if v >= NAV_EXIT_HI:
+        return "klar"
+    return "etapp" if v >= NAV_EXIT_LO else None
+
+
+def drawdown_review(entry: float, current: float) -> bool:
+    """−40 % från entry = omvärdera positionen från noll (masterguidens
+    säljregel). Inte en automatisk stop — tesen kan vara intakt — men ett
+    beslut som måste tas aktivt, inte skjutas upp."""
+    e, c = _num(entry), _num(current)
+    return bool(e and c is not None and e > 0 and (c / e - 1) * 100 <= -REVIEW_DRAWDOWN_PCT)
+
+
+def position_signals(p: dict, mcap_now=None, price_now=None) -> list:
+    """Säljreglerna för en öppen position, i prioritetsordning: [(kind, label)].
+
+    kind: sell_all · free_ride · nav_exit · drawdown. Färskt börsvärde och
+    kurs (sifferuppdateringen) går före arkets sparade tal när de finns, så
+    P/NAV och −40 % räknas på dagens läge, inte köpdagens.
+    """
+    r = p or {}
+    entry = _num(r.get("entry"), 0.0) or 0.0
+    cur = _num(price_now) if _num(price_now) else (_num(r.get("current"), 0.0) or 0.0)
+    out = []
+    cat_sell = catalyst_sell_signal(r.get("catalysts", []))
+    trig = dict(r.get("triggers") or {})
+    if cat_sell:
+        trig["delayed_twice"] = True
+    fired = [lbl for k, lbl in SELL_ALL_TRIGGERS if trig.get(k)]
+    if fired:
+        out.append(("sell_all", f"SÄLJ ALLT — {fired[0]}"))
+    if free_ride_reached(entry, cur) and not r.get("half_sold"):
+        out.append(("free_ride", "+100 % — FREE RIDE: sälj halva"))
+    mc = _num(mcap_now) if _num(mcap_now) else r.get("mcap")
+    stage = nav_exit_stage(p_nav(mc, r.get("nav")))
+    if stage == "klar":
+        out.append(("nav_exit", f"≥ {NAV_EXIT_HI:g}× NAV — omvärderingen gjord, sälj resten"))
+    elif stage == "etapp":
+        out.append(("nav_exit", f"{NAV_EXIT_LO:g}–{NAV_EXIT_HI:g}× NAV — slutsälj i etapper"))
+    if drawdown_review(entry, cur):
+        out.append(("drawdown", f"−{REVIEW_DRAWDOWN_PCT:g} % från entry — omvärdera från noll"))
+    return out
+
+
 def equity_at_risk(entry: float, current: float, shares: float,
                    half_sold: bool) -> Optional[float]:
     """Eget kapital i risk. Efter free ride (halva sålt vid +100 %) är insatsen
@@ -305,7 +357,8 @@ POS_CSV = [("date", "Köpdatum"), ("ticker", "Ticker"), ("name", "Bolag"),
            ("shares", "Antal"), ("entry", "Entry"), ("current", "Kurs nu"),
            ("_ret", "Utveckling %"), ("_free_ride", "+100 %-nivå"),
            ("half_sold", "Halva såld"), ("_risk", "Kapital i risk"),
-           ("_pnav", "P/NAV nu"), ("_sell", "Säljregel utlöst")]
+           ("_pnav", "P/NAV nu"), ("_sell", "Säljregel utlöst"),
+           ("_signals", "Signaler")]
 
 CAT_CSV = [("_ticker", "Bolag"), ("name", "Katalysator"), ("date", "Förväntad"),
            ("status", "Status"), ("actual", "Faktiskt datum"),
@@ -328,6 +381,7 @@ def _export(data: dict) -> None:
                                     p.get("half_sold")),
             "_pnav": None if pn is None else round(pn, 2),
             "_sell": sell.get("name") if sell else None,
+            "_signals": " · ".join(lbl for _k, lbl in position_signals(p)) or None,
         })
 
     cat_rows = []
@@ -383,6 +437,16 @@ def _suggest(*args, **kw) -> None:
         refresh_ui.suggest(*args, **kw)
     except Exception:
         pass
+
+
+def _fresh_rows() -> dict:
+    """Sifferuppdateringens rader ({'tiggre:<id>': {price, mcap_musd, asof}}).
+    Tom utan blob — då räknar arket på sina sparade tal som förut."""
+    try:
+        import refresh_ui
+        return dict((refresh_ui.load_refresh() or {}).get("rows") or {})
+    except Exception:
+        return {}
 
 
 def _screen_section(data: dict) -> None:
@@ -672,27 +736,31 @@ def _positions(data: dict) -> None:
         st.caption("Inga öppna positioner.")
         return
 
+    fresh = _fresh_rows()
     for p in list(pos):
         entry = _num(p.get("entry"), 0.0) or 0.0
         cur = _num(p.get("current"), 0.0) or 0.0
         ret = (cur / entry - 1) * 100 if entry > 0 and cur > 0 else None
-        free_ride = free_ride_reached(entry, cur) and not p.get("half_sold")
         # Kalendern styr sin egen trigger: en katalysator satt till "Försenad
         # 2:a ggn" ÄR säljregeln, så den ska inte behöva kryssas i för hand.
         cat_sell = catalyst_sell_signal(p.get("catalysts", []))
         if cat_sell:
             p.setdefault("triggers", {})["delayed_twice"] = True
         fired = [lbl for k, lbl in SELL_ALL_TRIGGERS if p.get("triggers", {}).get(k)]
-        pn_now = p_nav(p.get("mcap"), p.get("nav"))
+        # Färskt börsvärde och kurs ur sifferuppdateringen: P/NAV och −40 %
+        # räknas på dagens läge, inte på talen från köpdagen.
+        f = fresh.get(f"tiggre:{p.get('id')}") or {}
+        mc_now, px_now = _num(f.get("mcap_musd")), _num(f.get("price"))
+        pn_now = p_nav(mc_now if mc_now else p.get("mcap"), p.get("nav"))
+        signals = position_signals(p, mcap_now=mc_now, price_now=px_now)
 
-        if fired:
-            bd, badge = RED, (f"<span style='background:{RED};color:#fff;font-size:0.7rem;"
-                              f"font-weight:700;padding:2px 8px;border-radius:4px;'>"
-                              f"SÄLJ ALLT — {fired[0]}</span>")
-        elif free_ride:
-            bd, badge = AMBER, (f"<span style='background:{AMBER};color:#000;font-size:0.7rem;"
-                                f"font-weight:700;padding:2px 8px;border-radius:4px;'>"
-                                f"+100 % — FREE RIDE: sälj halva</span>")
+        _BADGE = {"sell_all": (RED, "#fff"), "free_ride": (AMBER, "#000"),
+                  "nav_exit": (GREEN, "#fff"), "drawdown": (EMBER, "#000")}
+        if signals:
+            kind, label = signals[0]
+            bd, fg = _BADGE.get(kind, (BORDER, "#fff"))
+            badge = (f"<span style='background:{bd};color:{fg};font-size:0.7rem;"
+                     f"font-weight:700;padding:2px 8px;border-radius:4px;'>{label}</span>")
         else:
             bd, badge = BORDER, ""
 
@@ -715,7 +783,11 @@ def _positions(data: dict) -> None:
                  lambda: _save(data), with_currency=True)
         c3.metric("Avkastning", _pct(ret, 1) if ret is not None else "–")
         c4.metric("P/NAV nu", f"{pn_now:.2f}×" if pn_now is not None else "–",
-                  help="Slutsälj i etapper vid 0,8–1,0× NAV eller produktionsstart.")
+                  help=(f"Slutsälj i etapper vid {NAV_EXIT_LO:g}–{NAV_EXIT_HI:g}× NAV eller "
+                        f"produktionsstart. "
+                        + (f"Räknat på färskt börsvärde {mc_now:,.0f} MUSD "
+                           f"({f.get('asof', '')[:10]})." if mc_now else
+                           "Räknat på arkets sparade börsvärde — ingen färsk siffra ännu.")))
         eq = equity_at_risk(new_entry, new_cur, p.get("shares", 0), p.get("half_sold"))
         c5.metric("Kapital i risk", "0 kr" if eq == 0 else (_fmt(eq, 0) if eq else "–"),
                   help="Efter free ride är insatsen uttagen — resten åker på husets pengar.")
@@ -751,6 +823,12 @@ def _positions(data: dict) -> None:
 
         if fired:
             st.error("Sälj allt samma vecka: " + " · ".join(fired))
+        for kind, label in signals:
+            if kind == "nav_exit":
+                st.success(label)
+            elif kind == "drawdown":
+                st.warning(f"{label}. Tesen kan vara intakt — men beslutet tas nu, "
+                           f"aktivt: köp mer, behåll eller sälj. Inte 'vänta och se'.")
         st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
 
 

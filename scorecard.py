@@ -248,6 +248,11 @@ def _strategy_cap(strategy: str) -> Optional[float]:
     except Exception:                                    # pragma: no cover
         return None
     key = (strategy or "").strip().lower()
+    # Strategins egen regel först (tiggre 4 %, sprott 1,5 % — de delar sleeve
+    # men inte tak); därefter det strängaste taket i sleeven med det namnet.
+    rule = allocator.rule_for_strategy(key)
+    if rule is not None:
+        return rule.hard_cap
     caps = [r.hard_cap for r in allocator.POSITION_RULES if r.sleeve == key]
     return min(caps) if caps else None
 
@@ -357,7 +362,65 @@ def _gather() -> dict:
     _try("producers", lambda m: {"producenter": m._load().get("producers", []),
                                  "royalty": m._load().get("royalty", [])})
     _try("insider", lambda m: {"insider": m._load().get("signals", [])})
+    _try("confidence.ui", lambda m: {"confidence": confidence_rows(m.load_store())})
     return sources
+
+
+def confidence_rows(store: dict) -> list:
+    """Confidence-/Durrett-arkets bolag som scorecard-rader.
+
+    Arket lagrar bolagen som CompanyInput (fält i `fields`), inte som platta
+    rader. Här plattas de till {ticker, name, stage, ...} plus de kontrollfält
+    scorecardet redan förstår, så att ett bolag som granskats i Durrett-fliken
+    dyker upp i köpgrinden i stället för att behöva läggas in en gång till.
+    Bedömningen (BUY CANDIDATE/WATCH/… och Durrett-motorns risknivå) räknas
+    i kortet — se engine_summary.
+    """
+    out = []
+    companies = (store or {}).get("companies") or {}
+    if not isinstance(companies, dict):
+        return out
+    for ticker, c in companies.items():
+        if not isinstance(c, dict):
+            continue
+        t = str(c.get("ticker") or ticker or "").strip().upper()
+        if not t:
+            continue
+        row = {k: v for k, v in c.items() if k != "fields"}
+        row["ticker"], row["name"] = t, str(c.get("name") or "")
+        row["_sheet"] = "confidence"
+        out.append(row)
+    return out
+
+
+def engine_summary(ticker: str) -> Optional[str]:
+    """En rad ur Confidence-scoren och Durrett-motorn för ett bolag i arket.
+
+    Läses, matas inte in. None när bolaget inte finns i arket eller motorerna
+    inte kan köras (t.ex. i test utan Streamlit-session).
+    """
+    try:
+        from confidence import store as cs, reports
+        from confidence.ui import load_store, _signals_for
+        from engines.durrett.engine import analyze as durrett_analyze
+    except Exception:                                    # pragma: no cover
+        return None
+    try:
+        data = load_store()
+        company = cs.get(data, (ticker or "").strip().upper())
+        if company is None:
+            return None
+        a = reports.analyze(company, cs.overrides(data), _signals_for(company.commodity),
+                            date.today())
+        d = durrett_analyze(company, today=date.today())
+        q = d.quality_score.value
+        return (f"Confidence: {a.recommendation} · case {a.case.total:.0f} ({a.case.rating}) · "
+                f"Durrett-motorn: kvalitet {q:.0f} · risk {d.risk_level}"
+                if q is not None else
+                f"Confidence: {a.recommendation} · case {a.case.total:.0f} ({a.case.rating}) · "
+                f"Durrett-motorn: risk {d.risk_level}")
+    except Exception:
+        return None
 
 
 # ── UI ───────────────────────────────────────────────────────────────────────
@@ -375,7 +438,8 @@ def render_scorecard_page() -> None:
     entries = collect(_gather())
     if not entries:
         st.info("Inga kandidater ännu. Lägg upp dem i Poängmodellen, Tiggre, "
-                "Granskningsarken eller Insider — de dyker upp här automatiskt.")
+                "Granskningsarken, Durrett/Confidence eller Insider — de dyker "
+                "upp här automatiskt.")
         return
 
     cards = data.setdefault("cards", {})
@@ -429,6 +493,10 @@ def _card(data: dict, cards: dict, entry: dict) -> None:
         # Sammanställningen — läses, matas inte in.
         st_ = control_state(entry, pos_total, strategy)
         _summary_row(entry, st_, strategy)
+        if "confidence" in entry["strategies"]:
+            line = engine_summary(entry["ticker"])
+            if line:
+                st.caption(f"🐺 {line}")
 
         v1, v2 = st.columns(2)
         val = v1.text_input("Värdering", value=card.get("valuation", ""),

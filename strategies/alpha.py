@@ -14,13 +14,15 @@ Signal levels:
   STRONG BUY — score_pct >= 70% AND all gates pass
   BUY        — score_pct >= 55% AND all gates pass
 
-Exit triggers (rules 6-7):
-  SELL       — price closes below EMA200
-  SELL       — regime turns red (cycle_score == 0)
+Exit triggers (rules 6-7, strategy_rules.py ALPHA):
+  REDUCE 50 % — price closes below EMA200 (EMA200-brott = minska 50 %)
+  SELL        — regime turns red (cycle_score == 0) — sälj resten
+  SELL        — an explicit hard stop stored on the position is hit
 
 Risk / sizing:
   • Position sized to risk_pct of capital per trade
-  • Stop distance = EMA200 breach (price – EMA200)
+  • Stop = EMA200, so stop distance = price − EMA200
+  • Never more than max_position_pct of capital in one stock (10 %)
 """
 
 from __future__ import annotations
@@ -34,12 +36,13 @@ DEFAULT_PARAMS: dict = {
     "ema_macro":       200,
     "rsi_period":      14,
     "atr_period":      14,
-    "atr_mult":        2.0,
-    "cycle_min":       2,       # minimum cycle_score to enter
+    "cycle_min":       2,       # minimum cycle_score to enter (green regime)
     "strong_buy_pct":  0.70,
     "buy_pct":         0.55,
     "hold_pct":        0.35,
     "risk_pct":        0.015,   # 1.5% risk per trade
+    "max_position_pct": 0.10,   # max 10 % per aktie (playbook rule 6)
+    "reduce_pct":      0.50,    # EMA200-brott = reducera 50 %
     "tp1_r":           3.0,
     "tp2_r":           6.0,
     "tp1_pct":         0.30,
@@ -95,13 +98,11 @@ def entry_fn(df: pd.DataFrame, params: dict | None = None) -> dict:
     close  = df["Close"]
     e50    = _ema(close, p["ema_slow"])
     e200   = _ema(close, p["ema_macro"])
-    atr    = _atr(df, p["atr_period"])
     rsi    = _rsi(close, p["rsi_period"])
 
     price   = float(close.iloc[-1])
     e50_v   = float(e50.iloc[-1])
     e200_v  = float(e200.iloc[-1])
-    atr_v   = float(atr.iloc[-1])
     rsi_v   = float(rsi.iloc[-1])
 
     # EMA200 slope: compare current vs 10 bars ago
@@ -123,6 +124,14 @@ def entry_fn(df: pd.DataFrame, params: dict | None = None) -> dict:
          "passed": rs_ok,
          "value": f"RSI={rsi_v:.1f}"},
     ]
+    # Rule 1 — "Köp endast i grön regim". The regime is not derivable from the
+    # price series, so it is passed in as cycle_score (alpha_regime); when the
+    # caller has none, the gate is not evaluated — as before.
+    cycle = p.get("cycle_score")
+    if cycle is not None:
+        gates.insert(0, {"rule": f"Green regime (cycle_score >= {p['cycle_min']})",
+                         "passed": float(cycle) >= float(p["cycle_min"]),
+                         "value": f"cycle_score={cycle}"})
 
     passed     = sum(g["passed"] for g in gates)
     score_pct  = passed / len(gates)
@@ -140,7 +149,9 @@ def entry_fn(df: pd.DataFrame, params: dict | None = None) -> dict:
         signal = "SELL"
 
     is_buy = signal in ("STRONG BUY", "BUY")
-    stop_loss = price - p["atr_mult"] * atr_v if is_buy else None
+    # The stop IS the EMA200 (playbook: "Pris − EMA200"). A buy requires
+    # price > EMA200, so the distance is always positive here.
+    stop_loss = e200_v if is_buy else None
     risk      = (price - stop_loss) if stop_loss else 0.0
     tp1_price = (price + p["tp1_r"] * risk) if risk > 0 else None
     tp2_price = (price + p["tp2_r"] * risk) if risk > 0 else None
@@ -164,52 +175,66 @@ def exit_fn(position: dict, df: pd.DataFrame, params: dict | None = None) -> dic
     """
     Evaluate Alpha exit conditions on the latest bar of *df*.
 
-    Exit rules (CAGR rules 6-7):
-      • Price closes below EMA200 → SELL
-      • Hard stop-loss breach → SELL
+    Exit rules (playbook rules 6-7):
+      • Price closes below EMA200 → REDUCE 50 % (reduce = 0.5, exit = False)
+      • Regime red (cycle_score <= 0, from position or params) → SELL the rest
+      • Explicit hard stop stored on the position → SELL
 
     Returns
     -------
     dict with keys:
-      exit        : bool
-      reason      : str | None
+      exit        : bool          full exit
+      reduce      : float         fraction to sell now (0.5 on EMA200 breach)
+      reason      : str | None    STOP_LOSS · REGIME_RED · EMA200_BREACH ·
+                                  EMA200_BREACH_HELD (already halved, waiting
+                                  for the regime rule)
       exit_price  : float | None
       partial_tp1 : bool
       partial_tp2 : bool
     """
     p = {**DEFAULT_PARAMS, **(params or {})}
+    none = {"exit": False, "reduce": 0.0, "reason": None, "exit_price": None,
+            "partial_tp1": False, "partial_tp2": False}
 
     if df is None or len(df) < 2:
-        return {"exit": False, "reason": None, "exit_price": None,
-                "partial_tp1": False, "partial_tp2": False}
+        return dict(none)
 
     close   = df["Close"]
     price   = float(close.iloc[-1])
-    atr_v   = float(_atr(df, p["atr_period"]).iloc[-1])
     e200_v  = float(_ema(close, p["ema_macro"]).iloc[-1])
 
     entry     = float(position.get("entry_price", price))
-    stop_loss = float(position.get("stop_loss", entry - p["atr_mult"] * atr_v))
+    hard_stop = position.get("stop_loss")          # explicit, user-set — optional
+    stop_ref  = float(hard_stop) if hard_stop is not None else e200_v
     tp1_hit   = bool(position.get("tp1_hit", False))
     tp2_hit   = bool(position.get("tp2_hit", False))
+    reduced   = bool(position.get("reduced", False))
+    cycle     = position.get("cycle_score", p.get("cycle_score"))
 
-    risk      = entry - stop_loss if entry > stop_loss else p["atr_mult"] * atr_v
+    risk      = entry - stop_ref if entry > stop_ref else max(entry * 0.05, 1e-9)
     tp1_price = entry + p["tp1_r"] * risk
     tp2_price = entry + p["tp2_r"] * risk
 
     partial_tp1 = not tp1_hit and price >= tp1_price
     partial_tp2 = tp1_hit and not tp2_hit and price >= tp2_price
 
-    if price <= stop_loss:
-        return {"exit": True, "reason": "STOP_LOSS", "exit_price": stop_loss,
-                "partial_tp1": False, "partial_tp2": False}
+    # Rule 7 — red regime = sell the rest (or everything).
+    if cycle is not None and float(cycle) <= 0:
+        return {**none, "exit": True, "reason": "REGIME_RED", "exit_price": price}
 
+    # An explicit hard stop on the position is still a full exit.
+    if hard_stop is not None and price <= float(hard_stop):
+        return {**none, "exit": True, "reason": "STOP_LOSS", "exit_price": float(hard_stop)}
+
+    # Rule 6 — EMA200-brott = reducera 50 %. Only the first breach reduces;
+    # a position already halved waits for the regime rule.
     if price < e200_v:
-        return {"exit": True, "reason": "EMA200_BREACH", "exit_price": price,
-                "partial_tp1": False, "partial_tp2": False}
+        if reduced:
+            return {**none, "reason": "EMA200_BREACH_HELD", "exit_price": price}
+        return {**none, "reduce": float(p["reduce_pct"]), "reason": "EMA200_BREACH",
+                "exit_price": price}
 
-    return {"exit": False, "reason": None, "exit_price": None,
-            "partial_tp1": partial_tp1, "partial_tp2": partial_tp2}
+    return {**none, "partial_tp1": partial_tp1, "partial_tp2": partial_tp2}
 
 
 def risk_fn(df: pd.DataFrame, capital: float, params: dict | None = None) -> dict:
@@ -229,12 +254,20 @@ def risk_fn(df: pd.DataFrame, capital: float, params: dict | None = None) -> dic
                 "risk_amount": 0.0, "stop_distance": 0.0, "stop_loss": 0.0,
                 "entry_price": 0.0, "atr": 0.0}
 
-    price = float(df["Close"].iloc[-1])
+    close = df["Close"]
+    price = float(close.iloc[-1])
     atr   = float(_atr(df, p["atr_period"]).iloc[-1])
+    e200  = float(_ema(close, p["ema_macro"]).iloc[-1])
 
-    stop_distance  = p["atr_mult"] * atr
+    # Stop = EMA200. Below it there is no entry, hence no size.
+    stop_distance  = max(price - e200, 0.0)
     risk_amount    = capital * p["risk_pct"]
     shares         = int(risk_amount / stop_distance) if stop_distance > 0 else 0
+    # A tight EMA200 distance would otherwise size the position enormously;
+    # the playbook caps every Alpha holding at 10 % of capital.
+    max_value = capital * p["max_position_pct"]
+    if price > 0 and shares * price > max_value:
+        shares = int(max_value / price)
     position_value = shares * price
     position_pct   = position_value / capital if capital > 0 else 0.0
 
@@ -244,7 +277,7 @@ def risk_fn(df: pd.DataFrame, capital: float, params: dict | None = None) -> dic
         "position_pct":   position_pct,
         "risk_amount":    risk_amount,
         "stop_distance":  stop_distance,
-        "stop_loss":      price - stop_distance,
+        "stop_loss":      e200,
         "entry_price":    price,
         "atr":            atr,
     }
@@ -256,7 +289,7 @@ STRATEGY: dict = {
     "description": (
         "Long-term position strategy: CAGR-based scoring (fundamentals + cycle + "
         "technical), Price>EMA200, EMA50>EMA200 golden cross, green regime gate, "
-        "ATR stop-loss, EMA200 breach exit."
+        "stop = EMA200: breach reduces 50 %, red regime sells the rest."
     ),
     "color":            "#2d8a4e",
     "params":           DEFAULT_PARAMS,
