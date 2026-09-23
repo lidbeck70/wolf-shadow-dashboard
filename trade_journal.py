@@ -210,6 +210,27 @@ def _compute_kpis(df: pd.DataFrame) -> dict:
         return _empty_kpis
 
 
+def journal_strategies() -> list:
+    """Strategierna journalen kan bokföra på: alla playbooks i strategy_rules.
+
+    Listan var hårdkodad till Wolf/Viking/Alpha, så affärer i de tio andra
+    strategierna fick bokföras som något de inte var. Swing-trion först (som
+    förut), resten i inlärningsordningen. Lagras som playbook-nyckel (gemener),
+    precis som de tre gamla.
+    """
+    first = ["wolf", "viking", "alpha"]
+    try:
+        import strategy_rules as sr
+        rest = [k for k in sr.LEARNING_ORDER if k not in first and k in sr.PLAYBOOKS]
+    except Exception:
+        rest = []
+    return first + rest
+
+
+def _strategy_label(key: str) -> str:
+    return {"contrarian": "Deep Contrarian"}.get(key, key.capitalize())
+
+
 def _strategy_stats(df: pd.DataFrame, strategy: str) -> dict:
     """Stats for a single strategy."""
     _empty = {"trades": 0, "win_rate": 0.0, "avg_r": 0.0, "total_pnl": 0.0, "cagr": None}
@@ -697,13 +718,18 @@ def render_trade_journal_page():
             f'Per-Strategy Breakdown</p>',
             unsafe_allow_html=True,
         )
-        s1, s2, s3 = st.columns(3)
-        with s1:
-            _strategy_card("Wolf", _strategy_stats(df, "wolf"))
-        with s2:
-            _strategy_card("Viking", _strategy_stats(df, "viking"))
-        with s3:
-            _strategy_card("Alpha", _strategy_stats(df, "alpha"))
+        # Swing-trion alltid; övriga strategier bara när journalen har affärer i dem.
+        _used = set()
+        if not df.empty and "strategy" in df.columns:
+            _used = set(df["strategy"].astype(str).str.lower().unique())
+        _shown = [k for k in journal_strategies()
+                  if k in ("wolf", "viking", "alpha") or k in _used]
+        for _i in range(0, len(_shown), 3):
+            _chunk = _shown[_i:_i + 3]
+            _cols = st.columns(3)
+            for _col, _k in zip(_cols, _chunk):
+                with _col:
+                    _strategy_card(_strategy_label(_k), _strategy_stats(df, _k))
 
         _render_swing_stats(trades)
 
@@ -828,7 +854,8 @@ def render_trade_journal_page():
             fc1, fc2, fc3, fc4 = st.columns(4)
             with fc1:
                 ticker = st.text_input("Ticker", placeholder="e.g. EQNR.OL")
-                strategy = st.selectbox("Strategy", ["Wolf", "Viking", "Alpha"])
+                strategy = st.selectbox("Strategy", journal_strategies(),
+                                        format_func=_strategy_label)
                 direction = st.selectbox("Direction", ["Long", "Short"])
             with fc2:
                 entry_date = st.date_input("Entry Date")

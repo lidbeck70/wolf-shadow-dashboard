@@ -265,7 +265,9 @@ def _compute_long_gates(ticker: str, sector: str) -> dict:
         "rule": "9. Max 10% per aktie",
         "passed": True,
         "value": "Portföljnivå",
-        "detail": f"Position size: Kapital × 1% / (½ ATR = {atr/2:.2f})",
+        # Alpha (strategy_rules.py): 1,5 % risk, stoppen är EMA200 — inte ½ ATR.
+        "detail": (f"Position size: Kapital × 1,5 % / (pris − EMA200 = "
+                   f"{max(price - ema200, 0.0):.2f})"),
     })
 
     # 10. Historisk nedgång — brus eller strukturell?

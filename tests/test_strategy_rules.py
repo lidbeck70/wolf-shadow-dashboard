@@ -113,6 +113,43 @@ def test_stop_multipliers_match_the_code():
             f"— the rules and the engine disagree")
 
 
+def _playbook_text(pb) -> str:
+    """Every string a playbook renders anywhere in the panel."""
+    parts = [pb.risk.risk_per_trade, pb.risk.position_size, pb.risk.stop,
+             pb.risk.targets, pb.support_note]
+    for rule in pb.entry + pb.exit + pb.mindset:
+        parts += [rule.text, rule.explanation, rule.panel_guide]
+    parts += list(pb.workflow) + list(pb.pitfalls)
+    parts += [f"{k} {v}" for k, v in pb.cheatsheet]
+    return " ".join(p for p in parts if p)
+
+
+def test_no_rule_text_anywhere_contradicts_the_stop_multiplier():
+    """The whole playbook, not just risk.stop.
+
+    PR 3 found the leftovers: the Wolf guide said 2 % + ½ ATR in one rule and
+    2,5 × ATR in another, the Viking exit rule still said ½ ATR, and the REGIME
+    gates computed on ½ ATR. Every ATR multiplier a playbook mentions must be
+    the one its engine trades, and the old ½ ATR must not creep back in.
+    """
+    from strategies.wolf import DEFAULT_PARAMS as WOLF_P
+    from strategies.viking import DEFAULT_PARAMS as VIKING_P
+
+    def _mults(text: str) -> set:
+        return {float(m.replace(",", "."))
+                for m in re.findall(r"(\d+(?:[.,]\d+)?)\s*×\s*ATR", text)}
+
+    for key, code_mult in (("wolf", float(WOLF_P["atr_mult"])),
+                           ("viking", float(VIKING_P["atr_stop_mult"]))):
+        text = _playbook_text(sr.PLAYBOOKS[key])
+        # "Höjd från ½ ATR" is history, not a rule — strip the explicit tombstone.
+        live = text.replace("Höjd från ½ ATR", "")
+        assert "½" not in live, f"{key}: rule text still mentions ½ ATR"
+        stated = _mults(live)
+        assert stated == {code_mult}, (
+            f"{key}: rule text mentions {stated}× ATR, engine trades {code_mult}×")
+
+
 def test_viking_sltp_calculator_reads_the_engine_multiplier():
     """The live OVTLYR/Viking SL/TP calculator must not hardcode a multiplier.
 

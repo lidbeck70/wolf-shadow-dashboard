@@ -95,8 +95,14 @@ RUNWAY_STRONG, RUNWAY_WEAK = 2.0, 1.0      # år: > 2 -> 2p, 1–2 -> 1p
 DURRETT_BUY_MAX = 10.0                     # MCap/framtida vinst under 10x
 MCAP_PER_OZ_CHEAP, MCAP_PER_OZ_VERY = 100.0, 50.0
 
+# Strategiernas hårda grindar ovanpå poängen (Masterguiden, strategy_rules):
+#   Sprott  — "Runway ≥ 18 månader. Under 18 månader = stopp oavsett projekt."
+#   Durrett — "Poängsätt i Poängmodellen — krav ≥ 8 OCH under 10x."
+# Poängen räknas som förut; grinden avgör bara vad poängen får kallas.
+SPROTT_RUNWAY_MIN_MONTHS = 18
+
 POSITION_NOTE = {
-    SPROTT: "Max 1–2 % per bolag, 10–15 bolag i korgen.",
+    SPROTT: "Max 1–1,5 % per bolag (tak 1,5 %), 10–15 bolag i korgen.",
     DURRETT: "Räknas mot Durrett-ramen i allokeringsplanen (mål 8 %, tak 3 % "
              "per bolag).",
 }
@@ -182,12 +188,52 @@ def durrett_buy_ok(ratio: Optional[float]) -> bool:
     return r is not None and r < DURRETT_BUY_MAX
 
 
-def ranked(rows: list) -> list:
-    """Kandidaterna med poäng och bedömning, bäst först."""
+def sprott_runway_ok(years) -> Optional[bool]:
+    """Sprotts hårda grind: runway ≥ 18 mån. None när runwayen är okänd."""
+    y = _num(years)
+    if y is None:
+        return None
+    return y * 12.0 >= SPROTT_RUNWAY_MIN_MONTHS
+
+
+def gated_verdict(key: str, row: dict) -> tuple:
+    """(bedömning, orsak) — poängens bedömning efter strategins hårda grind.
+
+    Sprott: runway under 18 mån → Passa, oavsett poäng. Durrett: Kärninnehav
+    kräver att köpregeln (under 10× framtida vinst) är räknad och uppfylld;
+    annars stannar raden på Bevakningslista. Orsaken är tom när grinden inte
+    slog. Poängen i sig ändras aldrig — bara etiketten.
+    """
+    r = row or {}
+    vd = verdict(total_score(r.get("factors", {})))
+    if vd is None:
+        return None, ""
+    if key == SPROTT:
+        if sprott_runway_ok(runway_years(r.get("cash"), r.get("burn"))) is False:
+            return PASS, (f"Runway under {SPROTT_RUNWAY_MIN_MONTHS} mån — "
+                          f"avstå oavsett poäng (Sprott-regeln).")
+    elif key == DURRETT and vd == CORE:
+        ratio = mcap_per_earnings(r.get("mcap"), r.get("profit"))
+        if ratio is None:
+            return WATCH, (f"Kärninnehav kräver köpregeln under {DURRETT_BUY_MAX:g}× "
+                           f"framtida vinst — fyll i börsvärde och framtida vinst.")
+        if not durrett_buy_ok(ratio):
+            return WATCH, (f"{ratio:.1f}× framtida vinst — Kärninnehav kräver "
+                           f"under {DURRETT_BUY_MAX:g}×.")
+    return vd, ""
+
+
+def ranked(rows: list, key: Optional[str] = None) -> list:
+    """Kandidaterna med poäng och bedömning, bäst först.
+
+    Med `key` (sprott/durrett) läggs strategins hårda grind på bedömningen
+    och `gate` bär orsaken; utan nyckel är bedömningen ren poäng som förut.
+    """
     out = []
     for r in rows or []:
         sc = total_score(r.get("factors", {}))
-        out.append({"row": r, "score": sc, "verdict": verdict(sc)})
+        vd, why = (gated_verdict(key, r) if key else (verdict(sc), ""))
+        out.append({"row": r, "score": sc, "verdict": vd, "gate": why})
     out.sort(key=lambda x: (-(x["score"] if x["score"] is not None else -1),
                             (x["row"].get("ticker") or "")))
     return out
@@ -303,7 +349,7 @@ CSV_COLUMNS = {
 
 def _export(data: dict, key: str) -> None:
     rows = []
-    for r in ranked(data.get(key, [])):
+    for r in ranked(data.get(key, []), key):
         row = r["row"]
         ds = ctl.ds_total(row)
         extra = {"_score": r["score"], "_verdict": r["verdict"],
@@ -343,14 +389,14 @@ def _new_row(data: dict, key: str) -> None:
 
 
 def _rows(data: dict, key: str) -> None:
-    rows = ranked(data.get(key, []))
+    rows = ranked(data.get(key, []), key)
     if not rows:
         st.caption("Inga kandidater ännu. Screenern körs i Börsdata — filtret "
                    "står i RULES → 📚 SNABBREFERENS.")
         return
 
     for r in rows:
-        row, sc, vd = r["row"], r["score"], r["verdict"]
+        row, sc, vd, gate_why = r["row"], r["score"], r["verdict"], r["gate"]
         c = VERDICT_COLOR.get(vd, DIM)
         head = (f"{row.get('ticker','?')} · {row.get('commodity','')} · "
                 f"{sc if sc is not None else '–'}/{MAX_SCORE} p · "
@@ -374,6 +420,9 @@ def _rows(data: dict, key: str) -> None:
 
             blocked = ctl.ds_blocks_buy(row)
             eff_c, eff_vd = (RED, "KÖP LÅST — hög DS") if blocked else (c, vd)
+            note = ctl.ds_note(row) if blocked else VERDICT_ACTION.get(vd, "")
+            if gate_why and not blocked:
+                note = f"{gate_why} {note}".strip()
             st.markdown(
                 f"<div style='border:1px solid {eff_c}55;background:{eff_c}0d;"
                 f"border-radius:8px;padding:10px 14px;margin:10px 0;'>"
@@ -382,7 +431,7 @@ def _rows(data: dict, key: str) -> None:
                 f"<span style='color:{eff_c};font-weight:700;margin-left:12px;'>"
                 f"{eff_vd or 'Sätt minst en faktor'}</span>"
                 f"<div style='color:{TEXT};font-size:0.8rem;margin-top:3px;'>"
-                f"{ctl.ds_note(row) if blocked else VERDICT_ACTION.get(vd, '')}"
+                f"{note}"
                 f"</div></div>", unsafe_allow_html=True)
 
             com = st.text_input("Kommentar", value=row.get("comment", ""),
@@ -410,13 +459,22 @@ def _sprott_math(data: dict, row: dict) -> None:
                            key=f"sc_burn_{row['id']}")
     rw = runway_years(cash, burn)
     c3.metric("Runway", f"{rw:.1f} år" if rw is not None else "–",
-              help="Under 12 månader = emissionen kommer, och den äter din "
-                   "uppsida.")
+              help=f"Under {SPROTT_RUNWAY_MIN_MONTHS} månader = stopp oavsett "
+                   f"projekt — nyemissionen som kommer äter din uppsida.")
     if (storage.differs(cash, row.get("cash"), 0.0)
             or storage.differs(burn, row.get("burn"), 0.0)):
         row["cash"], row["burn"] = cash, burn
         _save(data)
 
+    ok = sprott_runway_ok(rw)
+    if ok is not None:
+        c_ok = GREEN if ok else RED
+        st.markdown(
+            f"<div style='color:{c_ok};font-size:0.82rem;'>"
+            f"{'✓' if ok else '✕'} Runway-grinden: {rw * 12:.0f} mån "
+            f"{'≥' if ok else '<'} {SPROTT_RUNWAY_MIN_MONTHS} mån"
+            f"{'' if ok else ' — avstå oavsett poäng'}</div>",
+            unsafe_allow_html=True)
     pts = runway_points(rw)
     if pts is not None:
         st.caption(f"Runwayen motsvarar {pts} p på faktor 1 — förslag, inte "
@@ -465,8 +523,13 @@ def _durrett_math(data: dict, row: dict) -> None:
         st.markdown(
             f"<div style='color:{c};font-size:0.82rem;'>"
             f"{'✓' if ok else '✕'} Köpregeln: {ratio:.1f}× "
-            f"{'under' if ok else 'över'} {DURRETT_BUY_MAX:g}×</div>",
+            f"{'under' if ok else 'över'} {DURRETT_BUY_MAX:g}×"
+            f"{'' if ok else ' — Kärninnehav kräver under ' + format(DURRETT_BUY_MAX, 'g') + '×'}"
+            f"</div>",
             unsafe_allow_html=True)
+    else:
+        st.caption(f"Köpregeln är inte räknad — utan MCap/framtida vinst stannar "
+                   f"raden på {WATCH} även vid {CORE_MIN}+ poäng.")
 
     with st.expander("🧮 Hjälpräknare — framtida vinst", expanded=False):
         h1, h2, h3 = st.columns(3)

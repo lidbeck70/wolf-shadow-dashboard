@@ -177,7 +177,8 @@ SPROTT = Playbook(
     ),
     risk=RiskModel(
         risk_per_trade="Hela insatsen kan gå förlorad per bolag — det är designen",
-        position_size="1–2 % per bolag · positionstak 1,5 % av totala portföljen",
+        position_size="1–1,5 % per bolag · positionstak 1,5 % av totala portföljen "
+                      "(allocator.py: hard_cap = 1.5)",
         max_positions="10–15 bolag (aldrig 3–4 — då fungerar inte matematiken)",
         stop="Ingen stop. Runway < 18 månader = sälj/avstå oavsett projekt",
         targets="Låt vinnarna löpa — en enda 30x gör korgen",
@@ -203,7 +204,7 @@ SPROTT = Playbook(
          "Projektstadium, runway, människor, jurisdiktion, metall enligt rotationen.",
          "Poängmodellen (Sprott-fliken)."),
         ("Många bett, små bett",
-         "10–15 bolag à 1–2 %. Aldrig 'jag tror extra på denna' — det förstör "
+         "10–15 bolag à 1–1,5 %. Aldrig 'jag tror extra på denna' — det förstör "
          "asymmetrin.",
          "Portföljallokeraren: Optionalitets-ramen 0–12 % (delas med Tiggre).", True),
     ]),
@@ -224,7 +225,7 @@ SPROTT = Playbook(
         "Målet är 20–30 bolag till manuell granskning per månad — inte alla.",
         "Räkna runway på varje kandidat (5 min). Under 18 mån = bort direkt.",
         "Poängsätt resten i Poängmodellen. ≥ 8 = kandidat.",
-        "Köp 1–2 % per bolag tills korgen är 10–15 st.",
+        "Köp 1–1,5 % per bolag tills korgen är 10–15 st — taket 1,5 % bryts aldrig.",
     ),
     cheatsheet=(
         ("Börsvärde", "< 200 MUSD (gärna > 20)"),
@@ -232,7 +233,7 @@ SPROTT = Playbook(
         ("P/B", "< 1 (< 0,7 vid hundratals träffar)"),
         ("Runway", "≥ 18 månader — annars stopp"),
         ("Poäng", "≥ 8"),
-        ("Position", "1–2 % · tak 1,5 %"),
+        ("Position", "1–1,5 % · tak 1,5 %"),
         ("Korgstorlek", "10–15 bolag"),
         ("Förväntat utfall", "10 faller 80 % · 1 gör 15x · netto +8 %"),
     ),
@@ -276,7 +277,8 @@ DURRETT = Playbook(
     ),
     risk=RiskModel(
         risk_per_trade="Hävstången verkar åt båda håll — balansräkningen är skyddet",
-        position_size="3–5 % per bolag · positionstak 3 % av totala portföljen",
+        position_size="2–3 % per bolag · positionstak 3 % av totala portföljen "
+                      "(allocator.py: hard_cap = 3.0)",
         max_positions="Durrett-ramen 0–15 % av portföljen (mål 8 %)",
         stop="Ingen mekanisk stop — tesen är metallpriscykeln",
         targets="Multipel OCH vinst expanderar samtidigt — där föds 5–10-baggers",
@@ -325,7 +327,7 @@ DURRETT = Playbook(
         "Kör Durrett-screenern i Börsdata (15–40 träffar väntat).",
         "Räkna börsvärde per uns på topp-kandidaterna.",
         "Poängsätt i Poängmodellen — krav ≥ 8 OCH under 10x.",
-        "Köp 3–5 %, håll positionstaket 3 % av totalen i minnet.",
+        "Köp 2–3 % per bolag — positionstaket 3 % av totalen bryts aldrig.",
     ),
     cheatsheet=(
         ("Börsvärde", "50–500 MUSD (tidig cykel upp till 1 000)"),
@@ -335,7 +337,7 @@ DURRETT = Playbook(
         ("Tillväxt 1 år", "> 0 %"),
         ("Krav", "Poäng ≥ 8 och under 10x"),
         ("Silver", "Endast när guld/silver-kvot > 85"),
-        ("Position", "3–5 % · tak 3 %"),
+        ("Position", "2–3 % · tak 3 %"),
     ),
     pitfalls=(
         "Köpa majors för 'trygghetens' skull — de har för liten hävstång, hela "

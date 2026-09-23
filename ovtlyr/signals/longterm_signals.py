@@ -13,6 +13,12 @@ Signal thresholds:
   SELL   < 40   OR SPY < 20EMA OR breadth crossover down
 """
 
+try:  # Viking's real stop distance — the exit text must quote the engine's number.
+    from strategies.viking import DEFAULT_PARAMS as _VIKING_P
+    _VIKING_ATR_MULT = float(_VIKING_P["atr_stop_mult"])
+except Exception:  # pragma: no cover
+    _VIKING_ATR_MULT = 1.5
+
 
 def compute_longterm_signal(
     trend: dict,
@@ -53,7 +59,7 @@ def compute_longterm_signal(
     Exit triggers (check separately):
       - SPY close under 20EMA → SELL ALL
       - Stock trailing stop: price < 10EMA → SELL
-      - Stop loss: ½ ATR from entry → SELL
+      - Stop loss: 1.5 × ATR from entry (strategies/viking.py atr_stop_mult) → SELL
       - Order block hit → SELL
       - Gap & crap momentum → SELL
       - Fear & Greed target hit → SELL (with spread rules)
@@ -341,7 +347,7 @@ def compute_longterm_signal(
             "active": (ema10 > 0) and (price < ema10),
         },
         {
-            "trigger": "Stop loss: ½ ATR from entry",
+            "trigger": f"Stop loss: {_VIKING_ATR_MULT:g} × ATR from entry",
             "active": False,  # requires entry price context (not available here)
         },
         {

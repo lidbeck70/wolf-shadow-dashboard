@@ -93,7 +93,7 @@ SELL_RULES: tuple[SellRule, ...] = (
              "Sektorn älskad: EV/EBITDA > ~10, tom screener, förvärvsvåg "
              "→ trappa ur"),
     SellRule("Sprott", "sprott",
-             "Runway < 12 mån utan besked · caset ändrat · etappvis efter 10x"),
+             "Runway < 18 mån utan besked · caset ändrat · etappvis efter 10x"),
     SellRule("Durrett", "durrett",
              "MCap/framtida vinst närmar sig 10x · produktion sviker "
              "2 kvartal · cykeltopp"),

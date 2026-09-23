@@ -140,5 +140,5 @@ def test_sprott_position_rule_matches_its_playbook():
     import strategy_rules as sr
     pb = sr.PLAYBOOKS["sprott"]
     note = sc.POSITION_NOTE[sc.SPROTT]
-    assert "1–2 %" in note and "1–2 %" in pb.risk.position_size
+    assert "1–1,5 %" in note and "1–1,5 %" in pb.risk.position_size
     assert "10–15" in note and "10–15" in pb.risk.max_positions

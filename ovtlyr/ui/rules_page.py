@@ -194,7 +194,7 @@ def _guide_contrarian() -> None:
                     "Maximalt pessimism, alla ger upp. Köp första tredjedelen.",
                     "<b>ACCUMULATE 2/3</b> — Marknadsfas: DISBELIEF, ANGER eller PANIC. "
                     "Tvivel och ilska. Kursen fortfarande under 200-dagars MA. Köp andra tredjedelen.",
-                    "<b>ACCUMULATE 3/3</b> — Marknadsfas: HOPE. Kurs nära 200-dagars MA (–5% till +15%). "
+                    "<b>ACCUMULATE 3/3</b> — Marknadsfas: HOPE. Kurs nära 200-dagars MA (–5% till +5%). "
                     "Sista chansen att ackumulera billigt.",
                     "<b>Bekräftelse:</b> Gummisnodde ≥ 90:e percentilen (t.ex. Gold/Silver) = "
                     "råvaran historiskt max-billig vs motvikten → stärker köpfallet.",
@@ -269,7 +269,7 @@ def _guide_wolf() -> None:
                 "Fånga kortsiktiga trendrörelser (dagar till veckor) med hög precision och "
                 "tight riskkontroll. Varje trade har definierat stop-loss och minst 1:2 i "
                 "risk/reward (förhållande mellan risk och potentiell vinst). "
-                "Max 1% av portföljkapitalet i risk per trade.",
+                "Max 2% av portföljkapitalet i risk per trade (strategy_rules.py: Wolf 2 %).",
                 _CYAN),
             unsafe_allow_html=True,
         )
@@ -283,7 +283,7 @@ def _guide_wolf() -> None:
                     "<b>Regel 5:</b> Candlestick-trigger — hammer, engulfing eller break-and-retest.",
                     "<b>Regel 6:</b> Volymbekräftelse — volymratio ≥ 1,0× (ej undre volym).",
                     "<b>Regel 7:</b> Min R:R 1:2, helst 1:3.",
-                    "<b>Regel 8:</b> Max 1% risk av portföljkapitalet per trade.",
+                    "<b>Regel 8:</b> Max 2% risk av portföljkapitalet per trade.",
                 ], _TEXT),
                 _CYAN),
             unsafe_allow_html=True,
@@ -291,8 +291,8 @@ def _guide_wolf() -> None:
         st.markdown(
             _gs("3. Positionsstorlek",
                 _ul([
-                    "Beräkna: <b>Positionsstorlek = (Kapital × 1%) / SL-avstånd i kr</b>.",
-                    "Sätt alltid SL baserat på struktur (key level), aldrig ett fast procenttal.",
+                    "Beräkna: <b>Positionsstorlek = (Kapital × 2%) / SL-avstånd i kr</b>.",
+                    "SL = entry − 2,5 × ATR(14) (strategies/wolf.py: atr_stop_mult = 2.5) — strukturbaserat, aldrig ett fast procenttal.",
                     "Max 2 förluster per dag — stäng plattformen direkt efter den andra.",
                 ], _TEXT),
                 _AMBER),
@@ -306,7 +306,7 @@ def _guide_wolf() -> None:
                     "<b>Regel 10:</b> Max 2 förluster per dag — stopp dagen efter den andra.",
                     "<b>Regel 11 — exit:</b> Trailing stop via Kijun-sen (Ichimoku, 26-period). "
                     "Stäng om pris stänger UNDER Kijun <em>och</em> under EMA10. "
-                    "½ × ATR som hård nödstopp.",
+                    "2,5 × ATR(14) under entry som hård stop.",
                 ], _TEXT),
                 _RED),
             unsafe_allow_html=True,
@@ -350,7 +350,7 @@ def _guide_viking() -> None:
                 "Strategin kräver att ALLT är alignat — marknad, sektor och aktie. "
                 "Baserad på OVTLYR Golden Ticket-systemet: "
                 "<em>Where Outliers Win.</em> "
-                "Max 1–2% risk per trade, alltid med exakt stop-loss.",
+                "Max 1,5% risk per trade (strategies/viking.py: risk_pct = 1.5), alltid med exakt stop-loss.",
                 _BLUE),
             unsafe_allow_html=True,
         )
@@ -374,8 +374,8 @@ def _guide_viking() -> None:
         st.markdown(
             _gs("3. Positionsstorlek",
                 _ul([
-                    "Beräkna: <b>Positionsstorlek = (Kapital × 1–2%) / SL-avstånd</b>.",
-                    "SL = entry minus ½ × ATR (14-period).",
+                    "Beräkna: <b>Positionsstorlek = (Kapital × 1,5%) / SL-avstånd</b>.",
+                    "SL = entry minus 1,5 × ATR (14-period) (strategies/viking.py: atr_stop_mult = 1.5).",
                     "Max 2 förluster per dag — stäng plattformen.",
                 ], _TEXT),
                 _AMBER),
@@ -386,7 +386,7 @@ def _guide_viking() -> None:
             _gs("4. När säljer du (10 exit-regler)",
                 _ul([
                     "<b>1. Hård exit:</b> SPY stänger UNDER 20 EMA → stäng ALLT omedelbart.",
-                    "<b>2. SL:</b> ½ × ATR (14p) under entry — initial stop-loss.",
+                    "<b>2. SL:</b> 1,5 × ATR (14p) under entry — initial stop-loss.",
                     "<b>3. Trailing stop:</b> Stäng om pris stänger under 10 EMA.",
                     "<b>4. Order Block hit:</b> Pris rör sig in i bearish OB-zon → exit.",
                     "<b>5. Gap &amp; Crap:</b> Gap upp följt av fall under gårdagens stängning → exit direkt.",
@@ -417,7 +417,7 @@ def _guide_viking() -> None:
                     "Köper när SPY är svag — den hårda exit-regeln (SPY under 20 EMA) visar varför det är farligt.",
                     "Ignorerar marknadsbreadden — utan Bull List-bekräftelse köper du in i en försvagning.",
                     "Håller igenom earnings — en rapport kan radera hela vinsten på sekunder.",
-                    "Använder för stort SL-avstånd — tar mer risk per trade än 1–2%, kontot töms snabbt vid en serie förluster.",
+                    "Använder för stort SL-avstånd — tar mer risk per trade än 1,5%, kontot töms snabbt vid en serie förluster.",
                 ], _DIM),
                 _RED),
             unsafe_allow_html=True,
