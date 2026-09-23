@@ -116,6 +116,14 @@ def _render_zones() -> None:
         for col, (name, desc) in zip(cols, cards):
             with col:
                 st.markdown(card(name, desc, color), unsafe_allow_html=True)
+                # Kortet öppnar sin flik. Första namnet på ett kort med flera
+                # ("Rick Rule · Royalty C") är målet; okänt namn → toppfliken.
+                first = name.split(" · ")[0]
+                segs = [key, first] if first in nav.options(key) else [key]
+                target = nav.slug(segs)
+                if st.button("Öppna →", key=f"home_go_{target}", width="stretch"):
+                    st.session_state["nav_goto"] = target
+                    st.rerun()
 
 
 # ── Senaste händelserna ur arken ─────────────────────────────────────────────
@@ -150,5 +158,8 @@ def tab_home() -> None:
     status = _load_status()
     _render_pulse(status)
     _render_zones()
+    st.caption("Adressfältet följer fliken — kopiera URL:en (t.ex. `?p=regime/marknad/"
+               "arc-regime/wolf-regime`) för en direktlänk. Alla länkar står i "
+               "RULES → Regler & Guider → 🗺 FLIKGUIDE.")
     st.markdown("<br>", unsafe_allow_html=True)
     _render_recent_events(status)

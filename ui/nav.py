@@ -14,6 +14,8 @@ Etiketterna är exakt de strängar som visas i radioknapparna.
 
 from __future__ import annotations
 
+import re
+
 TOP: tuple = (
     ("home", "🏠 HOME"),
     ("screening", "🔱 SCREENING"),
@@ -86,9 +88,119 @@ HOME_ZONES: tuple = (
 )
 
 
+# Widget-nyckeln i session_state för radion på varje nivå. wolf_panel ritar
+# _sub(path) ur den här, och djuplänken seedar samma nycklar.
+TABS_KEY = "main_tabs"
+STATE_KEY: dict = {
+    "screening": "sub_screening",
+    "screening/Arc Screener": "sub_screening_arc",
+    "screening/Contrarian Alpha": "sub_screening_contrarian",
+    "review": "sub_review",
+    "review/🧭 Durrett & Confidence": "sub_review_durrett",
+    "regime": "sub_regime_group",
+    "regime/Marknad": "sub_regime",
+    "regime/Marknad/Arc Regime": "sub_regime_arc",
+    "regime/Marknad/Alpha Regime": "sub_regime_alpha",
+    "regime/Råvaror": "sub_regime_commodities",
+    "intel": "sub_intel",
+    "portfolio": "sub_portfolio",
+    "rules": "sub_rules",
+    "rules/Regler & Guider": "rules_sub",          # ritas inne i rules_page
+}
+
+
+def tab_label(key: str) -> str:
+    """Toppflikens etikett som st.tabs får den (med luft runt)."""
+    return f"  {TOP_LABEL[key]}  "
+
+
 def options(path: str) -> list:
     """Alternativen på nästa nivå under sökvägen, eller [] om det är ett löv."""
     return list(SUBS.get(path, []))
+
+
+# ── Djuplänkar: ?p=regime/marknad/arc-regime/wolf-regime ─────────────────────
+_TRANS = str.maketrans({"å": "a", "ä": "a", "ö": "o", "é": "e"})
+
+
+def slugify(label: str) -> str:
+    """'🧭 Durrett & Confidence' → 'durrett-confidence', 'Råvaror' → 'ravaror'."""
+    s = str(label or "").lower().translate(_TRANS).replace("'", "")
+    return re.sub(r"[^a-z0-9]+", "-", s).strip("-")
+
+
+def slug(segments) -> str:
+    """Sökvägens segment [toppnyckel, etikett, ...] → URL-slug."""
+    return "/".join(slugify(s) for s in segments)
+
+
+def _top_key(part: str):
+    for key, label in TOP:
+        if part in (slugify(key), slugify(label.split(" ", 1)[1])):
+            return key
+    return None
+
+
+def resolve(link: str):
+    """Slug → segment [toppnyckel, etikett, ...], eller None om toppfliken
+    är okänd. Okända segment längre ned ignoreras (länken landar så långt
+    trädet känner igen den). 'granskning/tiggre' och 'review/tiggre' är samma."""
+    parts = [p for p in str(link or "").split("/") if p]
+    if not parts:
+        return None
+    top = _top_key(parts[0])
+    if top is None:
+        return None
+    segs, path = [top], top
+    for p in parts[1:]:
+        hit = next((o for o in SUBS.get(path, []) if slugify(o) == p), None)
+        if hit is None:
+            break
+        segs.append(hit)
+        path = f"{path}/{hit}"
+    return segs
+
+
+def seed(state, segments) -> None:
+    """Skriv segmenten till widget-nycklarna INNAN widgetarna ritas, så att
+    flik och underflikar öppnar sig på länken."""
+    if not segments:
+        return
+    state[TABS_KEY] = tab_label(segments[0])
+    path = segments[0]
+    for seg in segments[1:]:
+        key = STATE_KEY.get(path)
+        if key:
+            state[key] = seg
+        path = f"{path}/{seg}"
+
+
+def current(state) -> list:
+    """Sökvägen panelen visar just nu, ur widget-nycklarna (första
+    alternativet där inget är valt)."""
+    lbl = str(state.get(TABS_KEY) or "").strip()
+    top = next((k for k, l in TOP if l == lbl), TOP[0][0])
+    segs, path = [top], top
+    while path in SUBS:
+        opts = SUBS[path]
+        val = state.get(STATE_KEY.get(path, ""))
+        if val not in opts:
+            val = opts[0]
+        segs.append(val)
+        path = f"{path}/{val}"
+    return segs
+
+
+def link_for(path_text: str) -> str:
+    """'REGIME → Marknad → Swing Regime' (FLIKGUIDENS form) → '?p=…', eller
+    '' om sökvägen inte finns i trädet."""
+    parts = [p.strip() for p in str(path_text or "").split("→") if p.strip()]
+    if not parts:
+        return ""
+    segs = resolve("/".join(slugify(p) for p in parts))
+    if not segs or len(segs) != len(parts):
+        return ""
+    return "?p=" + slug(segs)
 
 
 def leaves() -> set:

@@ -1170,18 +1170,26 @@ def _page_panel_guide() -> None:
         f"Vilken flik kontrollerar vilken regel — och hur du använder den.</p></div>",
         unsafe_allow_html=True)
 
+    from ui import nav as _nav
     html = ("<table style='width:100%;border-collapse:collapse;'>"
             f"<tr style='border-bottom:1px solid rgba(0,229,255,0.15);'>"
             f"<th style='text-align:left;color:{_CYAN};font-size:0.72rem;padding:8px;'>FLIK</th>"
             f"<th style='text-align:left;color:{_CYAN};font-size:0.72rem;padding:8px;'>KONTROLLERAR</th>"
-            f"<th style='text-align:left;color:{_CYAN};font-size:0.72rem;padding:8px;'>HUR DU ANVÄNDER DEN</th></tr>")
+            f"<th style='text-align:left;color:{_CYAN};font-size:0.72rem;padding:8px;'>HUR DU ANVÄNDER DEN</th>"
+            f"<th style='text-align:left;color:{_CYAN};font-size:0.72rem;padding:8px;'>LÄNK</th></tr>")
     for tab, rules, usage in _PANEL_GUIDE:
+        # Djuplänken: panelens adress + ?p=… öppnar fliken direkt.
+        link = _nav.link_for(tab)
         html += (f"<tr style='border-bottom:1px solid rgba(138,133,120,0.2);'>"
                  f"<td style='color:{_TEXT};font-size:0.78rem;padding:6px 8px;"
                  f"font-weight:700;white-space:nowrap;'>{tab}</td>"
                  f"<td style='color:{_YELLOW};font-size:0.7rem;padding:6px 8px;'>{rules}</td>"
-                 f"<td style='color:{_DIM};font-size:0.7rem;padding:6px 8px;'>{usage}</td></tr>")
+                 f"<td style='color:{_DIM};font-size:0.7rem;padding:6px 8px;'>{usage}</td>"
+                 f"<td style='color:{_DIM};font-size:0.66rem;padding:6px 8px;"
+                 f"font-family:monospace;white-space:nowrap;'>{_esc(link)}</td></tr>")
     st.markdown(html + "</table>", unsafe_allow_html=True)
+    st.caption("Lägg `?p=…` efter panelens adress. Adressfältet följer fliken, "
+               "så URL:en går alltid att kopiera som direktlänk.")
 
 
 def _routine_card(row) -> str:
@@ -1470,12 +1478,15 @@ def _page_reference() -> None:
 # ------------------------------------------------------------------ #
 
 def render_rules_page() -> None:
+    from ui import nav as _nav
+    # Alternativen och nyckeln ur navigationsträdet, så djuplänken
+    # ?p=rules/regler-guider/flikguide kan seeda den här radion.
     sub = st.radio(
-        "",
-        ["🚀 KOM IGÅNG", "📋 HANDELSREGLER", "⚡ FUSKLAPP", "🗺 FLIKGUIDE",
-         "📖 STRATEGIGUIDER", "🗓 ÅRSHJULET", "📚 SNABBREFERENS"],
+        "Val i RULES → Regler & Guider",
+        _nav.options("rules/Regler & Guider"),
         horizontal=True,
-        key="rules_sub",
+        key=_nav.STATE_KEY["rules/Regler & Guider"],
+        label_visibility="collapsed",
     )
     st.markdown("<hr style='border-color:rgba(0,229,255,0.15);margin:8px 0 16px 0;'>",
                 unsafe_allow_html=True)
