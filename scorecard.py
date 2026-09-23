@@ -359,7 +359,7 @@ def _gather() -> dict:
     _try("scoring", lambda m: {"sprott": m._load().get("sprott", []),
                                "durrett": m._load().get("durrett", [])})
     _try("tiggre", lambda m: {"tiggre": (m._load().get("candidates", [])
-                                         + m._load().get("positions", []))})
+                                         + m.open_positions())})
     _try("producers", lambda m: {"producenter": m._load().get("producers", []),
                                  "royalty": m._load().get("royalty", [])})
     _try("insider", lambda m: {"insider": m._load().get("signals", [])})

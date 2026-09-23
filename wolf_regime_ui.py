@@ -159,9 +159,8 @@ def _ticker_check(regime_data: dict) -> None:
         return
 
     screener = wolf_screener_ui._get_data() or {}
-    swing_data = storage.session_load(
-        "swing", {"positions": [], "market": {}, "watchlist": [],
-                  "closed": [], "checklist": {}})
+    import swing as _swing
+    swing_data = _swing.rules_data()        # positionerna ur registret (Holdings)
     v = swing_verdict.verdict(ticker, screener, regime_data, swing_data)
 
     colors = {swing_verdict.BUY: GREEN, swing_verdict.PARTIAL: "#d4943a",

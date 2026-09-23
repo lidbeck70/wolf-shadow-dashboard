@@ -48,7 +48,8 @@ log = logging.getLogger("sheets_refresh")
 BLOB_NAME = "sheets_refresh.json"
 SHEET_FILES = {"insider": "data/insider.json", "tiggre": "data/tiggre.json",
                "producers": "data/producers.json", "scoring": "data/scoring.json",
-               "confidence": "data/confidence.json"}          # Durrett-/Confidence-arket
+               "confidence": "data/confidence.json",          # Durrett-/Confidence-arket
+               "holdings": "data/holdings.json"}              # registret (positions.py)
 _BUCKETS = {"insider": ("signals",), "tiggre": ("candidates", "positions"),
             "producers": ("producers", "royalty"), "scoring": ("sprott", "durrett"),
             "confidence": ("companies",)}
@@ -84,6 +85,13 @@ def collect_rows(sheets: dict) -> list:
         data = sheets.get(sheet) or {}
         for b in buckets:
             rows = data.get(b, []) or []
+            if sheet == "tiggre" and b == "positions":
+                # Tiggre-positionerna bor i registret (Holdings) sedan PR 10;
+                # nyckeln förblir tiggre:<id> så arket hittar sina färska tal.
+                import positions as _positions
+                held = _positions.view_rows_from(sheets.get("holdings"), "Tiggre")
+                have = {p.get("id") for p in held}
+                rows = held + [p for p in rows if isinstance(p, dict) and p.get("id") not in have]
             if isinstance(rows, dict):                       # confidence: {TICKER: bolag}
                 rows = [dict(v, id=k) for k, v in rows.items() if isinstance(v, dict)]
             for row in rows:

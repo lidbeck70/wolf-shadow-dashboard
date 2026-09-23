@@ -45,6 +45,9 @@ STORE_DEFAULTS = {
     "scoring": {"sprott": [], "durrett": []},
     "tiggre": {"candidates": [], "positions": [], "closed": [], "parked": []},
     "insider": {"signals": []},
+    # registret (positions.py) — Tiggre-positionerna bor här sedan PR 10
+    "holdings": {"swing": [], "ovtlyr": [], "long": [], "momentum": [], "tiggre": [],
+                 "closed": [], "cash": 0},
 }
 
 
@@ -68,8 +71,12 @@ def _rows(strategy: str, stores: dict) -> list:
     if key in ("sprott", "durrett"):
         return data.get(key, []) or []
     if key == "tiggre":
-        # kandidater först, men ett bolag som redan är position hittas också
-        return (data.get("candidates", []) or []) + (data.get("positions", []) or [])
+        # kandidater först, men ett bolag som redan är position hittas också —
+        # positionerna ur registret (Holdings), en kvarglömd lista i arket därefter
+        import positions as _positions
+        held = _positions.view_rows_from((stores or {}).get("holdings"), "Tiggre")
+        return ((data.get("candidates", []) or []) + held
+                + (data.get("positions", []) or []))
     if key == "insider":
         return data.get("signals", []) or []
     return []

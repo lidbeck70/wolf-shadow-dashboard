@@ -304,8 +304,8 @@ def _render_review(ticker: str, strategy_key: str):
     if not review_link.has_review(strategy_key):
         return None
     store_name, _label = review_link.SHEET[strategy_key]
-    stores = {store_name: storage.session_load(
-        store_name, review_link.STORE_DEFAULTS[store_name])}
+    stores = {name: storage.session_load(name, review_link.STORE_DEFAULTS[name])
+              for name in (store_name, "holdings")}      # registret: Tiggre-positionerna
     rev = review_link.review(strategy_key, ticker, stores)
     if rev is None:
         return None
@@ -378,9 +378,8 @@ def _swing_rule_checks(ticker: str, strategy_key: str):
         screener_data = wolf_screener_ui._get_data() or {}
     except Exception:
         regime_data, screener_data = {}, {}
-    swing_data = storage.session_load(
-        "swing", {"positions": [], "market": {}, "watchlist": [],
-                  "closed": [], "checklist": {}})
+    import swing as _swing
+    swing_data = _swing.rules_data()        # positionerna ur registret (Holdings)
     checks = swing_verdict.rule_checks(ticker, screener_data, regime_data,
                                        swing_data)
 

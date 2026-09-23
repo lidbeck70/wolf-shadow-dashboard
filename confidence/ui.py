@@ -398,7 +398,9 @@ def _render_prefill(data: dict, company: CompanyInput) -> None:
     with st.expander("Förslag ur granskningsarken (Rick Rule/AQS/DS, Tiggre)", expanded=False):
         try:
             producers_data = storage.session_load("producers", {})
-            tiggre_data = storage.session_load("tiggre", {})
+            import positions as _positions
+            tiggre_data = {**storage.session_load("tiggre", {}),
+                           "positions": _positions.view_rows("Tiggre")}   # registret
         except Exception as exc:                          # pragma: no cover
             st.caption(f"Kunde inte läsa arken: {exc}")
             return

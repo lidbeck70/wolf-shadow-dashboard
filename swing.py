@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+import positions
 import storage
 import storage_ui
 from datetime import date
@@ -121,8 +122,15 @@ def _normalize(data: dict) -> dict:
     return data
 
 
+STRATEGY = "Momentum"     # positionernas strategitagg i registret (positions.py)
+
+
 def _load() -> dict:
-    """Laddas EN gång per session; därefter äger sessionen sanningen."""
+    """Laddas EN gång per session; därefter äger sessionen sanningen.
+
+    Positionerna bor sedan steg 2 i registret (positions.py, Holdings).
+    En sparad "positions"-lista i data/swing.json flyttas dit första
+    gången och töms här — sedan är registret källan."""
     data = storage.session_load(STORE, _default(),
                                 legacy_file="swing_data.json")
     if not isinstance(data, dict):
@@ -130,7 +138,32 @@ def _load() -> dict:
         st.session_state[STORE] = data
     for k, v in _default().items():
         data.setdefault(k, v)
+    _migrate_positions(data)
     return data
+
+
+def _migrate_positions(data: dict) -> None:
+    rows = data.get("positions") or []
+    if not rows:
+        return
+    positions.migrate_rows(STRATEGY, rows, source="swing")
+    data["positions"] = []
+    try:                                   # engångsskrivning av tömningen
+        storage.save_session(STORE)
+    except Exception:
+        pass
+
+
+def open_positions() -> list:
+    """Momentum-positionerna ur registret, i flikens form (entry, current,
+    setup, date, belowMA50, outOfRank, halfTaken)."""
+    return positions.view_rows(STRATEGY)
+
+
+def rules_data() -> dict:
+    """Det swing_verdict/alert_rules tar: flikens lagring med positionerna
+    ur registret. Läs den här i stället för session_load("swing")."""
+    return {**_load(), "positions": open_positions()}
 
 
 def _save(data: dict) -> None:
@@ -264,21 +297,21 @@ def _close_position(data: dict, p: dict, reason: str) -> None:
         "entry": entry, "exit": cur, "entryDate": p.get("date", ""),
         "exitDate": _today(), "ret": cur / entry - 1, "reason": reason,
     })
-    data["positions"] = [x for x in data["positions"] if x.get("id") != p.get("id")]
+    positions.close(row_id=p.get("id"), exit_price=cur, reason=reason)
     _save(data)
 
 
 def _positions(data: dict) -> None:
-    positions = data["positions"]
+    rows = open_positions()
     st.markdown(
         f"<div style='font-weight:700;color:{TEXT};margin-bottom:6px;'>"
-        f"Positioner ({len(positions)}/6–8)</div>",
+        f"Positioner ({len(rows)}/6–8)</div>",
         unsafe_allow_html=True,
     )
-    if not positions:
+    if not rows:
         st.caption("Inga öppna positioner. Kontanter är också en position.")
 
-    for p in positions:
+    for p in rows:
         entry = _num(p.get("entry"), 0.0)
         cur = _num(p.get("current"), 0.0)
         stop = entry * 0.9 if entry > 0 else 0.0
@@ -319,7 +352,7 @@ def _positions(data: dict) -> None:
         if new_entry != entry or new_cur != cur:
             p["entry"] = new_entry
             p["current"] = new_cur
-            _save(data)
+            positions.put(STRATEGY, p, "swing")
 
         f1, f2, f3, f4 = st.columns([1.4, 1.2, 1.2, 1])
         b_ma50 = f1.checkbox("Stängt under MA50 (regel 1)", value=bool(p.get("belowMA50")),
@@ -331,7 +364,7 @@ def _positions(data: dict) -> None:
         if (b_ma50 != bool(p.get("belowMA50")) or b_rank != bool(p.get("outOfRank"))
                 or b_half != bool(p.get("halfTaken"))):
             p["belowMA50"], p["outOfRank"], p["halfTaken"] = b_ma50, b_rank, b_half
-            _save(data)
+            positions.put(STRATEGY, p, "swing")
         if f4.button("Stäng", key=f"swing_close_{p['id']}"):
             reason = ("stop -10%" if stop_hit else "under MA50" if p.get("belowMA50")
                       else "ur topp 40" if p.get("outOfRank") else "manuell")
@@ -346,16 +379,16 @@ def _positions(data: dict) -> None:
 def _promote(data: dict, w: dict, entry_price: float, buy_locked: bool) -> None:
     if buy_locked:
         st.warning("Marknadsfiltret är rött — inga nya köp."); return
-    if len(data["positions"]) >= MAX_POSITIONS:
+    if len(open_positions()) >= MAX_POSITIONS:
         st.warning(f"Max {MAX_POSITIONS} positioner."); return
     if entry_price is None or entry_price <= 0:
         st.warning("Ange en entry-kurs > 0 innan köp."); return
-    data["positions"].append({
+    positions.put(STRATEGY, {
         "id": _uid(), "ticker": w.get("ticker", "?"),
         "entry": entry_price, "current": entry_price,
         "setup": w.get("setup") if w.get("setup") != "väntar" else "?",
         "date": _today(), "belowMA50": False, "outOfRank": False, "halfTaken": False,
-    })
+    }, "swing")
     data["watchlist"] = [x for x in data["watchlist"] if x.get("id") != w.get("id")]
     _save(data)
 
