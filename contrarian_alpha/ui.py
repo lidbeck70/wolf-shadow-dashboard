@@ -349,6 +349,13 @@ def _render_control_panel() -> tuple[dict, bool]:
             ),
         )
 
+    if market == "Global":
+        st.caption(
+            "🌐 **Global** = Norden + Börsdatas globala aktielista (kräver Pro+ "
+            "global). Saknas licensen körs bara Norden — statistiken visar då "
+            "*Globalt: 0*."
+        )
+
     # ── US/CA Resource: guardrails + composite v1 + enrichment v1 (PR2/PR3/PR4) ──
     if market == "US/CA Resource":
         st.caption(
@@ -568,6 +575,11 @@ def _get_or_run_pipeline(config_kwargs: dict, run_now: bool):
     }
     if getattr(result, "delisted_count", 0) > 0:
         _stats["Delistade skip"] = result.delisted_count
+    if cfg.include_global:
+        _stats["Globalt"] = getattr(result, "global_count", 0)
+        if not getattr(result, "global_count", 0):
+            st.warning("Inga globala instrument kom med — Börsdata Pro+ global "
+                       "saknas eller svarade tomt. Resultatet är en ren Norden-scan.")
     st.session_state["ca_last_stats"] = _stats
 
     # Persist to Gist (non-blocking best-effort)

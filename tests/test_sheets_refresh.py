@@ -84,8 +84,12 @@ class _API:
     def resolve_instrument_id(self, form):
         return {"EKTA B": 1, "HEXA B": 2, "BOL": 40}.get(form)
 
-    def get_fundamentals_snapshot_fast(self, ids):
-        return {i: dict(self.snaps.get(i, {}), ins_id=i) for i in ids}
+    def get_fundamentals_snapshot_fast(self, ids, scope="nordic"):
+        # Globala id:n (>100) finns bara i den globala screenern — samma
+        # gräns som Börsdatas egen: fel universum ger tomt.
+        if scope == "global":
+            return {i: dict(self.snaps.get(i, {}), ins_id=i) for i in ids if i > 100}
+        return {i: dict(self.snaps.get(i, {}), ins_id=i) for i in ids if i <= 100}
 
     def get_stockprices(self, ins_id, max_count=5):
         p = self.prices.get(ins_id)

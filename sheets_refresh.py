@@ -164,12 +164,18 @@ def refresh(api, sheets: dict) -> dict:
             if iid is not None:
                 resolved[r["key"]] = iid
         ids = sorted(set(resolved.values()))
+        nordic_ids = [i for i in ids if i in inst_map]
         missing_meta = [i for i in ids if i not in inst_map]
         if missing_meta:
             for i in api.get_global_instruments_list():
                 if i.get("insId") is not None:
                     inst_map.setdefault(int(i["insId"]), i)
-        snaps = api.get_fundamentals_snapshot_fast(ids) if ids else {}
+        # KPI-screenern är universum-bunden: globala id:n (Tiggre/Durrett-
+        # raderna på TSX/ASX) ger inget ur den nordiska — hämta dem ur den
+        # globala.
+        snaps = api.get_fundamentals_snapshot_fast(nordic_ids) if nordic_ids else {}
+        if missing_meta:
+            snaps.update(api.get_fundamentals_snapshot_fast(missing_meta, scope="global") or {})
 
         price_cache = {}
         for r in refs:

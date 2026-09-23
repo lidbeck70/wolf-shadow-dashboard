@@ -153,7 +153,11 @@ class PipelineConfig:
     universe: str = "nordic"
     market_ids: list[int] = field(default_factory=lambda: list(ALL_NORDIC_MARKETS))
     # All Nordic: SE Large/Mid/Small/First North/Spotlight/NGM, NO, FI, DK, all exchanges
-    include_global: bool   = False   # Requires Börsdata Pro+ global licence
+    # True lägger Börsdatas globala aktielista (/instruments/global, Pro+ global)
+    # ovanpå market_ids; nyckeltalen för de raderna hämtas ur den globala
+    # KPI-screenern. Flaggan fanns men lästes aldrig — "Global" i panelen körde
+    # exakt samma skanning som "Norden".
+    include_global: bool   = False
     manual_tickers: list[str] = field(default_factory=list)  # override / supplement
 
     # Pipeline gates
@@ -315,6 +319,7 @@ class PipelineResult:
     run_duration_s:   float
     config:           PipelineConfig
     delisted_count:   int = 0  # tickers skipped because yfinance returned no price data
+    global_count:     int = 0  # rader ur /instruments/global (0 med include_global = licens saknas)
 
     @property
     def pass_rates(self) -> dict[str, str]:
@@ -1771,10 +1776,25 @@ def _run_single_ticker(
 
 # ─── Universe helpers ─────────────────────────────────────────────────────────
 
+def _global_instruments(api) -> list[dict]:
+    """Börsdatas globala aktielista, [] utan Pro+ global (loggas en gång per körning)."""
+    try:
+        glob = list(api.get_global_instruments_list() or [])
+    except Exception as e:
+        logger.warning("instruments/global failed: %s", e)
+        return []
+    if not glob:
+        logger.warning("Globala instrument saknas — Börsdata Pro+ global krävs; "
+                       "skanningen fortsätter med Norden")
+    return glob
+
+
 def _build_universe(config: PipelineConfig, api) -> list[dict]:
     """
     Return list of instrument dicts to scan.
-    Each dict: {ticker, ins_id, inst_info, yf_ticker}
+    Each dict: {ticker, ins_id, inst_info, branch_name, sector_name[, scope]}
+    scope = "global" märker rader ur /instruments/global, så att nyckeltalen
+    hämtas ur rätt screener och cachas under egen nyckel.
     """
     universe: list[dict] = []
     seen_ids: set[int] = set()
@@ -1825,6 +1845,11 @@ def _build_universe(config: PipelineConfig, api) -> list[dict]:
 
     _table = _markets.load(api=api) if (api is not None and getattr(api, "is_configured", False)) \
         else _markets.current()
+    # Hämtas EN gång och används både för universumet och för uppslaget av
+    # manuella tickers nedan (annars loggas licensvarningen två gånger).
+    _glob: list[dict] = []
+    if config.include_global and api is not None and getattr(api, "is_configured", False):
+        _glob = _global_instruments(api)
     if api is not None and api.is_configured:
         try:
             instruments = api.get_instruments()
@@ -1864,18 +1889,53 @@ def _build_universe(config: PipelineConfig, api) -> list[dict]:
                     "branch_name": branch_meta.get(inst.get("branchId", -1), ""),
                     "sector_name": sector_meta.get(inst.get("sectorId", -1), ""),
                 })
+
+            # ── Globala instrument ovanpå Norden (include_global) ─────────
+            # Alla handlade aktielistor i marknadstabellen; index, valutor
+            # och okända marknads-id släpps inte in (markets.is_stock).
+            if config.include_global:
+                n_global = 0
+                for inst in _glob:
+                    mid = inst.get("marketId")
+                    if not _markets.is_stock(mid, _table):
+                        continue
+                    if inst.get("instrumentType", 1) not in (1, None):
+                        continue
+                    ins_id = inst.get("insId")
+                    if ins_id is None or ins_id in seen_ids:
+                        continue
+                    seen_ids.add(ins_id)
+                    ticker_raw = inst.get("ticker", "")
+                    yf_ticker = _markets.to_yf(ticker_raw, mid, _table) if ticker_raw else ""
+                    universe.append({
+                        "ticker":      yf_ticker or ticker_raw,
+                        "ins_id":      ins_id,
+                        "inst_info":   inst,
+                        "branch_name": branch_meta.get(inst.get("branchId", -1), ""),
+                        "sector_name": sector_meta.get(inst.get("sectorId", -1), ""),
+                        "scope":       "global",
+                    })
+                    n_global += 1
+                logger.info("Globalt universum: %d instrument", n_global)
         except Exception as e:
             logger.warning("Failed to build Börsdata universe: %s", e)
 
     # Add / supplement with manual tickers — försök slå upp mot Börsdata
     # först, så "BOL" blir Boliden med ins_id (fundamenta, rätt yf-suffix,
     # sektormetadata) i stället för en suffixlös yfinance-sträng utan data.
+    # Med include_global slås tickern även upp i den globala listan (Norden
+    # först, så "AAK" förblir det svenska bolaget).
     _bd_by_ticker: dict[str, dict] = {}
+    _global_ids: set[int] = set()
     _branch_meta2: dict[int, str] = {}
     _sector_meta2: dict[int, str] = {}
     if api is not None and api.is_configured:
         try:
-            for inst in api.get_instruments():
+            _lookup = list(api.get_instruments())
+            if config.include_global:
+                _global_ids = {i.get("insId") for i in _glob if i.get("insId") is not None}
+                _lookup += _glob
+            for inst in _lookup:
                 if inst.get("instrumentType", 1) not in (1, None):
                     continue
                 tk = str(inst.get("ticker", "")).upper()
@@ -1900,13 +1960,16 @@ def _build_universe(config: PipelineConfig, api) -> list[dict]:
             ins_id = inst.get("insId")
             mid = inst.get("marketId")
             # yfinance-form: "ERIC B" + ".ST" → "ERIC-B.ST" (mellanslag → bindestreck)
-            universe.append({
+            row = {
                 "ticker":      _markets.to_yf(inst.get("ticker", base), mid, _table),
                 "ins_id":      ins_id,
                 "inst_info":   inst,
                 "branch_name": _branch_meta2.get(inst.get("branchId", -1), ""),
                 "sector_name": _sector_meta2.get(inst.get("sectorId", -1), ""),
-            })
+            }
+            if ins_id in _global_ids:
+                row["scope"] = "global"
+            universe.append(row)
         else:
             universe.append({
                 "ticker":      t,
@@ -1919,12 +1982,16 @@ def _build_universe(config: PipelineConfig, api) -> list[dict]:
     return universe
 
 
-def _batch_fetch_fundamentals(ins_ids: list[int], api) -> dict[int, dict]:
+def _batch_fetch_fundamentals(ins_ids: list[int], api,
+                              global_ids: set[int] | frozenset = frozenset()) -> dict[int, dict]:
     """
     Batch-fetch KPI screener snapshots from Börsdata.
     Returns {ins_id: snapshot_dict}.
     Uses fundamentals TTLCache (24 h) keyed per ins_id.
     Falls back to empty dicts on failure.
+
+    global_ids: id:n ur /instruments/global — de hämtas ur den globala
+    screenern (scope="global") och cachas under "fund:g:<id>".
     """
     if not ins_ids:
         return {}
@@ -1936,12 +2003,15 @@ def _batch_fetch_fundamentals(ins_ids: list[int], api) -> dict[int, dict]:
         _cache_ok = False
         get_fundamentals = set_fundamentals = None
 
+    def _key(iid: int) -> str:
+        return f"fund:g:{iid}" if iid in global_ids else f"fund:{iid}"
+
     result: dict[int, dict] = {}
     uncached: list[int] = []
 
     for iid in ins_ids:
         if _cache_ok:
-            hit = get_fundamentals(f"fund:{iid}")
+            hit = get_fundamentals(_key(iid))
             if hit is not None:
                 result[iid] = hit
                 continue
@@ -1952,21 +2022,29 @@ def _batch_fetch_fundamentals(ins_ids: list[int], api) -> dict[int, dict]:
             result[iid] = {}
         return result
 
-    try:
-        fresh = api.get_fundamentals_snapshot_fast(uncached)
-        for iid, snap in fresh.items():
-            result[iid] = snap
-            if _cache_ok and snap:
-                try:
-                    set_fundamentals(f"fund:{iid}", snap)
-                except Exception:
-                    pass
-        for iid in uncached:
-            result.setdefault(iid, {})
-    except Exception as e:
-        logger.warning("Batch fundamentals fetch failed: %s", e)
-        for iid in uncached:
-            result[iid] = {}
+    batches = [([i for i in uncached if i not in global_ids], "nordic"),
+               ([i for i in uncached if i in global_ids], "global")]
+    for ids, scope in batches:
+        if not ids:
+            continue
+        try:
+            # Nordiska anropet utan nyckelord — äldre fejk-API:n i testerna
+            # tar bara id-listan.
+            fresh = (api.get_fundamentals_snapshot_fast(ids, scope="global") if scope == "global"
+                     else api.get_fundamentals_snapshot_fast(ids))
+            for iid, snap in fresh.items():
+                result[iid] = snap
+                if _cache_ok and snap:
+                    try:
+                        set_fundamentals(_key(iid), snap)
+                    except Exception:
+                        pass
+            for iid in ids:
+                result.setdefault(iid, {})
+        except Exception as e:
+            logger.warning("Batch fundamentals fetch (%s) failed: %s", scope, e)
+            for iid in ids:
+                result[iid] = {}
 
     return result
 
@@ -2008,7 +2086,8 @@ def run_pipeline(config: PipelineConfig | None = None) -> PipelineResult:
     # ── Build universe ────────────────────────────────────────────────────────
     universe = _build_universe(config, api)
     universe_count = len(universe)
-    logger.info("Universe: %d instruments", universe_count)
+    global_count = sum(1 for u in universe if u.get("scope") == "global")
+    logger.info("Universe: %d instruments (%d globala)", universe_count, global_count)
 
     if universe_count == 0:
         logger.error("Empty universe — check Börsdata API key or manual_tickers")
@@ -2068,7 +2147,9 @@ def run_pipeline(config: PipelineConfig | None = None) -> PipelineResult:
 
     # ── Batch-fetch fundamentals — bara för förgrind-överlevarna ─────────────
     ins_ids = [u["ins_id"] for u in scan_list if u["ins_id"] is not None]
-    fund_snapshots = _batch_fetch_fundamentals(ins_ids, api)
+    _global_ids = {u["ins_id"] for u in scan_list
+                   if u["ins_id"] is not None and u.get("scope") == "global"}
+    fund_snapshots = _batch_fetch_fundamentals(ins_ids, api, global_ids=_global_ids)
     for u in scan_list:
         if u["ins_id"] is None:
             fund_snapshots[None] = {}
@@ -2267,6 +2348,7 @@ def run_pipeline(config: PipelineConfig | None = None) -> PipelineResult:
         run_duration_s   = duration,
         config           = config,
         delisted_count   = delisted_skipped,
+        global_count     = global_count,
     )
 
 

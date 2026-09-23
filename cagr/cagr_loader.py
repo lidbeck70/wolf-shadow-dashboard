@@ -439,6 +439,42 @@ def load_all_tickers() -> Dict[str, dict]:
 MAX_ALPHA_TICKERS = 200
 
 
+def curated_tickers() -> list:
+    """De handplockade namnen, i registrets ordning: det nordiska registret
+    (med sektor, så cykelpoängen fungerar) och ticker_universe:s kurerade
+    råvarulistor per region. Används som prioritet när taket slår till."""
+    out = list(NORDIC_TICKERS.keys())
+    try:
+        from ticker_universe import FALLBACK_TICKERS
+        for lst in FALLBACK_TICKERS.values():
+            out.extend(lst or [])
+    except Exception:
+        pass
+    seen: set = set()
+    return [t for t in out if not (t in seen or seen.add(t))]
+
+
+def cap_tickers(tickers_meta: Dict[str, dict], limit: int = MAX_ALPHA_TICKERS,
+                priority=None) -> Dict[str, dict]:
+    """Behåll högst `limit` tickers: först de kurerade (i prioritetsordning),
+    sedan resten i registrets ordning. Förut togs de `limit` första i
+    BOKSTAVSORDNING — "Alla marknader" blev A–D och resten skannades aldrig."""
+    if len(tickers_meta) <= limit:
+        return dict(tickers_meta)
+    prio = [t for t in (curated_tickers() if priority is None else priority)
+            if t in tickers_meta]
+    keep: list = []
+    seen: set = set()
+    for t in prio + list(tickers_meta.keys()):
+        if t in seen:
+            continue
+        seen.add(t)
+        keep.append(t)
+        if len(keep) >= limit:
+            break
+    return {t: tickers_meta[t] for t in keep}
+
+
 def _build_ticker_meta(ticker_list: list) -> Dict[str, dict]:
     """Convert a list of ticker strings into a metadata dict.
 

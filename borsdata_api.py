@@ -945,17 +945,24 @@ class BorsdataAPI:
 
         return snapshot
 
-    def get_fundamentals_snapshot_fast(self, ins_ids: List[int]) -> Dict[int, dict]:
+    def get_fundamentals_snapshot_fast(self, ins_ids: List[int],
+                                       scope: str = "nordic") -> Dict[int, dict]:
         """
         Batch-fetch fundamental snapshots using screener endpoints.
         Much more efficient than per-instrument calls — one API call per KPI
         returns values for ALL instruments.
+
+        scope: "nordic" (default) läser /instruments/kpis, "global" läser
+        /instruments/global/kpis (Pro+ global). Screenern är universum-
+        bunden, så globala instrument-id:n ger ingenting ur den nordiska —
+        förut kom globala bolag tillbaka utan ett enda nyckeltal.
 
         Returns dict of ins_id → snapshot dict.
         """
         # Initialise empty snapshots
         snapshots: Dict[int, dict] = {iid: {"ins_id": iid} for iid in ins_ids}
         id_set = set(ins_ids)
+        _global = scope == "global"
 
         # KPIs to fetch with divisor
         kpi_fetch = {
@@ -996,9 +1003,13 @@ class BorsdataAPI:
 
         for key, (kpi_id, divisor) in kpi_fetch.items():
             KPI_BATCH_ATTEMPTED.add(kpi_id)
-            _screener_path = f"/instruments/kpis/{kpi_id}/last/latest"
+            _screener_path = (f"/instruments/global/kpis/{kpi_id}/last/latest" if _global
+                              else f"/instruments/kpis/{kpi_id}/last/latest")
             try:
-                all_vals = self.get_kpi_screener(kpi_id, "last", "latest")
+                if _global:
+                    all_vals = self.get_kpi_screener_global(kpi_id, "last", "latest")
+                else:
+                    all_vals = self.get_kpi_screener(kpi_id, "last", "latest")
                 # _get() swallows a 400 into an empty result (no exception) and
                 # records the path in _KPI_ERROR_LOGGED. An empty screener result
                 # whose path 400'd means "not in licence" → mark the KPI failed
