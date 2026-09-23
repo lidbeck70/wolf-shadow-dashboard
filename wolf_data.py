@@ -81,10 +81,29 @@ def get_prices(ins_id, start, end):
     df.to_csv(fp, index=False); return df
 
 
+def nordic_stock_market_ids():
+    """Handlade nordiska aktielistor ur /markets (markets.py) — index och
+    valutor ska inte in i rankingen och blåsa upp bredden över MA200."""
+    try:
+        import markets as mk
+        table = mk.from_api(_get("/markets").get("markets", []),
+                            _get("/countries").get("countries", []))
+        return mk.nordic_stock_ids(table) or mk.nordic_stock_ids(mk.FALLBACK)
+    except Exception as exc:
+        print(f"VARNING: /markets gick inte att läsa ({exc}) — använder inbyggd tabell")
+        import markets as mk
+        return mk.nordic_stock_ids(mk.FALLBACK)
+
+
 def build_universe():
     ins = pd.DataFrame(_get("/instruments")["instruments"])
-    if "instrument" in ins.columns:
-        ins = ins[ins["instrument"] == 0]
+    # Börsdatas fält heter instrumentType (0 = aktie); det gamla filtret på
+    # "instrument" träffade ingen kolumn och släppte in index i rankingen.
+    type_col = next((c for c in ("instrumentType", "instrument") if c in ins.columns), None)
+    if type_col:
+        ins = ins[ins[type_col] == 0]
+    if "marketId" in ins.columns:
+        ins = ins[ins["marketId"].isin(nordic_stock_market_ids())]
     csvp = CONFIG["UNIVERSE_CSV"]
     if csvp and os.path.exists(csvp):
         uni = pd.read_csv(csvp, sep=None, engine="python")

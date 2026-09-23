@@ -126,10 +126,11 @@ class _FakeAPI:
         return [
             {"insId": 1, "ticker": "EKTA B", "name": "Elekta", "marketId": 1,
              "stockPriceCurrency": "SEK"},
-            {"insId": 2, "ticker": "NOD", "name": "Nordic", "marketId": 4,
+            # marknads-id ur markets.FALLBACK: 9 = Oslo Børs, 99 = okänt
+            {"insId": 2, "ticker": "NOD", "name": "Nordic", "marketId": 9,
              "stockPriceCurrency": "NOK"},
             {"insId": 3, "ticker": "OMXS30", "name": "Index", "marketId": 7},
-            {"insId": 4, "ticker": "US", "name": "Utanför", "marketId": 30},
+            {"insId": 4, "ticker": "US", "name": "Utanför", "marketId": 99},
         ]
 
     def get_insider_transactions_batch(self, ids):

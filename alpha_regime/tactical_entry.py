@@ -42,11 +42,13 @@ _SWING_LOOKBACK_DAYS = 63  # ~3 months
 # Sector ETF mapping by exposure key (matches EXPOSURE_TO_RATIO in commodity_ratios)
 _EXPOSURE_TO_ETF: dict[str, str] = {
     "gold_miner":   "GDX",
-    "junior_miner": "GDX",
+    "junior_miner": "GDXJ",     # juniorerna mäts mot juniorindexet, inte GDX
     "silver":       "SIL",
     "oil":          "XLE",
     "copper":       "COPX",
     "uranium":      "URA",
+    "lithium":      "LIT",
+    "gas":          "UNG",
 }
 _DEFAULT_SECTOR_ETF = "SPY"
 

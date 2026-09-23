@@ -36,7 +36,14 @@ _ENRICHMENT_COLUMNS = (
     "quarterly_burn_musd", "shares_out_m", "shares_yoy_growth_pct",
     "data_source", "data_as_of",
 )
-_YF_TICKER_RE = re.compile(r"^[A-Z0-9]{1,6}(\.[A-Z]{1,3})?$")
+# Bindestreck för aktieklasser ("TECK-B.TO") är giltigt Yahoo-format.
+_YF_TICKER_RE = re.compile(r"^[A-Z0-9]{1,6}(-[A-Z0-9]{1,2})?(\.[A-Z]{1,3})?$")
+
+try:
+    from dead_tickers import status as _ticker_status  # noqa: E402
+except Exception:  # pragma: no cover
+    def _ticker_status(_t):
+        return None
 
 
 @dataclass
@@ -112,6 +119,12 @@ def validate_resource_universe(path: str | Path | None = None) -> ValidationResu
         if yf and not _YF_TICKER_RE.match(yf):
             res.warnings.append(
                 f"row {i} ({ticker}): unusual yf_ticker format '{yf}'")
+
+        # Omdöpt eller uppköpt enligt dead_tickers.py — ett fel, inte en
+        # varning: raden ger tysta DATA_GAP tills den byts eller tas bort.
+        dead = _ticker_status(yf or ticker)
+        if dead:
+            res.errors.append(f"row {i} ({ticker}): {dead}")
 
         as_of = (row.get("data_as_of") or "").strip()
         if as_of and not _parse_date(as_of):

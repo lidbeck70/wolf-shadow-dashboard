@@ -64,16 +64,20 @@ def _c(key, label, unit, aliases, seed, **kw) -> Commodity:
 
 
 REGISTRY: dict = {c.key: c for c in (
+    # Uran är energi (ember/config.THEME_TO_COMPLEX) — inte "agri", där den
+    # låg förut och fick sin regim ur DBA och SPY.
     _c("uranium", "Uran", "USD/lb U3O8", ("uran", "u3o8", "uranium"), 95.0,
-       rotation_key="uran", theme_key="uran", ember_complex="agri", proxies=("URNM", "URA")),
+       rotation_key="uran", theme_key="uran", ember_complex="energi", proxies=("URNM", "URA")),
     _c("copper", "Koppar", "USD/lb", ("koppar", "cu", "copper"), 92.0,
        rotation_key="koppar", theme_key="koppar", ratio_exposure="copper",
        ember_complex="basmetaller", proxies=("COPX", "CPER")),
     _c("lithium", "Litium", "USD/t LCE", ("litium", "li", "lithium"), 90.0,
        rotation_key="litium", ember_complex="basmetaller", proxies=("LIT",)),
     _c("rare_earth", "Sällsynta jordartsmetaller", "USD/kg NdPr", ("rare earth", "rare earths", "ree",
-       "sallsynta", "critical minerals", "rare_earth"), 90.0, theme_key="sallsynta", proxies=("REMX",)),
-    _c("nickel", "Nickel", "USD/t", ("ni", "nickel"), 85.0, ember_complex="basmetaller", proxies=("JJN",)),
+       "sallsynta", "critical minerals", "rare_earth"), 90.0, theme_key="sallsynta",
+       ember_complex="basmetaller", proxies=("REMX",)),
+    # JJN (iPath-ETN) är förfallen — ingen likvid nickelproxy finns; XME är basmetallkorgen.
+    _c("nickel", "Nickel", "USD/t", ("ni", "nickel"), 85.0, ember_complex="basmetaller", proxies=("XME",)),
     _c("cobalt", "Kobolt", "USD/lb", ("kobolt", "co", "cobalt"), 85.0, ember_complex="basmetaller",
        proxies=("BATT",)),
     _c("graphite", "Grafit", "USD/t", ("grafit", "graphite"), 85.0, ember_complex="basmetaller",
@@ -100,8 +104,9 @@ REGISTRY: dict = {c.key: c for c in (
        ember_complex="agri", proxies=("MOO",)),
     _c("iron_ore", "Järnmalm", "USD/t", ("jarnmalm", "järnmalm", "iron ore", "iron_ore"), 79.0,
        rotation_key="jarnmalm", ember_complex="basmetaller", proxies=("XME",)),
+    # KOL (VanEck) stängdes 2020 — BTU är den likvida kolproxyn som finns kvar.
     _c("coal", "Kol", "USD/t", ("kol", "coal", "met coal", "thermal coal"), 55.0, rotation_key="kol",
-       theme_key="kol", ember_complex="energi", proxies=("KOL",)),
+       theme_key="kol", ember_complex="energi", proxies=("BTU",)),
     _c("aluminum", "Aluminium", "USD/t", ("aluminium", "al", "aluminum", "bauxite"), 82.0,
        ember_complex="basmetaller", proxies=("XME",)),
     _c("steel", "Stål", "USD/t", ("stål", "steel"), 80.0, ember_complex="basmetaller", proxies=("SLX",)),

@@ -58,9 +58,13 @@ GOLD_SILVER_BRANCHES = frozenset({18})              # "Guld/silver"
 REVENUE_ZERO_MAX_MUSD = 5.0                         # "omsättning ~0"
 
 # Grova kurser till USD — trösklarna står i MUSD, börsvärdet kommer i
-# kursvalutan. Räcker för intervall som 50–500 MUSD.
+# kursvalutan. Räcker för intervall som 50–500 MUSD. En valuta som saknas
+# här ger INTE kurs 1,0 (då blev ett ZAR-börsvärde 18× för stort) utan
+# tomt börsvärde, och raden faller på "MCap: saknas" med en loggrad.
 FX_TO_USD = {"SEK": 0.095, "NOK": 0.095, "DKK": 0.145, "EUR": 1.08, "USD": 1.0,
-             "CAD": 0.73, "AUD": 0.66, "GBP": 1.27, "CHF": 1.13, "PLN": 0.25}
+             "CAD": 0.73, "AUD": 0.66, "GBP": 1.27, "CHF": 1.13, "PLN": 0.25,
+             "GBX": 0.0127, "NZD": 0.60, "HKD": 0.128, "JPY": 0.0067, "ZAR": 0.055}
+_UNKNOWN_CCY: set = set()
 
 # KPI-id (borsdata_api.KPI)
 KPI_ND_EBITDA, KPI_EQUITY_RATIO, KPI_EV_EBITDA, KPI_PB, KPI_FCF = 42, 39, 11, 4, 63
@@ -71,30 +75,20 @@ _KPIS = {"nd_ebitda": KPI_ND_EBITDA, "equity_ratio": KPI_EQUITY_RATIO,
          "ebit_margin": KPI_EBIT_MARGIN, "net_debt": KPI_NET_DEBT,
          "revenue": KPI_REVENUE}
 
-_MARKET_SUFFIX = {1: ".ST", 2: ".ST", 3: ".ST", 7: ".ST", 8: ".ST", 9: ".ST",
-                  18: ".ST", 19: ".ST", 4: ".OL", 14: ".OL", 5: ".HE", 16: ".HE",
-                  6: ".CO", 15: ".CO"}
-_INDEX_MARKETS = {7, 8, 13, 19, 28, 31}
-# Globala marknads-id (/instruments/global) → Yahoo-suffix. Samma tal som
-# ticker_universe.MARKET_SUFFIX (som importerar Streamlit och därför inte
-# används här). Utan suffix hittar varken yfinance eller sifferuppdateringen
-# en kanadensisk ticker. TODO PR 5: en gemensam marknadstabell ur get_markets().
-_GLOBAL_SUFFIX = {32: "", 33: "", 34: "", 35: ".TO", 36: ".V", 37: ".CN", 38: ".L", 39: ".DE",
-                  40: ".PA", 41: ".MC", 42: ".LS", 43: ".MI", 44: ".SW", 45: ".BR", 46: ".AS",
-                  50: ".WA", 52: ".TL", 53: ".TL", 54: ".TL"}
+# Marknadstabellen (id → land/suffix/index) bor i markets.py: ur Börsdatas
+# /markets när jobbet kör (scan() skriver den till bloben så panelen får
+# samma tabell), annars den avlästa FALLBACK-tabellen.
+import markets as _markets  # noqa: E402
 
 
-def yahoo_ticker(inst: dict, universe: str) -> str:
+def yahoo_ticker(inst: dict, universe: str = "", table: Optional[dict] = None) -> str:
     """Börsdata-instrument → Yahoo-ticker: mellanslag → bindestreck, suffix per marknad."""
-    t = str(inst.get("ticker") or "").strip().upper().replace(" ", "-")
-    mid = inst.get("marketId")
-    if universe == "nordic":
-        return t + _MARKET_SUFFIX.get(mid, "")
-    return t + _GLOBAL_SUFFIX.get(mid, "")
+    return _markets.to_yf(inst.get("ticker"), inst.get("marketId"), table)
 
-CA, AU, US = "canada", "australia", "usa"
+CA, AU, US, NORDIC = "canada", "australia", "usa", "nordic"
 _COUNTRY_HINTS = {CA: ("canada", "kanada"), AU: ("australi",),
-                  US: ("usa", "united states", "förenta stater", "amerika")}
+                  US: ("usa", "united states", "förenta stater", "amerika"),
+                  NORDIC: tuple(sorted(_markets.NORDIC_COUNTRIES))}
 
 
 @dataclass(frozen=True)
@@ -236,24 +230,30 @@ def tiggre_check(m: dict, meta: dict) -> tuple:
 
 
 def royalty_check(m: dict, meta: dict) -> tuple:
-    """Royalty: bruttomarginal > 70 % · EBIT-marginal > 40 % · skuld/EBITDA < 1,5."""
+    """Royalty: råvarubransch · bruttomarginal > 70 % · EBIT-marginal > 40 % ·
+    skuld/EBITDA < 1,5. Utan branschfiltret kvalade mjukvara och banker in —
+    70 % bruttomarginal är vardag där. Royalty- och streamingbolag ligger i
+    Börsdatas gruv-/olje-branscher precis som sina operatörer."""
     fails = [r for r in (_gt(m, "gross_margin", 70.0, "bruttomarginal %"),
                          _gt(m, "ebit_margin", 40.0, "EBIT-marginal %"),
                          _lt(m, "nd_ebitda", 1.5, "skuld/EBITDA")) if r]
+    if meta.get("branch_id") not in RULE_BRANCHES:
+        fails.append("inte råvarubransch")
     return fails, []
 
 
 SCREENS = (
     Screen("rule", "Överlevarna (Rule)",
-           "Råvarubransch · skuld/EBITDA < 0,5 (olja < 1,0) · soliditet > 50 % · "
-           "EV/EBITDA < 6 · P/B < 1,5 · FCF > 0", (), rule_check, "Rick Rule"),
+           "Norden/Kanada/USA/Australien · råvarubransch · skuld/EBITDA < 0,5 (olja < 1,0) · "
+           "soliditet > 50 % · EV/EBITDA < 6 · P/B < 1,5 · FCF > 0",
+           (NORDIC, CA, US, AU), rule_check, "Rick Rule"),
     Screen("sprott", "Optionalitet (Sprott)",
            "Kanada/Australien · Metals & Mining · MCap < 200 MUSD · nettokassa · P/B < 1",
            (CA, AU), sprott_check, "Poängmodell · Sprott"),
     Screen("durrett", "Durrett",
-           "Guld/silver · MCap 50–500 MUSD · P/S < 2 · bruttomarginal > 20 % · "
-           "skuld/EBITDA < 2 · omsättningstillväxt > 0", (), durrett_check,
-           "Poängmodell · Durrett"),
+           "Kanada/Australien/USA · guld/silver · MCap 50–500 MUSD · P/S < 2 · "
+           "bruttomarginal > 20 % · skuld/EBITDA < 2 · omsättningstillväxt > 0",
+           (CA, AU, US), durrett_check, "Poängmodell · Durrett"),
     Screen("tiggre", "Tiggre (sweet spot)",
            # Metals & Mining står i Tiggre-flikens egen håv-text (tiggre._screener_card)
            "Kanada/Australien/USA · MCap 50–1 000 MUSD · nettokassa eller "
@@ -271,25 +271,22 @@ def metrics_for(inst: dict, kpi_maps: dict) -> dict:
     """Instrumentets nyckeltal i de enheter kriterierna använder."""
     iid = inst.get("insId")
     ccy = str(inst.get("stockPriceCurrency") or "USD").upper()
-    fx = FX_TO_USD.get(ccy, 1.0)
+    fx = FX_TO_USD.get(ccy)
+    if fx is None and ccy not in _UNKNOWN_CCY:
+        _UNKNOWN_CCY.add(ccy)
+        log.warning("Okänd valuta %s — börsvärde lämnas tomt (lägg till i FX_TO_USD)", ccy)
     m = {k: kpi_maps.get(k, {}).get(iid) for k in _KPIS}
     mc = _f(m.get("mcap"))
-    m["mcap_musd"] = round(mc * fx, 1) if mc is not None else None
+    m["mcap_musd"] = round(mc * fx, 1) if (mc is not None and fx is not None) else None
     rev = _f(m.get("revenue"))
-    m["revenue_musd"] = round(rev * fx, 1) if rev is not None else None
+    m["revenue_musd"] = round(rev * fx, 1) if (rev is not None and fx is not None) else None
     m["currency"] = ccy
     return m
 
 
 def country_ids(countries: list) -> dict:
-    """{'canada': {id,...}, 'australia': {...}, 'usa': {...}} ur /countries."""
-    out = {k: set() for k in _COUNTRY_HINTS}
-    for c in countries or []:
-        name = str(c.get("name") or "").lower()
-        for key, hints in _COUNTRY_HINTS.items():
-            if any(h in name for h in hints):
-                out[key].add(c.get("id"))
-    return out
+    """{'canada': {id,...}, 'australia': {...}, 'usa': {...}, 'nordic': {...}} ur /countries."""
+    return {key: _markets.country_ids(countries, hints) for key, hints in _COUNTRY_HINTS.items()}
 
 
 def revenue_growth(api, ins_id: int) -> Optional[float]:
@@ -306,7 +303,7 @@ def revenue_growth(api, ins_id: int) -> Optional[float]:
 
 
 def run_universe(api, instruments: list, universe: str, kpi_fetch: Callable,
-                 ctry: dict, screens=SCREENS) -> dict:
+                 ctry: dict, screens=SCREENS, table: Optional[dict] = None) -> dict:
     """Kör alla håvar på ett universum. Returnerar {key: [rader]}."""
     kpi_maps = {}
     for name, kid in _KPIS.items():
@@ -335,7 +332,7 @@ def run_universe(api, instruments: list, universe: str, kpi_fetch: Callable,
             fails, notes = s.check(m, meta)
             if fails:
                 continue
-            ticker = yahoo_ticker(inst, universe)
+            ticker = yahoo_ticker(inst, universe, table)
             out[s.key].append({
                 "ticker": ticker, "name": str(inst.get("name") or ""), "ins_id": iid,
                 "universe": universe, "country_id": meta["country_id"],
@@ -396,13 +393,20 @@ def scan(api) -> dict:
                                "sheet": s.sheet, "rows": [], "error": None}
                        for s in SCREENS}}
     try:
+        # Marknadstabellen ur Börsdata själva — och med i bloben, så att
+        # panelen (utan egen licens) räknar med samma tabell som jobbet.
+        table = _markets.load(api=api)
+        out["markets"] = _markets.serialize(table)
         ctry = country_ids(api.get_countries())
-        nordic = [i for i in api.get_instruments()
-                  if i.get("marketId") in _MARKET_SUFFIX
-                  and i.get("marketId") not in _INDEX_MARKETS]
+        if not ctry.get(AU):
+            log.warning("Australien saknas i /countries — Sprott/Durrett/Tiggre/Royalty "
+                        "får inga ASX-träffar förrän Börsdata täcker ASX.")
+        nordic_ids = _markets.nordic_stock_ids(table)
+        nordic = [i for i in api.get_instruments() if i.get("marketId") in nordic_ids]
         log.info("Norden: %d instrument", len(nordic))
         res_n = run_universe(api, nordic, "nordic",
-                             lambda kid: api.get_kpi_screener(kid, "last", "latest"), ctry)
+                             lambda kid: api.get_kpi_screener(kid, "last", "latest"), ctry,
+                             table=table)
         for k, rows in res_n.items():
             out["screens"][k]["rows"].extend(rows)
 
@@ -412,14 +416,15 @@ def scan(api) -> dict:
             log.info("Globalt: %d instrument", len(glob))
             res_g = run_universe(api, glob, "global",
                                  lambda kid: api.get_kpi_screener_global(kid, "last", "latest"),
-                                 ctry)
+                                 ctry, table=table)
             for k, rows in res_g.items():
                 out["screens"][k]["rows"].extend(rows)
         else:
             log.warning("Globala instrument saknas — Börsdata Pro+ global krävs för "
-                        "Sprott/Tiggre/Royalty (Kanada/Australien/USA).")
+                        "Sprott/Durrett/Tiggre/Royalty (Kanada/Australien/USA).")
             for s in SCREENS:
-                if s.countries:
+                # Håvar utan nordisk geografi kan inte ge något alls utan global licens.
+                if s.countries and NORDIC not in s.countries:
                     out["screens"][s.key]["error"] = (
                         "Kräver Börsdata Pro+ global (Kanada/Australien/USA finns "
                         "inte i det nordiska universumet)")

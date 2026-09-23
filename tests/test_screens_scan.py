@@ -83,10 +83,12 @@ def test_tiggre_sweet_spot_notes_debt_instead_of_failing():
 
 def test_royalty_margins():
     m = {"gross_margin": 82.0, "ebit_margin": 55.0, "nd_ebitda": 0.4}
-    assert sc.royalty_check(m, {})[0] == []
-    assert sc.royalty_check(dict(m, gross_margin=65.0), {})[0]
-    assert sc.royalty_check(dict(m, ebit_margin=30.0), {})[0]
-    assert sc.royalty_check(dict(m, nd_ebitda=2.0), {})[0]
+    mining = {"branch_id": 18}                     # råvarubransch krävs (PR 5)
+    assert sc.royalty_check(m, mining)[0] == []
+    assert sc.royalty_check(dict(m, gross_margin=65.0), mining)[0]
+    assert sc.royalty_check(dict(m, ebit_margin=30.0), mining)[0]
+    assert sc.royalty_check(dict(m, nd_ebitda=2.0), mining)[0]
+    assert sc.royalty_check(m, {"branch_id": 90})[0] == ["inte råvarubransch"]
 
 
 def test_metrics_convert_market_cap_to_musd():
@@ -195,9 +197,11 @@ def test_scan_without_global_licence_marks_geographic_screens():
     s = out["screens"]
     assert out["global_available"] is False
     assert [r["ticker"] for r in s["rule"]["rows"]] == ["BOL.ST"]
-    for k in ("sprott", "tiggre", "royalty"):
+    # Durrett är Kanada/Australien/USA enligt masterguiden (PR 5) — utan
+    # global licens kan den inte ge något, precis som Sprott/Tiggre/Royalty.
+    for k in ("sprott", "durrett", "tiggre", "royalty"):
         assert "Pro+ global" in s[k]["error"]
-    assert s["durrett"]["error"] is None and s["durrett"]["rows"] == []
+    assert s["rule"]["error"] is None
 
 
 # ── Arkens förifyllning ──────────────────────────────────────────────────────

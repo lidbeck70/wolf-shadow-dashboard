@@ -58,21 +58,10 @@ _COMMODITY_KEYWORDS: list[str] = [
     "lantbruk", "agri",
 ]
 
-# Market IDs and their yfinance suffixes (Nordic markets from borsdata_api.py)
-_MARKET_SUFFIX: dict[int, str] = {
-    1: ".ST", 2: ".ST", 3: ".ST",
-    7: ".ST", 8: ".ST", 9: ".ST",
-    18: ".ST", 19: ".ST",
-    4: ".OL",
-    14: ".OL",
-    5: ".HE",
-    16: ".HE",
-    6: ".CO",
-    15: ".CO",
-}
-_NORDIC_MARKET_IDS: set[int] = set(_MARKET_SUFFIX.keys())
-# Market IDs that hold indices or non-stock instruments
-_INDEX_MARKET_IDS: set[int] = {7, 8, 13, 19, 28, 31}
+# Marknadstabellen (id → land/suffix/index) bor i markets.py — ur Börsdatas
+# /markets när API:t finns, annars den avlästa tabellen. Ingen egen kopia.
+import markets as _markets  # noqa: E402
+import dead_tickers as _dead  # noqa: E402
 
 
 # ── US / INTL curated static lists ────────────────────────────────────────────
@@ -161,13 +150,15 @@ _AUTO_ETFS: list[str] = [
     "PICK", "XME", "LIT",
 ]
 
-# Full US/INTL curated list (de-duplicated, insertion order preserved)
-US_INTL_CURATED: list[str] = list(dict.fromkeys(
+# Full US/INTL curated list (de-duplicated, insertion order preserved).
+# dead_tickers.alive() byter omdöpta (GOLD → B) och släpper uppköpta (MRO,
+# MAG, ARCH…) — annars ligger de kvar som tysta DATA_GAP i varje skanning.
+US_INTL_CURATED: list[str] = _dead.alive(
     _GDX_NAMES + _GDXJ_NAMES + _SIL_NAMES + _COPX_NAMES
     + _URA_NAMES + _REMX_NAMES + _XLE_NAMES + _COAL_NAMES
     + _AGRI_NAMES + _CANADA_MINING + _CANADA_OIL + _NORWAY_ENERGY
     + _UK_COMMODITY + _AUTO_ETFS
-))
+)
 
 
 # ── Universe stats ─────────────────────────────────────────────────────────────
@@ -225,10 +216,12 @@ def fetch_nordic_commodity_tickers() -> tuple[list[str], bool, str]:
         except Exception as exc:
             logger.debug("get_sectors: %s", exc)
 
+        table = _markets.load(api=api)
+        nordic_ids = _markets.nordic_stock_ids(table)
         tickers: list[str] = []
         for inst in instruments:
             mid = int(inst.get("marketId", 0))
-            if mid not in _NORDIC_MARKET_IDS or mid in _INDEX_MARKET_IDS:
+            if mid not in nordic_ids:
                 continue
 
             bname = branch_map.get(int(inst.get("branchId", 0) or 0), "")
@@ -241,8 +234,8 @@ def fetch_nordic_commodity_tickers() -> tuple[list[str], bool, str]:
             raw_ticker = inst.get("ticker", "")
             if not raw_ticker:
                 continue
-            suffix = _MARKET_SUFFIX.get(mid, ".ST")
-            tickers.append(f"{raw_ticker}{suffix}")
+            # "SKF A" → "SKF-A.ST": med mellanslaget kvar failar yfinance tyst.
+            tickers.append(_markets.to_yf(raw_ticker, mid, table))
 
         return sorted(set(tickers)), True, ""
 

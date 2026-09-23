@@ -28,46 +28,27 @@ except ImportError:
     except ImportError:
         _HAS_BORSDATA = False
 
-# ── Market suffix mapping (Borsdata marketId -> yfinance suffix) ─────────
-# VERIFIED: maps every known marketId from /instruments and /instruments/global
-MARKET_SUFFIX = {
-    # Nordic (from /instruments)
-    1: ".ST", 2: ".ST", 3: ".ST", 4: ".ST", 5: ".ST", 6: ".ST",       # Sweden
-    9: ".OL", 10: ".OL", 11: ".OL", 12: ".OL", 27: ".OL", 78: ".OL",  # Norway
-    14: ".CO", 15: ".CO", 16: ".CO", 17: ".CO", 30: ".CO",             # Denmark
-    20: ".HE", 21: ".HE", 22: ".HE", 23: ".HE", 48: ".HE",            # Finland
-    # Global (from /instruments/global)
-    32: "",      # NYSE — no suffix
-    33: "",      # Nasdaq — no suffix
-    34: "",      # OTC — no suffix
-    35: ".TO",   # Toronto
-    36: ".V",    # TSX Venture
-    37: ".CN",   # CSE Canada
-    38: ".L",    # England/London
-    39: ".DE",   # Tyskland/Xetra
-    40: ".PA",   # Frankrike/Paris
-    41: ".MC",   # Spanien/Madrid
-    42: ".LS",   # Portugal/Lissabon
-    43: ".MI",   # Italien/Milano
-    44: ".SW",   # Schweiz
-    45: ".BR",   # Belgien/Bryssel
-    46: ".AS",   # Nederlanderna/Amsterdam
-    50: ".WA",   # Polen/Warszawa
-    52: ".TL",   # Estland/Tallinn
-    53: ".TL",   # Lettland (Baltic)
-    54: ".TL",   # Litauen (Baltic)
-}
+# ── Marknadstabellen bor i markets.py ────────────────────────────────────
+# Den tabell som stod här (avläst ur /instruments och /instruments/global)
+# är nu markets.FALLBACK; Börsdatas /markets går före när API:t finns.
+# Namnen nedan finns kvar för moduler som importerar dem.
+import markets as _markets
+import dead_tickers as _dead
 
-# Index marketIds to exclude (index instruments, not tradable stocks)
-INDEX_MARKETS = {7, 8, 13, 19, 28, 31}
-# Non-stock markets to exclude
-NON_STOCK_MARKETS = {76, 77}  # Forex, Nymex
+MARKET_SUFFIX = {m.id: m.suffix for m in _markets.FALLBACK.values()
+                 if m.kind == _markets.STOCK}
+INDEX_MARKETS = {m.id for m in _markets.FALLBACK.values() if m.kind == _markets.INDEX}
+NON_STOCK_MARKETS = {m.id for m in _markets.FALLBACK.values() if m.kind == _markets.OTHER}
 
 # ── Region definitions (by Borsdata countryId) ───────────────────────────
+# Australien har inget känt lands-id i den avlästa tabellen; regionen får
+# sina id ur /countries när API:t finns (REGION_COUNTRY_HINTS), så ASX
+# hamnar i universumet så fort Börsdata täcker det.
 COUNTRY_REGIONS = {
     "Norden": [1, 2, 3, 4],                    # SE, NO, DK, FI
     "USA": [5],
     "Kanada": [6],
+    "Australien": [],
     "England": [7],
     "Tyskland": [8],
     "Frankrike": [9],
@@ -75,6 +56,33 @@ COUNTRY_REGIONS = {
     "Centraleuropa": [13, 14, 15],               # CH, BE, NL
     "Östeuropa & Baltikum": [17, 19, 20, 21],   # PL, EE, LV, LT
 }
+
+REGION_COUNTRY_HINTS = {
+    "Norden": ("sverige", "sweden", "norge", "norway", "danmark", "denmark", "finland"),
+    "USA": ("usa", "united states", "förenta stater"),
+    "Kanada": ("kanada", "canada"),
+    "Australien": ("australi",),
+    "England": ("england", "storbritannien", "united kingdom"),
+    "Tyskland": ("tyskland", "germany"),
+    "Frankrike": ("frankrike", "france"),
+    "Sydeuropa": ("spanien", "spain", "portugal", "italien", "italy"),
+    "Centraleuropa": ("schweiz", "switzerland", "belgien", "belgium", "nederländerna", "netherlands"),
+    "Östeuropa & Baltikum": ("polen", "poland", "estland", "estonia", "lettland", "latvia",
+                             "litauen", "lithuania"),
+}
+
+
+def region_country_ids(regions: list, countries=None) -> set:
+    """Lands-id för regionerna: ur /countries (namn) när det finns, annars
+    de avlästa id:na. Australien finns bara den första vägen."""
+    out = set()
+    for region in regions:
+        ids = set(COUNTRY_REGIONS.get(region, []))
+        if countries:
+            ids |= _markets.country_ids(countries, REGION_COUNTRY_HINTS.get(region, ()))
+        out |= {i for i in ids if i is not None}
+    return out
+
 
 # Nordic countryIds (use /instruments endpoint)
 _NORDIC_COUNTRY_IDS = {1, 2, 3, 4}
@@ -84,7 +92,8 @@ _NORDIC_COUNTRY_IDS = {1, 2, 3, 4}
 REGIONS = COUNTRY_REGIONS
 
 # ── Hardcoded FALLBACK lists (used when API is unavailable) ──────────────
-# All verified working in yfinance as of April 2026
+# Status per ticker (omdöpt/uppköpt) bor i dead_tickers.py och tillämpas i
+# FALLBACK_TICKERS nedan — listorna här är råmaterialet.
 
 US_OIL_GAS = [
     "XOM", "CVX", "COP", "EOG", "DVN", "OXY", "MPC", "VLO", "PSX",
@@ -137,15 +146,19 @@ EU_COMMODITY = [
     "OMV.VI", "GALP.LS", "AKZA.AS",
 ]
 
-# Fallback tickers grouped by region key (used when API fails)
+# Fallback tickers grouped by region key (used when API fails).
+# dead_tickers.alive(): omdöpta byts (GOLD → B), uppköpta och felplacerade
+# släpps (MRO, X, LTHM, UEC.TO, FCU.TO, PHNX.L, AKZA.AS, SMR…).
 FALLBACK_TICKERS = {
     "Norden": [],            # Nordic fallback handled by screener's own fallback
-    "USA": US_OIL_GAS + US_GOLD_SILVER + US_URANIUM + US_MINING_MATERIALS + US_ETFS_COMMODITY,
-    "Kanada": CANADA_OIL_GAS + CANADA_MINING,
-    "England": UK_COMMODITY,
+    "USA": _dead.alive(US_OIL_GAS + US_GOLD_SILVER + US_URANIUM + US_MINING_MATERIALS
+                       + US_ETFS_COMMODITY),
+    "Kanada": _dead.alive(CANADA_OIL_GAS + CANADA_MINING),
+    "Australien": [],        # ASX kommer via /instruments/global när Börsdata täcker det
+    "England": _dead.alive(UK_COMMODITY),
     "Tyskland": [],
     "Frankrike": [],
-    "Sydeuropa": EU_COMMODITY,
+    "Sydeuropa": _dead.alive(EU_COMMODITY),
     "Centraleuropa": [],
     "Östeuropa & Baltikum": [],
 }
@@ -173,13 +186,13 @@ def get_nordic_tickers() -> list:
         if _HAS_BORSDATA:
             df = get_all_instruments()
             if df is not None and not df.empty:
+                table = _markets.current()
                 tickers = []
                 for _, row in df.iterrows():
                     mid = row.get("marketId")
-                    if mid in INDEX_MARKETS or mid in NON_STOCK_MARKETS:
+                    if not _markets.is_stock(mid, table):
                         continue
-                    suffix = MARKET_SUFFIX.get(mid, ".ST")
-                    tickers.append(f"{row['ticker']}{suffix}")
+                    tickers.append(_markets.to_yf(row["ticker"], mid, table))
                 return sorted(set(tickers))
     except Exception:
         pass
@@ -199,35 +212,28 @@ def _get_api_tickers_for_country_ids(country_ids_tuple: tuple) -> list:
 
         country_ids = set(country_ids_tuple)
         tickers = []
+        table = _markets.current()
+
+        def _collect(df):
+            for _, row in df.iterrows():
+                mid = row.get("marketId")
+                if not _markets.is_stock(mid, table) or row.get("countryId") not in country_ids:
+                    continue
+                # Suffix ur marknadstabellen, "TECK B" → "TECK-B.TO"
+                tickers.append(_markets.to_yf(row["ticker"], mid, table))
 
         # Nordic countries -> /instruments endpoint
         if country_ids & _NORDIC_COUNTRY_IDS:
             nordic_df = get_all_instruments()
             if nordic_df is not None and not nordic_df.empty:
-                for _, row in nordic_df.iterrows():
-                    mid = row.get("marketId")
-                    if mid in INDEX_MARKETS or mid in NON_STOCK_MARKETS:
-                        continue
-                    cid = row.get("countryId")
-                    if cid not in country_ids:
-                        continue
-                    suffix = MARKET_SUFFIX.get(mid, ".ST")
-                    tickers.append(f"{row['ticker']}{suffix}")
+                _collect(nordic_df)
 
         # Global countries -> /instruments/global endpoint
         global_countries = country_ids - _NORDIC_COUNTRY_IDS
         if global_countries:
             global_df = get_global_instruments()
             if global_df is not None and not global_df.empty:
-                for _, row in global_df.iterrows():
-                    mid = row.get("marketId")
-                    if mid in INDEX_MARKETS or mid in NON_STOCK_MARKETS:
-                        continue
-                    cid = row.get("countryId")
-                    if cid not in country_ids:
-                        continue
-                    suffix = MARKET_SUFFIX.get(mid, "")
-                    tickers.append(f"{row['ticker']}{suffix}")
+                _collect(global_df)
 
         return sorted(set(tickers))
     except Exception as exc:
@@ -242,10 +248,19 @@ def get_tickers_for_regions(selected_regions: list) -> list:
     Accepts region names from COUNTRY_REGIONS keys.
     """
     try:
-        # Collect countryIds for all selected regions
-        country_ids = set()
-        for region in selected_regions:
-            country_ids.update(COUNTRY_REGIONS.get(region, []))
+        # Lands-id: ur /countries när API:t finns (så Australien får sina),
+        # annars de avlästa id:na.
+        countries = None
+        if _HAS_BORSDATA:
+            try:
+                from borsdata_api import get_api
+                api = get_api()
+                if api.is_configured:
+                    countries = api.get_countries()
+                    _markets.load(api=api)      # marknadstabellen ur Börsdata
+            except Exception:
+                countries = None
+        country_ids = region_country_ids(selected_regions, countries)
 
         if not country_ids:
             return []

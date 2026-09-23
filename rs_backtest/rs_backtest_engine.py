@@ -16,11 +16,11 @@ from datetime import datetime, timedelta
 SECTOR_MAP: dict[str, dict] = {
     "Energy": {
         "etf": "XLE",
-        "tickers": ["XOM", "CVX", "COP", "DVN", "OXY", "EOG", "FANG", "SLB", "HAL", "MPC", "VLO", "PSX", "HES", "CTRA", "APA", "EQT"],
+        "tickers": ["XOM", "CVX", "COP", "DVN", "OXY", "EOG", "FANG", "SLB", "HAL", "MPC", "VLO", "PSX", "CTRA", "APA", "EQT"],
     },
     "Materials": {
         "etf": "XLB",
-        "tickers": ["NEM", "GOLD", "FNV", "WPM", "KGC", "FCX", "NUE", "STLD", "CLF", "CF", "MOS", "ALB", "SCCO", "MP"],
+        "tickers": ["NEM", "B", "FNV", "WPM", "KGC", "FCX", "NUE", "STLD", "CLF", "CF", "MOS", "ALB", "SCCO", "MP"],
     },
     "Financials": {
         "etf": "XLF",

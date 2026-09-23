@@ -72,8 +72,8 @@ _MARKETS = {
     "Global":   {"market_ids": list(_ALL_NORDIC), "include_global": True},
     "US":       {"market_ids": [], "include_global": False,
                  "manual_tickers": [
-                     "FCX","NEM","GOLD","WPM","UUUU","CCJ","XOM","CVX",
-                     "RIO","BHP","VALE","AA","CLF","MP","LTHM",
+                     "FCX","NEM","B","WPM","UUUU","CCJ","XOM","CVX",
+                     "RIO","BHP","VALE","AA","CLF","MP","ALB",
                  ]},
     # PR1 foundation: static US/CA resource universe (Rick Rule / Eric Sprott style).
     # Loads config/universes/us_ca_resource.csv. Scoring is NOT yet stage-aware,

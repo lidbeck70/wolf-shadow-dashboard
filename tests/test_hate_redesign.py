@@ -206,7 +206,7 @@ def test_nordic_tickers_are_yfinance_form(monkeypatch):
     fake = pd.DataFrame([
         {"ticker": "SKF A", "marketId": 1},
         {"ticker": "BOL", "marketId": 1},
-        {"ticker": "EQNR", "marketId": 4},
+        {"ticker": "EQNR", "marketId": 9},      # Oslo Børs i markets.FALLBACK
     ])
     monkeypatch.setattr(bd, "get_all_instruments", lambda: fake)
     out = bd._get_nordic_tickers()

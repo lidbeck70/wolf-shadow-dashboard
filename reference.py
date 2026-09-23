@@ -53,14 +53,14 @@ class Term:
 
 SCREENERS: tuple[Screener, ...] = (
     Screener("Överlevarna (Rule)", "rule",
-             "Råvarubransch · skuld/EBITDA < 0,5 (olja < 1,0) · soliditet > 50 % · "
-             "EV/EBITDA < 6 · P/B < 1,5 · FCF > 0"),
+             "Norden/Kanada/USA/Australien · råvarubransch · skuld/EBITDA < 0,5 (olja < 1,0) · "
+             "soliditet > 50 % · EV/EBITDA < 6 · P/B < 1,5 · FCF > 0"),
     Screener("Optionalitet (Sprott)", "sprott",
              "Kanada/Australien · Metals & Mining · MCap < 200 MUSD · "
              "nettokassa · P/B < 1"),
     Screener("Durrett", "durrett",
-             "Guld/silver · MCap 50–500 MUSD · P/S < 2 · bruttomarginal > 20 % · "
-             "skuld/EBITDA < 2 · omsättningstillväxt > 0"),
+             "Kanada/Australien/USA · guld/silver · MCap 50–500 MUSD · P/S < 2 · "
+             "bruttomarginal > 20 % · skuld/EBITDA < 2 · omsättningstillväxt > 0"),
     Screener("Tiggre (sweet spot)", "tiggre",
              "Kanada/Australien/USA · MCap 50–1 000 MUSD · nettokassa eller "
              "byggkredit · omsättning ~0 → manuell FS- och tillståndssållning"),
