@@ -315,3 +315,21 @@ def test_normal_and_cap_are_independent():
     assert a.normal_state(30.0, a.RULE_BY_KEY["tiggre"])[0] == "normal"
     assert a.position_breaches(
         [{"ticker": "T", "rule": "tiggre", "value": 4.5}], total=100.0)
+
+
+# ── Kassan måste vara med i totalen ──────────────────────────────────────────
+def test_zero_cash_with_filled_sleeves_is_flagged_not_silently_inflated():
+    """Två delar à 10 000 och kassa 0 gav 50 % var — rätt räknat på det
+    ifyllda, men missvisande. Panelen ska säga ifrån."""
+    vals = {"optionalitet": 10000.0, "durrett": 10000.0, "kassa": 0.0}
+    assert a.cash_missing(vals) is True
+    assert a.sleeve_pct(vals)["durrett"] == 50.0
+    vals["kassa"] = 80000.0
+    assert a.cash_missing(vals) is False
+    assert a.sleeve_pct(vals)["durrett"] == 10.0            # kassan är med i totalen
+    assert a.cash_missing({}) is False                       # tomt är inte "saknad kassa"
+    assert a.cash_missing({"kassa": 5000.0}) is False
+    assert "Holdings" in a.CASH_MISSING_NOTE and "bufferten" in a.CASH_MISSING_NOTE
+    src = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            "allocator.py"), encoding="utf-8").read()
+    assert "if cash_missing(vals):\n        st.warning(CASH_MISSING_NOTE)" in src
