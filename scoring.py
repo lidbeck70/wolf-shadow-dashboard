@@ -590,6 +590,16 @@ def _factors(data: dict, row: dict, key: str) -> None:
             changed = True
     if changed:
         _save(data)
+    # Faktor 4 ur insynsägandet i underlaget (utdraget, Durrett-arket) — förslag.
+    try:
+        import judgment_hints as jh
+        cur4 = _num(fac.get("agare"))
+        hint = jh.insider_hint(row.get("ticker", ""), int(cur4) if cur4 is not None else None,
+                               as_points=True)
+        if hint:
+            st.caption(hint)
+    except Exception:
+        pass
 
 
 def _criteria() -> None:

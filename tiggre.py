@@ -608,6 +608,14 @@ def _candidate_card(data: dict, cand: dict) -> None:
             if v != fac.get(fkey):
                 fac[fkey] = v
                 changed = True
+        # Jurisdiktionen ur underlaget (utdraget, Durrett-arket) — förslag, inte poäng.
+        try:
+            import judgment_hints as jh
+            hint = jh.jurisdiction_hint(cand.get("ticker", ""), fac.get("jurisdiktion"), as_points=True)
+            if hint:
+                st.caption(hint)
+        except Exception:
+            pass
 
         # Kontrollsystemen (Masterguiden 4.0). Tiggre är utvecklare per
         # definition, och positionen ligger i intervallet 2–4 % — alltså

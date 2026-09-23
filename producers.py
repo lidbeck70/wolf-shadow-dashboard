@@ -548,6 +548,15 @@ def _producers(data: dict) -> None:
                 if v != bool(row.get(ckey)):
                     row[ckey] = v
                     changed = True
+            # Förslag ur underlaget (utdraget, Durrett-arket) — text, inte kryss.
+            try:
+                import judgment_hints as jh
+                for hint in (jh.jurisdiction_hint(row.get("ticker", ""), bool(row.get("jurisdiktion"))),
+                             jh.insider_hint(row.get("ticker", ""), bool(row.get("insyn")))):
+                    if hint:
+                        st.caption(hint)
+            except Exception:
+                pass
 
             sc2 = producer_score(row)
             vd2 = producer_verdict(sc2, asset_dying(row))
