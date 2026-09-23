@@ -488,7 +488,9 @@ def _render_more(data: dict, company: CompanyInput, a: DurrettAnalysis) -> None:
         if fn:
             fn(data, company)
     with st.expander("Alla fält (Confidence score + Durrett) med proveniens", expanded=False):
-        _cui("render_inputs", "_render_inputs")(data, company)
+        # tools=False: förslagen och extraktorn ritades redan ovan — en gång
+        # till här gav samma widget-nyckel två gånger så fort OPENAI_API_KEY fanns.
+        _cui("render_inputs", "_render_inputs")(data, company, tools=False)
     _render_catalysts(data, company, a)
     if confirm_delete("Ta bort bolaget ur arket", key=f"durrett_del_{company.ticker}"):
         cs.remove(data, company.ticker)

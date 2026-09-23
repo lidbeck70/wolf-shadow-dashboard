@@ -290,7 +290,11 @@ def _pillar_row(p) -> None:
 
 
 # ── Indata ───────────────────────────────────────────────────────────────────
-def _render_inputs(data: dict, company: CompanyInput) -> None:
+def _render_inputs(data: dict, company: CompanyInput, tools: bool = True) -> None:
+    """Alla fält med proveniens. tools=False hoppar över förslagen och
+    extraktorn — Durrett-fliken ritar dem själv utanför sin expander, och
+    två extraktorer för samma bolag ger samma widget-nyckel två gånger
+    (StreamlitDuplicateElementKey på cf_xt_<ticker>_pdf)."""
     with st.expander("Identitet", expanded=False):
         with st.form(f"conf_ident_{company.ticker}"):
             ident = _identity_widgets(f"conf_id_{company.ticker}", company)
@@ -307,8 +311,9 @@ def _render_inputs(data: dict, company: CompanyInput) -> None:
             st.session_state.pop("conf_last", None)
             st.rerun()
 
-    _render_prefill(data, company)
-    _render_extractor(data, company)
+    if tools:
+        _render_prefill(data, company)
+        _render_extractor(data, company)
 
     issues = validate(company)
     for i in issues:

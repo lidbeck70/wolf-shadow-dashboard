@@ -456,3 +456,41 @@ def test_screen_hit_becomes_a_sheet_row_and_sheet_apply_keeps_provenance():
     assert c.num("aisc") == 1450 and c.get("aisc").kind == "ACTUAL" and c.get("aisc").source == "MD&A"
     assert c.get("market_cap_musd").source.startswith("Börsdata-håven")
     assert _apply_sheet(c, {"aisc": ""}, "x", "mixed", "ESTIMATE", None) == 1 and not c.has("aisc")
+
+
+def test_more_tab_renders_one_extractor_even_with_an_openai_key(monkeypatch):
+    """Durrett → Mer ritade förslagen och extraktorn två gånger (en gång själv,
+    en gång via Alla fält) — med OPENAI_API_KEY satt blev det samma
+    file_uploader-nyckel två gånger och hela fliken kraschade."""
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+    import storage
+    from confidence import store as cs
+    from ai import openai_client as oc
+
+    data = cs.default()
+    cs.put(data, dcs.gold_producer())
+    stores = {"confidence": data, "producers": {}, "tiggre": {}}
+    monkeypatch.setattr(storage, "session_load", lambda name, default=None, legacy_file=None:
+                        st.session_state.setdefault(name, stores.get(name, default)))
+    monkeypatch.setattr(storage, "load_error", lambda name: None)
+    monkeypatch.setattr(storage, "is_dirty", lambda name: False)
+    monkeypatch.setattr(storage, "last_saved", lambda name: None)
+    monkeypatch.setattr(oc, "configured", lambda: True)          # nyckeln "finns"
+    import refresh_ui, screens_ui
+    monkeypatch.setattr(refresh_ui, "load_refresh", lambda: {})
+    monkeypatch.setattr(screens_ui, "load_screens", lambda: {})
+    monkeypatch.setenv("DURRETT_TEST_ROOT", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+    def app():
+        import os as _o
+        import sys as _s
+        _s.path.insert(0, _o.environ["DURRETT_TEST_ROOT"])
+        from engines.durrett.ui import render_durrett_page
+        render_durrett_page()
+
+    at = AppTest.from_function(app, default_timeout=60)
+    at.session_state["durrett_row_sub_GPR"] = "Mer"
+    at.run()
+    assert not at.exception, at.exception
+    assert len([t for t in at.text_area if t.key == "cf_xt_GPR_txt"]) == 1      # en extraktor, inte två
