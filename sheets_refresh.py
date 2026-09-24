@@ -212,6 +212,8 @@ def report_fields(api, ins_id: int, rfx: float = 1.0) -> dict:
                     out[f"shares_{back}y_ago_m"] = round(v, 2)
             if out.get("shares_3y_ago_m"):
                 out["shares_growth_3y_pct"] = round((now / out["shares_3y_ago_m"] - 1) * 100, 1)
+            if out.get("shares_5y_ago_m"):
+                out["shares_growth_5y_pct"] = round((now / out["shares_5y_ago_m"] - 1) * 100, 1)
     return out
 
 

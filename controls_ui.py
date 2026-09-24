@@ -90,6 +90,20 @@ def render_ds(row: dict, key: str, runway_years=None,
             pts = ctl.ds_shares_suggestion(sug[0])
             st.caption(f"Börsdata {sug[1]}: antalet aktier är {sug[0]:+.0f} % mot för tre år "
                        f"sedan — motsvarar {pts} riskpoäng på Aktier 3 år. Förslag, inte ifyllt.")
+    if sheet and row.get("ds_historik") is None:
+        try:
+            import refresh_ui
+            import judgment_hints as jh
+            sug5 = refresh_ui.suggestion(refresh_ui.load_refresh(), sheet, row,
+                                         "shares_growth_5y_pct", row_id=key)
+        except Exception:
+            sug5 = None
+        if sug5 is not None:
+            pts5 = jh.ds_history_points(sug5[0])
+            st.caption(f"Börsdata {sug5[1]}: antalet aktier är {sug5[0]:+.0f} % på fem år — "
+                       f"motsvarar {pts5} riskpoäng på Historik "
+                       f"({'serieutspädare' if pts5 == 2 else 'blandad' if pts5 == 1 else 'disciplinerad'}). "
+                       f"Förslag, inte ifyllt.")
 
     changed |= _score_row(row, ctl.DS_FIELDS, prefix, key)
 
