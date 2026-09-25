@@ -5,7 +5,32 @@
     ],
     "enabled": true
   },
+  "contrarian": {
+    "channels": [
+      "discord"
+    ],
+    "enabled": true
+  },
   "ember": {
+    "channels": [
+      "discord"
+    ],
+    "enabled": true
+  },
+  "insider": {
+    "channels": [
+      "discord"
+    ],
+    "enabled": true,
+    "min_score": 7
+  },
+  "screens": {
+    "channels": [
+      "discord"
+    ],
+    "enabled": true
+  },
+  "sheets": {
     "channels": [
       "discord"
     ],
@@ -29,6 +54,6 @@
       "discord"
     ],
     "enabled": true,
-    "min_score": 115
+    "min_score": 120
   }
 }
