@@ -1,0 +1,19 @@
+{
+  "checklist": {
+    "done": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "week": "2026-V33"
+  },
+  "closed": [],
+  "market": {
+    "aboveMA200": true,
+    "checked": "2026-08-12"
+  },
+  "positions": [],
+  "watchlist": []
+}
