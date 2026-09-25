@@ -1,0 +1,31 @@
+{
+  "cash": 0.0,
+  "closed": [],
+  "long": [],
+  "momentum": [
+    {
+      "entry_date": "2026-08-12",
+      "entry_price": 7.0,
+      "extras": {
+        "belowMA50": false,
+        "current": 8.5,
+        "halfTaken": false,
+        "outOfRank": false,
+        "setup": "A"
+      },
+      "id": "19ff7546a96",
+      "name": "",
+      "notes": "",
+      "sector": "Unknown",
+      "shares": 0,
+      "source": "swing",
+      "stop": null,
+      "strategy": "Momentum",
+      "target": null,
+      "ticker": "OBDU B"
+    }
+  ],
+  "ovtlyr": [],
+  "swing": [],
+  "tiggre": []
+}
