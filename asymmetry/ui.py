@@ -1,11 +1,12 @@
 """
 asymmetry/ui.py — fliken "🐺 Wolf Asymmetry" under GRANSKNING.
 
-Läser samma ark som Durrett och Confidence-caset (data/confidence.json)
-och visar Commodity Leverage, Margin of Safety, break-even-marginal,
-scenarier, stressmatris, thesis killers och datakvalitet för ett bolag.
-Inga egna inmatningar: fyll arket i Durrett 10-steg eller Confidence-case.
-Varje tal har en "Varför?"-förklaring; saknat underlag är DATA_MISSING.
+Ett fristående verktyg med eget ark (data/asymmetry.json): lägg in ett
+bolag, tagga vilken strategi det kompletterar, fyll talen med källa och
+datum, och se Commodity Leverage, Margin of Safety, break-even-marginal,
+scenarier, stressmatris, thesis killers och datakvalitet. Motorerna är
+samma rena funktioner som Confidence-lagret använder, men lagret är eget
+— oberoende av Durrett-arket. Saknat underlag är DATA_MISSING, aldrig noll.
 """
 
 from __future__ import annotations
@@ -16,26 +17,32 @@ from typing import Optional
 import pandas as pd
 import streamlit as st
 
+import storage
 import storage_ui
 from confidence import reports
-from confidence import store as cs
 from confidence import ui as cui
 from confidence.data.models import CompanyInput
-from ui.components import badge as _badge, page_header
+from ui.components import badge as _badge, confirm_delete, page_header
 from ui.tokens import AMBER, DIM, GREEN, RED, TEXT
 
 from asymmetry import ASYMMETRY_CONFIG as CFG, AsymmetryResult, analyze
 from asymmetry import charts
 from asymmetry import config as acfg
+from asymmetry import store as ast
 
-SUBS = ("Översikt", "Varför?", "Scenarier", "Stressmatris", "Thesis killers", "Data")
+SUBS = ("Översikt", "Varför?", "Scenarier", "Stressmatris", "Thesis killers", "Data", "Ark")
 _SEV_COLOR = {"CRITICAL": RED, "HIGH": RED, "MEDIUM": AMBER, "LOW": DIM}
 _BAND_COLOR = {acfg.BREAK_EVEN_STRONG: GREEN, acfg.BREAK_EVEN_MODERATE: AMBER, acfg.BREAK_EVEN_WEAK: RED}
 
 
 def _load() -> dict:
-    fn = getattr(cui, "load_store", None) or getattr(cui, "_load")
-    return fn()
+    data = ast.normalize(storage.session_load(ast.STORE, ast.default()))
+    st.session_state[ast.STORE] = data
+    return data
+
+
+def _save(data: dict) -> None:
+    st.session_state[ast.STORE] = data          # persistensen sker via 💾 Spara
 
 
 def _f(v, fmt: str = "{:,.0f}", na: str = "DATA_MISSING") -> str:
@@ -64,30 +71,40 @@ def _score_color(score: Optional[float], maximum: float) -> str:
 # ── sidan ────────────────────────────────────────────────────────────────────
 def render_asymmetry_page() -> None:
     data = _load()
-    storage_ui.save_bar(cs.STORE, "Wolf Asymmetry", key="save_asymmetry")
+    storage_ui.save_bar(ast.STORE, "Wolf Asymmetry", key="save_asymmetry")
     page_header("Wolf Asymmetry", "Hur mycket hävstång mot råvarupriset, hur mycket får gå fel "
-                "innan caset spricker, och vad uppsidan är värd efter confidence. Läser "
-                "arket från Durrett 10-steg / Confidence-case — inget matas in här. "
+                "innan caset spricker, och vad uppsidan är värd efter confidence. Eget ark: "
+                "lägg in bolaget, tagga strategin det kompletterar, fyll talen med källa. "
                 "DATA_MISSING är aldrig noll.")
-    tickers = list(cs.companies(data))
-    if not tickers:
-        st.info("Inga bolag i arket än. Lägg in ett bolag under GRANSKNING → 🧭 Durrett & Confidence.")
+    _new_company(data)
+    all_tickers = list(ast.companies(data))
+    if not all_tickers:
+        st.info("Inga bolag i arket än. Lägg in ett under ➕ Nytt bolag.")
         return
-    c1, c2 = st.columns([2, 4])
+    c0, c1, c2 = st.columns([1.2, 1.6, 4])
+    with c0:
+        used = sorted({ast.strategy(data, t) for t in all_tickers} - {ast.NO_STRATEGY})
+        strat = st.selectbox("Strategi", ["Alla"] + used, key="asym_strategy_filter")
+    tickers = ast.tickers_for(data, strat) or all_tickers
     with c1:
         last = st.session_state.get("asym_last")
         choice = st.selectbox("Bolag", tickers, key="asym_pick",
-                              index=tickers.index(last) if last in tickers else 0)
+                              index=tickers.index(last) if last in tickers else 0,
+                              format_func=lambda t: f"{t} · {ast.strategy(data, t)}"
+                              if ast.strategy(data, t) != ast.NO_STRATEGY else t)
     st.session_state["asym_last"] = choice
-    company = cs.get(data, choice)
+    company = ast.get(data, choice)
     if company is None:
         st.warning("Bolaget hittades inte.")
         return
     with c2:
         sub = st.radio("", list(SUBS), horizontal=True, label_visibility="collapsed", key="asym_sub")
     st.markdown("---")
+    if sub == "Ark":
+        _sheet(data, company)
+        return
 
-    conf = reports.analyze(company, cs.overrides(data), None, date.today())
+    conf = reports.analyze(company, ast.overrides(data), None, date.today())
     r = analyze(company, conf.confidence.total)
     _kpis(company, r, conf)
     if sub == "Översikt":
@@ -302,6 +319,54 @@ def _data_quality(r: AsymmetryResult, conf: reports.Analysis) -> None:
         st.markdown("#### Antaganden i beräkningen")
         for a in r.assumptions:
             st.caption("· " + a.text())
+
+
+# ── Ark: nytt bolag, strategi, fält ──────────────────────────────────────────
+def _new_company(data: dict) -> None:
+    with st.expander("➕ Nytt bolag", expanded=not ast.companies(data)):
+        with st.form("asym_new"):
+            ident = cui.identity_widgets("asym_new", None)
+            tags = list(ast.strategy_tags())
+            strat = st.selectbox("Komplement till strategi", tags, key="asym_new_strategy",
+                                 help="Vilken strategi bolaget granskas för. Filtrerar listan; ändras i Ark.")
+            if st.form_submit_button("Lägg till"):
+                t = ident["ticker"].strip().upper()
+                if not t:
+                    st.error("Ticker krävs.")
+                elif ast.get(data, t):
+                    st.error(f"{t} finns redan i arket.")
+                else:
+                    ast.put(data, CompanyInput(ticker=t, **{k: v for k, v in ident.items() if k != "ticker"}), strat)
+                    _save(data)
+                    st.session_state["asym_last"] = t
+                    st.session_state["asym_pick"] = t
+                    st.session_state["asym_sub"] = "Ark"
+                    st.rerun()
+
+
+def _sheet(data: dict, company: CompanyInput) -> None:
+    st.caption("Wolf Asymmetrys eget ark. Talen här påverkar inte Durrett-arket och tvärtom.")
+    with st.expander("Identitet och strategi", expanded=False):
+        with st.form(f"asym_ident_{company.ticker}"):
+            ident = cui.identity_widgets(f"asym_id_{company.ticker}", company)
+            tags = list(ast.strategy_tags())
+            cur = ast.strategy(data, company.ticker)
+            strat = st.selectbox("Komplement till strategi", tags, index=tags.index(cur) if cur in tags else 0,
+                                 key=f"asym_strat_{company.ticker}")
+            if st.form_submit_button("Uppdatera"):
+                for k, v in ident.items():
+                    if k != "ticker":
+                        setattr(company, k, v)
+                ast.put(data, company, strat)
+                _save(data)
+                st.rerun()
+        if confirm_delete("Ta bort bolaget ur Wolf Asymmetry", key=f"asym_del_{company.ticker}"):
+            ast.remove(data, company.ticker)
+            _save(data)
+            st.session_state.pop("asym_last", None)
+            st.rerun()
+    render_inputs = getattr(cui, "render_inputs", None) or getattr(cui, "_render_inputs")
+    render_inputs(data, company, tools=False, store=ast.STORE, identity=False)
 
 
 __all__ = ["render_asymmetry_page", "SUBS"]

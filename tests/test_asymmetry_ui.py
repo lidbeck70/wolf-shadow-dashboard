@@ -47,7 +47,7 @@ def _app_factory(monkeypatch, companies):
     data = cs.default()
     for mk in companies:
         cs.put(data, mk())
-    stores = {"confidence": data}
+    stores = {"asymmetry": data, "confidence": cs.default()}   # eget lager; Durrett-arket är tomt
     monkeypatch.setattr(storage, "session_load", lambda name, default=None, legacy_file=None:
                         st.session_state.setdefault(name, stores.get(name, default)))
     monkeypatch.setattr(storage, "load_error", lambda name: None)
@@ -121,6 +121,8 @@ def test_developer_matrix_and_missing_company(monkeypatch):
     # tomt bolag: allt DATA_MISSING, inget påhittat, ingen krasch i någon vy
     from asymmetry.ui import SUBS
     for sub in SUBS:
+        if sub == "Ark":
+            continue                                   # arket har inga KPI:er
         at = AppTest.from_function(app, default_timeout=60)
         at.session_state["asym_pick"] = "NUL"
         at.session_state["asym_sub"] = sub
@@ -140,5 +142,5 @@ def test_empty_store_points_to_durrett(monkeypatch):
     at = AppTest.from_function(app, default_timeout=60)
     at.run()
     assert not at.exception, at.exception
-    assert any("Durrett & Confidence" in i.value for i in at.info)
+    assert any("Nytt bolag" in i.value for i in at.info)
     assert not at.metric
