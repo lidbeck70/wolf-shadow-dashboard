@@ -31,7 +31,9 @@ from asymmetry import config as acfg
 from asymmetry import fetch
 from asymmetry import store as ast
 
-SUBS = ("Översikt", "Varför?", "Scenarier", "Stressmatris", "Thesis killers", "Data", "Ark")
+SUBS = ("Översikt", "Varför?", "Scenarier", "Stressmatris", "Thesis killers", "Data",
+        "Confidence", "Råvaror", "Signaler", "Ark")
+_CONF_SUBS = ("Confidence", "Råvaror", "Signaler")     # Confidence-caset, inbyggt (egna KPI:er)
 _SEV_COLOR = {"CRITICAL": RED, "HIGH": RED, "MEDIUM": AMBER, "LOW": DIM}
 _BAND_COLOR = {acfg.BREAK_EVEN_STRONG: GREEN, acfg.BREAK_EVEN_MODERATE: AMBER, acfg.BREAK_EVEN_WEAK: RED}
 
@@ -104,6 +106,9 @@ def render_asymmetry_page() -> None:
     st.markdown("---")
     if sub == "Ark":
         _sheet(data, company)
+        return
+    if sub in _CONF_SUBS:
+        _confidence(data, company, sub)
         return
 
     conf = reports.analyze(company, ast.overrides(data), None, date.today())
@@ -478,6 +483,21 @@ def _render_refresh(data: dict, company: CompanyInput) -> None:
             ast.put(data, company)
             _save(data)
             st.rerun()
+
+
+# ── Confidence-caset, inbyggt ────────────────────────────────────────────────
+def _confidence(data: dict, company: CompanyInput, sub: str) -> None:
+    """Case Score, Confidence Score, Thesis Killer, scenarier, Why Now (Confidence),
+    råvaruöverstyrningar (Råvaror) och signalerna (Signaler) — samma vyer som
+    Confidence-caset hade, räknade på Wolf Asymmetrys ark."""
+    if sub == "Confidence":
+        st.caption("Case Score 0–100 (hur bra är caset) och Confidence Score 0–100 (hur säkra är vi), "
+                   "med källa per poäng. Tomt = DATA_MISSING, aldrig 0.")
+        cui.render_analysis(data, company)
+    elif sub == "Råvaror":
+        cui.render_commodities(data, company, store=ast.STORE)
+    else:
+        cui.render_signals(company)
 
 
 __all__ = ["render_asymmetry_page", "SUBS"]

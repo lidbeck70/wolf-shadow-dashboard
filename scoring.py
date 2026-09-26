@@ -283,7 +283,7 @@ def render_scoring_page() -> None:
     page_header("Poängmodell", f"Fem faktorer 0–2. {CORE_MIN}–10 = kärninnehav · "
                 f"{WATCH_MIN}–7 = bevakningslista · 0–{WATCH_MIN - 1} = passa. "
                 f"Durrett-delen är snabbpoängen — hela 10-stegsmetoden ligger i "
-                f"GRANSKNING → 🧭 Durrett & Confidence.")
+                f"GRANSKNING → 🧭 Durrett.")
 
     which = st.radio("Modell", ["Sprott (optionalitet)", "Durrett (snabbpoäng)"],
                      horizontal=True, key="sc_which",
