@@ -27,7 +27,8 @@ def _src(rel: str) -> str:
 def test_tab_is_wired_under_review():
     review = nav.options("review")
     assert TAB in review
-    assert review.index(TAB) == review.index("🧭 Durrett & Confidence") + 1
+    assert review.index(TAB) == review.index("🧭 Durrett") + 1
+    assert "review/🧭 Durrett" not in nav.SUBS and "Confidence-case" not in nav.leaves()
     assert TAB not in nav.options("screening")
     assert nav.slugify(TAB) == "wolf-asymmetry"
     assert nav.resolve("granskning/wolf-asymmetry") == ["review", TAB]
@@ -121,8 +122,8 @@ def test_developer_matrix_and_missing_company(monkeypatch):
     # tomt bolag: allt DATA_MISSING, inget påhittat, ingen krasch i någon vy
     from asymmetry.ui import SUBS
     for sub in SUBS:
-        if sub == "Ark":
-            continue                                   # arket har inga KPI:er
+        if sub in ("Ark", "Confidence", "Råvaror", "Signaler"):
+            continue                                   # egna vyer utan asymmetri-KPI:er
         at = AppTest.from_function(app, default_timeout=60)
         at.session_state["asym_pick"] = "NUL"
         at.session_state["asym_sub"] = sub

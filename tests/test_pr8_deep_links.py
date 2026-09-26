@@ -47,7 +47,9 @@ def test_slugs_are_ascii_and_round_trip_for_every_path():
         assert re.fullmatch(r"[a-z0-9/-]+", s), s
         assert nav.resolve(s) == segs, (s, segs)
     assert nav.slug(["regime", "Marknad", "Arc Regime", "Wolf Regime"]) == "regime/marknad/arc-regime/wolf-regime"
-    assert nav.slugify("🧭 Durrett & Confidence") == "durrett-confidence"
+    assert nav.slugify("🧭 Durrett") == "durrett" and nav.slugify("🐺 Wolf Asymmetry") == "wolf-asymmetry"
+    # gamla länkar landar på Durrett i stället för Home
+    assert nav.resolve("granskning/durrett-confidence/confidence-case") == ["review", "🧭 Durrett"]
     assert nav.slugify("Råvaror") == "ravaror" and nav.slugify("Odin's Blindspot") == "odins-blindspot"
 
 

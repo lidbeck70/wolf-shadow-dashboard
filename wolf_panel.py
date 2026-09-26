@@ -194,14 +194,8 @@ try:
 except ImportError:
     INSIDER_AVAILABLE = False
 
-# Confidence score — Case Score + Confidence Score för gruv-/råvarubolag
-try:
-    from confidence import render_confidence_page
-    CONFIDENCE_AVAILABLE = True
-except ImportError:
-    CONFIDENCE_AVAILABLE = False
-
-# Durrett — Don Durretts 10-stegsmetod (engines/durrett), delar lagret med Confidence score
+# Durrett — Don Durretts 10-stegsmetod (engines/durrett) med eget ark (data/confidence.json).
+# Confidence-caset (confidence/) ritas inbyggt i Wolf Asymmetry sedan steg F.
 try:
     from engines.durrett.ui import render_durrett_page
     DURRETT_AVAILABLE = True
@@ -392,13 +386,8 @@ def main():
                 _page(TIGGRE_AVAILABLE, render_tiggre_page, "Tiggre", "tiggre")
             elif sub == "Insider":
                 _page(INSIDER_AVAILABLE, render_insider_page, "Insiderbevakaren", "insider")
-            elif sub == "🧭 Durrett & Confidence":
-                # Två vyer över samma ark (data/confidence.json) — en flik.
-                inner = _sub("review/🧭 Durrett & Confidence")
-                if inner == "Durrett 10-steg":
-                    _page(DURRETT_AVAILABLE, render_durrett_page, "Durrett", "engines/durrett/ui")
-                else:
-                    _page(CONFIDENCE_AVAILABLE, render_confidence_page, "Confidence score", "confidence")
+            elif sub == "🧭 Durrett":
+                _page(DURRETT_AVAILABLE, render_durrett_page, "Durrett", "engines/durrett/ui")
             elif sub == "🐺 Wolf Asymmetry":
                 _page(ASYMMETRY_AVAILABLE, render_asymmetry_page, "Wolf Asymmetry", "asymmetry/ui")
             elif sub == "🎯 Scorecard":

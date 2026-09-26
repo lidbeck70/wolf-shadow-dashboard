@@ -107,7 +107,7 @@ def render_durrett_page() -> None:
     page_header("Durrett 10-steg", "Don Durretts 10-stegsmetod. Håven håvar in screenerns "
                 "träffar, arket tar dina tal. Alla poäng 0–100 (50 = neutralt), N/A när det "
                 "inte går att räkna. Risk Score 100 = lägst risk. Ingen köp- eller "
-                "säljrekommendation. Samma ark som Confidence-caset.")
+                "säljrekommendation. Eget ark — Wolf Asymmetry kan kopiera ett bolag härifrån.")
     _new_candidate(data)
     _screen_section(data)
     _rows(data)
