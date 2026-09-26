@@ -25,6 +25,7 @@ from ui.components import badge as _badge, page_header
 from ui.tokens import AMBER, DIM, GREEN, RED, TEXT
 
 from asymmetry import ASYMMETRY_CONFIG as CFG, AsymmetryResult, analyze
+from asymmetry import charts
 from asymmetry import config as acfg
 
 SUBS = ("Översikt", "Varför?", "Scenarier", "Stressmatris", "Thesis killers", "Data")
@@ -43,6 +44,14 @@ def _f(v, fmt: str = "{:,.0f}", na: str = "DATA_MISSING") -> str:
 
 def _pct(v, na: str = "DATA_MISSING") -> str:
     return na if v is None else f"{v:+.0f} %"
+
+
+def _chart(fig, key: str) -> None:
+    """Ritar figuren, eller säger varför den saknas — aldrig ett tomt diagram med nollor."""
+    if fig is None:
+        st.caption("Diagrammet kan inte ritas: underlag saknas (DATA_MISSING).")
+    else:
+        st.plotly_chart(fig, use_container_width=True, key=key, config={"displayModeBar": False})
 
 
 def _score_color(score: Optional[float], maximum: float) -> str:
@@ -135,9 +144,11 @@ def _overview(r: AsymmetryResult) -> None:
         st.markdown("#### Prisgrid")
         st.caption("Intäkt, EBITDA, FCF och equity per prissteg. Poängen mäts vid "
                    f"+{r.leverage.probe_pct:g} %, nedsidan kontrolleras vid {CFG['commodity_leverage']['downside_probe_pct']:+g} %.")
+        _chart(charts.price_grid_chart(r), f"asym_ch_grid_{r.ticker}")
         st.dataframe(_grid_frame(r), hide_index=True, use_container_width=True)
     with right:
         st.markdown("#### Margin of Safety")
+        _chart(charts.safety_chart(r), f"asym_ch_mos_{r.ticker}")
         for c in r.safety.components:
             if c.not_applicable:
                 st.markdown(f"{_badge('EJ TILLÄMPLIGT', DIM)} {c.label}", unsafe_allow_html=True)
@@ -171,16 +182,18 @@ def _why(r: AsymmetryResult) -> None:
             _steps(c.steps)
     with st.expander(f"Break-even-marginal — {r.break_even.band}"):
         _steps(r.break_even.steps)
-    with st.expander("Justerad uppsida"):
+    with st.expander("Justerad uppsida", expanded=True):
         st.caption(f"· Base-uppsida {_pct(r.base_upside_pct)} × confidence "
                    f"{_f(r.confidence, '{:g}')}/100 = {_pct(r.adjusted_upside_pct)} "
                    f"(formel: {CFG['adjusted_upside']['formula']})")
+        _chart(charts.adjusted_upside_chart(r), f"asym_ch_adj_{r.ticker}")
 
 
 # ── Scenarier ────────────────────────────────────────────────────────────────
 def _scenarios(r: AsymmetryResult, conf: reports.Analysis) -> None:
     st.caption("Bear / Base / Bull / Super Bull med samma punkt-modell som prisgriden "
                "(pris- och capex-stegen ur confidence.config.SCENARIOS).")
+    _chart(charts.scenario_chart(r), f"asym_ch_scen_{r.ticker}")
     rows = []
     for s in r.scenarios:
         rows.append({"Scenario": s.label, "Pris %": f"{s.price_change_pct:+g}", "CapEx %": f"{s.capex_change_pct:+g}",
@@ -226,6 +239,7 @@ def _matrix(r: AsymmetryResult) -> None:
     st.caption("Uppsida mot börsvärde när pris och capex rör sig samtidigt. Rader = pris, kolumner = capex.")
     if r.matrix.note:
         st.caption("ℹ " + r.matrix.note)
+    _chart(charts.matrix_chart(r), f"asym_ch_matrix_{r.ticker}")
     st.markdown("#### Uppsida %")
     st.dataframe(_matrix_frame(r, "upside_pct"), use_container_width=True)
     st.markdown("#### Equity MUSD")
