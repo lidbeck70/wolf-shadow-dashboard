@@ -34,13 +34,14 @@ _NOTES = {"debt_musd": "bruttoskuld ≈ nettoskuld + kassa ur senaste rapporten"
 _PCT_FIELDS = {"ebitda_margin": 100.0}          # snapshoten ger decimaltal → %
 
 
-def refresh_row(blob: Optional[dict], ticker: str) -> Optional[dict]:
-    return ((blob or {}).get("rows") or {}).get(f"{SHEET}:{(ticker or '').strip().upper()}")
+def refresh_row(blob: Optional[dict], ticker: str, sheet: str = SHEET) -> Optional[dict]:
+    """Raden ur bloben: 'confidence:<TICKER>' (Durrett-arket) eller 'asymmetry:<TICKER>'."""
+    return ((blob or {}).get("rows") or {}).get(f"{sheet}:{(ticker or '').strip().upper()}")
 
 
-def proposals(blob: Optional[dict], company: CompanyInput) -> list:
+def proposals(blob: Optional[dict], company: CompanyInput, sheet: str = SHEET) -> list:
     """[(fältnyckel, Datapoint, nuvarande värde | None)] — bara avvikande tal."""
-    s = refresh_row(blob, company.ticker)
+    s = refresh_row(blob, company.ticker, sheet)
     if not s:
         return []
     asof = str(s.get("asof") or (blob or {}).get("generated") or "")[:10] or None

@@ -94,7 +94,7 @@ def test_new_company_strategy_and_fields_write_only_to_own_store(monkeypatch):
     store = at.session_state["asymmetry"]
     assert store["companies"]["NYX"]["name"] == "Test Nyx Gold" and store["companies"]["NYX"]["stage"] == "producer"
     assert store["strategies"]["NYX"] == "Viking"
-    assert "confidence" not in at.session_state                        # Durrett-arket laddas inte ens
+    assert at.session_state["confidence"]["companies"] == {}          # Durrett-arket orört
     assert at.session_state["asym_sub"] == "Ark"
     # arket: fält med källa skrivs till asymmetry-lagret
     assert any("Wolf Asymmetrys eget ark" in c.value for c in at.caption)
@@ -106,7 +106,7 @@ def test_new_company_strategy_and_fields_write_only_to_own_store(monkeypatch):
     assert not at.exception, at.exception
     fields = at.session_state["asymmetry"]["companies"]["NYX"]["fields"]
     assert fields["aisc"]["value"] == 1400.0 and fields["aisc"]["source"] == "MD&A Q2"
-    assert "confidence" not in at.session_state
+    assert at.session_state["confidence"]["companies"] == {}
     # strategi-taggen ändras i Ark och styr filtret
     at.selectbox(key="asym_strat_NYX").set_value("Ember").run()
     at.button(key="FormSubmitter:asym_ident_NYX-Uppdatera").click().run()
