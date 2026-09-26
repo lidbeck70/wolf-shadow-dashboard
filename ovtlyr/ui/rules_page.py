@@ -1114,6 +1114,10 @@ _PANEL_GUIDE: list[tuple] = [
     ("GRANSKNING → 🧭 Durrett & Confidence", "Durrett: 10 steg · Confidence-case",
      "Samma ark, två vyer: Durretts 10-stegsmetod (kvalitet, risk, upside) "
      "och Case/Confidence Score med källa per poäng. Håven fyller på."),
+    ("GRANSKNING → 🐺 Wolf Asymmetry", "Alla — hävstång och margin of safety",
+     "Commodity Leverage 0–10, Margin of Safety 0–10 i fem delar, break-even-"
+     "marginal, stressmatris pris × capex och uppsida justerad för confidence. "
+     "Läser Durrett-arket, matar inte in något. DATA_MISSING är aldrig noll."),
     ("GRANSKNING → 🎯 Scorecard", "Alla — köpgrinden",
      "Sista steget före köp. Läser kandidaterna ur de andra flikarna och "
      "kräver sju gröna kryss. Luckor i tabellen = standardbeslut INGEN AFFÄR."),

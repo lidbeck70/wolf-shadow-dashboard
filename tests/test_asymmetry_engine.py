@@ -173,6 +173,27 @@ def test_adjusted_upside_and_confidence_caps():
     assert nul.total < 10 and analyze(dcs.missing_everything(), nul.total).adjusted_upside_pct is None
 
 
+# ── scenarier: samma punkt-modell som griden ─────────────────────────────────
+def test_scenarios_and_asymmetry_use_the_point_model():
+    from confidence import config as ccfg
+    a = analyze(dcs.gold_producer(), 75)
+    assert [s.key for s in a.scenarios] == [k for k, *_ in ccfg.SCENARIOS]
+    base, bull, bear = a.scenario("base"), a.scenario("bull"), a.scenario("bear")
+    assert base.upside_pct == pytest.approx(a.base_upside_pct)
+    assert bull.upside_pct == pytest.approx(68.67, abs=0.01)      # +30 % pris: +20 % uppsida per 10 % pris
+    assert bear.upside_pct == pytest.approx(-51.33, abs=0.01)     # −30 % pris (capex-steget rör inte producenten)
+    assert bear.capex_change_pct == 20.0 and bear.price == pytest.approx(2100.0)
+    assert a.asymmetry is not None and a.asymmetry.ratio == pytest.approx(68.67 / 51.33, abs=0.01)
+    assert a.asymmetry.band == "SYMMETRISK"
+    assert a.asymmetry.expected_pct == pytest.approx(0.25 * -51.33 + 0.5 * 8.67 + 0.2 * 68.67 + 0.05 * 168.67, abs=0.05)
+    # utvecklare: bear drar capex +20 %
+    d = analyze(dcs.copper_developer(), 75)
+    assert d.scenario("bear").value_musd == pytest.approx(1800 - 600 * 30 / 20 - 800 * 0.2, abs=1)
+    # tomt bolag: inga scenarier, ingen asymmetri
+    n = analyze(dcs.missing_everything())
+    assert all(not s.complete for s in n.scenarios) and n.asymmetry is None
+
+
 # ── royalty: delvis mätbart ──────────────────────────────────────────────────
 def test_royalty_partial_measurability():
     a = analyze(dcs.royalty_company(), 75)

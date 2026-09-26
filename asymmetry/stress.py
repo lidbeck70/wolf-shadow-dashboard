@@ -8,6 +8,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
+from confidence import config as ccfg
+from confidence.scenarios import engine as se
+
 from asymmetry import config as acfg
 from asymmetry.config import ASYMMETRY_CONFIG as CFG
 from asymmetry.model import Inputs, Point
@@ -55,6 +58,24 @@ def break_even_margin(inp: Inputs) -> BreakEven:
     return BreakEven(inp.price, inp.be, margin, band,
                      [f"(pris {inp.price:g} − break-even {inp.be:g}) / pris = {margin:+.1f} %",
                       f"band: ≥ {b['strong']:g} % stark · ≥ {b['moderate']:g} % måttlig · annars svag"])
+
+
+# ── Scenarier Bear / Base / Bull / Super Bull ────────────────────────────────
+def scenarios(inp: Inputs) -> list:
+    """confidence.config.SCENARIOS räknade med samma punkt-modell som griden
+    (så producenter med bara 'produktion nu' får scenarier). Returnerar
+    scenario-motorns Scenario-objekt så asymmetri och tabeller är gemensamma."""
+    out = []
+    for key, label, price_pct, capex_pct in ccfg.SCENARIOS:
+        p = inp.point(price_pct, capex_pct=capex_pct if inp.pre_revenue else 0.0)
+        out.append(se.Scenario(key, label, price_pct, capex_pct, p.price, p.revenue_musd, p.ebitda_musd,
+                               p.fcf_musd, p.value_musd, p.equity_musd, p.share_price, p.upside_pct, list(p.steps)))
+    return out
+
+
+def scenario_asymmetry(scen: list) -> Optional[se.Asymmetry]:
+    """Bull / |Bear| med band ur confidence.config.ASYMMETRY_BANDS; None vid DATA_MISSING."""
+    return se.asymmetry(scen)
 
 
 # ── Confidence-justerad uppsida ──────────────────────────────────────────────
