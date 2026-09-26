@@ -135,6 +135,14 @@ def royalty_company() -> CompanyInput:
     return c
 
 
+def overvalued_producer() -> CompanyInput:
+    """Samma bolag som GPR men börsvärde 6 000 i stället för 1 500: bra bolag, dåligt pris."""
+    c = gold_producer()
+    c.ticker, c.name = "OVP", "Test Overvalued Producer"
+    fill(c, dict(market_cap_musd=6000, share_price=24.0), **_MKT)
+    return c
+
+
 def missing_everything() -> CompanyInput:
     return CompanyInput(ticker="NUL", name="Test Missing", commodity="gold", stage="developer", maturity="pea")
 
@@ -151,4 +159,5 @@ def currency_mismatch() -> CompanyInput:
 ALL = {"gold_producer": gold_producer, "leveraged_producer": leveraged_producer, "copper_developer": copper_developer,
        "developer_huge_capex_small_company": developer_huge_capex_small_company, "serial_diluter": serial_diluter,
        "lithium_explorer": lithium_explorer, "royalty_company": royalty_company,
+       "overvalued_producer": overvalued_producer,
        "missing_everything": missing_everything, "currency_mismatch": currency_mismatch}
