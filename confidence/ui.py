@@ -408,7 +408,7 @@ def _point_from_widgets(w: dict, f: cfg.FieldSpec) -> Optional[Datapoint]:
               pub_date=(w["pub_date"].strip() or None), unit=f.unit)
 
 
-def _render_prefill(data: dict, company: CompanyInput) -> None:
+def _render_prefill(data: dict, company: CompanyInput, store: str = cs.STORE) -> None:
     with st.expander("Förslag ur granskningsarken (Rick Rule/AQS/DS, Tiggre)", expanded=False):
         try:
             producers_data = storage.session_load("producers", {})
@@ -431,7 +431,7 @@ def _render_prefill(data: dict, company: CompanyInput) -> None:
                 if b.button("Använd", key=f"cf_pf_{company.ticker}_{key}"):
                     company.maturity = point
                     cs.put(data, company)
-                    _save(data)
+                    _save_to(store, data)
                     st.rerun()
                 continue
             label = cfg.FIELD_BY_KEY[key].label
@@ -441,11 +441,12 @@ def _render_prefill(data: dict, company: CompanyInput) -> None:
             if b.button("Använd", key=f"cf_pf_{company.ticker}_{key}"):
                 company.set(key, point)
                 cs.put(data, company)
-                _save(data)
+                _save_to(store, data)
                 st.rerun()
 
 
-def _render_extractor(data: dict, company: CompanyInput) -> None:
+def _render_extractor(data: dict, company: CompanyInput, store: str = cs.STORE,
+                      sheet_label: str = "Durrett-arket") -> None:
     from ai import document as doc
     from ai import extract_prompt as xp
     from ai import openai_client as oc
@@ -479,7 +480,7 @@ def _render_extractor(data: dict, company: CompanyInput) -> None:
                     reply = oc.complete(xp.SYSTEM_EXTRACT, prompt, max_output_tokens=3000, timeout=120.0,
                                         json_mode=True)
                 parsed = xp.parse_extraction(reply.text)
-                extract_store.save(company.ticker, parsed, doc=docname, sheet="Durrett-arket",
+                extract_store.save(company.ticker, parsed, doc=docname, sheet=sheet_label,
                                    model=reply.model, pages=doc.page_count(text), chars=len(text))
             except (oc.AIError, xp.ExtractionError, RuntimeError) as exc:
                 st.error(str(exc))
@@ -490,7 +491,7 @@ def _render_extractor(data: dict, company: CompanyInput) -> None:
         res = {"proposals": xp.proposals("confidence", entry["parsed"]),
                "notes": [str(n) for n in (entry["parsed"].get("notes") or [])][:6],
                "model": entry.get("model", ""), "doc": entry.get("doc") or "Presentation"}
-        st.caption(f"{extract_store.describe(entry, 'Durrett-arket')} · {res['model']} · "
+        st.caption(f"{extract_store.describe(entry, sheet_label)} · {res['model']} · "
                    f"{len(res['proposals'])} förslag")
         for p in res["proposals"]:
             a, b = st.columns([4, 1])
@@ -509,7 +510,7 @@ def _render_extractor(data: dict, company: CompanyInput) -> None:
                                          confidence=p["confidence"], unit=p["unit"] or spec.unit,
                                          note="ur extraktionen — sätt datatyp och datum"))
                 cs.put(data, company)
-                _save(data)
+                _save_to(store, data)
                 st.rerun()
         for n in res["notes"]:
             st.caption("📝 " + n)
@@ -519,6 +520,8 @@ def _render_extractor(data: dict, company: CompanyInput) -> None:
 load_store = _load
 save_store = _save
 render_inputs = _render_inputs
+render_prefill = _render_prefill
+render_extractor = _render_extractor
 identity_widgets = _identity_widgets
 new_company_form = _new_company_form
 

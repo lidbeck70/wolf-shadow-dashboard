@@ -49,10 +49,12 @@ BLOB_NAME = "sheets_refresh.json"
 SHEET_FILES = {"insider": "data/insider.json", "tiggre": "data/tiggre.json",
                "producers": "data/producers.json", "scoring": "data/scoring.json",
                "confidence": "data/confidence.json",          # Durrett-/Confidence-arket
+               "asymmetry": "data/asymmetry.json",            # Wolf Asymmetrys eget ark (samma form)
                "holdings": "data/holdings.json"}              # registret (positions.py)
 _BUCKETS = {"insider": ("signals",), "tiggre": ("candidates", "positions"),
             "producers": ("producers", "royalty"), "scoring": ("sprott", "durrett"),
             "confidence": ("companies",),
+            "asymmetry": ("companies",),
             # registrets övriga hinkar → kurs per position åt allokeraren
             # (tiggre-hinken hämtas redan som tiggre:<id> ovan)
             "holdings": ("swing", "ovtlyr", "long", "momentum")}
@@ -300,7 +302,7 @@ def refresh(api, sheets: dict) -> dict:
                 s.update(report_cache[iid])
                 if r["sheet"] == "producers" and bucket_of(r) == "royalty":
                     s["ev_ebitda_median"] = ev_ebitda_median(api, iid)
-                if r["sheet"] == "confidence":               # Durrett-arket: fler tal ur snapshoten
+                if r["sheet"] in ("confidence", "asymmetry"):   # Durrett-/Asymmetry-arket: fler tal ur snapshoten
                     roic = _f(snap.get("roic"))
                     s["roic_pct"] = round(roic * 100, 1) if roic is not None else None
                     pfcf = _f(snap.get("p_fcf"))

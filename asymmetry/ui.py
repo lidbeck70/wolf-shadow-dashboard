@@ -28,6 +28,7 @@ from ui.tokens import AMBER, DIM, GREEN, RED, TEXT
 from asymmetry import ASYMMETRY_CONFIG as CFG, AsymmetryResult, analyze
 from asymmetry import charts
 from asymmetry import config as acfg
+from asymmetry import fetch
 from asymmetry import store as ast
 
 SUBS = ("Översikt", "Varför?", "Scenarier", "Stressmatris", "Thesis killers", "Data", "Ark")
@@ -77,6 +78,7 @@ def render_asymmetry_page() -> None:
                 "lägg in bolaget, tagga strategin det kompletterar, fyll talen med källa. "
                 "DATA_MISSING är aldrig noll.")
     _new_company(data)
+    _fetch_sections(data)
     all_tickers = list(ast.companies(data))
     if not all_tickers:
         st.info("Inga bolag i arket än. Lägg in ett under ➕ Nytt bolag.")
@@ -365,8 +367,117 @@ def _sheet(data: dict, company: CompanyInput) -> None:
             _save(data)
             st.session_state.pop("asym_last", None)
             st.rerun()
-    render_inputs = getattr(cui, "render_inputs", None) or getattr(cui, "_render_inputs")
-    render_inputs(data, company, tools=False, store=ast.STORE, identity=False)
+    _render_refresh(data, company)
+    cui.render_prefill(data, company, store=ast.STORE)
+    cui.render_extractor(data, company, store=ast.STORE, sheet_label="Wolf Asymmetry")
+    cui.render_inputs(data, company, tools=False, store=ast.STORE, identity=False)
+
+
+# ── Hämta: registret och Durrett-arket (bolagsskal / kopior) ─────────────────
+def _fetch_sections(data: dict) -> None:
+    c1, c2 = st.columns(2)
+    with c1:
+        _fetch_register(data)
+    with c2:
+        _fetch_durrett(data)
+
+
+def _fetch_register(data: dict) -> None:
+    with st.expander("📥 Hämta från registret (Holdings)", expanded=False):
+        try:
+            import positions
+            rows = positions.open_positions()
+        except Exception as exc:                          # pragma: no cover
+            st.caption(f"Kunde inte läsa registret: {exc}")
+            return
+        cands = fetch.register_candidates(rows, data)
+        if not cands:
+            st.caption("Inga öppna positioner som saknas i arket.")
+            return
+        st.caption("Bolagsskal med ticker, namn och strategi-tagg. Råvara, stage och talen fyller du i Ark "
+                   "— eller låter Börsdata och extraktorn göra det.")
+        for t, name, strat in cands:
+            a, b = st.columns([4, 1])
+            a.markdown(f"<span style='color:{TEXT};'>{t}</span> <span style='color:{DIM};'>{name}</span> "
+                       f"{_badge(strat, DIM)}", unsafe_allow_html=True)
+            if b.button("Lägg in", key=f"asym_reg_{t}"):
+                fetch.add_from_register(data, t, name, strat)
+                _save(data)
+                st.session_state["asym_last"] = t
+                st.session_state["asym_pick"] = t
+                st.rerun()
+        if len(cands) > 1 and st.button(f"Lägg in alla ({len(cands)})", key="asym_reg_all"):
+            for t, name, strat in cands:
+                fetch.add_from_register(data, t, name, strat)
+            _save(data)
+            st.rerun()
+
+
+def _fetch_durrett(data: dict) -> None:
+    with st.expander("📥 Hämta från Durrett-arket (kopia)", expanded=False):
+        try:
+            from confidence import store as cs
+            conf = cs.normalize(storage.session_load(cs.STORE, cs.default()))
+        except Exception as exc:                          # pragma: no cover
+            st.caption(f"Kunde inte läsa Durrett-arket: {exc}")
+            return
+        cands = fetch.durrett_candidates(conf, data)
+        if not cands:
+            st.caption("Inget i Durrett-arket som saknas här.")
+            return
+        st.caption("Oberoende kopia med alla fält och källor. Ändringar efteråt påverkar inte Durrett-arket.")
+        for t, name, stage in cands:
+            a, b = st.columns([4, 1])
+            a.markdown(f"<span style='color:{TEXT};'>{t}</span> <span style='color:{DIM};'>{name} · {stage}</span>",
+                       unsafe_allow_html=True)
+            if b.button("Kopiera", key=f"asym_dur_{t}"):
+                fetch.copy_from_durrett(conf, data, t)
+                _save(data)
+                st.session_state["asym_last"] = t
+                st.session_state["asym_pick"] = t
+                st.rerun()
+
+
+# ── Börsdata-förslag ur sifferuppdateringen ──────────────────────────────────
+def _render_refresh(data: dict, company: CompanyInput) -> None:
+    try:
+        import refresh_ui
+        from confidence import config as ccfg
+    except Exception:                                     # pragma: no cover
+        return
+    blob = refresh_ui.load_refresh()
+    props = fetch.refresh_proposals(blob, company)
+    t = company.ticker
+    if not props:
+        if fetch.refresh_row(blob, t):
+            st.caption("🤖 Börsdata: sifferuppdateringen har inga nya tal för raden.")
+        else:
+            st.caption("🤖 Börsdata: inga tal än — sifferuppdateringen (sheets_refresh.py) läser arket "
+                       "schemalagt när det är sparat.")
+        return
+    asof = props[0][1].pub_date or ""
+    with st.expander(f"🤖 Börsdata {asof}: {len(props)} förslag ur sifferuppdateringen", expanded=True):
+        for key, point, cur in props:
+            label = ccfg.FIELD_BY_KEY[key].label
+            a, b = st.columns([4, 1])
+            val = point.value if not isinstance(point.value, (int, float)) else f"{point.value:,.4g}"
+            a.markdown(f"<span style='color:{TEXT};'>{label}: {val}{(' ' + point.unit) if point.unit else ''}</span>"
+                       + (f" <span style='color:{AMBER};font-size:0.78rem;'>ersätter {cur:,.4g}</span>"
+                          if isinstance(cur, (int, float)) else
+                          (f" <span style='color:{AMBER};font-size:0.78rem;'>ersätter {cur}</span>" if cur else ""))
+                       + (f"<br><span style='color:{DIM};font-size:0.74rem;'>{point.note}</span>" if point.note else ""),
+                       unsafe_allow_html=True)
+            if b.button("Använd", key=f"asym_rf_{t}_{key}"):
+                company.set(key, point)
+                ast.put(data, company)
+                _save(data)
+                st.rerun()
+        if st.button("Använd alla", key=f"asym_rf_all_{t}"):
+            for key, point, _cur in props:
+                company.set(key, point)
+            ast.put(data, company)
+            _save(data)
+            st.rerun()
 
 
 __all__ = ["render_asymmetry_page", "SUBS"]
