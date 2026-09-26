@@ -208,6 +208,13 @@ try:
 except ImportError:
     DURRETT_AVAILABLE = False
 
+# Wolf Asymmetry — hävstång, margin of safety, stressmatris (asymmetry/), samma ark som Durrett
+try:
+    from asymmetry.ui import render_asymmetry_page
+    ASYMMETRY_AVAILABLE = True
+except ImportError:
+    ASYMMETRY_AVAILABLE = False
+
 # Swing momentum-screener + regim (data från wolf_data.py)
 try:
     from wolf_screener_ui import render_wolf_screener_page
@@ -392,6 +399,8 @@ def main():
                     _page(DURRETT_AVAILABLE, render_durrett_page, "Durrett", "engines/durrett/ui")
                 else:
                     _page(CONFIDENCE_AVAILABLE, render_confidence_page, "Confidence score", "confidence")
+            elif sub == "🐺 Wolf Asymmetry":
+                _page(ASYMMETRY_AVAILABLE, render_asymmetry_page, "Wolf Asymmetry", "asymmetry/ui")
             elif sub == "🎯 Scorecard":
                 _page(SCORECARD_AVAILABLE, render_scorecard_page, "Master Scorecard", "scorecard")
 

@@ -39,7 +39,7 @@ SUBS: dict = {
     # Beslutsunderlaget efter screeningen. Durrett och Confidence är två vyer
     # över samma ark (data/confidence.json) och ligger därför under en flik.
     "review": ["Rick Rule", "Royalty C", "Poängmodell", "Tiggre", "Insider",
-               "🧭 Durrett & Confidence", "🎯 Scorecard"],
+               "🧭 Durrett & Confidence", "🐺 Wolf Asymmetry", "🎯 Scorecard"],
     "review/🧭 Durrett & Confidence": ["Durrett 10-steg", "Confidence-case"],
     # REGIME delat i två: marknaden (index, sektorer, cykel) och råvarorna.
     "regime": ["Marknad", "Råvaror"],
@@ -71,6 +71,7 @@ HOME_ZONES: tuple = (
         ("Rick Rule · Royalty C", "Producenter och royaltybolag mot kostnadskurvan"),
         ("Poängmodell · Tiggre · Insider", "Sprott, Durrett-snabbpoäng, Lobo-arket, insynsflödet"),
         ("🧭 Durrett & Confidence", "Durretts 10 steg och Confidence-caset — samma ark"),
+        ("🐺 Wolf Asymmetry", "Hävstång, margin of safety, stressmatris och justerad uppsida"),
         ("🎯 Scorecard", "Köpgrinden: sju kryss före ordern"),
     ]),
     ("intel", "INTELLIGENCE — TOLKA SIGNALERNA", [
