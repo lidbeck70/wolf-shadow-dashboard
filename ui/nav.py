@@ -71,7 +71,7 @@ HOME_ZONES: tuple = (
         ("Rick Rule · Royalty C", "Producenter och royaltybolag mot kostnadskurvan"),
         ("Poängmodell · Tiggre · Insider", "Sprott, Durrett-snabbpoäng, Lobo-arket, insynsflödet"),
         ("🧭 Durrett & Confidence", "Durretts 10 steg och Confidence-caset — samma ark"),
-        ("🐺 Wolf Asymmetry", "Hävstång, margin of safety, stressmatris och justerad uppsida"),
+        ("🐺 Wolf Asymmetry", "Eget ark för alla strategier: hävstång, margin of safety, stressmatris, justerad uppsida"),
         ("🎯 Scorecard", "Köpgrinden: sju kryss före ordern"),
     ]),
     ("intel", "INTELLIGENCE — TOLKA SIGNALERNA", [

@@ -58,6 +58,11 @@ def _save(data: dict) -> None:
     st.session_state[cs.STORE] = data          # persistensen sker via 💾 Spara
 
 
+def _save_to(store: str, data: dict) -> None:
+    """Samma sak för ett annat lager med samma form (Wolf Asymmetrys ark)."""
+    st.session_state[store] = data
+
+
 # ── hjälpare ─────────────────────────────────────────────────────────────────
 from ui.components import badge as _badge, confirm_delete, page_header  # noqa: E402
 
@@ -290,26 +295,30 @@ def _pillar_row(p) -> None:
 
 
 # ── Indata ───────────────────────────────────────────────────────────────────
-def _render_inputs(data: dict, company: CompanyInput, tools: bool = True) -> None:
+def _render_inputs(data: dict, company: CompanyInput, tools: bool = True, store: str = cs.STORE,
+                   identity: bool = True) -> None:
     """Alla fält med proveniens. tools=False hoppar över förslagen och
     extraktorn — Durrett-fliken ritar dem själv utanför sin expander, och
     två extraktorer för samma bolag ger samma widget-nyckel två gånger
-    (StreamlitDuplicateElementKey på cf_xt_<ticker>_pdf)."""
-    with st.expander("Identitet", expanded=False):
-        with st.form(f"conf_ident_{company.ticker}"):
-            ident = _identity_widgets(f"conf_id_{company.ticker}", company)
-            if st.form_submit_button("Uppdatera"):
-                for k, v in ident.items():
-                    if k != "ticker":
-                        setattr(company, k, v)
-                cs.put(data, company)
-                _save(data)
+    (StreamlitDuplicateElementKey på cf_xt_<ticker>_pdf). store = vilket
+    lager som skrivs (Wolf Asymmetry har ett eget med samma form);
+    identity=False när fliken ritar identitet och radering själv."""
+    if identity:
+        with st.expander("Identitet", expanded=False):
+            with st.form(f"conf_ident_{company.ticker}"):
+                ident = _identity_widgets(f"conf_id_{company.ticker}", company)
+                if st.form_submit_button("Uppdatera"):
+                    for k, v in ident.items():
+                        if k != "ticker":
+                            setattr(company, k, v)
+                    cs.put(data, company)
+                    _save_to(store, data)
+                    st.rerun()
+            if confirm_delete("Ta bort bolaget", key=f"conf_del_{company.ticker}"):
+                cs.remove(data, company.ticker)
+                _save_to(store, data)
+                st.session_state.pop("conf_last", None)
                 st.rerun()
-        if confirm_delete("Ta bort bolaget", key=f"conf_del_{company.ticker}"):
-            cs.remove(data, company.ticker)
-            _save(data)
-            st.session_state.pop("conf_last", None)
-            st.rerun()
 
     if tools:
         _render_prefill(data, company)
@@ -338,7 +347,7 @@ def _render_inputs(data: dict, company: CompanyInput, tools: bool = True) -> Non
                         else:
                             company.set(f.key, point)
                     cs.put(data, company)
-                    _save(data)
+                    _save_to(store, data)
                     st.rerun()
 
 

@@ -95,7 +95,7 @@ def test_tab_draws_the_charts_without_network(monkeypatch):
     data = cs.default()
     for mk in (dcs.gold_producer, dcs.missing_everything):
         cs.put(data, mk())
-    stores = {"confidence": data}
+    stores = {"asymmetry": data, "confidence": cs.default()}
     monkeypatch.setattr(storage, "session_load", lambda name, default=None, legacy_file=None:
                         st.session_state.setdefault(name, stores.get(name, default)))
     monkeypatch.setattr(storage, "load_error", lambda name: None)
