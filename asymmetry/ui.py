@@ -219,12 +219,17 @@ def _sheet(data: dict, company: Optional[CompanyInput]) -> None:
             ident = cui.identity_widgets(f"asym_id_{company.ticker}", company)
             tags = list(ast.strategy_tags())
             cur = ast.strategy(data, company.ticker)
-            strat = st.selectbox("Komplement till strategi", tags, index=tags.index(cur) if cur in tags else 0,
-                                 key=f"asym_strat_{company.ticker}")
+            x, y = st.columns(2)
+            strat = x.selectbox("Komplement till strategi", tags, index=tags.index(cur) if cur in tags else 0,
+                                key=f"asym_strat_{company.ticker}")
+            ins = y.text_input("Börsdata-id (ins_id)", value="" if company.ins_id is None else str(company.ins_id),
+                               key=f"asym_insid_{company.ticker}",
+                               help="Bara om Hämta nu inte hittar bolaget. Id:t står i Börsdatas URL.")
             if st.form_submit_button("Uppdatera"):
                 for k, v in ident.items():
                     if k != "ticker":
                         setattr(company, k, v)
+                company.ins_id = int(ins) if str(ins).strip().isdigit() else None
                 _put(data, company)
                 ast.set_strategy(data, company.ticker, strat)
                 _save(data)
@@ -364,9 +369,9 @@ def _render_refresh(data: dict, company: CompanyInput) -> None:
     t = company.ticker
     live_key = f"asym_bd_{t}"
     a, b = st.columns([4, 1])
-    if b.button("Hämta nu", key=f"asym_bd_go_{t}", help="Hämtar bolagets rad från Börsdata direkt, utan att vänta på det nattliga jobbet."):
+    if b.button("Hämta nu", key=f"asym_bd_go_{t}", help="Börsdata först (nordiskt eller globalt), Yahoo som reserv. Utan att vänta på det nattliga jobbet."):
         with st.spinner("Hämtar från Börsdata …"):
-            blob, props, msg = fetch.borsdata_now(company)
+            blob, props, msg = fetch.fetch_now(company)
         if blob is None:
             st.warning(msg)
         else:

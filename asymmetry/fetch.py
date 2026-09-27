@@ -72,9 +72,77 @@ def borsdata_now(company: CompanyInput, api=None) -> tuple:
     except Exception as exc:
         return None, [], f"Börsdata svarade inte: {exc}"
     if row is None:
-        return None, [], (f"Börsdata känner inte {company.ticker}. Ange Börsdata-id (ins_id) under Identitet, "
-                          "eller skriv talen själv.")
+        return None, [], f"Börsdata känner inte {company.ticker}."
     blob = {"generated": datetime.now(tz=timezone.utc).isoformat(), "rows": {f"{sr.ref_key('confidence', {'id': company.ticker})}": row}}
     props = dr.proposals(blob, company)
     return blob, props, (f"{len(props)} tal ur Börsdata" + (f" (kurs {row['price']:g} {row.get('currency') or ''})"
                                                             if row.get("price") is not None else ""))
+
+
+# ── Yahoo som reserv (bolag utanför Börsdata: NYSE, TSX, ASX …) ──────────────
+YAHOO_SUFFIXES = ("", ".TO", ".V", ".AX", ".L", ".CN")
+
+
+def yahoo_row(ticker: str, info_getter=None) -> Optional[dict]:
+    """Samma radform som Börsdata ur Yahoo: kurs, valuta, börsvärde, aktier,
+    kassa, skuld i MUSD. Provar tickern som den är och med vanliga
+    börssuffix. None när Yahoo inte har börsvärde för någon form."""
+    import sheets_refresh as sr
+    from datetime import date as _date
+
+    t = str(ticker or "").strip().upper()
+    if not t:
+        return None
+    if info_getter is None:
+        def info_getter(sym):
+            import yfinance as yf
+            return yf.Ticker(sym).info or {}
+    forms = [t] + [t + sfx for sfx in YAHOO_SUFFIXES[1:] if "." not in t]
+    for sym in forms:
+        try:
+            info = info_getter(sym) or {}
+        except Exception:
+            continue
+        mc = info.get("marketCap")
+        if not mc:
+            continue
+        ccy = str(info.get("currency") or "USD").upper()
+        fx = sr.FX_TO_USD.get(ccy, 1.0)
+        fccy = str(info.get("financialCurrency") or ccy).upper()
+        ffx = sr.FX_TO_USD.get(fccy, 1.0)
+
+        def musd(v, f):
+            try:
+                return round(float(v) * f / 1e6, 1) if v is not None else None
+            except (TypeError, ValueError):
+                return None
+
+        price = info.get("currentPrice") or info.get("regularMarketPrice")
+        shares = info.get("sharesOutstanding")
+        return {"ticker": t, "yahoo": sym, "ins_id": None, "source": "yfinance",
+                "source_label": f"Yahoo Finance ({sym}, {_date.today().isoformat()})",
+                "price": float(price) if price is not None else None, "asof": _date.today().isoformat(),
+                "currency": ccy, "mcap_musd": musd(mc, fx), "cash_musd": musd(info.get("totalCash"), ffx),
+                "debt_musd": musd(info.get("totalDebt"), ffx),
+                "shares_now_m": round(float(shares) / 1e6, 2) if shares else None,
+                "fx_to_usd": fx, "fx_table": "sheets_refresh.FX_TO_USD (fast tabell)",
+                "ev_ebitda": info.get("enterpriseToEbitda"), "pe": info.get("trailingPE")}
+    return None
+
+
+def fetch_now(company: CompanyInput, api=None, info_getter=None) -> tuple:
+    """Börsdata först, Yahoo som reserv. (blob, förslag, meddelande)."""
+    blob, props, msg = borsdata_now(company, api)
+    if blob is not None:
+        return blob, props, msg
+    row = yahoo_row(company.ticker, info_getter)
+    if row is None:
+        return None, [], (msg + f" Yahoo har inte heller {company.ticker} — skriv börsvärde, kassa och skuld själv "
+                          "nedan, eller ange Börsdata-id under Identitet.")
+    import sheets_refresh as sr
+    from datetime import datetime, timezone
+    yblob = {"generated": datetime.now(tz=timezone.utc).isoformat(),
+             "rows": {sr.ref_key("confidence", {"id": company.ticker}): row}}
+    yprops = dr.proposals(yblob, company)
+    return yblob, yprops, (f"{msg} Yahoo ({row['yahoo']}): {len(yprops)} tal"
+                          + (f" (kurs {row['price']:g} {row['currency']})" if row.get("price") is not None else ""))

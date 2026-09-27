@@ -45,7 +45,7 @@ def proposals(blob: Optional[dict], company: CompanyInput, sheet: str = SHEET) -
     if not s:
         return []
     asof = str(s.get("asof") or (blob or {}).get("generated") or "")[:10] or None
-    src = f"Börsdata (sifferuppdatering {asof or '?'})"
+    src = s.get("source_label") or f"Börsdata (sifferuppdatering {asof or '?'})"
     out = []
     ccy = str(s.get("currency") or "").upper()
     for bkey, fkey, unit, kind in _MAP:

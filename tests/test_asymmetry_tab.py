@@ -321,6 +321,54 @@ def test_borsdata_now_returns_proposals_for_the_company(monkeypatch):
     assert blob is None and props == [] and "känner inte NOPE" in msg
 
 
+class _GlobalApi(_FakeApi):
+    """Nordisk lista utan träff; global lista med FNV (NYSE) och AEM (TSX)."""
+
+    def get_instruments(self):
+        return [{"insId": 1, "ticker": "VOLV B", "stockPriceCurrency": "SEK", "reportCurrency": "SEK"}]
+
+    def resolve_instrument_id(self, q):
+        return 1 if q == "VOLV B" else None
+
+    def get_global_instruments_list(self):
+        return [{"insId": 9001, "ticker": "FNV", "name": "Franco-Nevada", "stockPriceCurrency": "USD",
+                 "reportCurrency": "USD"},
+                {"insId": 9002, "ticker": "AEM", "name": "Agnico Eagle", "stockPriceCurrency": "CAD",
+                 "reportCurrency": "USD"}]
+
+    def get_fundamentals_snapshot_fast(self, ids, scope="nordic"):
+        assert scope == "global"
+        return {i: {"market_cap": 30000.0, "ev_ebitda": 22.0} for i in ids}
+
+
+def test_resolve_falls_back_to_the_global_list():
+    import sheets_refresh as sr
+    api = _GlobalApi()
+    assert sr.resolve(api, "VOLV-B.ST") == 1
+    assert sr.resolve(api, "FNV") == 9001 and sr.resolve(api, "AEM.TO") == 9002 and sr.resolve(api, "XXX") is None
+    row = sr.fetch_row(api, "FNV")
+    assert row["ins_id"] == 9001 and row["currency"] == "USD" and row["mcap_musd"] == 30000.0
+    assert api._wolf_global_ticker_map == {"FNV": 9001, "AEM": 9002}
+
+
+def test_yahoo_is_the_fallback_when_borsdata_lacks_the_company():
+    infos = {"FNV.TO": {"marketCap": 5e10, "currency": "CAD", "financialCurrency": "USD", "currentPrice": 210.5,
+                        "sharesOutstanding": 192_000_000, "totalCash": 1.2e9, "totalDebt": 0}}
+    row = fetch.yahoo_row("FNV", lambda sym: infos.get(sym, {}))
+    assert row["yahoo"] == "FNV.TO" and row["currency"] == "CAD"
+    assert row["mcap_musd"] == round(5e10 * 0.73 / 1e6, 1) and row["cash_musd"] == 1200.0 and row["debt_musd"] == 0.0
+    assert row["shares_now_m"] == 192.0 and row["source"] == "yfinance"
+    assert fetch.yahoo_row("NOPE", lambda sym: {}) is None
+    c = dcs.royalty_company()
+    c.ticker = "FNV"
+    blob, props, msg = fetch.fetch_now(c, api=_FakeApi(), info_getter=lambda sym: infos.get(sym, {}))
+    by = {k: p for k, p, _cur in props}
+    assert by["market_cap_musd"].value == row["mcap_musd"] and "Yahoo Finance (FNV.TO" in by["market_cap_musd"].source
+    assert by["basic_shares_m"].value == 192.0 and "Yahoo" in msg and "känner inte FNV" in msg
+    blob, props, msg = fetch.fetch_now(c, api=_FakeApi(), info_getter=lambda sym: {})
+    assert blob is None and "Yahoo har inte heller FNV" in msg
+
+
 def test_ark_button_fetches_from_borsdata_now(monkeypatch):
     from streamlit.testing.v1 import AppTest
 
@@ -328,13 +376,13 @@ def test_ark_button_fetches_from_borsdata_now(monkeypatch):
             "asof": "2026-09-27", "currency": "USD", "mcap_musd": 1775.0, "cash_musd": 130.0, "fx_to_usd": 1.0}}}
     calls = []
 
-    def fake_now(company, api=None):
+    def fake_now(company, api=None, info_getter=None):
         calls.append(company.ticker)
         from engines.durrett import refresh as dr
         return live, dr.proposals(live, company), "2 tal ur Börsdata (kurs 7.1 USD)"
 
     app = _app(monkeypatch, _conf(dcs.gold_producer))
-    monkeypatch.setattr(fetch, "borsdata_now", fake_now)
+    monkeypatch.setattr(fetch, "fetch_now", fake_now)
     at = AppTest.from_function(app, default_timeout=60)
     at.session_state["asym_mode"] = "Ark"
     at.run()
