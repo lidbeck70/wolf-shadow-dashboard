@@ -180,6 +180,20 @@ COMMODITY_TO_THEME: dict[str, str] = {
     "lithium": "sallsynta", "rare_earth": "sallsynta", "cobalt": "sallsynta", "graphite": "sallsynta",
     "potash": "agri", "phosphate": "agri", "agri": "agri",
 }
+# Registrets sektortext (fri text i Holdings) → tema. Första träffen vinner.
+SECTOR_KEYWORD_THEME: tuple = (
+    ("uran", "uran"), ("uranium", "uran"),
+    ("silver", "silver"),
+    ("guld", "guld"), ("gold", "guld"), ("ädelmetall", "guld"), ("precious", "guld"),
+    ("koppar", "koppar"), ("copper", "koppar"), ("basmetall", "koppar"), ("nickel", "koppar"), ("zink", "koppar"),
+    ("litium", "sallsynta"), ("lithium", "sallsynta"), ("sällsynta", "sallsynta"), ("rare", "sallsynta"),
+    ("batteri", "sallsynta"),
+    ("naturgas", "naturgas"), ("gas", "naturgas"), ("lng", "naturgas"),
+    ("olja", "olja"), ("oil", "olja"), ("energi", "olja"), ("energy", "olja"), ("offshore", "olja"),
+    ("oljeservice", "olja"), ("petroleum", "olja"),
+    ("kol", "kol"), ("coal", "kol"),
+    ("agri", "agri"), ("jordbruk", "agri"), ("potash", "agri"), ("gödsel", "agri"), ("fertilizer", "agri"),
+)
 # Valt komplex utan råvara → temat som bär komplexet (för sektor-ETF och cykel).
 COMPLEX_DEFAULT_THEME: dict[str, str] = {"energi": "olja", "adelmetaller": "guld",
                                          "basmetaller": "koppar", "agri": "agri"}

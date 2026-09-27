@@ -128,7 +128,11 @@ def detect_complex(ticker: str) -> Optional[str]:
     hit = complex_overrides().get(t)
     if hit:
         return hit
-    return complex_from_sheet(t)
+    hit = complex_from_sheet(t)
+    if hit:
+        return hit
+    theme = theme_from_sector_text(register_sector(t))
+    return _T2C.get(theme) if theme else None
 
 
 def complex_overrides() -> dict:
@@ -185,9 +189,36 @@ def complex_from_sheet(ticker: str) -> Optional[str]:
     return COMMODITY_TO_COMPLEX.get(key) if key else None
 
 
+def register_sector(ticker: str) -> Optional[str]:
+    """Sektortexten på bolagets rad i registret (Holdings), eller None."""
+    try:
+        import positions
+        t = str(ticker or "").strip().upper()
+        for r in positions.open_positions():
+            if str(r.get("ticker") or "").strip().upper() == t:
+                sec = str(r.get("sector") or "").strip()
+                return sec if sec and sec.lower() != "unknown" else None
+    except Exception:
+        pass
+    return None
+
+
+def theme_from_sector_text(text: Optional[str]) -> Optional[str]:
+    """'Olja & offshore' → 'olja', 'Koppar' → 'koppar' (SECTOR_KEYWORD_THEME)."""
+    from ember.config import SECTOR_KEYWORD_THEME
+    low = str(text or "").lower()
+    if not low:
+        return None
+    for kw, theme in SECTOR_KEYWORD_THEME:
+        if kw in low:
+            return theme
+    return None
+
+
 def detect_theme(ticker: str) -> Optional[str]:
-    """Ticker → EMBER-tema (sektor-ETF och cykelfas): temakartan, annars råvaran
-    i arket (COMMODITY_TO_THEME), annars det valda komplexets bärande tema."""
+    """Ticker → EMBER-tema (sektor-ETF och cykelfas ur Odins temabräda), i ordning:
+    temakartan, råvaran i arket (COMMODITY_TO_THEME), sektortexten i registret,
+    annars det valda komplexets bärande tema."""
     from ember.config import COMMODITY_TO_THEME, COMPLEX_DEFAULT_THEME, TICKER_THEME_MAP
     t = str(ticker or "").strip().upper()
     if not t:
@@ -198,6 +229,9 @@ def detect_theme(ticker: str) -> Optional[str]:
     key = sheet_commodity(t)
     if key and key in COMMODITY_TO_THEME:
         return COMMODITY_TO_THEME[key]
+    hit = theme_from_sector_text(register_sector(t))
+    if hit:
+        return hit
     cx = complex_overrides().get(t) or (complex_from_sheet(t) if key else None)
     return COMPLEX_DEFAULT_THEME.get(cx) if cx else None
 

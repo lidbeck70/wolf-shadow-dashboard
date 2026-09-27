@@ -215,7 +215,10 @@ def _render_setup_card(r: EmberSetupResult, idx: int) -> None:
                 _field("Instrument",              r.ticker,       EMBER)
                 + _field("Typ",                   r.typ)
                 + _field("Sektor",                r.sektor)
-                + _field("Var i cykeln",          r.cykel_label + pct_10y_txt, cy_color)
+                + _field("Var i cykeln",
+                         (r.cykel_label + pct_10y_txt) if r.cykel_label != "DATA_GAP" else
+                         "DATA_GAP — okänt tema: sätt råvara i Wolf Asymmetry → Ark, sektor i Holdings "
+                         "eller komplex i EMBER Regime", cy_color)
                 + _field("Verdikt",               trend_txt,      t_color)
                 + _field("Varför intressant nu",  why_auto,       GOLD)
                 + _field("Marknaden ogillar",     hat_txt,        AMBER)
