@@ -610,8 +610,9 @@ def _render_ember_full_ruleset() -> None:
         )
         st.markdown(
             _gs("3. Makro/Cykelfilter — EMBER Regime",
-                f"<b>5 pelare, varje grön/amber/röd</b> — ≥4 gröna = {VERDICT_PA} (full size), "
-                f"3 = {VERDICT_SELEKTIV} (halverad size), ≤2 = {VERDICT_AV} (inga trades):"
+                f"<b>5 pelare, varje grön/amber/röd</b> — netto gröna − röda (gul och DATA_GAP = 0): "
+                f"≥ 3 = {VERDICT_PA} (full size), 0–2 = {VERDICT_SELEKTIV} (halverad size), "
+                f"&lt; 0 eller ≥ 2 röda = {VERDICT_AV} (inga nya trades enligt regeln):"
                 + _ul([
                     f"<b>DOLLAR (DXY 4V):</b> fallande = GRÖN · &gt;{DXY_SURGE_REGIME}% = RÖD.",
                     f"<b>TILLVÄXTPULS (Copper/Gold 3M):</b> stigande (|Δ| &gt; {CG_FLAT_PCT}%) = GRÖN.",

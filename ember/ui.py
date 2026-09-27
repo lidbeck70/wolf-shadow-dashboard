@@ -163,8 +163,8 @@ def _render_setup_card(r: EmberSetupResult, idx: int) -> None:
                 f"<div style='background:#2d0a0a;border:1px solid {RED}55;"
                 f"border-radius:6px;padding:9px 14px;margin-bottom:12px;"
                 f"color:{RED};font-size:0.8rem;font-weight:700;'>"
-                f"⛔ REGIMEN ÄR AV — inga nya entries. "
-                f"Bevaka för exit om du har en öppen position.</div>",
+                f"⛔ REGIMEN ÄR AV — inga nya entries enligt regeln. Kortet visas ändå: "
+                f"poängen står sig, beslutet är ditt. Bevaka för exit om du har en öppen position.</div>",
                 unsafe_allow_html=True,
             )
         elif _rv == VERDICT_SELEKTIV:

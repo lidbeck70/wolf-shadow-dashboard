@@ -742,11 +742,13 @@ try:  # pragma: no cover - trivial import guard
         VERDICT_BUY_MIN as _EMBER_BUY, VERDICT_WATCH_MIN as _EMBER_WATCH,
         PULLBACK_MAX_PCT as _EMBER_PB_MAX, RSI_FULL as _EMBER_RSI_FULL, RSI_ZERO as _EMBER_RSI_ZERO,
         RS_FULL_PCT as _EMBER_RS_FULL, LATE_CYCLE_PCT as _EMBER_LATE,
+        REGIME_PA_MIN as _EMBER_REG_PA, REGIME_AV_RED_MIN as _EMBER_REG_RED,
     )
 except Exception:  # pragma: no cover
     _EMBER_RISK_PCT, _EMBER_PULLBACK_PCT, _EMBER_RSI_MAX = 0.02, 3.0, 45
     _EMBER_BUY, _EMBER_WATCH, _EMBER_PB_MAX, _EMBER_RSI_FULL, _EMBER_RSI_ZERO = 70.0, 50.0, 6.0, 40.0, 55.0
     _EMBER_RS_FULL, _EMBER_LATE = 5.0, 85.0
+    _EMBER_REG_PA, _EMBER_REG_RED = 3, 2
 
 EMBER_PB = Playbook(
     key="ember",
@@ -777,9 +779,10 @@ EMBER_PB = Playbook(
     entry=_rules([
         ("Komplex-regimen måste tillåta handel",
          "Varje råvarukomplex (Energi, Ädelmetaller, Basmetaller, Agri) har en egen "
-         "regim med 5 pelare: ≥4 gröna = PÅ (full storlek), 3 = SELEKTIV (halverad, "
-         "endast topp-1 och topp-2), ≤2 = AV (inga nya trades). DATA_GAP räknas "
-         "aldrig som grön.",
+         "regim med 5 pelare. Netto = gröna − röda (gul och DATA_GAP räknas 0): "
+         f"netto ≥ {_EMBER_REG_PA} = PÅ (full storlek), 0–{_EMBER_REG_PA - 1} = SELEKTIV (halverad, endast "
+         f"topp-1 och topp-2), under 0 eller ≥ {_EMBER_REG_RED} röda = AV (inga nya trades "
+         "enligt regeln, korten visas ändå). Gul straffas inte längre som röd.",
          "REGIME → Råvaror → 🌍 EMBER Regime: ett verdikt per komplex. Screenern "
          "grindar varje setup mot sitt eget komplex — ett guldcase mot ÄDELMETALLER, "
          "inte mot ENERGI.", True),
@@ -824,7 +827,7 @@ EMBER_PB = Playbook(
         "Position = risk ÷ stopavstånd. Lägg stop direkt, logga i journalen.",
     ),
     cheatsheet=(
-        ("Regim", "Per komplex: ≥4 gröna = PÅ · 3 = SELEKTIV · ≤2 = AV"),
+        ("Regim", f"Per komplex, netto gröna − röda: ≥ {_EMBER_REG_PA} = PÅ · 0–{_EMBER_REG_PA - 1} = SELEKTIV · < 0 eller ≥ {_EMBER_REG_RED} röda = AV"),
         ("Trendgrindar", "T1–T4 — alla måste passera"),
         ("Entry E1", f"Pullback inom ±{_EMBER_PULLBACK_PCT:.0f} % av 20D EMA"),
         ("Entry E2", f"RSI(14) < {_EMBER_RSI_MAX}"),
