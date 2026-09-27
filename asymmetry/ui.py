@@ -213,7 +213,7 @@ def _sheet(data: dict, company: Optional[CompanyInput]) -> None:
         _fetch_register(data)
     if company is None:
         return
-    st.markdown(f"#### {company.ticker} · {company.name}")
+    st.markdown(f"#### {company.ticker}" + (f" · {company.name}" if company.name else ""))
     with st.expander("Identitet och strategi", expanded=False):
         with st.form(f"asym_ident_{company.ticker}"):
             ident = cui.identity_widgets(f"asym_id_{company.ticker}", company)
@@ -361,15 +361,26 @@ def _render_refresh(data: dict, company: CompanyInput) -> None:
         import refresh_ui
     except Exception:                                     # pragma: no cover
         return
-    blob = refresh_ui.load_refresh()
-    props = fetch.refresh_proposals(blob, company)
     t = company.ticker
+    live_key = f"asym_bd_{t}"
+    a, b = st.columns([4, 1])
+    if b.button("Hämta nu", key=f"asym_bd_go_{t}", help="Hämtar bolagets rad från Börsdata direkt, utan att vänta på det nattliga jobbet."):
+        with st.spinner("Hämtar från Börsdata …"):
+            blob, props, msg = fetch.borsdata_now(company)
+        if blob is None:
+            st.warning(msg)
+        else:
+            st.session_state[live_key] = blob
+            st.rerun()
+    blob = st.session_state.get(live_key) or refresh_ui.load_refresh()
+    live = live_key in st.session_state
+    props = fetch.refresh_proposals(blob, company)
     if not props:
-        st.caption("🤖 Börsdata: " + ("sifferuppdateringen har inga nya tal för raden." if fetch.refresh_row(blob, t)
-                                      else "inga tal än — sifferuppdateringen läser arket schemalagt när det är sparat."))
+        a.caption("🤖 Börsdata: " + ("inga nya tal för raden." if fetch.refresh_row(blob, t)
+                                    else "inga tal än — tryck Hämta nu, eller vänta på det nattliga jobbet."))
         return
     asof = props[0][1].pub_date or ""
-    st.caption(f"🤖 Börsdata {asof}: {len(props)} förslag ur sifferuppdateringen")
+    a.caption(f"🤖 Börsdata {asof}: {len(props)} förslag" + (" (hämtade nu)" if live else " ur sifferuppdateringen"))
     for key, point, cur in props:
         label = ccfg.FIELD_BY_KEY[key].label
         a, b = st.columns([4, 1])
