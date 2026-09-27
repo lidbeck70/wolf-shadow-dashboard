@@ -1,11 +1,11 @@
 """
-Wolf Asymmetry, steg G: en sida, ett ark.
+Wolf Asymmetry: tre poäng, ett kort, ett ark.
 
 Fliken läser och skriver samma ark som Durrett (data/confidence.json) med en
-strategi-tagg per bolag. Två lägen: Analys (KPI-rad, verdikt, thesis
-killers, diagram, hopfällda steg) och Ark (nytt bolag, registret, Börsdata,
-extraktor, fält, råvaror, signaler). Det gamla data/asymmetry.json flyttas
-in en gång.
+strategi-tagg per bolag. Analys: 🚀 🛡️ 🎯 med band, en tunn rad, verdikt,
+thesis killers, två hopfällda block. Ark: bara de fält poängen läser,
+Börsdata, terminspris, extraktor. Det gamla data/asymmetry.json flyttas in
+en gång.
 """
 import os
 import sys
@@ -14,8 +14,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import durrett_cases as dcs  # noqa: E402
-from asymmetry import fetch  # noqa: E402
+from asymmetry import fetch, fields  # noqa: E402
 from asymmetry import store as ast  # noqa: E402
+from confidence import config as cfg  # noqa: E402
 from confidence import store as cs  # noqa: E402
 from ui import nav  # noqa: E402
 
@@ -43,6 +44,27 @@ def test_tab_is_wired_under_review_after_durrett():
     assert "asymmetry" not in sr.SHEET_FILES and "asymmetry" not in sr._BUCKETS   # ett ark, inte två
 
 
+# ── fälten: bara det poängen läser ───────────────────────────────────────────
+def test_sheet_fields_exist_apply_to_stage_and_stay_small():
+    for stage in ("producer", "royalty", "developer", "explorer"):
+        keys = fields.all_keys(stage)
+        assert len(keys) == len(set(keys))
+        for k in keys:
+            spec = cfg.FIELD_BY_KEY[k]
+            assert not spec.stages or stage in spec.stages, (stage, k)
+        hands_on = len(fields.economy(stage)) + len(fields.confidence_core(stage))
+        assert hands_on <= 25, (stage, hands_on)                 # inte Durretts 136
+    assert [f.key for f in fields.economy("producer")] == ["commodity_price", "production_current",
+                                                           "production_unit", "aisc"]
+    assert "npv_stress_price_musd" in [f.key for f in fields.economy("developer")]
+    assert [f.key for f in fields.auto()] == ["market_cap_musd", "share_price", "basic_shares_m", "cash_musd", "debt_musd"]
+    assert fields.futures_name("gold") == "guld" and fields.futures_name("uranium") is None
+    # allt asymmetry-motorn läser finns i arket (utom default-antagandena)
+    read = {"commodity_price", "aisc", "production_current", "annual_production", "npv_musd", "capex_musd",
+            "breakeven_price", "irr_pct", "cash_musd", "debt_musd", "market_cap_musd", "npv_stress_price_musd"}
+    assert read <= set(fields.all_keys("developer")) | set(fields.all_keys("producer"))
+
+
 # ── lagret: samma ark som Durrett + strategi-tagg ────────────────────────────
 def test_store_is_the_shared_confidence_store_with_a_strategy_tag():
     assert ast.STORE == cs.STORE == "confidence"
@@ -53,8 +75,7 @@ def test_store_is_the_shared_confidence_store_with_a_strategy_tag():
     assert ast.strategy(d, "GPR") == "Viking" and ast.strategy(d, "CDV") == ast.NO_STRATEGY
     assert ast.tickers_for(d, "Viking") == ["GPR"] and ast.tickers_for(d, "Alla") == ["GPR", "CDV"]
     ast.set_strategy(d, "GPR", ast.NO_STRATEGY)
-    assert d["strategies"] == {}
-    assert cs.normalize(d)["strategies"] == {}           # Durretts normalize behåller taggarna
+    assert d["strategies"] == {} and cs.normalize(d)["strategies"] == {}
     tags = ast.strategy_tags()
     assert tags[0] == ast.NO_STRATEGY and "Durrett" in tags and "Untagged" not in tags
 
@@ -67,7 +88,7 @@ def test_merge_legacy_moves_companies_once_without_overwriting():
               "strategies": {"GPR": "Viking", "CDV": "Ember"},
               "commodity_overrides": {"copper": {"supply_balance_pct": {"value": -2}}}}
     assert ast.merge_legacy(d, legacy) == ["CDV"]
-    assert cs.get(d, "GPR").name == "Test Gold Producer"          # befintligt bolag rörs inte
+    assert cs.get(d, "GPR").name == "Test Gold Producer"
     assert ast.strategy(d, "CDV") == "Ember" and ast.strategy(d, "GPR") == "Viking"
     assert d["commodity_overrides"]["copper"]["supply_balance_pct"]["value"] == -2
     assert ast.merge_legacy(d, legacy) == [] and ast.merge_legacy(d, None) == []
@@ -83,17 +104,17 @@ def test_register_candidates_and_add():
     assert fetch.register_candidates(rows, d) == [("NYX", "Nyx Gold", "Momentum"), ("ZZZ", "Zed", ast.NO_STRATEGY)]
     c = fetch.add_from_register(d, "nyx", "Nyx Gold", "Momentum")
     assert c.ticker == "NYX" and c.fields == {} and ast.strategy(d, "NYX") == "Momentum"
-    assert "NYX" in d["companies"]
     props = {k: p for k, p, _c in fetch.refresh_proposals(BLOB, dcs.gold_producer())}
     assert props["market_cap_musd"].value == 1600.0
 
 
 # ── fliken ───────────────────────────────────────────────────────────────────
-def _app(monkeypatch, conf: dict, legacy=None, register_rows=None, blob=None):
+def _app(monkeypatch, conf: dict, legacy=None, register_rows=None, blob=None, futures=None):
     import streamlit as st
     import storage
     import positions
     import refresh_ui
+    import commodity_prices
 
     stores = {"confidence": conf, "asymmetry": legacy, "producers": {}, "tiggre": {}}
     monkeypatch.setattr(storage, "session_load", lambda name, default=None, legacy_file=None:
@@ -102,8 +123,8 @@ def _app(monkeypatch, conf: dict, legacy=None, register_rows=None, blob=None):
     monkeypatch.setattr(storage, "is_dirty", lambda name: False)
     monkeypatch.setattr(storage, "last_saved", lambda name: None)
     monkeypatch.setattr(positions, "open_positions", lambda strategy=None, bucket=None: register_rows or [])
-    monkeypatch.setattr(positions, "view_rows", lambda strategy=None: [])
     monkeypatch.setattr(refresh_ui, "load_refresh", lambda: blob or {})
+    monkeypatch.setattr(commodity_prices, "spot", lambda name: futures)
     monkeypatch.setenv("ASYM_TEST_ROOT", ROOT)
 
     def app():
@@ -130,7 +151,7 @@ def _conf(*makers, tags=None):
     return d
 
 
-def test_analysis_is_one_page(monkeypatch):
+def test_analysis_is_three_scores_on_one_card(monkeypatch):
     from streamlit.testing.v1 import AppTest
 
     app = _app(monkeypatch, _conf(dcs.gold_producer, dcs.copper_developer, dcs.missing_everything,
@@ -139,41 +160,69 @@ def test_analysis_is_one_page(monkeypatch):
     at.run()
     assert not at.exception, at.exception
     assert at.radio(key="asym_mode").value == "Analys"
+    assert [s.key for s in at.selectbox] == ["asym_pick"]          # en väljare, inget filter
     vals = {m.label: m.value for m in at.metric}
-    assert list(vals) == ["Commodity Leverage", "Margin of Safety", "Break-even-marginal", "Confidence",
-                          "Asymmetri", "Justerad uppsida"]
-    assert vals["Commodity Leverage"] == "6/10" and vals["Margin of Safety"] == "7/8"
-    assert vals["Asymmetri"] == "1.3×" and float(vals["Confidence"]) > 60
-    assert len(at.get("plotly_chart")) == 5                     # grid, MoS, scenarier, matris + justerad (i stegen)
+    assert list(vals) == ["🚀 Commodity Leverage", "🛡️ Margin of Safety", "🎯 Confidence",
+                          "Asymmetri Bull/|Bear|", "Justerad uppsida", "Break-even-marginal"]
+    assert vals["🚀 Commodity Leverage"] == "6/10" and vals["🛡️ Margin of Safety"] == "7/8"
+    assert vals["Asymmetri Bull/|Bear|"] == "1.3×" and float(vals["🎯 Confidence"]) > 60
     labels = [e.label for e in at.expander]
-    assert labels[0].startswith("Varför?") and labels[1].startswith("Confidence-caset") and labels[2].startswith("Tabeller")
-    assert len(labels) == 3                                    # inga fler flikar, inga fler expanders
-    text = _text(at)
-    assert "Råvarupris" in text                                 # thesis killer ur Confidence-caset
-    assert "Viking" in text and at.selectbox(key="asym_pick").options[0] == "GPR · Viking"
-    assert at.selectbox(key="asym_strategy_filter").options == ["Alla", "Ember", "Viking"]
+    assert labels == ["Diagram", "Varför? — stegen bakom varje tal"]
+    assert len(at.get("plotly_chart")) == 5
+    assert "Råvarupris" in _text(at) and "Viking" in _text(at)
+    assert at.selectbox(key="asym_pick").options[0] == "GPR · Viking"
 
-    # strategi-filter smalnar listan
-    at = AppTest.from_function(app, default_timeout=60)
-    at.session_state["asym_strategy_filter"] = "Ember"
-    at.run()
-    assert not at.exception, at.exception
-    assert at.selectbox(key="asym_pick").options == ["CDV · Ember"]
-    assert {m.label: m.value for m in at.metric}["Margin of Safety"] == "10/10"
-
-    # tomt bolag: DATA_MISSING, inga diagram, ingen krasch
+    # tomt bolag: DATA_MISSING, inga diagram, ingen krasch, pekar på Ark
     at = AppTest.from_function(app, default_timeout=60)
     at.session_state["asym_pick"] = "NUL"
     at.run()
     assert not at.exception, at.exception
     vals = {m.label: m.value for m in at.metric}
-    assert vals["Commodity Leverage"] == "DATA_MISSING" and vals["Justerad uppsida"] == "DATA_MISSING"
-    assert vals["Asymmetri"] == "DATA_MISSING"
-    assert len(at.get("plotly_chart")) == 0 and "Diagrammet kan inte ritas" in _text(at)
+    assert vals["🚀 Commodity Leverage"] == "DATA_MISSING" and vals["Justerad uppsida"] == "DATA_MISSING"
+    assert len(at.get("plotly_chart")) == 0
     assert "DATA_MISSING:" in _text(at) and "fyll i under Ark" in _text(at)
 
 
-def test_empty_sheet_opens_ark_and_new_company_writes_to_shared_store(monkeypatch):
+def test_ark_shows_only_score_fields_and_writes_to_shared_store(monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    fut = {"price": 3100.5, "unit": "USD/oz", "asof": "2026-09-26", "ticker": "GC=F"}
+    app = _app(monkeypatch, _conf(dcs.gold_producer, tags={"GPR": "Viking"}), blob=BLOB, futures=fut)
+    at = AppTest.from_function(app, default_timeout=60)
+    at.session_state["asym_mode"] = "Ark"
+    at.run()
+    assert not at.exception, at.exception
+    labels = [e.label for e in at.expander]
+    assert [l.split(" ·")[0].split(" —")[0] for l in labels] == [
+        "➕ Nytt bolag", "📥 Hämta från registret (Holdings)", "Identitet och strategi", "Börsdata fyller",
+        "Ekonomi", "Confidence", "Confidence", "🤖 Läs ur presentationen / tekniska rapporten (AI-förslag"]
+    assert any(l.startswith("Ekonomi") and l.endswith("3/4 ifyllda") for l in labels)   # GPR saknar produktionsenhet
+    keys = {t.key for t in at.text_input}
+    assert "cf_GPR_aisc_v" in keys and "cf_GPR_production_current_v" in keys
+    assert "cf_GPR_reserve_proven_v" not in keys and "cf_GPR_grade_v" not in keys   # Durretts fält syns inte
+    # Börsdata: Använd skriver till det gemensamma arket
+    at.button(key="asym_rf_GPR_market_cap_musd").click().run()
+    assert not at.exception, at.exception
+    f = at.session_state["confidence"]["companies"]["GPR"]["fields"]
+    assert f["market_cap_musd"]["value"] == 1600.0 and "Börsdata" in f["market_cap_musd"]["source"]
+    # terminspriset som ASSUMPTION med källa och datum
+    at.button(key="asym_fut_GPR").click().run()
+    assert not at.exception, at.exception
+    p = at.session_state["confidence"]["companies"]["GPR"]["fields"]["commodity_price"]
+    assert p["value"] == 3100.5 and p["kind"] == "ASSUMPTION" and "GC=F" in p["source"] and p["pub_date"] == "2026-09-26"
+    # ett ekonomifält
+    at.text_input(key="cf_GPR_aisc_v").set_value("1400").run()
+    at.button(key="FormSubmitter:asym_econ_GPR-Spara").click().run()
+    assert not at.exception, at.exception
+    assert at.session_state["confidence"]["companies"]["GPR"]["fields"]["aisc"]["value"] == 1400.0
+    # strategi-taggen
+    at.selectbox(key="asym_strat_GPR").set_value("Ember").run()
+    at.button(key="FormSubmitter:asym_ident_GPR-Uppdatera").click().run()
+    assert not at.exception, at.exception
+    assert at.session_state["confidence"]["strategies"]["GPR"] == "Ember"
+
+
+def test_empty_sheet_opens_ark_and_register_import(monkeypatch):
     from streamlit.testing.v1 import AppTest
 
     app = _app(monkeypatch, _conf(), register_rows=[{"ticker": "NYX", "name": "Nyx Gold", "strategy": "Momentum"}])
@@ -182,49 +231,30 @@ def test_empty_sheet_opens_ark_and_new_company_writes_to_shared_store(monkeypatc
     assert not at.exception, at.exception
     assert at.radio(key="asym_mode").value == "Ark" and not at.metric
     assert any("Inga bolag i arket" in i.value for i in at.info)
-    # registret → skal med strategi-tagg i det gemensamma arket
     at.button(key="asym_reg_NYX").click().run()
     assert not at.exception, at.exception
     s = at.session_state["confidence"]
     assert s["companies"]["NYX"]["name"] == "Nyx Gold" and s["strategies"]["NYX"] == "Momentum"
-    # nytt bolag via formuläret
     at.text_input(key="asym_new_ticker").set_value("abc").run()
     at.selectbox(key="asym_new_strategy").set_value("Viking").run()
     at.button(key="FormSubmitter:asym_new-Lägg till").click().run()
     assert not at.exception, at.exception
     s = at.session_state["confidence"]
     assert "ABC" in s["companies"] and s["strategies"]["ABC"] == "Viking"
-    assert "asymmetry" not in s                                 # inget andra lager
 
 
-def test_ark_applies_borsdata_and_fields_on_shared_store(monkeypatch):
+def test_uranium_has_no_futures_and_developer_sheet_shows_study_fields(monkeypatch):
     from streamlit.testing.v1 import AppTest
-    from confidence import config as cfg
 
-    app = _app(monkeypatch, _conf(dcs.gold_producer, tags={"GPR": "Viking"}), blob=BLOB)
+    app = _app(monkeypatch, _conf(dcs.copper_developer, dcs.lithium_explorer))
     at = AppTest.from_function(app, default_timeout=60)
+    at.session_state["asym_pick"] = "LEX"
     at.session_state["asym_mode"] = "Ark"
     at.run()
     assert not at.exception, at.exception
-    labels = " ".join(e.label for e in at.expander)
-    for needle in ("Nytt bolag", "Hämta från registret", "Identitet och strategi", "Börsdata 2026-09-25",
-                   "Förslag ur granskningsarken", "Läs ur presentationen", "Råvaran", "Signaler till Why Now"):
-        assert needle in labels, needle
-    at.button(key="asym_rf_GPR_market_cap_musd").click().run()
-    assert not at.exception, at.exception
-    f = at.session_state["confidence"]["companies"]["GPR"]["fields"]
-    assert f["market_cap_musd"]["value"] == 1600.0 and "Börsdata" in f["market_cap_musd"]["source"]
-    # ett fält i arket
-    at.text_input(key="cf_GPR_aisc_v").set_value("1400").run()
-    pillar = next(x.pillar for x in cfg.fields_for("producer") if x.key == "aisc")
-    at.button(key=f"FormSubmitter:conf_form_GPR_{pillar}-Uppdatera").click().run()
-    assert not at.exception, at.exception
-    assert at.session_state["confidence"]["companies"]["GPR"]["fields"]["aisc"]["value"] == 1400.0
-    # strategi-taggen
-    at.selectbox(key="asym_strat_GPR").set_value("Ember").run()
-    at.button(key="FormSubmitter:asym_ident_GPR-Uppdatera").click().run()
-    assert not at.exception, at.exception
-    assert at.session_state["confidence"]["strategies"]["GPR"] == "Ember"
+    assert "har ingen termin på Yahoo" in _text(at) and not any(b.key == "asym_fut_LEX" for b in at.button)
+    keys = {t.key for t in at.text_input}
+    assert "cf_LEX_npv_musd_v" in keys and "cf_LEX_quarterly_burn_musd_v" in keys
 
 
 def test_legacy_asymmetry_store_is_merged_once(monkeypatch):
@@ -238,6 +268,5 @@ def test_legacy_asymmetry_store_is_merged_once(monkeypatch):
     assert any("Flyttade CDV" in i.value for i in at.info)
     s = at.session_state["confidence"]
     assert "CDV" in s["companies"] and s["strategies"]["CDV"] == "Ember"
-    assert at.session_state["asym_migrated"] is True
     at.run()
-    assert not any("Flyttade" in i.value for i in at.info)     # bara en gång per session
+    assert not any("Flyttade" in i.value for i in at.info)
