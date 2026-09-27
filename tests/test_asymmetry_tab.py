@@ -270,3 +270,80 @@ def test_legacy_asymmetry_store_is_merged_once(monkeypatch):
     assert "CDV" in s["companies"] and s["strategies"]["CDV"] == "Ember"
     at.run()
     assert not any("Flyttade" in i.value for i in at.info)
+
+
+# ── Hämta från Börsdata nu ───────────────────────────────────────────────────
+class _FakeApi:
+    """Minsta möjliga Börsdata-klient: ett nordiskt bolag (FNV, USD)."""
+
+    def get_instruments(self):
+        return [{"insId": 105, "ticker": "FNV", "name": "Franco-Nevada", "stockPriceCurrency": "USD",
+                 "reportCurrency": "USD"}]
+
+    def get_global_instruments_list(self):
+        return []
+
+    def get_fundamentals_snapshot_fast(self, ids, scope="nordic"):
+        return {105: {"market_cap": 30000.0, "ev_ebitda": 22.0, "net_debt_ebitda": -0.5, "roic": 0.12,
+                      "p_fcf": 25.0, "ev_ebit": 30.0, "ev": 29500.0, "net_debt_m": -500.0, "revenue_m": 1200.0,
+                      "fcf_m": 900.0, "ocf_m": 950.0, "pe": 40.0, "ps": 25.0, "rs_rank": 80.0, "ebitda_margin": 0.8}}
+
+    def get_stockprices(self, ins_id, max_count=5):
+        return [{"d": "2026-09-26", "c": 156.2}]
+
+    def get_reports(self, ins_id, kind, max_count=7):
+        return []
+
+
+def test_fetch_row_builds_the_same_row_as_the_nightly_job(monkeypatch):
+    import sheets_refresh as sr
+    monkeypatch.setattr(sr, "resolve", lambda api, t, ins_id=None: 105 if t == "FNV" else None)
+    row = sr.fetch_row(_FakeApi(), "fnv")
+    assert row["ins_id"] == 105 and row["currency"] == "USD" and row["mcap_musd"] == 30000.0
+    assert row["price"] == 156.2 and row["asof"] == "2026-09-26"
+    assert row["roic_pct"] == 12.0 and row["fcf_yield_pct"] == 4.0 and row["ev_musd"] == 29500.0
+    assert row["fx_to_usd"] == 1.0 and row["source"] == "borsdata"
+    assert sr.fetch_row(_FakeApi(), "OKÄND") is None
+
+
+def test_borsdata_now_returns_proposals_for_the_company(monkeypatch):
+    import sheets_refresh as sr
+    monkeypatch.setattr(sr, "resolve", lambda api, t, ins_id=None: 105 if t == "FNV" else None)
+    c = dcs.royalty_company()
+    c.ticker = "FNV"
+    blob, props, msg = fetch.borsdata_now(c, api=_FakeApi())
+    assert "confidence:FNV" in blob["rows"] and "tal ur Börsdata" in msg
+    by = {k: p for k, p, _cur in props}
+    assert by["market_cap_musd"].value == 30000.0 and by["share_price"].value == 156.2
+    assert "Börsdata" in by["market_cap_musd"].source
+    c.ticker = "NOPE"
+    blob, props, msg = fetch.borsdata_now(c, api=_FakeApi())
+    assert blob is None and props == [] and "känner inte NOPE" in msg
+
+
+def test_ark_button_fetches_from_borsdata_now(monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    live = {"generated": "2026-09-27T05:00", "rows": {"confidence:GPR": {"ticker": "GPR", "ins_id": 105, "price": 7.1,
+            "asof": "2026-09-27", "currency": "USD", "mcap_musd": 1775.0, "cash_musd": 130.0, "fx_to_usd": 1.0}}}
+    calls = []
+
+    def fake_now(company, api=None):
+        calls.append(company.ticker)
+        from engines.durrett import refresh as dr
+        return live, dr.proposals(live, company), "2 tal ur Börsdata (kurs 7.1 USD)"
+
+    app = _app(monkeypatch, _conf(dcs.gold_producer))
+    monkeypatch.setattr(fetch, "borsdata_now", fake_now)
+    at = AppTest.from_function(app, default_timeout=60)
+    at.session_state["asym_mode"] = "Ark"
+    at.run()
+    assert not at.exception, at.exception
+    assert "tryck Hämta nu" in _text(at)
+    at.button(key="asym_bd_go_GPR").click().run()
+    assert not at.exception, at.exception
+    assert calls == ["GPR"] and "hämtade nu" in _text(at)
+    at.button(key="asym_rf_GPR_market_cap_musd").click().run()
+    assert not at.exception, at.exception
+    f = at.session_state["confidence"]["companies"]["GPR"]["fields"]
+    assert f["market_cap_musd"]["value"] == 1775.0 and f["market_cap_musd"]["pub_date"] == "2026-09-27"

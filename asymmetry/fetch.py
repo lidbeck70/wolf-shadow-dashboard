@@ -50,3 +50,31 @@ def refresh_row(blob: Optional[dict], ticker: str) -> Optional[dict]:
 def refresh_proposals(blob: Optional[dict], company: CompanyInput) -> list:
     """[(fältnyckel, Datapoint, nuvarande värde | None)] — bara avvikande tal."""
     return dr.proposals(blob, company)
+
+
+def borsdata_now(company: CompanyInput, api=None) -> tuple:
+    """Hämta bolagets rad från Börsdata direkt (samma rad som det nattliga
+    jobbet) och översätt till förslag. Returnerar (blob, förslag, meddelande);
+    blob är None när nyckel saknas eller Börsdata inte känner tickern."""
+    import os
+    from datetime import datetime, timezone
+
+    import sheets_refresh as sr
+
+    if api is None:
+        try:
+            from borsdata_api import BorsdataAPI
+            api = BorsdataAPI()
+        except Exception as exc:                          # pragma: no cover
+            return None, [], f"Börsdata-nyckel saknas eller klienten kunde inte startas ({exc})."
+    try:
+        row = sr.fetch_row(api, company.ticker, company.ins_id)
+    except Exception as exc:
+        return None, [], f"Börsdata svarade inte: {exc}"
+    if row is None:
+        return None, [], (f"Börsdata känner inte {company.ticker}. Ange Börsdata-id (ins_id) under Identitet, "
+                          "eller skriv talen själv.")
+    blob = {"generated": datetime.now(tz=timezone.utc).isoformat(), "rows": {f"{sr.ref_key('confidence', {'id': company.ticker})}": row}}
+    props = dr.proposals(blob, company)
+    return blob, props, (f"{len(props)} tal ur Börsdata" + (f" (kurs {row['price']:g} {row.get('currency') or ''})"
+                                                            if row.get("price") is not None else ""))

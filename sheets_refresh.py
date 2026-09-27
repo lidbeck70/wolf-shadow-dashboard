@@ -514,3 +514,47 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+# ── En rad på begäran (Wolf Asymmetry: "Hämta från Börsdata nu") ─────────────
+def fetch_row(api, ticker: str, ins_id=None) -> Optional[dict]:
+    """Samma rad som det nattliga jobbet bygger för confidence-arket, men för
+    ett bolag direkt: kurs, valuta, börsvärde, EV, multiplar, rapportfälten
+    (kassa, skuld, aktiehistorik), ROIC, FCF-yield, FX. None när Börsdata
+    inte känner tickern."""
+    t = str(ticker or "").strip().upper()
+    iid = resolve(api, t, ins_id)
+    if iid is None:
+        return None
+    meta = next((i for i in (api.get_instruments() or []) if i.get("insId") == iid), None)
+    scope = "nordic"
+    if meta is None:
+        meta = next((i for i in (api.get_global_instruments_list() or []) if i.get("insId") == iid), None) or {}
+        scope = "global"
+    snap = (api.get_fundamentals_snapshot_fast([iid], scope=scope) or {}).get(iid) or {}
+    ccy = str(meta.get("stockPriceCurrency") or "").upper() or None
+    fx = FX_TO_USD.get(ccy or "USD", 1.0)
+    rccy = str(meta.get("reportCurrency") or ccy or "USD").upper()
+    rfx = FX_TO_USD.get(rccy, 1.0)
+    price, asof = _last_close(api, iid)
+    s = {"ticker": t, "ins_id": iid, "price": price, "asof": asof, "currency": ccy, "source": "borsdata",
+         "ev_ebitda": _f(snap.get("ev_ebitda")), "nd_ebitda": _f(snap.get("net_debt_ebitda")), "mcap_musd": None}
+    mc = _f(snap.get("market_cap"))
+    if mc is not None:
+        s["mcap_musd"] = round(mc * fx, 1)
+    s.update(report_fields(api, iid, rfx))
+    roic = _f(snap.get("roic"))
+    s["roic_pct"] = round(roic * 100, 1) if roic is not None else None
+    pfcf = _f(snap.get("p_fcf"))
+    s["fcf_yield_pct"] = round(100.0 / pfcf, 1) if pfcf and pfcf > 0 else None
+    s["ev_ebit"] = _f(snap.get("ev_ebit"))
+    s["fx_to_usd"] = fx if ccy else None
+    s["fx_table"] = "sheets_refresh.FX_TO_USD (fast tabell)"
+    for src_key, out_key, factor in (("ev", "ev_musd", fx), ("net_debt_m", "net_debt_musd", rfx),
+                                     ("revenue_m", "revenue_musd", rfx), ("fcf_m", "fcf_musd", rfx),
+                                     ("ocf_m", "ocf_musd", rfx)):
+        v = _f(snap.get(src_key))
+        s[out_key] = round(v * factor, 1) if v is not None else None
+    for k in ("pe", "ps", "rs_rank", "ebitda_margin"):
+        s[k] = _f(snap.get(k))
+    return s
