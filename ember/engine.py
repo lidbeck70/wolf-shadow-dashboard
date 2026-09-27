@@ -95,6 +95,24 @@ class EmberScanResult:
     universe_stats:  Optional[UniverseStats] = None
 
 
+# ── Tema och sektor-ETF per ticker ───────────────────────────────────────────
+
+def _theme_for(ticker: str):
+    """Temakartan, annars råvaran i arket, annars det valda komplexet (ember.regime)."""
+    try:
+        from ember.regime import detect_theme
+        return detect_theme(ticker)
+    except Exception:
+        return TICKER_THEME_MAP.get(str(ticker or "").upper())
+
+
+def sector_etf_for(ticker: str) -> str:
+    """Relativ styrka mäts mot temats ETF: koppar → COPX, uran → URA, guld → GDX.
+    GLD bara när temat är okänt."""
+    key = _theme_for(ticker)
+    return EMBER_SECTOR_ETF.get(key, DEFAULT_SECTOR_ETF) if key else DEFAULT_SECTOR_ETF
+
+
 # ── Setup-poäng ───────────────────────────────────────────────────────────────
 
 def score_setup(trend_gates: list, entry_gates: list, notrade_flags: list) -> tuple[float, str, bool]:
@@ -135,7 +153,7 @@ def _scan_ticker(
     r = EmberSetupResult(ticker=ticker, typ=typ, sektor=sektor)
 
     # Pull theme board data (cycle position, HAT, necessity)
-    theme_key = TICKER_THEME_MAP.get(ticker.upper())
+    theme_key = _theme_for(ticker)
     if theme_key and theme_key in theme_map:
         td = theme_map[theme_key]
         r.cykel_label   = td.get("cykel_label", "DATA_GAP")
@@ -264,14 +282,13 @@ def run_ember_scan(
         logger.debug("build_theme_board: %s", exc)
 
     def _sector_etf(t: str) -> str:
-        key = TICKER_THEME_MAP.get(t.upper())
-        return EMBER_SECTOR_ETF.get(key, DEFAULT_SECTOR_ETF) if key else DEFAULT_SECTOR_ETF
+        return sector_etf_for(t)
 
     def _typ(t: str) -> str:
         return "ETF" if t.upper() in {x.upper() for x in EMBER_ETF_UNIVERSE} else "Aktie"
 
     def _sektor(t: str) -> str:
-        key = TICKER_THEME_MAP.get(t.upper())
+        key = _theme_for(t)
         return _THEME_LABEL.get(key, "Råvara") if key else "Råvara"
 
     # Parallel per-ticker scans
