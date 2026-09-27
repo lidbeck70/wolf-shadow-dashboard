@@ -1,12 +1,15 @@
 """
-asymmetry/ui.py — fliken "🐺 Wolf Asymmetry" under GRANSKNING.
+asymmetry/ui.py — fliken "🐺 Wolf Asymmetry" under GRANSKNING. En sida.
 
-Ett fristående verktyg med eget ark (data/asymmetry.json): lägg in ett
-bolag, tagga vilken strategi det kompletterar, fyll talen med källa och
-datum, och se Commodity Leverage, Margin of Safety, break-even-marginal,
-scenarier, stressmatris, thesis killers och datakvalitet. Motorerna är
-samma rena funktioner som Confidence-lagret använder, men lagret är eget
-— oberoende av Durrett-arket. Saknat underlag är DATA_MISSING, aldrig noll.
+Samma ark som Durrett (data/confidence.json), en strategi-tagg per bolag så
+fliken fungerar som komplement till vilken strategi som helst. Två lägen:
+
+  Analys   KPI-raden → verdikt och thesis killers → prisgrid + margin of
+           safety → scenarier + stressmatris → stegen bakom talen (hopfällt)
+  Ark      nytt bolag, hämta från registret, Börsdata-förslag, extraktor,
+           fälten, råvaror, signaler — allt som är inmatning
+
+Motorerna är asymmetry/ och confidence/. DATA_MISSING är aldrig noll.
 """
 
 from __future__ import annotations
@@ -19,9 +22,12 @@ import streamlit as st
 
 import storage
 import storage_ui
+from confidence import commodities as com
+from confidence import config as ccfg
 from confidence import reports
 from confidence import ui as cui
 from confidence.data.models import CompanyInput
+from confidence.store import companies as _companies, get as _get, overrides as _overrides, put as _put, remove as _remove
 from ui.components import badge as _badge, confirm_delete, page_header
 from ui.tokens import AMBER, DIM, GREEN, RED, TEXT
 
@@ -31,17 +37,29 @@ from asymmetry import config as acfg
 from asymmetry import fetch
 from asymmetry import store as ast
 
-SUBS = ("Översikt", "Varför?", "Scenarier", "Stressmatris", "Thesis killers", "Data",
-        "Confidence", "Råvaror", "Signaler", "Ark")
-_CONF_SUBS = ("Confidence", "Råvaror", "Signaler")     # Confidence-caset, inbyggt (egna KPI:er)
+MODES = ("Analys", "Ark")
 _SEV_COLOR = {"CRITICAL": RED, "HIGH": RED, "MEDIUM": AMBER, "LOW": DIM}
 _BAND_COLOR = {acfg.BREAK_EVEN_STRONG: GREEN, acfg.BREAK_EVEN_MODERATE: AMBER, acfg.BREAK_EVEN_WEAK: RED}
+_REC_COLOR = {"BUY CANDIDATE": GREEN, "WATCH": AMBER, "PASS": DIM, "REJECT": RED}
 
 
+# ── lagret ───────────────────────────────────────────────────────────────────
 def _load() -> dict:
-    data = ast.normalize(storage.session_load(ast.STORE, ast.default()))
+    data = ast.normalize(storage.session_load(ast.STORE, cs_default()))
+    legacy = storage.session_load(ast.LEGACY_STORE, None)
+    if legacy and not st.session_state.get("asym_migrated"):
+        moved = ast.merge_legacy(data, legacy)
+        st.session_state["asym_migrated"] = True
+        if moved:
+            st.info(f"Flyttade {', '.join(moved)} från det gamla Wolf Asymmetry-arket in i det gemensamma arket. "
+                    "Spara med 💾 så är flytten klar.")
     st.session_state[ast.STORE] = data
     return data
+
+
+def cs_default() -> dict:
+    from confidence import store as cs
+    return cs.default()
 
 
 def _save(data: dict) -> None:
@@ -57,84 +75,83 @@ def _pct(v, na: str = "DATA_MISSING") -> str:
 
 
 def _chart(fig, key: str) -> None:
-    """Ritar figuren, eller säger varför den saknas — aldrig ett tomt diagram med nollor."""
     if fig is None:
         st.caption("Diagrammet kan inte ritas: underlag saknas (DATA_MISSING).")
     else:
         st.plotly_chart(fig, use_container_width=True, key=key, config={"displayModeBar": False})
 
 
-def _score_color(score: Optional[float], maximum: float) -> str:
-    if score is None:
-        return DIM
-    share = score / maximum if maximum else 0
-    return GREEN if share >= 0.7 else AMBER if share >= 0.4 else RED
+def _steps(steps: list) -> None:
+    for s in steps:
+        st.caption("· " + s)
+
+
+def _goto(ticker: str) -> None:
+    """Öppna ett bolag på nästa körning. Väljaren är redan ritad när knappen
+    trycks, så dess nyckel får inte skrivas nu — den sätts överst nästa gång."""
+    st.session_state["asym_goto"] = ticker
+
+
+def _apply_goto() -> None:
+    t = st.session_state.pop("asym_goto", None)
+    if t:
+        st.session_state["asym_pick"] = t
+        st.session_state["asym_last"] = t
+        st.session_state["asym_strategy_filter"] = "Alla"
 
 
 # ── sidan ────────────────────────────────────────────────────────────────────
 def render_asymmetry_page() -> None:
     data = _load()
+    _apply_goto()
     storage_ui.save_bar(ast.STORE, "Wolf Asymmetry", key="save_asymmetry")
-    page_header("Wolf Asymmetry", "Hur mycket hävstång mot råvarupriset, hur mycket får gå fel "
-                "innan caset spricker, och vad uppsidan är värd efter confidence. Eget ark: "
-                "lägg in bolaget, tagga strategin det kompletterar, fyll talen med källa. "
-                "DATA_MISSING är aldrig noll.")
-    _new_company(data)
-    _fetch_sections(data)
-    all_tickers = list(ast.companies(data))
-    if not all_tickers:
-        st.info("Inga bolag i arket än. Lägg in ett under ➕ Nytt bolag.")
-        return
-    c0, c1, c2 = st.columns([1.2, 1.6, 4])
+    page_header("Wolf Asymmetry", "Hur mycket hävstång mot råvarupriset, hur mycket får gå fel innan "
+                "caset spricker, och vad uppsidan är värd efter confidence. Samma ark som Durrett; "
+                "taggen säger vilken strategi bolaget kompletterar. DATA_MISSING är aldrig noll.")
+    all_tickers = list(_companies(data))
+    c0, c1, c2 = st.columns([1.3, 2, 1.5])
     with c0:
         used = sorted({ast.strategy(data, t) for t in all_tickers} - {ast.NO_STRATEGY})
         strat = st.selectbox("Strategi", ["Alla"] + used, key="asym_strategy_filter")
     tickers = ast.tickers_for(data, strat) or all_tickers
     with c1:
         last = st.session_state.get("asym_last")
-        choice = st.selectbox("Bolag", tickers, key="asym_pick",
-                              index=tickers.index(last) if last in tickers else 0,
+        choice = st.selectbox("Bolag", tickers or ["—"], key="asym_pick",
+                              index=(tickers.index(last) if last in tickers else 0),
                               format_func=lambda t: f"{t} · {ast.strategy(data, t)}"
-                              if ast.strategy(data, t) != ast.NO_STRATEGY else t)
-    st.session_state["asym_last"] = choice
-    company = ast.get(data, choice)
-    if company is None:
-        st.warning("Bolaget hittades inte.")
-        return
+                              if t in tickers and ast.strategy(data, t) != ast.NO_STRATEGY else t)
     with c2:
-        sub = st.radio("", list(SUBS), horizontal=True, label_visibility="collapsed", key="asym_sub")
+        mode = st.radio("", list(MODES), horizontal=True, label_visibility="collapsed", key="asym_mode",
+                        index=0 if all_tickers else 1)
     st.markdown("---")
-    if sub == "Ark":
+    company = _get(data, choice) if all_tickers else None
+    if company is not None:
+        st.session_state["asym_last"] = company.ticker
+    if mode == "Ark" or company is None:
+        if company is None:
+            st.info("Inga bolag i arket än. Lägg in ett nedan, eller hämta från registret.")
         _sheet(data, company)
         return
-    if sub in _CONF_SUBS:
-        _confidence(data, company, sub)
-        return
+    _analysis(data, company)
 
-    conf = reports.analyze(company, ast.overrides(data), None, date.today())
+
+# ── Analys: en sida i läsordning ─────────────────────────────────────────────
+def _analysis(data: dict, company: CompanyInput) -> None:
+    signals = getattr(cui, "_signals_for", None)
+    sig = signals(com.get(company.commodity, _overrides(data))) if signals else None
+    conf = reports.analyze(company, _overrides(data), sig, date.today())
     r = analyze(company, conf.confidence.total)
-    _kpis(company, r, conf)
-    if sub == "Översikt":
-        _overview(r)
-    elif sub == "Varför?":
-        _why(r)
-    elif sub == "Scenarier":
-        _scenarios(r, conf)
-    elif sub == "Stressmatris":
-        _matrix(r)
-    elif sub == "Thesis killers":
-        _killers(company, r, conf)
-    else:
-        _data_quality(r, conf)
 
-
-# ── KPI-raden ────────────────────────────────────────────────────────────────
-def _kpis(company: CompanyInput, r: AsymmetryResult, conf: reports.Analysis) -> None:
+    # 1. vem
     st.markdown(
         f"<div style='display:flex;gap:10px;flex-wrap:wrap;align-items:center;'>"
         f"<span style='color:{TEXT};font-size:1.1rem;font-weight:700;'>{company.ticker} · {company.name}</span>"
         f"{_badge(company.stage.upper(), DIM)}{_badge(company.commodity, DIM)}"
-        f"{_badge(conf.recommendation, DIM)}</div>", unsafe_allow_html=True)
+        f"{_badge(ast.strategy(data, company.ticker), DIM) if ast.strategy(data, company.ticker) != ast.NO_STRATEGY else ''}"
+        f"</div>", unsafe_allow_html=True)
+
+    # 2. KPI-raden
+    asym = r.asymmetry
     m = st.columns(6)
     m[0].metric("Commodity Leverage", r.leverage.label,
                 f"{r.leverage.metric} {r.leverage.response_pct:+.0f} % vid +{r.leverage.probe_pct:g} % pris"
@@ -142,217 +159,131 @@ def _kpis(company: CompanyInput, r: AsymmetryResult, conf: reports.Analysis) -> 
     m[1].metric("Margin of Safety", r.safety.label, "fem delar om 0–2")
     m[2].metric("Break-even-marginal", _pct(r.break_even.margin_pct), r.break_even.band)
     m[3].metric("Confidence", f"{conf.confidence.total:g}", conf.confidence.band)
-    m[4].metric("Uppsida (Base)", _pct(r.base_upside_pct), "mot börsvärde")
-    m[5].metric("Justerad uppsida", _pct(r.adjusted_upside_pct), "× confidence/100")
+    m[4].metric("Asymmetri", f"{asym.ratio:.1f}×" if asym and asym.ratio not in (None, float("inf")) else
+                ("∞" if asym else "DATA_MISSING"), asym.band if asym else "Bear/Bull saknas")
+    m[5].metric("Justerad uppsida", _pct(r.adjusted_upside_pct),
+                f"Base {_pct(r.base_upside_pct)} × {conf.confidence.total:g}/100")
+
+    # 3. verdikt och thesis killers
+    st.markdown(f"{_badge(conf.recommendation, _REC_COLOR.get(conf.recommendation, DIM))} "
+                f"<span style='color:{DIM};font-size:0.84rem;'>{conf.recommendation_why}</span>",
+                unsafe_allow_html=True)
+    for _k, cap, text in conf.confidence.caps_applied:
+        st.markdown(f"{_badge(f'TAK {cap:g}', AMBER)} <span style='color:{DIM};font-size:0.84rem;'>{text}</span>",
+                    unsafe_allow_html=True)
     for flag in r.leverage.flags:
-        st.markdown(_badge(flag, RED), unsafe_allow_html=True)
+        st.markdown(f"{_badge('HÄVSTÅNG', RED)} <span style='color:{TEXT};font-size:0.9rem;'>{flag}</span>",
+                    unsafe_allow_html=True)
+    killers = [x for x in conf.risks if x.level in ("CRITICAL", "HIGH")]
+    for x in killers:
+        st.markdown(f"{_badge(x.level, _SEV_COLOR[x.level])} <b style='color:{TEXT};'>{x.name}</b> "
+                    f"<span style='color:{DIM};font-size:0.84rem;'>{x.why}</span>", unsafe_allow_html=True)
     if r.missing:
-        st.caption("⚠ Saknade fält (DATA_MISSING): " + ", ".join(r.missing[:12])
-                   + (" …" if len(r.missing) > 12 else ""))
+        st.caption("⚠ DATA_MISSING: " + ", ".join(r.missing[:12]) + (" …" if len(r.missing) > 12 else "")
+                   + " — fyll i under Ark.")
 
-
-# ── Översikt ─────────────────────────────────────────────────────────────────
-def _grid_frame(r: AsymmetryResult) -> pd.DataFrame:
-    rows = []
-    for p in r.leverage.grid:
-        rows.append({"Pris %": f"{p.price_pct:+g}", "Pris": _f(p.price, "{:,.4g}", "–"),
-                     "Intäkt MUSD": _f(p.revenue_musd, na="–"), "EBITDA MUSD": _f(p.ebitda_musd, na="–"),
-                     "FCF MUSD": _f(p.fcf_musd, na="–"), "Marginal %": _f(p.margin_pct, "{:.0f}", "–"),
-                     "Equity MUSD": _f(p.equity_musd, na="–"), "Uppsida %": _f(p.upside_pct, "{:+.0f}", "–")})
-    return pd.DataFrame(rows)
-
-
-def _overview(r: AsymmetryResult) -> None:
-    left, right = st.columns([3, 2])
-    with left:
-        st.markdown("#### Prisgrid")
-        st.caption("Intäkt, EBITDA, FCF och equity per prissteg. Poängen mäts vid "
-                   f"+{r.leverage.probe_pct:g} %, nedsidan kontrolleras vid {CFG['commodity_leverage']['downside_probe_pct']:+g} %.")
+    # 4. diagrammen
+    a, b = st.columns([3, 2])
+    with a:
         _chart(charts.price_grid_chart(r), f"asym_ch_grid_{r.ticker}")
-        st.dataframe(_grid_frame(r), hide_index=True, use_container_width=True)
-    with right:
-        st.markdown("#### Margin of Safety")
+    with b:
         _chart(charts.safety_chart(r), f"asym_ch_mos_{r.ticker}")
-        for c in r.safety.components:
-            if c.not_applicable:
-                st.markdown(f"{_badge('EJ TILLÄMPLIGT', DIM)} {c.label}", unsafe_allow_html=True)
-            elif c.points is None:
-                st.markdown(f"{_badge('DATA_MISSING', DIM)} {c.label}", unsafe_allow_html=True)
-            else:
-                st.markdown(f"{_badge(f'{c.points:g}/{c.max:g}', _score_color(c.points, c.max))} {c.label}",
-                            unsafe_allow_html=True)
-        st.markdown("#### Break-even")
-        st.markdown(f"{_badge(r.break_even.band, _BAND_COLOR.get(r.break_even.band, DIM))} "
-                    f"pris {_f(r.break_even.price, '{:,.4g}', '–')} · break-even {_f(r.break_even.break_even, '{:,.4g}', '–')} "
-                    f"· marginal {_pct(r.break_even.margin_pct)}", unsafe_allow_html=True)
+    a, b = st.columns(2)
+    with a:
+        _chart(charts.scenario_chart(r), f"asym_ch_scen_{r.ticker}")
+    with b:
+        _chart(charts.matrix_chart(r), f"asym_ch_matrix_{r.ticker}")
+        if r.matrix.note:
+            st.caption("ℹ " + r.matrix.note)
 
-
-# ── Varför? ──────────────────────────────────────────────────────────────────
-def _steps(steps: list) -> None:
-    for s in steps:
-        st.caption("· " + s)
-
-
-def _why(r: AsymmetryResult) -> None:
-    st.caption("Varje poäng med sina steg och den tabell som gav den. Trösklarna ligger i asymmetry/config.py.")
-    with st.expander(f"Commodity Leverage {r.leverage.label}", expanded=True):
+    # 5. stegen bakom talen — hopfällt
+    with st.expander("Varför? — stegen bakom varje tal", expanded=False):
+        st.markdown(f"**Commodity Leverage {r.leverage.label}**")
         _steps(r.leverage.steps)
-        for flag in r.leverage.flags:
-            st.markdown(_badge(flag, RED), unsafe_allow_html=True)
-    for c in r.safety.components:
-        head = ("ej tillämpligt" if c.not_applicable else "DATA_MISSING" if c.points is None
-                else f"{c.points:g}/{c.max:g}")
-        with st.expander(f"{c.label} — {head}"):
+        for c in r.safety.components:
+            head = ("ej tillämpligt" if c.not_applicable else "DATA_MISSING" if c.points is None
+                    else f"{c.points:g}/{c.max:g}")
+            st.markdown(f"**{c.label} — {head}**")
             _steps(c.steps)
-    with st.expander(f"Break-even-marginal — {r.break_even.band}"):
+        st.markdown(f"**Break-even-marginal — {r.break_even.band}**")
         _steps(r.break_even.steps)
-    with st.expander("Justerad uppsida", expanded=True):
-        st.caption(f"· Base-uppsida {_pct(r.base_upside_pct)} × confidence "
-                   f"{_f(r.confidence, '{:g}')}/100 = {_pct(r.adjusted_upside_pct)} "
-                   f"(formel: {CFG['adjusted_upside']['formula']})")
+        st.markdown("**Justerad uppsida**")
+        st.caption(f"· Base {_pct(r.base_upside_pct)} × confidence {conf.confidence.total:g}/100 = "
+                   f"{_pct(r.adjusted_upside_pct)} (formel: {CFG['adjusted_upside']['formula']})")
         _chart(charts.adjusted_upside_chart(r), f"asym_ch_adj_{r.ticker}")
+        st.markdown("**Scenarier**")
+        for s in r.scenarios:
+            st.caption(f"{s.label}: " + " · ".join(s.steps[:3]))
+        st.markdown("**Antaganden**")
+        for x in r.assumptions:
+            st.caption("· " + x.text())
+
+    with st.expander(f"Confidence-caset — Case Score {conf.case.total:g} ({conf.case.rating}) · "
+                     f"Confidence {conf.confidence.total:g} ({conf.confidence.band})", expanded=False):
+        left, right = st.columns(2)
+        with left:
+            st.markdown("**Case Score — pelarna**")
+            for p in conf.case.pillars:
+                st.caption(f"· {p.label}: {p.points:g}/{p.max:g}" + (f" — {p.notes[0]}" if p.notes else ""))
+            st.caption(f"Why Now {conf.why_now.score:g} ({conf.why_now.band}) · regional knapphet "
+                       f"{conf.regional.score:g} ({conf.regional.band}) · time-to-money {conf.ttm.years:g} år")
+        with right:
+            st.markdown("**Confidence — delarna**")
+            for p in conf.confidence.parts:
+                st.caption(f"· {p.label}: {p.points:g}/{p.max:g}")
+            for f in conf.confidence.flags:
+                st.caption(("🔴 " if f.startswith("KILL") else "• ") + f)
+        rest = [x for x in conf.risks if x.level not in ("CRITICAL", "HIGH")]
+        if rest:
+            st.markdown("**Övriga risker**")
+            for x in rest:
+                st.caption(f"· {x.level}: {x.name} — {x.why}")
+        for p in conf.scenarios.paths:
+            st.caption(f"{p.target:g}×: " + " · ".join(p.steps[:2]))
+
+    with st.expander("Tabeller — prisgrid, scenarier, stressmatris", expanded=False):
+        st.dataframe(_grid_frame(r), hide_index=True, use_container_width=True)
+        st.dataframe(_scenario_frame(r), hide_index=True, use_container_width=True)
+        st.dataframe(_matrix_frame(r), use_container_width=True)
 
 
-# ── Scenarier ────────────────────────────────────────────────────────────────
-def _scenarios(r: AsymmetryResult, conf: reports.Analysis) -> None:
-    st.caption("Bear / Base / Bull / Super Bull med samma punkt-modell som prisgriden "
-               "(pris- och capex-stegen ur confidence.config.SCENARIOS).")
-    _chart(charts.scenario_chart(r), f"asym_ch_scen_{r.ticker}")
-    rows = []
-    for s in r.scenarios:
-        rows.append({"Scenario": s.label, "Pris %": f"{s.price_change_pct:+g}", "CapEx %": f"{s.capex_change_pct:+g}",
-                     "Pris": _f(s.price, "{:,.4g}", "–"), "EBITDA MUSD": _f(s.ebitda_musd, na="–"),
-                     "FCF MUSD": _f(s.fcf_musd, na="–"), "Värde MUSD": _f(s.value_musd, na="–"),
-                     "Equity MUSD": _f(s.equity_musd, na="–"), "Aktie": _f(s.share_price, "{:,.3g}", "–"),
-                     "Uppsida %": _f(s.upside_pct, "{:+.0f}", "–")})
-    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
-    asym = r.asymmetry
-    c1, c2 = st.columns(2)
-    if asym:
-        c1.metric("Asymmetri (Bull / |Bear|)",
-                  f"{asym.ratio:.1f}×" if asym.ratio not in (None, float("inf")) else "∞", asym.band)
-        c2.metric("Sannolikhetsvägd uppsida", _pct(asym.expected_pct),
-                  " · ".join(f"{k} {v:.0f} %" for k, v in asym.probs.items()) if asym.probs else "")
-    else:
-        c1.metric("Asymmetri (Bull / |Bear|)", "DATA_MISSING", "Bear eller Bull kan inte räknas")
-    for p in conf.scenarios.paths:
-        with st.expander(f"{p.target:g}× — vad krävs?"):
-            st.caption(f"· råvarupris {_f(p.required_price, '{:,.4g}', '–')} ({_pct(p.price_change_pct, '–')})"
-                       + (f" · produktion × {p.production_factor:.1f}" if p.production_factor else "")
-                       + (f" · P/NAV {p.required_p_nav:.1f}×" if p.required_p_nav else ""))
-            _steps(p.steps)
-    for s in r.scenarios:
-        with st.expander(f"{s.label}: steg", expanded=False):
-            _steps(s.steps)
+def _grid_frame(r: AsymmetryResult) -> pd.DataFrame:
+    return pd.DataFrame([{"Pris %": f"{p.price_pct:+g}", "Pris": _f(p.price, "{:,.4g}", "–"),
+                          "Intäkt MUSD": _f(p.revenue_musd, na="–"), "EBITDA MUSD": _f(p.ebitda_musd, na="–"),
+                          "FCF MUSD": _f(p.fcf_musd, na="–"), "Marginal %": _f(p.margin_pct, "{:.0f}", "–"),
+                          "Equity MUSD": _f(p.equity_musd, na="–"), "Uppsida %": _f(p.upside_pct, "{:+.0f}", "–")}
+                         for p in r.leverage.grid])
 
 
-# ── Stressmatris ─────────────────────────────────────────────────────────────
-def _matrix_frame(r: AsymmetryResult, attr: str = "upside_pct") -> pd.DataFrame:
+def _scenario_frame(r: AsymmetryResult) -> pd.DataFrame:
+    return pd.DataFrame([{"Scenario": s.label, "Pris %": f"{s.price_change_pct:+g}", "CapEx %": f"{s.capex_change_pct:+g}",
+                          "EBITDA MUSD": _f(s.ebitda_musd, na="–"), "FCF MUSD": _f(s.fcf_musd, na="–"),
+                          "Värde MUSD": _f(s.value_musd, na="–"), "Equity MUSD": _f(s.equity_musd, na="–"),
+                          "Aktie": _f(s.share_price, "{:,.3g}", "–"), "Uppsida %": _f(s.upside_pct, "{:+.0f}", "–")}
+                         for s in r.scenarios])
+
+
+def _matrix_frame(r: AsymmetryResult) -> pd.DataFrame:
     table = {}
     for cp in r.matrix.capex_pct:
         col = {}
         for pp in r.matrix.price_pct:
             p = r.matrix.cell(pp, cp)
-            v = getattr(p, attr) if p else None
-            col[f"pris {pp:+g} %"] = "–" if v is None else (f"{v:+.0f} %" if attr == "upside_pct" else f"{v:,.0f}")
+            col[f"pris {pp:+g} %"] = "–" if p is None or p.upside_pct is None else f"{p.upside_pct:+.0f} %"
         table[f"capex {cp:+g} %"] = col
     return pd.DataFrame(table)
 
 
-def _matrix(r: AsymmetryResult) -> None:
-    st.caption("Uppsida mot börsvärde när pris och capex rör sig samtidigt. Rader = pris, kolumner = capex.")
-    if r.matrix.note:
-        st.caption("ℹ " + r.matrix.note)
-    _chart(charts.matrix_chart(r), f"asym_ch_matrix_{r.ticker}")
-    st.markdown("#### Uppsida %")
-    st.dataframe(_matrix_frame(r, "upside_pct"), use_container_width=True)
-    st.markdown("#### Equity MUSD")
-    st.dataframe(_matrix_frame(r, "equity_musd"), use_container_width=True)
-    worst = r.matrix.cell(min(r.matrix.price_pct), max(r.matrix.capex_pct))
-    if worst and worst.upside_pct is not None:
-        st.caption(f"Värsta rutan (pris {min(r.matrix.price_pct):+g} %, capex {max(r.matrix.capex_pct):+g} %): "
-                   f"uppsida {worst.upside_pct:+.0f} %.")
-        with st.expander("Steg för värsta rutan"):
-            _steps(worst.steps)
-    else:
-        st.caption("Matrisen kan inte räknas: " + (", ".join(r.missing) if r.missing else "underlag saknas") + ".")
-
-
-# ── Thesis killers ───────────────────────────────────────────────────────────
-def _durrett_flags(company: CompanyInput) -> list:
-    try:
-        from engines.durrett.engine import analyze as durrett_analyze
-        a = durrett_analyze(company)
-        return [f for f in a.red_flags if f.severity in ("CRITICAL", "HIGH")]
-    except Exception:            # motorn saknas eller faller — fliken ska ändå ritas
-        return []
-
-
-def _killers(company: CompanyInput, r: AsymmetryResult, conf: reports.Analysis) -> None:
-    st.caption("Vad som dödar caset: risker ur Confidence-caset, röda flaggor ur Durrett och "
-               "nedsidesflaggorna ur hävstångsanalysen.")
-    for flag in r.leverage.flags:
-        st.markdown(f"{_badge('HÄVSTÅNG', RED)} {flag}", unsafe_allow_html=True)
-    for sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW"):
-        risks = [x for x in conf.risks if x.level == sev]
-        for x in risks:
-            st.markdown(f"{_badge(sev, _SEV_COLOR[sev])} **{x.name}** "
-                        f"<span style='color:{DIM};font-size:0.8rem;'>{x.why}</span>", unsafe_allow_html=True)
-    flags = _durrett_flags(company)
-    if flags:
-        st.markdown("#### Durrett red flags")
-        for f in flags:
-            st.markdown(f"{_badge(f.severity, _SEV_COLOR[f.severity])} **{f.flag}** "
-                        f"<span style='color:{DIM};font-size:0.8rem;'>{f.reason}</span>", unsafe_allow_html=True)
-    if not conf.risks and not flags and not r.leverage.flags:
-        st.caption("Inga thesis killers i det som är angivet — vilket oftast betyder att underlaget är tunt.")
-
-
-# ── Data ─────────────────────────────────────────────────────────────────────
-def _data_quality(r: AsymmetryResult, conf: reports.Analysis) -> None:
-    left, right = st.columns(2)
-    with left:
-        st.markdown(f"#### Confidence {conf.confidence.total:g} — "
-                    f"{_badge(conf.confidence.band, DIM)}", unsafe_allow_html=True)
-        for p in conf.confidence.parts:
-            st.caption(f"· {p.label}: {p.points:g}/{p.max:g}")
-        for key, cap, text in conf.confidence.caps_applied:
-            st.markdown(f"{_badge(f'TAK {cap:g}', AMBER)} {text}", unsafe_allow_html=True)
-        if r.missing:
-            st.markdown("#### Saknade fält")
-            for k in r.missing:
-                st.caption(f"· {k} — DATA_MISSING")
-    with right:
-        st.markdown("#### Antaganden i beräkningen")
-        for a in r.assumptions:
-            st.caption("· " + a.text())
-
-
-# ── Ark: nytt bolag, strategi, fält ──────────────────────────────────────────
-def _new_company(data: dict) -> None:
-    with st.expander("➕ Nytt bolag", expanded=not ast.companies(data)):
-        with st.form("asym_new"):
-            ident = cui.identity_widgets("asym_new", None)
-            tags = list(ast.strategy_tags())
-            strat = st.selectbox("Komplement till strategi", tags, key="asym_new_strategy",
-                                 help="Vilken strategi bolaget granskas för. Filtrerar listan; ändras i Ark.")
-            if st.form_submit_button("Lägg till"):
-                t = ident["ticker"].strip().upper()
-                if not t:
-                    st.error("Ticker krävs.")
-                elif ast.get(data, t):
-                    st.error(f"{t} finns redan i arket.")
-                else:
-                    ast.put(data, CompanyInput(ticker=t, **{k: v for k, v in ident.items() if k != "ticker"}), strat)
-                    _save(data)
-                    st.session_state["asym_last"] = t
-                    st.session_state["asym_pick"] = t
-                    st.session_state["asym_sub"] = "Ark"
-                    st.rerun()
-
-
-def _sheet(data: dict, company: CompanyInput) -> None:
-    st.caption("Wolf Asymmetrys eget ark. Talen här påverkar inte Durrett-arket och tvärtom.")
+# ── Ark: allt som är inmatning ───────────────────────────────────────────────
+def _sheet(data: dict, company: Optional[CompanyInput]) -> None:
+    a, b = st.columns(2)
+    with a:
+        _new_company(data)
+    with b:
+        _fetch_register(data)
+    if company is None:
+        return
+    st.markdown(f"#### {company.ticker} · {company.name}")
     with st.expander("Identitet och strategi", expanded=False):
         with st.form(f"asym_ident_{company.ticker}"):
             ident = cui.identity_widgets(f"asym_id_{company.ticker}", company)
@@ -364,27 +295,45 @@ def _sheet(data: dict, company: CompanyInput) -> None:
                 for k, v in ident.items():
                     if k != "ticker":
                         setattr(company, k, v)
-                ast.put(data, company, strat)
+                _put(data, company)
+                ast.set_strategy(data, company.ticker, strat)
                 _save(data)
                 st.rerun()
-        if confirm_delete("Ta bort bolaget ur Wolf Asymmetry", key=f"asym_del_{company.ticker}"):
-            ast.remove(data, company.ticker)
+        if confirm_delete("Ta bort bolaget ur arket", key=f"asym_del_{company.ticker}"):
+            _remove(data, company.ticker)
+            ast.set_strategy(data, company.ticker, ast.NO_STRATEGY)
             _save(data)
             st.session_state.pop("asym_last", None)
             st.rerun()
     _render_refresh(data, company)
-    cui.render_prefill(data, company, store=ast.STORE)
-    cui.render_extractor(data, company, store=ast.STORE, sheet_label="Wolf Asymmetry")
-    cui.render_inputs(data, company, tools=False, store=ast.STORE, identity=False)
+    cui.render_prefill(data, company)
+    cui.render_extractor(data, company, sheet_label="Wolf Asymmetry")
+    cui.render_inputs(data, company, tools=False, identity=False)
+    with st.expander("Råvaran — utbud, lager, kostnadskurva (delas av alla bolag i samma råvara)", expanded=False):
+        cui.render_commodities(data, company)
+    with st.expander("Signaler till Why Now (rotation, teman, kvoter)", expanded=False):
+        cui.render_signals(company)
 
 
-# ── Hämta: registret och Durrett-arket (bolagsskal / kopior) ─────────────────
-def _fetch_sections(data: dict) -> None:
-    c1, c2 = st.columns(2)
-    with c1:
-        _fetch_register(data)
-    with c2:
-        _fetch_durrett(data)
+def _new_company(data: dict) -> None:
+    with st.expander("➕ Nytt bolag", expanded=not _companies(data)):
+        with st.form("asym_new"):
+            ident = cui.identity_widgets("asym_new", None)
+            tags = list(ast.strategy_tags())
+            strat = st.selectbox("Komplement till strategi", tags, key="asym_new_strategy")
+            if st.form_submit_button("Lägg till"):
+                t = ident["ticker"].strip().upper()
+                if not t:
+                    st.error("Ticker krävs.")
+                elif _get(data, t):
+                    st.error(f"{t} finns redan i arket.")
+                else:
+                    _put(data, CompanyInput(ticker=t, **{k: v for k, v in ident.items() if k != "ticker"}))
+                    ast.set_strategy(data, t, strat)
+                    _save(data)
+                    st.session_state["asym_last"] = t
+                    _goto(t)
+                    st.rerun()
 
 
 def _fetch_register(data: dict) -> None:
@@ -399,7 +348,7 @@ def _fetch_register(data: dict) -> None:
         if not cands:
             st.caption("Inga öppna positioner som saknas i arket.")
             return
-        st.caption("Bolagsskal med ticker, namn och strategi-tagg. Råvara, stage och talen fyller du i Ark "
+        st.caption("Bolagsskal med ticker, namn och strategi-tagg. Råvara, stage och talen fyller du här "
                    "— eller låter Börsdata och extraktorn göra det.")
         for t, name, strat in cands:
             a, b = st.columns([4, 1])
@@ -409,7 +358,7 @@ def _fetch_register(data: dict) -> None:
                 fetch.add_from_register(data, t, name, strat)
                 _save(data)
                 st.session_state["asym_last"] = t
-                st.session_state["asym_pick"] = t
+                _goto(t)
                 st.rerun()
         if len(cands) > 1 and st.button(f"Lägg in alla ({len(cands)})", key="asym_reg_all"):
             for t, name, strat in cands:
@@ -418,36 +367,9 @@ def _fetch_register(data: dict) -> None:
             st.rerun()
 
 
-def _fetch_durrett(data: dict) -> None:
-    with st.expander("📥 Hämta från Durrett-arket (kopia)", expanded=False):
-        try:
-            from confidence import store as cs
-            conf = cs.normalize(storage.session_load(cs.STORE, cs.default()))
-        except Exception as exc:                          # pragma: no cover
-            st.caption(f"Kunde inte läsa Durrett-arket: {exc}")
-            return
-        cands = fetch.durrett_candidates(conf, data)
-        if not cands:
-            st.caption("Inget i Durrett-arket som saknas här.")
-            return
-        st.caption("Oberoende kopia med alla fält och källor. Ändringar efteråt påverkar inte Durrett-arket.")
-        for t, name, stage in cands:
-            a, b = st.columns([4, 1])
-            a.markdown(f"<span style='color:{TEXT};'>{t}</span> <span style='color:{DIM};'>{name} · {stage}</span>",
-                       unsafe_allow_html=True)
-            if b.button("Kopiera", key=f"asym_dur_{t}"):
-                fetch.copy_from_durrett(conf, data, t)
-                _save(data)
-                st.session_state["asym_last"] = t
-                st.session_state["asym_pick"] = t
-                st.rerun()
-
-
-# ── Börsdata-förslag ur sifferuppdateringen ──────────────────────────────────
 def _render_refresh(data: dict, company: CompanyInput) -> None:
     try:
         import refresh_ui
-        from confidence import config as ccfg
     except Exception:                                     # pragma: no cover
         return
     blob = refresh_ui.load_refresh()
@@ -474,30 +396,15 @@ def _render_refresh(data: dict, company: CompanyInput) -> None:
                        unsafe_allow_html=True)
             if b.button("Använd", key=f"asym_rf_{t}_{key}"):
                 company.set(key, point)
-                ast.put(data, company)
+                _put(data, company)
                 _save(data)
                 st.rerun()
         if st.button("Använd alla", key=f"asym_rf_all_{t}"):
             for key, point, _cur in props:
                 company.set(key, point)
-            ast.put(data, company)
+            _put(data, company)
             _save(data)
             st.rerun()
 
 
-# ── Confidence-caset, inbyggt ────────────────────────────────────────────────
-def _confidence(data: dict, company: CompanyInput, sub: str) -> None:
-    """Case Score, Confidence Score, Thesis Killer, scenarier, Why Now (Confidence),
-    råvaruöverstyrningar (Råvaror) och signalerna (Signaler) — samma vyer som
-    Confidence-caset hade, räknade på Wolf Asymmetrys ark."""
-    if sub == "Confidence":
-        st.caption("Case Score 0–100 (hur bra är caset) och Confidence Score 0–100 (hur säkra är vi), "
-                   "med källa per poäng. Tomt = DATA_MISSING, aldrig 0.")
-        cui.render_analysis(data, company)
-    elif sub == "Råvaror":
-        cui.render_commodities(data, company, store=ast.STORE)
-    else:
-        cui.render_signals(company)
-
-
-__all__ = ["render_asymmetry_page", "SUBS"]
+__all__ = ["render_asymmetry_page", "MODES"]

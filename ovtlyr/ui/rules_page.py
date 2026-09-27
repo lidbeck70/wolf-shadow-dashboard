@@ -1115,9 +1115,10 @@ _PANEL_GUIDE: list[tuple] = [
      "Durretts 10-stegsmetod (kvalitet, risk, upside) med eget ark. Håven "
      "fyller på ur Börsdata-screenern. Confidence-caset ligger i Wolf Asymmetry."),
     ("GRANSKNING → 🐺 Wolf Asymmetry", "Alla — hävstång och margin of safety",
-     "Eget ark, komplement till vilken strategi som helst: Commodity Leverage "
-     "0–10, Margin of Safety 0–10 i fem delar, break-even-marginal, stressmatris "
-     "pris × capex och uppsida justerad för confidence. DATA_MISSING är aldrig noll."),
+     "En sida per bolag, komplement till vilken strategi som helst: Commodity "
+     "Leverage 0–10, Margin of Safety 0–10, break-even-marginal, Confidence, "
+     "asymmetri, stressmatris pris × capex och uppsida justerad för confidence. "
+     "Samma ark som Durrett. DATA_MISSING är aldrig noll."),
     ("GRANSKNING → 🎯 Scorecard", "Alla — köpgrinden",
      "Sista steget före köp. Läser kandidaterna ur de andra flikarna och "
      "kräver sju gröna kryss. Luckor i tabellen = standardbeslut INGEN AFFÄR."),
