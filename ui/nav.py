@@ -36,11 +36,10 @@ SUBS: dict = {
     "screening": ["Arc Screener", "Contrarian Alpha", "Swing Screener"],
     "screening/Arc Screener": ["Wolf", "Viking", "🔥 EMBER"],
     "screening/Contrarian Alpha": ["Screener", "Long Screener"],
-    # Beslutsunderlaget efter screeningen. Durrett och Confidence är två vyer
-    # över samma ark (data/confidence.json) och ligger därför under en flik.
+    # Beslutsunderlaget efter screeningen. Durrett har sitt ark
+    # (data/confidence.json); Wolf Asymmetry har sitt eget med Confidence inbyggt.
     "review": ["Rick Rule", "Royalty C", "Poängmodell", "Tiggre", "Insider",
-               "🧭 Durrett & Confidence", "🐺 Wolf Asymmetry", "🎯 Scorecard"],
-    "review/🧭 Durrett & Confidence": ["Durrett 10-steg", "Confidence-case"],
+               "🧭 Durrett", "🐺 Wolf Asymmetry", "🎯 Scorecard"],
     # REGIME delat i två: marknaden (index, sektorer, cykel) och råvarorna.
     "regime": ["Marknad", "Råvaror"],
     "regime/Marknad": ["Arc Regime", "Alpha Regime", "Swing Regime",
@@ -70,7 +69,7 @@ HOME_ZONES: tuple = (
     ("review", "GRANSKNING — VILKET BOLAG SOM KÖPS", [
         ("Rick Rule · Royalty C", "Producenter och royaltybolag mot kostnadskurvan"),
         ("Poängmodell · Tiggre · Insider", "Sprott, Durrett-snabbpoäng, Lobo-arket, insynsflödet"),
-        ("🧭 Durrett & Confidence", "Durretts 10 steg och Confidence-caset — samma ark"),
+        ("🧭 Durrett", "Durretts 10 steg med Håven och eget ark"),
         ("🐺 Wolf Asymmetry", "Eget ark för alla strategier: hävstång, margin of safety, stressmatris, justerad uppsida"),
         ("🎯 Scorecard", "Köpgrinden: sju kryss före ordern"),
     ]),
@@ -97,7 +96,6 @@ STATE_KEY: dict = {
     "screening/Arc Screener": "sub_screening_arc",
     "screening/Contrarian Alpha": "sub_screening_contrarian",
     "review": "sub_review",
-    "review/🧭 Durrett & Confidence": "sub_review_durrett",
     "regime": "sub_regime_group",
     "regime/Marknad": "sub_regime",
     "regime/Marknad/Arc Regime": "sub_regime_arc",
@@ -108,6 +106,11 @@ STATE_KEY: dict = {
     "rules": "sub_rules",
     "rules/Regler & Guider": "rules_sub",          # ritas inne i rules_page
 }
+
+# Gamla djuplänkar som fortfarande ska landa rätt: slug → dagens slug.
+# 'granskning/durrett-confidence/...' öppnade "🧭 Durrett & Confidence" innan
+# Confidence-caset byggdes in i Wolf Asymmetry (steg F).
+LEGACY_SLUGS: dict = {"durrett-confidence": "durrett"}
 
 
 def tab_label(key: str) -> str:
@@ -125,7 +128,7 @@ _TRANS = str.maketrans({"å": "a", "ä": "a", "ö": "o", "é": "e"})
 
 
 def slugify(label: str) -> str:
-    """'🧭 Durrett & Confidence' → 'durrett-confidence', 'Råvaror' → 'ravaror'."""
+    """'🐺 Wolf Asymmetry' → 'wolf-asymmetry', 'Råvaror' → 'ravaror'."""
     s = str(label or "").lower().translate(_TRANS).replace("'", "")
     return re.sub(r"[^a-z0-9]+", "-", s).strip("-")
 
@@ -154,6 +157,7 @@ def resolve(link: str):
         return None
     segs, path = [top], top
     for p in parts[1:]:
+        p = LEGACY_SLUGS.get(p, p)
         hit = next((o for o in SUBS.get(path, []) if slugify(o) == p), None)
         if hit is None:
             break

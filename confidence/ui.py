@@ -522,12 +522,14 @@ save_store = _save
 render_inputs = _render_inputs
 render_prefill = _render_prefill
 render_extractor = _render_extractor
+render_analysis = _render_analysis
+# render_commodities / render_signals sätts sist i filen (funktionerna definieras nedan)
 identity_widgets = _identity_widgets
 new_company_form = _new_company_form
 
 
 # ── Råvaror ──────────────────────────────────────────────────────────────────
-def _render_commodities(data: dict, company: CompanyInput) -> None:
+def _render_commodities(data: dict, company: CompanyInput, store: str = cs.STORE) -> None:
     keys = com.all_keys()
     cur = keys.index(company.commodity) if company.commodity in keys else 0
     key = st.selectbox("Råvara", keys, index=cur, format_func=lambda k: com.REGISTRY[k].label, key="conf_com")
@@ -570,7 +572,7 @@ def _render_commodities(data: dict, company: CompanyInput) -> None:
                                                   "pub_date": w["pub_date"].strip() or None})
             cs.set_override(data, key, "top_supplier", top.strip())
             cs.set_override(data, key, "adjustments", list(adj))
-            _save(data)
+            _save_to(store, data)
             st.rerun()
     st.markdown("**Nu gällande**")
     for fkey, label in fields:
@@ -623,3 +625,8 @@ def _render_signals(company: CompanyInput) -> None:
     st.caption("· Triple Signal: " + (f"{s.rotation_grade} ({s.rotation_month})" if s.rotation_grade else "DATA_MISSING"))
     st.caption(f"· gummiband: {s.ratio_status or 'DATA_MISSING'}" + (f" ({s.ratio_key})" if s.ratio_key else ""))
     st.caption(f"· komplex: {s.complex_verdict or 'DATA_MISSING'}" + (f" ({s.complex_key})" if s.complex_key else ""))
+
+
+# Publika alias (Wolf Asymmetry bygger in Confidence-caset)
+render_commodities = _render_commodities
+render_signals = _render_signals

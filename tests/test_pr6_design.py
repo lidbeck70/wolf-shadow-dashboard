@@ -37,7 +37,7 @@ def test_nav_tree_is_consistent():
             assert part in nav.SUBS.get(parent, []), f"{path}: '{part}' finns inte under '{parent}'"
     for opts in nav.SUBS.values():
         assert len(opts) == len(set(opts))
-    assert "🧭 Durrett & Confidence" in nav.options("review")
+    assert "🧭 Durrett" in nav.options("review") and "🐺 Wolf Asymmetry" in nav.options("review")
     assert "🐺 Durrett" not in nav.leaves() and "🧭 Confidence score" not in nav.leaves()
     assert nav.options("regime") == ["Marknad", "Råvaror"]
     assert "Market Cycle" in nav.options("regime/Marknad")
@@ -77,7 +77,8 @@ def test_flikguide_paths_exist_in_the_tree_and_cover_every_top_tab():
             assert p in leaves, f"FLIKGUIDE: '{p}' i '{tab}' är ingen flik"
     assert {"REGIME", "SCREENING", "GRANSKNING", "INTELLIGENCE", "PORTFOLIO",
             "ALERTS", "RULES", "COPILOT"} <= heads
-    assert any("Durrett & Confidence" in t for t, _r, _u in _PANEL_GUIDE)
+    assert any("🧭 Durrett" in t for t, _r, _u in _PANEL_GUIDE)
+    assert any("Wolf Asymmetry" in t for t, _r, _u in _PANEL_GUIDE)
     assert any("Allokering" in t for t, _r, _u in _PANEL_GUIDE)
 
 

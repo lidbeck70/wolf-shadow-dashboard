@@ -1111,9 +1111,9 @@ _PANEL_GUIDE: list[tuple] = [
      "Poängen 0–10, kvalitetsgrinden, teknisk trigger och statusflödet. "
      "Visar vs klustersnittet och stoppen −15 %. Insynsflödet läses i "
      "Börsdata."),
-    ("GRANSKNING → 🧭 Durrett & Confidence", "Durrett: 10 steg · Confidence-case",
-     "Samma ark, två vyer: Durretts 10-stegsmetod (kvalitet, risk, upside) "
-     "och Case/Confidence Score med källa per poäng. Håven fyller på."),
+    ("GRANSKNING → 🧭 Durrett", "Durrett: 10 steg",
+     "Durretts 10-stegsmetod (kvalitet, risk, upside) med eget ark. Håven "
+     "fyller på ur Börsdata-screenern. Confidence-caset ligger i Wolf Asymmetry."),
     ("GRANSKNING → 🐺 Wolf Asymmetry", "Alla — hävstång och margin of safety",
      "Eget ark, komplement till vilken strategi som helst: Commodity Leverage "
      "0–10, Margin of Safety 0–10 i fem delar, break-even-marginal, stressmatris "
