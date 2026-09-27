@@ -116,9 +116,69 @@ TICKER_COMPLEX_MAP: dict[str, str] = {t: _T2C[k] for t, k in _TTM_SRC.items() if
 def detect_complex(ticker: str) -> Optional[str]:
     """Ticker → komplexnyckel, eller None när tickern är okänd.
 
-    Förut blev allt okänt "energi" — så Boliden, SSAB och alla nordiska
-    tickers ur Börsdata-filtret lästes mot oljans regim. Okänt är okänt."""
-    return TICKER_COMPLEX_MAP.get(str(ticker or "").upper())
+    Tre källor i ordning: EMBER:s temakarta, ditt eget val i regimfliken
+    (data/ember.json), och råvaran i arket (Durrett / Wolf Asymmetry) via
+    COMMODITY_TO_COMPLEX. Okänt är okänt — aldrig "energi" som default."""
+    t = str(ticker or "").strip().upper()
+    if not t:
+        return None
+    hit = TICKER_COMPLEX_MAP.get(t)
+    if hit:
+        return hit
+    hit = complex_overrides().get(t)
+    if hit:
+        return hit
+    return complex_from_sheet(t)
+
+
+def complex_overrides() -> dict:
+    """{TICKER: komplex} som du valt själv i regimfliken."""
+    try:
+        import storage
+        from ember.config import EMBER_STORE
+        data = storage.session_load(EMBER_STORE, {}) or {}
+        return dict(data.get("complex_overrides") or {}) if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def set_complex_override(ticker: str, complex_key: Optional[str]) -> bool:
+    """Spara ditt val (None tar bort det). Returnerar True när det sparades."""
+    try:
+        import streamlit as st
+        import storage
+        from ember.config import EMBER_STORE
+        data = storage.session_load(EMBER_STORE, {}) or {}
+        if not isinstance(data, dict):
+            data = {}
+        ov = dict(data.get("complex_overrides") or {})
+        t = str(ticker or "").strip().upper()
+        if complex_key:
+            ov[t] = complex_key
+        else:
+            ov.pop(t, None)
+        data["complex_overrides"] = ov
+        st.session_state[EMBER_STORE] = data
+        res = storage.save_session(EMBER_STORE)
+        return bool(getattr(res, "ok", True))
+    except Exception as exc:
+        logger.warning("set_complex_override(%s): %s", ticker, exc)
+        return False
+
+
+def complex_from_sheet(ticker: str) -> Optional[str]:
+    """Råvaran i arket → komplex (confidence.commodities-nyckel → COMMODITY_TO_COMPLEX)."""
+    try:
+        import storage
+        from confidence import store as cs
+        from ember.config import COMMODITY_TO_COMPLEX
+        data = cs.normalize(storage.session_load(cs.STORE, cs.default()))
+        c = cs.get(data, ticker)
+        if c is None:
+            return None
+        return COMMODITY_TO_COMPLEX.get(str(c.commodity or "").strip().lower())
+    except Exception:
+        return None
 
 
 # ── Shared generic pillar helpers ─────────────────────────────────────────────
@@ -703,13 +763,27 @@ def _render_ticker_analysis(
     """Show complex regime + EMBER trend gate analysis for a specific ticker."""
     complex_key = detect_complex(ticker)
     if complex_key is None:
-        st.warning(f"{ticker} finns inte i EMBER:s temakarta — inget komplex att läsa "
-                   f"regimen ur. Lägg till tickern i ember/config.py TICKER_THEME_MAP.")
-        return
+        from ember.config import COMPLEX_LABEL
+        st.info(f"{ticker} finns varken i EMBER:s temakarta eller i arket med en råvara. "
+                "Välj komplex här, så kommer fliken ihåg det.")
+        keys = list(COMPLEX_LABEL)
+        c1, c2 = st.columns([3, 1])
+        pick = c1.selectbox("Komplex", keys, format_func=lambda k: COMPLEX_LABEL[k],
+                            key=f"ember_cx_pick_{ticker}")
+        if c2.button("Kom ihåg", key=f"ember_cx_save_{ticker}"):
+            if set_complex_override(ticker, pick):
+                st.rerun()
+            st.warning("Kunde inte spara valet — det gäller ändå i den här sessionen.")
+            complex_key = pick
+        else:
+            return
     result = all_regimes.get(complex_key)
     if result is None:
         st.warning(f"Ingen regimdata för komplex '{complex_key}'")
         return
+    if TICKER_COMPLEX_MAP.get(str(ticker or "").upper()) is None:
+        src = "ditt val i fliken" if str(ticker or "").upper() in complex_overrides() else "råvaran i arket"
+        st.caption(f"Komplex {result.label} — ur {src}.")
 
     complex_label = {
         "energi": "⚡ ENERGI", "adelmetaller": "🥇 ÄDELMETALLER",
