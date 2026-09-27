@@ -3,7 +3,7 @@ ember/ui.py
 EMBER strategy — Streamlit page.
 
 Renders: scan controls, TOPP 3 section, ranked setup cards (18 fields each),
-MANUELL BEDÖMNING checkboxes, near-miss section, and INGA ELITCASE fallback.
+MANUELL BEDÖMNING checkboxes, BEVAKA section, and INGA KÖPLÄGEN fallback.
 """
 from __future__ import annotations
 
@@ -58,9 +58,14 @@ def _field(label: str, value: str, color: str = TEXT) -> str:
     )
 
 
-def _gate_row(name: str, passed: bool, detail: str, is_blocker: bool) -> str:
+def _gate_row(name: str, passed: bool, detail: str, is_blocker: bool, points: float = 0.0,
+              max_points: float = 0.0) -> str:
     icon  = "✅" if passed else ("❌" if is_blocker else "○")
     color = TEXT if passed else (RED if is_blocker else DIM)
+    if max_points > 0:
+        name = f"{name} · {points:.0f}/{max_points:.0f} p"
+    elif is_blocker:
+        name = f"{name} · HÅRD"
     return (
         f"<div style='display:flex;align-items:flex-start;gap:7px;"
         f"margin-bottom:5px;font-size:0.76rem;'>"
@@ -92,7 +97,7 @@ def _render_top3(eligible: list[EmberSetupResult]) -> None:
         f"padding-bottom:6px;margin-bottom:18px;'>"
         f"<h3 style='color:{EMBER};margin:0;letter-spacing:0.08em;'>TOPP 3 JUST NU</h3>"
         f"<span style='color:{DIM};font-size:0.7rem;'>"
-        f"Rangordnat efter asymmetri (RR × makro) + cykelbonus</span>"
+        f"Rangordnat efter setup-poäng, sedan asymmetri (RR × makro) + cykelbonus</span>"
         f"</div>",
         unsafe_allow_html=True,
     )
@@ -118,6 +123,8 @@ def _render_top3(eligible: list[EmberSetupResult]) -> None:
                 f"<div style='color:{TEXT};font-size:0.78rem;margin-bottom:10px;'>"
                 f"{r.sektor} · {r.typ}</div>"
                 f"<div style='display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;'>"
+                + _badge(f"SETUP {r.setup_score:.0f}/100", EMBER)
+                + " "
                 + _badge(f"RR {rr_str}", GREEN)
                 + " "
                 + _badge(f"MAKRO {macro_str}/100", GOLD)
@@ -198,8 +205,8 @@ def _render_setup_card(r: EmberSetupResult, idx: int) -> None:
                 elif r.percentile_10y <= 50:
                     underval = f"10å-percentil {r.percentile_10y:.0f}% — under historisk median"
 
-            trend_txt = "✅ TREND OK" if r.trend_pass else "❌ TREND EJ OK"
-            t_color   = GREEN if r.trend_pass else RED
+            trend_txt = f"{r.verdict} · setup {r.setup_score:.0f}/100" + ("" if r.trend_pass else " · under 50V EMA")
+            t_color   = GREEN if r.verdict == "KÖPLÄGE" else (AMBER if r.verdict == "BEVAKA" else RED)
 
             pct_10y_txt = (f" ({r.percentile_10y:.0f}:e percentilen 10å)"
                            if r.percentile_10y else "")
@@ -209,7 +216,7 @@ def _render_setup_card(r: EmberSetupResult, idx: int) -> None:
                 + _field("Typ",                   r.typ)
                 + _field("Sektor",                r.sektor)
                 + _field("Var i cykeln",          r.cykel_label + pct_10y_txt, cy_color)
-                + _field("Trendstatus",           trend_txt,      t_color)
+                + _field("Verdikt",               trend_txt,      t_color)
                 + _field("Varför intressant nu",  why_auto,       GOLD)
                 + _field("Marknaden ogillar",     hat_txt,        AMBER)
                 + _field("Varför ändå behövs",    nec_txt,        GOLD)
@@ -253,7 +260,7 @@ def _render_setup_card(r: EmberSetupResult, idx: int) -> None:
             # Trend gates
             st.markdown(_section_label("Trendgates"), unsafe_allow_html=True)
             st.markdown(
-                "".join(_gate_row(g.name, g.passed, g.detail, g.is_blocker)
+                "".join(_gate_row(g.name, g.passed, g.detail, g.is_blocker, g.points, g.max_points)
                         for g in r.trend_gates),
                 unsafe_allow_html=True,
             )
@@ -261,7 +268,7 @@ def _render_setup_card(r: EmberSetupResult, idx: int) -> None:
             # Entry gates
             st.markdown(_section_label("Entrygates"), unsafe_allow_html=True)
             st.markdown(
-                "".join(_gate_row(g.name, g.passed, g.detail, g.is_blocker)
+                "".join(_gate_row(g.name, g.passed, g.detail, g.is_blocker, g.points, g.max_points)
                         for g in r.entry_gates),
                 unsafe_allow_html=True,
             )
@@ -371,20 +378,20 @@ def _render_near_misses(near_misses: list[EmberSetupResult]) -> None:
     if not near_misses:
         return
     with st.expander(
-        f"📋 Nästan-kandidater ({len(near_misses)}) — vad de saknar", expanded=False
+        f"📋 BEVAKA ({len(near_misses)}) — setup-poäng 50–70, vad som saknas", expanded=False
     ):
         for r in near_misses[:12]:
-            failed_trend  = [g.name for g in r.trend_gates   if not g.passed and g.is_blocker]
-            failed_entry  = [g.name for g in r.entry_gates   if not g.passed and g.is_blocker]
-            active_notrad = [g.name for g in r.notrade_flags if g.passed and g.is_blocker]
-            missing = (failed_trend + failed_entry + active_notrad)[:3]
+            lost = sorted((g for g in r.trend_gates + r.entry_gates if g.max_points > 0),
+                          key=lambda g: g.max_points - g.points, reverse=True)
+            missing = [f"{g.name} (−{g.max_points - g.points:.0f} p)" for g in lost if g.max_points - g.points > 0][:3]
+            missing += [f"{f.name} ({f.points:+.0f} p)" for f in r.notrade_flags if f.passed and f.points < 0]
             missing_str = "; ".join(missing) if missing else "—"
             st.markdown(
                 f"<div style='background:{BG2};border-left:2px solid {AMBER}44;"
                 f"border-radius:4px;padding:8px 12px;margin-bottom:6px;font-size:0.78rem;'>"
                 f"<span style='color:{AMBER};font-weight:700;'>{r.ticker}</span>"
-                f"<span style='color:{DIM};'> · {r.sektor}</span>"
-                f"<br/><span style='color:{DIM};font-size:0.67rem;'>Saknar: "
+                f"<span style='color:{DIM};'> · {r.sektor} · setup {r.setup_score:.0f}/100</span>"
+                f"<br/><span style='color:{DIM};font-size:0.67rem;'>Tappar mest på: "
                 f"<span style='color:{TEXT};'>{missing_str}</span></span>"
                 f"</div>",
                 unsafe_allow_html=True,
@@ -454,6 +461,24 @@ def _render_universe_stats(stats: Optional[UniverseStats]) -> None:
 # ── Main page ─────────────────────────────────────────────────────────────────
 
 
+def _own_tickers() -> list[str]:
+    """Bolagen du redan följer: öppna positioner i registret och arket
+    (Durrett / Wolf Asymmetry). Så screenern jobbar på det du tittar på."""
+    out: list[str] = []
+    try:
+        import positions as _positions
+        out += [str(r.get("ticker") or "").strip().upper() for r in _positions.open_positions()]
+    except Exception:
+        pass
+    try:
+        import storage as _storage
+        from confidence import store as _cs
+        out += list(_cs.companies(_cs.normalize(_storage.session_load(_cs.STORE, _cs.default()))))
+    except Exception:
+        pass
+    return [t for t in dict.fromkeys(out) if t]
+
+
 def _render_ember_cached_preview() -> None:
     """Show pre-computed scheduled EMBER results (from Gist) as an instant preview."""
     try:
@@ -473,7 +498,7 @@ def _render_ember_cached_preview() -> None:
         f"padding:10px 14px;margin-bottom:12px;'>"
         f"<b style='color:#E8EDF2;'>Schemalagt EMBER-resultat</b> "
         f"<span style='color:#6B7280;'>&middot; senast uppdaterad {ts_disp} "
-        f"&middot; {len(eligible)} elitcase, {len(near)} nastan</span><br>"
+        f"&middot; {len(eligible)} köplägen, {len(near)} bevaka</span><br>"
         f"<span style='font-size:0.8rem;color:#9aa4b0;'>Tryck <b>SKANNA</b> for live-analys.</span></div>",
         unsafe_allow_html=True,
     )
@@ -484,7 +509,8 @@ def _render_ember_cached_preview() -> None:
             "Ticker": r.get("ticker", ""),
             "Typ": r.get("typ", ""),
             "Sektor": r.get("sektor", ""),
-            "Elitcase": "JA" if r.get("eligible") else "nastan",
+            "Verdikt": r.get("verdict") or ("KÖPLÄGE" if r.get("eligible") else "BEVAKA"),
+            "Setup": round(r.get("setup_score", 0), 0),
             "Cykel": r.get("cykel_label", ""),
             "Entry": r.get("entry", ""),
             "Stop": r.get("stop", ""),
@@ -559,6 +585,7 @@ def render_ember_page() -> None:
 
     if scan_btn:
         extra = [t.strip().upper() for t in custom_raw.split(",") if t.strip()]
+        extra += _own_tickers()
         spinner_msg = {
             SOURCE_CURATED: "Skannar kurerad lista…",
             SOURCE_AUTO:    "Bygger råvaruuniversum (Norden + US/INTL) och förfiltrerar — ca 1–2 min…",
@@ -615,8 +642,8 @@ def render_ember_page() -> None:
         [m1, m2, m3, m4, m5],
         [("UNIVERSUM",   prefilter_val,  GOLD),
          ("SKANNADE",    str(tot),        GOLD),
-         ("ELITCASE",    str(eli),        EMBER if eli > 0 else DIM),
-         ("NÄSTAN",      str(nm),         AMBER),
+         ("KÖPLÄGE",     str(eli),        EMBER if eli > 0 else DIM),
+         ("BEVAKA",      str(nm),         AMBER),
          ("UPPDATERAD",  ts,              DIM)],
     ):
         with col:
@@ -680,7 +707,7 @@ def render_ember_page() -> None:
             f"background:{BG2};border:1px solid {EMBER}33;"
             f"border-radius:8px;margin:16px 0;'>"
             f"<h3 style='color:{EMBER};letter-spacing:0.08em;margin-bottom:8px;'>"
-            f"INGA ELITCASE just nu</h3>"
+            f"INGA KÖPLÄGEN just nu</h3>"
             f"<p style='color:{DIM};font-size:0.85rem;margin:0;'>"
             f"Disciplin är position. Vänta på rätt setup — råvarocykeln är tålmodig."
             f"</p></div>",
@@ -695,7 +722,7 @@ def render_ember_page() -> None:
     st.markdown(
         f"<div style='border-bottom:1px solid {EMBER}33;padding-bottom:5px;"
         f"margin-bottom:14px;'>"
-        f"<h4 style='color:{GOLD};margin:0;'>Alla elitcase — rankade</h4>"
+        f"<h4 style='color:{GOLD};margin:0;'>Alla köplägen — rankade på setup-poäng</h4>"
         f"</div>",
         unsafe_allow_html=True,
     )

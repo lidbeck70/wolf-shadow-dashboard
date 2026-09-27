@@ -35,6 +35,32 @@ LATE_CYCLE_PCT      = 85.0  # 10y price percentile > 85 → late / top phase
 DXY_SURGE_PCT       = 2.0   # DXY up > 2% in 2 weeks → commodity headwind
 DXY_SURGE_LOOKBACK_W = 2
 
+# ── Graderad setup-poäng (ersätter "alla nio grindar eller inget") ──────────
+# Hårda grindar (blockerar): pris > 50V EMA, sen cykel > 85:e percentilen,
+# regimen AV. Allt annat är poäng 0–100 med vikterna nedan (summa 100),
+# minus avdrag för aktiva flaggor. Trösklarna är VAL — de syns i RULES.
+SETUP_WEIGHTS = {
+    "ema_cross":   15,   # 20D EMA > 50D EMA
+    "rs":          20,   # relativ styrka vs sektor-ETF, graderad −RS_FULL … +RS_FULL
+    "higher_lows": 15,   # stigande bottnar 6V: 2 = halva, ≥3 = full
+    "pullback":    20,   # avstånd till 20D EMA: 0 % = full, ≥ PULLBACK_MAX_PCT = 0
+    "rsi":         15,   # RSI(14): ≤ RSI_FULL = full, ≥ RSI_ZERO = 0
+    "macd":         5,   # MACD-histogram stigande botten
+    "volume":       4,   # volym ≥ 20D-snitt
+    "candle":       3,   # bullish candle
+    "atr_falling":  3,   # ATR faller i rekylen
+}
+RS_FULL_PCT      = 5.0    # RS ≥ +5 % → full poäng; ≤ −5 % → 0 (binärt tidigare)
+HIGHER_LOWS_OK   = 2      # 2 stigande bottnar = halva poängen, HIGHER_LOWS_MIN (3) = full
+PULLBACK_MAX_PCT = 6.0    # graderat 0–6 % (hård gräns 3 % tidigare)
+RSI_FULL         = 40.0   # full poäng under 40 …
+RSI_ZERO         = 55.0   # … noll vid 55 (hård gräns 45 tidigare)
+PENALTY_ATR_SURGE = 15.0  # ATR-surge: avdrag, inte stopp
+PENALTY_DXY_SURGE = 10.0  # DXY-rally: avdrag, inte stopp
+VERDICT_BUY_MIN   = 70.0  # ≥ 70 → KÖPLÄGE
+VERDICT_WATCH_MIN = 50.0  # 50–70 → BEVAKA, annars AVVAKTA
+SETUP_KOP, SETUP_BEVAKA, SETUP_AVVAKTA = "KÖPLÄGE", "BEVAKA", "AVVAKTA"
+
 # ── Risk model ────────────────────────────────────────────────────────────────
 RISK_PCT      = 0.02   # 2% account risk per trade
 ATR_STOP_MULT = 2.5    # stop = entry − 2.5 × ATR(14)

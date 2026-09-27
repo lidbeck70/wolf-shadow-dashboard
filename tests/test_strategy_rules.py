@@ -169,13 +169,18 @@ def test_viking_sltp_calculator_reads_the_engine_multiplier():
 
 def test_ember_thresholds_track_ember_config():
     """Ember's playbook interpolates live values from ember/config.py."""
-    from ember.config import RISK_PCT, PULLBACK_EMA_PCT, RSI_ENTRY_MAX
+    from ember.config import (RISK_PCT, VERDICT_BUY_MIN, VERDICT_WATCH_MIN, LATE_CYCLE_PCT,
+                              PULLBACK_MAX_PCT, RSI_FULL, RSI_ZERO, RS_FULL_PCT)
 
     pb = sr.PLAYBOOKS["ember"]
     assert RISK_PCT * 100 in _pct_in(pb.risk.risk_per_trade)
     entry_text = " ".join(r.text for r in pb.entry)
-    assert f"{PULLBACK_EMA_PCT:.0f} %" in entry_text, entry_text
-    assert str(RSI_ENTRY_MAX) in entry_text, entry_text
+    assert f"≥ {VERDICT_BUY_MIN:.0f} = KÖPLÄGE" in entry_text, entry_text
+    assert f"{VERDICT_WATCH_MIN:.0f}–{VERDICT_BUY_MIN:.0f} = BEVAKA" in entry_text, entry_text
+    assert f"≤ {LATE_CYCLE_PCT:.0f}" in entry_text, entry_text
+    why_text = " ".join(r.explanation for r in pb.entry)
+    assert f"0…{PULLBACK_MAX_PCT:.0f} %" in why_text and f"{RSI_FULL:.0f}…{RSI_ZERO:.0f}" in why_text, why_text
+    assert f"−{RS_FULL_PCT:.0f}…+{RS_FULL_PCT:.0f} %" in why_text, why_text
 
 
 _PANEL_NATIVE = ("momentum", "quality", "alpha", "viking", "wolf", "contrarian", "ember")
