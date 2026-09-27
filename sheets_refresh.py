@@ -138,6 +138,34 @@ def resolve(api, ticker: str, ins_id=None) -> Optional[int]:
             iid = None
         if iid is not None:
             return int(iid)
+    return resolve_global(api, ticker)
+
+
+def resolve_global(api, ticker: str) -> Optional[int]:
+    """Börsdatas globala lista (Pro+ global): ticker utan börssuffix, t.ex.
+    'FNV' (NYSE) eller 'AEM.TO' → 'AEM'. Listan hämtas en gång per klient.
+    None när licensen saknas eller tickern inte finns."""
+    getter = getattr(api, "get_global_instruments_list", None)
+    if getter is None:
+        return None
+    gmap = getattr(api, "_wolf_global_ticker_map", None)
+    if gmap is None:
+        gmap = {}
+        try:
+            for i in getter() or []:
+                t = str(i.get("ticker") or "").strip().upper()
+                if t and i.get("insId") is not None:
+                    gmap.setdefault(t, int(i["insId"]))
+        except Exception:
+            gmap = {}
+        try:
+            api._wolf_global_ticker_map = gmap
+        except Exception:
+            pass
+    t = str(ticker or "").strip().upper()
+    for form in (t, re.sub(r"\.[A-Z]{1,3}$", "", t), t.replace("-", " "), t.replace(" ", "-")):
+        if form in gmap:
+            return gmap[form]
     return None
 
 
