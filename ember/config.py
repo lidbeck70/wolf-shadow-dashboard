@@ -158,6 +158,22 @@ THEME_TO_COMPLEX: dict[str, str] = {
     "agri": "agri",
 }
 
+# ── Råvara i arket (confidence.commodities-nyckel) → komplex ─────────────────
+# Så ett bolag i Durrett-/Wolf Asymmetry-arket får sitt komplex utan att stå
+# i TICKER_THEME_MAP: VISC.ST med råvara copper → basmetaller.
+COMMODITY_TO_COMPLEX: dict[str, str] = {
+    "uranium": "energi", "oil_gas": "energi", "natural_gas": "energi", "coal": "energi",
+    "gold": "adelmetaller", "silver": "adelmetaller", "platinum": "adelmetaller",
+    "palladium": "adelmetaller", "diamonds": "adelmetaller",
+    "copper": "basmetaller", "lithium": "basmetaller", "rare_earth": "basmetaller",
+    "nickel": "basmetaller", "cobalt": "basmetaller", "graphite": "basmetaller", "tin": "basmetaller",
+    "zinc": "basmetaller", "iron_ore": "basmetaller", "aluminum": "basmetaller", "steel": "basmetaller",
+    "potash": "agri", "phosphate": "agri", "agri": "agri",
+}
+COMPLEX_LABEL: dict[str, str] = {"energi": "ENERGI", "adelmetaller": "ÄDELMETALLER",
+                                 "basmetaller": "BASMETALLER", "agri": "AGRI & ÖVRIGT"}
+EMBER_STORE = "ember"           # data/ember.json: {"complex_overrides": {TICKER: komplex}}
+
 # ── Ticker → theme key map ────────────────────────────────────────────────────
 # Covers all universe members so cycle phase is never DATA_GAP for known tickers.
 _TICKER_THEME_RAW: dict[str, str] = {

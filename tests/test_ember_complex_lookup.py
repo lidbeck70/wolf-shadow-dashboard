@@ -1,0 +1,59 @@
+"""
+Ember Regime: ett bolag får sitt komplex ur temakartan, ur ditt eget val
+i fliken (data/ember.json) eller ur råvaran i arket — inte genom att du
+redigerar ember/config.py.
+"""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import durrett_cases as dcs  # noqa: E402
+from confidence import commodities as com  # noqa: E402
+from confidence import store as cs  # noqa: E402
+from ember import config as cfg  # noqa: E402
+from ember import regime as rg  # noqa: E402
+
+
+def test_every_sheet_commodity_has_a_complex():
+    for key in com.REGISTRY:
+        assert cfg.COMMODITY_TO_COMPLEX.get(key) in cfg.COMPLEX_LABEL, key
+
+
+def _stores(monkeypatch, conf=None, ember=None):
+    import streamlit as st
+    import storage
+    stores = {"confidence": conf if conf is not None else cs.default(), "ember": ember if ember is not None else {}}
+    monkeypatch.setattr(storage, "session_load", lambda name, default=None, legacy_file=None:
+                        st.session_state.setdefault(name, stores.get(name) if stores.get(name) is not None else default))
+    saved = []
+    monkeypatch.setattr(storage, "save_session", lambda name: saved.append(name) or type("R", (), {"ok": True})())
+    return saved
+
+
+def test_detect_complex_uses_sheet_commodity_and_overrides(monkeypatch):
+    import streamlit as st
+    conf = cs.default()
+    visc = dcs.copper_developer()
+    visc.ticker = "VISC.ST"
+    cs.put(conf, visc)
+    saved = _stores(monkeypatch, conf=conf)
+    st.session_state.clear()
+    assert rg.detect_complex("FCX") == "basmetaller"                 # temakartan
+    assert rg.detect_complex("visc.st") == "basmetaller"             # råvaran i arket: copper
+    assert rg.detect_complex("OKÄND") is None                        # okänt är okänt, aldrig energi
+    assert rg.set_complex_override("OKÄND", "agri") and saved == ["ember"]
+    assert rg.detect_complex("okänd") == "agri"                      # ditt val
+    assert rg.complex_overrides() == {"OKÄND": "agri"}
+    assert rg.set_complex_override("OKÄND", None)
+    assert rg.detect_complex("OKÄND") is None
+    # temakartan vinner över arket
+    fcx = dcs.gold_producer()
+    fcx.ticker = "FCX"
+    cs.put(conf, fcx)
+    assert rg.detect_complex("FCX") == "basmetaller"
+    src = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ember", "regime.py"),
+               encoding="utf-8").read()
+    assert "Lägg till tickern i ember/config.py" not in src            # inget "gå och redigera koden"
+    assert "Kom ihåg" in src
