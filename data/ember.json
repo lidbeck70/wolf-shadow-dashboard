@@ -1,6 +1,7 @@
 {
   "complex_overrides": {
     "DOFG.OL": "basmetaller",
+    "SPG.CO": "energi",
     "VISC.ST": "basmetaller"
   }
 }
