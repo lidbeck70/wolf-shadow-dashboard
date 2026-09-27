@@ -170,6 +170,19 @@ COMMODITY_TO_COMPLEX: dict[str, str] = {
     "zinc": "basmetaller", "iron_ore": "basmetaller", "aluminum": "basmetaller", "steel": "basmetaller",
     "potash": "agri", "phosphate": "agri", "agri": "agri",
 }
+# Råvara i arket → EMBER-tema (sektor-ETF och cykelfas följer temat). Basmetaller
+# utan egen ETF mäts mot COPX, sällsynta/batterimetaller mot REMX.
+COMMODITY_TO_THEME: dict[str, str] = {
+    "uranium": "uran", "oil_gas": "olja", "natural_gas": "naturgas", "coal": "kol",
+    "gold": "guld", "silver": "silver", "platinum": "guld", "palladium": "guld", "diamonds": "guld",
+    "copper": "koppar", "nickel": "koppar", "zinc": "koppar", "tin": "koppar", "iron_ore": "koppar",
+    "aluminum": "koppar", "steel": "koppar",
+    "lithium": "sallsynta", "rare_earth": "sallsynta", "cobalt": "sallsynta", "graphite": "sallsynta",
+    "potash": "agri", "phosphate": "agri", "agri": "agri",
+}
+# Valt komplex utan råvara → temat som bär komplexet (för sektor-ETF och cykel).
+COMPLEX_DEFAULT_THEME: dict[str, str] = {"energi": "olja", "adelmetaller": "guld",
+                                         "basmetaller": "koppar", "agri": "agri"}
 COMPLEX_LABEL: dict[str, str] = {"energi": "ENERGI", "adelmetaller": "ÄDELMETALLER",
                                  "basmetaller": "BASMETALLER", "agri": "AGRI & ÖVRIGT"}
 EMBER_STORE = "ember"           # data/ember.json: {"complex_overrides": {TICKER: komplex}}

@@ -166,19 +166,40 @@ def set_complex_override(ticker: str, complex_key: Optional[str]) -> bool:
         return False
 
 
-def complex_from_sheet(ticker: str) -> Optional[str]:
-    """Råvaran i arket → komplex (confidence.commodities-nyckel → COMMODITY_TO_COMPLEX)."""
+def sheet_commodity(ticker: str) -> Optional[str]:
+    """Råvarunyckeln i arket (confidence.commodities) för tickern, eller None."""
     try:
         import storage
         from confidence import store as cs
-        from ember.config import COMMODITY_TO_COMPLEX
         data = cs.normalize(storage.session_load(cs.STORE, cs.default()))
         c = cs.get(data, ticker)
-        if c is None:
-            return None
-        return COMMODITY_TO_COMPLEX.get(str(c.commodity or "").strip().lower())
+        return str(c.commodity or "").strip().lower() or None if c is not None else None
     except Exception:
         return None
+
+
+def complex_from_sheet(ticker: str) -> Optional[str]:
+    """Råvaran i arket → komplex (COMMODITY_TO_COMPLEX)."""
+    from ember.config import COMMODITY_TO_COMPLEX
+    key = sheet_commodity(ticker)
+    return COMMODITY_TO_COMPLEX.get(key) if key else None
+
+
+def detect_theme(ticker: str) -> Optional[str]:
+    """Ticker → EMBER-tema (sektor-ETF och cykelfas): temakartan, annars råvaran
+    i arket (COMMODITY_TO_THEME), annars det valda komplexets bärande tema."""
+    from ember.config import COMMODITY_TO_THEME, COMPLEX_DEFAULT_THEME, TICKER_THEME_MAP
+    t = str(ticker or "").strip().upper()
+    if not t:
+        return None
+    hit = TICKER_THEME_MAP.get(t)
+    if hit:
+        return hit
+    key = sheet_commodity(t)
+    if key and key in COMMODITY_TO_THEME:
+        return COMMODITY_TO_THEME[key]
+    cx = complex_overrides().get(t) or (complex_from_sheet(t) if key else None)
+    return COMPLEX_DEFAULT_THEME.get(cx) if cx else None
 
 
 # ── Shared generic pillar helpers ─────────────────────────────────────────────
