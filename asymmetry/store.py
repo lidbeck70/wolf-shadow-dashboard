@@ -1,13 +1,12 @@
 """
-asymmetry/store.py — formen på data/asymmetry.json: Wolf Asymmetrys eget ark.
+asymmetry/store.py — Wolf Asymmetry läser och skriver SAMMA ark som Durrett
+(data/confidence.json). Det enda som är eget är strategi-taggen per bolag:
 
-{"companies": {TICKER: CompanyInput.as_dict()},
- "commodity_overrides": {råvarunyckel: {...}},
+{"companies": {...}, "commodity_overrides": {...},
  "strategies": {TICKER: "Viking"}}          # vilken strategi bolaget kompletterar
 
-Samma bolagsform som confidence.store så alla motorer (asymmetry,
-confidence-score, scenarier) fungerar oförändrade — men ett eget lager,
-oberoende av Durrett-arket. Rena funktioner; persistensen sköts av UI:t.
+Ett bolag, ett register, två läsningar (Durretts 10 steg, Wolf Asymmetry).
+Rena funktioner; persistensen sköts av UI:t (💾 Spara).
 """
 
 from __future__ import annotations
@@ -15,9 +14,9 @@ from __future__ import annotations
 from typing import Optional
 
 from confidence import store as cs
-from confidence.data.models import CompanyInput
 
-STORE = "asymmetry"           # data/asymmetry.json
+STORE = cs.STORE              # data/confidence.json — gemensamt
+LEGACY_STORE = "asymmetry"    # data/asymmetry.json från steg D–F; flyttas in en gång
 NO_STRATEGY = "—"
 
 
@@ -27,35 +26,11 @@ def strategy_tags() -> tuple:
     return (NO_STRATEGY,) + tuple(s for s in STRATEGIES if s != "Untagged")
 
 
-def default() -> dict:
-    d = cs.default()
-    d["strategies"] = {}
-    return d
-
-
 def normalize(data: Optional[dict]) -> dict:
     data = cs.normalize(data)
     if not isinstance(data.get("strategies"), dict):
         data["strategies"] = {}
     return data
-
-
-companies = cs.companies
-get = cs.get
-overrides = cs.overrides
-set_override = cs.set_override
-
-
-def put(data: dict, company: CompanyInput, strategy: Optional[str] = None) -> None:
-    normalize(data)
-    cs.put(data, company)
-    if strategy is not None:
-        set_strategy(data, company.ticker, strategy)
-
-
-def remove(data: dict, ticker: str) -> None:
-    cs.remove(data, ticker)
-    (data.get("strategies") or {}).pop(cs._key(ticker), None)
 
 
 def strategy(data: dict, ticker: str) -> str:
@@ -72,7 +47,30 @@ def set_strategy(data: dict, ticker: str, strategy: str) -> None:
 
 def tickers_for(data: dict, strategy: Optional[str] = None) -> list:
     """Tickers i lagrad ordning, filtrerade på strategi (None/'Alla' = alla)."""
-    out = list(companies(data))
+    out = list(cs.companies(data))
     if strategy in (None, "Alla"):
         return out
     return [t for t in out if globals()["strategy"](data, t) == strategy]
+
+
+def merge_legacy(data: dict, legacy: Optional[dict]) -> list:
+    """Engångsflytt: bolag och taggar ur det gamla data/asymmetry.json in i
+    det gemensamma arket. Bolag som redan finns rörs inte. Returnerar
+    tickers som flyttades."""
+    normalize(data)
+    if not isinstance(legacy, dict):
+        return []
+    moved = []
+    for t, d in (legacy.get("companies") or {}).items():
+        k = cs._key(t)
+        if k in data["companies"] or not isinstance(d, dict):
+            continue
+        data["companies"][k] = d
+        moved.append(k)
+    for t, s in (legacy.get("strategies") or {}).items():
+        k = cs._key(t)
+        if k in data["companies"] and k not in data["strategies"] and s:
+            data["strategies"][k] = s
+    for ck, ov in (legacy.get("commodity_overrides") or {}).items():
+        data["commodity_overrides"].setdefault(ck, ov)
+    return moved
