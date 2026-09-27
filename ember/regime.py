@@ -9,15 +9,15 @@ Five pillars (each GREEN / AMBER / RED with actual values shown):
   4. TEMA-BREDD   — share of Theme Board themes TIDIG/MITTEN + positive 3m momentum
   5. RISKAPTIT    — GDX/SPY 3m + HYG/TLT 1m relative performance
 
-Regime verdict:
-  ≥4 GREEN → PÅ       (full position sizing)
-   3 GREEN → SELEKTIV  (half position sizing)
-  ≤2 GREEN → AV        (no new trades)
+Regime verdict (ember/config.py): netto = gröna − röda (gul och DATA_GAP 0).
+  netto ≥ 3            → PÅ       (full position sizing)
+  netto 0–2            → SELEKTIV (half position sizing)
+  netto < 0 / ≥2 röda  → AV       (no new trades by the rule; cards still shown)
 
 Session state keys: "ember_complex_regimes" (dict of ComplexRegimeResult, one
 per commodity complex) and the legacy "ember_regime" (first complex, kept for
 backward compatibility).
-DATA_GAP is never treated as GREEN — it counts as AMBER for the verdict.
+DATA_GAP is never treated as GREEN — it counts 0, like AMBER, and is flagged.
 """
 from __future__ import annotations
 
@@ -82,6 +82,9 @@ class ComplexRegimeResult:
     verdict:     str            # VERDICT_PA | VERDICT_SELEKTIV | VERDICT_AV
     action_text: str
     timestamp:   datetime = field(default_factory=datetime.now)
+    net_score:   int = 0        # gröna − röda
+    red_count:   int = 0
+    gap_count:   int = 0        # DATA_GAP — visas som varning, räknas 0
 
 
 # ── Download helper ───────────────────────────────────────────────────────────
@@ -534,54 +537,73 @@ def _ag_dba_volume() -> PillarResult:
 
 # ── Complex compute helpers ───────────────────────────────────────────────────
 
-def _complex_verdict(green_count: int, key: str) -> tuple[str, str]:
+def regime_counts(pillars: list) -> tuple[int, int, int, int]:
+    """(gröna, röda, DATA_GAP, netto) enligt config.REGIME_PILLAR_POINTS."""
+    from ember.config import REGIME_PILLAR_POINTS as PTS
+    green = sum(1 for p in pillars if p.status == "GREEN")
+    red   = sum(1 for p in pillars if p.status == "RED")
+    gap   = sum(1 for p in pillars if p.status == "DATA_GAP")
+    net   = sum(PTS.get(p.status, 0) for p in pillars)
+    return green, red, gap, net
+
+
+def _complex_verdict(pillars: list, key: str) -> tuple[str, str]:
+    """Netto i stället för 'räkna gröna': gul och DATA_GAP är 0, inte nej."""
+    from ember.config import REGIME_PA_MIN, REGIME_SELEKTIV_MIN, REGIME_AV_RED_MIN
     lbl = {"energi": "ENERGI", "adelmetaller": "ÄDELMETALLER",
            "basmetaller": "BASMETALLER", "agri": "AGRI & ÖVRIGT"}.get(key, key.upper())
-    if green_count >= 4:
+    green, red, gap, net = regime_counts(pillars)
+    tally = f"{green} gröna · {5 - green - red - gap} gula · {red} röda" + (f" · {gap} DATA_GAP" if gap else "")
+    if red >= REGIME_AV_RED_MIN or net < REGIME_SELEKTIV_MIN:
+        return (VERDICT_AV,
+                f"Inga nya {lbl}-trades enligt regeln ({tally}, netto {net:+d}). Korten visas ändå — "
+                f"bevaka befintliga positioner.")
+    if net >= REGIME_PA_MIN:
         return (VERDICT_PA,
-                f"Full positionsstorlek tillåten för {lbl}. Alla topp-rankade elitcase är giltiga.")
-    if green_count == 3:
-        return (VERDICT_SELEKTIV,
-                f"Halverad positionsstorlek för {lbl}. Handla endast topp-1 och topp-2 i screener.")
-    return (VERDICT_AV,
-            f"Inga nya {lbl}-trades. Bevaka befintliga positioner och planera nästa setup.")
+                f"Full positionsstorlek för {lbl} ({tally}, netto {net:+d}). Alla KÖPLÄGE är giltiga.")
+    return (VERDICT_SELEKTIV,
+            f"Halverad positionsstorlek för {lbl} ({tally}, netto {net:+d}). Handla endast topp-1 och topp-2.")
 
 
 @_cache_1h
 def compute_energi_regime() -> ComplexRegimeResult:
     pillars = [_ep_dxy(), _ep_xle_rs(), _ep_oil_trend(), _ep_gas_trend(), _ep_energy_breadth()]
-    gc = sum(1 for p in pillars if p.status == "GREEN")
-    v, a = _complex_verdict(gc, "energi")
+    gc, red, gap, net = regime_counts(pillars)
+    v, a = _complex_verdict(pillars, "energi")
     return ComplexRegimeResult(key="energi", label="ENERGI",
-                               pillars=pillars, green_count=gc, verdict=v, action_text=a)
+                               pillars=pillars, green_count=gc, verdict=v, action_text=a,
+                               net_score=net, red_count=red, gap_count=gap)
 
 
 @_cache_1h
 def compute_adelmetaller_regime() -> ComplexRegimeResult:
     pillars = [_am_dxy(), _am_gdx_rs(), _am_gold_blowoff(), _am_silver_trend(), _am_tip_trend()]
-    gc = sum(1 for p in pillars if p.status == "GREEN")
-    v, a = _complex_verdict(gc, "adelmetaller")
+    gc, red, gap, net = regime_counts(pillars)
+    v, a = _complex_verdict(pillars, "adelmetaller")
     return ComplexRegimeResult(key="adelmetaller", label="ÄDELMETALLER",
-                               pillars=pillars, green_count=gc, verdict=v, action_text=a)
+                               pillars=pillars, green_count=gc, verdict=v, action_text=a,
+                               net_score=net, red_count=red, gap_count=gap)
 
 
 @_cache_1h
 def compute_basmetaller_regime() -> ComplexRegimeResult:
     pillars = [_bm_copper_gold(), _bm_copx_rs(), _bm_copper_trend(),
                _bm_china_demand(), _bm_yield_curve()]
-    gc = sum(1 for p in pillars if p.status == "GREEN")
-    v, a = _complex_verdict(gc, "basmetaller")
+    gc, red, gap, net = regime_counts(pillars)
+    v, a = _complex_verdict(pillars, "basmetaller")
     return ComplexRegimeResult(key="basmetaller", label="BASMETALLER",
-                               pillars=pillars, green_count=gc, verdict=v, action_text=a)
+                               pillars=pillars, green_count=gc, verdict=v, action_text=a,
+                               net_score=net, red_count=red, gap_count=gap)
 
 
 @_cache_1h
 def compute_agri_regime() -> ComplexRegimeResult:
     pillars = [_ag_dba_trend(), _ag_dba_rs(), _ag_dxy(), _ag_agri_theme(), _ag_dba_volume()]
-    gc = sum(1 for p in pillars if p.status == "GREEN")
-    v, a = _complex_verdict(gc, "agri")
+    gc, red, gap, net = regime_counts(pillars)
+    v, a = _complex_verdict(pillars, "agri")
     return ComplexRegimeResult(key="agri", label="AGRI & ÖVRIGT",
-                               pillars=pillars, green_count=gc, verdict=v, action_text=a)
+                               pillars=pillars, green_count=gc, verdict=v, action_text=a,
+                               net_score=net, red_count=red, gap_count=gap)
 
 
 def compute_all_complex_regimes() -> dict[str, ComplexRegimeResult]:
@@ -665,7 +687,8 @@ def _render_complex_tab(result: ComplexRegimeResult) -> None:
         f"<div style='color:{TEXT};font-size:0.9rem;margin-bottom:6px;'>"
         f"{result.action_text}</div>"
         f"<div style='color:{DIM};font-size:0.7rem;'>"
-        f"Gröna pelare: {result.green_count}/5 · "
+        f"Pelare: {result.green_count} gröna · {result.red_count} röda · netto {result.net_score:+d}"
+        + (f" · {result.gap_count} DATA_GAP" if result.gap_count else "") + " · "
         f"Uppdaterad: {result.timestamp.strftime('%H:%M:%S')}</div>"
         f"</div>",
         unsafe_allow_html=True,
@@ -767,7 +790,7 @@ def _render_ticker_analysis(
         # Swedish action box
         if result.verdict == VERDICT_AV:
             ac, ai = RED,   "⛔"
-            at = f"NEJ — regimen för {result.label} är AV. Inga nya entries."
+            at = f"NEJ — regimen för {result.label} är AV (netto {result.net_score:+d}). Inga nya entries enligt regeln."
         elif result.verdict == VERDICT_SELEKTIV and all_pass:
             ac, ai = AMBER, "🟡"
             at = f"SELEKTIV — regim SELEKTIV och trendfilter gröna. Halverad position."

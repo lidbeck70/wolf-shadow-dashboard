@@ -61,6 +61,15 @@ VERDICT_BUY_MIN   = 70.0  # ≥ 70 → KÖPLÄGE
 VERDICT_WATCH_MIN = 50.0  # 50–70 → BEVAKA, annars AVVAKTA
 SETUP_KOP, SETUP_BEVAKA, SETUP_AVVAKTA = "KÖPLÄGE", "BEVAKA", "AVVAKTA"
 
+# ── Regimverdikt per komplex: netto i stället för "räkna gröna" ─────────────
+# Grön +1, gul 0, röd −1, DATA_GAP 0 (visas som varning). Netto ≥ REGIME_PA_MIN
+# = PÅ, netto ≥ REGIME_SELEKTIV_MIN = SELEKTIV, annars AV. Minst
+# REGIME_AV_RED_MIN röda = AV oavsett netto. Gul straffades som röd tidigare.
+REGIME_PILLAR_POINTS = {"GREEN": 1, "AMBER": 0, "RED": -1, "DATA_GAP": 0}
+REGIME_PA_MIN        = 3     # t.ex. 3 gröna + 2 gula, eller 4 gröna + 1 röd
+REGIME_SELEKTIV_MIN  = 0     # 0–2: t.ex. 2 gröna + 3 gula, eller 3 gröna + 1 gul + 1 röd
+REGIME_AV_RED_MIN    = 2     # två röda pelare = AV oavsett
+
 # ── Risk model ────────────────────────────────────────────────────────────────
 RISK_PCT      = 0.02   # 2% account risk per trade
 ATR_STOP_MULT = 2.5    # stop = entry − 2.5 × ATR(14)
