@@ -80,3 +80,20 @@ def test_sector_etf_and_theme_follow_the_sheet_commodity(monkeypatch):
         assert cfg.COMMODITY_TO_THEME[key] in cfg.EMBER_SECTOR_ETF, key
     for cx in cfg.COMPLEX_LABEL:
         assert cfg.COMPLEX_DEFAULT_THEME[cx] in cfg.EMBER_SECTOR_ETF
+
+
+def test_theme_from_register_sector_text(monkeypatch):
+    import streamlit as st
+    import positions
+    rows = [{"ticker": "DOFG.OL", "name": "DOF Group", "strategy": "Wolf", "sector": "Olja & offshore"},
+            {"ticker": "NYX", "name": "x", "strategy": "Viking", "sector": "Unknown"}]
+    monkeypatch.setattr(positions, "open_positions", lambda strategy=None, bucket=None: rows)
+    _stores(monkeypatch)
+    st.session_state.clear()
+    assert rg.theme_from_sector_text("Olja & offshore") == "olja"
+    assert rg.theme_from_sector_text("Guldgruva") == "guld" and rg.theme_from_sector_text("Bank") is None
+    assert rg.register_sector("dofg.ol") == "Olja & offshore" and rg.register_sector("NYX") is None
+    assert rg.detect_theme("DOFG.OL") == "olja" and rg.detect_complex("DOFG.OL") == "energi"
+    from ember import engine as e
+    assert e.sector_etf_for("DOFG.OL") == "XLE"
+    assert rg.detect_theme("NYX") is None                              # Unknown ger inget tema
