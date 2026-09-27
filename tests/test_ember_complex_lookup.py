@@ -97,3 +97,34 @@ def test_theme_from_register_sector_text(monkeypatch):
     from ember import engine as e
     assert e.sector_etf_for("DOFG.OL") == "XLE"
     assert rg.detect_theme("NYX") is None                              # Unknown ger inget tema
+
+
+def test_theme_from_yahoo_industry_is_automatic(monkeypatch):
+    import streamlit as st
+    import positions
+    monkeypatch.setattr(positions, "open_positions", lambda strategy=None, bucket=None:
+                        [{"ticker": "DOFG.OL", "name": "DOF Group", "strategy": "Wolf", "sector": "Unknown"}])
+    _stores(monkeypatch)
+    st.session_state.clear()
+    rg._THEME_CACHE.clear()
+    infos = {"DOFG.OL": {"sector": "Energy", "industry": "Oil & Gas Equipment & Services", "longName": "DOF Group ASA"},
+             "AEM.TO": {"sector": "Basic Materials", "industry": "Gold"},
+             "BANK.ST": {"sector": "Financial Services", "industry": "Banks - Regional"}}
+    calls = []
+
+    def getter(sym):
+        calls.append(sym)
+        return infos.get(sym, {})
+
+    assert rg.yahoo_theme("dofg.ol", getter) == "olja" and rg.yahoo_theme("AEM.TO", getter) == "guld"
+    assert rg.yahoo_theme("BANK.ST", getter) is None and rg.yahoo_theme("BANK.ST", getter) is None
+    assert calls == ["DOFG.OL", "AEM.TO", "BANK.ST"]                 # cachat: en fråga per ticker
+    # detect_theme/detect_complex använder cachen utan att fråga igen (auto)
+    assert rg.detect_theme("DOFG.OL") == "olja" and rg.detect_complex("DOFG.OL") == "energi"
+    from ember import engine as e
+    assert e.sector_etf_for("DOFG.OL") == "XLE"
+    assert rg.detect_theme("BANK.ST") is None and rg.detect_complex("BANK.ST") is None
+    assert rg.detect_theme("NEW.ST", auto=False) is None and "NEW.ST" not in rg._THEME_CACHE
+    src = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ember", "ui.py"),
+               encoding="utf-8").read()
+    assert "_render_all_scanned(result)" in src and "Alla skannade" in src   # inget försvinner tyst

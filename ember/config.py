@@ -194,6 +194,20 @@ SECTOR_KEYWORD_THEME: tuple = (
     ("kol", "kol"), ("coal", "kol"),
     ("agri", "agri"), ("jordbruk", "agri"), ("potash", "agri"), ("gödsel", "agri"), ("fertilizer", "agri"),
 )
+# Yahoo-bransch (sector/industry/namn, engelska) → tema. Läses automatiskt för
+# tickers som inte finns i temakartan, arket eller registret. Första träffen vinner.
+INDUSTRY_KEYWORD_THEME: tuple = (
+    ("uranium", "uran"),
+    ("silver", "silver"),
+    ("gold", "guld"), ("precious", "guld"), ("platinum", "guld"), ("palladium", "guld"),
+    ("copper", "koppar"), ("industrial metals", "koppar"), ("nickel", "koppar"), ("zinc", "koppar"),
+    ("steel", "koppar"), ("aluminum", "koppar"), ("iron", "koppar"),
+    ("lithium", "sallsynta"), ("rare earth", "sallsynta"), ("cobalt", "sallsynta"), ("graphite", "sallsynta"),
+    ("coal", "kol"),
+    ("natural gas", "naturgas"), ("lng", "naturgas"),
+    ("oil", "olja"), ("petroleum", "olja"), ("offshore", "olja"), ("drilling", "olja"), ("energy", "olja"),
+    ("agricultural", "agri"), ("fertilizer", "agri"), ("potash", "agri"), ("farm", "agri"),
+)
 # Valt komplex utan råvara → temat som bär komplexet (för sektor-ETF och cykel).
 COMPLEX_DEFAULT_THEME: dict[str, str] = {"energi": "olja", "adelmetaller": "guld",
                                          "basmetaller": "koppar", "agri": "agri"}
