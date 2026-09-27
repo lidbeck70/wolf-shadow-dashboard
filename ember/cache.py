@@ -40,6 +40,7 @@ def _setup_to_dict(r) -> dict:
         "candle_pattern": r.candle_pattern,
         "asymmetry_score": r.asymmetry_score, "setup_quality": r.setup_quality,
         "setup_score": getattr(r, "setup_score", 0.0), "verdict": getattr(r, "verdict", ""),
+        "theme_key": getattr(r, "theme_key", None), "hard_pass": getattr(r, "hard_pass", False),
         "macro_total": (r.macro.total if r.macro else None),
         "sentiment_total": (r.sentiment.total if r.sentiment else None),
         "error": r.error,

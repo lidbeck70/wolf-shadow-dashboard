@@ -217,8 +217,8 @@ def _render_setup_card(r: EmberSetupResult, idx: int) -> None:
                 + _field("Sektor",                r.sektor)
                 + _field("Var i cykeln",
                          (r.cykel_label + pct_10y_txt) if r.cykel_label != "DATA_GAP" else
-                         "DATA_GAP — okänt tema: sätt råvara i Wolf Asymmetry → Ark, sektor i Holdings "
-                         "eller komplex i EMBER Regime", cy_color)
+                         "DATA_GAP — temabrädan har inte temat än, eller så är branschen ingen råvara "
+                         "(Yahoo). Sätt komplex i EMBER Regime om du vill tvinga.", cy_color)
                 + _field("Verdikt",               trend_txt,      t_color)
                 + _field("Varför intressant nu",  why_auto,       GOLD)
                 + _field("Marknaden ogillar",     hat_txt,        AMBER)
@@ -376,6 +376,33 @@ def _render_setup_card(r: EmberSetupResult, idx: int) -> None:
 
 
 # ── Near-miss section ─────────────────────────────────────────────────────────
+
+def _render_all_scanned(result: EmberScanResult) -> None:
+    """Varje skannad ticker med verdikt och varför — så ett bolag aldrig försvinner tyst."""
+    rows = []
+    for r in sorted(result.all_results, key=lambda x: (x.error is not None, -x.setup_score)):
+        if r.error:
+            why = f"fel: {r.error}"
+        elif not r.hard_pass:
+            failed = [g.name for g in r.trend_gates if g.is_blocker and not g.passed]
+            failed += [f.name for f in r.notrade_flags if f.is_blocker and f.passed]
+            why = "hård grind: " + "; ".join(failed) if failed else "hård grind"
+        elif r.verdict == "AVVAKTA":
+            lost = sorted((g for g in r.trend_gates + r.entry_gates if g.max_points > 0),
+                          key=lambda g: g.max_points - g.points, reverse=True)
+            why = "tappar mest på " + "; ".join(f"{g.name.split(' (')[0]} −{g.max_points - g.points:.0f}"
+                                                 for g in lost[:2] if g.max_points - g.points > 0)
+        else:
+            why = ""
+        rows.append({"Ticker": r.ticker, "Verdikt": r.verdict if not r.error else "FEL",
+                     "Setup": round(r.setup_score) if not r.error else None,
+                     "Tema": r.sektor, "Cykel": r.cykel_label, "Varför": why})
+    with st.expander(f"Alla skannade ({len(rows)}) — verdikt och varför", expanded=False):
+        import pandas as pd
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        st.caption("AVVAKTA visas bara här. Hård grind = pris under 50V EMA eller sen cykel. "
+                   "Tema ur temakartan, arket, Holdings eller Yahoos bransch — cykelfasen följer temat.")
+
 
 def _render_near_misses(near_misses: list[EmberSetupResult]) -> None:
     if not near_misses:
@@ -717,6 +744,7 @@ def render_ember_page() -> None:
             unsafe_allow_html=True,
         )
         _render_near_misses(result.near_misses)
+        _render_all_scanned(result)
         return
 
     _render_top3(result.eligible)
@@ -733,3 +761,4 @@ def render_ember_page() -> None:
         _render_setup_card(r, idx)
 
     _render_near_misses(result.near_misses)
+    _render_all_scanned(result)

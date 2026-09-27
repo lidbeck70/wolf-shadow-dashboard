@@ -79,6 +79,7 @@ class EmberSetupResult:
     asymmetry_score: float = 0.0
     setup_quality:   int   = 0
     cycle_bonus:     float = 0.0
+    theme_key:       Optional[str] = None   # tema som gav sektor-ETF och cykelfas
     setup_score:     float = 0.0        # 0–100: graderade grindar minus avdrag
     verdict:         str   = SETUP_AVVAKTA   # KÖPLÄGE / BEVAKA / AVVAKTA
     hard_pass:       bool  = False      # 50V EMA + ingen sen cykel
@@ -154,6 +155,7 @@ def _scan_ticker(
 
     # Pull theme board data (cycle position, HAT, necessity)
     theme_key = _theme_for(ticker)
+    r.theme_key = theme_key
     if theme_key and theme_key in theme_map:
         td = theme_map[theme_key]
         r.cykel_label   = td.get("cykel_label", "DATA_GAP")

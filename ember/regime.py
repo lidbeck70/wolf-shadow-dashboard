@@ -131,7 +131,7 @@ def detect_complex(ticker: str) -> Optional[str]:
     hit = complex_from_sheet(t)
     if hit:
         return hit
-    theme = theme_from_sector_text(register_sector(t))
+    theme = theme_from_sector_text(register_sector(t)) or yahoo_theme(t)
     return _T2C.get(theme) if theme else None
 
 
@@ -215,10 +215,42 @@ def theme_from_sector_text(text: Optional[str]) -> Optional[str]:
     return None
 
 
-def detect_theme(ticker: str) -> Optional[str]:
+_THEME_CACHE: dict = {}          # {TICKER: tema | None} — en Yahoo-fråga per ticker och process
+
+
+def yahoo_theme(ticker: str, info_getter=None) -> Optional[str]:
+    """Tema ur Yahoos bransch: 'Oil & Gas Equipment & Services' → olja,
+    'Gold' → guld, 'Copper' → koppar. Cachas per process. None när Yahoo
+    inte vet eller branschen inte är en råvara (bank, teknik …)."""
+    from ember.config import INDUSTRY_KEYWORD_THEME
+    t = str(ticker or "").strip().upper()
+    if not t:
+        return None
+    if t in _THEME_CACHE:
+        return _THEME_CACHE[t]
+    if info_getter is None:
+        def info_getter(sym):
+            import yfinance as yf
+            return yf.Ticker(sym).info or {}
+    theme = None
+    try:
+        info = info_getter(t) or {}
+        text = " ".join(str(info.get(k) or "") for k in ("industry", "sector", "longName", "shortName")).lower()
+        for kw, th in INDUSTRY_KEYWORD_THEME:
+            if kw in text:
+                theme = th
+                break
+    except Exception as exc:
+        logger.debug("yahoo_theme(%s): %s", t, exc)
+    _THEME_CACHE[t] = theme
+    return theme
+
+
+def detect_theme(ticker: str, auto: bool = True) -> Optional[str]:
     """Ticker → EMBER-tema (sektor-ETF och cykelfas ur Odins temabräda), i ordning:
     temakartan, råvaran i arket (COMMODITY_TO_THEME), sektortexten i registret,
-    annars det valda komplexets bärande tema."""
+    det valda komplexets bärande tema, och sist Yahoos bransch (auto=True) —
+    så ett bolag får cykelfas utan att du rör Holdings eller arket."""
     from ember.config import COMMODITY_TO_THEME, COMPLEX_DEFAULT_THEME, TICKER_THEME_MAP
     t = str(ticker or "").strip().upper()
     if not t:
@@ -233,7 +265,9 @@ def detect_theme(ticker: str) -> Optional[str]:
     if hit:
         return hit
     cx = complex_overrides().get(t) or (complex_from_sheet(t) if key else None)
-    return COMPLEX_DEFAULT_THEME.get(cx) if cx else None
+    if cx:
+        return COMPLEX_DEFAULT_THEME.get(cx)
+    return yahoo_theme(t) if auto else None
 
 
 # ── Shared generic pillar helpers ─────────────────────────────────────────────
