@@ -739,14 +739,19 @@ try:  # pragma: no cover - trivial import guard
         RISK_PCT as _EMBER_RISK_PCT,
         PULLBACK_EMA_PCT as _EMBER_PULLBACK_PCT,
         RSI_ENTRY_MAX as _EMBER_RSI_MAX,
+        VERDICT_BUY_MIN as _EMBER_BUY, VERDICT_WATCH_MIN as _EMBER_WATCH,
+        PULLBACK_MAX_PCT as _EMBER_PB_MAX, RSI_FULL as _EMBER_RSI_FULL, RSI_ZERO as _EMBER_RSI_ZERO,
+        RS_FULL_PCT as _EMBER_RS_FULL, LATE_CYCLE_PCT as _EMBER_LATE,
     )
 except Exception:  # pragma: no cover
     _EMBER_RISK_PCT, _EMBER_PULLBACK_PCT, _EMBER_RSI_MAX = 0.02, 3.0, 45
+    _EMBER_BUY, _EMBER_WATCH, _EMBER_PB_MAX, _EMBER_RSI_FULL, _EMBER_RSI_ZERO = 70.0, 50.0, 6.0, 40.0, 55.0
+    _EMBER_RS_FULL, _EMBER_LATE = 5.0, 85.0
 
 EMBER_PB = Playbook(
     key="ember",
     name="🔥 Ember",
-    tagline="Råvarucykel med hårda grindar — kontrariansk timing, teknisk precision",
+    tagline="Råvarucykel med tre hårda grindar och graderad setup-poäng — kontrariansk timing",
     color=EMBER,
     level=LEVEL_ADVANCED,
     horizon="Swing — dagar till veckor",
@@ -754,8 +759,9 @@ EMBER_PB = Playbook(
     where="SCREENING → Arc Screener → 🔥 EMBER  ·  REGIME → Råvaror → 🌍 EMBER Regime",
     idea=(
         "Ember tar Deep Contrarians cykeltänk och lägger teknisk precision ovanpå: "
-        "makro/cykelfilter avgör OM du får handla, fyra hårda trendgrindar avgör VAD, "
-        "och två hårda entrygrindar avgör NÄR. Allt är kodstyrt och mekaniskt — men "
+        "makro/cykelfilter avgör OM du får handla, tre hårda grindar (50V EMA, inte sen "
+        "cykel, regimen inte AV) avgör VAD, och en setup-poäng 0–100 avgör NÄR: "
+        f"≥ {_EMBER_BUY:.0f} = KÖPLÄGE, {_EMBER_WATCH:.0f}–{_EMBER_BUY:.0f} = BEVAKA. Allt är kodstyrt — men "
         "det är många villkor att hålla reda på, så lär dig Deep Contrarian först. "
         "Det fullständiga regelverket (13 sektioner med exakta trösklar) finns under "
         "STRATEGIGUIDER → Ember."
@@ -777,22 +783,21 @@ EMBER_PB = Playbook(
          "REGIME → Råvaror → 🌍 EMBER Regime: ett verdikt per komplex. Screenern "
          "grindar varje setup mot sitt eget komplex — ett guldcase mot ÄDELMETALLER, "
          "inte mot ENERGI.", True),
-        ("Fyra trendgrindar (T1–T4) — alla hårda, alla måste passera",
-         "Trendstrukturen måste vara intakt innan en entry ens övervägs.",
-         "SCREENING → Arc Screener → 🔥 EMBER: setup-kortet visar T1–T4 med PASS/FAIL per grind.", True),
-        (f"Entrygrind E1 — pullback inom ±{_EMBER_PULLBACK_PCT:.0f} % av 20D EMA",
-         "Du köper i en rekyl mot 20-dagars EMA, aldrig i ett rakt rally.",
-         "SCREENING → Arc Screener → 🔥 EMBER: setup-kortet visar avstånd till 20D EMA.", True),
-        (f"Entrygrind E2 — RSI(14) under {_EMBER_RSI_MAX}",
-         "Momentum får inte vara utsträckt vid entry.",
-         "SCREENING → Arc Screener → 🔥 EMBER: RSI visas på setup-kortet med gränsvärdet utsatt.", True),
-        ("Fyra bekräftande entryfilter",
-         "Inte hårda krav, men de höjer kvaliteten på caset.",
-         "SCREENING → Arc Screener → 🔥 EMBER: bekräftelsefälten på setup-kortet."),
-        ("Inga aktiva no-trade-flaggor (F1–F4)",
-         "Är någon flagga aktiv blockeras entry helt — oavsett hur bra allt annat ser ut.",
-         "SCREENING → Arc Screener → 🔥 EMBER: no-trade-flaggorna listas på kortet. Aktiv flagga = "
-         "kortet blockeras.", True),
+        (f"Hård grind: pris över 50-veckors EMA och inte sen cykel (10å-percentil ≤ {_EMBER_LATE:.0f})",
+         "Rätt komplex i rätt fas. Under 50V EMA eller på cykeltoppen övervägs ingen entry, "
+         "oavsett setup-poäng.",
+         "SCREENING → Arc Screener → 🔥 EMBER: grindarna märkta HÅRD på setup-kortet.", True),
+        (f"Setup-poäng ≥ {_EMBER_BUY:.0f} = KÖPLÄGE, {_EMBER_WATCH:.0f}–{_EMBER_BUY:.0f} = BEVAKA",
+         "Trend och entry är poäng, inte grindar: 20D > 50D EMA (15), relativ styrka mot "
+         f"sektor-ETF graderad −{_EMBER_RS_FULL:.0f}…+{_EMBER_RS_FULL:.0f} % (20), stigande bottnar "
+         f"2 = halva / 3 = full (15), pullback till 20D EMA 0…{_EMBER_PB_MAX:.0f} % (20), RSI(14) "
+         f"{_EMBER_RSI_FULL:.0f}…{_EMBER_RSI_ZERO:.0f} (15), MACD, volym, candle, fallande ATR (15). "
+         "Summa 100. Ett bolag som gått 1 % sämre än GDX stoppas inte längre, det tappar några poäng.",
+         "SCREENING → Arc Screener → 🔥 EMBER: varje rad på kortet visar poäng/max.", True),
+        ("Flaggorna ATR-surge och DXY-rally är avdrag, inte stopp",
+         "Volatilitetsspik −15 p, dollarrally −10 p. Chop-zonen mellan 20D och 50D EMA är borttagen: "
+         "den mätte samma sak som pullback-grinden med motsatt tecken.",
+         "SCREENING → Arc Screener → 🔥 EMBER: flaggorna på kortet med avdraget utsatt."),
     ]),
     exit=_rules([
         ("Stop enligt setup-kortet — strukturbaserad",

@@ -2,7 +2,7 @@
 ember/gates.py
 EMBER strategy — hard gate computations.
 
-Trend gates:  price > 50W EMA, 20D > 50D EMA, RS vs sector ETF (3m),
+Trend gates:  price > 50W EMA (hård), 20D > 50D EMA, RS vs sector ETF (3m) graderad,
               ≥3 higher lows in 6 weeks.
 Entry gates:  pullback to 20D EMA, RSI(14)<45, MACD histogram higher low,
               volume > 20D avg, bullish candle, ATR falling.
@@ -20,6 +20,8 @@ import numpy as np
 import pandas as pd
 
 from ember.config import (
+    SETUP_WEIGHTS as W, RS_FULL_PCT, HIGHER_LOWS_OK, PULLBACK_MAX_PCT, RSI_FULL, RSI_ZERO,
+    PENALTY_ATR_SURGE, PENALTY_DXY_SURGE,
     PULLBACK_EMA_PCT, RSI_ENTRY_MAX, RSI_PERIOD, VOL_MIN_RATIO,
     ATR_PERIOD, ATR_SURGE_PCT, ATR_SURGE_LOOKBACK_W,
     LATE_CYCLE_PCT, DXY_SURGE_PCT, DXY_SURGE_LOOKBACK_W,
@@ -38,6 +40,16 @@ class GateResult:
     passed: bool
     detail: str
     is_blocker: bool   # True = hard gate; False = confirmation / advisory
+    points: float = 0.0       # poäng i setup-poängen (negativ = avdrag)
+    max_points: float = 0.0   # max för graderade grindar (0 för hårda grindar)
+
+
+def graded(value: float, zero: float, full: float) -> float:
+    """0–1 linjärt mellan zero och full (åt vilket håll som helst)."""
+    if full == zero:
+        return 1.0 if value >= full else 0.0
+    x = (value - zero) / (full - zero)
+    return max(0.0, min(1.0, x))
 
 
 # ── Robust download (reuses the pattern from tactical_entry / commodity_ratios) ──
@@ -171,7 +183,7 @@ def compute_trend_gates(
     close_w: pd.Series,
     sector_etf: str,
 ) -> list[GateResult]:
-    """4 trend gates — all must pass (is_blocker=True on all)."""
+    """4 trendgrindar: pris > 50V EMA är hård; de tre andra ger poäng."""
     gates: list[GateResult] = []
     price = float(close_d.iloc[-1])
 
@@ -201,7 +213,7 @@ def compute_trend_gates(
         name="20D EMA > 50D EMA",
         passed=c2,
         detail=f"20D EMA {ema20_d:.2f} {'>' if c2 else '<'} 50D EMA {ema50_d:.2f}",
-        is_blocker=True,
+        is_blocker=False, points=W["ema_cross"] if c2 else 0.0, max_points=W["ema_cross"],
     ))
 
     # TREND 3 — relative strength vs sector ETF (3 months)
@@ -209,12 +221,13 @@ def compute_trend_gates(
 
     # TREND 4 — ≥3 higher lows in 6 weeks
     hl_count = _count_higher_lows(close_d, HIGHER_LOWS_LOOKBACK_W)
-    hl_pass  = hl_count >= HIGHER_LOWS_MIN
+    hl_pass  = hl_count >= HIGHER_LOWS_OK
+    hl_pts   = W["higher_lows"] * (1.0 if hl_count >= HIGHER_LOWS_MIN else 0.5 if hl_count >= HIGHER_LOWS_OK else 0.0)
     gates.append(GateResult(
-        name=f"≥{HIGHER_LOWS_MIN} stigande bottnar (6V)",
+        name=f"Stigande bottnar 6V ({HIGHER_LOWS_OK} = halva, ≥{HIGHER_LOWS_MIN} = full)",
         passed=hl_pass,
         detail=f"{hl_count} stigande botten{'ar' if hl_count != 1 else ''} detekterade",
-        is_blocker=True,
+        is_blocker=False, points=hl_pts, max_points=W["higher_lows"],
     ))
 
     return gates
@@ -227,7 +240,7 @@ def _rs_gate(close_d: pd.Series, sector_etf: str) -> GateResult:
         if etf_df.empty or "Close" not in etf_df.columns:
             return GateResult(name=name, passed=False,
                               detail=f"DATA_GAP — {sector_etf} ej tillgänglig",
-                              is_blocker=True)
+                              is_blocker=False, max_points=W["rs"])
         etf_c = etf_df["Close"].squeeze()
         if isinstance(etf_c, pd.DataFrame):
             etf_c = etf_c.iloc[:, 0]
@@ -236,22 +249,22 @@ def _rs_gate(close_d: pd.Series, sector_etf: str) -> GateResult:
         if len(etf_c) < n or len(close_d) < n:
             return GateResult(name=name, passed=False,
                               detail="DATA_GAP — otillräcklig historik för RS",
-                              is_blocker=True)
+                              is_blocker=False, max_points=W["rs"])
         rs_t   = float(close_d.iloc[-1]) / float(close_d.iloc[-n]) - 1
         rs_etf = float(etf_c.iloc[-1]) / float(etf_c.iloc[-n]) - 1
         diff   = (rs_t - rs_etf) * 100
-        passed = diff > 0
+        share  = graded(diff, -RS_FULL_PCT, RS_FULL_PCT)
         return GateResult(
             name=name,
-            passed=passed,
+            passed=diff > 0,
             detail=f"Ticker 3m {rs_t*100:+.1f}% vs {sector_etf} {rs_etf*100:+.1f}% "
-                   f"→ RS {diff:+.1f}%",
-            is_blocker=True,
+                   f"→ RS {diff:+.1f}% ({share * 100:.0f} % av poängen)",
+            is_blocker=False, points=W["rs"] * share, max_points=W["rs"],
         )
     except Exception as exc:
         logger.debug("_rs_gate: %s", exc)
         return GateResult(name=name, passed=False,
-                          detail=f"DATA_GAP: {exc}", is_blocker=True)
+                          detail=f"DATA_GAP: {exc}", is_blocker=False, max_points=W["rs"])
 
 
 # ── Entry gates ───────────────────────────────────────────────────────────────
@@ -281,22 +294,24 @@ def compute_entry_gates(
     # ENTRY 1 — pullback to 20D EMA ≤ 3% (hard gate)
     pct = abs(price - ema20) / ema20 * 100 if ema20 > 0 else 999.0
     e1  = pct <= PULLBACK_EMA_PCT
+    pb_share = graded(pct, PULLBACK_MAX_PCT, 0.0)
     gates.append(GateResult(
-        name=f"Pullback till 20D EMA (≤{PULLBACK_EMA_PCT}%)",
+        name=f"Pullback till 20D EMA (0 % = full, ≥{PULLBACK_MAX_PCT:.0f} % = 0)",
         passed=e1,
-        detail=f"Pris {price:.2f} är {pct:.1f}% från 20D EMA {ema20:.2f}",
-        is_blocker=True,
+        detail=f"Pris {price:.2f} är {pct:.1f}% från 20D EMA {ema20:.2f} ({pb_share * 100:.0f} % av poängen)",
+        is_blocker=False, points=W["pullback"] * pb_share, max_points=W["pullback"],
     ))
 
     # ENTRY 2 — RSI(14) < 45 (hard gate)
     rsi_val = _rsi(close_d)
     e2 = (not np.isnan(rsi_val)) and (rsi_val < RSI_ENTRY_MAX)
+    rsi_share = 0.0 if np.isnan(rsi_val) else graded(rsi_val, RSI_ZERO, RSI_FULL)
     rsi_str = f"{rsi_val:.1f}" if not np.isnan(rsi_val) else "DATA_GAP"
     gates.append(GateResult(
-        name=f"RSI({RSI_PERIOD}) < {RSI_ENTRY_MAX}",
+        name=f"RSI({RSI_PERIOD}) (≤{RSI_FULL:.0f} = full, ≥{RSI_ZERO:.0f} = 0)",
         passed=e2,
-        detail=f"RSI = {rsi_str}",
-        is_blocker=True,
+        detail=f"RSI = {rsi_str} ({rsi_share * 100:.0f} % av poängen)",
+        is_blocker=False, points=W["rsi"] * rsi_share, max_points=W["rsi"],
     ))
 
     # ENTRY 3 — MACD histogram higher low (confirmation)
@@ -306,14 +321,14 @@ def compute_entry_gates(
             name="MACD-histogram: stigande botten",
             passed=hist_rising,
             detail=f"Histogram nu {h_now:.4f} / föregående {h_prev:.4f}",
-            is_blocker=False,
+            is_blocker=False, points=W["macd"] if hist_rising else 0.0, max_points=W["macd"],
         ))
     else:
         gates.append(GateResult(
             name="MACD-histogram: stigande botten",
             passed=False,
             detail="DATA_GAP — otillräcklig historik",
-            is_blocker=False,
+            is_blocker=False, max_points=W["macd"],
         ))
 
     # ENTRY 4 — volume > 20D average (confirmation)
@@ -326,7 +341,7 @@ def compute_entry_gates(
         name="Bullish candlestick-mönster",
         passed=candle_pass,
         detail=f"Detekterat: {candle}" if candle != "NONE" else "Inget mönster detekterat",
-        is_blocker=False,
+        is_blocker=False, points=W["candle"] if candle_pass else 0.0, max_points=W["candle"],
     ))
 
     # ENTRY 6 — ATR falling during pullback (advisory)
@@ -360,12 +375,12 @@ def _volume_gate(df_daily: pd.DataFrame) -> GateResult:
     vol = df_daily["Volume"].dropna()
     if len(vol) < 22:
         return GateResult(name=name, passed=False,
-                          detail="DATA_GAP — < 22 volymrader", is_blocker=False)
+                          detail="DATA_GAP — < 22 volymrader", is_blocker=False, max_points=W["volume"])
     avg20 = float(vol.iloc[-21:-1].mean())
     cur   = float(vol.iloc[-1])
     ratio = cur / avg20 if avg20 > 0 else 0.0
     passed = ratio >= VOL_MIN_RATIO
-    return GateResult(
+    return GateResult(points=W["volume"] if passed else 0.0, max_points=W["volume"],
         name=name,
         passed=passed,
         detail=f"Volym {cur:,.0f} = {ratio:.2f}× snitt ({avg20:,.0f})",
@@ -377,17 +392,17 @@ def _atr_falling_gate(df_daily: pd.DataFrame) -> GateResult:
     name = "ATR sjunker (lugn pullback)"
     if not all(c in df_daily.columns for c in ("High", "Low", "Close")):
         return GateResult(name=name, passed=False,
-                          detail="DATA_GAP — OHLC saknas", is_blocker=False)
+                          detail="DATA_GAP — OHLC saknas", is_blocker=False, max_points=W["atr_falling"])
     atr_s = _atr_series(df_daily)
     if len(atr_s) < 6:
         return GateResult(name=name, passed=False,
-                          detail="DATA_GAP — otillräcklig historik", is_blocker=False)
+                          detail="DATA_GAP — otillräcklig historik", is_blocker=False, max_points=W["atr_falling"])
     atr_now  = float(atr_s.iloc[-1])
     atr_prev = float(atr_s.iloc[-5])
     falling  = atr_now < atr_prev
     return GateResult(
         name=name,
-        passed=falling,
+        passed=falling, points=W["atr_falling"] if falling else 0.0, max_points=W["atr_falling"],
         detail=f"ATR nu {atr_now:.4f} / 5 dagar {atr_prev:.4f} "
                f"({'↓ SJUNKER ✓' if falling else '↑ STIGER'})",
         is_blocker=False,
@@ -402,29 +417,17 @@ def compute_notrade_flags(
     cycle_percentile_10y: Optional[float],
 ) -> list[GateResult]:
     """
-    4 no-trade zone checks.
-    passed=True means the NO-TRADE condition IS active → blocks the trade.
+    Tre no-trade-kontroller. passed=True = villkoret är aktivt.
+    Sen cykel blockerar (is_blocker). ATR-surge och DXY-rally är avdrag
+    (points < 0). Chop-zonen togs bort: den mätte samma sak som pullback-
+    grinden med motsatt tecken och gjorde varje rekyl omöjlig.
     """
     flags: list[GateResult] = []
-    price  = float(close_d.iloc[-1])
-    ema20  = float(_ema(close_d, 20).iloc[-1])
-    ema50  = float(_ema(close_d, 50).iloc[-1])
 
-    # FLAG 1 — price in chop zone between 20D and 50D EMA
-    lo, hi = min(ema20, ema50), max(ema20, ema50)
-    between = lo < price < hi
-    flags.append(GateResult(
-        name="Pris i chop-zon (mellan 20D/50D EMA)",
-        passed=between,
-        detail=f"20D {ema20:.2f} · 50D {ema50:.2f} · Pris {price:.2f}"
-               f" {'→ CHOP-ZON ⛔' if between else ' ✓'}",
-        is_blocker=True,
-    ))
-
-    # FLAG 2 — ATR surge > 40% vs 2 weeks ago
+    # FLAG 1 — ATR surge > 40% vs 2 weeks ago (avdrag)
     flags.append(_atr_surge_flag(df_daily))
 
-    # FLAG 3 — late cycle (10y percentile > 85)
+    # FLAG 2 — late cycle (10y percentile > 85) — hård
     if cycle_percentile_10y is not None:
         late = cycle_percentile_10y > LATE_CYCLE_PCT
         flags.append(GateResult(
@@ -442,7 +445,7 @@ def compute_notrade_flags(
             is_blocker=True,
         ))
 
-    # FLAG 4 — DXY rally > 2% in 2 weeks
+    # FLAG 3 — DXY rally > 2% in 2 weeks (avdrag)
     flags.append(_dxy_surge_flag())
 
     return flags
@@ -452,12 +455,12 @@ def _atr_surge_flag(df_daily: pd.DataFrame) -> GateResult:
     name = f"ATR-surge > {ATR_SURGE_PCT:.0f}% (2 veckor)"
     if not all(c in df_daily.columns for c in ("High", "Low", "Close")):
         return GateResult(name=name, passed=False,
-                          detail="DATA_GAP — OHLC saknas", is_blocker=True)
+                          detail="DATA_GAP — OHLC saknas", is_blocker=False)
     atr_s = _atr_series(df_daily)
     n = ATR_SURGE_LOOKBACK_W * 5
     if len(atr_s) < n + 2:
         return GateResult(name=name, passed=False,
-                          detail="DATA_GAP — otillräcklig historik", is_blocker=True)
+                          detail="DATA_GAP — otillräcklig historik", is_blocker=False)
     atr_now  = float(atr_s.iloc[-1])
     atr_prev = float(atr_s.iloc[-(n + 1)])
     change   = (atr_now - atr_prev) / atr_prev * 100 if atr_prev > 0 else 0.0
@@ -466,8 +469,8 @@ def _atr_surge_flag(df_daily: pd.DataFrame) -> GateResult:
         name=name,
         passed=surge,
         detail=f"ATR 2V förändring: {change:+.1f}% "
-               f"({'SURGE → STANNA ⛔' if surge else '✓'})",
-        is_blocker=True,
+               f"({f'SURGE → −{PENALTY_ATR_SURGE:.0f} p' if surge else '✓'})",
+        is_blocker=False, points=-PENALTY_ATR_SURGE if surge else 0.0,
     )
 
 
@@ -480,7 +483,7 @@ def _dxy_surge_flag() -> GateResult:
         if df.empty or "Close" not in df.columns:
             return GateResult(name=name, passed=False,
                               detail="DATA_GAP — DXY ej tillgänglig, antas OK",
-                              is_blocker=True)
+                              is_blocker=False)
         close = df["Close"].squeeze()
         if isinstance(close, pd.DataFrame):
             close = close.iloc[:, 0]
@@ -489,17 +492,17 @@ def _dxy_surge_flag() -> GateResult:
         if len(close) < n + 2:
             return GateResult(name=name, passed=False,
                               detail="DATA_GAP — otillräcklig DXY-historik",
-                              is_blocker=True)
+                              is_blocker=False)
         change = (float(close.iloc[-1]) / float(close.iloc[-(n + 1)]) - 1) * 100
         surge  = change > DXY_SURGE_PCT
         return GateResult(
             name=name,
             passed=surge,
             detail=f"DXY 2V förändring: {change:+.1f}% "
-                   f"({'RALLY → MOTSTÅND ⛔' if surge else '✓'})",
-            is_blocker=True,
+                   f"({f'RALLY → −{PENALTY_DXY_SURGE:.0f} p' if surge else '✓'})",
+            is_blocker=False, points=-PENALTY_DXY_SURGE if surge else 0.0,
         )
     except Exception as exc:
         logger.debug("_dxy_surge_flag: %s", exc)
         return GateResult(name=name, passed=False,
-                          detail=f"DATA_GAP: {exc}", is_blocker=True)
+                          detail=f"DATA_GAP: {exc}", is_blocker=False)

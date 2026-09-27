@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 
 from ember.config import (
-    RISK_PCT, ATR_STOP_MULT,
+    RISK_PCT, ATR_STOP_MULT, VERDICT_BUY_MIN, VERDICT_WATCH_MIN, SETUP_KOP, SETUP_BEVAKA, SETUP_AVVAKTA,
     EMBER_ETF_UNIVERSE, EMBER_STOCK_UNIVERSE,
     DEFAULT_SECTOR_ETF, EMBER_SECTOR_ETF, TICKER_THEME_MAP, _THEME_LABEL,
 )
@@ -79,6 +79,9 @@ class EmberSetupResult:
     asymmetry_score: float = 0.0
     setup_quality:   int   = 0
     cycle_bonus:     float = 0.0
+    setup_score:     float = 0.0        # 0–100: graderade grindar minus avdrag
+    verdict:         str   = SETUP_AVVAKTA   # KÖPLÄGE / BEVAKA / AVVAKTA
+    hard_pass:       bool  = False      # 50V EMA + ingen sen cykel
 
     error: Optional[str] = None
 
@@ -90,6 +93,32 @@ class EmberScanResult:
     all_results:     list[EmberSetupResult]
     timestamp:       datetime               = field(default_factory=datetime.now)
     universe_stats:  Optional[UniverseStats] = None
+
+
+# ── Setup-poäng ───────────────────────────────────────────────────────────────
+
+def score_setup(trend_gates: list, entry_gates: list, notrade_flags: list) -> tuple[float, str, bool]:
+    """(poäng 0–100, verdikt, hårda grindar ok). Poängen = summan av de
+    graderade grindarnas points / summan av deras max × 100, minus avdragen
+    ur aktiva flaggor. Faller en hård grind (50V EMA, sen cykel) blir
+    verdiktet AVVAKTA oavsett poäng — poängen visas ändå."""
+    graded_gates = [g for g in trend_gates + entry_gates if g.max_points > 0]
+    mx = sum(g.max_points for g in graded_gates)
+    pts = sum(g.points for g in graded_gates)
+    penalty = sum(-g.points for g in notrade_flags if g.passed and g.points < 0)
+    score = (pts / mx * 100.0 if mx > 0 else 0.0) - penalty
+    score = round(max(0.0, min(100.0, score)), 1)
+    hard = (all(g.passed for g in trend_gates if g.is_blocker)
+            and not any(f.passed and f.is_blocker for f in notrade_flags))
+    if not hard:
+        verdict = SETUP_AVVAKTA
+    elif score >= VERDICT_BUY_MIN:
+        verdict = SETUP_KOP
+    elif score >= VERDICT_WATCH_MIN:
+        verdict = SETUP_BEVAKA
+    else:
+        verdict = SETUP_AVVAKTA
+    return score, verdict, hard
 
 
 # ── Per-ticker pipeline ───────────────────────────────────────────────────────
@@ -140,16 +169,13 @@ def _scan_ticker(
             cw = cw.iloc[:, 0]
         close_w = cw.dropna().resample("W").last().dropna()
 
-    # Trend gates
+    # Trend gates (50V EMA hård, resten poäng)
     r.trend_gates = compute_trend_gates(close_d, close_w, sector_etf)
     r.trend_pass  = all(g.passed for g in r.trend_gates if g.is_blocker)
 
-    # Entry gates + levels
+    # Entry gates + levels (alla poäng)
     (r.entry_gates, r.ema20, r.atr14,
      r.entry, r.stop, r.rr, r.candle_pattern) = compute_entry_gates(close_d, df_daily)
-
-    # entry_pass: both hard-gate conditions (pullback + RSI) must pass
-    r.entry_pass = all(g.passed for g in r.entry_gates if g.is_blocker)
     r.setup_quality = sum(1 for g in r.entry_gates if g.passed)
 
     # Recompute levels with ATR stop model
@@ -164,12 +190,14 @@ def _scan_ticker(
             if account_size > 0:
                 r.shares = max(1, int(account_size * RISK_PCT / risk))
 
-    # No-trade flags
+    # No-trade flags (sen cykel hård, ATR/DXY avdrag)
     r.notrade_flags = compute_notrade_flags(close_d, df_daily, r.percentile_10y)
     r.notrade_clear = not any(f.passed and f.is_blocker for f in r.notrade_flags)
 
-    # Overall eligibility
-    r.eligible = r.trend_pass and r.entry_pass and r.notrade_clear
+    # Setup-poäng 0–100 och verdikt
+    r.setup_score, r.verdict, r.hard_pass = score_setup(r.trend_gates, r.entry_gates, r.notrade_flags)
+    r.entry_pass = r.verdict != SETUP_AVVAKTA
+    r.eligible   = r.verdict == SETUP_KOP
 
     # Macro scoring (shared context — passed in from caller)
     r.macro = compute_macro_score(ratios_dict, r.cykel_label)
@@ -196,6 +224,7 @@ def run_ember_scan(
     max_workers: int = 6,
     universe_source: str = SOURCE_CURATED,
     use_prefilter: bool = True,
+    extra_tickers: Optional[list[str]] = None,
 ) -> EmberScanResult:
     """
     Scan tickers and return ranked EmberScanResult.
@@ -210,6 +239,8 @@ def run_ember_scan(
         tickers, u_stats = build_universe(universe_source, use_prefilter=use_prefilter)
         if not tickers:
             tickers = list(dict.fromkeys(EMBER_ETF_UNIVERSE + EMBER_STOCK_UNIVERSE))
+    if extra_tickers:
+        tickers = list(dict.fromkeys(list(tickers) + [t.strip().upper() for t in extra_tickers if t and t.strip()]))
 
     # Shared macro context fetched once
     ratios_dict: Optional[dict] = None
@@ -264,13 +295,11 @@ def run_ember_scan(
                 all_results.append(err)
 
     # Partition
-    eligible    = [r for r in all_results if r.eligible and not r.error]
-    near_misses = [r for r in all_results
-                   if not r.eligible and not r.error
-                   and (r.trend_pass or r.entry_pass)]
+    eligible    = [r for r in all_results if r.verdict == SETUP_KOP and not r.error]
+    near_misses = [r for r in all_results if r.verdict == SETUP_BEVAKA and not r.error]
 
-    eligible.sort(key=lambda r: r.asymmetry_score, reverse=True)
-    near_misses.sort(key=lambda r: r.setup_quality, reverse=True)
+    eligible.sort(key=lambda r: (r.setup_score, r.asymmetry_score), reverse=True)
+    near_misses.sort(key=lambda r: r.setup_score, reverse=True)
 
     return EmberScanResult(
         eligible=eligible,
