@@ -134,3 +134,35 @@ def test_ui_preset_and_texts():
     assert p["global_market_ids"] == US_CA and p["include_global"] and p["static_fallback"]
     assert p["min_market_cap_musd"] == 50.0
     assert "US/CA Resource" not in ui._MARKETS
+
+
+def test_insider_ownership_from_yahoo_when_borsdata_has_none():
+    from contrarian_alpha.catalyst import _score_insider_ownership, _score_insider_buying
+    out = eng.yahoo_insider_fill({}, "IPT.V", lambda sym: {"heldPercentInsiders": 0.23})
+    assert out["insider_ownership_pct"] == 23.0 and out["insider_ownership_source"] == "Yahoo (IPT.V)"
+    assert _score_insider_ownership(out)[:2] == (8.0, 23.0)          # >20 % → full poäng
+    assert _score_insider_buying(out)[0] == 2.0                      # köp/sälj fylls inte → neutral
+    # Börsdata-värdet vinner, ingen Yahoo-fråga
+    kept = eng.yahoo_insider_fill({"insider_ownership_pct": 4.0}, "X", lambda sym: 1 / 0)
+    assert kept == {"insider_ownership_pct": 4.0}
+    # None in, orimligt värde, Yahoo faller → oförändrat
+    assert eng.yahoo_insider_fill(None, "Y", lambda sym: {"heldPercentInsiders": 1.7}) == {}
+    assert eng.yahoo_insider_fill(None, "Z", lambda sym: 1 / 0) == {}
+    assert eng.yahoo_insider_fill({"insider_buy_count": 2}, "W", lambda sym: {}) == {"insider_buy_count": 2}
+
+
+def test_yahoo_info_is_cached_per_ticker(monkeypatch):
+    import types
+    calls = []
+
+    class _T:
+        def __init__(self, sym):
+            calls.append(sym)
+            self.info = {"heldPercentInsiders": 0.1}
+    monkeypatch.setitem(sys.modules, "yfinance", types.SimpleNamespace(Ticker=_T))
+    eng._YAHOO_INFO.clear()
+    assert eng.yahoo_info("NEM")["heldPercentInsiders"] == 0.1
+    eng.yahoo_fill({}, "NEM")
+    eng.yahoo_insider_fill({}, "NEM")
+    assert calls == ["NEM"]                                          # en fråga delas av båda
+    eng._YAHOO_INFO.clear()
