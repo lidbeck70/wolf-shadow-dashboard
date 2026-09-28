@@ -45,9 +45,10 @@ def test_name_and_theme_fallbacks():
 
 
 def test_missing_fields_are_listed_by_label():
-    assert eng.missing_fields({"market_cap": 100.0, "fcf_m": 5.0, "roic": float("nan")}) == [
-        "EBITDA-marginal", "Nettoskuld/EBITDA", "D/E", "ROIC", "P/FCF", "EV/EBITDA", "Omsättning"]
-    assert eng.missing_fields(None)[0] == "Börsvärde"
+    miss, nm = eng.missing_fields({"market_cap": 100.0, "fcf_m": 5.0, "roic": float("nan")})
+    assert miss == ["EBITDA-marginal", "Nettoskuld/EBITDA", "D/E", "ROIC", "P/FCF", "EV/EBITDA", "Omsättning"]
+    assert nm == []
+    assert eng.missing_fields(None)[0][0] == "Börsvärde"
 
 
 def _universe():
@@ -64,7 +65,7 @@ def _run(monkeypatch, mode):
     monkeypatch.setattr(eng, "_build_universe", lambda cfg, api: _universe())
     monkeypatch.setattr(eng, "_batch_fetch_fundamentals", lambda ids, api, global_ids=None: {})
     monkeypatch.setattr(eng, "_fetch_price_df", lambda t, i, api: None)
-    monkeypatch.setattr(eng, "_batch_valuation_data", lambda scan, snaps, api: {})
+    monkeypatch.setattr(eng, "_batch_valuation_data", lambda scan, snaps, api: {}, raising=True)
     seen = []
 
     def fake_single(ticker, ins_id, inst_info, fund_snap, price_df, branch_name, sector_name, config, api, **kw):

@@ -158,6 +158,15 @@ class PipelineConfig:
     # KPI-screenern. Flaggan fanns men lästes aldrig — "Global" i panelen körde
     # exakt samma skanning som "Norden".
     include_global: bool   = False
+    # Begränsa de globala raderna till dessa Börsdata-marknader (None = alla).
+    # "USA & Kanada": NYSE 32, Nasdaq 33, Toronto 35, TSX Venture 36, CSE 37.
+    global_market_ids: list[int] | None = None
+    # Storleksfilter före kurshämtningen: börsvärde i MUSD (None = av).
+    min_market_cap_musd: float | None = None
+    # Saknas globala instrument (licens) → den kurerade US/CA-listan i stället.
+    static_fallback: bool = False
+    # Fyll valutafria nyckeltal ur Yahoo när Börsdata är tomt (UI sätter True).
+    yahoo_fill: bool = False
     manual_tickers: list[str] = field(default_factory=list)  # override / supplement
 
     # Råvarugrind (commodity_gate.py): None = på i deep_contrarian, av i quality.
@@ -231,6 +240,8 @@ class ContrairianAlphaResult:
     # Råvaruklassning och datakvalitet (synligt på kortet)
     commodity_label:      str        = ""   # "Gruv – guld & silver", "tema olja" …
     data_missing:         list[str]  = field(default_factory=list)  # Börsdata-fält som saknades
+    data_not_meaningful:  list[str]  = field(default_factory=list)  # tomma för att talet saknar mening
+    data_filled_yahoo:    list[str]  = field(default_factory=list)  # fyllda ur Yahoo
 
     # Pipeline flags
     eliminated:           bool       = False
@@ -328,6 +339,9 @@ class PipelineResult:
     config:           PipelineConfig
     delisted_count:   int = 0  # tickers skipped because yfinance returned no price data
     commodity_passed: int | None = None  # None = råvarugrinden var av (quality-läget)
+    size_passed:      int | None = None  # None = storleksfiltret var av
+    static_fallback_used: bool = False   # global licens saknades → kurerad US/CA-lista
+    field_coverage:   dict = field(default_factory=dict)  # {etikett: (har, av)} bland skannade
     global_count:     int = 0  # rader ur /instruments/global (0 med include_global = licens saknas)
 
     @property
@@ -337,10 +351,14 @@ class PipelineResult:
         base = self.universe_count if self.commodity_passed is None else self.commodity_passed
         out = {} if self.commodity_passed is None else {
             "commodity": _pct(self.commodity_passed, self.universe_count)}
+        hate_base = self.necessity_passed
+        if self.size_passed is not None:
+            out["size"] = _pct(self.size_passed, self.necessity_passed)
+            hate_base = self.size_passed
         return {
             **out,
             "necessity":  _pct(self.necessity_passed,  base),
-            "hate":       _pct(self.hate_passed,        self.necessity_passed),
+            "hate":       _pct(self.hate_passed,        hate_base),
             "balance_sheet": _pct(self.bs_passed,      self.hate_passed),
             "ranked":     _pct(self.composite_ranked,   self.bs_passed),
         }
@@ -1235,19 +1253,85 @@ KEY_FIELDS: dict[str, str] = {
 }
 
 
-def missing_fields(fund_snap: dict | None) -> list[str]:
-    """Etiketter för nyckelfält som saknas eller är NaN i snapshoten."""
+def _num(v):
+    try:
+        return None if v is None or v != v else float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+# Multiplar som Börsdata lämnar tomma när nämnaren är negativ — inte en lucka.
+_NEEDS_POSITIVE = {"p_fcf": "fcf_m", "ev_ebitda": "ebitda_margin", "net_debt_ebitda": "ebitda_margin"}
+
+
+def missing_fields(fund_snap: dict | None) -> tuple[list[str], list[str]]:
+    """(saknas, ej meningsfullt). P/FCF är tomt när FCF ≤ 0 och EV/EBITDA,
+    nettoskuld/EBITDA när EBITDA ≤ 0 — då är talet meningslöst, inte saknat."""
     snap = fund_snap or {}
-    out = []
+    missing, meaningless = [], []
     for key, label in KEY_FIELDS.items():
-        v = snap.get(key)
-        try:
-            bad = v is None or v != v
-        except Exception:
-            bad = True
-        if bad:
-            out.append(label)
-    return out
+        if _num(snap.get(key)) is not None:
+            continue
+        base = _NEEDS_POSITIVE.get(key)
+        bv = _num(snap.get(base)) if base else None
+        if bv is not None and bv <= 0:
+            why = "negativt FCF" if base == "fcf_m" else "negativ EBITDA"
+            meaningless.append(f"{label} ({why})")
+        else:
+            missing.append(label)
+    return missing, meaningless
+
+
+def yahoo_fill(fund_snap: dict, ticker: str, info_getter=None) -> list[str]:
+    """Fyll valutafria nyckeltal ur Yahoo när Börsdata är tomt: EBITDA-marginal,
+    D/E, EV/EBITDA och nettoskuld/EBITDA (bara med positiv EBITDA). Samma
+    enheter som snapshoten (marginal som decimal, D/E som kvot). Returnerar
+    etiketterna som fylldes."""
+    want = [k for k in ("ebitda_margin", "debt_to_equity", "ev_ebitda", "net_debt_ebitda")
+            if _num(fund_snap.get(k)) is None]
+    if not want or not ticker:
+        return []
+    if info_getter is None:
+        def info_getter(sym):
+            import yfinance as yf
+            return yf.Ticker(sym).info or {}
+    try:
+        info = info_getter(ticker) or {}
+    except Exception as exc:
+        logger.debug("yahoo_fill(%s): %s", ticker, exc)
+        return []
+    ebitda = _num(info.get("ebitda"))
+    cand = {
+        "ebitda_margin":   _num(info.get("ebitdaMargins")),
+        "debt_to_equity":  (_num(info.get("debtToEquity")) / 100.0) if _num(info.get("debtToEquity")) is not None else None,
+        "ev_ebitda":       _num(info.get("enterpriseToEbitda")) if ebitda and ebitda > 0 else None,
+        "net_debt_ebitda": ((_num(info.get("totalDebt")) or 0.0) - (_num(info.get("totalCash")) or 0.0)) / ebitda
+                           if ebitda and ebitda > 0 and info.get("totalDebt") is not None else None,
+    }
+    filled = []
+    for k in want:
+        v = cand.get(k)
+        if v is not None:
+            fund_snap[k] = round(v, 4)
+            filled.append(KEY_FIELDS[k])
+    return filled
+
+
+_MARKET_CCY = {32: "USD", 33: "USD", 34: "USD", 35: "CAD", 36: "CAD", 37: "CAD"}
+
+
+def market_cap_musd(snap: dict, inst_info: dict) -> float | None:
+    """Börsvärdet i MUSD ur snapshoten (lokal valuta, miljoner). None när det saknas."""
+    mc = _num(snap.get("market_cap"))
+    if mc is None:
+        return None
+    ccy = str(inst_info.get("stockPriceCurrency") or "").upper() \
+        or _MARKET_CCY.get(inst_info.get("marketId")) or "SEK"
+    try:
+        from sheets_refresh import FX_TO_USD
+    except Exception:                                   # pragma: no cover
+        FX_TO_USD = {"USD": 1.0, "CAD": 0.73, "SEK": 0.095, "NOK": 0.095, "DKK": 0.145, "EUR": 1.08}
+    return mc * FX_TO_USD.get(ccy, 1.0)
 
 
 def _run_single_ticker(
@@ -1284,8 +1368,12 @@ def _run_single_ticker(
         timestamp=datetime.now(tz=timezone.utc).isoformat(),
     )
 
-    # Vilka Börsdata-fält saknades — syns på kortet så en låg poäng går att förklara.
-    result.data_missing = missing_fields(fund_snap)
+    # Yahoo fyller valutafria luckor, sedan: vad saknas och vad är meningslöst.
+    if fund_snap is None:
+        fund_snap = {}
+    if config.yahoo_fill:
+        result.data_filled_yahoo = yahoo_fill(fund_snap, ticker)
+    result.data_missing, result.data_not_meaningful = missing_fields(fund_snap)
 
     # Resource-universe context (PR2). Only populated for us_ca_resource; Nordic
     # rows leave these empty so their behavior is bit-for-bit unchanged.
@@ -1938,6 +2026,8 @@ def _build_universe(config: PipelineConfig, api) -> list[dict]:
                     mid = inst.get("marketId")
                     if not _markets.is_stock(mid, _table):
                         continue
+                    if config.global_market_ids is not None and mid not in config.global_market_ids:
+                        continue
                     if inst.get("instrumentType", 1) not in (1, None):
                         continue
                     ins_id = inst.get("insId")
@@ -2124,6 +2214,15 @@ def run_pipeline(config: PipelineConfig | None = None) -> PipelineResult:
 
     # ── Build universe ────────────────────────────────────────────────────────
     universe = _build_universe(config, api)
+    static_fallback_used = False
+    if (config.static_fallback and config.universe != "us_ca_resource"
+            and not any(u.get("scope") == "global" for u in universe)):
+        # Ingen global licens (eller tomt svar) → den kurerade US/CA-listan.
+        import dataclasses as _dc
+        logger.warning("Inga globala instrument — kurerad US/CA-lista som reserv")
+        config = _dc.replace(config, universe="us_ca_resource", include_global=False)
+        universe = _build_universe(config, api)
+        static_fallback_used = True
     universe_count = len(universe)
     global_count = sum(1 for u in universe if u.get("scope") == "global")
     logger.info("Universe: %d instruments (%d globala)", universe_count, global_count)
@@ -2217,6 +2316,35 @@ def run_pipeline(config: PipelineConfig | None = None) -> PipelineResult:
     _global_ids = {u["ins_id"] for u in scan_list
                    if u["ins_id"] is not None and u.get("scope") == "global"}
     fund_snapshots = _batch_fetch_fundamentals(ins_ids, api, global_ids=_global_ids)
+
+    # ── Storleksfilter (börsvärde i MUSD) — före kurshämtningen ─────────────
+    size_dropped = 0
+    if config.min_market_cap_musd:
+        _kept_size = []
+        for u in scan_list:
+            mc_usd = market_cap_musd(fund_snapshots.get(u["ins_id"]) or {}, u["inst_info"])
+            if mc_usd is not None and mc_usd < config.min_market_cap_musd:
+                size_dropped += 1
+                info = u["inst_info"]
+                eliminated.append(ContrairianAlphaResult(
+                    ticker=u["ticker"], ins_id=u["ins_id"], name=info.get("name", u["ticker"]),
+                    market=_market_name(info.get("marketId", 0)), sector=u["sector_name"],
+                    branch=u["branch_name"], composite_score=0.0, eliminated=True,
+                    elimination_stage="SIZE",
+                    elimination_reason=f"Börsvärde {mc_usd:,.0f} MUSD < {config.min_market_cap_musd:,.0f}",
+                    commodity_label=commodity_labels.get(u["ticker"], ""),
+                    timestamp=datetime.now(tz=timezone.utc).isoformat(),
+                ))
+            else:
+                _kept_size.append(u)
+        scan_list = _kept_size
+        ins_ids = [u["ins_id"] for u in scan_list if u["ins_id"] is not None]
+
+    # ── Täckning per nyckelfält bland de skannade ────────────────────────────
+    field_coverage = {label: (sum(1 for u in scan_list if u["ins_id"] is not None
+                                  and _num((fund_snapshots.get(u["ins_id"]) or {}).get(key)) is not None),
+                              sum(1 for u in scan_list if u["ins_id"] is not None))
+                      for key, label in KEY_FIELDS.items()}
     for u in scan_list:
         if u["ins_id"] is None:
             fund_snapshots[None] = {}
@@ -2388,6 +2516,7 @@ def run_pipeline(config: PipelineConfig | None = None) -> PipelineResult:
             bs_passed += 1
             passing.append(res)
 
+    necessity_passed += size_dropped          # storleksfiltret kommer efter nödvändighet
     for res in passing + eliminated:
         if not res.commodity_label and res.ticker in commodity_labels:
             res.commodity_label = commodity_labels[res.ticker]
@@ -2421,6 +2550,9 @@ def run_pipeline(config: PipelineConfig | None = None) -> PipelineResult:
         delisted_count   = delisted_skipped,
         global_count     = global_count,
         commodity_passed = commodity_passed,
+        size_passed      = (necessity_passed - size_dropped) if config.min_market_cap_musd else None,
+        static_fallback_used = static_fallback_used,
+        field_coverage   = field_coverage,
     )
 
 

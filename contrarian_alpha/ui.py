@@ -75,11 +75,13 @@ _MARKETS = {
                      "FCX","NEM","B","WPM","UUUU","CCJ","XOM","CVX",
                      "RIO","BHP","VALE","AA","CLF","MP","ALB",
                  ]},
-    # PR1 foundation: static US/CA resource universe (Rick Rule / Eric Sprott style).
-    # Loads config/universes/us_ca_resource.csv. Scoring is NOT yet stage-aware,
-    # so the Nordic fundamental grinds still apply (see warning in control panel).
-    "US/CA Resource": {"market_ids": [], "include_global": False,
-                       "universe": "us_ca_resource"},
+    # Börsdatas globala lista på NYSE, Nasdaq, Toronto, TSX Venture och CSE, med
+    # fullständiga nyckeltal ur den globala screenern. OTC är inte med
+    # (dubbellistningar). Storleksfilter före kurshämtningen. Saknas global
+    # licens används den kurerade US/CA-listan (config/universes/us_ca_resource.csv).
+    "USA & Kanada": {"market_ids": [], "include_global": True,
+                     "global_market_ids": [32, 33, 35, 36, 37],
+                     "min_market_cap_musd": 50.0, "static_fallback": True},
     "Custom":   {"market_ids": [], "include_global": False},
 }
 
@@ -357,6 +359,11 @@ def _render_control_panel() -> tuple[dict, bool]:
             "*Globalt: 0*."
         )
 
+    if market == "USA & Kanada":
+        st.caption(
+            "🇺🇸🇨🇦 **USA & Kanada** = Börsdatas globala lista på NYSE, Nasdaq, Toronto, TSX Venture "
+            "och CSE, med fullständiga nyckeltal. Kräver Pro+ global — saknas licensen används den "
+            "kurerade listan (62 bolag) som reserv. I Deep Contrarian går bara råvarubolag vidare.")
     # ── US/CA Resource: guardrails + composite v1 + enrichment v1 (PR2/PR3/PR4) ──
     if market == "US/CA Resource":
         st.caption(
@@ -434,6 +441,11 @@ def _render_control_panel() -> tuple[dict, bool]:
             _render_cache_status()
 
     preset = _MARKETS[market].copy()
+    preset["yahoo_fill"] = True
+    if market == "USA & Kanada":
+        preset["min_market_cap_musd"] = float(st.number_input(
+            "Min börsvärde (MUSD)", min_value=0.0, value=50.0, step=25.0, key="ca_min_mcap",
+            help="Bolag under gränsen hoppas över före kurshämtningen. 0 = alla."))  or None
     if market == "Custom":
         preset["manual_tickers"] = custom_tickers
     preset["top_n"] = top_n
@@ -570,6 +582,7 @@ def _get_or_run_pipeline(config_kwargs: dict, run_now: bool):
         "Universum":   result.universe_count,
         **({"Råvara ✓": result.commodity_passed} if getattr(result, "commodity_passed", None) is not None else {}),
         "Necessity ✓": result.necessity_passed,
+        **({"Storlek ✓": result.size_passed} if getattr(result, "size_passed", None) is not None else {}),
         "Hate ✓":      result.hate_passed,
         "BS ✓":        result.bs_passed,
         "Rankade":     result.composite_ranked,
@@ -582,6 +595,9 @@ def _get_or_run_pipeline(config_kwargs: dict, run_now: bool):
         if not getattr(result, "global_count", 0):
             st.warning("Inga globala instrument kom med — Börsdata Pro+ global "
                        "saknas eller svarade tomt. Resultatet är en ren Norden-scan.")
+    if getattr(result, "static_fallback_used", False):
+        st.warning("Inga globala instrument från Börsdata (Pro+ global saknas eller svarade tomt). "
+                   "Den kurerade US/CA-listan användes i stället — utan Börsdata-nyckeltal.")
     st.session_state["ca_last_stats"] = _stats
 
     # Persist to Gist (non-blocking best-effort)
@@ -829,8 +845,14 @@ def _render_detail_card(r) -> None:
                    + (f" · råvara: {_lbl}" if _lbl else "")
                    + (f" · nödvändighet {_ne.label} {_ne.score}" if _ne else ""))
         _miss = getattr(r, "data_missing", []) or []
+        _nm = getattr(r, "data_not_meaningful", []) or []
+        _yf = getattr(r, "data_filled_yahoo", []) or []
+        if _yf:
+            st.caption("↺ Ur Yahoo (Börsdata tomt): " + ", ".join(_yf))
+        if _nm:
+            st.caption("ℹ Ej meningsfullt: " + ", ".join(_nm))
         if _miss:
-            st.caption("⚠ Saknas i Börsdata: " + ", ".join(_miss) + " — delpoängen räknas utan dem.")
+            st.caption("⚠ Saknas: " + ", ".join(_miss) + " — delpoängen räknas utan dem.")
         # KAP badge (quality mode only)
         if getattr(r, "kap_badge", False):
             st.markdown(
@@ -1561,6 +1583,9 @@ def render_contrarian_alpha_page() -> None:
                f'<b style="color:{P["gold"]}">{pr["commodity"]}</b></span>' if "commodity" in pr else "")
             + f'<span style="color:{P["text_dim"]}">Necessity: '
             f'<b style="color:{P["gold"]}">{pr.get("necessity","—")}</b></span>'
+            + (f'<span style="color:{P["text_dim"]}">Storlek: '
+               f'<b style="color:{P["gold"]}">{pr["size"]}</b></span>' if "size" in pr else "")
+            + f''
             f'<span style="color:{P["text_dim"]}">Hate: '
             f'<b style="color:{P["gold"]}">{pr.get("hate","—")}</b></span>'
             f'<span style="color:{P["text_dim"]}">Balance Sheet: '
@@ -1572,6 +1597,11 @@ def render_contrarian_alpha_page() -> None:
             f'</div>',
             unsafe_allow_html=True,
         )
+
+    _cov = getattr(pipeline_result, "field_coverage", {}) or {}
+    if _cov:
+        st.caption("Datatäckning bland skannade (Börsdata): " + " · ".join(
+            f"{lbl} {have}/{tot}" for lbl, (have, tot) in _cov.items() if tot))
 
     st.divider()
 
