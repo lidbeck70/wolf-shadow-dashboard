@@ -236,7 +236,8 @@ def _guide_contrarian() -> None:
                     "<b>Hitta fas:</b> REGIME → Alpha Regime → välj Deep Contrarian → tryck ANALYSERA.",
                     "<b>Gummisnodde-bekräftelse:</b> Välj 'Commodity exposure' i Alpha Regime för att se "
                     "om råvaruratios är historiskt sträckta (≥ 90:e percentilen).",
-                    "<b>Hitta kandidater:</b> SCREENING → Contrarian Alpha (Hat Score + Necessity).",
+                    "<b>Hitta kandidater:</b> SCREENING → Contrarian Alpha, läge Deep Contrarian "
+                    "(bara råvarubolag · Hat Score + Necessity).",
                     "<b>Sentiment:</b> INTELLIGENCE → Retail Pulse.",
                 ], _CYAN),
                 _CYAN),
@@ -1089,8 +1090,9 @@ _PANEL_GUIDE: list[tuple] = [
      "Wolf: Regime Score + volymbekräftelse. Viking: Z-score composite + Vikings "
      "Nine. Ember: råvarusetups med T/E-grindar och no-trade-flaggor."),
     ("SCREENING → Contrarian Alpha → Screener", "Quality / Deep Contrarian",
-     "Kvalitetspoäng, KAP-badge, Hat Score + Necessity. Detaljkort med "
-     "gate-checklista och score-breakdown."),
+     "Quality: hela universumet, kvalitetspoäng och KAP-badge. Deep Contrarian: bara "
+     "råvaror (olja & gas, kol, uran, gruvor), Hat Score + Necessity. Detaljkort med "
+     "bransch, saknade Börsdata-fält, gate-checklista och score-breakdown."),
     ("SCREENING → Contrarian Alpha → Long Screener", "Alpha: kandidater",
      "CAGR-composite för långsiktiga innehav — kandidaterna till Alpha Regime."),
     ("GRANSKNING → Rick Rule", "Rule: granskningen",

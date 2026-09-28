@@ -343,7 +343,8 @@ def _render_control_panel() -> tuple[dict, bool]:
             key="ca_mode",
             help=(
                 "Quality — ROIC>15%, Quality-vikt 30%, Hat-vikt 20%.\n"
-                "Deep Contrarian — Hat ≥ 40, ROIC ≥ 8% genom cykeln, högst 5% över SMA200, "
+                "Deep Contrarian — bara råvaror (olja & gas, kol, uran, gruvor, gruvservice), "
+                "Hat ≥ 40, ROIC ≥ 8% genom cykeln, högst 5% över SMA200, "
                 "ND/EBITDA ≤ 3, Altman Z ≥ 1.8 (ej finans/fastighet), "
                 "Hat-vikt 30%, Quality-vikt 20%."
             ),
@@ -567,6 +568,7 @@ def _get_or_run_pipeline(config_kwargs: dict, run_now: bool):
     st.session_state["ca_last_run_ts"] = ts
     _stats = {
         "Universum":   result.universe_count,
+        **({"Råvara ✓": result.commodity_passed} if getattr(result, "commodity_passed", None) is not None else {}),
         "Necessity ✓": result.necessity_passed,
         "Hate ✓":      result.hate_passed,
         "BS ✓":        result.bs_passed,
@@ -821,6 +823,14 @@ def _render_detail_card(r) -> None:
 
     # ── Metadata (höger) ──
     with col_meta:
+        _ne = getattr(r, "necessity_entry", None)
+        _lbl = getattr(r, "commodity_label", "") or ""
+        st.caption(f"Bransch: {r.branch or r.sector or '—'}"
+                   + (f" · råvara: {_lbl}" if _lbl else "")
+                   + (f" · nödvändighet {_ne.label} {_ne.score}" if _ne else ""))
+        _miss = getattr(r, "data_missing", []) or []
+        if _miss:
+            st.caption("⚠ Saknas i Börsdata: " + ", ".join(_miss) + " — delpoängen räknas utan dem.")
         # KAP badge (quality mode only)
         if getattr(r, "kap_badge", False):
             st.markdown(
@@ -1547,7 +1557,9 @@ def render_contrarian_alpha_page() -> None:
             f'border-radius:6px;padding:8px 16px;margin-bottom:16px;'
             f'font-family:\'Courier New\',monospace;font-size:10px;'
             f'letter-spacing:0.08em;display:flex;flex-wrap:wrap;gap:16px">'
-            f'<span style="color:{P["text_dim"]}">Necessity: '
+            + (f'<span style="color:{P["text_dim"]}">Råvara: '
+               f'<b style="color:{P["gold"]}">{pr["commodity"]}</b></span>' if "commodity" in pr else "")
+            + f'<span style="color:{P["text_dim"]}">Necessity: '
             f'<b style="color:{P["gold"]}">{pr.get("necessity","—")}</b></span>'
             f'<span style="color:{P["text_dim"]}">Hate: '
             f'<b style="color:{P["gold"]}">{pr.get("hate","—")}</b></span>'
