@@ -160,6 +160,10 @@ class PipelineConfig:
     include_global: bool   = False
     manual_tickers: list[str] = field(default_factory=list)  # override / supplement
 
+    # Råvarugrind (commodity_gate.py): None = på i deep_contrarian, av i quality.
+    # Quality-läget är orört — det screenar hela universumet som förut.
+    commodity_only: bool | None = None
+
     # Pipeline gates
     necessity_threshold: float = float(NECESSITY_THRESHOLD)   # 60
     hate_threshold:      float = float(HAT_THRESHOLD)          # 40
@@ -223,6 +227,10 @@ class ContrairianAlphaResult:
     catalyst_result:  CatalystResult | None    = None
     quality_result:   "QualityResult | None"   = None
     value_result:     "ValueResult | None"     = None
+
+    # Råvaruklassning och datakvalitet (synligt på kortet)
+    commodity_label:      str        = ""   # "Gruv – guld & silver", "tema olja" …
+    data_missing:         list[str]  = field(default_factory=list)  # Börsdata-fält som saknades
 
     # Pipeline flags
     eliminated:           bool       = False
@@ -319,14 +327,19 @@ class PipelineResult:
     run_duration_s:   float
     config:           PipelineConfig
     delisted_count:   int = 0  # tickers skipped because yfinance returned no price data
+    commodity_passed: int | None = None  # None = råvarugrinden var av (quality-läget)
     global_count:     int = 0  # rader ur /instruments/global (0 med include_global = licens saknas)
 
     @property
     def pass_rates(self) -> dict[str, str]:
         def _pct(n, d):
             return f"{n}/{d} ({n/d*100:.0f}%)" if d else "0/0"
+        base = self.universe_count if self.commodity_passed is None else self.commodity_passed
+        out = {} if self.commodity_passed is None else {
+            "commodity": _pct(self.commodity_passed, self.universe_count)}
         return {
-            "necessity":  _pct(self.necessity_passed,  self.universe_count),
+            **out,
+            "necessity":  _pct(self.necessity_passed,  base),
             "hate":       _pct(self.hate_passed,        self.necessity_passed),
             "balance_sheet": _pct(self.bs_passed,      self.hate_passed),
             "ranked":     _pct(self.composite_ranked,   self.bs_passed),
@@ -1214,6 +1227,29 @@ def _batch_valuation_data(
     return result
 
 
+# Nyckelfälten ur Börsdata-snapshoten som poängen vilar på → läsbar etikett
+KEY_FIELDS: dict[str, str] = {
+    "market_cap": "Börsvärde", "fcf_m": "FCF", "ebitda_margin": "EBITDA-marginal",
+    "net_debt_ebitda": "Nettoskuld/EBITDA", "debt_to_equity": "D/E", "roic": "ROIC",
+    "p_fcf": "P/FCF", "ev_ebitda": "EV/EBITDA", "revenue_m": "Omsättning",
+}
+
+
+def missing_fields(fund_snap: dict | None) -> list[str]:
+    """Etiketter för nyckelfält som saknas eller är NaN i snapshoten."""
+    snap = fund_snap or {}
+    out = []
+    for key, label in KEY_FIELDS.items():
+        v = snap.get(key)
+        try:
+            bad = v is None or v != v
+        except Exception:
+            bad = True
+        if bad:
+            out.append(label)
+    return out
+
+
 def _run_single_ticker(
     ticker:       str,
     ins_id:       int | None,
@@ -1247,6 +1283,9 @@ def _run_single_ticker(
         composite_score=0.0,
         timestamp=datetime.now(tz=timezone.utc).isoformat(),
     )
+
+    # Vilka Börsdata-fält saknades — syns på kortet så en låg poäng går att förklara.
+    result.data_missing = missing_fields(fund_snap)
 
     # Resource-universe context (PR2). Only populated for us_ca_resource; Nordic
     # rows leave these empty so their behavior is bit-for-bit unchanged.
@@ -2105,10 +2144,38 @@ def run_pipeline(config: PipelineConfig | None = None) -> PipelineResult:
     # (yfinance-sektoruppslag); resurs-universumet grindas aldrig hårt.
     eliminated: list[ContrairianAlphaResult] = []
     scan_list: list[dict] = []
+    commodity_only = (config.commodity_only if config.commodity_only is not None
+                      else config.mode == "deep_contrarian") and config.universe != "us_ca_resource"
+    commodity_passed: int | None = None
+    commodity_labels: dict[str, str] = {}
+    if commodity_only:
+        from contrarian_alpha.commodity_gate import classify as _classify_commodity
+        commodity_passed = 0
+        _kept = []
+        for u in universe:
+            info = u["inst_info"]
+            ok, label = _classify_commodity(u["ticker"], info.get("branchId"),
+                                            u.get("branch_name", ""), u.get("sector_name", ""))
+            if ok:
+                commodity_passed += 1
+                commodity_labels[u["ticker"]] = label
+                _kept.append(u)
+                continue
+            eliminated.append(ContrairianAlphaResult(
+                ticker=u["ticker"], ins_id=u["ins_id"], name=info.get("name", u["ticker"]),
+                market=_market_name(info.get("marketId", 0)), sector=u["sector_name"],
+                branch=u["branch_name"], composite_score=0.0, eliminated=True,
+                elimination_stage="COMMODITY", elimination_reason=f"Ej råvara — {label}",
+                timestamp=datetime.now(tz=timezone.utc).isoformat(),
+            ))
+        logger.info("Råvarugrind: %d/%d kvar", commodity_passed, universe_count)
+        universe_for_necessity = _kept
+    else:
+        universe_for_necessity = universe
     if config.universe == "us_ca_resource":
         scan_list = list(universe)
     else:
-        for u in universe:
+        for u in universe_for_necessity:
             info = u["inst_info"]
             _sect = u["branch_name"] or u["sector_name"]
             if not (info.get("sectorId") or info.get("branchId") or _sect):
@@ -2321,6 +2388,10 @@ def run_pipeline(config: PipelineConfig | None = None) -> PipelineResult:
             bs_passed += 1
             passing.append(res)
 
+    for res in passing + eliminated:
+        if not res.commodity_label and res.ticker in commodity_labels:
+            res.commodity_label = commodity_labels[res.ticker]
+
     # ── Rank by composite score ────────────────────────────────────────────────
     passing.sort(key=lambda r: r.composite_score, reverse=True)
     for rank, res in enumerate(passing, start=1):
@@ -2349,6 +2420,7 @@ def run_pipeline(config: PipelineConfig | None = None) -> PipelineResult:
         config           = config,
         delisted_count   = delisted_skipped,
         global_count     = global_count,
+        commodity_passed = commodity_passed,
     )
 
 
