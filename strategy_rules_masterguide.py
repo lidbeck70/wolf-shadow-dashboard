@@ -122,6 +122,7 @@ RULE = Playbook(
         ("ND/EBITDA", "< 0,5 (olja/gas < 1,0)"),
         ("Soliditet", "> 50 % (djup baisse > 40 %)"),
         ("EV/EBITDA", "< 6 (kapitulation < 4)"),
+        ("EV/NAV", "< 0,7× billigt · 0,7–1,0× rimligt · NAV efter skatt, egen rad utanför poängen"),
         ("P/B", "< 1,5 (kriscase < 1,0)"),
         ("FCF-marginal", "> 0"),
         ("Listlängd", "< 15 = dyrt · > 100 = kapitulation"),

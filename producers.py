@@ -23,6 +23,9 @@ Formlerna är migrationsspecens (§6), som i sin tur är arkets:
   rabatt     = pnav_nu / pnav_botten − 1
   vs median  = pnav_nu / ev_ebitda_median-jämförelsen
   GEO-tillväxt = geo_aktie_nu / geo_aktie_3år − 1
+  EV/NAV     = EV (MUSD) / NAV efter skatt (MUSD) — Rules värdering av
+               producenter. Egen rad utanför poängen: poängen säger om
+               bolaget är bra, EV/NAV om det är billigt.
 """
 
 from __future__ import annotations
@@ -73,10 +76,16 @@ LIFE_MIN_YEARS = 5.0        # gruvlivslängd
 RP_MIN_YEARS = 8.0          # reserver/produktion, olja och gas
 DYING_ASSET = "Döende tillgång — låg multipel av ett skäl"
 
+# EV/NAV — värderingsraden bredvid poängen (inte i den)
+EV_NAV_CHEAP, EV_NAV_FAIR = 0.7, 1.0      # under 0,7× billigt, 0,7–1,0× rimligt, över dyrt
+NAV_PRICE_GAP_PCT = 20.0                  # NAV-pris mer än så från spot → varning
+NAV_CHEAP, NAV_FAIR, NAV_RICH = "Billigt mot NAV", "Rimligt mot NAV", "Dyrt mot NAV"
+
 P_BUY = "Köpkandidat"
 P_WATCH = "Bevaka"
 P_PASS = "Passa"
 PROD_COLOR = {P_BUY: GREEN, P_WATCH: AMBER, P_PASS: DIM}
+NAV_COLOR = {NAV_CHEAP: GREEN, NAV_FAIR: AMBER, NAV_RICH: RED}
 
 CHECKS = (
     ("jurisdiktion", "Jurisdiktion OK",
@@ -209,6 +218,40 @@ def producer_verdict(score: Optional[int],
     return Verdict(P_PASS, "För tunn marginal eller för lös disciplin.")
 
 
+def ev_nav(ev, nav) -> Optional[float]:
+    """EV / NAV efter skatt. None när något saknas eller NAV ≤ 0."""
+    e, n = _num(ev), _num(nav)
+    if e is None or n is None or n <= 0:
+        return None
+    return round(e / n, 4)
+
+
+def nav_price_gap(nav_price, spot) -> Optional[float]:
+    """Hur många procent spot ligger över (+) eller under (−) priset NAV:n är räknad på."""
+    p, s_ = _num(nav_price), _num(spot)
+    if not p or not s_ or p <= 0 or s_ <= 0:
+        return None
+    return round((s_ / p - 1) * 100, 1)
+
+
+def ev_nav_verdict(row: dict) -> Optional[Verdict]:
+    """Billigt/rimligt/dyrt mot NAV, med varning när NAV:n är räknad på ett
+    metallpris långt från dagens. None utan EV och NAV."""
+    r = ev_nav(row.get("ev_musd"), row.get("nav_musd"))
+    if r is None:
+        return None
+    label = NAV_CHEAP if r < EV_NAV_CHEAP else NAV_FAIR if r <= EV_NAV_FAIR else NAV_RICH
+    why = (f"EV {_num(row.get('ev_musd')):,.0f} MUSD / NAV {_num(row.get('nav_musd')):,.0f} MUSD = {r:.2f}×. "
+           f"Under {EV_NAV_CHEAP:g}× billigt, {EV_NAV_CHEAP:g}–{EV_NAV_FAIR:g}× rimligt, över dyrt.")
+    gap = nav_price_gap(row.get("nav_price"), row.get("price"))
+    if gap is not None and abs(gap) > NAV_PRICE_GAP_PCT:
+        why += (f" OBS: NAV räknad på {_num(row.get('nav_price')):,.0f}, spot {_num(row.get('price')):,.0f} "
+                f"({gap:+.0f} %) — NAV:n {'underskattar' if gap > 0 else 'överskattar'} värdet i dag.")
+    elif _num(row.get("nav_price")) is None:
+        why += " Ange metallpriset NAV:n är räknad på — annars går den inte att jämföra med spot."
+    return Verdict(label, why)
+
+
 def discount_vs_bottom(now, bottom) -> Optional[float]:
     """Hur många procent över sin egen P/NAV-botten bolaget handlas."""
     n, b = _num(now), _num(bottom)
@@ -264,7 +307,8 @@ def ranked_producers(rows: list) -> list:
         dying = asset_dying(r)
         out.append({"row": r, "score": sc,
                     "verdict": producer_verdict(sc, dying), "dying": dying,
-                    "margin": margin_pct(r.get("price"), r.get("unit_cost"))})
+                    "margin": margin_pct(r.get("price"), r.get("unit_cost")),
+                    "ev_nav": ev_nav(r.get("ev_musd"), r.get("nav_musd"))})
     out.sort(key=lambda x: (-(x["score"] if x["score"] is not None else -1),
                             (x["row"].get("ticker") or "")))
     return out
@@ -393,7 +437,10 @@ PROD_CSV = [("date", "Datum"), ("ticker", "Ticker"), ("name", "Bolag"),
             ("_dying", "Döende tillgång"),
             ("_ds", "DS"), ("_aqs", "AQS"), ("_csm_flag", "CSM röd flagga"),
             ("fcf_kvalitet", "FCF-klass"), ("_fv_base", "Fair value Base"),
-            ("_mos", "Säkerhetsmarginal %"), ("_mos_band", "MoS-bedömning")]
+            ("_mos", "Säkerhetsmarginal %"), ("_mos_band", "MoS-bedömning"),
+            ("ev_musd", "EV (MUSD)"), ("nav_musd", "NAV efter skatt (MUSD)"),
+            ("nav_price", "Metallpris i NAV"), ("nav_source", "NAV-källa"),
+            ("_ev_nav", "EV/NAV"), ("_ev_nav_band", "EV/NAV-bedömning")]
 
 ROYALTY_CSV = [("date", "Datum"), ("ticker", "Ticker"), ("name", "Bolag"),
                ("level", "Nivå"), ("pnav_now", "P/NAV nu"),
@@ -420,7 +467,9 @@ def _csv_row(r: dict) -> dict:
                                           row.get("csm", {}),
                                           bool(row.get("secured_cash"))),
             "_fv_base": _r1(fv["fv_base"]), "_mos": _r1(fv["mos"]),
-            "_mos_band": fv["mos_band"]}
+            "_mos_band": fv["mos_band"],
+            "_ev_nav": None if r.get("ev_nav") is None else round(r["ev_nav"], 2),
+            "_ev_nav_band": (ev_nav_verdict(row).label if ev_nav_verdict(row) else None)}
 
 
 def _producers(data: dict) -> None:
@@ -469,7 +518,8 @@ def _producers(data: dict) -> None:
         row, sc, vd = r["row"], r["score"], r["verdict"]
         head = (f"{row.get('ticker','?')} · {row.get('commodity','')} · "
                 f"{sc if sc is not None else '–'}/{PROD_MAX_SCORE} p · "
-                f"{vd.label if vd else 'ofullständig'}")
+                f"{vd.label if vd else 'ofullständig'}"
+                + (f" · {r['ev_nav']:.2f}× NAV" if r.get("ev_nav") is not None else ""))
         with st.expander(head, expanded=False):
             changed = False
             v1, v2, v3, v4 = st.columns(4)
@@ -530,7 +580,9 @@ def _producers(data: dict) -> None:
             _extract_section(data, row, "rule",
                              {"unit_cost": f"pr_c_{row['id']}",
                               "mine_life": f"pr_life_{row['id']}",
-                              "rp_ratio": f"pr_rp_{row['id']}"})
+                              "rp_ratio": f"pr_rp_{row['id']}",
+                              "nav_musd": f"pr_nav_{row['id']}",
+                              "nav_price": f"pr_navp_{row['id']}"})
             dying = asset_dying(row)
             if dying:
                 st.error(f"{DYING_ASSET} — den låga multipeln förklaras av "
@@ -571,6 +623,9 @@ def _producers(data: dict) -> None:
                 f"<div style='color:{TEXT};font-size:0.8rem;margin-top:3px;'>"
                 f"{vd2.why if vd2 else ''}</div></div>", unsafe_allow_html=True)
 
+            if _ev_nav_section(data, row):
+                changed = True
+
             # Positionsstorleken styr vilka kontroller som krävs.
             pos = st.number_input(
                 "Tänkt position (% av total)", min_value=0.0, step=0.5,
@@ -595,6 +650,70 @@ def _producers(data: dict) -> None:
                 st.rerun()
             if changed:
                 _save(data)
+
+
+def _fetch_ev(row: dict, widget_key: str) -> None:
+    """Hämta EV (MUSD) ur Börsdata direkt — samma rad som det nattliga jobbet."""
+    try:
+        from borsdata_api import BorsdataAPI
+        import sheets_refresh as sr
+        s_ = sr.fetch_row(BorsdataAPI(), row.get("ticker", ""), row.get("ins_id"))
+    except Exception as exc:
+        st.session_state[f"{widget_key}_msg"] = f"Börsdata svarade inte: {exc}"
+        return
+    ev = (s_ or {}).get("ev_musd")
+    if ev is None:
+        st.session_state[f"{widget_key}_msg"] = (f"Börsdata har ingen EV för {row.get('ticker', '?')} — "
+                                                 f"skriv den själv (börsvärde + nettoskuld, MUSD).")
+        return
+    row["ev_musd"] = ev
+    st.session_state[widget_key] = ev
+    st.session_state[f"{widget_key}_msg"] = f"EV {ev:,.0f} MUSD ur Börsdata ({s_.get('asof') or 'idag'})."
+
+
+def _ev_nav_section(data: dict, row: dict) -> bool:
+    """Värderingsraden: EV mot NAV efter skatt. Utanför poängen. True vid ändring."""
+    rid = row["id"]
+    st.markdown(f"<div style='color:{TEXT};font-size:0.85rem;font-weight:600;margin-top:6px;'>"
+                f"Värdering — EV/NAV <span style='color:{DIM};font-weight:400;'>"
+                f"(utanför poängen)</span></div>", unsafe_allow_html=True)
+    k_ev, k_nav, k_np = f"pr_evm_{rid}", f"pr_nav_{rid}", f"pr_navp_{rid}"
+    n1, n2, n3 = st.columns(3)
+    ev = n1.number_input("EV (MUSD)", min_value=0.0, step=10.0, value=_num(row.get("ev_musd")), key=k_ev,
+                         help="Börsvärde + nettoskuld i miljoner USD. Hämtas ur Börsdata.")
+    nav = n2.number_input("NAV efter skatt (MUSD)", min_value=0.0, step=10.0, value=_num(row.get("nav_musd")),
+                          key=k_nav, help="Summan av gruvornas NPV efter skatt (tekniska rapporter eller "
+                                          "analytikerkonsensus). Aldrig före skatt.")
+    np_ = n3.number_input("Metallpris i NAV", min_value=0.0, step=10.0, value=_num(row.get("nav_price")),
+                          key=k_np, help="Priset NAV:n är räknad på, i samma enhet som råvarupriset ovan.")
+    src = st.text_input("NAV-källa", value=row.get("nav_source") or "", key=f"pr_navs_{rid}",
+                        placeholder="t.ex. NI 43-101 2025, 5 % diskontering / analytikerkonsensus")
+    b1, b2 = st.columns([1, 3])
+    b1.button("Hämta EV nu", key=f"pr_evget_{rid}", on_click=_fetch_ev, args=(row, k_ev))
+    if st.session_state.get(f"{k_ev}_msg"):
+        b2.caption(st.session_state[f"{k_ev}_msg"])
+    _suggest("producers", row, "ev_musd", "ev_musd", "EV (MUSD)", k_ev, lambda: _save(data), fmt="{:,.0f}")
+    changed = False
+    if (storage.differs(ev, row.get("ev_musd")) or storage.differs(nav, row.get("nav_musd"))
+            or storage.differs(np_, row.get("nav_price"))):
+        row["ev_musd"], row["nav_musd"], row["nav_price"] = ev, nav, np_
+        changed = True
+    if (src or "") != (row.get("nav_source") or ""):
+        row["nav_source"] = src.strip()
+        changed = True
+    v = ev_nav_verdict(row)
+    if v is None:
+        st.caption("Fyll i EV och NAV efter skatt för att se EV/NAV.")
+    else:
+        c = NAV_COLOR.get(v.label, DIM)
+        r = ev_nav(row.get("ev_musd"), row.get("nav_musd"))
+        st.markdown(
+            f"<div style='border:1px solid {c}55;background:{c}0d;border-radius:8px;padding:8px 14px;"
+            f"margin:6px 0;'><span style='color:{c};font-weight:700;'>{r:.2f}× NAV</span>"
+            f"<span style='color:{c};font-weight:700;margin-left:12px;'>{v.label}</span>"
+            f"<div style='color:{TEXT};font-size:0.8rem;margin-top:3px;'>{v.why}</div></div>",
+            unsafe_allow_html=True)
+    return changed
 
 
 def _royalty(data: dict) -> None:

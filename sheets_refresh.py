@@ -328,6 +328,9 @@ def refresh(api, sheets: dict) -> dict:
                 s.update(report_cache[iid])
                 if r["sheet"] == "producers" and bucket_of(r) == "royalty":
                     s["ev_ebitda_median"] = ev_ebitda_median(api, iid)
+                if r["sheet"] == "producers" and bucket_of(r) == "producers":  # Rick Rule: EV till EV/NAV
+                    ev = _f(snap.get("ev"))
+                    s["ev_musd"] = round(ev * fx, 1) if ev is not None else None
                 if r["sheet"] == "confidence":               # Durrett-/Wolf Asymmetry-arket: fler tal ur snapshoten
                     roic = _f(snap.get("roic"))
                     s["roic_pct"] = round(roic * 100, 1) if roic is not None else None
