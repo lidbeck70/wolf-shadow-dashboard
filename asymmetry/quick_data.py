@@ -22,7 +22,9 @@ logger = logging.getLogger(__name__)
 # Fälten poängen läser — täckningen räknas på dem
 SCORED_FIELDS: tuple = ("fcf", "nd_ebitda", "current_ratio", "shares_growth_3y_pct", "equity_ratio_pct",
                         "ebitda_margin_pct", "ev_ebitda", "p_fcf", "earnings_stability", "fcf_stability",
-                        "f_score", "vs_sma200_pct")
+                        "fcf_positive_share", "cash_conversion", "vs_sma200_pct")
+# Operativt kassaflöde i Börsdatas årsrapport (camelCase efter aliasningen i #102)
+OCF_KEYS: tuple = ("cashFlowFromOperatingActivities", "operatingCashFlow")
 
 
 def _n(v) -> Optional[float]:
@@ -112,6 +114,27 @@ def trend_stability(values: list) -> Optional[float]:
     if sxy <= 0:
         return 0.0
     return round(sxy * sxy / (sxx * syy), 2)
+
+
+def fcf_positive_share(values: list) -> Optional[float]:
+    """Andel år med positivt fritt kassaflöde. None vid för få år."""
+    ys = [x for x in (_n(v) for v in values) if x is not None]
+    if len(ys) < qc.QUALITY_MIN_YEARS:
+        return None
+    return round(sum(1 for y in ys if y > 0) / len(ys), 2)
+
+
+def cash_conversion(ocf: list, profit: list) -> Optional[float]:
+    """Operativt kassaflöde / nettoresultat, summerat över år där båda finns.
+    Summor i stället för årskvoter — ett år med resultat nära noll ger annars
+    orimliga tal. None vid för få år eller summerad förlust (inte meningsfullt)."""
+    pairs = [(o, p) for o, p in ((_n(a), _n(b)) for a, b in zip(ocf, profit)) if o is not None and p is not None]
+    if len(pairs) < qc.QUALITY_MIN_YEARS:
+        return None
+    tot_p = sum(p for _, p in pairs)
+    if tot_p <= 0:
+        return None
+    return round(sum(o for o, _ in pairs) / tot_p, 2)
 
 
 def _price_stats(closes) -> dict:
@@ -216,7 +239,15 @@ def fetch(ticker: str, api=None, price_getter: Optional[Callable] = None,
                         d[key] = v
                         d["kpi_source"][key] = f"Börsdata historik ({'år' if rt == 'year' else 'r12'})"
             earn = [_n(r.get("profitToEquityHolders")) for r in years]
-            for key, series in (("earnings_stability", earn), ("fcf_stability", [v for _, v in d["fcf_series"]])):
+            ocf = [next((_n(r.get(k)) for k in OCF_KEYS if _n(r.get(k)) is not None), None) for r in years]
+            fcf_vals = [v for _, v in d["fcf_series"]]
+            d["quality_years"] = sum(1 for v in fcf_vals if v is not None)
+            d["fcf_positive_share"] = fcf_positive_share(fcf_vals)
+            d["cash_conversion"] = cash_conversion(ocf, earn)
+            if d["cash_conversion"] is None and sum(1 for p in earn if p is not None) >= qc.QUALITY_MIN_YEARS \
+                    and sum(p for p in earn if p is not None) <= 0:
+                d["cash_conversion_note"] = "summerad förlust — kvoten är inte meningsfull"
+            for key, series in (("earnings_stability", earn), ("fcf_stability", fcf_vals)):
                 if d.get(key) is None:
                     v = trend_stability(series)
                     if v is not None:
