@@ -311,6 +311,11 @@ def contrarian_alerts(ca_data: Optional[dict], prev: Optional[dict]) -> tuple:
     """
     if not isinstance(ca_data, dict) or not ca_data.get("timestamp"):
         return [], (prev if isinstance(prev, dict) else {"ranked": {}})
+    # Deep Contrarian är bara råvaror (#98). En lista utan commodity_only=True
+    # är från före råvarugrinden (eller fel läge) — larma inte på den, frys
+    # baslinjen tills scheduled_scan skrivit en ny.
+    if ca_data.get("commodity_only") is not True:
+        return [], (prev if isinstance(prev, dict) else {"ranked": {}})
 
     ranked = {}
     for row in ca_data.get("results", []) or []:

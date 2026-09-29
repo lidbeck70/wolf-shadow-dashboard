@@ -4,9 +4,9 @@ on:
   schedule:
     # Weekdays 08:00, 12:00, 18:00 Europe/Stockholm.
     # Cron is UTC. Stockholm = UTC+1 (winter) / UTC+2 (summer). Both crons
-    # fire all year, so the "Gate on local hour" step below skips the run
-    # whose Stockholm hour is not 08/12/18 — otherwise every weekday got six
-    # full runs (Börsdata/Yahoo load and double alerts) instead of three.
+    # fire all year, so the "Gate on season" step below skips the cron that
+    # belongs to the other season — otherwise every weekday got six full runs
+    # (Börsdata/Yahoo load and double alerts) instead of three.
     - cron: "0 6,10,16 * * 1-5"   # summer (CEST, UTC+2): 08/12/18 local
     - cron: "0 7,11,17 * * 1-5"   # winter (CET,  UTC+1): 08/12/18 local
   workflow_dispatch: {}            # allow manual trigger from the Actions tab
@@ -20,14 +20,22 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Gate on local hour
+      # GitHub kan försena schemalagda körningar flera timmar. Förut prövades
+      # klockslaget (08/12/18) när jobbet väl startade — en försenad körning
+      # hoppades över, så skanningen gick sällan (senast fullt 25/9). Nu prövas
+      # i stället VILKEN cron som startade jobbet mot säsongen: sommarcronen
+      # kör när Stockholm är UTC+2, vintercronen när Stockholm är UTC+1.
+      - name: Gate on season
         id: gate
         run: |
-          H=$(TZ=Europe/Stockholm date +%H)
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$H" = "08" ] || [ "$H" = "12" ] || [ "$H" = "18" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"; echo "Stockholm $H:xx — kör."
+          OFF=$(TZ=Europe/Stockholm date +%z)
+          SCHED="${{ github.event.schedule }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] \
+             || { [ "$SCHED" = "0 6,10,16 * * 1-5" ] && [ "$OFF" = "+0200" ]; } \
+             || { [ "$SCHED" = "0 7,11,17 * * 1-5" ] && [ "$OFF" = "+0100" ]; }; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; echo "Cron '$SCHED', Stockholm $OFF — kör."
           else
-            echo "run=false" >> "$GITHUB_OUTPUT"; echo "Stockholm $H:xx — hoppar (den andra cronen täcker den här timmen)."
+            echo "run=false" >> "$GITHUB_OUTPUT"; echo "Cron '$SCHED', Stockholm $OFF — hoppar (andra säsongens cron)."
           fi
 
       - name: Checkout

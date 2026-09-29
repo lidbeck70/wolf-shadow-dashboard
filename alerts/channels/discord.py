@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 import urllib.error
 import urllib.request
 from typing import Any, Dict, Optional
@@ -34,6 +35,24 @@ logger = logging.getLogger(__name__)
 
 _ENV_KEY = "DISCORD_WEBHOOK_URL"
 _TIMEOUT = 10  # seconds
+# Discord begränsar webhooks (~5 meddelanden / 2 s). 429 bär retry_after i
+# sekunder — vänta och försök igen i stället för att tappa larmet.
+_MAX_RETRIES = 3
+_MAX_WAIT_S = 10.0
+_sleep = time.sleep          # utbytbar i tester
+
+
+def _retry_after(exc: urllib.error.HTTPError, detail: str) -> float:
+    """Sekunder att vänta ur 429-svaret (kroppen, annars Retry-After), max _MAX_WAIT_S."""
+    wait = None
+    try:
+        wait = float(json.loads(detail).get("retry_after"))
+    except Exception:
+        try:
+            wait = float(exc.headers.get("Retry-After"))
+        except Exception:
+            wait = None
+    return min(max(wait if wait is not None else 1.0, 0.1), _MAX_WAIT_S)
 
 # Senaste felorsaken i klartext — läses av panelens testknapp, som annars
 # bara kan säga "misslyckades" utan att veta varför.
@@ -98,26 +117,34 @@ def send(message: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
         method="POST",
     )
 
-    try:
-        with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
-            status = resp.status
-    except urllib.error.HTTPError as exc:
+    for attempt in range(_MAX_RETRIES + 1):
         try:
-            detail = exc.read().decode("utf-8", "replace")[:200]
-        except Exception:
-            detail = ""
-        hint = (" — fel eller ofullständig webhook-URL?"
-                if exc.code in (401, 404) else "")
-        last_error = f"Discord svarade HTTP {exc.code} {exc.reason}{hint}"
-        if detail:
-            last_error += f" · svar: {detail}"
-        logger.error("discord channel: HTTP %d — %s %s", exc.code, exc.reason,
-                     detail)
-        return False
-    except OSError as exc:
-        last_error = f"nätverksfel: {exc}"
-        logger.error("discord channel: network error — %s", exc)
-        return False
+            with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
+                status = resp.status
+            break
+        except urllib.error.HTTPError as exc:
+            try:
+                detail = exc.read().decode("utf-8", "replace")[:200]
+            except Exception:
+                detail = ""
+            if exc.code == 429 and attempt < _MAX_RETRIES:
+                wait = _retry_after(exc, detail)
+                logger.info("discord channel: 429 — väntar %.1f s och försöker igen (%d/%d)",
+                            wait, attempt + 1, _MAX_RETRIES)
+                _sleep(wait)
+                continue
+            hint = (" — fel eller ofullständig webhook-URL?"
+                    if exc.code in (401, 404) else "")
+            last_error = f"Discord svarade HTTP {exc.code} {exc.reason}{hint}"
+            if detail:
+                last_error += f" · svar: {detail}"
+            logger.error("discord channel: HTTP %d — %s %s", exc.code, exc.reason,
+                         detail)
+            return False
+        except OSError as exc:
+            last_error = f"nätverksfel: {exc}"
+            logger.error("discord channel: network error — %s", exc)
+            return False
 
     if status not in range(200, 300):
         last_error = f"Discord svarade oväntad status {status}"

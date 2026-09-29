@@ -299,6 +299,11 @@ _LOCAL_FALLBACK   = os.path.join(os.path.dirname(__file__), ".ca_results.json")
 _EMPTY_RESULTS: dict = {"results": [], "timestamp": "", "universe_count": 0}
 
 
+def _local_path(mode: str = None) -> str:
+    """Lokal reservfil: .ca_results.json utan läge, .ca_results_<läge>.json med."""
+    return _LOCAL_FALLBACK if not mode else _LOCAL_FALLBACK.replace(".json", f"_{mode}.json")
+
+
 def _get_github_token() -> Optional[str]:
     try:
         import streamlit as st
@@ -358,16 +363,21 @@ def save_screener_results(pipeline_result, mode: str = None) -> bool:
     pipeline_result is a PipelineResult from engine.run_pipeline().
     Returns True if Gist write succeeded.
     """
+    cfg = getattr(pipeline_result, "config", None)
     payload = {
         "timestamp":      pipeline_result.timestamp,
         "universe_count": pipeline_result.universe_count,
         "run_duration_s": pipeline_result.run_duration_s,
+        # Läget och råvarugrinden följer med, så larmet kan se att listan är
+        # rätt sort (Deep = bara råvaror) och inte från före grinden.
+        "mode":           mode or getattr(cfg, "mode", None),
+        "commodity_only": getattr(pipeline_result, "commodity_passed", None) is not None,
         "results": [_result_to_dict(r) for r in pipeline_result.results],
     }
 
     # Always write local fallback first
     try:
-        with open(_LOCAL_FALLBACK, "w", encoding="utf-8") as f:
+        with open(_local_path(mode), "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2, default=str)
     except Exception as e:
         logger.debug("Local CA results write failed: %s", e)
@@ -419,10 +429,11 @@ def load_screener_results(mode: str = None) -> dict:
     except Exception as e:
         logger.debug("Gist CA load failed: %s", e)
 
-    # Local fallback
+    # Local fallback — per läge: förut delade Quality och Deep samma fil, så
+    # en misslyckad Deep-läsning kunde ge Quality-listan under Deep-namnet.
     try:
-        if os.path.exists(_LOCAL_FALLBACK):
-            with open(_LOCAL_FALLBACK, encoding="utf-8") as f:
+        if os.path.exists(_local_path(mode)):
+            with open(_local_path(mode), encoding="utf-8") as f:
                 data = json.load(f)
             if data.get("results"):
                 return data
