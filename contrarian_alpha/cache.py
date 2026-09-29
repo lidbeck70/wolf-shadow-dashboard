@@ -357,10 +357,11 @@ def _result_to_dict(r) -> dict:
     }
 
 
-def save_screener_results(pipeline_result, mode: str = None) -> bool:
+def save_screener_results(pipeline_result, mode: str = None, extra: dict = None) -> bool:
     """
     Persist top pipeline results to Gist + local fallback.
     pipeline_result is a PipelineResult from engine.run_pipeline().
+    extra: fler nycklar i payloaden (Quality: quality_signals ur alpha_regime.quality_scan).
     Returns True if Gist write succeeded.
     """
     cfg = getattr(pipeline_result, "config", None)
@@ -374,6 +375,8 @@ def save_screener_results(pipeline_result, mode: str = None) -> bool:
         "commodity_only": getattr(pipeline_result, "commodity_passed", None) is not None,
         "results": [_result_to_dict(r) for r in pipeline_result.results],
     }
+    if extra:
+        payload.update(extra)
 
     # Always write local fallback first
     try:

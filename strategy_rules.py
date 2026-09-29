@@ -593,6 +593,8 @@ QUALITY = Playbook(
         "SCREENING → Contrarian Alpha: sortera på kvalitetspoäng, leta KAP-badges.",
         "REGIME → Alpha Regime → Quality & Contrarian (Quality-läge): kör ANALYSERA på kandidaten.",
         "Alla fyra gates gröna = BUY. Tre gröna = WATCH. Två eller färre = WAIT.",
+        "Larm: 💎 Quality-köpsignal (SCHEMALAGDA) säger till när ett av de 25 högst "
+        "rankade i listan NYTT får alla fyra gröna.",
         "Räkna positionen: max 10 % av portföljen, kolla sektorexponeringen först.",
         "PORTFOLIO → Holdings: lägg in innehavet så regim- och signalbevakning körs.",
         "Kvartalsvis: gå igenom innehaven mot de fyra exit-reglerna.",

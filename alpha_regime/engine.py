@@ -304,6 +304,7 @@ def run_regime_analysis(
     market_ticker: str = "SPY",
     quality_score: Optional[float] = None,
     kap_badge: bool = False,
+    with_sentiment: bool = True,
 ) -> RegimeResult:
     """
     Full regime analysis for a single ticker.
@@ -315,6 +316,8 @@ def run_regime_analysis(
     market_ticker  : market benchmark for cycle detection (e.g. "SPY", "^OMX")
     quality_score  : pre-computed quality score (0-100); if None, skipped
     kap_badge      : whether ticker holds KAP badge
+    with_sentiment : False hoppar över sentimenthämtningen (upp till 10 s) —
+                     den påverkar inte quality-verdiktet (schemalagd skanning)
 
     Returns
     -------
@@ -380,7 +383,7 @@ def run_regime_analysis(
     result.kap_badge = kap_badge
 
     # 4. Fetch sentiment (best-effort, non-blocking) ──────────────────────────
-    result.sentiment_score = _fetch_sentiment(ticker)
+    result.sentiment_score = _fetch_sentiment(ticker) if with_sentiment else None
 
     # 5. Evaluate signals ─────────────────────────────────────────────────────
     if mode == "quality":
