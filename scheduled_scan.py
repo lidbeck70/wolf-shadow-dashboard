@@ -34,7 +34,22 @@ def _run_contrarian(mode: str) -> None:
     log.info("Contrarian Alpha [%s] starting...", mode)
     cfg = PipelineConfig(mode=mode, market_ids=list(ALL_NORDIC_MARKETS), top_n=40)
     res = run_pipeline(cfg)
-    ok = save_screener_results(res, mode=mode)
+    extra = None
+    if mode == "quality":
+        # Quality-köpsignaler: Alpha Regimes fyra gates på de högst rankade.
+        # Fel här får inte fälla listan — den sparas ändå, utan signaler.
+        try:
+            from datetime import datetime, timezone
+            from alpha_regime.quality_scan import scan
+            t1 = time.time()
+            signals = scan(res.results)
+            extra = {"quality_signals": signals,
+                     "signals_asof": datetime.now(tz=timezone.utc).isoformat()}
+            log.info("Quality-signaler: %d analyserade, %d BUY på %.0fs", len(signals),
+                     sum(1 for v in signals.values() if v.get("verdict") == "BUY"), time.time() - t1)
+        except Exception:
+            log.error("Quality-signalerna FAILED:\n%s", traceback.format_exc())
+    ok = save_screener_results(res, mode=mode, extra=extra)
     log.info("Contrarian Alpha [%s] done: %d ranked in %.0fs, gist_saved=%s",
              mode, res.composite_ranked, time.time() - t0, ok)
 

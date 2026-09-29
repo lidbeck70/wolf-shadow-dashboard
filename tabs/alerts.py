@@ -392,6 +392,7 @@ def _render_scheduled_settings(send_fn) -> None:
         "viking":    {"enabled": True, "channels": ["discord"],
                       "min_nine": 8},
         "contrarian": {"enabled": True, "channels": ["discord"]},
+        "quality":   {"enabled": True, "channels": ["discord"]},
         "insider":   {"enabled": True, "channels": ["discord"],
                       "min_score": 7},
         "screens":   {"enabled": True, "channels": ["discord"]},
@@ -435,8 +436,12 @@ def _render_scheduled_settings(send_fn) -> None:
              "grinden (pris > EMA200, ADX ≥ 20).",
              ("min_nine", "Larmribba (Nine av 9)", 5, 9, 8)),
             ("contrarian", "🎯 Deep Contrarian",
-             "En ticker som NYTT kommer in i Deep Contrarian-listan — hatad "
-             "men behövd, alla grindar passerade (Rule/Sprott/Durrett).", None),
+             "Ett råvarubolag som NYTT kommer in i Deep Contrarian-listan — "
+             "hatat men behövt, alla grindar passerade (Rule/Sprott/Durrett).", None),
+            ("quality", "💎 Quality-köpsignal",
+             "Ett bolag bland de 25 högst rankade i Quality-listan som NYTT får "
+             "alla fyra gates gröna i Alpha Regime — trend, värdering, cykel "
+             "(hemmamarknadens index) och kvalitet. Strategins egen köpregel.", None),
             ("insider", "👥 Insiderbevakaren",
              "Ett insynskluster ur Börsdatas register (riktiga köp, 30 dagar) "
              "som NYTT når poängribban — samma poäng, grind och trigger som "

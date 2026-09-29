@@ -356,6 +356,58 @@ def contrarian_alerts(ca_data: Optional[dict], prev: Optional[dict]) -> tuple:
     return alerts, state
 
 
+# ── Quality-köpsignaler (alpha_regime.quality_scan) ─────────────────────────
+def quality_alerts(q_data: Optional[dict], prev: Optional[dict]) -> tuple:
+    """(larm, nytt tillstånd) för Quality-listans köpsignaler.
+
+    q_data är contrarian_alpha.cache.load_screener_results("quality") med
+    "quality_signals": {ticker: {verdict, passed, total, benchmark, phase,
+    gates}} ur den schemalagda skanningen. Larmet gäller övergången TILL BUY
+    — alla fyra gates gröna (trend, värdering, cykel, kvalitet), strategins
+    egen köpregel. Saknas signalerna (gammal lista, fel) fryser baslinjen.
+    """
+    frozen = prev if isinstance(prev, dict) else {"buy": {}}
+    if not isinstance(q_data, dict) or not q_data.get("timestamp") \
+            or not isinstance(q_data.get("quality_signals"), dict):
+        return [], frozen
+
+    rows = {str(r.get("ticker", "")).strip().upper(): r
+            for r in (q_data.get("results") or []) if isinstance(r, dict)}
+    buy = {}
+    for ticker, sig in q_data["quality_signals"].items():
+        if not isinstance(sig, dict) or sig.get("verdict") != "BUY":
+            continue
+        row = rows.get(str(ticker).upper()) or {}
+        buy[str(ticker).upper()] = {
+            "name": str(row.get("name", "") or ""), "sector": str(row.get("sector", "") or ""),
+            "rank": row.get("rank"), "score": row.get("composite_score"),
+            "passed": sig.get("passed"), "total": sig.get("total") or 4,
+            "benchmark": sig.get("benchmark") or "", "phase": sig.get("phase") or "",
+            "gates": sig.get("gates") or {},
+        }
+
+    state = {"buy": buy}
+    if prev is None:
+        return [], state
+
+    seen = set((prev or {}).get("buy", {}) or {})
+    alerts = []
+    for ticker, d in buy.items():
+        if ticker in seen:
+            continue
+        gates = " · ".join(f"{k} {'✓' if g.get('passed') else '✗'}" for k, g in d["gates"].items())
+        sector = f" · {d['sector']}" if d["sector"] else ""
+        rank = f" · #{d['rank']:.0f} i listan" if isinstance(d["rank"], (int, float)) else ""
+        alerts.append(_alert(
+            "quality_buy",
+            f"💎 Quality: {ticker} köpsignal ({d['passed']}/{d['total']})",
+            f"{d['name'] or ticker}{sector}{rank}. {gates}. Cykel {d['phase'] or '?'} "
+            f"mot {d['benchmark'] or '?'}. Alla fyra gates gröna = köp enligt Quality — "
+            f"kontrollera i REGIME → Alpha Regime → Quality & Contrarian, max 10 % per "
+            f"aktie och 20–25 % per sektor."))
+    return alerts, state
+
+
 # ── Insiderbevakaren (insider_scan.py) ───────────────────────────────────────
 INSIDER_MIN_SCORE = 7    # av 10 — arkets gräns för "går vidare till grinden"
 _S_INSIDER_BUY = "KÖP — logga i journalen"   # = insider.S_BUY (testad)
@@ -525,6 +577,7 @@ def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
              wolf_data: Optional[dict] = None,
              viking_data: Optional[dict] = None,
              contrarian_data: Optional[dict] = None,
+             quality_data: Optional[dict] = None,
              insider_data: Optional[dict] = None,
              screens_data: Optional[dict] = None,
              sheets_data: Optional[dict] = None) -> tuple:
@@ -580,6 +633,9 @@ def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
     c_alerts, c_state = contrarian_alerts(contrarian_data, _prev("contrarian"))
     out += _route("contrarian", c_alerts)
 
+    q_alerts, q_state = quality_alerts(quality_data, _prev("quality"))
+    out += _route("quality", q_alerts)
+
     insider_cfg = cfg.get("insider") or {}
     i_alerts, i_state = insider_alerts(
         insider_data, _prev("insider"),
@@ -594,4 +650,4 @@ def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
 
     return out, {"swing": s_state, "blindspot": b_state, "ember": e_state,
                  "wolf": w_state, "viking": v_state, "contrarian": c_state,
-                 "insider": i_state, "screens": sc_state, "sheets": sh_state}
+                 "quality": q_state, "insider": i_state, "screens": sc_state, "sheets": sh_state}

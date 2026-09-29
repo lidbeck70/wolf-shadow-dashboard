@@ -184,6 +184,17 @@ def main() -> int:
     except Exception:
         log.warning("Deep Contrarian-listan kunde inte läsas — benet står stilla.")
 
+    # Quality-listan med köpsignalerna (scheduled_scan → quality_scan). Saknas
+    # signalerna fryser benet sin baslinje.
+    quality_data = None
+    try:
+        from contrarian_alpha.cache import load_screener_results
+        _q = load_screener_results(mode="quality")
+        if isinstance(_q, dict) and _q.get("timestamp"):
+            quality_data = _q
+    except Exception:
+        log.warning("Quality-listan kunde inte läsas — benet står stilla.")
+
     # Insiderbevakaren: insider_scan.py:s blob. error → benet fryser.
     insider_data = None
     _ins = load_blob("insider_scan.json", None)
@@ -206,7 +217,7 @@ def main() -> int:
     alerts, new_state = alert_rules.evaluate(
         regime_data, screener_data, swing_data, themes, prev_state, settings,
         ember_data=ember_data, wolf_data=wolf_data, viking_data=viking_data,
-        contrarian_data=contrarian_data, insider_data=insider_data,
+        contrarian_data=contrarian_data, quality_data=quality_data, insider_data=insider_data,
         screens_data=screens_data, sheets_data=sheets_data)
     if not themes and isinstance(prev_state, dict):
         new_state["blindspot"] = prev_state.get("blindspot",
