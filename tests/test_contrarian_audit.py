@@ -172,7 +172,7 @@ def test_currency_mismatch_drops_market_cap_from_altman():
 
 # ── Larmbenet ────────────────────────────────────────────────────────────────
 def _ca(*tickers, ts="2026-09-09T15:00"):
-    return {"timestamp": ts,
+    return {"timestamp": ts, "mode": "deep_contrarian", "commodity_only": True,
             "results": [{"ticker": t, "name": t, "composite_score": 61.5,
                          "rank": i + 1, "necessity_score": 90, "hat_score": 55,
                          "sector": "Material"} for i, t in enumerate(tickers)]}

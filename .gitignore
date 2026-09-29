@@ -11,3 +11,4 @@ output/
 
 blindspot/blindspot_history.jsonl
 retail_sentiment/sentiment_history.jsonl
+contrarian_alpha/.ca_results_*.json

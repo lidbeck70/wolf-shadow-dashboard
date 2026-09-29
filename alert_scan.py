@@ -41,12 +41,14 @@ import json
 import logging
 import os
 import sys
+import time
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("alert_scan")
 
 STATE_FILE = "alert_state.json"
+SEND_PAUSE_S = 0.5          # paus mellan larmen (Discord: ~5 per 2 s och webhook)
 SETTINGS_PATH = "data/alerts.json"
 SWING_PATH = "data/swing.json"
 HOLDINGS_PATH = "data/holdings.json"    # registret — positionerna bor här sedan PR 10
@@ -84,6 +86,27 @@ def _repo_file(path: str, default):
     except Exception as exc:
         log.error("kunde inte läsa %s: %s — använder default", path, exc)
         return default
+
+
+def deliver(alerts: list, send, fmt, dry_run: bool = False, pause=None) -> tuple:
+    """Skicka larmen ett i taget med paus emellan. (antal levererade, missade titlar).
+    Ett larm räknas som levererat när minst en kanal tog emot det."""
+    pause = time.sleep if pause is None else pause
+    delivered, failed = 0, []
+    for i, a in enumerate(alerts):
+        text = fmt(a)
+        if dry_run:
+            log.info("[DRY-RUN] %s -> %s\n%s", a["kind"], a["channels"], text)
+            continue
+        if i:
+            pause(SEND_PAUSE_S)            # Discord-webhooken tål ~5 meddelanden / 2 s
+        results = send(text, a["channels"], metadata={"subject": a["title"]})
+        log.info("%s -> %s", a["kind"], results)
+        if results and not any(results.values()):
+            failed.append(a["title"])
+        else:
+            delivered += 1
+    return delivered, failed
 
 
 def _themes(skip: bool) -> list:
@@ -197,28 +220,24 @@ def main() -> int:
                          "först vid nästa inträde.", name)
 
     log.info("%d larm att skicka.", len(alerts))
-    delivered_all = True
-    for a in alerts:
-        text = alert_rules.format_alert(a)
-        if args.dry_run:
-            log.info("[DRY-RUN] %s -> %s\n%s", a["kind"], a["channels"], text)
-            continue
-        results = send_alert(text, a["channels"],
-                             metadata={"subject": a["title"]})
-        log.info("%s -> %s", a["kind"], results)
-        if results and not any(results.values()):
-            delivered_all = False
+    delivered, failed = deliver(alerts, send_alert, alert_rules.format_alert, dry_run=args.dry_run)
 
     if args.dry_run:
         log.info("[DRY-RUN] tillståndet sparas inte.")
         return 0
 
-    if alerts and not delivered_all:
+    if alerts and not delivered:
         # Ingen kanal tog emot något av larmen — spara INTE tillståndet, så
         # övergången larmas om vid nästa körning i stället för att ätas upp.
         log.error("Inget larm nådde någon kanal — tillståndet sparas inte, "
                   "övergångarna prövas igen nästa körning.")
         return 0
+    if failed:
+        # Förut räckte ETT misslyckat larm (Discord 429) för att inget sparades
+        # — då skickades hela skörden igen varje körning och rate-limiten slog
+        # till ännu hårdare. Nu sparas tillståndet och de missade loggas.
+        log.error("%d av %d larm nådde ingen kanal (sparas ändå): %s",
+                  len(failed), len(alerts), " | ".join(failed))
 
     if not save_blob(STATE_FILE, new_state):
         log.error("Tillståndet kunde inte sparas till Gisten — nästa körning "
