@@ -1098,7 +1098,8 @@ _PANEL_GUIDE: list[tuple] = [
     ("GRANSKNING → Rick Rule", "Rule: granskningen",
      "Guidens 'Producenter A': marginal mot kostnadskurvan, de tre "
      "disciplinfrågorna och strykregeln för döende tillgång (gruvlivslängd "
-     "< 5 år, R/P < 8 år). AQS och CSM visas när positionen kräver dem."),
+     "< 5 år, R/P < 8 år). EV/NAV (NAV efter skatt) som egen värderingsrad "
+     "utanför poängen: under 0,7× billigt. AQS och CSM visas när positionen kräver dem."),
     ("GRANSKNING → Royalty C", "Royalty: köpsignalen",
      "Rabatt mot egen P/NAV-botten, mot egen EV/EBITDA-median och "
      "GEO-tillväxt per aktie. Krympande GEO slår ut köpläget."),
