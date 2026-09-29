@@ -241,6 +241,21 @@ def _resolve_api_key() -> str:
 # Main API class
 # ---------------------------------------------------------------------------
 
+def _report_aliases(row):
+    """Börsdatas rapportfält heter med understreck (number_Of_Shares,
+    free_Cash_Flow, cash_And_Equivalents, net_Debt, total_Assets …) medan
+    panelen läser numberOfShares, freeCashFlow osv. Lägg till namnet utan
+    understreck för varje sådant fält — båda formerna finns sedan kvar, och
+    kommer fältet redan utan understreck ändras ingenting."""
+    if not isinstance(row, dict):
+        return row
+    out = dict(row)
+    for k, v in row.items():
+        if isinstance(k, str) and "_" in k:
+            out.setdefault(k.replace("_", ""), v)
+    return out
+
+
 class BorsdataAPI:
     """
     Börsdata REST-API v1 client.
@@ -509,7 +524,7 @@ class BorsdataAPI:
         # Response keys vary by type
         for key in ("reportsYear", "reportsR12", "reportsQuarter", "reports"):
             if key in data:
-                return data[key]
+                return [_report_aliases(r) for r in (data[key] or [])]
         return []
 
     def get_reports_batch(
@@ -539,6 +554,7 @@ class BorsdataAPI:
             for key in ("reportsYear", "reportsR12", "reportsQuarter", "reports"):
                 if key in data:
                     for report in data[key]:
+                        report = _report_aliases(report)
                         iid = report.get("instrumentId") or report.get("instrument")
                         if iid is not None:
                             results.setdefault(iid, []).append(report)
