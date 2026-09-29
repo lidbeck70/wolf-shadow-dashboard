@@ -31,6 +31,7 @@ MIN_HISTORY = 3                           # minst så många år för en median
 # ── Confidence (auto) ───────────────────────────────────────────────────────
 COVERAGE_PCT = (80.0, 50.0)        # andel nyckeltal som fanns
 STABILITY = (0.7, 0.4)             # Börsdatas vinst-/FCF-stabilitet (0–1)
+STABILITY_MIN_YEARS = 5            # minst så många årsrapporter för egen beräkning
 F_SCORE = (7.0, 4.0)               # Piotroski 0–9
 REPORT_YEARS = (5, 3)              # år med årsrapporter
 SOURCE_GAP_PCT = 10.0              # Börsdata mot Yahoo börsvärde: inom 10 % = samstämmigt

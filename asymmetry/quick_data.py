@@ -15,6 +15,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
+from asymmetry import quick_config as qc
+
 logger = logging.getLogger(__name__)
 
 # Fälten poängen läser — täckningen räknas på dem
@@ -73,6 +75,45 @@ def _kpi_hist(api, iid: int, kpi_id: int) -> list:
     return [(int(r.get("y")), float(r["v"])) for r in raw if r.get("v") is not None and r.get("y") is not None]
 
 
+# Börsdatas screener (last/latest) lämnar ibland de här tomma — då läses det
+# senaste värdet ur bolagets egen KPI-historik. (fält, KPI-id)
+HISTORY_FALLBACK: tuple = (("earnings_stability", 174), ("fcf_stability", 179), ("f_score", 167),
+                           ("current_ratio", 44))
+
+
+def _kpi_latest(api, iid: int, kpi_id: int) -> tuple:
+    """(senaste värdet, rapporttyp) ur KPI-historiken, år först och sedan r12."""
+    for rt in ("year", "r12"):
+        try:
+            raw = api.get_kpi_history(iid, kpi_id, rt, "mean") or []
+        except Exception as exc:
+            logger.debug("kpi_history %s/%s/%s: %s", iid, kpi_id, rt, exc)
+            continue
+        rows = [r for r in raw if isinstance(r, dict) and _n(r.get("v")) is not None]
+        if rows:
+            last = max(rows, key=lambda r: (int(r.get("y") or 0), int(r.get("p") or 0)))
+            return float(last["v"]), rt
+    return None, None
+
+
+def trend_stability(values: list) -> Optional[float]:
+    """Stabilitet 0–1 som Börsdatas: R² för en rak trendlinje genom årsvärdena.
+    Fallande trend ger 0 — stadigt krympande är inte stabilt. None vid för få år."""
+    ys = [float(v) for v in values if _n(v) is not None]
+    n = len(ys)
+    if n < qc.STABILITY_MIN_YEARS:
+        return None
+    xm, ym = (n - 1) / 2.0, sum(ys) / n
+    sxx = sum((i - xm) ** 2 for i in range(n))
+    sxy = sum((i - xm) * (y - ym) for i, y in enumerate(ys))
+    syy = sum((y - ym) ** 2 for y in ys)
+    if syy == 0:
+        return 1.0 if ym > 0 else 0.0
+    if sxy <= 0:
+        return 0.0
+    return round(sxy * sxy / (sxx * syy), 2)
+
+
 def _price_stats(closes) -> dict:
     out: dict = {"prices": [], "sma200": []}
     if closes is None or len(closes) == 0:
@@ -100,7 +141,7 @@ def fetch(ticker: str, api=None, price_getter: Optional[Callable] = None,
     import sheets_refresh as sr
 
     t = str(ticker or "").strip().upper()
-    d: dict = {"ticker": t, "name": t, "source": "", "filled_yahoo": [],
+    d: dict = {"ticker": t, "name": t, "source": "", "filled_yahoo": [], "kpi_source": {},
                "fetched": datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}
     if not t:
         return d
@@ -168,6 +209,19 @@ def fetch(ticker: str, api=None, price_getter: Optional[Callable] = None,
                 d["fcf"] = _n(snap.get("fcf_m"))
             if d.get("net_debt") is None:
                 d["net_debt"] = _n(snap.get("net_debt_m"))
+            for key, kpi_id in HISTORY_FALLBACK:
+                if d.get(key) is None:
+                    v, rt = _kpi_latest(api, iid, kpi_id)
+                    if v is not None:
+                        d[key] = v
+                        d["kpi_source"][key] = f"Börsdata historik ({'år' if rt == 'year' else 'r12'})"
+            earn = [_n(r.get("profitToEquityHolders")) for r in years]
+            for key, series in (("earnings_stability", earn), ("fcf_stability", [v for _, v in d["fcf_series"]])):
+                if d.get(key) is None:
+                    v = trend_stability(series)
+                    if v is not None:
+                        d[key] = v
+                        d["kpi_source"][key] = "beräknad ur årsrapporterna"
             d["ev_ebitda_series"] = _kpi_hist(api, iid, 11)
             d["p_fcf_series"] = _kpi_hist(api, iid, 76)
             d["ev_ebitda_hist"] = [v for _, v in d["ev_ebitda_series"]]

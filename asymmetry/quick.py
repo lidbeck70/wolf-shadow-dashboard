@@ -198,15 +198,19 @@ def confidence(d: dict) -> Group:
                      Pillar("coverage", "Datatäckning", _higher(cov, qc.COVERAGE_PCT), f"{have}/{total} nyckeltal",
                             f"Källa {d.get('source') or '—'} · ≥ {qc.COVERAGE_PCT[0]:g} % grönt, "
                             f"≥ {qc.COVERAGE_PCT[1]:g} % gult"))
+    src = d.get("kpi_source") or {}
     for key, label in (("earnings_stability", "Resultatstabilitet"), ("fcf_stability", "FCF-stabilitet")):
         v = _stability(_n(d.get(key)))
-        g.pillars.append(_gap(key, label, f"{label.lower()} saknas (Börsdata)") if v is None else
+        g.pillars.append(_gap(key, label, f"{label.lower()} saknas — varken Börsdata eller "
+                                          f"≥ {qc.STABILITY_MIN_YEARS} årsrapporter") if v is None else
                          Pillar(key, label, _higher(v, qc.STABILITY), f"{v:.2f}",
-                                f"Börsdata 0–1 · ≥ {qc.STABILITY[0]:g} grönt, ≥ {qc.STABILITY[1]:g} gult"))
+                                f"{src.get(key, 'Börsdata')} · 0–1 · ≥ {qc.STABILITY[0]:g} grönt, "
+                                f"≥ {qc.STABILITY[1]:g} gult"))
     fs = _n(d.get("f_score"))
-    g.pillars.append(_gap("f_score", "Piotroski F-score", "F-score saknas") if fs is None else
+    g.pillars.append(_gap("f_score", "Piotroski F-score", "F-score saknas i Börsdata") if fs is None else
                      Pillar("f_score", "Piotroski F-score", _higher(fs, qc.F_SCORE), f"{fs:.0f}/9",
-                            f"≥ {qc.F_SCORE[0]:g} grönt, ≥ {qc.F_SCORE[1]:g} gult"))
+                            f"{src.get('f_score', 'Börsdata')} · ≥ {qc.F_SCORE[0]:g} grönt, "
+                            f"≥ {qc.F_SCORE[1]:g} gult"))
     yrs = d.get("report_years")
     gap = _n(d.get("source_gap_pct"))
     if yrs is None and gap is None:

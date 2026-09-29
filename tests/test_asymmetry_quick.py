@@ -134,6 +134,47 @@ def test_fetch_yahoo_only_marks_what_it_filled():
     assert r.group("confidence").pillars[1].status == "DATA_GAP"
 
 
+class _ApiNoScreener(_Api):
+    """Screenern ger inga stabilitets-/F-score-värden (som i appen för BOL och AEM)."""
+
+    def get_fundamentals_snapshot_fast(self, ids, scope="nordic"):
+        snap = super().get_fundamentals_snapshot_fast(ids, scope)
+        for k in ("earnings_stability", "fcf_stability", "f_score"):
+            snap[7].pop(k)
+        return snap
+
+    def get_kpi_history(self, iid, kpi, rt, pt):
+        if kpi == 167:                                   # F-score bara som r12
+            return [] if rt == "year" else [{"y": 2025, "p": 3, "v": 6.0}, {"y": 2025, "p": 4, "v": 8.0}]
+        if kpi == 174:
+            return [{"y": 2024, "v": 0.6}, {"y": 2025, "v": 0.9}, {"y": 2023, "v": 0.1}]
+        if kpi == 179:
+            raise RuntimeError("400")
+        return super().get_kpi_history(iid, kpi, rt, pt)
+
+
+def test_fetch_falls_back_to_kpi_history_then_reports():
+    d = quick_data.fetch("BOL.ST", api=_ApiNoScreener(), price_getter=lambda s: _closes(),
+                         info_getter=lambda s: {})
+    assert d["earnings_stability"] == 0.9 and d["f_score"] == 8.0
+    assert d["kpi_source"]["earnings_stability"] == "Börsdata historik (år)"
+    assert d["kpi_source"]["f_score"] == "Börsdata historik (r12)"
+    # FCF 0, 1000 … 5000 är en rak linje → stabilitet 1.0 ur årsrapporterna
+    assert d["fcf_stability"] == 1.0 and d["kpi_source"]["fcf_stability"] == "beräknad ur årsrapporterna"
+    conf = quick.score(d).group("confidence")
+    assert conf.coverage == "5/5 mätta"
+    assert "beräknad ur årsrapporterna" in next(p for p in conf.pillars if p.key == "fcf_stability").why
+
+
+def test_trend_stability():
+    assert quick_data.trend_stability([1, 2, 3]) is None                   # för få år
+    assert quick_data.trend_stability([1, 2, 3, 4, 5]) == 1.0
+    assert quick_data.trend_stability([5, 4, 3, 2, 1]) == 0.0              # krympande
+    assert quick_data.trend_stability([3, 3, 3, 3, 3]) == 1.0
+    assert 0.0 < quick_data.trend_stability([1, 5, 2, 6, 3, 8]) < 0.7
+    assert quick_data.trend_stability([1, None, 2, 3, 4, 5]) == 1.0
+
+
 def test_fetch_unknown_ticker():
     d = quick_data.fetch("NOPE", api=None, use_api_default=False, price_getter=lambda s: None,
                          info_getter=lambda s: {})
