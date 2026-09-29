@@ -23,7 +23,8 @@ def _good() -> dict:
             "ev_ebitda": 4.0, "ev_ebitda_hist": [6.0, 7.0, 5.5, 6.5, 8.0], "p_fcf": 8.0,
             "p_fcf_hist": [14.0, 12.0, 16.0], "from_52w_high_pct": 45.0, "vs_sma200_pct": -12.0,
             "earnings_stability": 0.8, "fcf_stability": 0.75, "f_score": 7, "report_years": 10,
-            "source_gap_pct": 2.0, "coverage": (12, 12)}
+            "fcf_positive_share": 0.9, "quality_years": 10, "cash_conversion": 1.3,
+            "source_gap_pct": 2.0, "coverage": (13, 13)}
 
 
 def test_strong_company_is_green_on_every_card():
@@ -95,7 +96,8 @@ class _Api:
         if kind == "r12":
             return [{"freeCashFlow": 5000.0, "cashAndEquivalents": 3000.0, "netDebt": 2000.0}]
         return [{"year": 2020 + i, "freeCashFlow": 1000.0 * i, "numberOfShares": 273.5, "totalAssets": 100.0,
-                 "totalEquity": 55.0} for i in range(6)]
+                 "totalEquity": 55.0, "cashFlowFromOperatingActivities": 1200.0, "profitToEquityHolders": 1000.0}
+                for i in range(6)]
 
     def get_kpi_history(self, iid, kpi, rt, pt):
         base = {11: [6.0, 7.0, 5.5, 6.5, 8.0], 76: [14.0, 12.0, 16.0]}[kpi]
@@ -113,8 +115,9 @@ def test_fetch_from_borsdata_fills_every_scored_field():
     assert d["source"] == "Börsdata" and d["name"] == "Boliden" and d["yf_ticker"] == "BOL.ST"
     assert d["equity_ratio_pct"] == 55.0 and d["ebitda_margin_pct"] == 42.0 and d["fcf"] == 5000.0
     assert d["shares_growth_3y_pct"] == 0.0 and d["report_years"] == 6
+    assert d["cash_conversion"] == 1.2 and d["fcf_positive_share"] == 0.83 and d["quality_years"] == 6
     assert d["ev_ebitda_hist"] == [6.0, 7.0, 5.5, 6.5, 8.0] and d["fcf_yield_pct"] == 12.5
-    assert d["source_gap_pct"] == 2.0 and d["coverage"] == (12, 12) and d["filled_yahoo"] == []
+    assert d["source_gap_pct"] == 2.0 and d["coverage"] == (13, 13) and d["filled_yahoo"] == []
     assert d["from_52w_high_pct"] > 0 and d["vs_sma200_pct"] < 0 and len(d["prices"]) == 320
     r = quick.score(d)
     assert r.group("survival").score == 100.0 and r.group("confidence").coverage == "5/5 mätta"
@@ -129,7 +132,7 @@ def test_fetch_yahoo_only_marks_what_it_filled():
     assert d["source"] == "Yahoo" and d["name"] == "Newmont"
     assert set(d["filled_yahoo"]) >= {"fcf", "current_ratio", "ebitda_margin_pct", "ev_ebitda", "nd_ebitda"}
     assert d["nd_ebitda"] == round(3e9 / 9e9, 4) and d["fcf_yield_pct"] == 5.0
-    assert d["coverage"][0] < 12                                      # stabilitet, F-score m.m. saknas
+    assert d["coverage"][0] < 13                                      # stabilitet, kvalitet m.m. saknas
     r = quick.score(d)
     assert r.group("confidence").pillars[1].status == "DATA_GAP"
 
@@ -173,6 +176,33 @@ def test_trend_stability():
     assert quick_data.trend_stability([3, 3, 3, 3, 3]) == 1.0
     assert 0.0 < quick_data.trend_stability([1, 5, 2, 6, 3, 8]) < 0.7
     assert quick_data.trend_stability([1, None, 2, 3, 4, 5]) == 1.0
+
+
+def test_quality_helpers():
+    assert quick_data.fcf_positive_share([1, 2, -1, 3]) is None             # för få år
+    assert quick_data.fcf_positive_share([1, 2, -1, 3, None, 4]) == 0.8
+    assert quick_data.cash_conversion([120] * 5, [100] * 5) == 1.2
+    assert quick_data.cash_conversion([50] * 5, [-10, -20, 5, -1, 0]) is None   # summerad förlust
+    assert quick_data.cash_conversion([1, 2], [1, 2]) is None
+
+
+def test_quality_card_statuses_and_f_score_is_info_only():
+    d = _good()
+    q = next(p for p in quick.confidence(d).pillars if p.key == "quality")
+    assert q.status == "GREEN" and q.value == "FCF+ 9/10 år · kassaomvandling 1.30×"
+    assert "Piotroski 7/9 (info, räknas inte)" in q.why
+    d.update(fcf_positive_share=0.9, cash_conversion=0.5)                 # grön + röd → gul
+    assert next(p for p in quick.confidence(d).pillars if p.key == "quality").status == "AMBER"
+    d.update(fcf_positive_share=0.6, cash_conversion=0.5)                 # gul + röd → röd
+    assert next(p for p in quick.confidence(d).pillars if p.key == "quality").status == "RED"
+    d.update(fcf_positive_share=None, cash_conversion=None, f_score=2,
+             cash_conversion_note="summerad förlust — kvoten är inte meningsfull")
+    q = next(p for p in quick.confidence(d).pillars if p.key == "quality")
+    assert q.status == "DATA_GAP" and "summerad förlust" in q.why
+    # F-score påverkar inte poängen
+    a, b = _good(), _good()
+    b["f_score"] = 1
+    assert quick.score(a).total == quick.score(b).total
 
 
 def test_fetch_unknown_ticker():
@@ -226,7 +256,7 @@ def test_quick_tab_renders_card_gauges_cards_and_charts(monkeypatch):
     assert "15/15 kort mätta" in html
     charts = at.get("plotly_chart")
     assert len(charts) == 3 + 4                                        # tre mätare + fyra grafer
-    assert "Prisbuffert" in html and "Piotroski F-score" in html and "Utspädning" in html
+    assert "Prisbuffert" in html and "Resultatkvalitet" in html and "Utspädning" in html
     assert any("Ur Yahoo" in c.value for c in at.caption)
     # cachat: ny körning hämtar inte igen
     at.run()

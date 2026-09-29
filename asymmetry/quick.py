@@ -190,6 +190,33 @@ def _stability(v: Optional[float]) -> Optional[float]:
     return v / 100.0 if v > 1.0 else v
 
 
+def _quality(d: dict) -> Pillar:
+    """Resultatkvalitet: andel år med positivt FCF och kassaomvandling
+    (operativt kassaflöde / resultat). Tål råvarucykeln, till skillnad från
+    F-score som visas bredvid som information men inte räknas."""
+    share, conv = _n(d.get("fcf_positive_share")), _n(d.get("cash_conversion"))
+    fs = _n(d.get("f_score"))
+    info = f" · Piotroski {fs:.0f}/9 (info, räknas inte)" if fs is not None else ""
+    parts, vals = [], []
+    if share is not None:
+        yrs = d.get("quality_years")
+        parts.append(_higher(share, qc.FCF_POSITIVE_SHARE))
+        vals.append(f"FCF+ {round(share * yrs)}/{yrs} år" if yrs else f"FCF+ {share:.0%} av åren")
+    if conv is not None:
+        parts.append(_higher(conv, qc.CASH_CONVERSION))
+        vals.append(f"kassaomvandling {conv:.2f}×")
+    if not parts:
+        why = d.get("cash_conversion_note") or f"färre än {qc.QUALITY_MIN_YEARS} årsrapporter"
+        return _gap("quality", "Resultatkvalitet", why + info)
+    pts = sum(qc.STATUS_POINTS[p] for p in parts) / len(parts)
+    status = "GREEN" if pts >= 75 else "RED" if pts <= 25 else "AMBER"
+    return Pillar("quality", "Resultatkvalitet", status, " · ".join(vals),
+                  f"Årsrapporterna · FCF-positiva år ≥ {qc.FCF_POSITIVE_SHARE[0]:.0%} grönt, "
+                  f"≥ {qc.FCF_POSITIVE_SHARE[1]:.0%} gult · operativt kassaflöde / resultat "
+                  f"≥ {qc.CASH_CONVERSION[0]:g} grönt, ≥ {qc.CASH_CONVERSION[1]:g} gult"
+                  + (f" · {d['cash_conversion_note']}" if d.get("cash_conversion_note") else "") + info)
+
+
 def confidence(d: dict) -> Group:
     g = Group("confidence", "Confidence (auto)")
     have, total = d.get("coverage", (0, 0))
@@ -206,11 +233,7 @@ def confidence(d: dict) -> Group:
                          Pillar(key, label, _higher(v, qc.STABILITY), f"{v:.2f}",
                                 f"{src.get(key, 'Börsdata')} · 0–1 · ≥ {qc.STABILITY[0]:g} grönt, "
                                 f"≥ {qc.STABILITY[1]:g} gult"))
-    fs = _n(d.get("f_score"))
-    g.pillars.append(_gap("f_score", "Piotroski F-score", "F-score saknas i Börsdata") if fs is None else
-                     Pillar("f_score", "Piotroski F-score", _higher(fs, qc.F_SCORE), f"{fs:.0f}/9",
-                            f"{src.get('f_score', 'Börsdata')} · ≥ {qc.F_SCORE[0]:g} grönt, "
-                            f"≥ {qc.F_SCORE[1]:g} gult"))
+    g.pillars.append(_quality(d))
     yrs = d.get("report_years")
     gap = _n(d.get("source_gap_pct"))
     if yrs is None and gap is None:
