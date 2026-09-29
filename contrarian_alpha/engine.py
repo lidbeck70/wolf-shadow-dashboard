@@ -1282,6 +1282,45 @@ def missing_fields(fund_snap: dict | None) -> tuple[list[str], list[str]]:
     return missing, meaningless
 
 
+_YAHOO_INFO: dict = {}      # {ticker: info} — en Yahoo-fråga per ticker och process
+
+
+def yahoo_info(ticker: str) -> dict:
+    """yfinance .info, cachat per process (delas av yahoo_fill och insiderfyllningen)."""
+    t = str(ticker or "").strip()
+    if not t:
+        return {}
+    if t not in _YAHOO_INFO:
+        try:
+            import yfinance as yf
+            _YAHOO_INFO[t] = yf.Ticker(t).info or {}
+        except Exception as exc:
+            logger.debug("yahoo_info(%s): %s", t, exc)
+            _YAHOO_INFO[t] = {}
+    return _YAHOO_INFO[t]
+
+
+def yahoo_insider_fill(insider: dict | None, ticker: str, info_getter=None) -> dict:
+    """Insiders ägarandel ur Yahoo (heldPercentInsiders) när Börsdata saknar den —
+    Börsdatas insiderregister täcker bara Norden. Köp/sälj fylls inte: Yahoo har
+    dem bara för amerikanska bolag och täckningen är ojämn. Returnerar dicten
+    (ny om None) med insider_ownership_source satt när något fylldes."""
+    out = dict(insider or {})
+    if _num(out.get("insider_ownership_pct")) is not None or not ticker:
+        return out
+    getter = info_getter or yahoo_info
+    try:
+        info = getter(ticker) or {}
+    except Exception as exc:
+        logger.debug("yahoo_insider_fill(%s): %s", ticker, exc)
+        return out
+    held = _num(info.get("heldPercentInsiders"))
+    if held is not None and 0 <= held <= 1:
+        out["insider_ownership_pct"] = round(held * 100.0, 2)
+        out["insider_ownership_source"] = f"Yahoo ({ticker})"
+    return out
+
+
 def yahoo_fill(fund_snap: dict, ticker: str, info_getter=None) -> list[str]:
     """Fyll valutafria nyckeltal ur Yahoo när Börsdata är tomt: EBITDA-marginal,
     D/E, EV/EBITDA och nettoskuld/EBITDA (bara med positiv EBITDA). Samma
@@ -1292,9 +1331,7 @@ def yahoo_fill(fund_snap: dict, ticker: str, info_getter=None) -> list[str]:
     if not want or not ticker:
         return []
     if info_getter is None:
-        def info_getter(sym):
-            import yfinance as yf
-            return yf.Ticker(sym).info or {}
+        info_getter = yahoo_info
     try:
         info = info_getter(ticker) or {}
     except Exception as exc:
@@ -1835,6 +1872,10 @@ def _run_single_ticker(
             insider_dict = fetch_insider_data(ins_id, api)
         except Exception as e:
             logger.debug("insider_data failed for %s: %s", ticker, e)
+    if config.yahoo_fill:
+        insider_dict = yahoo_insider_fill(insider_dict, ticker)
+        if insider_dict.get("insider_ownership_source"):
+            result.data_filled_yahoo.append("Insiders ägarandel")
 
     # Catalyst (also computes Viking Regime)
     catalyst_result = calculate_catalyst_score(
