@@ -157,6 +157,7 @@ def test_analysis_is_three_scores_on_one_card(monkeypatch):
     app = _app(monkeypatch, _conf(dcs.gold_producer, dcs.copper_developer, dcs.missing_everything,
                                   tags={"GPR": "Viking", "CDV": "Ember"}))
     at = AppTest.from_function(app, default_timeout=60)
+    at.session_state["asym_mode"] = "Analys"
     at.run()
     assert not at.exception, at.exception
     assert at.radio(key="asym_mode").value == "Analys"
@@ -174,6 +175,7 @@ def test_analysis_is_three_scores_on_one_card(monkeypatch):
 
     # tomt bolag: DATA_MISSING, inga diagram, ingen krasch, pekar på Ark
     at = AppTest.from_function(app, default_timeout=60)
+    at.session_state["asym_mode"] = "Analys"
     at.session_state["asym_pick"] = "NUL"
     at.run()
     assert not at.exception, at.exception
@@ -228,6 +230,9 @@ def test_empty_sheet_opens_ark_and_register_import(monkeypatch):
     app = _app(monkeypatch, _conf(), register_rows=[{"ticker": "NYX", "name": "Nyx Gold", "strategy": "Momentum"}])
     at = AppTest.from_function(app, default_timeout=60)
     at.run()
+    assert not at.exception, at.exception
+    assert at.radio(key="asym_mode").value == "⚡ Snabbkoll"               # standardläget
+    at.radio(key="asym_mode").set_value("Ark").run()
     assert not at.exception, at.exception
     assert at.radio(key="asym_mode").value == "Ark" and not at.metric
     assert any("Inga bolag i arket" in i.value for i in at.info)

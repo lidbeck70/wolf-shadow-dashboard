@@ -33,7 +33,8 @@ from asymmetry import charts, fetch, fields
 from asymmetry import config as acfg
 from asymmetry import store as ast
 
-MODES = ("Analys", "Ark")
+QUICK = "⚡ Snabbkoll"
+MODES = (QUICK, "Analys", "Ark")
 _SEV_COLOR = {"CRITICAL": RED, "HIGH": RED, "MEDIUM": AMBER, "LOW": DIM}
 _BAND_COLOR = {acfg.BREAK_EVEN_STRONG: GREEN, acfg.BREAK_EVEN_MODERATE: AMBER, acfg.BREAK_EVEN_WEAK: RED}
 _REC_COLOR = {"BUY CANDIDATE": GREEN, "WATCH": AMBER, "PASS": DIM, "REJECT": RED}
@@ -91,10 +92,15 @@ def render_asymmetry_page() -> None:
     data = _load()
     _apply_goto()
     storage_ui.save_bar(ast.STORE, "Wolf Asymmetry", key="save_asymmetry")
-    page_header("Wolf Asymmetry", "🚀 Commodity Leverage · 🛡️ Margin of Safety · 🎯 Confidence. "
-                "Ett bolag, tre poäng, en rad varför. Arket visar bara de fält poängen läser. "
-                "DATA_MISSING är aldrig noll.")
+    page_header("Wolf Asymmetry", "⚡ Snabbkoll: skriv en ticker — Survival, Margin of Safety och "
+                "Confidence helt automatiskt. Analys och Ark: arkets bolag med Commodity Leverage och "
+                "scenarier. DATA_MISSING är aldrig noll.")
     tickers = list(_companies(data))
+    mode = st.radio("", list(MODES), horizontal=True, label_visibility="collapsed", key="asym_mode")
+    if mode == QUICK:
+        from asymmetry.quick_ui import render_quick
+        render_quick(add_to_sheet=lambda t, name: _add_quick(data, t, name))
+        return
     c1, c2 = st.columns([3, 1.5])
     with c1:
         last = st.session_state.get("asym_last")
@@ -102,9 +108,6 @@ def render_asymmetry_page() -> None:
                               index=(tickers.index(last) if last in tickers else 0),
                               format_func=lambda t: f"{t} · {ast.strategy(data, t)}"
                               if t in tickers and ast.strategy(data, t) != ast.NO_STRATEGY else t)
-    with c2:
-        mode = st.radio("", list(MODES), horizontal=True, label_visibility="collapsed", key="asym_mode",
-                        index=0 if tickers else 1)
     st.markdown("---")
     company = _get(data, choice) if tickers else None
     if company is not None:
@@ -115,6 +118,16 @@ def render_asymmetry_page() -> None:
         _sheet(data, company)
         return
     _analysis(data, company)
+
+
+def _add_quick(data: dict, ticker: str, name: str) -> bool:
+    """Snabbkollens bolag in i arket (samma ark som Durrett). False om det redan fanns."""
+    t = str(ticker or "").strip().upper()
+    if not t or _get(data, t):
+        return False
+    _put(data, CompanyInput(ticker=t, name=name))
+    _save(data)
+    return True
 
 
 # ── Analys: tre poäng, ett kort ──────────────────────────────────────────────
