@@ -48,7 +48,7 @@ def render_quick(add_to_sheet=None) -> None:
         refresh = c3.form_submit_button("🔄 Uppdatera", use_container_width=True)
     t = str(ticker or "").strip().upper()
     if not t:
-        st.caption("Skriv en ticker. Börsdata först (nordiskt, sedan globalt), Yahoo som reserv. "
+        _note("Skriv en ticker. Börsdata först (nordiskt, sedan globalt), Yahoo som reserv. "
                    "Survival · Margin of Safety · Confidence räknas helt automatiskt.")
         return
     with st.spinner(f"Hämtar {t} …"):
@@ -67,12 +67,22 @@ def render_quick(add_to_sheet=None) -> None:
     if data.get("filled_yahoo"):
         extra.append("Ur Yahoo (Börsdata tomt): " + ", ".join(data["filled_yahoo"]))
     if extra:
-        st.caption(" · ".join(extra))
+        _note(" · ".join(extra))
     if add_to_sheet is not None:
         if st.button("➕ Lägg till i arket (Analys/Ark)", key=f"asym_quick_add_{t}"):
             ok = add_to_sheet(data.get("yf_ticker") or t, data.get("name") or t)
             (st.success if ok else st.info)(
                 f"{t} ligger i arket — öppna Ark för råvara och stage." if ok else f"{t} finns redan i arket.")
+
+
+# Förklaringstext: st.caption blir nästan osynlig på mörk bakgrund i mobilen —
+# egen ljusare färg (mellan TEXT och DIM) i stället.
+NOTE = "#c4bfb3"
+
+
+def _note(text: str) -> None:
+    st.markdown(f"<div class='asym-note' style='color:{NOTE};font-size:0.76rem;line-height:1.45;"
+                f"margin:2px 0 6px;'>{text}</div>", unsafe_allow_html=True)
 
 
 # ── Poängkortet (Viking Regime-stil) ────────────────────────────────────────
@@ -114,7 +124,7 @@ def _gauges(res: quick.QuickResult) -> None:
                 st.plotly_chart(build_gauge(round(g.score), 100, g.label.upper(), color_cyan=True),
                                 use_container_width=True, config={"displayModeBar": False},
                                 key=f"asym_quick_gauge_{g.key}")
-            st.caption(f"{g.coverage}")
+            _note(f"{g.coverage}")
             for p in g.pillars:
                 st.markdown(_card(p), unsafe_allow_html=True)
 
@@ -175,7 +185,7 @@ def _leverage(data: dict):
     if not lev.sensitivity:
         return lev
     with st.expander(f"Känslighet mot {name.lower()} ({lev.ticker}) — hur det räknas"):
-        st.caption(
+        _note(
             "Skattat ur bolagets egen historik: årlig intäkt, EBITDA och FCF (Börsdata, rapportvalutan) "
             f"mot {name.lower()}-priset som årssnitt omräknat till samma valuta. Rak linje (OLS) per mått; "
             f"break-even = priset där linjen når noll. Samband med färre än {qc.LEV_MIN_YEARS} år eller "
@@ -183,9 +193,9 @@ def _leverage(data: dict):
             f"huvudråvaran som proxy.")
         fits = " · ".join(f"{k}: R² {f.r2:.2f} ({f.n} år)" for k, f in lev.fits.items())
         if fits:
-            st.caption("Samband — " + fits)
+            _note("Samband — " + fits)
         if lev.downside:
-            st.caption(f"Nedsida ({lev.downside_basis}): " + " · ".join(
+            _note(f"Nedsida ({lev.downside_basis}): " + " · ".join(
                 f"pris {pct:+.0f} % → {v:,.0f} M" for pct, v in lev.downside.items()))
 
         def _f(v, fmt="{:,.0f}"):
@@ -234,15 +244,19 @@ def _engine(data: dict, lev) -> None:
                              _FIVE_X_COLOR.get(eng.five_x, GREY)), unsafe_allow_html=True)
     base = next((x for x in eng.scenarios if x.name == "BASE"), None)
     if base:
+        top = (f" · ⚠ råvaran nära 10-årstopp ({eng.price_pctl:.0f}:e percentilen) — troligen generöst"
+               if eng.cycle_top else "")
         c2.markdown(_metric_card("BASE MOT BÖRSVÄRDET", f"{base.ratio:.2f}×",
-                                 f"dagens pris, egen median {base.multiple:g}× EV/EBITDA",
-                                 _ratio_color(base.ratio)), unsafe_allow_html=True)
+                                 f"dagens pris, egen median {base.multiple:g}× EV/EBITDA{top}",
+                                 AMBER if eng.cycle_top and base.ratio >= 1 else _ratio_color(base.ratio)),
+                    unsafe_allow_html=True)
     ccy = eng.price_ccy
     with st.expander("5×-motorn — scenarier, krav, stressmatris och thesis killers"):
         m = eng.multiples
-        st.caption(
+        _note(
             f"Kedjan: {eng.commodity}-pris → EBITDA (egen linje, R² {lev.fits['EBITDA'].r2:.2f}) → EV med egen "
-            f"EV/EBITDA (25:e percentil {m['low']:g}× · median {m['median']:g}× · 75:e {m['high']:g}×) → "
+            f"EV/EBITDA (lägsta {m['min']:g}× · 25:e percentil {m['low']:g}× · median {m['median']:g}× · "
+            f"75:e {m['high']:g}×) → "
             f"− nettoskuld {eng.net_debt:,.0f} M → mot börsvärdet {eng.mcap:,.0f} M {eng.report_ccy} "
             f"({eng.mcap_note}) → kurs. Antalet aktier hålls fast (ingen utspädning).")
         head = (f"<tr style='color:{DIM};'><th style='text-align:left;'>Scenario</th><th>{eng.commodity.capitalize()}"
@@ -257,7 +271,7 @@ def _engine(data: dict, lev) -> None:
         st.markdown(f"<table style='width:100%;font-size:0.78rem;color:{TEXT};text-align:right;'>{head}{rows}</table>",
                     unsafe_allow_html=True)
         if any(x.outside_history for x in eng.scenarios):
-            st.caption("⚠ = råvarupriset ligger utanför de senaste tio årens årssnitt — linjen extrapoleras.")
+            _note("⚠ = råvarupriset ligger utanför de senaste tio årens årssnitt — linjen extrapoleras.")
         req = "".join(
             f"<tr><td style='text-align:left;'>{r.multiple}×</td>"
             f"<td>{'—' if r.price_pct is None else f'{r.price_pct:+.0f} %'}</td>"
@@ -270,7 +284,7 @@ def _engine(data: dict, lev) -> None:
             f"</div><table style='width:100%;font-size:0.78rem;color:{TEXT};text-align:right;'>"
             f"<tr style='color:{DIM};'><th style='text-align:left;'>Mål</th><th>{eng.commodity.capitalize()}</th>"
             f"<th>Pris ({eng.unit})</th><th>Bedömning</th></tr>{req}</table>", unsafe_allow_html=True)
-        st.caption(f"JA = priset har redan varit där (högsta årssnitt 10 år) · VILLKORAT = upp till "
+        _note(f"JA = priset har redan varit där (högsta årssnitt 10 år) · VILLKORAT = upp till "
                    f"{qc.FIVE_X_CONDITIONAL_FACTOR:g}× det · NEJ = längre bort.")
         mk = qc.STRESS_MULTIPLES
         srows = "".join(
@@ -290,7 +304,7 @@ def _engine(data: dict, lev) -> None:
             tag = "" if k.measured else f" <span style='color:{DIM};'>(mäts inte automatiskt)</span>"
             st.markdown(f"<div style='font-size:0.78rem;color:{TEXT};'>• <b>{k.label}</b> — {k.detail}{tag}</div>",
                         unsafe_allow_html=True)
-        st.caption("Sannolikhet: UNKNOWN — killers listas ur uppmätta tal, ingen sannolikhet hittas på.")
+        _note("Sannolikhet: UNKNOWN — killers listas ur uppmätta tal, ingen sannolikhet hittas på.")
 
 
 def leverage_chart(data: dict, lev) -> Optional[go.Figure]:
@@ -372,7 +386,7 @@ def _charts(data: dict) -> None:
         for col, (fig, key) in zip(cols, row):
             with col:
                 if fig is None:
-                    st.caption("Grafen kan inte ritas: för lite historik.")
+                    _note("Grafen kan inte ritas: för lite historik.")
                 else:
                     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False},
                                     key=f"asym_quick_chart_{key}")

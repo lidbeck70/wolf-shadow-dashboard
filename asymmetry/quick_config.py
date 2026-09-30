@@ -89,3 +89,8 @@ STRESS_MULTIPLES = ("low", "median", "high")
 KILL_ND_EBITDA = 2.0
 KILL_DILUTION_3Y_PCT = 15.0
 KILL_WEAK_R2 = 0.6
+# Cykeltopp: dagens råvarupris i översta delen av tio års årssnitt → marknaden
+# sätter normalt en lägre multipel på toppvinster. BEAR tar då den lägsta
+# egna multipeln i stället för 25:e percentilen, och en killer läggs till.
+CYCLE_TOP_PCTL = 75.0
+BEAR_AT_TOP_MULTIPLE = "min"
