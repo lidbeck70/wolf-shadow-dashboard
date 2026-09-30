@@ -600,9 +600,11 @@ def _render_ember_full_ruleset() -> None:
             _gs("2. Univers",
                 _ul([
                     f"<b>Kurerad lista (snabb):</b> {13} ETF:er + {12} aktier — statisk seed-lista.",
-                    "<b>Auto: Norden + US-råvaror (~150+ tickers):</b> "
-                    "Börsdata råvarufilter (energi, gruv, metall, olja, gas) + "
-                    "GDX/GDXJ/SIL/COPX/URA/XLE-konstituenter + Canada/UK-namn.",
+                    "<b>Auto: Norden + USA/Kanada/Australien:</b> "
+                    "Börsdata råvarufilter i Norden (energi, gruv, metall, olja, gas) + "
+                    "Börsdata global: råvarubranscher på NYSE, Nasdaq, Toronto, TSX Venture, "
+                    "CSE och ASX med börsvärde ≥ 300 MUSD (inte OTC) + kurerade "
+                    "GDX/GDXJ/SIL/COPX/URA/XLE-namn, ETF:er och UK.",
                     "<b>Förfilter (Auto/Båda):</b> Omsättning &gt; 5 MSEK/dag (20D snitt) "
                     "<em>och</em> pris &gt; SMA(200) — utför batchar om 50 tickers.",
                 ], _TEXT),

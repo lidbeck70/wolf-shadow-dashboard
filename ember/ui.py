@@ -13,7 +13,7 @@ import streamlit as st
 
 from ember.config import (
     BG, BG2, BG3, EMBER, GOLD, BRONZE, GREEN, RED, AMBER, TEXT, DIM,
-    EMBER_ETF_UNIVERSE, EMBER_STOCK_UNIVERSE, RISK_PCT,
+    EMBER_ETF_UNIVERSE, EMBER_STOCK_UNIVERSE, RISK_PCT, GLOBAL_MIN_MCAP_MUSD,
 )
 from ember.universe import (
     ALL_SOURCES, SOURCE_CURATED, SOURCE_AUTO, SOURCE_BOTH,
@@ -443,7 +443,9 @@ def _render_universe_info(source: str) -> None:
     elif source == SOURCE_AUTO:
         body = (
             f"<b style='color:{GOLD};'>Universum:</b> "
-            f"Norden (Börsdata råvarufilter) + {len(US_INTL_CURATED)} US/INTL-tickers<br/>"
+            f"Norden (Börsdata råvarufilter) + USA/Kanada/Australien (Börsdata global, "
+            f"råvarubranscher, börsvärde ≥ {GLOBAL_MIN_MCAP_MUSD:,.0f} MUSD) + "
+            f"{len(US_INTL_CURATED)} US/INTL-tickers<br/>"
             f"<span style='font-size:0.68rem;color:{DIM};'>"
             f"Förfilter tillämpas: omsättning &gt; 5 MSEK/dag + pris &gt; SMA200"
             f"</span>"
@@ -452,7 +454,8 @@ def _render_universe_info(source: str) -> None:
         curated_n = len(EMBER_ETF_UNIVERSE) + len(EMBER_STOCK_UNIVERSE)
         body = (
             f"<b style='color:{GOLD};'>Universum:</b> "
-            f"Norden + {len(US_INTL_CURATED)} US/INTL + {curated_n} kurerade<br/>"
+            f"Norden + USA/Kanada/Australien (Börsdata global) + {len(US_INTL_CURATED)} US/INTL "
+            f"+ {curated_n} kurerade<br/>"
             f"<span style='font-size:0.68rem;color:{DIM};'>"
             f"Förfilter tillämpas: omsättning &gt; 5 MSEK/dag + pris &gt; SMA200"
             f"</span>"
@@ -473,8 +476,13 @@ def _render_universe_stats(stats: Optional[UniverseStats]) -> None:
     parts = []
     if stats.nordic_raw > 0:
         parts.append(f"Norden: {stats.nordic_raw} råvarubolag")
+    if stats.global_raw > 0:
+        by = stats.global_by_country or {}
+        parts.append("Globalt: " + " · ".join(f"{c} {n}" for c, n in sorted(by.items())) + " råvarubolag")
+    elif stats.global_error:
+        parts.append(f"⚠ Globalt (USA/Kanada/Australien): {stats.global_error}")
     if stats.us_intl_raw > 0:
-        parts.append(f"US/INTL: {stats.us_intl_raw} tickers")
+        parts.append(f"US/INTL (kurerat): {stats.us_intl_raw} tickers")
     if not stats.borsdata_available and stats.borsdata_error:
         parts.append(f"⚠ Börsdata: {stats.borsdata_error}")
     detail = " · ".join(parts) if parts else ""
@@ -581,7 +589,8 @@ def render_ember_page() -> None:
         key="ember_universe_source",
         help=(
             "Kurerad lista: fast statisk lista (25 ticker, snabb). "
-            "Auto: Börsdata Norden + 150+ US/INTL råvaror med förfilter. "
+            "Auto: Börsdata Norden + USA/Kanada/Australien (Börsdata global) + "
+            "kurerade US/INTL-råvaror med förfilter. "
             "Båda: union av alla, förfiltrat."
         ),
     )
@@ -618,7 +627,7 @@ def render_ember_page() -> None:
         extra += _own_tickers()
         spinner_msg = {
             SOURCE_CURATED: "Skannar kurerad lista…",
-            SOURCE_AUTO:    "Bygger råvaruuniversum (Norden + US/INTL) och förfiltrerar — ca 1–2 min…",
+            SOURCE_AUTO:    "Bygger råvaruuniversum (Norden + USA/Kanada/Australien + US/INTL) och förfiltrerar — ca 2–4 min…",
             SOURCE_BOTH:    "Bygger fullständigt universum och förfiltrerar — ca 2 min…",
         }.get(source, "Skannar…")
 
