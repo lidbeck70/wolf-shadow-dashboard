@@ -161,3 +161,13 @@ def test_cycle_top_uses_the_lowest_multiple_in_bear_and_warns():
     top = next(k for k in e.killers if k.label == "Cykeltopp")
     assert "100 % av tio års årssnitt" in top.detail and "lägsta egna 4×" in top.detail
     assert qs.price_percentile(3.0, PRICES) == 50 and qs.price_percentile(None, PRICES) is None
+
+
+def test_valuation_killer_needs_a_real_premium_and_one_metal_note_is_measured():
+    labels = [k.label for k in qs.run(_data(ev_ebitda=6.3)).killers]          # 5 % över medianen 6,0 = brus
+    assert "Värderingen redan hög" not in labels
+    k = next(k for k in qs.run(_data(ev_ebitda=7.0)).killers if k.label == "Värderingen redan hög")
+    assert "17 % över egen median" in k.detail
+    eb = [(y, 3000.0 * p + 8000) for y, p in PRICES.items()]                 # Boliden-lik
+    one = next(k for k in qs.run(_data(ebitda_series=eb, fcf_series=[])).killers if k.label == "En råvara räknas")
+    assert one.measured and "även vid koppar-pris 0" in one.detail

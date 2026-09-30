@@ -63,7 +63,9 @@ def test_low_leverage_business_scores_low():
     eb = {y: 100.0 * p + 5000 for y, p in PRICES.items()}
     lev = ql.estimate({}, eb, {}, PRICES, p0=4.0, commodity="guld", ticker="GC=F")
     assert lev.basis == "EBITDA" and lev.score == 0 and lev.response_pct < 10
-    assert lev.break_even_price == 0.0 and lev.break_even_margin_pct == 100.0 and lev.band == "UTMÄRKT"
+    # positiv även vid pris 0 → break-even kan inte mätas i guld (inte "100 % UTMÄRKT")
+    assert lev.break_even_price is None and lev.break_even_margin_pct is None and lev.band == "EJ MÄTBAR"
+    assert "5,000 M även vid guld-pris 0" in lev.break_even_note
 
 
 def test_ebitda_is_used_when_fcf_does_not_follow_the_price():
@@ -192,3 +194,17 @@ def test_fetch_builds_the_series_and_falls_back_to_margin_times_revenue():
     cp = d["commodity_px"]
     assert cp["commodity"] == "koppar" and cp["ticker"] == "HG=F" and cp["prices"][2024] == round(4.1 * 10.5, 10)
     assert ql.from_data(d).error.startswith("för få år")                 # tre år räcker inte
+
+
+def test_multi_metal_producer_break_even_is_not_measurable_in_one_metal():
+    """Boliden-fallet: koppar förklarar svängningarna (högt R²) men zink, guld,
+    silver och smältverken bär resultatet även vid kopparpris 0."""
+    eb = {y: 3000.0 * p + 8000 for y, p in PRICES.items()}
+    lev = ql.estimate({}, eb, {}, PRICES, p0=4.0, commodity="koppar", ticker="HG=F")
+    assert lev.score is not None and lev.band == "EJ MÄTBAR" and lev.break_even_margin_pct is None
+    assert "biprodukter, smältverk, andra metaller" in lev.break_even_note
+    assert lev.downside_label == "STARK"                                  # nedsidan räknas ändå
+
+
+def test_price_format_keeps_decimals_for_small_prices():
+    assert ql.fmt_price(6.63) == "6.63" and ql.fmt_price(4183.9) == "4,184" and ql.fmt_price(None) == "—"
