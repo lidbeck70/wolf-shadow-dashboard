@@ -17,6 +17,7 @@ from ui.charts import PLOTLY_LAYOUT, build_gauge
 from ui.tokens import AMBER, CYAN, DIM, GOLD, GREEN, GREY, RED, TEXT
 
 from asymmetry import quick, quick_data
+from asymmetry import quick_config as qc
 
 CACHE_KEY = "asym_quick_cache"
 CACHE_TTL_S = 3600
@@ -59,6 +60,7 @@ def render_quick(add_to_sheet=None) -> None:
     _score_card(res, data)
     _gauges(res)
     _volatility(res)
+    _leverage(data)
     _charts(data)
     extra = []
     if data.get("filled_yahoo"):
@@ -138,6 +140,96 @@ def _volatility(res: quick.QuickResult) -> None:
     cols = st.columns(len(g.pillars))
     for col, p in zip(cols, g.pillars):
         col.markdown(_card(p), unsafe_allow_html=True)
+
+
+def _metric_card(title: str, big: str, sub: str, color: str) -> str:
+    return (f"<div style='border:1px solid {color}55;background:{color}0d;border-radius:10px;padding:12px 14px;"
+            f"text-align:center;'><div style='font-size:10px;letter-spacing:3px;color:{DIM};'>{title}</div>"
+            f"<div style='font-size:2rem;font-weight:900;color:{color};font-family:Courier New;'>{big}</div>"
+            f"<div style='font-size:0.72rem;color:{TEXT};margin-top:2px;'>{sub}</div></div>")
+
+
+def _leverage(data: dict) -> None:
+    """🚀 Commodity Leverage och 💥 break-even — skattade ur historiken, utanför 300."""
+    from asymmetry import quick_leverage as ql
+    lev = ql.from_data(data)
+    st.markdown(f"<div style='color:{CYAN};font-family:Courier New;letter-spacing:2px;font-size:0.8rem;"
+                f"margin:10px 0 4px;'>🚀 RÅVARUHÄVSTÅNG <span style='color:{DIM};letter-spacing:0;'>"
+                f"— egen dimension, räknas inte i 300</span></div>", unsafe_allow_html=True)
+    name = (lev.commodity or "råvara").capitalize()
+    c1, c2 = st.columns(2)
+    if lev.score is None:
+        c1.markdown(_metric_card("COMMODITY LEVERAGE", "—", f"DATA_GAP: {lev.error}", GREY), unsafe_allow_html=True)
+        c2.markdown(_metric_card("BREAK-EVEN-MARGINAL", "—", "kräver ett användbart samband", GREY),
+                    unsafe_allow_html=True)
+    else:
+        lc = GREEN if lev.downside_label == "STARK" else AMBER if lev.downside_label == "MÅTTLIG" else RED
+        c1.markdown(_metric_card("COMMODITY LEVERAGE", f"{lev.score}/10",
+                                 f"{name} +20 % → {lev.basis} {lev.response_pct:+.0f} % · {lev.flag}", lc),
+                    unsafe_allow_html=True)
+        bc = GREEN if lev.band in ("UTMÄRKT", "STARK") else AMBER if lev.band in ("MÅTTLIG", "SVAG") else RED
+        c2.markdown(_metric_card("BREAK-EVEN-MARGINAL", f"{lev.break_even_margin_pct:.0f} %",
+                                 f"{lev.band} · {name} nu {lev.price_now:,.0f} mot break-even "
+                                 f"{lev.break_even_price:,.0f} {lev.unit}", bc), unsafe_allow_html=True)
+    if not lev.sensitivity:
+        return
+    with st.expander(f"Känslighet mot {name.lower()} ({lev.ticker}) — hur det räknas"):
+        st.caption(
+            "Skattat ur bolagets egen historik: årlig intäkt, EBITDA och FCF (Börsdata, rapportvalutan) "
+            f"mot {name.lower()}-priset som årssnitt omräknat till samma valuta. Rak linje (OLS) per mått; "
+            f"break-even = priset där linjen når noll. Samband med färre än {qc.LEV_MIN_YEARS} år eller "
+            f"R² under {qc.LEV_MIN_R2:g} poängsätts inte. En råvara räknas — multi-metallbolag får "
+            f"huvudråvaran som proxy.")
+        fits = " · ".join(f"{k}: R² {f.r2:.2f} ({f.n} år)" for k, f in lev.fits.items())
+        if fits:
+            st.caption("Samband — " + fits)
+        if lev.downside:
+            st.caption(f"Nedsida ({lev.downside_basis}): " + " · ".join(
+                f"pris {pct:+.0f} % → {v:,.0f} M" for pct, v in lev.downside.items()))
+
+        def _f(v, fmt="{:,.0f}"):
+            return "—" if v is None else fmt.format(v)
+
+        def _step(pct):
+            return "BAS" if pct == 0 else f"{pct:+.0f} %"
+        bold = f"font-weight:700;color:{CYAN};"
+        rows = "".join(
+            f"<tr style='{bold if r['pct'] == 0 else ''}'><td>{_step(r['pct'])}</td>"
+            f"<td>{_f(r['price'], '{:,.2f}')}</td><td>{_f(r['revenue'])}</td><td>{_f(r['ebitda'])}</td>"
+            f"<td>{_f(r['fcf'])}</td><td>{_f(r['ebitda_margin'], '{:.0f} %')}</td>"
+            f"<td>{_f(r['fcf_margin'], '{:.0f} %')}</td></tr>" for r in lev.sensitivity)
+        st.markdown(
+            f"<table style='width:100%;font-size:0.78rem;color:{TEXT};text-align:right;'>"
+            f"<tr style='color:{DIM};'><th>Pris</th><th>{name} ({lev.unit})</th><th>Intäkt M</th>"
+            f"<th>EBITDA M</th><th>FCF M</th><th>EBITDA-marg.</th><th>FCF-marg.</th></tr>{rows}</table>",
+            unsafe_allow_html=True)
+        fig = leverage_chart(data, lev)
+        if fig is not None:
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False},
+                            key=f"asym_quick_lev_{data.get('ticker', '')}")
+
+
+def leverage_chart(data: dict, lev) -> Optional[go.Figure]:
+    """EBITDA och FCF mot råvarupriset per år, med den skattade linjen."""
+    cp = data.get("commodity_px") or {}
+    prices, fx = cp.get("prices") or {}, cp.get("fx_now") or 1.0
+    fig = go.Figure()
+    for key, series, color in (("EBITDA", data.get("ebitda_series"), CYAN), ("FCF", data.get("fcf_series"), GOLD)):
+        pts = [(prices[y], v, y) for y, v in (series or []) if y in prices and v is not None]
+        if len(pts) < 2:
+            continue
+        fig.add_trace(go.Scatter(x=[p / fx for p, _, _ in pts], y=[v for _, v, _ in pts], mode="markers+text",
+                                 text=[str(y) for _, _, y in pts], textposition="top center", name=key,
+                                 marker=dict(color=color, size=8), textfont=dict(color=DIM, size=9)))
+        f = lev.fits.get(key)
+        if f:
+            xs = sorted(p for p, _, _ in pts)
+            fig.add_trace(go.Scatter(x=[xs[0] / fx, xs[-1] / fx], y=[f.at(xs[0]), f.at(xs[-1])], mode="lines",
+                                     name=f"{key}-linje (R² {f.r2:.2f})", line=dict(color=color, dash="dot")))
+    if not fig.data:
+        return None
+    fig.update_layout(**_layout(f"{(lev.commodity or 'RÅVARA').upper()}-PRIS MOT EBITDA OCH FCF (PER ÅR)", 300))
+    return fig
 
 
 # ── Grafer ───────────────────────────────────────────────────────────────────
