@@ -113,4 +113,4 @@ def test_critical_metals_are_in_the_curated_list_with_themes():
     for t in ("LYC.AX", "ILU.AX", "ARU.AX", "ALB", "SQM", "PLS.AX", "MIN.AX", "LTR.AX", "SBSW", "PPLT", "PALL"):
         assert t in eu.US_INTL_CURATED, t
     assert TICKER_THEME_MAP["LYC.AX"] == "sallsynta" and TICKER_THEME_MAP["ALB"] == "sallsynta"
-    assert TICKER_THEME_MAP["SBSW"] == "guld" and TICKER_THEME_MAP["PALL"] == "guld"
+    assert TICKER_THEME_MAP["SBSW"] == "platina" and TICKER_THEME_MAP["PALL"] == "palladium"

@@ -2,7 +2,7 @@
 blindspot/theme_board.py
 Commodity Theme Board for Odin's Blindspot.
 
-Nine commodity themes ranked by BLINDSPOT_SCORE.
+Fifteen commodity themes ranked by BLINDSPOT_SCORE.
 Each theme has:
   CYKELPOSITION  — 10y price percentile + 200W MA slope → TIDIG/MITTEN/SEN/TOPP
   HAT            — distance from 5y high + 12m volume trend + 12m RS vs SPY (0-100)
@@ -51,6 +51,18 @@ NECESSITY_KOL        = 60
 NECESSITY_AGRI       = 70
 # Rare earth metals: defence, EVs, wind turbines, electronics
 NECESSITY_SALLSYNTA  = 85
+# Platinum: autocatalysts (diesel), industry, hydrogen electrolysers
+NECESSITY_PLATINA    = 70
+# Palladium: gasoline autocatalysts — demand shrinks as EVs grow
+NECESSITY_PALLADIUM  = 65
+# Wheat: staple food — the most basic of the soft commodities
+NECESSITY_VETE       = 90
+# Forestry: timber, pulp, packaging, building materials
+NECESSITY_SKOG       = 60
+# Coffee: consumer staple, but substitutable and not survival-critical
+NECESSITY_KAFFE      = 50
+# Cocoa: consumer staple, weather-driven supply, least necessary
+NECESSITY_KAKAO      = 45
 
 # ── Cycle classification thresholds ──────────────────────────────────────────
 
@@ -90,6 +102,20 @@ _THEMES: list[ThemeSpec] = [
               proxy_flag=True, proxy_note="BTU (Peabody Energy) används som proxy för kol"),
     ThemeSpec("agri",       "Agri",              ["DBA"],          NECESSITY_AGRI),
     ThemeSpec("sallsynta",  "Sällsynta metaller",["REMX"],         NECESSITY_SALLSYNTA),
+    ThemeSpec("platina",    "Platina",           ["PPLT", "PL=F"], NECESSITY_PLATINA),
+    ThemeSpec("palladium",  "Palladium",         ["PALL", "PA=F"], NECESSITY_PALLADIUM),
+    ThemeSpec("vete",       "Vete",              ["WEAT", "ZW=F"], NECESSITY_VETE),
+    ThemeSpec("skog",       "Skog",              ["WOOD"],         NECESSITY_SKOG,
+              proxy_flag=True, proxy_note="WOOD (iShares Global Timber & Forestry) — skogsbolagen, "
+                                          "inte virkespriset"),
+    # Kaffe- och kakao-ETN:erna (JO, NIB) är avnoterade — terminens närmaste
+    # månad är den enda serien med tio års historik.
+    ThemeSpec("kaffe",      "Kaffe",             ["KC=F"],         NECESSITY_KAFFE,
+              proxy_flag=True, proxy_note="Terminskontrakt KC=F (närmaste månad, rullas) — "
+                                          "volymen är kontraktsvolym"),
+    ThemeSpec("kakao",      "Kakao",             ["CC=F"],         NECESSITY_KAKAO,
+              proxy_flag=True, proxy_note="Terminskontrakt CC=F (närmaste månad, rullas) — "
+                                          "volymen är kontraktsvolym"),
 ]
 
 # Rubber-band ratio keys per theme (for cross-linking in the UI)
@@ -300,7 +326,7 @@ def _compute_theme(spec: ThemeSpec) -> ThemeResult:
 @_cache_12h
 def build_theme_board() -> list[ThemeResult]:
     """
-    Build all 9 theme results, sorted by blindspot_score descending.
+    Build all theme results (_THEMES), sorted by blindspot_score descending.
     Cached 12h.
     """
     results = []
