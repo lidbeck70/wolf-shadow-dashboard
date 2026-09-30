@@ -178,10 +178,14 @@ def _leverage(data: dict):
         c1.markdown(_metric_card("COMMODITY LEVERAGE", f"{lev.score}/10",
                                  f"{name} +20 % → {lev.basis} {lev.response_pct:+.0f} % · {lev.flag}", lc),
                     unsafe_allow_html=True)
-        bc = GREEN if lev.band in ("UTMÄRKT", "STARK") else AMBER if lev.band in ("MÅTTLIG", "SVAG") else RED
-        c2.markdown(_metric_card("BREAK-EVEN-MARGINAL", f"{lev.break_even_margin_pct:.0f} %",
-                                 f"{lev.band} · {name} nu {lev.price_now:,.0f} mot break-even "
-                                 f"{lev.break_even_price:,.0f} {lev.unit}", bc), unsafe_allow_html=True)
+        if lev.break_even_margin_pct is None:
+            c2.markdown(_metric_card("BREAK-EVEN-MARGINAL", "—", f"{lev.band} · {lev.break_even_note}", GREY),
+                        unsafe_allow_html=True)
+        else:
+            bc = GREEN if lev.band in ("UTMÄRKT", "STARK") else AMBER if lev.band in ("MÅTTLIG", "SVAG") else RED
+            c2.markdown(_metric_card("BREAK-EVEN-MARGINAL", f"{lev.break_even_margin_pct:.0f} %",
+                                     f"{lev.band} · {name} nu {ql.fmt_price(lev.price_now)} mot break-even "
+                                     f"{ql.fmt_price(lev.break_even_price)} {lev.unit}", bc), unsafe_allow_html=True)
     if not lev.sensitivity:
         return lev
     with st.expander(f"Känslighet mot {name.lower()} ({lev.ticker}) — hur det räknas"):

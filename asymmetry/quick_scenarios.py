@@ -229,8 +229,10 @@ def killers(d: dict, lev: ql.LeverageEstimate, res: EngineResult) -> list:
         out.append(Killer("Valuta", f"{name.capitalize()} prissätts i USD, rapporterna i {res.report_ccy} — "
                                     f"en starkare {res.report_ccy} äter marginalen"))
     ev_now = _n(d.get("ev_ebitda"))
-    if ev_now is not None and res.multiples and ev_now > res.multiples["median"]:
-        out.append(Killer("Värderingen redan hög", f"EV/EBITDA {ev_now:.1f}× över egen median "
+    if ev_now is not None and res.multiples \
+            and ev_now > res.multiples["median"] * (1 + qc.KILL_EV_PREMIUM_PCT / 100):
+        prem = (ev_now / res.multiples["median"] - 1) * 100
+        out.append(Killer("Värderingen redan hög", f"EV/EBITDA {ev_now:.1f}× är {prem:.0f} % över egen median "
                                                    f"{res.multiples['median']:g}×"))
     if res.cycle_top:
         out.append(Killer("Cykeltopp", f"{name.capitalize()} ligger över {res.price_pctl:.0f} % av tio års "
@@ -240,8 +242,11 @@ def killers(d: dict, lev: ql.LeverageEstimate, res: EngineResult) -> list:
     if any(s.outside_history for s in res.scenarios if s.price_pct > 0):
         out.append(Killer("Bull kräver nya pristoppar", "Bull-scenarierna ligger över tio års högsta årssnitt — "
                                                         "linjen extrapoleras"))
-    out.append(Killer("En råvara räknas", "Biprodukter och övriga metaller ingår inte — exponeringen per metall "
-                                          "är okänd här", measured=False))
+    if lev.band == qc.BREAK_EVEN_NOT_MEASURABLE:
+        out.append(Killer("En råvara räknas", f"{lev.break_even_note} — exponeringen per metall är okänd här"))
+    else:
+        out.append(Killer("En råvara räknas", "Biprodukter och övriga metaller ingår inte — exponeringen per metall "
+                                              "är okänd här", measured=False))
     out.append(Killer("Capex, produktion, tillstånd", "Kostnadsöverdrag, produktionsstörningar och tillstånd "
                                                       "syns inte i siffrorna — läs rapporterna", measured=False))
     return out

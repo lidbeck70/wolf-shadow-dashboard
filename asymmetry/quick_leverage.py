@@ -51,6 +51,7 @@ class LeverageEstimate:
     break_even_price: Optional[float] = None
     break_even_margin_pct: Optional[float] = None
     band: str = ""
+    break_even_note: str = ""
     downside: dict = field(default_factory=dict)   # {−20: nivå, −30: nivå} i rapportvalutan
     downside_basis: str = ""
     downside_label: str = ""            # STARK | MÅTTLIG | SKÖR
@@ -91,6 +92,13 @@ def _score(response_pct: float) -> int:
         if response_pct >= lim:
             return pts
     return 0
+
+
+def fmt_price(v: Optional[float]) -> str:
+    """Råvarupris läsbart: decimaler under 100 (6.63 USD/lb), tusental över (4,184 USD/oz)."""
+    if v is None:
+        return "—"
+    return f"{v:,.2f}" if abs(v) < 100 else f"{v:,.0f}"
 
 
 def _band(margin_pct: float) -> str:
@@ -139,9 +147,16 @@ def estimate(revenue: dict, ebitda: dict, fcf: dict, prices: dict, p0: Optional[
     res.elasticity = round(res.response_pct / (probe * 100), 2)
     res.score = _score(res.response_pct)
     be = -f.a / f.b
-    res.break_even_price = round(max(be, 0.0) / fx, 2)
-    res.break_even_margin_pct = round(min((p0 - be) / p0 * 100, 100.0), 1)
-    res.band = _band(res.break_even_margin_pct)
+    if be <= 0:
+        # Skattad nivå positiv även vid pris 0 — resten av resultatet kommer från
+        # annat än den här råvaran. Ett "100 % UTMÄRKT" vore påhittat.
+        res.band = qc.BREAK_EVEN_NOT_MEASURABLE
+        res.break_even_note = (f"{basis} ≈ {f.a:,.0f} M även vid {commodity}-pris 0 — resultatet vilar på mer än "
+                               f"{commodity} (biprodukter, smältverk, andra metaller)")
+    else:
+        res.break_even_price = round(be / fx, 2)
+        res.break_even_margin_pct = round((p0 - be) / p0 * 100, 1)
+        res.band = _band(res.break_even_margin_pct)
     # nedsidan: FCF när det sambandet går att använda, annars basens
     d_fit, d_basis = (fits["FCF"], "FCF") if _usable(fits["FCF"], p0) else (f, basis)
     res.downside_basis = d_basis

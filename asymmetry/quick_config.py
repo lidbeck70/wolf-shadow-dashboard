@@ -66,6 +66,9 @@ LEV_PRICE_UNITS = {"GC=F": "USD/oz", "SI=F": "USD/oz", "PL=F": "USD/oz", "PA=F":
 # Break-even-marginal (pris − break-even) / pris i % → band (spec §5)
 BREAK_EVEN_BANDS = ((40.0, "UTMÄRKT"), (25.0, "STARK"), (10.0, "MÅTTLIG"), (0.0, "SVAG"))
 BREAK_EVEN_FAILED = "UNDER BREAK-EVEN"
+# Linjen positiv även vid pris 0 → break-even kan inte mätas i den här råvaran
+# (resultatet vilar på annat: biprodukter, smältverk, andra metaller)
+BREAK_EVEN_NOT_MEASURABLE = "EJ MÄTBAR"
 # Nedsidan (spec §12): FCF (annars EBITDA) vid pris −20 % och −30 %
 LEV_DOWNSIDE_PCT = (-20.0, -30.0)
 LEV_HIGH_SCORE = 6                 # från den här poängen kallas hävstången hög
@@ -89,6 +92,7 @@ STRESS_MULTIPLES = ("low", "median", "high")
 KILL_ND_EBITDA = 2.0
 KILL_DILUTION_3Y_PCT = 15.0
 KILL_WEAK_R2 = 0.6
+KILL_EV_PREMIUM_PCT = 10.0         # "värderingen redan hög" först när nuvarande EV/EBITDA är > 10 % över medianen
 # Cykeltopp: dagens råvarupris i översta delen av tio års årssnitt → marknaden
 # sätter normalt en lägre multipel på toppvinster. BEAR tar då den lägsta
 # egna multipeln i stället för 25:e percentilen, och en killer läggs till.
