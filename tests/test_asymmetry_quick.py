@@ -23,6 +23,8 @@ def _good() -> dict:
             "ev_ebitda": 4.0, "ev_ebitda_hist": [6.0, 7.0, 5.5, 6.5, 8.0], "p_fcf": 8.0,
             "p_fcf_hist": [14.0, 12.0, 16.0], "from_52w_high_pct": 45.0, "vs_sma200_pct": -12.0,
             "earnings_stability": 0.8, "fcf_stability": 0.75, "f_score": 7, "report_years": 10,
+            "fcf_series": [(2016 + i, 500.0 + 100 * i) for i in range(10)],
+            "ev_ebitda_series": [(2021 + i, v) for i, v in enumerate([6.0, 7.0, 5.5, 6.5, 8.0])],
             "fcf_positive_share": 0.9, "quality_years": 10, "cash_conversion": 1.3,
             "source_gap_pct": 2.0, "coverage": (13, 13)}
 
@@ -30,12 +32,13 @@ def _good() -> dict:
 def test_strong_company_is_green_on_every_card():
     r = quick.score(_good())
     assert r.verdict == "GRÖN" and r.total == 300
+    want = {"survival": "5/5 mätta", "mos": "5/5 mätta", "confidence": "4/4 mätta"}
     for g in r.groups:
-        assert g.score == 100.0 and g.coverage == "5/5 mätta", g.label
+        assert g.score == 100.0 and g.coverage == want[g.key], g.label
         assert all(p.status == "GREEN" for p in g.pillars), [(p.label, p.status) for p in g.pillars]
-    assert r.group("mos").pillars[1].value == "4.0× (-38 %)"
     ev = r.group("mos").pillars[1]
-    assert "median 6.5×" in ev.why and "5 år" in ev.why
+    assert ev.value == "4.0× · median 6.5× (-38 %)"                 # nu · median · premie/rabatt
+    assert "2021–2025 (5 år)" in ev.why and "38 % rabatt" in ev.why
 
 
 def test_weak_junior_is_red_with_reasons():
@@ -120,7 +123,8 @@ def test_fetch_from_borsdata_fills_every_scored_field():
     assert d["source_gap_pct"] == 2.0 and d["coverage"] == (13, 13) and d["filled_yahoo"] == []
     assert d["from_52w_high_pct"] > 0 and d["vs_sma200_pct"] < 0 and len(d["prices"]) == 320
     r = quick.score(d)
-    assert r.group("survival").score == 100.0 and r.group("confidence").coverage == "5/5 mätta"
+    assert r.group("survival").score == 100.0 and r.group("confidence").coverage == "4/4 mätta"
+    assert [p.key for p in r.group("confidence").pillars] == ["coverage", "fcf_data", "quality", "history"]
 
 
 def test_fetch_yahoo_only_marks_what_it_filled():
@@ -134,7 +138,9 @@ def test_fetch_yahoo_only_marks_what_it_filled():
     assert d["nd_ebitda"] == round(3e9 / 9e9, 4) and d["fcf_yield_pct"] == 5.0
     assert d["coverage"][0] < 13                                      # stabilitet, kvalitet m.m. saknas
     r = quick.score(d)
-    assert r.group("confidence").pillars[1].status == "DATA_GAP"
+    fd = r.group("confidence").pillars[1]
+    assert fd.key == "fcf_data" and fd.status == "AMBER" and fd.value == "bara senaste 12 mån"
+    assert all(p.status == "DATA_GAP" for p in r.volatility.pillars)     # stabilitet saknas utan årsserie
 
 
 class _ApiNoScreener(_Api):
@@ -164,9 +170,9 @@ def test_fetch_falls_back_to_kpi_history_then_reports():
     assert d["kpi_source"]["f_score"] == "Börsdata historik (r12)"
     # FCF 0, 1000 … 5000 är en rak linje → stabilitet 1.0 ur årsrapporterna
     assert d["fcf_stability"] == 1.0 and d["kpi_source"]["fcf_stability"] == "beräknad ur årsrapporterna"
-    conf = quick.score(d).group("confidence")
-    assert conf.coverage == "5/5 mätta"
-    assert "beräknad ur årsrapporterna" in next(p for p in conf.pillars if p.key == "fcf_stability").why
+    res = quick.score(d)
+    assert res.group("confidence").coverage == "4/4 mätta"
+    assert "beräknad ur årsrapporterna" in next(p for p in res.volatility.pillars if p.key == "fcf_stability").why
 
 
 def test_trend_stability():
@@ -253,7 +259,7 @@ def test_quick_tab_renders_card_gauges_cards_and_charts(monkeypatch):
     assert calls == ["BOL.ST"]
     html = " ".join(m.value for m in at.markdown)
     assert "WOLF ASYMMETRY SCORE" in html and ">300<" in html and "GRÖN · STARK ASYMMETRI" in html
-    assert "15/15 kort mätta" in html
+    assert "14/14 kort mätta" in html and "CYKELVOLATILITET" in html
     charts = at.get("plotly_chart")
     assert len(charts) == 3 + 4                                        # tre mätare + fyra grafer
     assert "Prisbuffert" in html and "Resultatkvalitet" in html and "Utspädning" in html
@@ -266,3 +272,41 @@ def test_quick_tab_renders_card_gauges_cards_and_charts(monkeypatch):
     assert not at.exception, at.exception
     assert "BOL.ST" in at.session_state["confidence"]["companies"]
     assert at.session_state["confidence"]["companies"]["BOL.ST"]["name"] == "Boliden"
+
+
+# ── Volatilitet ≠ datakvalitet (Asymmetry 1.1, §8 och §36) ────────────────────
+def test_a_cyclical_miner_is_not_marked_down_for_swinging_fcf():
+    steady, cyclical = _good(), _good()
+    cyclical.update(earnings_stability=0.05, fcf_stability=0.0)          # gruvbolag i en råvarucykel
+    a, b = quick.score(steady), quick.score(cyclical)
+    assert a.total == b.total == 300 and a.group("confidence").score == b.group("confidence").score
+    vol = {p.key: p for p in b.volatility.pillars}
+    assert vol["fcf_stability"].status == "RED" and vol["fcf_stability"].info
+    assert "cyklisk" in vol["fcf_stability"].value and "räknas inte i 300" in vol["fcf_stability"].why
+    assert not any("FCF-volatilitet" in r for r in b.reasons)             # inte ett rött kort i verdiktet
+
+
+def test_fcf_data_measures_how_well_fcf_is_documented():
+    def fd(**kw):
+        d = _good()
+        d.update(kw)
+        return next(p for p in quick.confidence(d).pillars if p.key == "fcf_data")
+    assert fd().status == "GREEN" and fd().value == "10/10 år med FCF"
+    gappy = [(2016 + i, None if i % 3 == 0 else 1.0) for i in range(10)]      # 6 av 10 år
+    assert fd(fcf_series=gappy).status == "AMBER"
+    assert fd(fcf_series=[(2024, 1.0), (2025, None)]).status == "RED"
+    p = fd(fcf_source_gap_pct=40.0)                                        # källorna oense
+    assert p.status == "AMBER" and "Yahoo +40 %" in p.value
+    assert fd(fcf_series=[], fcf=None).status == "DATA_GAP"
+    # en svängande men komplett serie är GRÖN — datat är belagt
+    swings = [(2016 + i, v) for i, v in enumerate([900, -400, 1200, -50, 3000, 200, -800, 1500, 60, 2500])]
+    assert fd(fcf_series=swings, fcf_stability=0.0).status == "GREEN"
+
+
+def test_fetch_compares_fcf_with_yahoo_only_in_the_same_currency():
+    d = quick_data.fetch("BOL.ST", api=_Api(), price_getter=lambda s: _closes(),
+                         info_getter=lambda s: {"marketCap": 98e9, "freeCashflow": 5.5e9, "financialCurrency": "SEK"})
+    assert d["fcf_source_gap_pct"] == round((5500 - 5000) / 5500 * 100, 1)
+    d = quick_data.fetch("BOL.ST", api=_Api(), price_getter=lambda s: _closes(),
+                         info_getter=lambda s: {"marketCap": 98e9, "freeCashflow": 5.5e8, "financialCurrency": "USD"})
+    assert "fcf_source_gap_pct" not in d

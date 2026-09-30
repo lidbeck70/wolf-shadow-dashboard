@@ -271,6 +271,15 @@ def fetch(ticker: str, api=None, price_getter: Optional[Callable] = None,
             d["name"] = info.get("longName") or info.get("shortName") or t
             d["currency"] = info.get("financialCurrency") or info.get("currency")
         ebitda = _n(info.get("ebitda"))
+        # FCF-data: Börsdata mot Yahoo för senaste 12 mån — bara i samma valuta,
+        # och bara när Börsdata faktiskt hade ett tal (innan Yahoo fyller luckan).
+        y_fcf = _n(info.get("freeCashflow"))
+        bd_fcf = _n(d.get("fcf"))
+        same_ccy = str(info.get("financialCurrency") or "").upper() == str(d.get("currency") or "").upper() != ""
+        if bd_fcf is not None and y_fcf is not None and same_ccy:
+            denom = max(abs(bd_fcf), abs(y_fcf / 1e6))
+            if denom > 0:
+                d["fcf_source_gap_pct"] = round((y_fcf / 1e6 - bd_fcf) / denom * 100, 1)
         fills = {
             "fcf": (_n(info.get("freeCashflow")) / 1e6) if _n(info.get("freeCashflow")) is not None else None,
             "cash": (_n(info.get("totalCash")) / 1e6) if _n(info.get("totalCash")) is not None else None,
