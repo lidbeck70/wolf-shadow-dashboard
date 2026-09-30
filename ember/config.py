@@ -102,6 +102,21 @@ PREFILTER_MIN_TURNOVER = 5_000_000  # avg daily turnover (close×vol) in local c
 PREFILTER_BATCH_SIZE   = 50         # tickers per yf.download() batch call
 PREFILTER_PERIOD       = "1y"       # download period for pre-filter (gives ~252 bars)
 
+# ── Globalt universum (Börsdata /instruments/global) ──────────────────────────
+# USA (NYSE, Nasdaq — inte OTC), Kanada (Toronto, TSX Venture, CSE) och
+# Australien (ASX), råvarubranscher, börsvärde ≥ GLOBAL_MIN_MCAP_MUSD.
+GLOBAL_COUNTRIES      = ("usa", "kanada", "canada", "australien", "australia")
+GLOBAL_EXCLUDE_LISTS  = ("otc",)
+GLOBAL_MIN_MCAP_MUSD  = 300.0       # swingbart: mindre bolag faller oftast i omsättningsfiltret ändå
+# Börsdatas bransch-id: råvarugrindens (olja/gas/kol/uran/gruv) + skog 21 och
+# jordbruk 60, som Norden-filtret också tar med (EMBER har agri- och skogsteman).
+GLOBAL_EXTRA_BRANCH_IDS = (21, 60)
+# Kemikalier (15) är mest färg och specialkemi — där tas bara bolag vars namn
+# pekar på litium, sällsynta jordartsmetaller, kobolt, grafit eller PGM.
+GLOBAL_KEYWORD_BRANCH_IDS = (15,)
+GLOBAL_METAL_KEYWORDS = ("lithium", "litium", "rare earth", "sällsynt", "cobalt", "kobolt",
+                         "graphite", "grafit", "platinum", "platina", "palladium", "vanadium")
+
 # ── External data ─────────────────────────────────────────────────────────────
 FRED_T10Y2Y_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=T10Y2Y"
 FRED_TIMEOUT    = 20   # seconds (increased; disk cache in fred_cache.py handles daily data)
@@ -275,6 +290,12 @@ _TICKER_THEME_RAW: dict[str, str] = {
     "NTR.TO": "agri",
     # ── Sällsynta jordartsmetaller ─────────────────────────────────────────
     "REMX": "sallsynta", "MP": "sallsynta",
+    "LYC.AX": "sallsynta", "ILU.AX": "sallsynta", "ARU.AX": "sallsynta",
+    # ── Litium (räknas till sällsynta/batterimetaller) ────────────────────
+    "ALB": "sallsynta", "SQM": "sallsynta", "PLS.AX": "sallsynta",
+    "MIN.AX": "sallsynta", "LTR.AX": "sallsynta",
+    # ── Platina/palladium — inget eget tema än, följer guldcykeln ─────────
+    "SBSW": "guld", "PPLT": "guld", "PALL": "guld",
 }
 
 # Omdöpta tickers byts (GOLD → B), uppköpta släpps (MRO, MAG, ARCH, CEIX…).

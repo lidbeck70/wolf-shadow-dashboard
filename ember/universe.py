@@ -5,11 +5,13 @@ EMBER strategy — commodity universe builder.
 Three modes
 -----------
 CURATED  — static ETF + seed stock lists from ember/config.py (fast, no prefilter)
-AUTO     — Nordic (Börsdata branch filter) + US/INTL curated static lists
+AUTO     — Nordic (Börsdata branch filter) + USA/Kanada/Australien (Börsdata
+           global, råvarubranscher, börsvärde-golv) + US/INTL curated static lists
 BOTH     — union of CURATED + AUTO
 
 Nordic tickers are fetched from Börsdata API (requires BORSDATA_API_KEY).
-US/INTL lists are static, annotated with source ETF and approximate date.
+USA/Kanada/Australien kräver Börsdata Pro+ global — utan den används bara de
+statiska US/INTL-listorna (ETF:er, UK, norsk energi och de största namnen).
 
 Pre-filter (applied to AUTO and BOTH)
 --------------------------------------
@@ -26,13 +28,15 @@ import pandas as pd
 from ember.config import (
     EMBER_ETF_UNIVERSE, EMBER_STOCK_UNIVERSE,
     PREFILTER_MIN_TURNOVER, PREFILTER_BATCH_SIZE, PREFILTER_PERIOD,
+    GLOBAL_COUNTRIES, GLOBAL_EXCLUDE_LISTS, GLOBAL_MIN_MCAP_MUSD, GLOBAL_EXTRA_BRANCH_IDS,
+    GLOBAL_KEYWORD_BRANCH_IDS, GLOBAL_METAL_KEYWORDS,
 )
 
 logger = logging.getLogger(__name__)
 
 # ── Universe source labels ─────────────────────────────────────────────────────
 SOURCE_CURATED = "Kurerad lista"
-SOURCE_AUTO    = "Auto: Norden + US-råvaror"
+SOURCE_AUTO    = "Auto: Norden + US-råvaror"   # etiketten sparad i session/inställningar — oförändrad
 SOURCE_BOTH    = "Båda"
 ALL_SOURCES    = [SOURCE_CURATED, SOURCE_AUTO, SOURCE_BOTH]
 
@@ -99,6 +103,15 @@ _REMX_NAMES: list[str] = [
     "MP",
 ]
 
+# Kritiska metaller — säkerhetslista oavsett hur Börsdata klassat bolaget
+# (litium och REE ligger ibland under Kemikalier). Sällsynta jordartsmetaller,
+# litium, platina/palladium (producenter + ETF:er).
+_CRITICAL_METALS: list[str] = [
+    "LYC.AX", "ILU.AX", "ARU.AX",                       # sällsynta jordartsmetaller
+    "ALB", "SQM", "PLS.AX", "MIN.AX", "LTR.AX",          # litium
+    "SBSW", "PPLT", "PALL",                              # platina/palladium
+]
+
 # XLE / XOP (US energy ETFs) top holdings + Shell US-listed ADR
 _XLE_NAMES: list[str] = [
     "XOM", "CVX", "COP", "EOG", "SLB", "MPC", "VLO", "PSX",
@@ -155,7 +168,7 @@ _AUTO_ETFS: list[str] = [
 # MAG, ARCH…) — annars ligger de kvar som tysta DATA_GAP i varje skanning.
 US_INTL_CURATED: list[str] = _dead.alive(
     _GDX_NAMES + _GDXJ_NAMES + _SIL_NAMES + _COPX_NAMES
-    + _URA_NAMES + _REMX_NAMES + _XLE_NAMES + _COAL_NAMES
+    + _URA_NAMES + _REMX_NAMES + _CRITICAL_METALS + _XLE_NAMES + _COAL_NAMES
     + _AGRI_NAMES + _CANADA_MINING + _CANADA_OIL + _NORWAY_ENERGY
     + _UK_COMMODITY + _AUTO_ETFS
 )
@@ -169,6 +182,9 @@ class UniverseStats:
     total_before_prefilter: int = 0
     nordic_raw: int             = 0
     us_intl_raw: int            = 0
+    global_raw: int             = 0      # USA/Kanada/Australien ur Börsdata global
+    global_by_country: dict     = None   # {"USA": n, "Kanada": n, "Australien": n}
+    global_error: str           = ""
     passed_prefilter: int       = 0
     borsdata_available: bool    = False
     borsdata_error: str         = ""
@@ -242,6 +258,79 @@ def fetch_nordic_commodity_tickers() -> tuple[list[str], bool, str]:
     except Exception as exc:
         logger.debug("fetch_nordic_commodity_tickers: %s", exc)
         return [], False, str(exc)
+
+
+# ── USA / Kanada / Australien ur Börsdata global ──────────────────────────────
+_CCY_BY_COUNTRY = {"usa": "USD", "kanada": "CAD", "canada": "CAD", "australien": "AUD", "australia": "AUD"}
+
+
+def _global_market_ids(table: dict) -> dict:
+    """{marknads-id: land} för aktielistorna i GLOBAL_COUNTRIES, utan OTC."""
+    out = {}
+    for m in table.values():
+        if m.kind != _markets.STOCK or m.country.strip().lower() not in GLOBAL_COUNTRIES:
+            continue
+        if any(x in f"{m.name} {m.exchange}".lower() for x in GLOBAL_EXCLUDE_LISTS):
+            continue
+        out[m.id] = m.country
+    return out
+
+
+def fetch_global_commodity_tickers(api=None, min_mcap_musd: float = GLOBAL_MIN_MCAP_MUSD) -> tuple:
+    """(tickers, per land, fel) — råvarubolag i USA, Kanada och Australien ur
+    Börsdatas globala lista. Branschen avgörs av Börsdatas bransch-id (samma
+    tabell som Contrarian Alphas råvarugrind + skog och jordbruk; Kemikalier
+    bara med litium/REE/kobolt/grafit/PGM i namnet). Börsvärdet
+    ur den globala KPI-screenern; bolag utan värde behålls (förfiltret tar dem)."""
+    try:
+        from borsdata_api import KPI, get_api  # type: ignore[import]
+        from contrarian_alpha.commodity_gate import COMMODITY_BRANCH_IDS
+        from sheets_refresh import FX_TO_USD
+        api = api or get_api()
+        if not getattr(api, "is_configured", False):
+            return [], {}, "BORSDATA_API_KEY ej konfigurerad"
+        glob = list(api.get_global_instruments_list() or [])
+        if not glob:
+            return [], {}, "globala instrument saknas (Börsdata Pro+ global krävs)"
+        table = _markets.load(api=api)
+        mids = _global_market_ids(table)
+        branches = set(COMMODITY_BRANCH_IDS) | set(GLOBAL_EXTRA_BRANCH_IDS)
+        mcap: dict = {}
+        if min_mcap_musd:
+            try:
+                mcap = {e.get("i"): e.get("n") for e in api.get_kpi_screener_global(KPI["market_cap"]) or []
+                        if e.get("i") is not None and e.get("n") is not None}
+            except Exception as exc:
+                logger.debug("global market cap: %s", exc)
+        tickers, per_country = [], {}
+        for inst in glob:
+            mid = inst.get("marketId")
+            if mid not in mids or inst.get("instrumentType", 1) not in (1, None):
+                continue
+            try:
+                bid = int(inst.get("branchId") or 0)
+            except (TypeError, ValueError):
+                continue
+            if bid not in branches:
+                name = str(inst.get("name") or "").lower()
+                if not (bid in GLOBAL_KEYWORD_BRANCH_IDS and any(k in name for k in GLOBAL_METAL_KEYWORDS)):
+                    continue
+            country = mids[mid]
+            mc = mcap.get(inst.get("insId"))
+            if mc is not None and min_mcap_musd:
+                ccy = str(inst.get("stockPriceCurrency") or "").upper() \
+                    or _CCY_BY_COUNTRY.get(country.strip().lower(), "USD")
+                if float(mc) * FX_TO_USD.get(ccy, 1.0) < min_mcap_musd:
+                    continue
+            raw = inst.get("ticker", "")
+            if not raw:
+                continue
+            tickers.append(_markets.to_yf(raw, mid, table))
+            per_country[country] = per_country.get(country, 0) + 1
+        return sorted(set(tickers)), per_country, ""
+    except Exception as exc:
+        logger.debug("fetch_global_commodity_tickers: %s", exc)
+        return [], {}, str(exc)
 
 
 # ── Batch pre-filter ──────────────────────────────────────────────────────────
@@ -398,6 +487,12 @@ def build_universe(
         stats.borsdata_available = bd_ok
         stats.borsdata_error     = bd_err
         base.extend(nordic)
+
+        glob, per_country, g_err = fetch_global_commodity_tickers()
+        stats.global_raw = len(glob)
+        stats.global_by_country = per_country
+        stats.global_error = g_err
+        base.extend(glob)
 
         stats.us_intl_raw = len(US_INTL_CURATED)
         base.extend(US_INTL_CURATED)
