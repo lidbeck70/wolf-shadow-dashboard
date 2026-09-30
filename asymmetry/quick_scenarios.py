@@ -250,3 +250,52 @@ def killers(d: dict, lev: ql.LeverageEstimate, res: EngineResult) -> list:
     out.append(Killer("Capex, produktion, tillstånd", "Kostnadsöverdrag, produktionsstörningar och tillstånd "
                                                       "syns inte i siffrorna — läs rapporterna", measured=False))
     return out
+
+
+# ── Värdering vid givna råvarupriser (Guld/Silver-fliken, PR B) ───────────────
+@dataclass
+class PricePoint:
+    name: str
+    price: float                     # råvarans enhet (USD)
+    price_pct: float                 # mot dagens pris
+    revenue: Optional[float]         # rapportvalutan, miljoner (egen linje, None utan samband)
+    ebitda: float
+    fcf: Optional[float]
+    ev: float
+    equity: float
+    ratio: float                     # eget kapital / dagens börsvärde
+    share_price: Optional[float]
+    outside_history: bool = False
+
+
+def at_prices(d: dict, points, lev: Optional[ql.LeverageEstimate] = None,
+              multiple_key: str = "median") -> tuple:
+    """(EngineResult, [PricePoint]) — samma kedja som 5×-motorn, men vid
+    råvarupriser som anroparen väljer (USD i råvarans enhet). Ingen egen
+    räknelogik: EBITDA ur bolagets linje, EV med egen multipel, − nettoskuld."""
+    lev = lev or ql.from_data(d)
+    res = run(d, lev)
+    if res.error:
+        return res, []
+    cp = d.get("commodity_px") or {}
+    p0, fx = cp.get("p0"), cp.get("fx_now") or 1.0
+    prices = cp.get("prices") or {}
+    fits = lev.fits or {}
+    f = fits["EBITDA"]
+    mult = res.multiples[multiple_key]
+    out = []
+    for name, usd in points:
+        if not usd or usd <= 0:
+            continue
+        p = usd * fx
+        eb = f.at(p)
+        ev = eb * mult
+        eq = ev - res.net_debt
+        ratio = eq / res.mcap
+        out.append(PricePoint(
+            name, round(usd, 2), round((p / p0 - 1) * 100, 1),
+            round(fits["Intäkt"].at(p), 0) if fits.get("Intäkt") else None, round(eb, 0),
+            round(fits["FCF"].at(p), 0) if fits.get("FCF") else None, round(ev, 0), round(eq, 0), round(ratio, 2),
+            round(res.share_price * max(ratio, 0), 2) if res.share_price else None,
+            outside_history=bool(prices) and not (min(prices.values()) <= p <= max(prices.values()))))
+    return res, out
