@@ -157,8 +157,66 @@ def _price_stats(closes) -> dict:
     return out
 
 
+def _annual_mean(series) -> dict:
+    """{år: årssnitt} ur en daglig kursserie (pandas Series med datumindex)."""
+    if series is None or len(series) == 0:
+        return {}
+    try:
+        g = series.groupby(series.index.year).mean()
+        return {int(y): float(v) for y, v in g.items() if v == v}
+    except Exception:
+        return {}
+
+
+def _series_default(sym: str, period: str = "10y"):
+    from market_prices import close
+    return close(sym, period)
+
+
+def _theme_default(sym: str) -> Optional[str]:
+    try:
+        from ember.regime import detect_theme
+        return detect_theme(sym)
+    except Exception as exc:
+        logger.debug("detect_theme %s: %s", sym, exc)
+        return None
+
+
+def commodity_prices(theme: Optional[str], currency: Optional[str], series_getter: Callable) -> dict:
+    """Råvarans årssnitt och dagspris i rapportvalutan (Commodity Leverage).
+    {commodity, ticker, prices: {år: pris}, p0, fx_now} — tomt pris när serien saknas."""
+    ticker = qc.LEV_PRICE_TICKERS.get(theme or "", "")
+    out = {"commodity": theme or "", "ticker": ticker, "prices": {}, "p0": None, "fx_now": 1.0}
+    if not ticker:
+        return out
+    try:
+        px = series_getter(ticker, "10y")
+    except Exception as exc:
+        logger.debug("pris %s: %s", ticker, exc)
+        return out
+    if px is None or len(px) == 0:
+        return out
+    ccy = str(currency or "USD").upper()
+    fx_year, fx_now = {}, 1.0
+    if ccy != "USD":
+        try:
+            fxs = series_getter(f"USD{ccy}=X", "10y")
+        except Exception:
+            fxs = None
+        if fxs is None or len(fxs) == 0:
+            return out                              # utan valutakurs blir sambandet fel — hellre inget
+        fx_year, fx_now = _annual_mean(fxs), float(fxs.iloc[-1])
+    yearly = _annual_mean(px)
+    out["prices"] = {y: v * fx_year.get(y, fx_now if not fx_year else None) for y, v in yearly.items()
+                     if not fx_year or y in fx_year}
+    out["p0"] = float(px.iloc[-1]) * fx_now
+    out["fx_now"] = fx_now
+    return out
+
+
 def fetch(ticker: str, api=None, price_getter: Optional[Callable] = None,
-          info_getter: Optional[Callable] = None, use_api_default: bool = True) -> dict:
+          info_getter: Optional[Callable] = None, use_api_default: bool = True,
+          series_getter: Optional[Callable] = None, theme_getter: Optional[Callable] = None) -> dict:
     """Allt för Snabbkollen. Nycklar som inte gick att få fram saknas eller är None."""
     import markets
     import sheets_refresh as sr
@@ -258,6 +316,15 @@ def fetch(ticker: str, api=None, price_getter: Optional[Callable] = None,
             d["ev_ebitda_hist"] = [v for _, v in d["ev_ebitda_series"]]
             d["p_fcf_hist"] = [v for _, v in d["p_fcf_series"]]
             d["mcap_bd"] = _n(snap.get("market_cap"))
+            # Commodity Leverage: omsättning och EBITDA per år (KPI 53/54, rapportvalutan)
+            d["revenue_series"] = _kpi_hist(api, iid, 53) or [
+                (int(r["year"]), _n(r.get("revenues"))) for r in years if _n(r.get("revenues")) is not None]
+            d["ebitda_series"] = _kpi_hist(api, iid, 54)
+            if not d["ebitda_series"] and d["revenue_series"]:
+                # reserv: EBITDA-marginal (KPI 32, %) × omsättning samma år
+                marg = dict(_kpi_hist(api, iid, 32))
+                d["ebitda_series"] = [(y, round(r * marg[y] / 100, 1)) for y, r in d["revenue_series"]
+                                      if r is not None and y in marg]
 
     # ── Yahoo: reserv för luckor + jämförelse ────────────────────────────────
     try:
@@ -316,6 +383,10 @@ def fetch(ticker: str, api=None, price_getter: Optional[Callable] = None,
         closes = None
     d.update(_price_stats(closes))
     d["yf_ticker"] = yf_sym
+
+    # ── Råvaran (Commodity Leverage, utanför 300) ────────────────────────────
+    theme = (theme_getter or _theme_default)(yf_sym)
+    d["commodity_px"] = commodity_prices(theme, d.get("currency"), series_getter or _series_default)
 
     have = sum(1 for k in SCORED_FIELDS if _n(d.get(k)) is not None)
     d["coverage"] = (have, len(SCORED_FIELDS))

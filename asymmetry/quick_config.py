@@ -48,3 +48,24 @@ SOURCE_GAP_PCT = 10.0              # Börsdata mot Yahoo börsvärde: inom 10 % 
 VERDICT_GREEN_MIN = 65.0           # alla tre ≥ 65 → GRÖN
 VERDICT_RED_BELOW = 40.0           # någon < 40 → RÖD, annars GUL
 MIN_MEASURED = 2                   # färre mätta kort i en grupp → gruppen visas som DATA_GAP
+
+# ── Commodity Leverage (auto) — utanför 300 ─────────────────────────────────
+# Skattas ur historiken: bolagets årliga EBITDA och FCF mot råvarans årssnitt
+# (omräknat till rapportvalutan). Poängtabell, prissteg och prob återanvänds ur
+# asymmetry/config.ASYMMETRY_CONFIG["commodity_leverage"].
+LEV_MIN_YEARS = 5                  # minst så många år med både resultat och pris
+LEV_MIN_R2 = 0.30                  # svagare samband än så → visas men poängsätts inte
+# Tema (ember.regime.detect_theme) → Yahoo-serie för råvarupriset. Uran, kol,
+# sällsynta, skog och agri saknar en ren prisserie på Yahoo → DATA_GAP.
+LEV_PRICE_TICKERS = {"guld": "GC=F", "silver": "SI=F", "platina": "PL=F", "palladium": "PA=F",
+                     "koppar": "HG=F", "olja": "CL=F", "naturgas": "NG=F",
+                     "vete": "ZW=F", "kaffe": "KC=F", "kakao": "CC=F"}
+LEV_PRICE_UNITS = {"GC=F": "USD/oz", "SI=F": "USD/oz", "PL=F": "USD/oz", "PA=F": "USD/oz",
+                   "HG=F": "USD/lb", "CL=F": "USD/fat", "NG=F": "USD/MMBtu",
+                   "ZW=F": "USc/bu", "KC=F": "USc/lb", "CC=F": "USD/t"}
+# Break-even-marginal (pris − break-even) / pris i % → band (spec §5)
+BREAK_EVEN_BANDS = ((40.0, "UTMÄRKT"), (25.0, "STARK"), (10.0, "MÅTTLIG"), (0.0, "SVAG"))
+BREAK_EVEN_FAILED = "UNDER BREAK-EVEN"
+# Nedsidan (spec §12): FCF (annars EBITDA) vid pris −20 % och −30 %
+LEV_DOWNSIDE_PCT = (-20.0, -30.0)
+LEV_HIGH_SCORE = 6                 # från den här poängen kallas hävstången hög
