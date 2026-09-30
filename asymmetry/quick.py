@@ -5,6 +5,11 @@ asymmetry/quick_data.fetch — ingen nätverkstrafik här.
 
 Kort: GRÖN 100 · GUL 50 · RÖD 0 · DATA_GAP räknas inte. Grupp = snittet av
 mätta kort. Totalverdikt: alla tre ≥ 65 → GRÖN, någon < 40 → RÖD, annars GUL.
+
+Affärens volatilitet (resultat- och FCF-stabilitet) är en egen dimension —
+Cykelvolatilitet, visas men räknas inte. Ett gruvbolag vars kassaflöde
+svänger med råvarupriset har inte sämre data; Confidence mäter hur väl talen
+är belagda, inte hur jämna de är.
 """
 
 from __future__ import annotations
@@ -23,6 +28,7 @@ class Pillar:
     status: str                 # GREEN | AMBER | RED | DATA_GAP
     value: str                  # det faktiska värdet, läsbart
     why: str                    # en rad förklaring med tröskeln
+    info: bool = False          # visas men räknas inte (cykelvolatilitet)
 
     @property
     def points(self) -> Optional[float]:
@@ -37,7 +43,12 @@ class Group:
 
     @property
     def measured(self) -> list:
-        return [p for p in self.pillars if p.points is not None]
+        return [p for p in self.pillars if p.points is not None and not p.info]
+
+    @property
+    def scored(self) -> list:
+        """Korten som ingår i poängen (info-kort undantagna)."""
+        return [p for p in self.pillars if not p.info]
 
     @property
     def score(self) -> Optional[float]:
@@ -48,7 +59,7 @@ class Group:
 
     @property
     def coverage(self) -> str:
-        return f"{len(self.measured)}/{len(self.pillars)} mätta"
+        return f"{len(self.measured)}/{len(self.scored)} mätta"
 
 
 @dataclass
@@ -59,6 +70,7 @@ class QuickResult:
     groups: list
     verdict: str                # GRÖN | GUL | RÖD | DATA_GAP
     reasons: list
+    volatility: Optional["Group"] = None     # cykelvolatilitet — info, utanför 300
 
     def group(self, key: str) -> Optional[Group]:
         return next((g for g in self.groups if g.key == key), None)
@@ -89,6 +101,22 @@ def _lower(v: float, table: tuple) -> str:
 
 def _gap(key: str, label: str, what: str) -> Pillar:
     return Pillar(key, label, "DATA_GAP", "—", f"DATA_GAP: {what}")
+
+
+def _period(series) -> str:
+    """'2016–2025' ur [(år, värde)] med samma filter som medianen, annars ''."""
+    ys = [int(y) for y, v in (series or []) if _n(v) is not None and 0 < _n(v) < 100]
+    return f"{min(ys)}–{max(ys)}" if ys else ""
+
+
+def _valuation_pillar(key: str, label: str, cur, pct, med, n, series) -> Pillar:
+    """Nu · egen median · premie/rabatt · period — alltid synliga (spec §6)."""
+    per = _period(series)
+    word = "rabatt" if pct < 0 else "premie"
+    return Pillar(key, label, _lower(pct, qc.EV_EBITDA_VS_MEDIAN_PCT if key == "ev_ebitda" else qc.P_FCF_VS_MEDIAN_PCT),
+                  f"{cur:.1f}× · median {med:g}× ({pct:+.0f} %)",
+                  f"Nu {cur:.1f}× mot egen median {med:g}× {per + ' ' if per else ''}({n} år) = "
+                  f"{abs(pct):.0f} % {word} · ≥ 25 % under grönt, inom ±25 % gult")
 
 
 def _vs_median(cur: Optional[float], hist: list) -> tuple:
@@ -157,14 +185,12 @@ def margin_of_safety(d: dict) -> Group:
     pct, med, n = _vs_median(_n(d.get("ev_ebitda")), d.get("ev_ebitda_hist"))
     g.pillars.append(_gap("ev_ebitda", "EV/EBITDA mot historik",
                           f"för kort historik ({n} år) eller negativ EBITDA") if pct is None else
-                     Pillar("ev_ebitda", "EV/EBITDA mot historik", _lower(pct, qc.EV_EBITDA_VS_MEDIAN_PCT),
-                            f"{d.get('ev_ebitda'):.1f}× ({pct:+.0f} %)",
-                            f"Egen median {med:g}× över {n} år · ≥ 25 % under grönt, inom ±25 % gult"))
+                     _valuation_pillar("ev_ebitda", "EV/EBITDA mot historik", _n(d.get("ev_ebitda")), pct, med, n,
+                                       d.get("ev_ebitda_series")))
     pct, med, n = _vs_median(_n(d.get("p_fcf")), d.get("p_fcf_hist"))
     if pct is not None:
-        g.pillars.append(Pillar("p_fcf", "P/FCF mot historik", _lower(pct, qc.P_FCF_VS_MEDIAN_PCT),
-                                f"{d.get('p_fcf'):.1f}× ({pct:+.0f} %)",
-                                f"Egen median {med:g}× över {n} år · ≥ 25 % under grönt, inom ±25 % gult"))
+        g.pillars.append(_valuation_pillar("p_fcf", "P/FCF mot historik", _n(d.get("p_fcf")), pct, med, n,
+                                           d.get("p_fcf_series")))
     else:
         fy = _n(d.get("fcf_yield_pct"))
         g.pillars.append(_gap("p_fcf", "FCF-yield", "P/FCF-historik och FCF-yield saknas") if fy is None else
@@ -217,6 +243,52 @@ def _quality(d: dict) -> Pillar:
                   + (f" · {d['cash_conversion_note']}" if d.get("cash_conversion_note") else "") + info)
 
 
+def _fcf_data(d: dict) -> Pillar:
+    """FCF-DATA — hur väl kassaflödet är belagt: andel årsrapporter med FCF och
+    om Börsdata och Yahoo är överens om senaste 12 mån. Inte hur jämnt det är."""
+    label = "FCF-data"
+    series = [v for _, v in (d.get("fcf_series") or [])]
+    total = len(series)
+    have = sum(1 for v in series if _n(v) is not None)
+    gap = _n(d.get("fcf_source_gap_pct"))
+    gap_txt = f" · Yahoo {gap:+.0f} %" if gap is not None else ""
+    why_tail = (f"Luckor i årsserien eller källor som skiljer > {qc.FCF_SOURCE_GAP_PCT:g} % sänker · "
+                f"svängande FCF sänker inte (se Cykelvolatilitet)")
+    if total == 0:
+        if _n(d.get("fcf")) is None:
+            return _gap("fcf_data", label, "inget fritt kassaflöde i någon källa")
+        return Pillar("fcf_data", label, "AMBER", "bara senaste 12 mån" + gap_txt,
+                      "Ingen årsserie — bara ett tal att gå på · " + why_tail)
+    share = have / total
+    g, a = qc.FCF_DATA_COMPLETE
+    yg, ya = qc.FCF_DATA_MIN_YEARS
+    st = "GREEN" if share >= g and have >= yg else "AMBER" if share >= a and have >= ya else "RED"
+    if gap is not None and abs(gap) > qc.FCF_SOURCE_GAP_PCT and st == "GREEN":
+        st = "AMBER"
+    return Pillar("fcf_data", label, st, f"{have}/{total} år med FCF{gap_txt}",
+                  f"≥ {g:.0%} av åren och ≥ {yg} år grönt, ≥ {a:.0%} och ≥ {ya} år gult · " + why_tail)
+
+
+def volatility(d: dict) -> Group:
+    """Cykelvolatilitet — affärens svängningar, en egen dimension (info).
+    Låg stabilitet = cyklisk verksamhet, inte opålitliga data och inte i sig
+    överlevnadsrisk. Räknas inte i 300."""
+    g = Group("volatility", "Cykelvolatilitet (info)")
+    src = d.get("kpi_source") or {}
+    for key, label in (("earnings_stability", "Resultatvolatilitet"), ("fcf_stability", "FCF-volatilitet")):
+        v = _stability(_n(d.get(key)))
+        if v is None:
+            p = _gap(key, label, f"stabilitet saknas — varken Börsdata eller ≥ {qc.STABILITY_MIN_YEARS} årsrapporter")
+        else:
+            kind = "jämn" if v >= qc.STABILITY[0] else "måttligt svängande" if v >= qc.STABILITY[1] else "cyklisk"
+            p = Pillar(key, label, _higher(v, qc.STABILITY), f"stabilitet {v:.2f} · {kind}",
+                       f"{src.get(key, 'Börsdata')} · trendlinjens R² (0–1) · beskriver affären och cykeln, "
+                       f"inte datakvaliteten · räknas inte i 300")
+        p.info = True
+        g.pillars.append(p)
+    return g
+
+
 def confidence(d: dict) -> Group:
     g = Group("confidence", "Confidence (auto)")
     have, total = d.get("coverage", (0, 0))
@@ -225,14 +297,7 @@ def confidence(d: dict) -> Group:
                      Pillar("coverage", "Datatäckning", _higher(cov, qc.COVERAGE_PCT), f"{have}/{total} nyckeltal",
                             f"Källa {d.get('source') or '—'} · ≥ {qc.COVERAGE_PCT[0]:g} % grönt, "
                             f"≥ {qc.COVERAGE_PCT[1]:g} % gult"))
-    src = d.get("kpi_source") or {}
-    for key, label in (("earnings_stability", "Resultatstabilitet"), ("fcf_stability", "FCF-stabilitet")):
-        v = _stability(_n(d.get(key)))
-        g.pillars.append(_gap(key, label, f"{label.lower()} saknas — varken Börsdata eller "
-                                          f"≥ {qc.STABILITY_MIN_YEARS} årsrapporter") if v is None else
-                         Pillar(key, label, _higher(v, qc.STABILITY), f"{v:.2f}",
-                                f"{src.get(key, 'Börsdata')} · 0–1 · ≥ {qc.STABILITY[0]:g} grönt, "
-                                f"≥ {qc.STABILITY[1]:g} gult"))
+    g.pillars.append(_fcf_data(d))
     g.pillars.append(_quality(d))
     yrs = d.get("report_years")
     gap = _n(d.get("source_gap_pct"))
@@ -272,4 +337,4 @@ def score(d: dict) -> QuickResult:
     if reds:
         reasons.append("Röda kort: " + ", ".join(reds[:4]))
     return QuickResult(str(d.get("ticker") or ""), str(d.get("name") or ""), str(d.get("source") or ""),
-                       groups, verdict, reasons)
+                       groups, verdict, reasons, volatility(d))

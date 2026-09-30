@@ -58,6 +58,7 @@ def render_quick(add_to_sheet=None) -> None:
     res = quick.score(data)
     _score_card(res, data)
     _gauges(res)
+    _volatility(res)
     _charts(data)
     extra = []
     if data.get("filled_yahoo"):
@@ -77,6 +78,7 @@ def _score_card(res: quick.QuickResult, data: dict) -> None:
     total = res.total
     total_txt = f"{total:.0f}" if total is not None else "—"
     measured = sum(len(g.measured) for g in res.groups)
+    n_cards = sum(len(g.scored) for g in res.groups)
     st.markdown(
         f"""<div style="background:linear-gradient(135deg, rgba(0,229,255,0.06) 0%, rgba(139,115,64,0.03) 100%);
         border:1px solid {col};border-radius:12px;padding:28px 16px;text-align:center;position:relative;
@@ -90,7 +92,7 @@ def _score_card(res: quick.QuickResult, data: dict) -> None:
         {res.verdict} · {_VERDICT_LABEL.get(res.verdict, "")}</span></div>
         <div style="margin-top:12px;font-size:0.8rem;color:{TEXT};">{" · ".join(res.reasons)}</div>
         <div style="margin-top:14px;font-size:10px;color:rgba(0,229,255,0.35);letter-spacing:2px;">
-        {res.ticker} · {res.name} · {res.source} · {measured}/15 kort mätta · {data.get("fetched", "")}</div>
+        {res.ticker} · {res.name} · {res.source} · {measured}/{n_cards} kort mätta · {data.get("fetched", "")}</div>
         </div>""",
         unsafe_allow_html=True)
 
@@ -111,15 +113,31 @@ def _gauges(res: quick.QuickResult) -> None:
                                 key=f"asym_quick_gauge_{g.key}")
             st.caption(f"{g.coverage}")
             for p in g.pillars:
-                c = _STATUS_COLOR.get(p.status, GREY)
-                st.markdown(
-                    f"<div style='border-left:3px solid {c};background:#14141e;border-radius:6px;"
-                    f"padding:7px 10px;margin-bottom:6px;'>"
-                    f"<div style='display:flex;justify-content:space-between;gap:8px;'>"
-                    f"<span style='color:{TEXT};font-size:0.82rem;'>{_STATUS_ICON.get(p.status, '')} {p.label}</span>"
-                    f"<span style='color:{c};font-size:0.82rem;font-weight:700;'>{p.value}</span></div>"
-                    f"<div style='color:{DIM};font-size:0.7rem;margin-top:2px;'>{p.why}</div></div>",
-                    unsafe_allow_html=True)
+                st.markdown(_card(p), unsafe_allow_html=True)
+
+
+def _card(p) -> str:
+    c = _STATUS_COLOR.get(p.status, GREY)
+    return (f"<div style='border-left:3px solid {c};background:#14141e;border-radius:6px;"
+            f"padding:7px 10px;margin-bottom:6px;'>"
+            f"<div style='display:flex;justify-content:space-between;gap:8px;'>"
+            f"<span style='color:{TEXT};font-size:0.82rem;'>{_STATUS_ICON.get(p.status, '')} {p.label}</span>"
+            f"<span style='color:{c};font-size:0.82rem;font-weight:700;'>{p.value}</span></div>"
+            f"<div style='color:{DIM};font-size:0.7rem;margin-top:2px;'>{p.why}</div></div>")
+
+
+def _volatility(res: quick.QuickResult) -> None:
+    """Cykelvolatilitet — egen dimension under mätarna, räknas inte i 300."""
+    g = res.volatility
+    if g is None or not g.pillars:
+        return
+    st.markdown(f"<div style='color:{CYAN};font-family:Courier New;letter-spacing:2px;font-size:0.8rem;"
+                f"margin:6px 0 4px;'>📉 CYKELVOLATILITET <span style='color:{DIM};letter-spacing:0;'>"
+                f"— info, räknas inte i 300. Svängande resultat och FCF är cykeln, inte sämre data.</span></div>",
+                unsafe_allow_html=True)
+    cols = st.columns(len(g.pillars))
+    for col, p in zip(cols, g.pillars):
+        col.markdown(_card(p), unsafe_allow_html=True)
 
 
 # ── Grafer ───────────────────────────────────────────────────────────────────

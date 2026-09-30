@@ -30,13 +30,18 @@ MIN_HISTORY = 3                           # minst så många år för en median
 
 # ── Confidence (auto) ───────────────────────────────────────────────────────
 COVERAGE_PCT = (80.0, 50.0)        # andel nyckeltal som fanns
-STABILITY = (0.7, 0.4)             # Börsdatas vinst-/FCF-stabilitet (0–1)
+STABILITY = (0.7, 0.4)             # Börsdatas vinst-/FCF-stabilitet (0–1)  — info (cykelvolatilitet), räknas inte
 STABILITY_MIN_YEARS = 5            # minst så många årsrapporter för egen beräkning
 # Resultatkvalitet (ersätter F-score i poängen — F-score straffar råvarucykeln):
 FCF_POSITIVE_SHARE = (0.8, 0.5)    # andel år med positivt FCF, t.ex. 8 av 10 grönt
 CASH_CONVERSION = (1.0, 0.7)       # operativt kassaflöde / nettoresultat, summerat över åren
 QUALITY_MIN_YEARS = 5              # minst så många årsrapporter
 REPORT_YEARS = (5, 3)              # år med årsrapporter
+# FCF-data (datakonfidens, inte volatilitet): andel årsrapporter med FCF,
+# och Börsdata mot Yahoo för senaste 12 mån (samma valuta)
+FCF_DATA_COMPLETE = (0.9, 0.6)
+FCF_DATA_MIN_YEARS = (5, 3)
+FCF_SOURCE_GAP_PCT = 25.0          # FCF-definitionerna skiljer mer än börsvärdet — större tolerans
 SOURCE_GAP_PCT = 10.0              # Börsdata mot Yahoo börsvärde: inom 10 % = samstämmigt
 
 # ── Totalverdikt ────────────────────────────────────────────────────────────
