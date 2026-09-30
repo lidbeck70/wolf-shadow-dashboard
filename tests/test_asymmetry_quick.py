@@ -252,7 +252,7 @@ def test_quick_tab_renders_card_gauges_cards_and_charts(monkeypatch):
     at.run()
     assert not at.exception, at.exception
     assert at.radio(key="asym_mode").value == "⚡ Snabbkoll"
-    assert any("Skriv en ticker" in c.value for c in at.caption) and not calls
+    assert "Skriv en ticker" in " ".join(m.value for m in at.markdown) and not calls
     at.text_input(key="asym_quick_ticker").set_value("bol.st")
     at.button(key="FormSubmitter:asym_quick_form-🔍 Analysera").click().run()
     assert not at.exception, at.exception
@@ -263,7 +263,7 @@ def test_quick_tab_renders_card_gauges_cards_and_charts(monkeypatch):
     charts = at.get("plotly_chart")
     assert len(charts) == 3 + 4                                        # tre mätare + fyra grafer
     assert "Prisbuffert" in html and "Resultatkvalitet" in html and "Utspädning" in html
-    assert any("Ur Yahoo" in c.value for c in at.caption)
+    assert "Ur Yahoo" in " ".join(m.value for m in at.markdown)
     # cachat: ny körning hämtar inte igen
     at.run()
     assert calls == ["BOL.ST"]

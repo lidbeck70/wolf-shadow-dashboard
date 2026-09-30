@@ -32,13 +32,15 @@ def _data(**kw):
 
 
 def test_own_multiples_are_quartiles_of_the_history():
-    assert qs.own_multiples([4, 5, 6, 7, 8]) == {"low": 5.0, "median": 6.0, "high": 7.0}
-    assert qs.own_multiples([6, 7]) == {} and qs.own_multiples([5, -3, 150, 6, 7]) == {"low": 5.5, "median": 6.0, "high": 6.5}
+    assert qs.own_multiples([4, 5, 6, 7, 8]) == {"min": 4.0, "low": 5.0, "median": 6.0, "high": 7.0}
+    assert qs.own_multiples([6, 7]) == {}
+    assert qs.own_multiples([5, -3, 150, 6, 7]) == {"min": 5.0, "low": 5.5, "median": 6.0, "high": 6.5}
 
 
 def test_scenarios_follow_the_chain():
     e = qs.run(_data())
-    assert e.error is None and e.multiples == {"low": 5.0, "median": 6.0, "high": 7.0}
+    assert e.error is None and e.multiples == {"min": 4.0, "low": 5.0, "median": 6.0, "high": 7.0}
+    assert e.price_pctl == 70 and not e.cycle_top                     # 4,0 över 7 av 10 årssnitt
     by = {s.name: s for s in e.scenarios}
     base = by["BASE"]                         # EBITDA 2000 × 6 = 12000 − 1000 = 11000 = börsvärdet
     assert (base.ebitda, base.ev, base.equity, base.ratio, base.share_price) == (2000, 12000, 11000, 1.0, 50.0)
@@ -146,4 +148,16 @@ def test_the_quick_tab_shows_the_engine(monkeypatch):
     assert "5×-MOTORN" in html and "5× POTENTIAL" in html and ">NEJ<" in html
     assert "SUPER BULL" in html and "Vad krävs?" in html and "Stressmatris" in html
     assert "VAD DÖDAR CASET?" in html and "Värderingen redan hög" in html
-    assert any("Sannolikhet: UNKNOWN" in c.value for c in at.caption)
+    assert "Sannolikhet: UNKNOWN" in html and "asym-note" in html
+
+
+def test_cycle_top_uses_the_lowest_multiple_in_bear_and_warns():
+    e = qs.run(_data(commodity_px={"commodity": "koppar", "ticker": "HG=F", "prices": dict(PRICES), "p0": 4.3,
+                                   "fx_now": 1.0}))
+    assert e.price_pctl == 100 and e.cycle_top
+    bear = next(s for s in e.scenarios if s.name == "BEAR")
+    assert bear.multiple_key == "min" and bear.multiple == 4.0             # inte 25:e percentilen 5,0
+    assert next(s for s in e.scenarios if s.name == "BASE").multiple == 6.0   # base oförändrad
+    top = next(k for k in e.killers if k.label == "Cykeltopp")
+    assert "100 % av tio års årssnitt" in top.detail and "lägsta egna 4×" in top.detail
+    assert qs.price_percentile(3.0, PRICES) == 50 and qs.price_percentile(None, PRICES) is None

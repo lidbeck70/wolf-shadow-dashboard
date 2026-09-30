@@ -169,8 +169,7 @@ def test_the_quick_tab_shows_leverage_and_break_even(monkeypatch):
     html = " ".join(m.value for m in at.markdown)
     assert "RÅVARUHÄVSTÅNG" in html and "8/10" in html and "Hög hävstång + stark nedsida" in html
     assert "BREAK-EVEN-MARGINAL" in html and "38 %" in html and "STARK" in html
-    caps = [c.value for c in at.caption]
-    assert any("Samband — " in c and "FCF: R² 1.00 (10 år)" in c for c in caps)
+    assert "Samband — " in html and "FCF: R² 1.00 (10 år)" in html
     assert any("KOPPAR-PRIS MOT EBITDA OCH FCF" in ch.proto.spec for ch in at.get("plotly_chart"))
 
 

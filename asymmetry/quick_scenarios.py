@@ -66,6 +66,8 @@ class EngineResult:
     share_price: Optional[float] = None
     price_high: Optional[float] = None                 # högsta årssnittet, råvarans enhet
     price_low: Optional[float] = None
+    price_pctl: Optional[float] = None                 # dagens pris mot tio års årssnitt (%)
+    cycle_top: bool = False
     scenarios: list = field(default_factory=list)
     requirements: list = field(default_factory=list)
     five_x: str = ""                                   # JA | VILLKORAT | NEJ
@@ -93,8 +95,16 @@ def own_multiples(hist) -> dict:
     vals = [x for x in (_n(v) for v in (hist or [])) if x is not None and 0 < x < 100]
     if len(vals) < qc.MIN_HISTORY:
         return {}
-    return {"low": round(_quantile(vals, 0.25), 2), "median": round(_quantile(vals, 0.5), 2),
-            "high": round(_quantile(vals, 0.75), 2)}
+    return {"min": round(min(vals), 2), "low": round(_quantile(vals, 0.25), 2),
+            "median": round(_quantile(vals, 0.5), 2), "high": round(_quantile(vals, 0.75), 2)}
+
+
+def price_percentile(p0: float, prices: dict) -> Optional[float]:
+    """Andel av årssnitten (%) som ligger under eller på dagens pris."""
+    vals = [v for v in (prices or {}).values() if v is not None]
+    if not vals or not p0:
+        return None
+    return round(sum(1 for v in vals if v <= p0) / len(vals) * 100, 0)
 
 
 def market_cap_report(d: dict) -> tuple:
@@ -154,7 +164,11 @@ def run(d: dict, lev: Optional[ql.LeverageEstimate] = None) -> EngineResult:
         eq = ev - res.net_debt
         return p, eb, ev, eq, eq / res.mcap
 
+    res.price_pctl = price_percentile(p0, prices)
+    res.cycle_top = res.price_pctl is not None and res.price_pctl >= qc.CYCLE_TOP_PCTL
     for name, pct, mkey in qc.SCENARIOS:
+        if name == "BEAR" and res.cycle_top:
+            mkey = qc.BEAR_AT_TOP_MULTIPLE          # i toppen: sämsta egna multipeln i bear
         p, eb, ev, eq, ratio = equity_at(pct, mkey)
         res.scenarios.append(Scenario(
             name, pct, round(p / fx, 2), mkey, res.multiples[mkey], round(eb, 0), round(ev, 0), round(eq, 0),
@@ -218,6 +232,11 @@ def killers(d: dict, lev: ql.LeverageEstimate, res: EngineResult) -> list:
     if ev_now is not None and res.multiples and ev_now > res.multiples["median"]:
         out.append(Killer("Värderingen redan hög", f"EV/EBITDA {ev_now:.1f}× över egen median "
                                                    f"{res.multiples['median']:g}×"))
+    if res.cycle_top:
+        out.append(Killer("Cykeltopp", f"{name.capitalize()} ligger över {res.price_pctl:.0f} % av tio års "
+                                       f"årssnitt — marknaden brukar sätta en lägre multipel på toppvinster, så "
+                                       f"medianen {res.multiples['median']:g}× är troligen generös. BEAR räknas med "
+                                       f"lägsta egna {res.multiples['min']:g}×"))
     if any(s.outside_history for s in res.scenarios if s.price_pct > 0):
         out.append(Killer("Bull kräver nya pristoppar", "Bull-scenarierna ligger över tio års högsta årssnitt — "
                                                         "linjen extrapoleras"))
