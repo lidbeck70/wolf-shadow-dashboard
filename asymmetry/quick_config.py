@@ -69,3 +69,23 @@ BREAK_EVEN_FAILED = "UNDER BREAK-EVEN"
 # Nedsidan (spec §12): FCF (annars EBITDA) vid pris −20 % och −30 %
 LEV_DOWNSIDE_PCT = (-20.0, -30.0)
 LEV_HIGH_SCORE = 6                 # från den här poängen kallas hävstången hög
+
+# ── 5×-motorn (auto) — utanför 300 ──────────────────────────────────────────
+# Kedjan: råvarupris → EBITDA (bolagets egen linje ur Commodity Leverage) →
+# EV (egen EV/EBITDA-historik) → − nettoskuld → eget kapital → mot dagens
+# börsvärde → kurs. Utspädning räknas inte (antalet aktier hålls fast).
+# Scenarier: (namn, råvara %, multipel ur egen historik: "low" = 25:e
+# percentilen, "median", "high" = 75:e). Bull använder medianen — multiplar
+# krymper oftast i cykeltoppen.
+SCENARIOS = (("BEAR", -20.0, "low"), ("BASE", 0.0, "median"), ("BULL", 30.0, "median"),
+             ("SUPER BULL", 60.0, "median"))
+TARGET_MULTIPLES = (2, 3, 5, 10)
+FIVE_X = 5
+# 5× POTENTIAL: krävt pris ≤ högsta årssnittet (10 år) → JA, ≤ × 1,5 → VILLKORAT, annars NEJ
+FIVE_X_CONDITIONAL_FACTOR = 1.5
+STRESS_PRICE_PCT = (-30.0, -20.0, -10.0, 0.0, 20.0, 40.0)
+STRESS_MULTIPLES = ("low", "median", "high")
+# Thesis killers ur uppmätta tal
+KILL_ND_EBITDA = 2.0
+KILL_DILUTION_3Y_PCT = 15.0
+KILL_WEAK_R2 = 0.6
