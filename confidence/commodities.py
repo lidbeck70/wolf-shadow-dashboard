@@ -90,9 +90,9 @@ REGISTRY: dict = {c.key: c for c in (
     _c("silver", "Silver", "USD/oz", ("ag", "silver"), 82.0, rotation_key="silver", theme_key="silver",
        ratio_exposure="silver", ember_complex="adelmetaller", proxies=("SLV", "SIL")),
     _c("platinum", "Platina", "USD/oz", ("platina", "pt", "pgm", "platinum"), 80.0,
-       rotation_key="platina", ember_complex="adelmetaller", proxies=("PPLT",)),
+       rotation_key="platina", theme_key="platina", ember_complex="adelmetaller", proxies=("PPLT",)),
     _c("palladium", "Palladium", "USD/oz", ("pd", "palladium"), 80.0, rotation_key="palladium",
-       ember_complex="adelmetaller", proxies=("PALL",)),
+       theme_key="palladium", ember_complex="adelmetaller", proxies=("PALL",)),
     _c("oil_gas", "Olja & gas", "USD/boe", ("olja", "oil", "oil & gas", "oil_gas", "crude", "energy",
        "petroleum"), 80.0, rotation_key="olja", theme_key="olja", ratio_exposure="oil",
        ember_complex="energi", proxies=("XLE", "USO")),
@@ -113,6 +113,15 @@ REGISTRY: dict = {c.key: c for c in (
     _c("diamonds", "Diamanter", "USD/ct", ("diamanter", "diamonds"), 50.0),
     _c("agri", "Jordbruk", "USD/t", ("lantbruk", "agri", "agriculture"), 70.0, theme_key="agri",
        ember_complex="agri", proxies=("DBA",)),
+    # Odins temakarta: vete, kaffe, kakao och skog har egna teman.
+    _c("wheat", "Vete", "USc/bu", ("vete", "wheat"), 80.0, theme_key="vete", ember_complex="agri",
+       proxies=("WEAT",)),
+    _c("coffee", "Kaffe", "USc/lb", ("kaffe", "coffee"), 45.0, theme_key="kaffe", ember_complex="agri",
+       proxies=("KC=F",)),
+    _c("cocoa", "Kakao", "USD/t", ("kakao", "cocoa"), 40.0, theme_key="kakao", ember_complex="agri",
+       proxies=("CC=F",)),
+    _c("timber", "Skog", "USD/mbf", ("skog", "skogsbruk", "timber", "forest", "forestry", "lumber"), 60.0,
+       theme_key="skog", ember_complex="agri", proxies=("WOOD",)),
 )}
 
 _ALIAS: dict = {}

@@ -12,7 +12,7 @@ from blindspot.history import read_history
 # ── Optional commodity theme board ───────────────────────────────────────────
 _THEME_OK = False
 try:
-    from blindspot.theme_board import build_theme_board, theme_verdict_text, THEME_RATIO_KEYS
+    from blindspot.theme_board import build_theme_board, theme_verdict_text, THEME_RATIO_KEYS, _THEMES
     _THEME_OK = True
 except ImportError:
     pass
@@ -75,7 +75,7 @@ def _render_theme_board() -> None:
 
     _section_header("COMMODITY THEME BOARD", GOLD)
     st.caption(
-        "Nio råvaruteman rankade efter Blindspot-poäng "
+        f"{len(_THEMES)} råvaruteman rankade efter Blindspot-poäng "
         "(Nödvändighet × Hat × Billigt). "
         "Cachad 12h. Klicka på ett tema för detaljer."
     )

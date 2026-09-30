@@ -43,7 +43,7 @@ NAME_EXCLUDE: tuple = ("gasförsörjning", "skog", "forest", "jordbruk", "agri",
 
 # EMBER-teman som räknas (agri är inte råvara i den här fliken)
 COMMODITY_THEMES: frozenset = frozenset({"uran", "silver", "guld", "koppar", "olja", "naturgas", "kol",
-                                         "sallsynta"})
+                                         "sallsynta", "platina", "palladium"})
 
 
 def by_branch(branch_id) -> Optional[bool]:

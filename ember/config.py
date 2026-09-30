@@ -157,6 +157,12 @@ EMBER_SECTOR_ETF: dict[str, str] = {
     "kol":       "XLE",     # proxy — no dedicated coal ETF
     "agri":      "DBA",
     "sallsynta": "REMX",
+    "platina":   "PPLT",
+    "palladium": "PALL",
+    "vete":      "WEAT",
+    "kaffe":     "DBA",     # ingen likvid kaffe-ETF kvar — jordbrukskorgen
+    "kakao":     "DBA",     # ingen likvid kakao-ETF kvar — jordbrukskorgen
+    "skog":      "WOOD",
 }
 
 DEFAULT_SECTOR_ETF = "GLD"
@@ -171,6 +177,8 @@ THEME_TO_COMPLEX: dict[str, str] = {
     "koppar": "basmetaller", "sallsynta": "basmetaller",
     "uran": "energi", "olja": "energi", "naturgas": "energi", "kol": "energi",
     "agri": "agri",
+    "platina": "adelmetaller", "palladium": "adelmetaller",
+    "vete": "agri", "kaffe": "agri", "kakao": "agri", "skog": "agri",
 }
 
 # ── Råvara i arket (confidence.commodities-nyckel) → komplex ─────────────────
@@ -184,21 +192,24 @@ COMMODITY_TO_COMPLEX: dict[str, str] = {
     "nickel": "basmetaller", "cobalt": "basmetaller", "graphite": "basmetaller", "tin": "basmetaller",
     "zinc": "basmetaller", "iron_ore": "basmetaller", "aluminum": "basmetaller", "steel": "basmetaller",
     "potash": "agri", "phosphate": "agri", "agri": "agri",
+    "wheat": "agri", "coffee": "agri", "cocoa": "agri", "timber": "agri",
 }
 # Råvara i arket → EMBER-tema (sektor-ETF och cykelfas följer temat). Basmetaller
 # utan egen ETF mäts mot COPX, sällsynta/batterimetaller mot REMX.
 COMMODITY_TO_THEME: dict[str, str] = {
     "uranium": "uran", "oil_gas": "olja", "natural_gas": "naturgas", "coal": "kol",
-    "gold": "guld", "silver": "silver", "platinum": "guld", "palladium": "guld", "diamonds": "guld",
+    "gold": "guld", "silver": "silver", "platinum": "platina", "palladium": "palladium", "diamonds": "guld",
     "copper": "koppar", "nickel": "koppar", "zinc": "koppar", "tin": "koppar", "iron_ore": "koppar",
     "aluminum": "koppar", "steel": "koppar",
     "lithium": "sallsynta", "rare_earth": "sallsynta", "cobalt": "sallsynta", "graphite": "sallsynta",
     "potash": "agri", "phosphate": "agri", "agri": "agri",
+    "wheat": "vete", "coffee": "kaffe", "cocoa": "kakao", "timber": "skog",
 }
 # Registrets sektortext (fri text i Holdings) → tema. Första träffen vinner.
 SECTOR_KEYWORD_THEME: tuple = (
     ("uran", "uran"), ("uranium", "uran"),
     ("silver", "silver"),
+    ("platina", "platina"), ("platinum", "platina"), ("palladium", "palladium"),
     ("guld", "guld"), ("gold", "guld"), ("ädelmetall", "guld"), ("precious", "guld"),
     ("koppar", "koppar"), ("copper", "koppar"), ("basmetall", "koppar"), ("nickel", "koppar"), ("zink", "koppar"),
     ("litium", "sallsynta"), ("lithium", "sallsynta"), ("sällsynta", "sallsynta"), ("rare", "sallsynta"),
@@ -207,6 +218,9 @@ SECTOR_KEYWORD_THEME: tuple = (
     ("olja", "olja"), ("oil", "olja"), ("energi", "olja"), ("energy", "olja"), ("offshore", "olja"),
     ("oljeservice", "olja"), ("petroleum", "olja"),
     ("kol", "kol"), ("coal", "kol"),
+    ("skog", "skog"), ("forest", "skog"), ("timber", "skog"), ("massa", "skog"), ("pulp", "skog"),
+    ("kaffe", "kaffe"), ("coffee", "kaffe"), ("kakao", "kakao"), ("cocoa", "kakao"),
+    ("vete", "vete"), ("wheat", "vete"), ("spannmål", "vete"), ("grain", "vete"),
     ("agri", "agri"), ("jordbruk", "agri"), ("potash", "agri"), ("gödsel", "agri"), ("fertilizer", "agri"),
 )
 # Yahoo-bransch (sector/industry/namn, engelska) → tema. Läses automatiskt för
@@ -214,13 +228,16 @@ SECTOR_KEYWORD_THEME: tuple = (
 INDUSTRY_KEYWORD_THEME: tuple = (
     ("uranium", "uran"),
     ("silver", "silver"),
-    ("gold", "guld"), ("precious", "guld"), ("platinum", "guld"), ("palladium", "guld"),
+    ("platinum", "platina"), ("palladium", "palladium"),
+    ("gold", "guld"), ("precious", "guld"),
     ("copper", "koppar"), ("industrial metals", "koppar"), ("nickel", "koppar"), ("zinc", "koppar"),
     ("steel", "koppar"), ("aluminum", "koppar"), ("iron", "koppar"),
     ("lithium", "sallsynta"), ("rare earth", "sallsynta"), ("cobalt", "sallsynta"), ("graphite", "sallsynta"),
     ("coal", "kol"),
     ("natural gas", "naturgas"), ("lng", "naturgas"),
     ("oil", "olja"), ("petroleum", "olja"), ("offshore", "olja"), ("drilling", "olja"), ("energy", "olja"),
+    ("lumber", "skog"), ("forest", "skog"), ("timber", "skog"), ("paper & paper", "skog"), ("pulp", "skog"),
+    ("coffee", "kaffe"), ("cocoa", "kakao"), ("chocolate", "kakao"), ("wheat", "vete"), ("grain", "vete"),
     ("agricultural", "agri"), ("fertilizer", "agri"), ("potash", "agri"), ("farm", "agri"),
 )
 # Valt komplex utan råvara → temat som bär komplexet (för sektor-ETF och cykel).
@@ -294,8 +311,8 @@ _TICKER_THEME_RAW: dict[str, str] = {
     # ── Litium (räknas till sällsynta/batterimetaller) ────────────────────
     "ALB": "sallsynta", "SQM": "sallsynta", "PLS.AX": "sallsynta",
     "MIN.AX": "sallsynta", "LTR.AX": "sallsynta",
-    # ── Platina/palladium — inget eget tema än, följer guldcykeln ─────────
-    "SBSW": "guld", "PPLT": "guld", "PALL": "guld",
+    # ── Platina/palladium ─────────────────────────────────────────────────
+    "SBSW": "platina", "PPLT": "platina", "PALL": "palladium",
 }
 
 # Omdöpta tickers byts (GOLD → B), uppköpta släpps (MRO, MAG, ARCH, CEIX…).
@@ -317,4 +334,10 @@ _THEME_LABEL: dict[str, str] = {
     "kol":       "Kol",
     "agri":      "Agri",
     "sallsynta": "Sällsynta Jordartsmetaller",
+    "platina":   "Platina",
+    "palladium": "Palladium",
+    "vete":      "Vete",
+    "kaffe":     "Kaffe",
+    "kakao":     "Kakao",
+    "skog":      "Skog",
 }
