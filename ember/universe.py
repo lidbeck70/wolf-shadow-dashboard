@@ -29,6 +29,7 @@ from ember.config import (
     EMBER_ETF_UNIVERSE, EMBER_STOCK_UNIVERSE,
     PREFILTER_MIN_TURNOVER, PREFILTER_BATCH_SIZE, PREFILTER_PERIOD,
     GLOBAL_COUNTRIES, GLOBAL_EXCLUDE_LISTS, GLOBAL_MIN_MCAP_MUSD, GLOBAL_EXTRA_BRANCH_IDS,
+    GLOBAL_KEYWORD_BRANCH_IDS, GLOBAL_METAL_KEYWORDS,
 )
 
 logger = logging.getLogger(__name__)
@@ -102,6 +103,15 @@ _REMX_NAMES: list[str] = [
     "MP",
 ]
 
+# Kritiska metaller — säkerhetslista oavsett hur Börsdata klassat bolaget
+# (litium och REE ligger ibland under Kemikalier). Sällsynta jordartsmetaller,
+# litium, platina/palladium (producenter + ETF:er).
+_CRITICAL_METALS: list[str] = [
+    "LYC.AX", "ILU.AX", "ARU.AX",                       # sällsynta jordartsmetaller
+    "ALB", "SQM", "PLS.AX", "MIN.AX", "LTR.AX",          # litium
+    "SBSW", "PPLT", "PALL",                              # platina/palladium
+]
+
 # XLE / XOP (US energy ETFs) top holdings + Shell US-listed ADR
 _XLE_NAMES: list[str] = [
     "XOM", "CVX", "COP", "EOG", "SLB", "MPC", "VLO", "PSX",
@@ -158,7 +168,7 @@ _AUTO_ETFS: list[str] = [
 # MAG, ARCH…) — annars ligger de kvar som tysta DATA_GAP i varje skanning.
 US_INTL_CURATED: list[str] = _dead.alive(
     _GDX_NAMES + _GDXJ_NAMES + _SIL_NAMES + _COPX_NAMES
-    + _URA_NAMES + _REMX_NAMES + _XLE_NAMES + _COAL_NAMES
+    + _URA_NAMES + _REMX_NAMES + _CRITICAL_METALS + _XLE_NAMES + _COAL_NAMES
     + _AGRI_NAMES + _CANADA_MINING + _CANADA_OIL + _NORWAY_ENERGY
     + _UK_COMMODITY + _AUTO_ETFS
 )
@@ -269,7 +279,8 @@ def _global_market_ids(table: dict) -> dict:
 def fetch_global_commodity_tickers(api=None, min_mcap_musd: float = GLOBAL_MIN_MCAP_MUSD) -> tuple:
     """(tickers, per land, fel) — råvarubolag i USA, Kanada och Australien ur
     Börsdatas globala lista. Branschen avgörs av Börsdatas bransch-id (samma
-    tabell som Contrarian Alphas råvarugrind + skog och jordbruk). Börsvärdet
+    tabell som Contrarian Alphas råvarugrind + skog och jordbruk; Kemikalier
+    bara med litium/REE/kobolt/grafit/PGM i namnet). Börsvärdet
     ur den globala KPI-screenern; bolag utan värde behålls (förfiltret tar dem)."""
     try:
         from borsdata_api import KPI, get_api  # type: ignore[import]
@@ -297,10 +308,13 @@ def fetch_global_commodity_tickers(api=None, min_mcap_musd: float = GLOBAL_MIN_M
             if mid not in mids or inst.get("instrumentType", 1) not in (1, None):
                 continue
             try:
-                if int(inst.get("branchId") or 0) not in branches:
-                    continue
+                bid = int(inst.get("branchId") or 0)
             except (TypeError, ValueError):
                 continue
+            if bid not in branches:
+                name = str(inst.get("name") or "").lower()
+                if not (bid in GLOBAL_KEYWORD_BRANCH_IDS and any(k in name for k in GLOBAL_METAL_KEYWORDS)):
+                    continue
             country = mids[mid]
             mc = mcap.get(inst.get("insId"))
             if mc is not None and min_mcap_musd:

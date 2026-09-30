@@ -603,8 +603,9 @@ def _render_ember_full_ruleset() -> None:
                     "<b>Auto: Norden + USA/Kanada/Australien:</b> "
                     "Börsdata råvarufilter i Norden (energi, gruv, metall, olja, gas) + "
                     "Börsdata global: råvarubranscher på NYSE, Nasdaq, Toronto, TSX Venture, "
-                    "CSE och ASX med börsvärde ≥ 300 MUSD (inte OTC) + kurerade "
-                    "GDX/GDXJ/SIL/COPX/URA/XLE-namn, ETF:er och UK.",
+                    "CSE och ASX med börsvärde ≥ 300 MUSD (inte OTC); kemibolag bara med "
+                    "litium/REE/kobolt/grafit/PGM i namnet + kurerade GDX/GDXJ/SIL/COPX/URA/XLE-namn, "
+                    "kritiska metaller (REE, litium, platina/palladium), ETF:er och UK.",
                     "<b>Förfilter (Auto/Båda):</b> Omsättning &gt; 5 MSEK/dag (20D snitt) "
                     "<em>och</em> pris &gt; SMA(200) — utför batchar om 50 tickers.",
                 ], _TEXT),

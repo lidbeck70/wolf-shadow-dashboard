@@ -50,9 +50,13 @@ _GLOB = [
     {"insId": 9, "ticker": "RIO", "marketId": 38, "branchId": 17, "stockPriceCurrency": "GBP"},      # London — inte med
     {"insId": 10, "ticker": "WFG", "marketId": 35, "branchId": 21, "stockPriceCurrency": "CAD"},     # skog, med i EMBER
     {"insId": 11, "ticker": "SMALLCA", "marketId": 35, "branchId": 2, "stockPriceCurrency": "CAD"},  # 350 MCAD ≈ 255 MUSD
+    {"insId": 12, "ticker": "LAC", "name": "Lithium Americas Corp", "marketId": 32, "branchId": 15,
+     "stockPriceCurrency": "USD"},                                                                   # kemi men litium
+    {"insId": 13, "ticker": "PPG", "name": "PPG Industries", "marketId": 32, "branchId": 15,
+     "stockPriceCurrency": "USD"},                                                                   # vanlig kemi
 ]
 _MCAP = {1: 50000.0, 2: 3e6, 3: 120.0, 4: 900.0, 5: 90000.0, 7: 200000.0, 8: 900.0, 9: 90000.0,
-         10: 8000.0, 11: 350.0}
+         10: 8000.0, 11: 350.0, 12: 900.0, 13: 30000.0}
 
 
 def test_global_picks_us_canada_australia_commodity_names_above_the_floor():
@@ -61,10 +65,10 @@ def test_global_picks_us_canada_australia_commodity_names_above_the_floor():
     finally:
         markets.reset()
     assert err == ""
-    assert tickers == sorted(["NEM", "CNQ.TO", "JUN.V", "BHP.AX", "PDN.AX", "WFG.TO"])
-    assert per == {"USA": 1, "Kanada": 3, "Australien": 2}
-    # inte råvara, för liten, OTC, London, CAD-omräkning under golvet
-    for t in ("AAPL", "TINY", "OTCG", "RIO.L", "SMALLCA.TO"):
+    assert tickers == sorted(["NEM", "CNQ.TO", "JUN.V", "BHP.AX", "PDN.AX", "WFG.TO", "LAC"])
+    assert per == {"USA": 2, "Kanada": 3, "Australien": 2}
+    # inte råvara, för liten, OTC, London, CAD-omräkning under golvet, vanlig kemi
+    for t in ("AAPL", "TINY", "OTCG", "RIO.L", "SMALLCA.TO", "PPG"):
         assert t not in tickers
 
 
@@ -102,3 +106,11 @@ def test_build_universe_reports_a_missing_licence(monkeypatch):
     tickers, stats = eu.build_universe(eu.SOURCE_AUTO, use_prefilter=False)
     assert stats.global_raw == 0 and "Pro+" in stats.global_error
     assert len(tickers) == len(eu.US_INTL_CURATED)            # de kurerade finns kvar
+
+
+def test_critical_metals_are_in_the_curated_list_with_themes():
+    from ember.config import TICKER_THEME_MAP
+    for t in ("LYC.AX", "ILU.AX", "ARU.AX", "ALB", "SQM", "PLS.AX", "MIN.AX", "LTR.AX", "SBSW", "PPLT", "PALL"):
+        assert t in eu.US_INTL_CURATED, t
+    assert TICKER_THEME_MAP["LYC.AX"] == "sallsynta" and TICKER_THEME_MAP["ALB"] == "sallsynta"
+    assert TICKER_THEME_MAP["SBSW"] == "guld" and TICKER_THEME_MAP["PALL"] == "guld"
