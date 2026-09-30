@@ -65,6 +65,25 @@ def kpi(label: str, value: str, color: str = ACCENT, caption: str = "") -> str:
             + "</div>")
 
 
+# Förklaringstext: st.caption blir nästan osynlig på mörk bakgrund i mobilen —
+# egen ljusare färg (mellan TEXT och DIM) i stället.
+NOTE = "#c4bfb3"
+
+
+def note(text: str) -> None:
+    """Förklaringsrad som syns på mobilen (ersätter st.caption)."""
+    st.markdown(f"<div class='wolf-note' style='color:{NOTE};font-size:0.76rem;line-height:1.45;"
+                f"margin:2px 0 6px;'>{text}</div>", unsafe_allow_html=True)
+
+
+def big_card(title: str, big: str, sub: str, color: str) -> str:
+    """Stort siffrkort (Snabbkollens och Guld/Silver-flikens toppkort)."""
+    return (f"<div style='border:1px solid {color}55;background:{color}0d;border-radius:10px;padding:12px 14px;"
+            f"text-align:center;'><div style='font-size:10px;letter-spacing:3px;color:{DIM};'>{title}</div>"
+            f"<div style='font-size:2rem;font-weight:900;color:{color};font-family:Courier New;'>{big}</div>"
+            f"<div style='font-size:0.72rem;color:{TEXT};margin-top:2px;'>{sub}</div></div>")
+
+
 def card(title: str, body: str, color: str = ACCENT) -> str:
     """Navigations-/infokort: rubrik och en rad text."""
     return (f"<div style='background:{BG_ALT};border:1px solid {BORDER_FAINT};"

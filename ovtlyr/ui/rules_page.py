@@ -1086,6 +1086,11 @@ _PANEL_GUIDE: list[tuple] = [
     ("REGIME → Råvaror → Råvarurotation", "Rule · Sprott · Durrett · Tiggre — var kapitalet ska",
      "Hat-betyg per råvara en gång i månaden; AGERA-råvarorna styr vilka "
      "screeners som är värda att köra."),
+    ("REGIME → Råvaror → 🥇🥈 Guld/Silver", "Durrett: silvervarianten (kvot > 85)",
+     "Kvoten nu och i historiken (1–20 år, percentiler), guidens zoner 85/50, "
+     "geologisk referens ~19 (inte fair value), produktions- och ovanjordskvot med "
+     "källa, silverpris per kvot och matrisen guldpris × kvot. Silverbolag kan "
+     "köras genom Snabbkollens motor per kvotscenario."),
     ("SCREENING → Swing Screener", "Momentum: entry #2, #3",
      "Färdig momentum-ranking topp 40 med setup-flaggor A/B och RSI. "
      "'→ Bevakning' skickar kandidaten till Swing-fliken."),

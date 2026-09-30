@@ -46,7 +46,7 @@ SUBS: dict = {
                        "Flow Divergence", "Market Cycle"],
     "regime/Marknad/Arc Regime": ["Wolf Regime", "Viking Regime"],
     "regime/Marknad/Alpha Regime": ["Quality & Contrarian", "Long Trend"],
-    "regime/Råvaror": ["🌍 EMBER Regime", "Råvarurotation"],
+    "regime/Råvaror": ["🌍 EMBER Regime", "Råvarurotation", "🥇🥈 Guld/Silver"],
     "intel": ["Odin's Blindspot", "Sentiment", "Retail Pulse", "Heatmap"],
     "portfolio": ["📓 Trade Journal", "Holdings", "Swing", "Allokering", "Backtest"],
     "rules": ["Regler & Guider", "Position Sizing", "Data Health"],
@@ -59,7 +59,7 @@ SUBS: dict = {
 HOME_ZONES: tuple = (
     ("regime", "REGIME — VAR KAPITALET SKA", [
         ("Marknad", "Wolf · Viking · Alpha · Swing · Flow Divergence · Market Cycle"),
-        ("Råvaror", "🌍 EMBER Regime · Råvarurotation"),
+        ("Råvaror", "🌍 EMBER Regime · Råvarurotation · 🥇🥈 Guld/Silver"),
     ]),
     ("screening", "SCREENING — VILKA BOLAG SOM KVALAR", [
         ("Arc Screener", "Wolf (EMA/swing) · Viking (OVTLYR) · EMBER (råvaror)"),
