@@ -244,7 +244,8 @@ def fetch(ticker: str, api=None, price_getter: Optional[Callable] = None,
             inst, scope = _meta(api, iid)
             d.update(ins_id=iid, name=inst.get("name") or t,
                      source="Börsdata" + (" global" if scope == "global" else ""),
-                     currency=inst.get("reportCurrency") or inst.get("stockPriceCurrency"))
+                     currency=inst.get("reportCurrency") or inst.get("stockPriceCurrency"),
+                     price_currency=inst.get("stockPriceCurrency") or inst.get("reportCurrency"))
             if inst.get("ticker") and inst.get("marketId") is not None:
                 try:
                     yf_sym = markets.to_yf(inst["ticker"], inst["marketId"], markets.current()) or t
@@ -363,6 +364,11 @@ def fetch(ticker: str, api=None, price_getter: Optional[Callable] = None,
                 d[key] = round(v, 4)
                 d["filled_yahoo"].append(key)
         mc_y = _n(info.get("marketCap"))
+        if mc_y:
+            d["mcap_yahoo"] = mc_y / 1e6                      # miljoner, Yahoos handelsvaluta
+            d["mcap_yahoo_ccy"] = str(info.get("currency") or "").upper() or None
+        if not d.get("price_currency") and info.get("currency"):
+            d["price_currency"] = str(info.get("currency")).upper()
         if d.get("mcap_bd") and mc_y:
             d["source_gap_pct"] = round((d["mcap_bd"] / (mc_y / 1e6) - 1) * 100, 1)
         pf = _n(d.get("p_fcf"))

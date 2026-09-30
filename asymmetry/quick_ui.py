@@ -60,7 +60,8 @@ def render_quick(add_to_sheet=None) -> None:
     _score_card(res, data)
     _gauges(res)
     _volatility(res)
-    _leverage(data)
+    lev = _leverage(data)
+    _engine(data, lev)
     _charts(data)
     extra = []
     if data.get("filled_yahoo"):
@@ -149,7 +150,7 @@ def _metric_card(title: str, big: str, sub: str, color: str) -> str:
             f"<div style='font-size:0.72rem;color:{TEXT};margin-top:2px;'>{sub}</div></div>")
 
 
-def _leverage(data: dict) -> None:
+def _leverage(data: dict):
     """🚀 Commodity Leverage och 💥 break-even — skattade ur historiken, utanför 300."""
     from asymmetry import quick_leverage as ql
     lev = ql.from_data(data)
@@ -172,7 +173,7 @@ def _leverage(data: dict) -> None:
                                  f"{lev.band} · {name} nu {lev.price_now:,.0f} mot break-even "
                                  f"{lev.break_even_price:,.0f} {lev.unit}", bc), unsafe_allow_html=True)
     if not lev.sensitivity:
-        return
+        return lev
     with st.expander(f"Känslighet mot {name.lower()} ({lev.ticker}) — hur det räknas"):
         st.caption(
             "Skattat ur bolagets egen historik: årlig intäkt, EBITDA och FCF (Börsdata, rapportvalutan) "
@@ -207,6 +208,89 @@ def _leverage(data: dict) -> None:
         if fig is not None:
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False},
                             key=f"asym_quick_lev_{data.get('ticker', '')}")
+    return lev
+
+
+_FIVE_X_COLOR = {"JA": GREEN, "VILLKORAT": AMBER, "NEJ": RED}
+
+
+def _ratio_color(r: float) -> str:
+    return GREEN if r >= 2 else CYAN if r >= 1 else AMBER if r >= 0.7 else RED
+
+
+def _engine(data: dict, lev) -> None:
+    """⚡ 5×-motorn — scenarier, krav för 2×/3×/5×/10×, stressmatris och thesis
+    killers ur samma linje som Commodity Leverage. Utanför 300."""
+    from asymmetry import quick_scenarios as qs
+    eng = qs.run(data, lev)
+    st.markdown(f"<div style='color:{CYAN};font-family:Courier New;letter-spacing:2px;font-size:0.8rem;"
+                f"margin:10px 0 4px;'>⚡ 5×-MOTORN <span style='color:{DIM};letter-spacing:0;'>"
+                f"— automatisk, egen historik, räknas inte i 300</span></div>", unsafe_allow_html=True)
+    if eng.error:
+        st.markdown(_metric_card("5× POTENTIAL", "—", f"DATA_GAP: {eng.error}", GREY), unsafe_allow_html=True)
+        return
+    c1, c2 = st.columns(2)
+    c1.markdown(_metric_card("5× POTENTIAL", eng.five_x or "—", f"kräver {eng.five_x_text}",
+                             _FIVE_X_COLOR.get(eng.five_x, GREY)), unsafe_allow_html=True)
+    base = next((x for x in eng.scenarios if x.name == "BASE"), None)
+    if base:
+        c2.markdown(_metric_card("BASE MOT BÖRSVÄRDET", f"{base.ratio:.2f}×",
+                                 f"dagens pris, egen median {base.multiple:g}× EV/EBITDA",
+                                 _ratio_color(base.ratio)), unsafe_allow_html=True)
+    ccy = eng.price_ccy
+    with st.expander("5×-motorn — scenarier, krav, stressmatris och thesis killers"):
+        m = eng.multiples
+        st.caption(
+            f"Kedjan: {eng.commodity}-pris → EBITDA (egen linje, R² {lev.fits['EBITDA'].r2:.2f}) → EV med egen "
+            f"EV/EBITDA (25:e percentil {m['low']:g}× · median {m['median']:g}× · 75:e {m['high']:g}×) → "
+            f"− nettoskuld {eng.net_debt:,.0f} M → mot börsvärdet {eng.mcap:,.0f} M {eng.report_ccy} "
+            f"({eng.mcap_note}) → kurs. Antalet aktier hålls fast (ingen utspädning).")
+        head = (f"<tr style='color:{DIM};'><th style='text-align:left;'>Scenario</th><th>{eng.commodity.capitalize()}"
+                f"</th><th>Pris ({eng.unit})</th><th>Multipel</th><th>EBITDA M</th><th>Eget kapital M</th>"
+                f"<th>× börsvärde</th><th>Kurs {ccy}</th></tr>")
+        rows = "".join(
+            f"<tr><td style='text-align:left;'>{x.name}{' ⚠' if x.outside_history else ''}</td>"
+            f"<td>{x.price_pct:+.0f} %</td><td>{x.price:,.2f}</td><td>{x.multiple:g}×</td>"
+            f"<td>{x.ebitda:,.0f}</td><td>{x.equity:,.0f}</td>"
+            f"<td style='color:{_ratio_color(x.ratio)};font-weight:700;'>{x.ratio:.2f}×</td>"
+            f"<td>{'—' if x.share_price is None else f'{x.share_price:,.2f}'}</td></tr>" for x in eng.scenarios)
+        st.markdown(f"<table style='width:100%;font-size:0.78rem;color:{TEXT};text-align:right;'>{head}{rows}</table>",
+                    unsafe_allow_html=True)
+        if any(x.outside_history for x in eng.scenarios):
+            st.caption("⚠ = råvarupriset ligger utanför de senaste tio årens årssnitt — linjen extrapoleras.")
+        req = "".join(
+            f"<tr><td style='text-align:left;'>{r.multiple}×</td>"
+            f"<td>{'—' if r.price_pct is None else f'{r.price_pct:+.0f} %'}</td>"
+            f"<td>{'—' if r.price is None else f'{r.price:,.2f}'}</td>"
+            f"<td style='color:{_FIVE_X_COLOR.get(r.verdict, GREY)};font-weight:700;'>{r.verdict}</td></tr>"
+            for r in eng.requirements)
+        st.markdown(
+            f"<div style='color:{CYAN};font-size:0.8rem;margin-top:8px;'>Vad krävs? (egen median "
+            f"{m['median']:g}× EV/EBITDA{f', högsta årssnitt 10 år {eng.price_high:,.2f}' if eng.price_high else ''})"
+            f"</div><table style='width:100%;font-size:0.78rem;color:{TEXT};text-align:right;'>"
+            f"<tr style='color:{DIM};'><th style='text-align:left;'>Mål</th><th>{eng.commodity.capitalize()}</th>"
+            f"<th>Pris ({eng.unit})</th><th>Bedömning</th></tr>{req}</table>", unsafe_allow_html=True)
+        st.caption(f"JA = priset har redan varit där (högsta årssnitt 10 år) · VILLKORAT = upp till "
+                   f"{qc.FIVE_X_CONDITIONAL_FACTOR:g}× det · NEJ = längre bort.")
+        mk = qc.STRESS_MULTIPLES
+        srows = "".join(
+            f"<tr><td style='text-align:left;'>{pct:+.0f} %</td>" + "".join(
+                f"<td style='color:{_ratio_color(row[k][0])};'>{row[k][0]:.2f}×"
+                f"{'' if row[k][1] is None else f' · {row[k][1]:,.0f}'}</td>" for k in mk) + "</tr>"
+            for pct, row in eng.stress)
+        st.markdown(
+            f"<div style='color:{CYAN};font-size:0.8rem;margin-top:8px;'>Stressmatris — råvarupris mot multipel "
+            f"(× börsvärdet · kurs {ccy})</div><table style='width:100%;font-size:0.78rem;color:{TEXT};"
+            f"text-align:right;'><tr style='color:{DIM};'><th style='text-align:left;'>{eng.commodity.capitalize()}"
+            f"</th>" + "".join(f"<th>{k} {m[k]:g}×</th>" for k in mk) + f"</tr>{srows}</table>",
+            unsafe_allow_html=True)
+        st.markdown(f"<div style='color:{RED};font-size:0.8rem;margin-top:10px;'>☠️ VAD DÖDAR CASET?</div>",
+                    unsafe_allow_html=True)
+        for k in eng.killers:
+            tag = "" if k.measured else f" <span style='color:{DIM};'>(mäts inte automatiskt)</span>"
+            st.markdown(f"<div style='font-size:0.78rem;color:{TEXT};'>• <b>{k.label}</b> — {k.detail}{tag}</div>",
+                        unsafe_allow_html=True)
+        st.caption("Sannolikhet: UNKNOWN — killers listas ur uppmätta tal, ingen sannolikhet hittas på.")
 
 
 def leverage_chart(data: dict, lev) -> Optional[go.Figure]:
