@@ -1,9 +1,16 @@
 name: Börsdata probe (diagnostik)
 
 # Manuell engångsdiagnostik: skriver ut Börsdatas sektor-/branschlista,
-# KPI-metadata och råa KPI-värden för referensbolag. Ändrar ingenting.
+# KPI-metadata och råa KPI-värden för referensbolag, samt Börsdatas
+# råvaruinstrument med prishistorik. Ändrar ingenting.
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      section:
+        description: "Vad som körs: commodities = bara råvarorna (snabb), all = hela proben"
+        type: choice
+        options: [commodities, all]
+        default: commodities
 
 jobs:
   probe:
@@ -28,4 +35,5 @@ jobs:
         env:
           BORSDATA_API_KEY: ${{ secrets.BORSDATA_API_KEY }}
           PROBE_PIPELINE: "1"
+          PROBE_SECTION: ${{ inputs.section || 'all' }}
         run: python borsdata_probe.py
