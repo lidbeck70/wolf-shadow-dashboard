@@ -6,15 +6,23 @@ on:
     # session's close, so mid-week regime shifts and setups are caught.
     # Cron is UTC. 04:30 UTC = 06:30 CEST (summer) / 05:30 CET (winter), before
     # the Stockholm open. Weekends are skipped (no new market data).
-    # Started 90 min before scheduled-scan (06:00 UTC) so the two alert_scan
+    # Started ~2 h before scheduled-scan (06:11 UTC) so the two alert_scan
     # steps never run at the same time — they share alert_state in the Gist,
     # and a parallel run could lose state or send the same alert twice.
-    - cron: "30 4 * * 1-5"
+    # Minut :17 i stället för :30 (GitHub försenar jobb på jämna och halva
+    # klockslag — 29/9 kom 04:30-körningen 10:50), plus en reserv 30 min
+    # senare som hoppar över sig själv om en körning redan gått.
+    - cron: "17 4 * * 1-5"
+    - cron: "47 4 * * 1-5"         # reserv
   workflow_dispatch: {}            # allow manual trigger from the Actions tab
 
 concurrency:
   group: wolf-data
   cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read                    # grinden läser arbetsflödets tidigare körningar
 
 jobs:
   generate:
@@ -24,13 +32,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Dubblettspärr: reserv-cronen hoppar över sig själv om en körning redan
+      # gått inom 150 min. Manuell körning körs alltid.
+      - name: Gate on duplicates
+        id: gate
+        env:
+          SCHEDULE: ${{ github.event.schedule }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/schedule_gate.sh wolf-data.yml
+
       - name: Set up Python
+        if: steps.gate.outputs.run == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
 
       - name: Install dependencies
+        if: steps.gate.outputs.run == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
@@ -41,6 +60,7 @@ jobs:
       # caches after ~7 days unused); the screener/regime JSON itself always
       # goes to the Gist, so a lost cache only shortens the history chart.
       - name: Restore data cache
+        if: steps.gate.outputs.run == 'true'
         uses: actions/cache@v4
         with:
           path: |
@@ -51,6 +71,7 @@ jobs:
             wolf-data-
 
       - name: Generate screener + regime data
+        if: steps.gate.outputs.run == 'true'
         env:
           BORSDATA_API_KEY: ${{ secrets.BORSDATA_API_KEY }}
           # Gist-scoped PAT (classic, gist scope) — same secret the other jobs use.
@@ -72,7 +93,7 @@ jobs:
       # upptäcks medan datan är minuter gammal. Temakartan hoppas över här —
       # den körs av scheduled-scan, och en hoppad karta rör inte baslinjen.
       - name: Alert scan (swing)
-        if: always()
+        if: always() && steps.gate.outputs.run == 'true'
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
