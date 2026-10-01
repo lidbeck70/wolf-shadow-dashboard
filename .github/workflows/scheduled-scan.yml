@@ -2,45 +2,43 @@ name: Scheduled Screening
 
 on:
   schedule:
-    # Weekdays 08:00, 12:00, 18:00 Europe/Stockholm.
-    # Cron is UTC. Stockholm = UTC+1 (winter) / UTC+2 (summer). Both crons
-    # fire all year, so the "Gate on season" step below skips the cron that
-    # belongs to the other season — otherwise every weekday got six full runs
-    # (Börsdata/Yahoo load and double alerts) instead of three.
-    - cron: "0 6,10,16 * * 1-5"   # summer (CEST, UTC+2): 08/12/18 local
-    - cron: "0 7,11,17 * * 1-5"   # winter (CET,  UTC+1): 08/12/18 local
+    # Vardagar ~08/12/18 svensk tid. Cron är UTC; Stockholm = UTC+2 (sommar) /
+    # UTC+1 (vinter), så båda säsongernas tider står här och grinden hoppar
+    # över den andra säsongens.
+    # GitHub försenar (timmar) eller tappar schemalagda jobb, värst på jämna
+    # klockslag: 30/9 kom 08-körningen aldrig, 12 kördes 13:26 och 18 kördes
+    # 22:21. Därför: minut :11 i stället för :00, och en reserv 30 min senare
+    # som hoppar över sig själv om en körning redan gått (schedule_gate.sh).
+    - cron: "11 6,10,16 * * 1-5"   # sommar (CEST): 08:11 / 12:11 / 18:11
+    - cron: "41 6,10,16 * * 1-5"   # sommar, reserv
+    - cron: "11 7,11,17 * * 1-5"   # vinter (CET): 08:11 / 12:11 / 18:11
+    - cron: "41 7,11,17 * * 1-5"   # vinter, reserv
   workflow_dispatch: {}            # allow manual trigger from the Actions tab
 
 concurrency:
   group: scheduled-screening
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  actions: read                    # grinden läser arbetsflödets tidigare körningar
+
 jobs:
   screen:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      # GitHub kan försena schemalagda körningar flera timmar. Förut prövades
-      # klockslaget (08/12/18) när jobbet väl startade — en försenad körning
-      # hoppades över, så skanningen gick sällan (senast fullt 25/9). Nu prövas
-      # i stället VILKEN cron som startade jobbet mot säsongen: sommarcronen
-      # kör när Stockholm är UTC+2, vintercronen när Stockholm är UTC+1.
-      - name: Gate on season
-        id: gate
-        run: |
-          OFF=$(TZ=Europe/Stockholm date +%z)
-          SCHED="${{ github.event.schedule }}"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] \
-             || { [ "$SCHED" = "0 6,10,16 * * 1-5" ] && [ "$OFF" = "+0200" ]; } \
-             || { [ "$SCHED" = "0 7,11,17 * * 1-5" ] && [ "$OFF" = "+0100" ]; }; then
-            echo "run=true" >> "$GITHUB_OUTPUT"; echo "Cron '$SCHED', Stockholm $OFF — kör."
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"; echo "Cron '$SCHED', Stockholm $OFF — hoppar (andra säsongens cron)."
-          fi
-
       - name: Checkout
-        if: steps.gate.outputs.run == 'true'
         uses: actions/checkout@v4
+
+      # Säsong (rätt cron för sommar/vinter) + dubblettspärr (reserven hoppar
+      # över sig själv om primären redan kört). Manuell körning körs alltid.
+      - name: Gate on season and duplicates
+        id: gate
+        env:
+          SCHEDULE: ${{ github.event.schedule }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/schedule_gate.sh scheduled-scan.yml seasonal
 
       - name: Set up Python
         if: steps.gate.outputs.run == 'true'

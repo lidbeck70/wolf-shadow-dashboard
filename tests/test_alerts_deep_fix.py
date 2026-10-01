@@ -138,8 +138,6 @@ def test_local_fallback_is_per_mode(monkeypatch, tmp_path):
 
 # ── 4. Schemagrinden ─────────────────────────────────────────────────────────
 def test_schedule_gate_uses_the_triggering_cron_not_the_clock():
-    import yaml
-    wf = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "scheduled-scan.yml"), encoding="utf-8"))
-    run = wf["jobs"]["screen"]["steps"][0]["run"]
-    assert "github.event.schedule" in run and "+0200" in run and "+0100" in run
-    assert "date +%H" not in run                                          # klockslaget avgör inte längre
+    script = open(os.path.join(ROOT, "scripts", "schedule_gate.sh"), encoding="utf-8").read()
+    assert "+0200" in script and "+0100" in script and "SCHEDULE" in script
+    assert "date +%H" not in script                                       # klockslaget avgör inte

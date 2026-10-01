@@ -144,14 +144,21 @@ def test_scheduled_scan_runs_once_per_local_hour_and_wolf_data_does_not_overlap(
     import yaml
     wf = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "scheduled-scan.yml"), encoding="utf-8"))
     steps = wf["jobs"]["screen"]["steps"]
-    assert steps[0]["id"] == "gate" and "Europe/Stockholm" in steps[0]["run"]
-    for s in steps[1:]:
+    gate = next(i for i, s in enumerate(steps) if s.get("id") == "gate")
+    assert "schedule_gate.sh scheduled-scan.yml seasonal" in steps[gate]["run"]
+    for s in steps[gate + 1:]:
         assert "steps.gate.outputs.run == 'true'" in str(s.get("if", "")), s["name"]
     crons = [c["cron"] for c in wf[True]["schedule"]] if True in wf else [c["cron"] for c in wf["on"]["schedule"]]
-    assert crons == ["0 6,10,16 * * 1-5", "0 7,11,17 * * 1-5"]
+    assert crons == ["11 6,10,16 * * 1-5", "41 6,10,16 * * 1-5", "11 7,11,17 * * 1-5", "41 7,11,17 * * 1-5"]
+    assert all(not c.startswith(("0 ", "30 ")) for c in crons)          # aldrig jämna/halva klockslag
     wd = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "wolf-data.yml"), encoding="utf-8"))
     on = wd[True] if True in wd else wd["on"]
-    assert on["schedule"][0]["cron"] == "30 4 * * 1-5"                    # 90 min före scheduled-scan
+    assert [c["cron"] for c in on["schedule"]] == ["17 4 * * 1-5", "47 4 * * 1-5"]   # ~2 h före scheduled-scan
+    wsteps = wd["jobs"]["generate"]["steps"]
+    wgate = next(i for i, s in enumerate(wsteps) if s.get("id") == "gate")
+    for s in wsteps[wgate + 1:]:
+        assert "steps.gate.outputs.run == 'true'" in str(s.get("if", "")), s["name"]
+    assert wf["permissions"]["actions"] == "read" and wd["permissions"]["actions"] == "read"
 
 
 # ── Wolf-checklistan ──────────────────────────────────────────────────────────
