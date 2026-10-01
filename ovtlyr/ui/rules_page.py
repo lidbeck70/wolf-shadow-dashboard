@@ -1108,6 +1108,10 @@ _PANEL_GUIDE: list[tuple] = [
      "disciplinfrågorna och strykregeln för döende tillgång (gruvlivslängd "
      "< 5 år, R/P < 8 år). EV/NAV (NAV efter skatt) som egen värderingsrad "
      "utanför poängen: under 0,7× billigt. AQS och CSM visas när positionen kräver dem."),
+    ("GRANSKNING → 🚀 Råvaruhävstång", "Ember · Durrett · Wolf Asymmetry: vilket bolag ger mest hävstång",
+     "Upp till åtta bolag mot sin råvara: resultathävstång 0–10 och break-even ur "
+     "bolagets egna år, kursbeta (veckor, 3 år) med upp/ned-asymmetri, 5×-potential "
+     "och fritt råvarupris genom 5×-kedjan. Kursbetat fungerar även för juniorer."),
     ("GRANSKNING → Royalty C", "Royalty: köpsignalen",
      "Rabatt mot egen P/NAV-botten, mot egen EV/EBITDA-median och "
      "GEO-tillväxt per aktie. Krympande GEO slår ut köpläget."),

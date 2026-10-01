@@ -229,6 +229,13 @@ try:
 except ImportError:
     ROTATION_AVAILABLE = False
 
+# Råvaruhävstång (GRANSKNING) — resultat- och kurshävstång mot råvaran
+try:
+    from commodity_leverage.ui import render_commodity_leverage_page
+    COMMODITY_LEVERAGE_AVAILABLE = True
+except ImportError:
+    COMMODITY_LEVERAGE_AVAILABLE = False
+
 # Guld/silver-kvoten (REGIME → Råvaror)
 try:
     from gold_silver.ui import render_gold_silver_page
@@ -397,6 +404,9 @@ def main():
                 _page(DURRETT_AVAILABLE, render_durrett_page, "Durrett", "engines/durrett/ui")
             elif sub == "🐺 Wolf Asymmetry":
                 _page(ASYMMETRY_AVAILABLE, render_asymmetry_page, "Wolf Asymmetry", "asymmetry/ui")
+            elif sub == "🚀 Råvaruhävstång":
+                _page(COMMODITY_LEVERAGE_AVAILABLE, render_commodity_leverage_page, "Råvaruhävstång",
+                      "commodity_leverage/ui")
             elif sub == "🎯 Scorecard":
                 _page(SCORECARD_AVAILABLE, render_scorecard_page, "Master Scorecard", "scorecard")
 
