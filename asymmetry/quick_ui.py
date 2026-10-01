@@ -75,14 +75,9 @@ def render_quick(add_to_sheet=None) -> None:
                 f"{t} ligger i arket — öppna Ark för råvara och stage." if ok else f"{t} finns redan i arket.")
 
 
-# Förklaringstext: st.caption blir nästan osynlig på mörk bakgrund i mobilen —
-# egen ljusare färg (mellan TEXT och DIM) i stället.
-NOTE = "#c4bfb3"
-
-
-def _note(text: str) -> None:
-    st.markdown(f"<div class='asym-note' style='color:{NOTE};font-size:0.76rem;line-height:1.45;"
-                f"margin:2px 0 6px;'>{text}</div>", unsafe_allow_html=True)
+# Förklaringstext och stora kort delas med andra flikar (ui/components).
+from ui.components import big_card as _metric_card  # noqa: E402
+from ui.components import note as _note  # noqa: E402
 
 
 # ── Poängkortet (Viking Regime-stil) ────────────────────────────────────────
@@ -151,13 +146,6 @@ def _volatility(res: quick.QuickResult) -> None:
     cols = st.columns(len(g.pillars))
     for col, p in zip(cols, g.pillars):
         col.markdown(_card(p), unsafe_allow_html=True)
-
-
-def _metric_card(title: str, big: str, sub: str, color: str) -> str:
-    return (f"<div style='border:1px solid {color}55;background:{color}0d;border-radius:10px;padding:12px 14px;"
-            f"text-align:center;'><div style='font-size:10px;letter-spacing:3px;color:{DIM};'>{title}</div>"
-            f"<div style='font-size:2rem;font-weight:900;color:{color};font-family:Courier New;'>{big}</div>"
-            f"<div style='font-size:0.72rem;color:{TEXT};margin-top:2px;'>{sub}</div></div>")
 
 
 def _leverage(data: dict):

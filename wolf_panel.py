@@ -229,6 +229,13 @@ try:
 except ImportError:
     ROTATION_AVAILABLE = False
 
+# Guld/silver-kvoten (REGIME → Råvaror)
+try:
+    from gold_silver.ui import render_gold_silver_page
+    GOLD_SILVER_AVAILABLE = True
+except ImportError:
+    GOLD_SILVER_AVAILABLE = False
+
 # Portföljallokeraren (Masterguiden Del 2)
 try:
     from allocator import render_allocator_page
@@ -430,6 +437,8 @@ def main():
                     _page(EMBER_AVAILABLE, render_ember_regime_page, "EMBER Regime", "ember")
                 elif sub == "Råvarurotation":
                     _page(ROTATION_AVAILABLE, render_rotation_page, "Råvarurotationen", "rotation")
+                elif sub == "🥇🥈 Guld/Silver":
+                    _page(GOLD_SILVER_AVAILABLE, render_gold_silver_page, "Guld/Silver", "gold_silver")
 
     # ── INTELLIGENCE ─────────────────────────────────────────────────────────
     if _is_open(tabs["intel"]):

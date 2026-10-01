@@ -148,7 +148,7 @@ def test_the_quick_tab_shows_the_engine(monkeypatch):
     assert "5×-MOTORN" in html and "5× POTENTIAL" in html and ">NEJ<" in html
     assert "SUPER BULL" in html and "Vad krävs?" in html and "Stressmatris" in html
     assert "VAD DÖDAR CASET?" in html and "Värderingen redan hög" in html
-    assert "Sannolikhet: UNKNOWN" in html and "asym-note" in html
+    assert "Sannolikhet: UNKNOWN" in html and "wolf-note" in html
 
 
 def test_cycle_top_uses_the_lowest_multiple_in_bear_and_warns():
