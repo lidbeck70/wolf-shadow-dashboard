@@ -11,6 +11,10 @@ i stället för gissningar:
   3. Råa screenervärden för referensbolag (G5EN, QAIR, BOL, EQNR) — så
      enheterna (procent vs kvot, MSEK vs per aktie) kan fastställas mot
      kända siffror.
+  4. Råvaror: alla instrument på Börsdatas råvaru-/valutamarknader (76 Forex,
+     77 Nymex och andra marknader av typen "other") med antal år prishistorik,
+     plus en namnsökning efter uran, kol, zink, sällsynta metaller m.fl.
+     PROBE_SECTION=commodities kör bara den delen (snabbt).
 
 Skriver ingenting, ändrar ingenting. Exit 0 alltid.
 """
@@ -31,6 +35,103 @@ PROBE_KPIS = {
     "net_debt_m": 60, "short_selling": 207,
 }
 
+COMMODITY_MARKET_IDS = (76, 77)
+# Namnsökning (engelska och svenska) — vad finns som råvara hos Börsdata?
+COMMODITY_KEYWORDS = ("uran", "coal", "kol", "zinc", "zink", "rare", "sällsynt",
+                      "lithium", "litium", "nickel", "cobalt", "kobolt", "alumin",
+                      "iron", "järn", "tin", "lead", "bly", "gold", "guld", "silver",
+                      "platin", "pallad", "copper", "koppar", "oil", "olja", "brent",
+                      "gas", "wheat", "vete", "coffee", "kaffe", "cocoa", "kakao",
+                      "lumber", "timber", "sugar", "corn", "soy", "molyb")
+MAX_PRICE_PROBES = 120
+
+
+def _history(api, ins_id) -> str:
+    """Antal prisrader, första/sista datum och senaste pris (upp till 20 år)."""
+    try:
+        rows = api.get_stockprices(ins_id, max_count=5040)
+    except Exception as e:
+        return f"pris FEL: {str(e)[:60]}"
+    if not rows:
+        return "pris: inga rader"
+    dates = sorted(str(r.get("d", ""))[:10] for r in rows if r.get("d"))
+    if not dates:
+        return f"pris: {len(rows)} rader utan datum"
+    last = max(rows, key=lambda r: str(r.get("d", "")))
+    try:
+        years = (int(dates[-1][:4]) - int(dates[0][:4])) + (int(dates[-1][5:7]) - int(dates[0][5:7])) / 12
+    except ValueError:
+        years = 0.0
+    return (f"pris: {len(rows)} rader {dates[0]} → {dates[-1]} (≈{years:.1f} år) "
+            f"senast={last.get('c')}")
+
+
+def _keyword_hits(name: str) -> list:
+    low = (name or "").lower()
+    words = set(low.replace("-", " ").replace("/", " ").split())
+    hits = []
+    for k in COMMODITY_KEYWORDS:
+        # korta ord (uran, kol, tin, gas) måste inleda ett ord — "Uranium" ja, "Petrol" nej
+        if (len(k) <= 4 and any(w.startswith(k) for w in words)) or (len(k) > 4 and k in low):
+            hits.append(k)
+    return hits
+
+
+def probe_commodities(api, out=print) -> list:
+    """
+    Listar Börsdatas råvaru-/valutainstrument med prishistorik. Rent
+    läsande. Returnerar raderna (dict) så att testet kan granska urvalet.
+    """
+    from markets import OTHER, from_api
+    out("\n" + "=" * 72)
+    out("RÅVAROR — marknader, instrument och prishistorik")
+    out("=" * 72)
+    try:
+        markets = from_api(api.get_markets(), api.get_countries())
+    except Exception as e:
+        out(f"  marknader FEL: {e}")
+        markets = {}
+    for mid, m in sorted(markets.items()):
+        out(f"  marknad {mid:>4}  {m.name:28} land={m.country or '-':12} typ={m.kind}"
+            f"{'  ← råvaror/valuta' if m.kind == OTHER else ''}")
+    target = set(COMMODITY_MARKET_IDS) | {mid for mid, m in markets.items() if m.kind == OTHER}
+    out(f"\n  Råvaru-/valutamarknader som undersöks: {sorted(target)}")
+
+    rows, seen = [], set()
+    for source, getter in (("nordisk", api.get_instruments), ("global", api.get_global_instruments_list)):
+        try:
+            lst = getter() or []
+        except Exception as e:
+            out(f"  {source} instrumentlista FEL: {e}")
+            continue
+        out(f"\n  {source}: {len(lst)} instrument; typer (instrumentType → antal): "
+            f"{dict(Counter(i.get('instrumentType') for i in lst).most_common())}")
+        per_market = Counter(i.get("marketId") for i in lst if i.get("marketId") in target)
+        out(f"  {source}: på råvarumarknaderna: {dict(per_market)}")
+        for i in lst:
+            iid = i.get("insId")
+            if iid in seen:
+                continue
+            on_market = i.get("marketId") in target
+            if on_market:
+                seen.add(iid)
+                rows.append({"source": source, "insId": iid, "name": i.get("name", ""),
+                             "ticker": i.get("ticker", ""), "marketId": i.get("marketId"),
+                             "type": i.get("instrumentType"), "hits": _keyword_hits(i.get("name", ""))})
+
+    out(f"\n  INSTRUMENT PÅ RÅVARU-/VALUTAMARKNADERNA ({len(rows)} st):")
+    for n, r in enumerate(rows):
+        hist = _history(api, r["insId"]) if n < MAX_PRICE_PROBES else "pris: ej hämtat (tak)"
+        r["history"] = hist
+        out(f"   {r['insId']:>7} m={r['marketId']!s:>3} typ={r['type']!s:>3} {r['ticker'][:12]:12} "
+            f"{r['name'][:34]:34} {hist}")
+
+    out("\n  NAMNSÖKNING bland dem (uran, kol, zink, sällsynta m.fl.):")
+    for k in ("uran", "coal", "kol", "zinc", "zink", "rare", "sällsynt", "lithium", "nickel", "cobalt"):
+        found = [f"{r['ticker'] or r['name']} ({r['insId']})" for r in rows if k in r["hits"]]
+        out(f"   {k:10} → {', '.join(found) if found else 'INGEN TRÄFF'}")
+    return rows
+
 
 def main() -> int:
     if not os.environ.get("BORSDATA_API_KEY"):
@@ -38,6 +139,10 @@ def main() -> int:
         return 0
     from borsdata_api import BorsdataAPI, ALL_NORDIC_MARKETS
     api = BorsdataAPI()
+
+    if os.environ.get("PROBE_SECTION", "all") == "commodities":
+        probe_commodities(api)
+        return 0
 
     print("=" * 72)
     print("SEKTORER (id → namn)")
@@ -157,6 +262,11 @@ def main() -> int:
               f"längd={len(txt)}; början: {txt[:400]}")
     except Exception as e:
         print(f"  FEL: {e}")
+
+    try:
+        probe_commodities(api)
+    except Exception as e:
+        print(f"  råvaror FEL: {e}")
 
     # ── Deep Contrarian: hela pipelinen med elimineringsorsaker ────────────
     if os.environ.get("PROBE_PIPELINE", "1") == "1":
