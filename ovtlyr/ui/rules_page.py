@@ -1091,6 +1091,12 @@ _PANEL_GUIDE: list[tuple] = [
      "geologisk referens ~19 (inte fair value), produktions- och ovanjordskvot med "
      "källa, silverpris per kvot och matrisen guldpris × kvot. Silverbolag kan "
      "köras genom Snabbkollens motor per kvotscenario."),
+    ("REGIME → Råvaror → 🥇 Guldkvoter", "Rule · Sprott · Durrett — råvaror och index mätta i guld",
+     "Platina, palladium, koppar, olja (WTI/Brent), naturgas, vete, kaffe och kakao "
+     "som guld ÷ råvara, Dow och S&P 500 som index ÷ guld. Översikt över alla kvoter "
+     "mot egen historik, sedan per par: historik (1–20 år, percentiler), pris per "
+     "kvot och matrisen. Referens = kvotens egen median, målkvoter = egna percentiler "
+     "— inget fair value."),
     ("SCREENING → Swing Screener", "Momentum: entry #2, #3",
      "Färdig momentum-ranking topp 40 med setup-flaggor A/B och RSI. "
      "'→ Bevakning' skickar kandidaten till Swing-fliken."),
