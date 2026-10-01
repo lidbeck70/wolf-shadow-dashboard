@@ -165,7 +165,7 @@ def estimate(revenue: dict, ebitda: dict, fcf: dict, prices: dict, p0: Optional[
     res.downside_label = "STARK" if lo30 > 0 else "MÅTTLIG" if lo20 > 0 else "SKÖR"
     icon = {"STARK": "🟢", "MÅTTLIG": "🟡", "SKÖR": "🔴"}[res.downside_label]
     high = res.score >= qc.LEV_HIGH_SCORE
-    res.flag = (f"{icon} {'Hög hävstång' if high else 'Hävstång'} + {res.downside_label.lower()} nedsida")
+    res.flag = (f"{icon} {'Hög hävstång' if high else 'Hävstång'} + {res.downside_label.lower()} nedsida i verksamheten")
     res.sensitivity = _sensitivity(fits, p0, fx)
     return res
 

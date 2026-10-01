@@ -43,7 +43,7 @@ def test_solid_producer_high_leverage_strong_downside():
     assert lev.basis == "FCF" and lev.response_pct == 53.3 and lev.score == 8 and lev.r2 == 1.0
     assert lev.break_even_price == 2.5 and lev.break_even_margin_pct == 37.5 and lev.band == "STARK"
     assert lev.downside == {-20.0: 700.0, -30.0: 300.0} and lev.downside_label == "STARK"
-    assert lev.flag == "🟢 Hög hävstång + stark nedsida" and lev.unit == "USD/lb"
+    assert lev.flag == "🟢 Hög hävstång + stark nedsida i verksamheten" and lev.unit == "USD/lb"
     base = next(r for r in lev.sensitivity if r["pct"] == 0)
     assert base == {"pct": 0.0, "price": 4.0, "revenue": 4000.0, "ebitda": 2000.0, "fcf": 1500.0,
                     "ebitda_margin": 50.0, "fcf_margin": 37.5}
@@ -56,7 +56,7 @@ def test_highly_leveraged_producer_is_flagged_fragile():
     assert lev.score == 10 and lev.response_pct > 75                       # FCF 300 → +800
     assert lev.break_even_margin_pct == 7.5 and lev.band == "SVAG"
     assert lev.downside[-20.0] < 0 and lev.downside_label == "SKÖR"
-    assert lev.flag == "🔴 Hög hävstång + skör nedsida"                     # hög hävstång ≠ bra
+    assert lev.flag == "🔴 Hög hävstång + skör nedsida i verksamheten"                     # hög hävstång ≠ bra
 
 
 def test_low_leverage_business_scores_low():
@@ -169,7 +169,7 @@ def test_the_quick_tab_shows_leverage_and_break_even(monkeypatch):
     at.button(key="FormSubmitter:asym_quick_form-🔍 Analysera").click().run()
     assert not at.exception, at.exception
     html = " ".join(m.value for m in at.markdown)
-    assert "RÅVARUHÄVSTÅNG" in html and "8/10" in html and "Hög hävstång + stark nedsida" in html
+    assert "RÅVARUHÄVSTÅNG" in html and "8/10" in html and "Hög hävstång + stark nedsida i verksamheten" in html
     assert "BREAK-EVEN-MARGINAL" in html and "38 %" in html and "STARK" in html
     assert "Samband — " in html and "FCF: R² 1.00 (10 år)" in html
     assert any("KOPPAR-PRIS MOT EBITDA OCH FCF" in ch.proto.spec for ch in at.get("plotly_chart"))

@@ -61,6 +61,16 @@ def weekly_returns(stock, commodity, years: int = cc.BETA_YEARS):
     return df.pct_change().dropna()
 
 
+def stock_move(b: Optional[StockBeta], commodity_pct: float = cc.STOCK_SHOCK_PCT) -> tuple:
+    """(aktiens ungefärliga rörelse i %, vilket beta som användes) vid en
+    råvarurörelse — linjärt, historiskt, inte en prognos. Golv −100 %."""
+    if b is None:
+        return None, ""
+    side = b.down_beta if commodity_pct < 0 else b.up_beta
+    used, label = (side, "ned-beta" if commodity_pct < 0 else "upp-beta") if side is not None else (b.beta, "beta")
+    return round(max(used * commodity_pct, -100.0), 0), f"{label} {used:.2f}×"
+
+
 def stock_beta(stock, commodity, years: int = cc.BETA_YEARS) -> tuple:
     """(StockBeta | None, fel | None)."""
     r = weekly_returns(stock, commodity, years)

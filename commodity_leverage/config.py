@@ -12,6 +12,10 @@ ASYMMETRY_MIN_GAP = 0.2
 
 MAX_TICKERS = 8
 
+# "Aktien vid råvara −30 %": kursbeta × chocken. Vid fall används beta i
+# nedveckor när den finns (det är den relevanta), annars hela betat.
+STOCK_SHOCK_PCT = -30.0
+
 # Råvaror med prisserie på Yahoo (samma som Snabbkollens Commodity Leverage)
 COMMODITY_LABELS = {"guld": "Guld", "silver": "Silver", "koppar": "Koppar", "olja": "Olja",
                     "naturgas": "Naturgas", "platina": "Platina", "palladium": "Palladium",
