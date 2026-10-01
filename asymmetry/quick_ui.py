@@ -71,6 +71,7 @@ def render_quick(add_to_sheet=None) -> None:
     _volatility(res)
     if mode == qc.MODE_VALUE:
         _value(data)
+        _value_engine(data)
     else:
         lev = _leverage(data)
         _engine(data, lev)
@@ -226,6 +227,77 @@ def _leverage(data: dict):
 
 
 _FIVE_X_COLOR = {"JA": GREEN, "VILLKORAT": AMBER, "NEJ": RED}
+
+_M_LABEL = {"now": "nu", "min": "lägsta", "p25": "P25", "median": "median", "p75": "P75", "max": "högsta"}
+
+
+def _value_engine(data: dict) -> None:
+    """⚡ 5×-motorn för värde: marginal × multipel × tillväxt ur egen historik."""
+    from asymmetry import quick_value_scenarios as qvs
+    eng = qvs.run(data)
+    st.markdown(f"<div style='color:{CYAN};font-family:Courier New;letter-spacing:2px;font-size:0.8rem;"
+                f"margin:10px 0 4px;'>⚡ 5×-MOTORN (VÄRDE) <span style='color:{DIM};letter-spacing:0;'>"
+                f"— marginal, multipel och tillväxt ur egen historik, räknas inte i 300</span></div>",
+                unsafe_allow_html=True)
+    if eng.error:
+        st.markdown(_metric_card("5× POTENTIAL", "—", f"DATA_GAP: {eng.error}", GREY), unsafe_allow_html=True)
+        return
+    b = eng.base
+    c1, c2 = st.columns(2)
+    c1.markdown(_metric_card("5× POTENTIAL", eng.five_x, f"kräver {eng.five_x_text}",
+                             _FIVE_X_COLOR.get(eng.five_x, GREY)), unsafe_allow_html=True)
+    base = next(x for x in eng.scenarios if x.name == "BASE")
+    c2.markdown(_metric_card("BASE MOT BÖRSVÄRDET", f"{base.ratio:.2f}×",
+                             f"dagens marginal {base.margin:.1f} %, egen median {base.multiple:g}× EV/EBITDA",
+                             _ratio_color(base.ratio)), unsafe_allow_html=True)
+    ccy = b.price_ccy
+    with st.expander("5×-motorn (värde) — scenarier, krav, stressmatris och thesis killers"):
+        _note(f"Kedjan: omsättning {b.revenue:,.0f} M × (1 + egen tillväxt {eng.growth_used * 100:+.1f} %/år)^år × "
+              f"marginal = EBITDA → × multipel = EV → − nettoskuld {b.net_debt:,.0f} M → mot börsvärdet "
+              f"{b.mcap:,.0f} M {b.report_ccy} → kurs. Antalet aktier hålls fast. Marginaler och multiplar ur "
+              f"egen historik {b.years}.")
+        head = (f"<tr style='color:{DIM};'><th style='text-align:left;'>Scenario</th><th>Marginal</th>"
+                f"<th>Multipel</th><th>År tillväxt</th><th>Omsättning M</th><th>EBITDA M</th>"
+                f"<th>Eget kapital M</th><th>× börsvärde</th><th>Kurs {ccy}</th></tr>")
+        rows = "".join(
+            f"<tr><td style='text-align:left;'>{x.name}</td><td>{x.margin:.1f} % ({_M_LABEL[x.margin_key]})</td>"
+            f"<td>{x.multiple:g}× ({x.multiple_key})</td><td>{x.years}</td><td>{x.revenue:,.0f}</td>"
+            f"<td>{x.ebitda:,.0f}</td><td>{x.equity:,.0f}</td>"
+            f"<td style='color:{_ratio_color(x.ratio)};font-weight:700;'>{x.ratio:.2f}×</td>"
+            f"<td>{'—' if x.share_price is None else f'{x.share_price:,.2f}'}</td></tr>" for x in eng.scenarios)
+        st.markdown(f"<div style='overflow-x:auto;'><table style='width:100%;font-size:0.76rem;color:{TEXT};"
+                    f"text-align:right;'>{head}{rows}</table></div>", unsafe_allow_html=True)
+        req = "".join(
+            f"<tr><td style='text-align:left;'>{r.multiple}×</td><td>{r.growth_pct:.1f} %/år</td>"
+            f"<td>{r.revenue:,.0f}</td><td style='color:{_FIVE_X_COLOR.get(r.verdict, GREY)};font-weight:700;'>"
+            f"{r.verdict}</td></tr>" for r in eng.requirements)
+        st.markdown(
+            f"<div style='color:{CYAN};font-size:0.8rem;margin-top:8px;'>Vad krävs? (egen median-marginal "
+            f"{b.margin_q['median']:.1f} %, median {b.multiples['median']:g}× EV/EBITDA, {qc.VALUE_REQ_YEARS} år)</div>"
+            f"<div style='overflow-x:auto;'><table style='width:100%;font-size:0.78rem;color:{TEXT};"
+            f"text-align:right;'><tr style='color:{DIM};'><th style='text-align:left;'>Mål</th><th>Tillväxt som "
+            f"krävs</th><th>Omsättning M</th><th>Bedömning</th></tr>{req}</table></div>", unsafe_allow_html=True)
+        _note(f"JA = inom bolagets egen tillväxttakt · VILLKORAT = upp till {qc.VALUE_COND_GAP_PP:g} procentenheter "
+              f"över · NEJ = längre bort.")
+        mk = qc.VALUE_STRESS_MULTIPLES
+        srows = "".join(
+            f"<tr><td style='text-align:left;'>{_M_LABEL[key]} {m:.1f} %</td>" + "".join(
+                f"<td style='color:{_ratio_color(row[x][0])};'>{row[x][0]:.2f}×"
+                f"{'' if row[x][1] is None else f' · {row[x][1]:,.0f}'}</td>" for x in mk) + "</tr>"
+            for key, m, row in eng.stress)
+        st.markdown(
+            f"<div style='color:{CYAN};font-size:0.8rem;margin-top:8px;'>Stressmatris — marginal mot multipel "
+            f"(dagens omsättning · × börsvärdet · kurs {ccy})</div><div style='overflow-x:auto;'><table "
+            f"style='width:100%;font-size:0.78rem;color:{TEXT};text-align:right;'><tr style='color:{DIM};'>"
+            f"<th style='text-align:left;'>Marginal</th>" + "".join(f"<th>{x} {b.multiples[x]:g}×</th>" for x in mk)
+            + f"</tr>{srows}</table></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='color:{RED};font-size:0.8rem;margin-top:10px;'>☠️ VAD DÖDAR CASET?</div>",
+                    unsafe_allow_html=True)
+        for label, detail, measured in eng.killers:
+            tag = "" if measured else f" <span style='color:{DIM};'>(mäts inte automatiskt)</span>"
+            st.markdown(f"<div style='font-size:0.78rem;color:{TEXT};'>• <b>{label}</b> — {detail}{tag}</div>",
+                        unsafe_allow_html=True)
+        _note("Sannolikhet: UNKNOWN — killers listas ur uppmätta tal, ingen sannolikhet hittas på.")
 
 
 def _value(data: dict) -> None:
