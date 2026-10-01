@@ -163,12 +163,15 @@ def _load_ohlcv(ticker: str, period: str) -> pd.DataFrame:
         raise RuntimeError(f"Could not fetch OHLCV for {ticker}: {exc}") from exc
 
 
+SENTIMENT_UNAVAILABLE = {"score": None, "label": "DATA UNAVAILABLE", "available": False}
+
+
 @st.cache_data(ttl=1800, show_spinner=False)
 def _load_sentiment() -> dict:
-    if compute_sentiment is not None:
-        return compute_sentiment({}, {}, {}, {})
-    # Dummy fallback
-    return {"score": 50, "label": "Neutral"}
+    """Ingen riktig F&G-källa finns ännu för marknad/sektor. compute_sentiment
+    utan indata gav en konstant (48) som räknades som PASS i två grindar —
+    nu DATA UNAVAILABLE, som aldrig räknas som PASS (PR 2 bygger riktig data)."""
+    return dict(SENTIMENT_UNAVAILABLE)
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
@@ -192,18 +195,9 @@ def _load_sector_breadth() -> dict:
                     return result
         except Exception:
             pass
-    # Dummy fallback
-    return {
-        "Technology":   {"state": "bullish", "change": 1.2,  "weight": 20},
-        "Industrials":  {"state": "neutral",  "change": -0.3, "weight": 15},
-        "Financials":   {"state": "bullish", "change": 0.8,  "weight": 18},
-        "Health Care":  {"state": "neutral",  "change": 0.1,  "weight": 12},
-        "Consumer":     {"state": "bearish",  "change": -1.1, "weight": 10},
-        "Energy":       {"state": "bearish",  "change": -2.0, "weight": 8},
-        "Materials":    {"state": "neutral",  "change": 0.4,  "weight": 7},
-        "Utilities":    {"state": "neutral",  "change": -0.2, "weight": 5},
-        "Real Estate":  {"state": "bearish",  "change": -0.9, "weight": 5},
-    }
+    # Ingen riktig sektorbredd → tomt (DATA UNAVAILABLE). Här låg förut en
+    # påhittad tabell som visades i Sektor-fliken och fällde två grindar.
+    return {}
 
 
 # ------------------------------------------------------------------ #
@@ -563,7 +557,7 @@ def render_ovtlyr_page() -> None:
         try:
             sentiment = _load_sentiment()
         except Exception:
-            sentiment = {"score": 50, "label": "Neutral"}
+            sentiment = dict(SENTIMENT_UNAVAILABLE)
 
         # Sector breadth
         try:
@@ -571,12 +565,13 @@ def render_ovtlyr_page() -> None:
         except Exception:
             breadth_data = {}
 
-        # Determine sector_green from breadth (placeholder: True if >50% bullish)
+        # sector_green: True om > 50 % av sektorerna är bullish; None när
+        # bredddata saknas (DATA UNAVAILABLE — räknas aldrig som PASS)
         bullish_sectors = sum(
             1 for v in breadth_data.values()
             if isinstance(v, dict) and v.get("state") == "bullish"
         )
-        sector_green = bullish_sectors > len(breadth_data) / 2 if breadth_data else True
+        sector_green = bullish_sectors > len(breadth_data) / 2 if breadth_data else None
 
         # Advanced indicators
         vol_histogram = {}
@@ -723,8 +718,9 @@ def render_ovtlyr_page() -> None:
 
         gate_html = f'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">'
         for g in gates:
-            c = GREEN if g.get("passed") else RED
-            icon = "✓" if g.get("passed") else "✗"
+            unknown = g.get("status") == "DATA UNAVAILABLE"
+            c = DIM if unknown else GREEN if g.get("passed") else RED
+            icon = "?" if unknown else "✓" if g.get("passed") else "✗"
             short_rule = g.get("rule", "")[:30]
             gate_html += (
                 f'<div style="background:{BG2};border:1px solid {c};border-radius:4px;'
@@ -734,9 +730,13 @@ def render_ovtlyr_page() -> None:
                 f'</div>'
             )
         gate_html += f'</div>'
+        n_unknown = sum(1 for g in gates if g.get("status") == "DATA UNAVAILABLE")
         gate_html += (
             f'<div style="color:{gate_color};font-size:0.8rem;font-weight:700;">'
-            f'{passed}/{total} GATES PASSED</div>'
+            f'{passed}/{total} GATES PASSED'
+            + (f' <span style="color:{DIM};font-weight:400;">· {n_unknown} DATA UNAVAILABLE '
+               f'(räknas inte som PASS)</span>' if n_unknown else '')
+            + '</div>'
         )
         st.markdown(gate_html, unsafe_allow_html=True)
 
@@ -795,18 +795,28 @@ def render_ovtlyr_page() -> None:
         )
 
         # Sentiment card
-        s_score = int(sentiment.get("score", 50))
-        s_color = sentiment_color(s_score)
-        _indicator_card(
-            "Sentiment",
-            [
-                ("Fear & Greed", f"{s_score}/100",                  s_color),
-                ("Label",        sentiment.get("label", "—"),        s_color),
-                ("Rule 5 ok?",   "Yes" if s_score < 60 else "No ⚠",
-                 GREEN if s_score < 60 else RED),
-            ],
-            color=s_color,
-        )
+        if sentiment.get("score") is None:
+            _indicator_card(
+                "Sentiment",
+                [
+                    ("Fear & Greed", "DATA UNAVAILABLE", DIM),
+                    ("Label",        "räknas inte som PASS", DIM),
+                ],
+                color=DIM,
+            )
+        else:
+            s_score = int(sentiment.get("score", 50))
+            s_color = sentiment_color(s_score)
+            _indicator_card(
+                "Sentiment",
+                [
+                    ("Fear & Greed", f"{s_score}/100",                  s_color),
+                    ("Label",        sentiment.get("label", "—"),        s_color),
+                    ("Rule 5 ok?",   "Yes" if s_score < 60 else "No ⚠",
+                     GREEN if s_score < 60 else RED),
+                ],
+                color=s_color,
+            )
 
         # Momentum card
         rsi_val = float(momentum.get("rsi", 50))
@@ -1166,8 +1176,15 @@ def render_ovtlyr_page() -> None:
                         key="sltp_cap_ovtlyr_main",
                     )
                 with sltp_c2:
+                    # Risken läses ur Viking-motorn (1,5 %), som stopp-multipeln
+                    # ovan. Här stod förut 5 % → 530 aktier i stället för 159.
+                    try:
+                        from strategies.viking import DEFAULT_PARAMS as _VK_RISK
+                        _vk_risk_pct = float(_VK_RISK.get("risk_pct", 0.015)) * 100
+                    except Exception:
+                        _vk_risk_pct = 1.5
                     risk_ov = st.number_input(
-                        "Risk %", value=5.0, min_value=0.5, max_value=10.0,
+                        "Risk %", value=_vk_risk_pct, min_value=0.5, max_value=10.0,
                         step=0.5, key="sltp_risk_ovtlyr_main",
                     )
 
