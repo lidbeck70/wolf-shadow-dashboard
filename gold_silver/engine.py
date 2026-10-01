@@ -214,3 +214,21 @@ def above_ground_ratio(ref: dict = None) -> Optional[float]:
     """None när en sida saknas — då visas 'Partial data', aldrig en gissad kvot."""
     ref = ref or gc.REFERENCES["above_ground"]
     return ratio(ref.get("silver_t"), ref.get("gold_t"))
+
+
+
+# ── Silverbolagsscenarier (PR B) ─────────────────────────────────────────────
+def miner_price_points(gold, silver, scenarios=gc.MINER_SCENARIOS) -> list:
+    """[(namn, kvot, silverpris USD)] — BASE = dagens silver, övriga guld / kvot.
+    Kvoter som redan är nådda (≥ dagens) hoppas inte över: de visar nedsidan."""
+    cur = ratio(gold, silver)
+    out = []
+    for name, target in scenarios:
+        if target is None:
+            if cur is not None:
+                out.append((name, round(cur, 2), float(silver)))
+            continue
+        s = implied_silver(gold, target)
+        if s is not None:
+            out.append((name, float(target), round(s, 2)))
+    return out
