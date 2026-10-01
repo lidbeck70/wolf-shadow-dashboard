@@ -39,7 +39,7 @@ SUBS: dict = {
     # Beslutsunderlaget efter screeningen. Durrett har sitt ark
     # (data/confidence.json); Wolf Asymmetry har sitt eget med Confidence inbyggt.
     "review": ["Rick Rule", "Royalty C", "Poängmodell", "Tiggre", "Insider",
-               "🧭 Durrett", "🐺 Wolf Asymmetry", "🎯 Scorecard"],
+               "🧭 Durrett", "🐺 Wolf Asymmetry", "🚀 Råvaruhävstång", "🎯 Scorecard"],
     # REGIME delat i två: marknaden (index, sektorer, cykel) och råvarorna.
     "regime": ["Marknad", "Råvaror"],
     "regime/Marknad": ["Arc Regime", "Alpha Regime", "Swing Regime",
@@ -71,6 +71,7 @@ HOME_ZONES: tuple = (
         ("Poängmodell · Tiggre · Insider", "Sprott, Durrett-snabbpoäng, Lobo-arket, insynsflödet"),
         ("🧭 Durrett", "Durretts 10 steg med Håven och eget ark"),
         ("🐺 Wolf Asymmetry", "En sida per bolag: hävstång, margin of safety, confidence, stressmatris, justerad uppsida"),
+        ("🚀 Råvaruhävstång", "Bolagens hävstång mot sin råvara: resultat, kursbeta upp/ned och 5× — jämför upp till åtta"),
         ("🎯 Scorecard", "Köpgrinden: sju kryss före ordern"),
     ]),
     ("intel", "INTELLIGENCE — TOLKA SIGNALERNA", [
