@@ -172,10 +172,34 @@ def survival(d: dict) -> Group:
 
 
 # ── Margin of Safety ────────────────────────────────────────────────────────
-def margin_of_safety(d: dict) -> Group:
+def _margin_vs_history(d: dict) -> Pillar:
+    """Värdeläget: dagens EBITDA-marginal mot bolagets egen median — en marginal
+    under det normala är mindre säkerhetsmarginal (verksamheten har försämrats)."""
+    label = "Marginal mot egen historik"
+    rev = {int(y): _n(v) for y, v in (d.get("revenue_series") or []) if _n(v)}
+    eb = {int(y): _n(v) for y, v in (d.get("ebitda_series") or []) if _n(v) is not None}
+    margins = [eb[y] / rev[y] * 100 for y in sorted(set(rev) & set(eb)) if rev[y] > 0]
+    if len(margins) < qc.MIN_HISTORY:
+        return _gap("margin_hist", label, f"marginalhistorik saknas (< {qc.MIN_HISTORY} år)")
+    med = median(margins)
+    cur = _n(d.get("ebitda_margin_pct"))
+    cur = margins[-1] if cur is None else cur
+    if med <= 0:
+        return _gap("margin_hist", label, "medianmarginalen ≤ 0")
+    ratio = cur / med
+    g, a = qc.MARGIN_VS_MEDIAN
+    return Pillar("margin_hist", label, "GREEN" if ratio >= g else "AMBER" if ratio >= a else "RED",
+                  f"{cur:.1f} % mot median {med:.1f} %",
+                  f"EBITDA-marginal nu mot egen median ({len(margins)} år) · ≥ {g:.0%} av medianen grönt, "
+                  f"≥ {a:.0%} gult")
+
+
+def margin_of_safety(d: dict, mode: Optional[str] = None) -> Group:
     g = Group("mos", "Margin of Safety")
     em = _n(d.get("ebitda_margin_pct"))
-    if em is None:
+    if mode == qc.MODE_VALUE:
+        g.pillars.append(_margin_vs_history(d))
+    elif em is None:
         g.pillars.append(_gap("buffer", "Prisbuffert", "EBITDA-marginal saknas"))
     else:
         g.pillars.append(Pillar("buffer", "Prisbuffert", "RED" if em <= 0 else _higher(em, qc.PRICE_BUFFER_PCT),
@@ -316,8 +340,10 @@ def confidence(d: dict) -> Group:
 
 
 # ── Totalt ───────────────────────────────────────────────────────────────────
-def score(d: dict) -> QuickResult:
-    groups = [survival(d), margin_of_safety(d), confidence(d)]
+def score(d: dict, mode: Optional[str] = None) -> QuickResult:
+    """mode: qc.MODE_VALUE byter Prisbufferten mot marginal mot egen historik;
+    annat (råvaruläget) som förut."""
+    groups = [survival(d), margin_of_safety(d, mode), confidence(d)]
     scores = {g.label: g.score for g in groups}
     reasons = []
     if any(v is None for v in scores.values()):

@@ -98,3 +98,26 @@ KILL_EV_PREMIUM_PCT = 10.0         # "värderingen redan hög" först när nuvar
 # egna multipeln i stället för 25:e percentilen, och en killer läggs till.
 CYCLE_TOP_PCTL = 75.0
 BEAR_AT_TOP_MULTIPLE = "min"
+
+# ── Värdeläget (icke-råvarubolag) — utanför 300 ──────────────────────────────
+# Asymmetrin kommer ur bolagets egen historik: omvärdering (multipel mot egen
+# median), marginalåterhämtning (EBITDA-marginal mot egen median) och tillväxt.
+MODE_AUTO, MODE_COMMODITY, MODE_VALUE = "Auto", "Råvara", "Värde"
+# Teman som gör ett bolag till ett råvarubolag (ember THEME_TO_COMPLEX-nycklar)
+COMMODITY_THEMES = ("guld", "silver", "koppar", "sallsynta", "uran", "olja", "naturgas", "kol", "agri",
+                    "platina", "palladium", "vete", "kaffe", "kakao", "skog")
+VALUE_MIN_YEARS = 5                # minst så många år med omsättning och EBITDA
+# Börsdatas branscher där EBITDA inte bär värderingen (banker, nischbanker,
+# kredit, investmentbolag, försäkring, fastighet) → DATA_GAP med förklaring
+FINANCIAL_BRANCH_IDS = (68, 69, 70, 73, 74, 75, 76)
+FINANCIAL_KEYWORDS = ("bank", "insurance", "reit", "real estate", "credit services", "mortgage")
+# Margin of Safety-kortet i värdeläget: dagens marginal mot egen median
+MARGIN_VS_MEDIAN = (0.9, 0.7)      # ≥ 90 % av medianen grönt, ≥ 70 % gult
+# Värdefälle-kontroller (ur uppmätta tal)
+TRAP_REVENUE_CAGR_3Y = 0.0         # krympande omsättning tre år
+TRAP_MARGIN_SLOPE_YEARS = 5        # marginaltrend över så många år
+TRAP_ROIC_MIN = 8.0                # median-ROIC under detta = förstör troligen kapital
+TRAP_ND_EBITDA = 2.5
+TRAP_DILUTION_3Y = 10.0
+# Tillväxt i scenarierna: egen CAGR, kapad
+GROWTH_CAP = (-0.10, 0.30)
