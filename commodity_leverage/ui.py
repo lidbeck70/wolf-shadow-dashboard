@@ -85,11 +85,14 @@ def _comparison(rows: list) -> None:
     def beta_cell(r):
         b = r.beta
         if b is None:
-            return f"<td style='color:{GREY};'>DATA_GAP</td><td>—</td>"
+            return f"<td style='color:{GREY};'>DATA_GAP</td><td>—</td><td>—</td>"
         updn = ("—" if b.up_beta is None or b.down_beta is None else
                 f"{b.up_beta:.1f}× / {b.down_beta:.1f}×{' ⬆' if b.asymmetric else ''}")
+        mv, basis = cb.stock_move(b)
         return (f"<td style='color:{AMBER if b.weak else TEXT};'>{b.beta:.2f}×<br><span style='color:{DIM};"
-                f"font-size:0.68rem;'>R² {b.r2:.2f}</span></td><td>{updn}</td>")
+                f"font-size:0.68rem;'>R² {b.r2:.2f}</span></td><td>{updn}</td>"
+                f"<td style='color:{RED if mv <= -40 else AMBER if mv <= -20 else TEXT};'>≈ {mv:+.0f} %<br>"
+                f"<span style='color:{DIM};font-size:0.68rem;'>{basis}</span></td>")
 
     def five_cell(r):
         e = r.eng
@@ -101,11 +104,17 @@ def _comparison(rows: list) -> None:
         f"<tr><td style='text-align:left;'><b>{r.ticker}</b><br><span style='color:{DIM};font-size:0.68rem;'>"
         f"{(r.name or '')[:22]}</span></td><td>{(r.commodity or '—').capitalize()}{' 🔒' if r.locked else ''}</td>"
         + lev_cell(r) + beta_cell(r) + five_cell(r) + "</tr>" for r in rows)
-    head = "".join(f"<th>{h}</th>" for h in ("Råvara", "Resultat-<br>hävstång", "Break-even", "Nedsida",
-                                             "Kursbeta", "Upp / ned", "5×"))
+    shock = f"{cc.STOCK_SHOCK_PCT:+.0f} %".replace("-", "−")
+    head = "".join(f"<th>{h}</th>" for h in ("Råvara", "Resultat-<br>hävstång", "Break-even",
+                                             "Verksamhetens<br>nedsida", "Kursbeta", "Upp / ned",
+                                             f"Aktien vid<br>råvara {shock}", "5×"))
     st.markdown(f"<div style='overflow-x:auto;'><table style='width:100%;font-size:0.78rem;color:{TEXT};"
                 f"text-align:right;'><tr style='color:{DIM};'><th style='text-align:left;'>Bolag</th>{head}</tr>"
                 f"{body}</table></div>", unsafe_allow_html=True)
+    note("Verksamhetens nedsida gäller BOLAGET, inte aktien: STARK = FCF (annars EBITDA) positivt även vid "
+         "råvara −30 %, MÅTTLIG = vid −20 % men inte −30 %, SKÖR = negativt redan vid −20 % — bolaget klarar "
+         "sig utan nyemission. Aktien kan ändå falla mycket: \"Aktien vid råvara −30 %\" = kursbeta (i "
+         "nedveckor när det finns) × −30 %, en grov historisk uppskattning, ingen prognos.")
     note("Resultathävstång = hur mycket FCF (annars EBITDA) rör sig när råvaran stiger 20 %, ur bolagets egna "
          "år (Snabbkollens motor). Kursbeta = hur mycket aktien rört sig per 1 % i råvaran, veckovis, "
          f"{cc.BETA_YEARS} år. Upp/ned = beta i veckor då råvaran steg respektive föll; ⬆ = följer med mer upp "
@@ -125,7 +134,9 @@ def _detail(r: ce.CompanyLeverage) -> None:
         c2.markdown(big_card("BREAK-EVEN", "—", "kräver resultathävstång", GREY), unsafe_allow_html=True)
     else:
         c1.markdown(big_card("RESULTATHÄVSTÅNG", f"{lev.score}/10",
-                             f"{r.commodity} +20 % → {lev.basis} {lev.response_pct:+.0f} % · {lev.flag}",
+                             f"{r.commodity} +20 % → {lev.basis} {lev.response_pct:+.0f} % · {lev.flag} "
+                             f"(FCF/EBITDA vid −20/−30 %: " + " / ".join(f"{v:,.0f} M" for v in lev.downside.values())
+                             + ")",
                              _FLAG_COLOR.get(lev.downside_label, GREY)), unsafe_allow_html=True)
         if lev.break_even_margin_pct is None:
             c2.markdown(big_card("BREAK-EVEN", "—", f"{lev.band} · {lev.break_even_note}", GREY),
@@ -138,8 +149,10 @@ def _detail(r: ce.CompanyLeverage) -> None:
     if b is None:
         c3.markdown(big_card("KURSBETA", "—", f"DATA_GAP: {r.beta_error}", GREY), unsafe_allow_html=True)
     else:
+        mv, basis = cb.stock_move(b)
         sub = (f"upp {b.up_beta:.1f}× · ned {b.down_beta:.1f}×" if b.up_beta is not None and b.down_beta is not None
-               else "för få upp-/nedveckor") + f" · R² {b.r2:.2f} · {b.weeks} veckor"
+               else "för få upp-/nedveckor") + f" · R² {b.r2:.2f} · {b.weeks} veckor · aktien vid " \
+              f"{r.commodity} {cc.STOCK_SHOCK_PCT:+.0f} % ≈ {mv:+.0f} % ({basis})"
         c3.markdown(big_card("KURSBETA", f"{b.beta:.2f}×", sub + (" · ⬆ asymmetri" if b.asymmetric else ""),
                              AMBER if b.weak else CYAN), unsafe_allow_html=True)
 

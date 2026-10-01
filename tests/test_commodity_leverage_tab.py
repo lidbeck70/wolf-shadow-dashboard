@@ -138,8 +138,23 @@ def test_tab_compares_and_details(monkeypatch):
     assert not at.exception, at.exception
     html = " ".join(m.value for m in at.markdown)
     assert "JÄMFÖRELSE" in html and "8/10" in html and "⬆" in html and ">NEJ<" in html
+    assert "Verksamhetens<br>nedsida" in html and "Aktien vid<br>råvara −30 %" in html and "ned-beta" in html
+    assert "gäller BOLAGET, inte aktien" in html
     assert "RESULTATHÄVSTÅNG" in html and "KURSBETA" in html and "Valt pris" in html
     assert any("VECKOAVKASTNING" in ch.proto.spec for ch in at.get("plotly_chart"))
     at.slider(key="cl_pct_AAA").set_value(50).run()
     assert not at.exception, at.exception
     assert "+50 %" in " ".join(m.value for m in at.markdown)
+
+
+def test_stock_move_uses_the_down_beta_on_a_fall():
+    s, c = _pair(2.5, 1.2)
+    b, _ = cb.stock_beta(s, c)
+    assert cb.stock_move(b) == (-36.0, "ned-beta 1.20×")                  # −30 % × 1,2
+    assert cb.stock_move(b, 20.0) == (50.0, "upp-beta 2.50×")
+    b.down_beta = None
+    mv, basis = cb.stock_move(b)
+    assert basis.startswith("beta ") and mv == round(b.beta * -30, 0)
+    b.down_beta = 5.0
+    assert cb.stock_move(b)[0] == -100.0                                  # golv
+    assert cb.stock_move(None) == (None, "")
