@@ -1096,7 +1096,8 @@ _PANEL_GUIDE: list[tuple] = [
      "som guld ÷ råvara, Dow och S&P 500 som index ÷ guld. Översikt över alla kvoter "
      "mot egen historik, sedan per par: historik (1–20 år, percentiler), pris per "
      "kvot och matrisen. Referens = kvotens egen median, målkvoter = egna percentiler "
-     "— inget fair value."),
+     "— inget fair value. Bolag kan köras genom Snabbkollens motor per kvotscenario "
+     "(råvarorna, inte Brent eller index)."),
     ("SCREENING → Swing Screener", "Momentum: entry #2, #3",
      "Färdig momentum-ranking topp 40 med setup-flaggor A/B och RSI. "
      "'→ Bevakning' skickar kandidaten till Swing-fliken."),

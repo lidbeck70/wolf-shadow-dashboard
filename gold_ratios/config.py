@@ -61,3 +61,8 @@ ANCHOR_GRID = (0.75, 1.0, 1.25, 1.5, 2.0)
 # För guld ÷ råvara betyder lägre kvot dyrare råvara: P90 = svag råvara, P10 = stark.
 MINER_SCENARIOS = (("BASE", None), ("SVAG (P90)", "p90"), ("MEDIAN", "median"),
                    ("STARK (P25)", "p25"), ("MYCKET STARK (P10)", "p10"))
+
+# Exempel i tickerfältet per tema (bara platshållartext)
+MINER_EXAMPLES = {"platina": "SBSW, IMP.JO, PLG", "palladium": "SBSW, NILSY", "koppar": "FCX, BOL.ST, LUN.TO",
+                  "olja": "EQNR.OL, XOM, VAR.OL", "naturgas": "EQT, AR, TOU.TO", "vete": "ADM, BG",
+                  "kaffe": "SJM, NSRGY", "kakao": "BARN.SW, HSY"}
