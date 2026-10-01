@@ -301,9 +301,9 @@ def _matrix(pair: dict, num, targets: list, ref: float) -> None:
     num_name, den_name = _names(pair)
     _section(f"💥 {num_name.upper()} × KVOT", f"{den_name.lower()}priset för varje par")
     grid = gre.anchor_grid(num)
-    rows = ge.matrix(grid, sorted(set(targets), reverse=True))
+    rows = ge.matrix(grid, sorted(set(targets), reverse=True)) if targets else []
     if not rows:
-        note(f"Kräver {'ett guldpris' if is_c else 'en indexnivå'} > 0.")
+        note(f"Kräver {'ett guldpris' if is_c else 'en indexnivå'} > 0 och minst en målkvot.")
         return
     ratios = list(rows[0][1])
     head = "".join(f"<th>{_fmt(r)}{' ⓡ' if abs(r - ref) < 1e-9 else ''}</th>" for r in ratios)

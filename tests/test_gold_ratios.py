@@ -156,6 +156,11 @@ def test_page_renders_overview_and_pairs(monkeypatch):
     at.number_input(key="gr_gold_dow").set_value(8800.0).run()
     html = " ".join(m.value for m in at.markdown)
     assert ">5.00<" in html and "egen inmatning · ASSUMPTION" in html
+    # par utan data: sidan står, inga målkvoter, ingen matris
+    at.selectbox(key="gr_pair").set_value("naturgas").run()
+    assert not at.exception, at.exception
+    html = " ".join(m.value for m in at.markdown)
+    assert "saknas just nu" in html and "Historik saknas" in html and "minst en målkvot" in html
 
 
 def test_navigation_and_guide():
