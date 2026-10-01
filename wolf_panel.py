@@ -243,6 +243,13 @@ try:
 except ImportError:
     GOLD_SILVER_AVAILABLE = False
 
+# Guldkvoter (REGIME → Råvaror) — råvaror och index mätta i guld
+try:
+    from gold_ratios.ui import render_gold_ratios_page
+    GOLD_RATIOS_AVAILABLE = True
+except ImportError:
+    GOLD_RATIOS_AVAILABLE = False
+
 # Portföljallokeraren (Masterguiden Del 2)
 try:
     from allocator import render_allocator_page
@@ -449,6 +456,8 @@ def main():
                     _page(ROTATION_AVAILABLE, render_rotation_page, "Råvarurotationen", "rotation")
                 elif sub == "🥇🥈 Guld/Silver":
                     _page(GOLD_SILVER_AVAILABLE, render_gold_silver_page, "Guld/Silver", "gold_silver")
+                elif sub == "🥇 Guldkvoter":
+                    _page(GOLD_RATIOS_AVAILABLE, render_gold_ratios_page, "Guldkvoter", "gold_ratios")
 
     # ── INTELLIGENCE ─────────────────────────────────────────────────────────
     if _is_open(tabs["intel"]):
