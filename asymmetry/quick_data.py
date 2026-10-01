@@ -321,6 +321,9 @@ def fetch(ticker: str, api=None, price_getter: Optional[Callable] = None,
             d["revenue_series"] = _kpi_hist(api, iid, 53) or [
                 (int(r["year"]), _n(r.get("revenues"))) for r in years if _n(r.get("revenues")) is not None]
             d["ebitda_series"] = _kpi_hist(api, iid, 54)
+            # Värdeläget: ROIC per år (KPI 37, %) och Börsdatas bransch/sektor-id
+            d["roic_series"] = _kpi_hist(api, iid, 37)
+            d["bd_branch_id"], d["bd_sector_id"] = inst.get("branchId"), inst.get("sectorId")
             if not d["ebitda_series"] and d["revenue_series"]:
                 # reserv: EBITDA-marginal (KPI 32, %) × omsättning samma år
                 marg = dict(_kpi_hist(api, iid, 32))
@@ -334,6 +337,7 @@ def fetch(ticker: str, api=None, price_getter: Optional[Callable] = None,
         logger.debug("yahoo info %s: %s", yf_sym, exc)
         info = {}
     if info:
+        d["sector_text"] = " ".join(str(info.get(k) or "") for k in ("sector", "industry")).strip()
         if not d.get("source"):
             d["source"] = "Yahoo"
             d["name"] = info.get("longName") or info.get("shortName") or t

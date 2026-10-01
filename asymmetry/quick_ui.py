@@ -56,12 +56,24 @@ def render_quick(add_to_sheet=None) -> None:
     if not data.get("prices") and data.get("source") in ("—", "", None):
         st.warning(f"Hittade inget för {t} i Börsdata eller Yahoo. Kontrollera tickern (t.ex. suffix .ST, .OL, .TO).")
         return
-    res = quick.score(data)
+    from asymmetry import quick_value as qv
+    detected = qv.detect_mode(data)
+    pick = st.radio("Läge", [qc.MODE_AUTO, qc.MODE_COMMODITY, qc.MODE_VALUE], horizontal=True,
+                    key="asym_quick_mode",
+                    help="Auto = Råvara när bolaget har ett råvarutema, annars Värde (omvärdering, marginal, "
+                         "tillväxt).")
+    mode = detected if pick == qc.MODE_AUTO else pick
+    _note(f"Läge: <b>{mode}</b>" + (f" (automatiskt — {'råvarutema ' + (data.get('commodity_px') or {}).get('commodity', '') if detected == qc.MODE_COMMODITY else 'inget råvarutema'})"
+                                    if pick == qc.MODE_AUTO else " (valt)"))
+    res = quick.score(data, mode)
     _score_card(res, data)
     _gauges(res)
     _volatility(res)
-    lev = _leverage(data)
-    _engine(data, lev)
+    if mode == qc.MODE_VALUE:
+        _value(data)
+    else:
+        lev = _leverage(data)
+        _engine(data, lev)
     _charts(data)
     extra = []
     if data.get("filled_yahoo"):
@@ -214,6 +226,45 @@ def _leverage(data: dict):
 
 
 _FIVE_X_COLOR = {"JA": GREEN, "VILLKORAT": AMBER, "NEJ": RED}
+
+
+def _value(data: dict) -> None:
+    """📈 Värdedrivare + ⚠️ värdefälla? — värdeläget, utanför 300."""
+    from asymmetry import quick_value as qv
+    vr = qv.analyze(data)
+    st.markdown(f"<div style='color:{CYAN};font-family:Courier New;letter-spacing:2px;font-size:0.8rem;"
+                f"margin:10px 0 4px;'>📈 VÄRDEDRIVARE <span style='color:{DIM};letter-spacing:0;'>"
+                f"— omvärdering, marginal, tillväxt ur egen historik, räknas inte i 300</span></div>",
+                unsafe_allow_html=True)
+    if vr.error:
+        st.markdown(_metric_card("VÄRDEDRIVARE", "—", f"DATA_GAP: {vr.error}", GREY), unsafe_allow_html=True)
+        return
+    cols = st.columns(2)
+    for i, dv in enumerate(vr.drivers):
+        if dv.key == "growth":
+            big = "—" if dv.upside_pct is None else f"{dv.upside_pct:+.1f} %/år"
+            color = GREY if dv.upside_pct is None else GREEN if dv.upside_pct > 3 else AMBER if dv.upside_pct >= 0 else RED
+        else:
+            big = f"{dv.upside_pct:+.0f} %"
+            color = GREEN if dv.upside_pct >= 30 else CYAN if dv.upside_pct >= 0 else RED
+        cols[i % 2].markdown(_metric_card(dv.label.upper(), big, f"{dv.note}", color), unsafe_allow_html=True)
+    with st.expander("Hur drivarna räknas — och ⚠️ värdefälla?"):
+        b = vr.base
+        _note(f"Underlag {b.years}: omsättning {b.revenue:,.0f} M, EBITDA nu {b.ebitda:,.0f} M ({b.margin:.1f} %), "
+              f"egen marginal min {b.margin_q['min']:.1f} · P25 {b.margin_q['p25']:.1f} · median "
+              f"{b.margin_q['median']:.1f} · P75 {b.margin_q['p75']:.1f} %, egen EV/EBITDA median "
+              f"{b.multiples['median']:g}×, nettoskuld {b.net_debt:,.0f} M, börsvärde {b.mcap:,.0f} M "
+              f"{b.report_ccy} ({b.mcap_note}).")
+        for dv in vr.drivers:
+            _note(f"<b>{dv.label}</b>: {dv.formula}"
+                  + ("" if dv.ratio is None else f" = <b>{dv.ratio:.2f}×</b> börsvärdet ({dv.upside_pct:+.0f} %)"))
+        st.markdown(f"<div style='color:{AMBER};font-size:0.8rem;margin-top:8px;'>⚠️ VÄRDEFÄLLA?</div>",
+                    unsafe_allow_html=True)
+        for t in vr.traps:
+            icon = "⚪" if t.flagged is None else "🔴" if t.flagged else "🟢"
+            st.markdown(f"<div style='font-size:0.78rem;color:{TEXT};'>{icon} <b>{t.label}</b> — {t.detail}</div>",
+                        unsafe_allow_html=True)
+        _note("Billigt är ofta billigt av ett skäl. Kontrollerna läses ur bolagets egna tal — ⚪ = kan inte mätas.")
 
 
 def _ratio_color(r: float) -> str:

@@ -230,7 +230,8 @@ def test_quick_tab_renders_card_gauges_cards_and_charts(monkeypatch):
                 ev_ebitda_series=[(2020 + i, v) for i, v in enumerate(good["ev_ebitda_hist"])],
                 shares_series=[(2020 + i, 273.5) for i in range(6)],
                 fcf_series=[(2020 + i, 1000.0 * i - 1500) for i in range(6)], yf_ticker="BOL.ST",
-                fetched="2026-09-29 18:00 UTC", filled_yahoo=["current_ratio"])
+                fetched="2026-09-29 18:00 UTC", filled_yahoo=["current_ratio"],
+                commodity_px={"commodity": "koppar", "ticker": "HG=F", "prices": {}, "p0": None})   # råvaruläget
     calls = []
     monkeypatch.setattr(quick_data, "fetch", lambda t, **kw: calls.append(t) or dict(good, ticker=t))
     stores = {"confidence": cs.default()}
