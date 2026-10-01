@@ -121,3 +121,15 @@ TRAP_ND_EBITDA = 2.5
 TRAP_DILUTION_3Y = 10.0
 # Tillväxt i scenarierna: egen CAGR, kapad
 GROWTH_CAP = (-0.10, 0.30)
+
+# ── 5×-motorn för värde (PR 2) ───────────────────────────────────────────────
+# (namn, marginal, multipel, år av egen tillväxt, jämförelse med dagens marginal).
+# Marginal: "now" = dagens, annars kvantil ur egen historik; "min" tar det
+# sämre av kvantilen och dagens (bear får aldrig bättre marginal än i dag),
+# "max" det bättre (bull antar aldrig sämre). Multipel ur own_multiples.
+VALUE_SCENARIOS = (("BEAR", "p25", "low", 0, "min"), ("BASE", "now", "median", 0, None),
+                   ("BULL", "median", "median", 3, "max"), ("SUPER BULL", "p75", "high", 5, "max"))
+VALUE_REQ_YEARS = 5                # 2×/3×/5×/10× baklänges: tillväxt som krävs över så många år
+VALUE_COND_GAP_PP = 5.0            # VILLKORAT: krävd tillväxt högst så många procentenheter över egen
+VALUE_STRESS_MARGINS = ("min", "p25", "median", "p75", "max")
+VALUE_STRESS_MULTIPLES = ("low", "median", "high")
