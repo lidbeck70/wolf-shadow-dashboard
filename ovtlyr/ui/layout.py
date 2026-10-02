@@ -261,21 +261,65 @@ def _sector_of(ticker: str):
         return None
 
 
+def _stock_frame(df: pd.DataFrame, min_bars: int = 60):
+    """Sidans df (Date-kolumn) som OHLCV med DatetimeIndex, eller None."""
+    if df is None or "Date" not in df.columns or len(df) < min_bars:
+        return None
+    stock = df.set_index(pd.to_datetime(df["Date"]))[["Open", "High", "Low", "Close", "Volume"]]
+    if getattr(stock.index, "tz", None) is not None:
+        stock.index = stock.index.tz_localize(None)
+    return stock
+
+
 def _load_nine(ticker: str, df: pd.DataFrame, ob_analysis: dict):
     """OVTLYR Nine på riktiga priser (SPY, sektor-ETF:er, aktien) — None vid fel,
     då sidan faller tillbaka på de gamla proxyerna."""
     try:
         import ovtlyr_nine as _on
-        stock = None
-        if df is not None and "Date" in df.columns and len(df) >= _on.MIN_BARS:
-            stock = df.set_index(pd.to_datetime(df["Date"]))[["Open", "High", "Low", "Close", "Volume"]]
-            if getattr(stock.index, "tz", None) is not None:
-                stock.index = stock.index.tz_localize(None)
+        stock = _stock_frame(df, _on.MIN_BARS)
         return _on.evaluate(ticker, stock_df=stock, ob_analysis=ob_analysis, sector_getter=_sector_of)
     except Exception as exc:
         import logging as _lg
         _lg.getLogger(__name__).warning("OVTLYR Nine: %s", exc)
         return None
+
+
+def _render_viking_execution(ticker: str, df: pd.DataFrame, nine, ob_analysis: dict) -> None:
+    """VIKING EXECUTION · RISK ENGINE · FINAL DECISION (viking_execution.py)."""
+    try:
+        import viking_execution as _vx
+        from ovtlyr.ui.execution_card import render_execution
+    except ImportError:
+        return
+    st.markdown(
+        f"<div style='color:{CYAN};font-size:0.7rem;text-transform:uppercase;letter-spacing:0.1em;"
+        f"margin:14px 0 6px 0;'>VIKING EXECUTION · RISK ENGINE · FINAL DECISION</div>",
+        unsafe_allow_html=True)
+    _c1, _c2 = st.columns(2)
+    capital = _c1.number_input("Kapital (SEK)", min_value=0.0, value=100000.0, step=10000.0, key="vx_capital")
+    max_pos = _c2.number_input("Max position (% av kapitalet)", min_value=5.0, max_value=100.0,
+                               value=float(_vx.MAX_POSITION_PCT), step=5.0, key="vx_max_pos")
+    frame = _stock_frame(df)
+    earnings_date = None
+    try:
+        from earnings_calendar import _fetch_earnings_date
+        earnings_date = (_fetch_earnings_date(ticker) or {}).get("date")
+    except Exception:
+        earnings_date = None
+    trades = []
+    try:
+        from trade_journal import load_journal
+        trades = load_journal()
+    except Exception:
+        trades = []
+    try:
+        decision = _vx.evaluate_entry(ticker, frame, nine=nine, capital=capital, ob_analysis=ob_analysis,
+                                      earnings_date=earnings_date, earnings_known=earnings_date is not None,
+                                      trades=trades, max_position_pct=max_pos)
+    except Exception as exc:
+        st.warning(f"Viking Execution kunde inte räknas: {exc}")
+        return
+    render_execution(decision)
 
 
 def _fetch_etf_data_for_bull_list():
@@ -776,6 +820,9 @@ def render_ovtlyr_page() -> None:
             st.markdown(gate_html, unsafe_allow_html=True)
 
 
+    # VIKING EXECUTION · RISK ENGINE · FINAL DECISION — setup (Nine) ≠ entry
+    _render_viking_execution(ticker, df, nine, ob_analysis)
+
     # ── MIDDLE ROW ────────────────────────────────────────────────────
     mid_left, mid_right = st.columns([7, 3])
 
@@ -1190,6 +1237,13 @@ def render_ovtlyr_page() -> None:
                     abs(_low - _close.shift(1)),
                 ], axis=1).max(axis=1)
                 _atr = float(_tr.rolling(14).mean().dropna().iloc[-1])
+                # Samma ATR som riskmotorn (Wilder, viking_execution.atr) så att
+                # kalkylatorn och RISK ENGINE inte visar olika stopp.
+                try:
+                    import viking_execution as _vx_calc
+                    _atr = float(_vx_calc.atr(pd.DataFrame({"High": _high, "Low": _low, "Close": _close})).iloc[-1])
+                except Exception:
+                    _vx_calc = None
                 # Stop multiplier is read from the Viking engine so this
                 # calculator can't disagree with the strategy. It used to be a
                 # hardcoded ½ ATR while viking.py traded 1.5× ATR — a 3×
@@ -1210,7 +1264,7 @@ def render_ovtlyr_page() -> None:
                 sltp_c1, sltp_c2 = st.columns(2)
                 with sltp_c1:
                     capital_ov = st.number_input(
-                        "Kapital (SEK)", value=100000, step=10000,
+                        "Kapital (SEK)", value=int(st.session_state.get("vx_capital", 100000)), step=10000,
                         key="sltp_cap_ovtlyr_main",
                     )
                 with sltp_c2:
@@ -1228,6 +1282,12 @@ def render_ovtlyr_page() -> None:
 
                 _risk_amount = capital_ov * (risk_ov / 100)
                 _shares = int(_risk_amount / _sl_dist) if _sl_dist > 0 else 0
+                # Exponeringstaket från riskmotorn gäller även här
+                if _vx_calc is not None and _price > 0:
+                    _cap = int(capital_ov * float(st.session_state.get("vx_max_pos", _vx_calc.MAX_POSITION_PCT))
+                               / 100 / _price)
+                    _shares = min(_shares, _cap)
+                    _risk_amount = _shares * _sl_dist
                 _pos_value = _shares * _price
                 _pos_pct = (_pos_value / capital_ov * 100) if capital_ov > 0 else 0
 

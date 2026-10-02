@@ -1068,6 +1068,8 @@ _PANEL_GUIDE: list[tuple] = [
     ("REGIME → Marknad → Arc Regime → Viking Regime", "Viking: OVTLYR Nine + Viking Execution-filter",
      "OVTLYR Nine (Market 40 % · Sector 30 % · Stock 30 %) på riktiga priser för SPY, "
      "sektor-ETF:er och aktien — WOLF APPROXIMATION, saknad data räknas aldrig som PASS. "
+     "Viking Execution + riskmotor → GOLDEN TICKET / WAIT / NO TRADE (1,5 % risk, 1,5 × ATR, "
+     "R/R ≥ 2, no chase 2 %, rapportspärr 5 dagar, max 2 förluster per dag). "
      "Prisgraf + EMA 10/20/50/200 + Order Blocks. Per-ticker Fear & Greed. "
      "Overhead Clusters. SL/TP-kalkylator."),
     ("REGIME → Marknad → Alpha Regime → Quality & Contrarian",
