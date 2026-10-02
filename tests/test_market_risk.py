@@ -127,3 +127,48 @@ def test_evaluate_with_getters():
     assert r2.possible == 8 and all(s["key"] != "breadth_div" for s in r2.signals)
     gone = mr.evaluate("SPY", getter=lambda t, p: None, fred_getter=lambda s: None)
     assert "DATA UNAVAILABLE" in gone.error
+
+
+# ── Börsdata (OMXS30) ────────────────────────────────────────────────────────
+class _FakeBD:
+    """Börsdata: indexet 'OMX Stockholm 30' (marknad 7) och 40 Large Cap-aktier (marknad 1)."""
+
+    def __init__(self, with_index=True, stocks=40):
+        self.ins = ([{"insId": 1, "name": "OMX Stockholm 30", "ticker": "OMXS30", "marketId": 7}] if with_index else [])
+        self.ins += [{"insId": 100 + k, "name": f"Bolag {k}", "ticker": f"B{k}", "marketId": 1} for k in range(stocks)]
+        self.ins += [{"insId": 999, "name": "Småbolag", "ticker": "SM", "marketId": 3}]
+        self.calls = []
+
+    def get_instruments(self):
+        return self.ins
+
+    def get_stockprices_df(self, ins_id, max_count=0):
+        self.calls.append(ins_id)
+        s = _walk(0.0004, 0.012, seed=ins_id)
+        return pd.DataFrame({"Close": s})
+
+
+def test_stocks_breadth_pct():
+    up, down = _px(np.linspace(100, 200, 300)), _px(np.linspace(200, 100, 300))
+    pct = mr.stocks_breadth_pct({"A": up, "B": up, "C": down, "D": down}, min_stocks=4)
+    assert pct.iloc[-1] == 50.0 and pct.index[0] == up.index[50]
+    assert mr.stocks_breadth_pct({"A": up}, min_stocks=4) is None
+
+
+def test_omxs30_from_borsdata_with_large_cap_breadth():
+    _idx, d = _data(crash=True)
+    bd = _FakeBD()
+    r = mr.evaluate("OMXS30", getter=lambda t, p: d.get(t), fred_getter=lambda s: d.get(s), bd_api=bd)
+    assert r.error is None and r.source.startswith("Börsdata · OMX Stockholm 30")
+    assert "40 Large Cap-aktier" in r.breadth_source and r.possible == 9
+    assert any(s["key"] == "breadth_div" for s in r.signals)
+    assert 999 not in bd.calls                                         # bara marknad 1
+
+
+def test_omxs30_falls_back_to_yahoo_and_reports_why():
+    _idx, d = _data(crash=True)
+    omx = dict(d, **{"^OMX": d["SPY"]})
+    r = mr.evaluate("OMXS30", getter=lambda t, p: omx.get(t), fred_getter=lambda s: omx.get(s),
+                    bd_api=_FakeBD(with_index=False, stocks=5))
+    assert r.error is None and "Yahoo Finance ^OMX (reserv" in r.source
+    assert "för få aktier" in r.breadth_source and r.possible == 8

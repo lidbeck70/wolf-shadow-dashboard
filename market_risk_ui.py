@@ -100,7 +100,8 @@ def render_market_risk_page() -> None:
     note("Gränserna är satta i förväg och inte optimerade mot historiken. Varningarna använder bara data fram "
          "till varje dag; målet tittar framåt per definition. Nedgångar är få — läs alltid antalet fall. "
          "Använd nivån som riskspärr (färre nya affärer, mindre positioner, tätare stopp), inte som "
-         "blankningssignal. OMXS30 får de globala varningarna men ingen bredd.")
+         "blankningssignal. OMXS30 hämtas från Börsdata (Yahoo ^OMX som reserv) och får bredd ur svenska "
+         "Large Cap-aktier; VIX, kredit, kurva och rotation är globala.")
 
 
 def _signals(r: mr.MarketRisk) -> None:
@@ -117,6 +118,8 @@ def _signals(r: mr.MarketRisk) -> None:
                     f"font-weight:700;'>{mark}</span> <b>{s['label']}</b> <span style='color:{col};font-size:0.7rem;'>"
                     f"{state}</span><div style='color:{DIM};font-size:0.72rem;margin-left:16px;'>{s['why']}</div></div>")
     st.markdown("".join(rows), unsafe_allow_html=True)
+    st.markdown(f"<div style='color:{DIM};font-size:0.72rem;margin-top:4px;'>Index: {r.source}<br>Bredd: "
+                f"{r.breadth_source or '—'}</div>", unsafe_allow_html=True)
     lv = r.level
     st.markdown(f"<div style='margin-top:6px;color:{LEVEL_COLOR.get(lv, DIM)};font-weight:700;letter-spacing:0.1em;'>"
                 f"NIVÅ: {lv}</div><div style='color:{DIM};font-size:0.75rem;'>LÅG 0–1 · FÖRHÖJD 2–3 · HÖG 4+ "
