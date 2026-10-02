@@ -40,7 +40,8 @@ def card_html(nine: on.NineResult) -> str:
                if f.status not in (on.PASS, on.FAIL) else "") + "</div>"
             for f in nine.layer(name) for m, c in [_mark(f)])
         n, size = nine.layer_passed(name), on.LAYER_SIZE[name]
-        sub = f" · {nine.sector_etf}" if name == "sector" and nine.sector_etf else ""
+        sub = (f" · {nine.sector_etf}" if name == "sector" and nine.sector_etf else
+               f" · {getattr(nine, 'market_label', 'SPY')}" if name == "market" else "")
         col = _GREEN if n == size else _AMBER if n else _RED
         blocks.append(
             f"<div style='flex:1 1 150px;background:{_BG2};border:1px solid #2a2d36;border-radius:6px;"

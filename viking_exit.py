@@ -5,7 +5,7 @@ Separat från entryn (viking_execution.py) och från setupen (ovtlyr_nine.py).
 Varje exitregel ur strategy_rules.py (Viking) är en egen kontroll med
 uträkningen utskriven:
 
-  HARD MARKET EXIT  SPY stänger under EMA20 → stäng ALLT
+  HARD MARKET EXIT  marknaden (SPY, OMXS30 för nordiska) under EMA20 → stäng ALLT
   INITIAL STOP      entry − 1,5 × ATR14 (ATR vid entrydagen)
   TRAILING STOP     stängning under EMA10
   BE EXIT           när stoppen flyttats till breakeven (ny högre topp efter
@@ -109,7 +109,7 @@ def evaluate_exit(ticker: str, df: pd.DataFrame, entry: float, entry_date, nine=
     spy_sig = nine.get("market.signal") if nine is not None and hasattr(nine, "get") else None
     if spy_sig is not None and spy_sig.status in ("PASS", "FAIL"):
         t.append(Trigger("market", "Hard market exit", ACTIVE if spy_sig.status == "FAIL" else CLEAR,
-                         f"SPY: {spy_sig.detail}"))
+                         f"{getattr(nine, 'market_label', 'SPY')}: {spy_sig.detail}"))
     elif spy_df is not None and len(spy_df) >= 25:
         s = spy_df["Close"].astype(float)
         e20 = float(vx._ema(s, 20).iloc[-1])
@@ -217,7 +217,8 @@ def evaluate_exit(ticker: str, df: pd.DataFrame, entry: float, entry_date, nine=
     out.triggers = t
     if t[0].active:
         out.status = CLOSE_ALL
-        out.reasons = ["HARD MARKET EXIT — SPY under EMA20: stäng alla positioner"]
+        label = getattr(nine, "market_label", "SPY") if nine is not None else "SPY"
+        out.reasons = [f"HARD MARKET EXIT — {label} under EMA20: stäng alla positioner"]
     elif out.active:
         out.status = EXIT
         out.reasons = [f"{x.label}: {x.detail}" for x in out.active]

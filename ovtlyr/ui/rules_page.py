@@ -1071,7 +1071,8 @@ _PANEL_GUIDE: list[tuple] = [
      "REJECTED) och Nine, med filtret Bara momentumkandidater (Nine ≥ 7, EMA-stack, RSI > 50, inget "
      "bearish block, R/R ≥ 2), och signallogg. Screening ≠ automatisk entry."),
     ("REGIME → Marknad → Arc Regime → ⚔️ Viking Nine Regime", "Viking Nine: beslutet för en aktie",
-     "Marknadslagret (SPY + bredd), OVTLYR Nine-kortet, graf med entry/stopp/motstånd, Viking "
+     "Marknadslagret (SPY + bredd för amerikanska aktier, OMXS30 + svensk Large Cap-bredd för "
+     "nordiska), OVTLYR Nine-kortet, graf med entry/stopp/motstånd, Viking "
      "Execution + riskmotor (GOLDEN TICKET / WAIT / NO TRADE), exitmotorn för en öppen position och "
      "signalloggen. Välj ticker direkt ur senaste ⚔️ Viking Nine-skanningen."),
     ("REGIME → Marknad → Arc Regime → Viking Regime", "Viking: OVTLYR Nine + Viking Execution-filter",
@@ -1196,7 +1197,8 @@ _PANEL_GUIDE: list[tuple] = [
     ("PORTFOLIO → Backtest", "Wolf · Alpha · Viking · ⚔️ Viking Nine",
      "Historisk signalvalidering med strategiernas egna parametrar. ⚔️ Viking Nine: OVTLYR Nine + "
      "Viking Execution + exitmotorn utan look-ahead (entry nästa öppning), i R — expectancy, profit "
-     "factor, max drawdown, win rate, flest förluster i rad, snittinnehav."),
+     "factor, max drawdown, win rate, flest förluster i rad, snittinnehav. Välj exitregler (alla, EMA10 "
+     "först efter breakeven, kärnan, bara stopp + EMA10, egna) och jämför dem sida vid sida."),
     ("ALERTS", "Alla — larmen",
      "Schemalagda körningar: regim, screeners, håvar, arkens händelser. "
      "Discord-kanalerna och larmloggen."),

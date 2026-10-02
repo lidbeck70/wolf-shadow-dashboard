@@ -102,30 +102,32 @@ def _risk_banner(markets) -> None:
                    f"(REGIME → 🌩️ Marknadsrisk).</div>" if high else "") + "</div>", unsafe_allow_html=True)
 
 
-def _market_banner() -> None:
-    """Marknadslagret i OVTLYR Nine är detsamma för alla aktier — visas en gång."""
-    try:
-        import ovtlyr_nine as on
-        from market_prices import ohlcv
-        spy = ohlcv(on.MARKET_TICKER, on.PERIOD)
-        etfs = {t: on._close(ohlcv(t, on.PERIOD)) for t in on.SECTOR_ETFS.values()}
-        today = __import__("pandas").Timestamp.today()
-        c = on._close(spy)
-        facts = [on._gate("market.trend", "Trend", "market", c, "SPY", today, on._trend),
-                 on._gate("market.signal", "Signal", "market", c, "SPY", today, on._signal),
-                 on._market_breadth(etfs, today)[0]]
-    except Exception as exc:
-        note(f"Marknadslagret kunde inte räknas: {exc}")
+def _market_banner(markets=("SPY", "OMXS30")) -> None:
+    """Marknadslagret i OVTLYR Nine — SPY för amerikanska aktier, OMXS30 för nordiska."""
+    import ovtlyr_nine as on
+    blocks = []
+    for m in markets:
+        try:
+            facts = on.market_layer(m)
+        except Exception as exc:
+            note(f"Marknadslagret ({m}) kunde inte räknas: {exc}")
+            continue
+        n = sum(f.passed for f in facts)
+        col = GREEN if n == 3 else AMBER if n else RED
+        marks = " · ".join(f"<span style='color:{GREEN if f.passed else RED if f.status == 'FAIL' else DIM};'>"
+                           f"{'✓' if f.passed else '✗' if f.status == 'FAIL' else '?'} {f.label}</span>"
+                           for f in facts)
+        blocks.append((m, n, col, marks))
+    if not blocks:
         return
-    n = sum(f.passed for f in facts)
-    col = GREEN if n == 3 else AMBER if n else RED
-    marks = " · ".join(f"<span style='color:{GREEN if f.passed else RED if f.status == 'FAIL' else DIM};'>"
-                       f"{'✓' if f.passed else '✗' if f.status == 'FAIL' else '?'} {f.label}</span>" for f in facts)
-    st.markdown(f"<div style='border:1px solid {col};border-radius:6px;padding:6px 10px;margin:6px 0;'>"
-                f"<b style='color:{col};'>MARKET {n}/3</b> <span style='color:{TEXT};'>{marks}</span>"
-                + ("" if n == 3 else f"<div style='color:{DIM};font-size:0.75rem;'>Marknaden är inte 3/3 — ingen "
-                   f"aktie kan nå 9/9 i dag. Skanningen visar ändå var setupen byggs (DEVELOPING).</div>")
-                + "</div>", unsafe_allow_html=True)
+    rows = "".join(f"<div><b style='color:{col};'>MARKET {m} {n}/3</b> <span style='color:{TEXT};'>{marks}</span>"
+                   f"</div>" for m, n, col, marks in blocks)
+    worst = min(n for _m, n, _c, _k in blocks)
+    col = GREEN if worst == 3 else AMBER if worst else RED
+    st.markdown(f"<div style='border:1px solid {col};border-radius:6px;padding:6px 10px;margin:6px 0;'>{rows}"
+                + ("" if worst == 3 else f"<div style='color:{DIM};font-size:0.75rem;'>En marknad som inte är 3/3 "
+                   f"gör att ingen aktie på den kan nå 9/9 i dag. Nordiska aktier mäts mot OMXS30, övriga mot "
+                   f"SPY.</div>") + "</div>", unsafe_allow_html=True)
 
 
 def render_viking_nine_page() -> None:

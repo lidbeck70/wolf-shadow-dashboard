@@ -33,12 +33,25 @@ import viking_execution as vx
 import viking_exit as vex
 
 WARMUP_BARS = 60
+
+# Exitregler som kan väljas (stopp och breakeven-stopp gäller alltid)
+EXIT_RULES = {"market": "Marknaden < EMA20", "trail": "Trailing EMA10", "be_exit": "BE exit (under gårdagens low)",
+              "gap": "Gap & crap", "signal": "Aktiens signal", "breadth": "Sektor + bredd", "fg": "F&G-target"}
+ALL_EXITS = tuple(EXIT_RULES)
+# Förval: (regler, EMA10 först efter breakeven)
+EXIT_PRESETS = {
+    "Alla regler": (ALL_EXITS, False),
+    "EMA10 först efter breakeven": (ALL_EXITS, True),
+    "Kärnan (stopp, breakeven, EMA10, marknad)": (("market", "trail", "be_exit"), False),
+    "Bara stopp + EMA10": (("trail",), False),
+}
 NOTES = (
     "Entry på nästa dags öppning efter en stängd signaldag; stängningsregler ger exit på nästa öppning.",
     "Rapportspärren ingår inte — historiska rapportdatum saknas.",
     "Max två förluster per dag (portföljregel) ingår inte — varje ticker testas för sig.",
     "Bearish block används som entryfilter men inte som exit.",
     "Universum och sektor är dagens: aktier som försvunnit saknas (överlevnadsbias).",
+    "Nordiska aktier testas mot OMXS30 och svensk Large Cap-bredd (Börsdata), övriga mot SPY.",
     "OVTLYR Nine är WOLF APPROXIMATION — panelens definitioner, inte OVTLYR:s data.",
 )
 
@@ -51,6 +64,8 @@ class Config:
     min_rr: float = vx.MINIMUM_RR
     atr_mult: float = vx.ATR_STOP_MULT
     years: int = 3
+    exit_rules: tuple = ALL_EXITS
+    trail_after_be: bool = False       # EMA10 gäller först när stoppen flyttats till breakeven
 
 
 @dataclass
@@ -152,7 +167,9 @@ def _blocks_at(stock: pd.DataFrame, i: int) -> tuple:
 
 # ── En ticker ───────────────────────────────────────────────────────────────
 def backtest_ticker(ticker: str, stock: pd.DataFrame, spy: Optional[pd.DataFrame], sector: Optional[pd.DataFrame],
-                    breadth: Optional[pd.Series], cfg: Config = Config(), start=None) -> dict:
+                    breadth: Optional[pd.Series], cfg: Config = Config(), start=None,
+                    market_label: str = "SPY") -> dict:
+    """spy = marknadens index (SPY, eller OMXS30 för nordiska aktier); breadth = marknadens bredd i %."""
     stock = stock.dropna(subset=["Open", "High", "Low", "Close"])
     n = len(stock)
     res = {"ticker": ticker, "trades": [], "signals": 0, "no_chase": 0, "low_rr": 0}
@@ -224,20 +241,21 @@ def backtest_ticker(ticker: str, stock: pd.DataFrame, spy: Optional[pd.DataFrame
                 t.exit, t.exit_date = px, str(idx[j].date())
                 t.exit_reason = "breakeven-stopp" if armed and cur_stop >= entry else "stopp"
                 break
-            reasons = []
-            if not f["market.signal"].iloc[j]:
-                reasons.append("SPY < EMA20")
-            if c[j] < x["ema10"].iloc[j]:
+            reasons, rules = [], cfg.exit_rules
+            if "market" in rules and not f["market.signal"].iloc[j]:
+                reasons.append(f"{market_label} < EMA20")
+            if "trail" in rules and (armed or not cfg.trail_after_be) and c[j] < x["ema10"].iloc[j]:
                 reasons.append("trailing EMA10")
-            if armed and j >= 1 and c[j] < lo[j - 1]:
+            if "be_exit" in rules and armed and j >= 1 and c[j] < lo[j - 1]:
                 reasons.append("BE exit")
-            if j >= 1 and o[j] > h[j - 1] and c[j] < c[j - 1]:
+            if "gap" in rules and j >= 1 and o[j] > h[j - 1] and c[j] < c[j - 1]:
                 reasons.append("gap & crap")
-            if not f["stock.signal"].iloc[j]:
+            if "signal" in rules and not f["stock.signal"].iloc[j]:
                 reasons.append("stock signal")
-            if not f["sector.breadth"].iloc[j] and not f["market.breadth"].iloc[j]:
+            if "breadth" in rules and not f["sector.breadth"].iloc[j] and not f["market.breadth"].iloc[j]:
                 reasons.append("sektor + bredd")
-            if fg_target is not None and pd.notna(f["fg"].iloc[j]) and f["fg"].iloc[j] >= fg_target:
+            if ("fg" in rules and fg_target is not None and pd.notna(f["fg"].iloc[j])
+                    and f["fg"].iloc[j] >= fg_target):
                 reasons.append("F&G-target")
             if h[j] > pre_high:
                 armed = True
@@ -288,7 +306,10 @@ def metrics(trades: list) -> dict:
 
 # ── Flera tickers ───────────────────────────────────────────────────────────
 def run(tickers: list, getter: Optional[Callable] = None, sector_getter: Optional[Callable] = None,
-        cfg: Config = Config(), progress: Optional[Callable] = None, today=None) -> dict:
+        cfg: Config = Config(), progress: Optional[Callable] = None, today=None,
+        nordic_provider: Optional[Callable] = None) -> dict:
+    """Nordiska tickers (.ST .OL .CO .HE) testas mot OMXS30 och svensk Large Cap-bredd,
+    övriga mot SPY och sektor-ETF-bredden — samma regel som i Viking Nine."""
     if getter is None:
         from market_prices import ohlcv as getter
     period = f"{int(cfg.years) + 1}y"                               # ett extra år för uppvärmning
@@ -310,6 +331,10 @@ def run(tickers: list, getter: Optional[Callable] = None, sector_getter: Optiona
     breadth = on.breadth_series({t: on._close(d) for t, d in etfs.items()})
     end = pd.Timestamp(today) if today is not None else pd.Timestamp.today()
     start = end - pd.DateOffset(years=int(cfg.years))
+    nordic = None
+    if any(on.market_for(t) == on.NORDIC_LABEL for t in tickers):
+        bars = (int(cfg.years) + 1) * 262
+        nordic = (nordic_provider or (lambda: on.nordic_market(bars)))()
     per, trades = [], []
     for k, t in enumerate(tickers):
         df = _get(t)
@@ -318,8 +343,13 @@ def run(tickers: list, getter: Optional[Callable] = None, sector_getter: Optiona
                         "error": "DATA UNAVAILABLE"})
         else:
             etf, _src = on.resolve_sector(t, sector_getter)
-            r = backtest_ticker(t, df, spy, etfs.get(etf) if etf else None, breadth, cfg, start=start)
-            r["sector_etf"] = etf
+            m_df, m_breadth, label = spy, breadth, "SPY"
+            if on.market_for(t) == on.NORDIC_LABEL and nordic and nordic.get("close") is not None:
+                m_df, label = pd.DataFrame({"Close": nordic["close"]}), on.NORDIC_LABEL
+                m_breadth = nordic.get("breadth")
+            r = backtest_ticker(t, df, m_df, etfs.get(etf) if etf else None, m_breadth, cfg, start=start,
+                                market_label=label)
+            r["sector_etf"], r["market"] = etf, label
             per.append(r)
             trades += r["trades"]
         if progress is not None:

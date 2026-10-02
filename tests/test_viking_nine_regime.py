@@ -52,7 +52,7 @@ def test_page_shows_the_full_decision_chain(monkeypatch):
     at.text_input(key="vnr_ticker").set_value("GOOD").run()
     assert not at.exception, at.exception
     html = " ".join(m.value for m in at.markdown)
-    assert "MARKET 3/3" in html and "OVTLYR NINE" in html and "TOTAL 9 / 9" in html
+    assert "MARKET SPY 3/3" in html and "OVTLYR NINE" in html and "TOTAL 9 / 9" in html
     assert "VIKING EXECUTION" in html and "RISK ENGINE" in html and "VIKING EXIT ENGINE" in html
     assert any("GOOD" in c.proto.spec and "EMA10" in c.proto.spec for c in at.get("plotly_chart"))
     assert "Kör ⚔️ Viking Nine under SCREENING" in html                    # ingen skanning än
