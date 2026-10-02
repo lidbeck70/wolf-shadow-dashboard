@@ -570,6 +570,44 @@ def sheet_alerts(sheets_data: Optional[dict], prev: Optional[dict]) -> tuple:
 
 
 # ── Sammanvägningen ──────────────────────────────────────────────────────────
+# ── 🌩️ Marknadsrisk ─────────────────────────────────────────────────────────
+def market_risk_alerts(levels: Optional[dict], prev: Optional[dict]) -> tuple:
+    """(larm, nytt tillstånd) — när SPY eller OMXS30 går IN i nivå HÖG, och när
+    den lämnar HÖG. FÖRHÖJD larmar inte (bara information i fliken).
+
+    levels: {marknad: market_risk_gate.summarize(...) | None}. En marknad som
+    inte gick att räkna behåller sin gamla nivå; levels None fryser benet."""
+    prev_levels = dict((prev or {}).get("levels") or {}) if isinstance(prev, dict) else {}
+    if not isinstance(levels, dict):
+        return [], (prev if isinstance(prev, dict) else {"levels": {}})
+    now = dict(prev_levels)
+    for m, r in levels.items():
+        if isinstance(r, dict) and r.get("level"):
+            now[m] = r["level"]
+    state = {"levels": now}
+    if prev is None:
+        return [], state
+    alerts = []
+    for m, r in levels.items():
+        if not isinstance(r, dict) or not r.get("level"):
+            continue
+        old, new = prev_levels.get(m), r["level"]
+        act = ", ".join(r.get("active") or []) or "inga"
+        if new == "HÖG" and old != "HÖG":
+            alerts.append(_alert(
+                "market_risk_high", f"🌩️ Marknadsrisk HÖG: {r.get('label', m)}",
+                f"{r.get('points')} av {r.get('possible')} varningar lyser: {act} ({r.get('date')}). "
+                f"Viking Nine tar inga nya entries på marknaden och Wolf halverar positionerna. Historiskt har "
+                f"−10 % inom tre månader följt betydligt oftare än normalt i HÖG — träffbilden finns i "
+                f"REGIME → Marknad → 🌩️ Marknadsrisk."))
+        elif old == "HÖG" and new != "HÖG":
+            alerts.append(_alert(
+                "market_risk_clear", f"✅ Marknadsrisk {r.get('label', m)} ner till {new}",
+                f"{r.get('points')} av {r.get('possible')} varningar lyser nu ({act}). Spärren släpper: "
+                f"Viking Nine kan ta entries igen och Wolf får full storlek."))
+    return alerts, state
+
+
 def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
              themes: list, prev_state: Optional[dict],
              settings: Optional[dict] = None,
@@ -580,7 +618,8 @@ def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
              quality_data: Optional[dict] = None,
              insider_data: Optional[dict] = None,
              screens_data: Optional[dict] = None,
-             sheets_data: Optional[dict] = None) -> tuple:
+             sheets_data: Optional[dict] = None,
+             market_risk_data: Optional[dict] = None) -> tuple:
     """(larm-med-kanaler, nytt tillstånd) för hela körningen.
 
     settings: data/alerts.json — {"swing": {"enabled", "channels"},
@@ -648,6 +687,10 @@ def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
     sh_alerts, sh_state = sheet_alerts(sheets_data, _prev("sheets"))
     out += _route("sheets", sh_alerts)
 
+    mr_alerts, mr_state = market_risk_alerts(market_risk_data, _prev("market_risk"))
+    out += _route("market_risk", mr_alerts)
+
     return out, {"swing": s_state, "blindspot": b_state, "ember": e_state,
                  "wolf": w_state, "viking": v_state, "contrarian": c_state,
-                 "quality": q_state, "insider": i_state, "screens": sc_state, "sheets": sh_state}
+                 "quality": q_state, "insider": i_state, "screens": sc_state, "sheets": sh_state,
+                 "market_risk": mr_state}

@@ -54,6 +54,20 @@ def _summary(r: mr.MarketRisk) -> str:
     return big_card(r.label.upper(), r.level, sub, LEVEL_COLOR.get(r.level, DIM))
 
 
+def log_ticks(lo: float, hi: float) -> list:
+    """Rena etiketter på logaritmisk axel: 1, 2, 5 × 10^k inom [lo, hi]."""
+    import math
+    if not (lo > 0 and hi > lo):
+        return []
+    out = []
+    for k in range(int(math.floor(math.log10(lo))), int(math.ceil(math.log10(hi))) + 1):
+        for m in (1, 2, 5):
+            v = m * 10 ** k
+            if lo <= v <= hi:
+                out.append(v)
+    return out
+
+
 def history_chart(r: mr.MarketRisk) -> go.Figure:
     close, pts = r.close, r.history
     start = r.calibration.start if r.calibration else str(close.index[0].date())
@@ -69,7 +83,9 @@ def history_chart(r: mr.MarketRisk) -> go.Figure:
     layout.update(height=440, showlegend=False, bargap=0,
                   title=dict(text=f"{r.label.upper()} OCH ANTAL VARNINGAR", font=dict(size=12, color=CYAN)))
     fig.update_layout(**layout)
-    fig.update_yaxes(type="log", row=1, col=1)
+    ticks = log_ticks(float(close.min()), float(close.max()))
+    fig.update_yaxes(type="log", row=1, col=1, tickvals=ticks or None,
+                     ticktext=[f"{v:,.0f}".replace(",", " ") for v in ticks] or None)
     return fig
 
 
