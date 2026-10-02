@@ -19,8 +19,10 @@ hur ofta föll marknaden minst 10 % inom tre månader — jämfört med normalt?
                larm (träffar / falsklarm). Bara data fram till dagen — inget
                look-ahead i signalerna; målet tittar framåt per definition.
 
-OMXS30 får samma globala signaler (VIX, kredit, kurva, rotation) — de
-amerikanska riskmåtten är globala — men ingen bredd (bolagsdata saknas).
+OMXS30 hämtas från Börsdata (upp till 20 års dagsdata, indexet söks på namn)
+med Yahoo ^OMX som reserv, och får egen bredd: andelen svenska Large Cap-aktier
+(Börsdata marknad 1) över EMA50 dag för dag. De globala signalerna (VIX,
+kredit, kurva, rotation) är desamma — de amerikanska riskmåtten är globala.
 """
 
 from __future__ import annotations
@@ -36,8 +38,11 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-MARKETS = {"SPY": {"label": "S&P 500 (SPY)", "ticker": "SPY", "breadth": True},
-           "OMXS30": {"label": "OMXS30", "ticker": "^OMX", "breadth": False}}
+MARKETS = {"SPY": {"label": "S&P 500 (SPY)", "ticker": "SPY", "breadth": "us_sectors"},
+           "OMXS30": {"label": "OMXS30", "ticker": "^OMX", "breadth": "borsdata",
+                      "bd_index": ("OMX Stockholm 30", "OMXS30"), "bd_breadth_markets": (1,)}}
+BD_MIN_STOCKS = 30                 # färre Large Cap-aktier med kurs en dag → bredden okänd den dagen
+BD_MAX_BARS = 5040                 # 20 år
 HORIZON = 63
 DRAWDOWN = 0.10
 LEVELS = (("LÅG", 0), ("FÖRHÖJD", 2), ("HÖG", 4))      # (namn, lägsta poäng)
@@ -81,8 +86,39 @@ def _ema(s, n):
 
 
 # ── Signalerna (kausala) ────────────────────────────────────────────────────
-def compute_signals(index: pd.Series, data: dict, breadth: bool = True) -> tuple:
-    """(aktiv: DataFrame bool, tillgänglig: DataFrame bool). data: ticker/FRED-id → serie."""
+def us_breadth_pct(data: dict) -> Optional[pd.Series]:
+    """Andel (%) av de nio SPDR-sektor-ETF:erna över EMA50 per dag."""
+    etfs = {t: _close(data.get(t)) for t in BREADTH_ETFS}
+    if not all(s is not None for s in etfs.values()):
+        return None
+    df = pd.concat(etfs, axis=1, join="inner").dropna()
+    pct = pd.concat({t: df[t] > _ema(df[t], 50) for t in df.columns}, axis=1).sum(axis=1) / len(df.columns) * 100
+    return pct.iloc[50:]
+
+
+def stocks_breadth_pct(closes: dict, min_stocks: int = BD_MIN_STOCKS) -> Optional[pd.Series]:
+    """Andel (%) av aktierna över EMA50 per dag. En aktie räknas från sin 50:e
+    stängning; dagar med färre än min_stocks aktier blir NaN (okänt)."""
+    cols = {t: s for t, s in (closes or {}).items() if s is not None and len(s) > 50}
+    if len(cols) < min_stocks:
+        return None
+    df = pd.concat(cols, axis=1).sort_index()
+    above, valid = {}, {}
+    for t in df.columns:
+        s = df[t].dropna()
+        ok = (s > _ema(s, 50)).iloc[50:]
+        above[t], valid[t] = ok.astype(float), pd.Series(1.0, index=ok.index)
+    a = pd.concat(above, axis=1).reindex(df.index)
+    v = pd.concat(valid, axis=1).reindex(df.index)
+    n = v.sum(axis=1)
+    pct = a.sum(axis=1) / n * 100
+    return pct[n >= min_stocks]
+
+
+def compute_signals(index: pd.Series, data: dict, breadth: bool = True,
+                    breadth_pct: Optional[pd.Series] = None) -> tuple:
+    """(aktiv: DataFrame bool, tillgänglig: DataFrame bool). data: ticker/FRED-id → serie.
+    breadth_pct: färdig bredd (t.ex. Börsdata Large Cap); annars de amerikanska sektorerna."""
     idx = index.index
     c = index
     sma50, sma200 = c.rolling(50).mean(), c.rolling(200).mean()
@@ -93,11 +129,9 @@ def compute_signals(index: pd.Series, data: dict, breadth: bool = True) -> tuple
     act["stretch"], avail["stretch"] = c / sma200 - 1 > 0.15, sma200.notna()
 
     if breadth:
-        etfs = {t: _close(data.get(t)) for t in BREADTH_ETFS}
-        if all(s is not None for s in etfs.values()):
-            df = pd.concat(etfs, axis=1, join="inner").dropna()
-            pct = pd.concat({t: df[t] > _ema(df[t], 50) for t in df.columns}, axis=1).sum(axis=1) / len(df.columns) * 100
-            pct = _on(pct.iloc[50:], idx)
+        raw = breadth_pct if breadth_pct is not None else us_breadth_pct(data)
+        if raw is not None and len(raw):
+            pct = _on(raw, idx)
             near_top = c >= 0.97 * c.rolling(252, min_periods=50).max()
             act["breadth_div"] = near_top & (pct <= pct.rolling(63, min_periods=20).max() - 30)
             avail["breadth_div"] = pct.notna()
@@ -241,6 +275,10 @@ class MarketRisk:
     signals: list = field(default_factory=list)            # [{key, label, why, active, available}]
     calibration: Optional[Calibration] = None
     error: Optional[str] = None
+    close: Optional[pd.Series] = None                      # indexet (för grafen)
+    history: Optional[pd.Series] = None                    # poäng per dag
+    source: str = ""                                       # varifrån indexet kom
+    breadth_source: str = ""                               # varifrån bredden kom (eller varför den saknas)
 
     @property
     def possible(self) -> int:
@@ -271,13 +309,65 @@ _FRED_CACHE: dict = {}
 
 def needed_tickers(market: str) -> list:
     base = [MARKETS[market]["ticker"], "^VIX", "^VIX3M", "HYG", "IEF", "XLU", "XLP", "XLK", "XLY"]
-    if MARKETS[market]["breadth"]:
+    if MARKETS[market]["breadth"] == "us_sectors":
         base += [t for t in BREADTH_ETFS if t not in base]
     return base
 
 
+# ── Börsdata (OMXS30) ───────────────────────────────────────────────────────
+def _bd_default():
+    try:
+        from borsdata_api import BorsdataAPI
+        api = BorsdataAPI()
+        return api if api.is_configured else None
+    except Exception:
+        return None
+
+
+def _bd_close(api, ins_id) -> Optional[pd.Series]:
+    try:
+        df = api.get_stockprices_df(int(ins_id), max_count=BD_MAX_BARS)
+    except Exception as exc:
+        logger.warning("Börsdata %s: %s", ins_id, exc)
+        return None
+    return None if df is None or df.empty else df["Close"].astype(float).dropna()
+
+
+def borsdata_index(api, hints) -> tuple:
+    """(serie | None, källtext) — indexet söks på namn/ticker i /instruments."""
+    try:
+        ins = api.get_instruments() or []
+    except Exception as exc:
+        return None, f"Börsdata instrumentlista: {exc}"
+    for h in hints:
+        hl = h.lower()
+        hit = next((i for i in ins if str(i.get("name", "")).lower() == hl
+                    or str(i.get("ticker", "")).lower() == hl), None) or \
+            next((i for i in ins if hl in str(i.get("name", "")).lower()), None)
+        if hit:
+            s = _bd_close(api, hit.get("insId"))
+            if s is not None and len(s):
+                return s, f"Börsdata · {hit.get('name')} (insId {hit.get('insId')})"
+    return None, f"Börsdata: inget index som heter {' / '.join(hints)}"
+
+
+def borsdata_breadth(api, market_ids) -> tuple:
+    """(bredd % | None, källtext) — aktierna på Börsdata-marknaderna över EMA50."""
+    try:
+        ins = [i for i in (api.get_instruments() or []) if i.get("marketId") in set(market_ids)]
+    except Exception as exc:
+        return None, f"Börsdata instrumentlista: {exc}"
+    closes = {i.get("ticker") or i.get("insId"): _bd_close(api, i.get("insId")) for i in ins}
+    pct = stocks_breadth_pct(closes)
+    if pct is None:
+        n = sum(1 for s in closes.values() if s is not None)
+        return None, f"Börsdata: för få aktier med kurs ({n}, kräver {BD_MIN_STOCKS})"
+    return pct, f"Börsdata · {sum(1 for s in closes.values() if s is not None)} Large Cap-aktier över EMA50 " \
+                f"(dagens lista — överlevnadsbias)"
+
+
 def evaluate(market: str, getter: Optional[Callable] = None, fred_getter: Optional[Callable] = None,
-             horizon: int = HORIZON, drawdown: float = DRAWDOWN) -> MarketRisk:
+             horizon: int = HORIZON, drawdown: float = DRAWDOWN, bd_api=None) -> MarketRisk:
     cfg = MARKETS[market]
     out = MarketRisk(market, cfg["label"])
     if getter is None:
@@ -291,11 +381,27 @@ def evaluate(market: str, getter: Optional[Callable] = None, fred_getter: Option
             logger.warning("marknadsrisk %s: %s", t, exc)
             data[t] = None
     data["T10Y2Y"] = fred_getter("T10Y2Y")
-    close = _close(data.get(cfg["ticker"]))
+    close, out.source = _close(data.get(cfg["ticker"])), f"Yahoo Finance {cfg['ticker']}"
+    breadth_pct = None
+    if cfg["breadth"] == "borsdata":
+        api = bd_api if bd_api is not None else _bd_default()
+        if api is None:
+            out.breadth_source = "Börsdata-nyckel saknas — ingen bredd"
+        else:
+            bd_close, why = borsdata_index(api, cfg["bd_index"])
+            if bd_close is not None and len(bd_close) >= 260:
+                close, out.source = bd_close, why
+            else:
+                out.source += f" (reserv — {why})"
+            breadth_pct, out.breadth_source = borsdata_breadth(api, cfg["bd_breadth_markets"])
+    else:
+        out.breadth_source = "Yahoo Finance · 9 SPDR-sektor-ETF:er över EMA50"
     if close is None or len(close) < 260:
-        out.error = f"DATA UNAVAILABLE — ingen kurshistorik för {cfg['ticker']}"
+        out.error = f"DATA UNAVAILABLE — ingen kurshistorik för {cfg['label']}"
         return out
-    active, avail = compute_signals(close, data, breadth=cfg["breadth"])
+    active, avail = compute_signals(close, data, breadth=True, breadth_pct=breadth_pct) \
+        if (cfg["breadth"] == "us_sectors" or breadth_pct is not None) else \
+        compute_signals(close, data, breadth=False)
     last = close.index[-1]
     out.date, out.price = str(last.date()), round(float(close.iloc[-1]), 2)
     out.points = int(active.loc[last].sum())
@@ -303,4 +409,5 @@ def evaluate(market: str, getter: Optional[Callable] = None, fred_getter: Option
     out.signals = [{"key": k, "label": SIGNALS[k][0], "why": SIGNALS[k][1], "active": bool(active.loc[last, k]),
                     "available": bool(avail.loc[last, k])} for k in active.columns]
     out.calibration = calibrate(close, active, avail, horizon, drawdown)
+    out.close, out.history = close, score(active)
     return out

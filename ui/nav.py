@@ -43,7 +43,7 @@ SUBS: dict = {
     # REGIME delat i två: marknaden (index, sektorer, cykel) och råvarorna.
     "regime": ["Marknad", "Råvaror"],
     "regime/Marknad": ["Arc Regime", "Alpha Regime", "Swing Regime",
-                       "Flow Divergence", "Market Cycle"],
+                       "Flow Divergence", "Market Cycle", "🌩️ Marknadsrisk"],
     "regime/Marknad/Arc Regime": ["Wolf Regime", "Viking Regime", "⚔️ Viking Nine Regime"],
     "regime/Marknad/Alpha Regime": ["Quality & Contrarian", "Long Trend"],
     "regime/Råvaror": ["🌍 EMBER Regime", "Råvarurotation", "🥇🥈 Guld/Silver", "🥇 Guldkvoter"],
