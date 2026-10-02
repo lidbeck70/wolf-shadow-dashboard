@@ -72,7 +72,9 @@ def card_html(nine: on.NineResult) -> str:
         f"<div style='color:{_TEXT};'>Viktat <b>{nine.weighted:g} / 100</b></div>"
         f"<div style='color:{st_col};font-weight:700;letter-spacing:0.08em;'>STATUS: {nine.status}</div></div>"
         f"<div style='color:{_DIM};font-size:0.72rem;margin-top:4px;'>{calc}</div>{missing}"
-        f"<div style='color:{_DIM};font-size:0.7rem;margin-top:6px;'>Nine = setup, inte entry. Riktiga priser "
+        + (f"<div style='color:{_DIM};font-size:0.7rem;margin-top:4px;'>Sektor: {nine.sector_source}</div>"
+           if getattr(nine, "sector_source", "") else "")
+        + f"<div style='color:{_DIM};font-size:0.7rem;margin-top:6px;'>Nine = setup, inte entry. Riktiga priser "
         f"(SPY, sektor-ETF:er, aktien) men panelens egna definitioner — inte OVTLYR:s data.</div></div>")
 
 

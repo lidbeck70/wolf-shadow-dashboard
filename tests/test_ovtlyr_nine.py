@@ -169,3 +169,42 @@ def test_viking_labels_no_longer_claim_to_be_ovtlyr_nine():
     assert "VIKING'S NINE" not in src and "VIKING EXECUTION FILTER" in src and "inte OVTLYR Nine" in src
     assert "render_nine_card(nine)" in src and "nine=nine" in src
     assert "Vikings Nine" not in open(os.path.join(ROOT, "alert_rules.py"), encoding="utf-8").read()
+
+
+# ── Sektorn: Börsdata först, Yahoo som reserv, fel cachas kort ────────────────
+def test_sector_from_borsdata_first(monkeypatch):
+    monkeypatch.setattr(on, "_SECTOR_CACHE", {})
+    etf, src = on.resolve_sector("VOLV-B.ST", sector_getter=lambda t: "Technology", bd_sector=lambda t: 5)
+    assert etf == "XLI" and src == "Börsdata · Industri → XLI"
+    etf, src = on.resolve_sector("NVDA", sector_getter=lambda t: "Technology", bd_sector=lambda t: None)
+    assert etf == "XLK" and src.startswith("Yahoo · Technology")
+    etf, src = on.resolve_sector("X", sector_getter=lambda t: None, bd_sector=lambda t: None)
+    assert etf is None and "provade Börsdata och Yahoo" in src
+
+
+def test_evaluate_shows_where_the_sector_came_from():
+    data = {"SPY": _df(), "NVDA": _df(), **{t: _df() for t in on.SECTOR_ETFS.values()}}
+    r = on.evaluate("NVDA", ob_analysis=BULL_OB, getter=lambda t, p: data.get(t, pd.DataFrame()),
+                    sector_getter=lambda t: None, bd_sector=lambda t: 6, today=END)
+    assert r.sector_etf == "XLK" and "Börsdata" in r.sector_source and r.layer_passed("sector") == 2
+    gone = on.evaluate("NVDA", ob_analysis=BULL_OB, getter=lambda t, p: data.get(t, pd.DataFrame()),
+                       sector_getter=lambda t: None, bd_sector=lambda t: None, today=END)
+    assert all("sektor okänd" in f.detail for f in gone.sector)
+    from ovtlyr.ui.nine_card import card_html
+    assert "Sektor: Börsdata · Informationsteknik → XLK" in card_html(r)
+
+
+def test_failed_sector_lookup_is_retried(monkeypatch):
+    import time as _t
+    monkeypatch.setattr(on, "_SECTOR_CACHE", {})
+    calls = []
+
+    def boom():
+        calls.append(1)
+        raise RuntimeError("429 Too Many Requests")
+    assert on._cached(("yf", "A"), boom) is None and on._cached(("yf", "A"), boom) is None
+    assert len(calls) == 1                                                   # kort cache …
+    on._SECTOR_CACHE[("yf", "A")] = (_t.time() - on.SECTOR_TTL_FAIL - 1, None)
+    assert on._cached(("yf", "A"), lambda: "Energy") == "Energy"            # … sedan nytt försök
+    on._SECTOR_CACHE[("yf", "B")] = (_t.time() - on.SECTOR_TTL_FAIL - 1, "Utilities")
+    assert on._cached(("yf", "B"), boom) == "Utilities"                      # lyckat svar ligger kvar ett dygn

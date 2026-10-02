@@ -279,7 +279,6 @@ def run(tickers: list, getter: Optional[Callable] = None, sector_getter: Optiona
         cfg: Config = Config(), progress: Optional[Callable] = None, today=None) -> dict:
     if getter is None:
         from market_prices import ohlcv as getter
-    sector_getter = sector_getter or on._sector_default
     period = f"{int(cfg.years) + 1}y"                               # ett extra år för uppvärmning
 
     def _get(t):
@@ -306,7 +305,7 @@ def run(tickers: list, getter: Optional[Callable] = None, sector_getter: Optiona
             per.append({"ticker": t, "trades": [], "signals": 0, "no_chase": 0, "low_rr": 0,
                         "error": "DATA UNAVAILABLE"})
         else:
-            etf = on.sector_etf_for(sector_getter(t))
+            etf, _src = on.resolve_sector(t, sector_getter)
             r = backtest_ticker(t, df, spy, etfs.get(etf) if etf else None, breadth, cfg, start=start)
             r["sector_etf"] = etf
             per.append(r)
