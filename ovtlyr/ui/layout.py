@@ -335,6 +335,19 @@ def _render_viking_execution(ticker: str, df: pd.DataFrame, nine, ob_analysis: d
         st.warning(f"Viking Execution kunde inte räknas: {exc}")
         return
     render_execution(decision)
+    # Signalloggen: GOLDEN TICKET och READY loggas (en rad per ticker och dag)
+    try:
+        import storage as _storage
+        import viking_screen as _vs
+        _row = {"ticker": ticker, "nine": nine, "decision": decision,
+                "category": _vx.watchlist_category(getattr(nine, "passed", None), decision.status)}
+        if _row["category"] in _vs.LOGGED_CATEGORIES:
+            _log = _storage.session_load(_vs.LOG_STORE, [])
+            _new, _n = _vs.append_log(_log, [_row], source="viking_regime")
+            if _n:
+                st.session_state[_vs.LOG_STORE] = _new
+    except Exception:
+        pass
 
 
 def _fetch_etf_data_for_bull_list():

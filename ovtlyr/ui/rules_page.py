@@ -1065,6 +1065,10 @@ _PANEL_GUIDE: list[tuple] = [
     ("REGIME → Marknad → Arc Regime → Wolf Regime", "Wolf: alla regler",
      "4-lagers regime + Entry Checklist (Trend/Volatilitet/Momentum/Candlestick/"
      "OB) med auto-pass/fail. SL/TP-kalkylator. Benchmark RS."),
+    ("SCREENING → Arc Screener → ⚔️ Viking Nine", "Viking: OVTLYR Nine + Viking Execution över en lista",
+     "OVTLYR SCREEN (sorterad på Nine), VIKING MOMENTUM SCREEN (Nine ≥ 7, EMA-stack, RSI > 50, "
+     "inget bearish block, R/R ≥ 2), bevakningslista GOLDEN TICKET / READY / DEVELOPING / REJECTED "
+     "och signallogg. Screening ≠ automatisk entry."),
     ("REGIME → Marknad → Arc Regime → Viking Regime", "Viking: OVTLYR Nine + Viking Execution-filter",
      "OVTLYR Nine (Market 40 % · Sector 30 % · Stock 30 %) på riktiga priser för SPY, "
      "sektor-ETF:er och aktien — WOLF APPROXIMATION, saknad data räknas aldrig som PASS. "
