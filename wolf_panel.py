@@ -257,6 +257,13 @@ try:
 except ImportError:
     VIKING_NINE_REGIME_AVAILABLE = False
 
+# Marknadsrisk (REGIME → Marknad) — riskmodellen för SPY och OMXS30
+try:
+    from market_risk_ui import render_market_risk_page
+    MARKET_RISK_AVAILABLE = True
+except ImportError:
+    MARKET_RISK_AVAILABLE = False
+
 # Guldkvoter (REGIME → Råvaror) — råvaror och index mätta i guld
 try:
     from gold_ratios.ui import render_gold_ratios_page
@@ -466,6 +473,8 @@ def main():
                 elif sub == "Market Cycle":
                     _page(MARKET_CYCLE_AVAILABLE, render_market_cycle_page, "Market Cycle Engine",
                           "tabs/market_cycle")
+                elif sub == "🌩️ Marknadsrisk":
+                    _page(MARKET_RISK_AVAILABLE, render_market_risk_page, "Marknadsrisk", "market_risk_ui")
             else:
                 sub = _sub("regime/Råvaror")
                 st.markdown("---")

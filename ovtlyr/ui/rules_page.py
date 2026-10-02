@@ -1092,6 +1092,10 @@ _PANEL_GUIDE: list[tuple] = [
      "positionsstorlek på EMA200-stoppen."),
     ("REGIME → Marknad → Flow Divergence", "Alpha #4 · Viking sektor",
      "Global sektorsbredd och makrocykel — sektorhjulet grön/gul/röd."),
+    ("REGIME → Marknad → 🌩️ Marknadsrisk", "Alla — riskspärr, ingen kristallkula",
+     "Nio varningar för SPY och OMXS30 (trend, bredd, VIX, kredit, räntekurva, rotation, eufori) → "
+     "nivå LÅG / FÖRHÖJD / HÖG. Historisk träffbild: hur ofta −10 % inom tre månader följde i varje "
+     "nivå mot basfrekvensen, vilka nedgångar som varnades och hur många larm som var falsklarm."),
     ("REGIME → Marknad → Market Cycle", "Quality · Deep Contrarian",
      "Marknadsfas (CAPITULATION → EUPHORIA). Styr både Quality-cykelgaten och "
      "Deep Contrarians ackumulerings-/distributionssteg."),

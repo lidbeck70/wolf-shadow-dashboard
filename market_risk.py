@@ -241,6 +241,8 @@ class MarketRisk:
     signals: list = field(default_factory=list)            # [{key, label, why, active, available}]
     calibration: Optional[Calibration] = None
     error: Optional[str] = None
+    close: Optional[pd.Series] = None                      # indexet (för grafen)
+    history: Optional[pd.Series] = None                    # poäng per dag
 
     @property
     def possible(self) -> int:
@@ -303,4 +305,5 @@ def evaluate(market: str, getter: Optional[Callable] = None, fred_getter: Option
     out.signals = [{"key": k, "label": SIGNALS[k][0], "why": SIGNALS[k][1], "active": bool(active.loc[last, k]),
                     "available": bool(avail.loc[last, k])} for k in active.columns]
     out.calibration = calibrate(close, active, avail, horizon, drawdown)
+    out.close, out.history = close, score(active)
     return out
