@@ -141,7 +141,14 @@ def compute_longterm_signal(
     trend_state   = str(trend.get("trend_state",  trend.get("direction", "neutral"))).lower()
     regime_color  = str(trend.get("regime_color", "red")).lower()
 
-    sentiment_score = _to_float(sentiment.get("score", 50))
+    # DATA UNAVAILABLE räknas aldrig som PASS: F&G utan riktig data
+    # (available=False eller score=None) och okänd sektorbredd (None) fäller
+    # sina grindar och visas som DATA UNAVAILABLE. Anropare som skickar
+    # riktiga värden (Holdings) påverkas inte.
+    fg_known = sentiment.get("available", True) is not False and sentiment.get("score", 50) is not None
+    breadth_known = sector_green is not None
+    sector_green = bool(sector_green)
+    sentiment_score = _to_float(sentiment.get("score", 50)) if fg_known else 50.0
     sentiment_label = str(sentiment.get("label", "Neutral"))
 
     risk_score = _to_float(volatility.get("risk_score", 50))
@@ -180,8 +187,9 @@ def compute_longterm_signal(
 
     # Component 3 — Market Breadth: breadth advancing  [SPY proxy via sector_green heuristic]
     # sector_green == True is used as a proxy for "market breadth advancing"
-    mkt_breadth_ok = sector_green
-    mkt_breadth_detail = f"sector_green={sector_green} → market breadth advancing [SPY proxy]"
+    mkt_breadth_ok = sector_green and breadth_known
+    mkt_breadth_detail = (f"sector_green={sector_green} → market breadth advancing [SPY proxy]" if breadth_known
+                          else "DATA UNAVAILABLE — ingen bredddata, räknas inte som PASS")
 
     market_components = [mkt_trend_ok, mkt_signal_ok, mkt_breadth_ok]
     market_score = int(round(sum(market_components) / len(market_components) * 100))
@@ -191,12 +199,14 @@ def compute_longterm_signal(
     # ------------------------------------------------------------------ #
 
     # Component 4 — Sector Fear & Greed: advancing (not extreme greed > 90)
-    sec_fg_ok = (sentiment_score < 90) and (sentiment_score > 25)
-    sec_fg_detail = f"F&G={sentiment_score:.0f} — advancing range (25–90)"
+    sec_fg_ok = fg_known and (sentiment_score < 90) and (sentiment_score > 25)
+    sec_fg_detail = (f"F&G={sentiment_score:.0f} — advancing range (25–90)" if fg_known
+                     else "DATA UNAVAILABLE — ingen F&G-data, räknas inte som PASS")
 
     # Component 5 — Sector Breadth: advancing (bullish 10EMA cross)
-    sec_breadth_ok = sector_green
-    sec_breadth_detail = f"sector_green={sector_green} → bullish EMA cross"
+    sec_breadth_ok = sector_green and breadth_known
+    sec_breadth_detail = (f"sector_green={sector_green} → bullish EMA cross" if breadth_known
+                          else "DATA UNAVAILABLE — ingen sektorbredd, räknas inte som PASS")
 
     sector_components = [sec_fg_ok, sec_breadth_ok]
     sector_score = int(round(sum(sector_components) / len(sector_components) * 100))
@@ -221,8 +231,9 @@ def compute_longterm_signal(
     )
 
     # Component 8 — Stock Fear & Greed: advancing (score > 30 and not reversing)
-    stk_fg_ok = sentiment_score > 30
-    stk_fg_detail = f"F&G={sentiment_score:.0f} > 30 (advancing)"
+    stk_fg_ok = fg_known and sentiment_score > 30
+    stk_fg_detail = (f"F&G={sentiment_score:.0f} > 30 (advancing)" if fg_known
+                     else "DATA UNAVAILABLE — ingen F&G-data, räknas inte som PASS")
 
     # Component 9 — Order Blocks: no restrictive bearish OBs + momentum ok
     no_restrictive_ob = ob_bias not in ("SELL", "REDUCE") and not approaching_bearish
@@ -257,7 +268,7 @@ def compute_longterm_signal(
     # Primary signal logic
     if ovtlyr_nine < 40 or spy_under_20ema or (not mkt_breadth_ok and not mkt_trend_ok):
         signal = "SELL"
-    elif approaching_bearish or sentiment_score > 80:
+    elif approaching_bearish or (fg_known and sentiment_score > 80):
         signal = "REDUCE"
     elif ovtlyr_nine >= 70 and not selloff_override and stk_ob_ok:
         signal = "BUY"
@@ -333,6 +344,9 @@ def compute_longterm_signal(
             "layer": "OVERRIDE",
         },
     ]
+    for g in gates:
+        g["status"] = ("DATA UNAVAILABLE" if str(g["detail"]).startswith("DATA UNAVAILABLE")
+                       else "PASS" if g["passed"] else "FAIL")
 
     # ------------------------------------------------------------------ #
     #  EXIT TRIGGERS
@@ -360,15 +374,15 @@ def compute_longterm_signal(
         },
         {
             "trigger": "Fear & Greed target hit (0-50: exit at 63)",
-            "active": (sentiment_score >= 63 and sentiment_score <= 75),
+            "active": fg_known and (sentiment_score >= 63 and sentiment_score <= 75),
         },
         {
             "trigger": "Fear & Greed target hit (50-75: 10pt spread)",
-            "active": (sentiment_score > 75 and sentiment_score <= 85),
+            "active": fg_known and (sentiment_score > 75 and sentiment_score <= 85),
         },
         {
             "trigger": "Fear & Greed target hit (75+: 5pt spread)",
-            "active": sentiment_score > 85,
+            "active": fg_known and sentiment_score > 85,
         },
     ]
 

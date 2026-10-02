@@ -28,6 +28,19 @@ def fetch_backtest_data(ticker: str, years: int = 3) -> pd.DataFrame:
         return pd.DataFrame()
 
 
+def atr_stop_mult(mode: str) -> float:
+    """Stoppavstånd i ATR. Viking ("ovtlyr") läser motorns värde så att
+    backtestet inte kan avvika från strategin (det stod 0,5 × ATR här medan
+    viking.py handlar 1,5 ×). Övriga lägen oförändrade."""
+    if mode == "ovtlyr":
+        try:
+            from strategies.viking import DEFAULT_PARAMS
+            return float(DEFAULT_PARAMS.get("atr_stop_mult", 1.5))
+        except Exception:
+            return 1.5
+    return 0.5
+
+
 def run_backtest(
     ticker: str,
     years: int = 3,
@@ -37,9 +50,10 @@ def run_backtest(
     Run EMA crossover backtest.
 
     Modes:
-      "swing"  — EMA 10/20 cross, exit on EMA 10 break, ATR stop (Viking: 1.5 × ATR)
-      "long"   — EMA 50/200 cross, exit on EMA 200 break
-      "ovtlyr" — EMA 10/20 cross with ADX filter + volume confirm
+      "swing"  — EMA 10/20 cross, exit on EMA 10 break, stop 0.5 × ATR
+      "long"   — EMA 50/200 cross, exit on EMA 200 break, stop 0.5 × ATR
+      "ovtlyr" — Viking: EMA 10/20 cross with ADX filter + volume confirm,
+                 stop = strategies/viking.py atr_stop_mult (1.5 × ATR)
 
     Returns dict with:
       trades: list of dicts
@@ -99,6 +113,7 @@ def run_backtest(
         adx = dx.rolling(14).mean().fillna(0)
 
     vol_sma = volume.rolling(20).mean()
+    stop_mult = atr_stop_mult(mode)
 
     # Simulate trades
     trades = []
@@ -136,7 +151,7 @@ def run_backtest(
                 in_trade = True
                 entry_price = price
                 entry_date = date
-                stop_loss = price - atr.iloc[i] * 0.5
+                stop_loss = price - atr.iloc[i] * stop_mult
 
         else:
             # Exit signals

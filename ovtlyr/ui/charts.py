@@ -587,7 +587,7 @@ def build_bull_list_gauge(bl: dict) -> go.Figure:
         zone_label = "BULLISH ZONE"
     elif "Extreme Bearish" in zone:
         bar_color = _GREEN  # Extreme fear = opportunity
-        zone_label = "EXTREME FEAR — BEST ENTRY"
+        zone_label = "EXTREME FEAR — POTENTIAL OPPORTUNITY ZONE"
     else:
         bar_color = _YELLOW
         zone_label = "BEARISH ZONE — CAUTION"
