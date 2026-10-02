@@ -250,6 +250,13 @@ try:
 except ImportError:
     VIKING_NINE_AVAILABLE = False
 
+# Viking Nine Regime (REGIME → Arc Regime) — beslutet för en aktie i Viking Nine
+try:
+    from ovtlyr.ui.viking_nine_regime import render_viking_nine_regime_page
+    VIKING_NINE_REGIME_AVAILABLE = True
+except ImportError:
+    VIKING_NINE_REGIME_AVAILABLE = False
+
 # Guldkvoter (REGIME → Råvaror) — råvaror och index mätta i guld
 try:
     from gold_ratios.ui import render_gold_ratios_page
@@ -440,6 +447,9 @@ def main():
                         _page(True, tab_regime, "Wolf Regime", "tabs/regime", rules_key="wolf")
                     elif inner == "Viking Regime":
                         _page(OVTLYR_AVAILABLE, render_ovtlyr_page, "OVTLYR", "ovtlyr", rules_key="viking")
+                    elif inner == "⚔️ Viking Nine Regime":
+                        _page(VIKING_NINE_REGIME_AVAILABLE, render_viking_nine_regime_page, "Viking Nine Regime",
+                              "viking_nine_regime")
                 elif sub == "Alpha Regime":
                     inner = _sub("regime/Marknad/Alpha Regime")
                     if inner == "Quality & Contrarian":

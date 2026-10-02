@@ -1070,6 +1070,10 @@ _PANEL_GUIDE: list[tuple] = [
      "bästa kandidaterna). En resultatlista sorterad på kategori (GOLDEN TICKET / READY / DEVELOPING / "
      "REJECTED) och Nine, med filtret Bara momentumkandidater (Nine ≥ 7, EMA-stack, RSI > 50, inget "
      "bearish block, R/R ≥ 2), och signallogg. Screening ≠ automatisk entry."),
+    ("REGIME → Marknad → Arc Regime → ⚔️ Viking Nine Regime", "Viking Nine: beslutet för en aktie",
+     "Marknadslagret (SPY + bredd), OVTLYR Nine-kortet, graf med entry/stopp/motstånd, Viking "
+     "Execution + riskmotor (GOLDEN TICKET / WAIT / NO TRADE), exitmotorn för en öppen position och "
+     "signalloggen. Välj ticker direkt ur senaste ⚔️ Viking Nine-skanningen."),
     ("REGIME → Marknad → Arc Regime → Viking Regime", "Viking: OVTLYR Nine + Viking Execution-filter",
      "OVTLYR Nine (Market 40 % · Sector 30 % · Stock 30 %) på riktiga priser för SPY, "
      "sektor-ETF:er och aktien — WOLF APPROXIMATION, saknad data räknas aldrig som PASS. "
