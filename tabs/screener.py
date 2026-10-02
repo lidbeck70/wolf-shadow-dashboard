@@ -585,7 +585,8 @@ def _render_ovtlyr_screener_ui():
                      height=min(600, 38 + 35 * len(results)))
         st.caption(
             "Kontextkolumner (påverkar INTE Composite/Signal ännu): "
-            "V9 (Viking Nine) · F&G (Fear & Greed) · Retail · OC (Overhead Clusters). "
+            "V9 (Viking Execution-filter: egna indikatorer, inte OVTLYR Nine) · F&G (Fear & Greed) · "
+            "Retail · OC (Overhead Clusters). "
             "Composite/Signal drivs enbart av Trend · Momentum · Volatility · Volume · ADX "
             "plus absolut eligibility (Pris>EMA200 & ADX≥20)."
         )

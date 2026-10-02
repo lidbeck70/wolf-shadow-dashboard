@@ -432,7 +432,7 @@ def _render_scheduled_settings(send_fn) -> None:
              "scanningen — Market · Sector · Stock · Ichimoku.",
              ("min_score", "Larmribba (score)", 50, 125, 80)),
             ("viking", "Viking (OVTLYR)",
-             "En ticker som NYTT når Vikings Nine-ribban OCH klarar absoluta "
+             "En ticker som NYTT når Viking Execution-filtrets ribba OCH klarar absoluta "
              "grinden (pris > EMA200, ADX ≥ 20).",
              ("min_nine", "Larmribba (Nine av 9)", 5, 9, 8)),
             ("contrarian", "🎯 Deep Contrarian",

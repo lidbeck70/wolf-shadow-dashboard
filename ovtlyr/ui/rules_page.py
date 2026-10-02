@@ -403,7 +403,7 @@ def _guide_viking() -> None:
         st.markdown(
             _gs("5. Var i panelen",
                 _ul([
-                    "<b>Alla 10 entry-regler:</b> REGIME → Viking Regime (Vikings Nine-checklist).",
+                    "<b>Alla 10 entry-regler:</b> REGIME → Viking Regime (OVTLYR Nine-kortet: Market · Sector · Stock).",
                     "<b>Screena momentum:</b> SCREENING → Arc Screener (Viking-filter).",
                     "<b>Marknadsbreadd:</b> REGIME → Viking Regime → Bull List % gauge.",
                     "<b>Sektor:</b> INTELLIGENCE → Heatmap / Flow Divergence.",
@@ -1065,7 +1065,9 @@ _PANEL_GUIDE: list[tuple] = [
     ("REGIME → Marknad → Arc Regime → Wolf Regime", "Wolf: alla regler",
      "4-lagers regime + Entry Checklist (Trend/Volatilitet/Momentum/Candlestick/"
      "OB) med auto-pass/fail. SL/TP-kalkylator. Benchmark RS."),
-    ("REGIME → Marknad → Arc Regime → Viking Regime", "Viking: alla + Vikings Nine",
+    ("REGIME → Marknad → Arc Regime → Viking Regime", "Viking: OVTLYR Nine + Viking Execution-filter",
+     "OVTLYR Nine (Market 40 % · Sector 30 % · Stock 30 %) på riktiga priser för SPY, "
+     "sektor-ETF:er och aktien — WOLF APPROXIMATION, saknad data räknas aldrig som PASS. "
      "Prisgraf + EMA 10/20/50/200 + Order Blocks. Per-ticker Fear & Greed. "
      "Overhead Clusters. SL/TP-kalkylator."),
     ("REGIME → Marknad → Alpha Regime → Quality & Contrarian",
