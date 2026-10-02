@@ -284,6 +284,26 @@ def _load_nine(ticker: str, df: pd.DataFrame, ob_analysis: dict):
         return None
 
 
+def _earnings_date(ticker: str):
+    """Nästa rapportdatum (earnings_calendar, cachad 24 h) eller None."""
+    try:
+        from earnings_calendar import _fetch_earnings_date
+        return (_fetch_earnings_date(ticker) or {}).get("date")
+    except Exception:
+        return None
+
+
+def _render_viking_exit(ticker: str, df: pd.DataFrame, nine, ob_analysis: dict) -> None:
+    """VIKING EXIT ENGINE (viking_exit.py) för en öppen position."""
+    try:
+        from ovtlyr.ui.exit_card import render_exit_section
+        render_exit_section(ticker, _stock_frame(df, 25), nine, ob_analysis, _earnings_date(ticker))
+    except ImportError:
+        return
+    except Exception as exc:
+        st.warning(f"Viking Exit kunde inte räknas: {exc}")
+
+
 def _render_viking_execution(ticker: str, df: pd.DataFrame, nine, ob_analysis: dict) -> None:
     """VIKING EXECUTION · RISK ENGINE · FINAL DECISION (viking_execution.py)."""
     try:
@@ -300,12 +320,7 @@ def _render_viking_execution(ticker: str, df: pd.DataFrame, nine, ob_analysis: d
     max_pos = _c2.number_input("Max position (% av kapitalet)", min_value=5.0, max_value=100.0,
                                value=float(_vx.MAX_POSITION_PCT), step=5.0, key="vx_max_pos")
     frame = _stock_frame(df)
-    earnings_date = None
-    try:
-        from earnings_calendar import _fetch_earnings_date
-        earnings_date = (_fetch_earnings_date(ticker) or {}).get("date")
-    except Exception:
-        earnings_date = None
+    earnings_date = _earnings_date(ticker)
     trades = []
     try:
         from trade_journal import load_journal
@@ -822,6 +837,8 @@ def render_ovtlyr_page() -> None:
 
     # VIKING EXECUTION · RISK ENGINE · FINAL DECISION — setup (Nine) ≠ entry
     _render_viking_execution(ticker, df, nine, ob_analysis)
+    # VIKING EXIT ENGINE — förvaltning av en öppen position
+    _render_viking_exit(ticker, df, nine, ob_analysis)
 
     # ── MIDDLE ROW ────────────────────────────────────────────────────
     mid_left, mid_right = st.columns([7, 3])
