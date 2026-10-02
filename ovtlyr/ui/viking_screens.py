@@ -2,8 +2,8 @@
 ovtlyr/ui/viking_screens.py — SCREENING → Arc Screener → ⚔️ Viking Nine.
 
 Skannar ett helt universum (samma marknader som Viking-screenern) i två steg
-och visar OVTLYR SCREEN, VIKING MOMENTUM SCREEN, bevakningslistan och
-signalloggen. Marknadslagret (SPY + bredd) är gemensamt och visas överst.
+och visar EN resultatlista (kategori, Nine, momentumkrav — med filter för
+momentumkandidater) och signalloggen. Marknadslagret (SPY + bredd) är gemensamt och visas överst.
 Screening ≠ automatisk entry — beslutet tas i REGIME → Viking Regime.
 """
 
@@ -52,7 +52,7 @@ def _sector(ticker: str):
 def _table(rows: list, extra=None) -> str:
     head = ("<tr style='color:%s;'><th style='text-align:left;'>Ticker</th><th>Nine</th><th>Viktat</th>"
             "<th>M</th><th>S</th><th>St</th><th>Viking</th><th>Beslut</th><th>Kategori</th><th>Entry</th>"
-            "<th>Stopp</th><th>R/R</th>%s</tr>") % (DIM, "<th style='text-align:left;'>Saknas</th>" if extra else "")
+            "<th>Stopp</th><th>R/R</th>%s</tr>") % (DIM, "<th style='text-align:left;'>Momentum</th>" if extra else "")
     body = []
     for r in rows:
         n, d = r["nine"], r["decision"]
@@ -112,11 +112,10 @@ def render_viking_nine_page() -> None:
                                      key="vn_markets")
         else:
             markets = []
-        c1, c2, c3 = st.columns(3)
+        c1, c2 = st.columns(2)
         n_cand = c1.number_input("Kandidater till steg 2", min_value=5, max_value=vs.CANDIDATES_CAP,
                                  value=vs.MAX_CANDIDATES, step=5, key="vn_candidates")
         capital = c2.number_input("Kapital (SEK)", min_value=0.0, value=100000.0, step=10000.0, key="vn_capital")
-        need_vol = c3.checkbox("Kräv relativ volym ≥ %.2f×" % vx.RELATIVE_VOLUME_MIN, value=False, key="vn_need_vol")
         extra = st.text_input("Egna tickers (läggs till universumet, valfritt)", key="vn_extra",
                               placeholder="t.ex. NVDA, MSFT")
         go = st.form_submit_button("⚔️ SCAN")
@@ -159,40 +158,37 @@ def render_viking_nine_page() -> None:
                     f"<b style='color:{TEXT};'>{f.get('passed', '—')}</b> → steg 2 analyserade "
                     f"<b style='color:{TEXT};'>{f.get('candidates', len(rows))}</b></div>", unsafe_allow_html=True)
 
-    t1, t2, t3, t4 = st.tabs(["OVTLYR SCREEN", "VIKING MOMENTUM SCREEN", "BEVAKNINGSLISTA", "SIGNALLOGG"])
+    t1, t2 = st.tabs(["RESULTAT", "SIGNALLOGG"])
     with t1:
         if rows:
-            st.markdown(_table(vs.ovtlyr_screen(rows)), unsafe_allow_html=True)
-            note("Alla tickers sorterade på OVTLYR Nine (antal godkända, sedan viktad poäng). M/S/St = "
-                 "Market/Sector/Stock. Allt är WOLF APPROXIMATION — riktiga priser, panelens definitioner.")
+            _render_results(rows)
     with t2:
-        if rows:
-            hits = vs.momentum_screen(rows, need_vol)
-            if hits:
-                st.markdown(_table(hits), unsafe_allow_html=True)
-            else:
-                note("Ingen ticker klarar momentum-screenen just nu.")
-            with st.expander("Varför föll de andra?"):
-                rest = [r for r in vs.ovtlyr_screen(rows) if r not in hits]
-                st.markdown(_table(rest, extra=lambda r: ", ".join(vs.momentum_pass(r, need_vol)[1])),
-                            unsafe_allow_html=True)
-            note(f"Krav: Nine ≥ {vs.MOMENTUM_MIN_NINE}/9 · kurs > EMA10 > EMA20 > EMA50 · RSI > {vx.RSI_MIN:g} och "
-                 f"stigande · inget bearish block nära · R/R ≥ {vx.MINIMUM_RR:g}"
-                 + (" · relativ volym" if need_vol else "") + ". Hittar kandidater — ingen automatisk entry.")
-    with t3:
-        if rows:
-            wl = vs.watchlist(rows)
-            for cat in vs.CATEGORY_ORDER:
-                items = wl.get(cat, [])
-                st.markdown(f"<div style='color:{_CAT_COLOR[cat]};font-weight:700;letter-spacing:0.08em;"
-                            f"margin-top:10px;'>{cat} <span style='color:{DIM};font-weight:400;'>({len(items)})"
-                            f"</span></div>", unsafe_allow_html=True)
-                if items:
-                    st.markdown(_table(items), unsafe_allow_html=True)
-            note("GOLDEN TICKET = 9/9 + Viking Execution klar · READY = 9/9 men entryn väntar · DEVELOPING = 7–8/9 "
-                 "· REJECTED = ≤ 6/9. Kategorin säger hur många villkor som är uppfyllda — inte aktiens kvalitet.")
-    with t4:
         _render_log(log)
+
+
+def _render_results(rows: list) -> None:
+    counts = {c: sum(1 for r in rows if r["category"] == c and r["nine"] is not None) for c in vs.CATEGORY_ORDER}
+    st.markdown("<div style='display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 8px;'>" + "".join(
+        f"<div style='border:1px solid {_CAT_COLOR[c]};border-radius:4px;padding:2px 8px;color:{_CAT_COLOR[c]};"
+        f"font-weight:700;font-size:0.78rem;'>{c} {n}</div>" for c, n in counts.items()) + "</div>",
+        unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
+    only = c1.checkbox("Bara momentumkandidater", value=False, key="vn_momentum_only")
+    need_vol = c2.checkbox("Kräv relativ volym ≥ %.2f×" % vx.RELATIVE_VOLUME_MIN, value=False, key="vn_need_vol")
+    shown = vs.results(rows, momentum_only=only, require_volume=need_vol)
+
+    def _why(r):
+        ok, why = vs.momentum_pass(r, need_vol)
+        return "✓ momentumkandidat" if ok else ", ".join(why)
+    if shown:
+        st.markdown(_table(shown, extra=_why), unsafe_allow_html=True)
+    else:
+        note("Ingen ticker klarar momentum-kraven just nu.")
+    note("Sorterad på kategori och sedan OVTLYR Nine. GOLDEN TICKET = 9/9 + Viking Execution klar · READY = 9/9 men "
+         "entryn väntar · DEVELOPING = 7–8/9 · REJECTED = ≤ 6/9 — hur många villkor som är uppfyllda, inte aktiens "
+         f"kvalitet. Momentumkandidat = Nine ≥ {vs.MOMENTUM_MIN_NINE}/9 · kurs > EMA10 > EMA20 > EMA50 · RSI > "
+         f"{vx.RSI_MIN:g} och stigande · inget bearish block nära · R/R ≥ {vx.MINIMUM_RR:g}"
+         + (" · relativ volym" if need_vol else "") + ". M/S/St = Market/Sector/Stock. WOLF APPROXIMATION.")
 
 
 def _render_log(log: list) -> None:

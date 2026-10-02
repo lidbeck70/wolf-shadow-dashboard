@@ -1,5 +1,5 @@
 """
-viking_screen.py — Vikings två screeners, bevakningslistan och signalloggen.
+viking_screen.py — Viking Nine-screenern: en resultatlista och signalloggen.
 
 Skanningen går i två steg så att ett helt universum (Norden, USA …) hinner:
   Steg 1  alla tickers i en batch (bara stängningskurser): aktiens Trend och
@@ -8,11 +8,12 @@ Skanningen går i två steg så att ett helt universum (Norden, USA …) hinner:
   Steg 2  de bästa kandidaterna (förval 40) får full OVTLYR Nine (sektor, F&G,
           order blocks) och Viking Execution. Rapportdatum hämtas bara för 9/9.
 
-  OVTLYR SCREEN          alla tickers sorterade på OVTLYR Nine (9/9, 8/9, 7/9 …)
-  VIKING MOMENTUM SCREEN Nine ≥ 7/9 · kurs > EMA10 > EMA20 > EMA50 · RSI > 50 och
+  RESULTAT (results)     en lista sorterad på kategori och sedan Nine; filtret
+                         "bara momentumkandidater" kräver:
+                         Nine ≥ 7/9 · kurs > EMA10 > EMA20 > EMA50 · RSI > 50 och
                          stigande momentum · inget bearish block nära · R/R ≥ 2 ·
                          relativ volym (valfritt krav, av som standard)
-  BEVAKNINGSLISTA        GOLDEN TICKET (9/9 + PASS) · READY (9/9 + WAIT) ·
+  KATEGORI               GOLDEN TICKET (9/9 + PASS) · READY (9/9 + WAIT) ·
                          DEVELOPING (7–8/9) · REJECTED (≤ 6/9)
   SIGNALLOGG             varje GOLDEN TICKET / READY med tidsstämpel, Nine per
                          lager, Viking-poäng, entry, stopp, ATR, position, R/R,
@@ -188,6 +189,17 @@ def watchlist(rows: list) -> dict:
     out = {c: [] for c in CATEGORY_ORDER}
     for r in ovtlyr_screen(rows):
         out.setdefault(r["category"], []).append(r)
+    return out
+
+
+def results(rows: list, momentum_only: bool = False, require_volume: bool = False) -> list:
+    """EN lista: sorterad på kategori (GOLDEN TICKET → REJECTED), sedan Nine.
+    momentum_only = samma urval som VIKING MOMENTUM SCREEN."""
+    order = {c: i for i, c in enumerate(CATEGORY_ORDER)}
+    ranked = ovtlyr_screen(rows)
+    out = sorted(ranked, key=lambda r: order.get(r["category"], len(order)) if r["nine"] is not None else len(order))
+    if momentum_only:
+        out = [r for r in out if momentum_pass(r, require_volume)[0]]
     return out
 
 
