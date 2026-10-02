@@ -163,7 +163,19 @@ def backtest_ticker(ticker: str, stock: pd.DataFrame, spy: Optional[pd.DataFrame
     count8 = f[eight].sum(axis=1)
     o, h, lo, c = (stock[k].astype(float).values for k in ("Open", "High", "Low", "Close"))
     idx = stock.index
-    first = max(WARMUP_BARS, int(np.searchsorted(idx, pd.Timestamp(start))) if start is not None else 0)
+    # Robust start-position lookup: np.searchsorted on a DatetimeIndex crashes in
+    # pandas>=2 when the index resolution (s/ms/us) differs from the Timestamp's
+    # (ns) — _unbox_scalar uses round_ok=False. A boolean comparison converts
+    # units/tz gracefully and is equivalent to searchsorted(side="left").
+    start_pos = 0
+    if start is not None:
+        _ts = pd.Timestamp(start)
+        if getattr(idx, "tz", None) is not None and _ts.tz is None:
+            _ts = _ts.tz_localize(idx.tz)
+        elif getattr(idx, "tz", None) is None and _ts.tz is not None:
+            _ts = _ts.tz_localize(None)
+        start_pos = int((idx < _ts).sum())
+    first = max(WARMUP_BARS, start_pos)
     i = first
     while i < n - 1:
         if count8.iloc[i] + 1 < cfg.min_nine or not f["market.signal"].iloc[i]:
