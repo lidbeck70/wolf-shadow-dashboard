@@ -47,7 +47,7 @@ SUBS: dict = {
     "regime/Marknad/Arc Regime": ["Wolf Regime", "Viking Regime", "⚔️ Viking Nine Regime"],
     "regime/Marknad/Alpha Regime": ["Quality & Contrarian", "Long Trend"],
     "regime/Råvaror": ["🌍 EMBER Regime", "Råvarurotation", "🥇🥈 Guld/Silver", "🥇 Guldkvoter"],
-    "intel": ["Odin's Blindspot", "Sentiment", "Retail Pulse", "Heatmap"],
+    "intel": ["Odin's Blindspot", "Sentiment", "Retail Pulse", "Heatmap", "🕯️ Teknisk analys"],
     "portfolio": ["📓 Trade Journal", "Holdings", "Swing", "Allokering", "Backtest"],
     "rules": ["Regler & Guider", "Position Sizing", "Data Health"],
     "rules/Regler & Guider": ["🚀 KOM IGÅNG", "📋 HANDELSREGLER", "⚡ FUSKLAPP",

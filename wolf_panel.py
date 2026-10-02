@@ -264,6 +264,13 @@ try:
 except ImportError:
     MARKET_RISK_AVAILABLE = False
 
+# Teknisk analys (INTELLIGENCE) — pris, order blocks, mönster, risk för valfri ticker
+try:
+    from tech_analysis import render_tech_analysis_page
+    TECH_ANALYSIS_AVAILABLE = True
+except ImportError:
+    TECH_ANALYSIS_AVAILABLE = False
+
 # Guldkvoter (REGIME → Råvaror) — råvaror och index mätta i guld
 try:
     from gold_ratios.ui import render_gold_ratios_page
@@ -501,6 +508,8 @@ def main():
                       "retail_sentiment")
             elif sub == "Heatmap":
                 _page(HEATMAP_AVAILABLE, render_heatmap_page, "Heatmap", "heatmap")
+            elif sub == "🕯️ Teknisk analys":
+                _page(TECH_ANALYSIS_AVAILABLE, render_tech_analysis_page, "Teknisk analys", "tech_analysis")
 
     # ── PORTFOLIO ─────────────────────────────────────────────────────────────
     if _is_open(tabs["portfolio"]):
