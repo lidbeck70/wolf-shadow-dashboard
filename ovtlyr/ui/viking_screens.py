@@ -49,12 +49,10 @@ def _risk_for(ticker: str):
 
 
 def _sector(ticker: str):
-    try:
-        from ovtlyr.ui.layout import _sector_of
-        return _sector_of(ticker)
-    except Exception:
-        import ovtlyr_nine as on
-        return on._sector_default(ticker)
+    """Yahoos sektor (reserv — Börsdata prövas först i ovtlyr_nine.resolve_sector).
+    Bara lyckade svar cachas länge; ett strypt Yahoo-svar provas igen efter tio minuter."""
+    import ovtlyr_nine as on
+    return on._sector_default(ticker)
 
 
 def _table(rows: list, extra=None) -> str:

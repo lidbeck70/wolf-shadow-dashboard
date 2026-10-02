@@ -92,6 +92,7 @@ class NineResult:
     stock: list = field(default_factory=list)
     sector_etf: Optional[str] = None
     etf_states: dict = field(default_factory=dict)      # ETF → (kurs/EMA50 − 1) i %
+    sector_source: str = ""                             # varifrån sektorn kom (Börsdata / Yahoo)
 
     @property
     def factors(self) -> list:
@@ -329,23 +330,84 @@ def sector_etf_for(sector: Optional[str]) -> Optional[str]:
     return SECTOR_ETFS.get(str(sector or "").strip())
 
 
-def _sector_default(ticker: str) -> Optional[str]:
+# Börsdatas sektorId (1–10, contrarian_alpha.necessity.BORSDATA_SECTOR_MAP) → SPDR-ETF
+BORSDATA_SECTOR_ETFS = {1: ("Finans & Fastighet", "XLF"), 2: ("Dagligvaror", "XLP"), 3: ("Energi", "XLE"),
+                        4: ("Hälsovård", "XLV"), 5: ("Industri", "XLI"), 6: ("Informationsteknik", "XLK"),
+                        7: ("Material", "XLB"), 8: ("Sällanköpsvaror", "XLY"), 9: ("Telekommunikation", "XLC"),
+                        10: ("Kraftförsörjning", "XLU")}
+SECTOR_TTL_OK, SECTOR_TTL_FAIL = 86_400, 600       # ett misslyckat uppslag provas igen efter tio minuter
+_SECTOR_CACHE: dict = {}
+_BD_STATE: dict = {}
+
+
+def _cached(key, fn):
+    import time
+    hit = _SECTOR_CACHE.get(key)
+    if hit and time.time() - hit[0] < (SECTOR_TTL_OK if hit[1] is not None else SECTOR_TTL_FAIL):
+        return hit[1]
     try:
-        import yfinance as yf
-        return (yf.Ticker(ticker).info or {}).get("sector")
+        val = fn()
     except Exception as exc:
-        logger.debug("sektor %s: %s", ticker, exc)
-        return None
+        logger.debug("sektor %s: %s", key, exc)
+        val = None
+    _SECTOR_CACHE[key] = (time.time(), val)
+    return val
+
+
+def _sector_default(ticker: str) -> Optional[str]:
+    """yfinance-sektorn ('Technology' …). Bara lyckade svar cachas länge."""
+    def fetch():
+        import yfinance as yf
+        return (yf.Ticker(ticker).info or {}).get("sector") or None
+    return _cached(("yf", str(ticker).upper()), fetch)
+
+
+def _bd_sector_id(ticker: str) -> Optional[int]:
+    """Börsdatas sektorId för tickern — nordiska listan först, sedan den globala."""
+    def fetch():
+        api = _BD_STATE.get("api")
+        if api is None:
+            from borsdata_api import BorsdataAPI
+            api = BorsdataAPI()
+            _BD_STATE["api"] = api
+        if not api.is_configured:
+            return None
+        iid = api.resolve_instrument_id(str(ticker))
+        if iid is not None and api._id_map and iid in api._id_map:
+            return api._id_map[iid].get("sectorId")
+        glob = _BD_STATE.get("global")
+        if glob is None:
+            glob = {str(i.get("ticker", "")).upper(): i.get("sectorId") for i in api.get_global_instruments_list()}
+            _BD_STATE["global"] = glob
+        return glob.get(str(ticker).upper())
+    return _cached(("bd", str(ticker).upper()), fetch)
+
+
+def resolve_sector(ticker: str, sector_getter: Optional[Callable] = None,
+                   bd_sector: Optional[Callable] = None) -> tuple:
+    """(sektor-ETF | None, källtext). Börsdata först (inga Yahoo-anrop, finns för
+    nordiska bolag), sedan Yahoos sektor."""
+    tried = []
+    sid = (bd_sector or _bd_sector_id)(ticker)
+    if sid in BORSDATA_SECTOR_ETFS:
+        name, etf = BORSDATA_SECTOR_ETFS[sid]
+        return etf, f"Börsdata · {name} → {etf}"
+    tried.append("Börsdata" + (f" (sektorId {sid})" if sid is not None else ""))
+    sec = (sector_getter or _sector_default)(ticker)
+    etf = sector_etf_for(sec)
+    if etf:
+        return etf, f"Yahoo · {sec} → {etf}"
+    tried.append("Yahoo" + (f" ({sec})" if sec else ""))
+    return None, "sektor okänd — provade " + " och ".join(tried)
 
 
 def evaluate(ticker: str, stock_df: Optional[pd.DataFrame] = None, ob_analysis: Optional[dict] = None,
              getter: Optional[Callable] = None, sector_getter: Optional[Callable] = None,
-             today=None) -> NineResult:
+             today=None, bd_sector: Optional[Callable] = None) -> NineResult:
     """Hämtar SPY, sektor-ETF:erna och (vid behov) aktien via den delade
     priscachen och räknar Nine. Saknad data blir DATA UNAVAILABLE."""
     if getter is None:
         from market_prices import ohlcv as getter
-    sector_getter = sector_getter or _sector_default
 
     def _get(t):
         try:
@@ -365,6 +427,11 @@ def evaluate(ticker: str, stock_df: Optional[pd.DataFrame] = None, ob_analysis: 
     spy = _get(MARKET_TICKER)
     etfs = {t: _get(t) for t in SECTOR_ETFS.values()}
     etf_closes = {t: _close(d) for t, d in etfs.items()}
-    sector_etf = sector_etf_for(sector_getter(ticker))
-    return compute(ticker, stock_df, spy, sector_etf, etfs.get(sector_etf) if sector_etf else None,
-                   etf_closes, ob_analysis=ob_analysis, today=today)
+    sector_etf, sector_src = resolve_sector(ticker, sector_getter, bd_sector)
+    r = compute(ticker, stock_df, spy, sector_etf, etfs.get(sector_etf) if sector_etf else None,
+                etf_closes, ob_analysis=ob_analysis, today=today)
+    r.sector_source = sector_src
+    if sector_etf is None:
+        for f in r.sector:
+            f.detail = sector_src
+    return r
