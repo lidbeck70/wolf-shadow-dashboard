@@ -243,6 +243,13 @@ try:
 except ImportError:
     GOLD_SILVER_AVAILABLE = False
 
+# Viking Nine (SCREENING → Arc Screener) — OVTLYR Nine + Viking Execution över en lista
+try:
+    from ovtlyr.ui.viking_screens import render_viking_nine_page
+    VIKING_NINE_AVAILABLE = True
+except ImportError:
+    VIKING_NINE_AVAILABLE = False
+
 # Guldkvoter (REGIME → Råvaror) — råvaror och index mätta i guld
 try:
     from gold_ratios.ui import render_gold_ratios_page
@@ -377,6 +384,8 @@ def main():
                     tab_screener()
                 elif inner == "Viking":
                     _page(OVTLYR_AVAILABLE, render_viking_screener, "Viking Screener", "screener_ovtlyr")
+                elif inner == "⚔️ Viking Nine":
+                    _page(VIKING_NINE_AVAILABLE, render_viking_nine_page, "Viking Nine", "viking_screen")
                 elif inner == "🔥 EMBER":
                     _page(EMBER_AVAILABLE, render_ember_page, "EMBER", "ember")
             elif sub == "Contrarian Alpha":

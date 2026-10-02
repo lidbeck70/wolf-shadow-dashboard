@@ -34,7 +34,7 @@ TOP_LABEL = dict(TOP)
 # kvalar (SCREENING), och vilket av dem som köps (GRANSKNING).
 SUBS: dict = {
     "screening": ["Arc Screener", "Contrarian Alpha", "Swing Screener"],
-    "screening/Arc Screener": ["Wolf", "Viking", "🔥 EMBER"],
+    "screening/Arc Screener": ["Wolf", "Viking", "⚔️ Viking Nine", "🔥 EMBER"],
     "screening/Contrarian Alpha": ["Screener", "Long Screener"],
     # Beslutsunderlaget efter screeningen. Durrett har sitt ark
     # (data/confidence.json); Wolf Asymmetry har sitt eget med Confidence inbyggt.
