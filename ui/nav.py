@@ -44,7 +44,7 @@ SUBS: dict = {
     "regime": ["Marknad", "Råvaror"],
     "regime/Marknad": ["Arc Regime", "Alpha Regime", "Swing Regime",
                        "Flow Divergence", "Market Cycle"],
-    "regime/Marknad/Arc Regime": ["Wolf Regime", "Viking Regime"],
+    "regime/Marknad/Arc Regime": ["Wolf Regime", "Viking Regime", "⚔️ Viking Nine Regime"],
     "regime/Marknad/Alpha Regime": ["Quality & Contrarian", "Long Trend"],
     "regime/Råvaror": ["🌍 EMBER Regime", "Råvarurotation", "🥇🥈 Guld/Silver", "🥇 Guldkvoter"],
     "intel": ["Odin's Blindspot", "Sentiment", "Retail Pulse", "Heatmap"],
