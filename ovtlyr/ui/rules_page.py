@@ -1067,9 +1067,9 @@ _PANEL_GUIDE: list[tuple] = [
      "OB) med auto-pass/fail. SL/TP-kalkylator. Benchmark RS."),
     ("SCREENING → Arc Screener → ⚔️ Viking Nine", "Viking: OVTLYR Nine + Viking Execution över universumet",
      "Skannar valda marknader i två steg (trend + signal på hela universumet, sedan full Nine på de "
-     "bästa kandidaterna). OVTLYR SCREEN (sorterad på Nine), VIKING MOMENTUM SCREEN (Nine ≥ 7, EMA-stack, RSI > 50, "
-     "inget bearish block, R/R ≥ 2), bevakningslista GOLDEN TICKET / READY / DEVELOPING / REJECTED "
-     "och signallogg. Screening ≠ automatisk entry."),
+     "bästa kandidaterna). En resultatlista sorterad på kategori (GOLDEN TICKET / READY / DEVELOPING / "
+     "REJECTED) och Nine, med filtret Bara momentumkandidater (Nine ≥ 7, EMA-stack, RSI > 50, inget "
+     "bearish block, R/R ≥ 2), och signallogg. Screening ≠ automatisk entry."),
     ("REGIME → Marknad → Arc Regime → Viking Regime", "Viking: OVTLYR Nine + Viking Execution-filter",
      "OVTLYR Nine (Market 40 % · Sector 30 % · Stock 30 %) på riktiga priser för SPY, "
      "sektor-ETF:er och aktien — WOLF APPROXIMATION, saknad data räknas aldrig som PASS. "

@@ -152,8 +152,19 @@ def test_page_scans_markets(monkeypatch):
     html = " ".join(m.value for m in at.markdown)
     assert "universum <b" in html and "steg 1 (trend + signal)" in html
     assert "<b>GOOD</b>" in html and "9/9" in html                     # BAD och NODATA föll i steg 1
-    assert "<b>BAD</b>" not in html
+    assert "<b>BAD</b>" not in html and "Momentum</th>" in html
+    assert "READY 1" in html or "GOLDEN TICKET 1" in html
+    at.checkbox(key="vn_momentum_only").check().run()
+    assert not at.exception, at.exception
     assert at.session_state[vs.LOG_STORE][0]["ticker"] == "GOOD"
+
+
+def test_one_result_list_sorted_by_category_with_momentum_filter():
+    rows = _run()
+    out = vs.results(rows)
+    assert [r["ticker"] for r in out] == ["GOOD", "BAD", "NODATA"]          # kategori → Nine; saknad data sist
+    only = vs.results(rows, momentum_only=True)
+    assert all(vs.momentum_pass(r)[0] for r in only) and all(r["ticker"] != "BAD" for r in only)
 
 
 def test_navigation():
