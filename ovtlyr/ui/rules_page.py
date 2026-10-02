@@ -1182,8 +1182,10 @@ _PANEL_GUIDE: list[tuple] = [
     ("PORTFOLIO → 📓 Trade Journal", "Alla — disciplin",
      "Logga varje affär: entry, exit, R, exit-anledning och om du följde planen. "
      "Utan journal går strategin inte att utvärdera."),
-    ("PORTFOLIO → Backtest", "Wolf · Alpha · Viking",
-     "Historisk signalvalidering med strategiernas egna parametrar."),
+    ("PORTFOLIO → Backtest", "Wolf · Alpha · Viking · ⚔️ Viking Nine",
+     "Historisk signalvalidering med strategiernas egna parametrar. ⚔️ Viking Nine: OVTLYR Nine + "
+     "Viking Execution + exitmotorn utan look-ahead (entry nästa öppning), i R — expectancy, profit "
+     "factor, max drawdown, win rate, flest förluster i rad, snittinnehav."),
     ("ALERTS", "Alla — larmen",
      "Schemalagda körningar: regim, screeners, håvar, arkens händelser. "
      "Discord-kanalerna och larmloggen."),

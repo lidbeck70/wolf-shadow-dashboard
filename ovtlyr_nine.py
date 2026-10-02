@@ -207,6 +207,22 @@ def fear_greed(df: pd.DataFrame) -> Optional[float]:
     return float(_score_fear_greed(df))
 
 
+def fear_greed_series(df: pd.DataFrame) -> pd.Series:
+    """Samma syntetiska F&G som screener_ovtlyr._score_fear_greed, men för varje
+    dag (bara data fram till dagen — används av backtestet utan look-ahead)."""
+    from screener_ovtlyr import _rsi
+    c, v = df["Close"].astype(float), df["Volume"].astype(float)
+    rng = df["High"].astype(float) - df["Low"].astype(float)
+    z = ((v - v.rolling(20).mean()) / np.maximum(1.0, v.rolling(20).std())).clip(-3, 3)
+    ma20 = c.rolling(20).mean()
+    ratio = rng.rolling(5).mean() / np.maximum(0.001, rng.rolling(20).mean())
+    score = ((z + 3) / 6 * 20 + _rsi(c, 14) / 100 * 20
+             + ((c - ma20) / ma20 + 0.05).div(0.10).mul(20).clip(0, 20)
+             + ((1.5 - ratio) / 1.0 * 20).clip(0, 20)
+             + (c.diff() > 0).astype(float).rolling(20).sum() / 20 * 20)
+    return score.clip(0, 100).round(1)
+
+
 def _fg_check(df: pd.DataFrame) -> Callable:
     def check(_c):
         now, prev = fear_greed(df), fear_greed(df.iloc[:-FG_LOOKBACK])
