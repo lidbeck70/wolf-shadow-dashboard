@@ -7,7 +7,9 @@ uträkningen utskriven:
 
   HARD MARKET EXIT  marknaden (SPY, OMXS30 för nordiska) under EMA20 → stäng ALLT
   INITIAL STOP      entry − 1,5 × ATR14 (ATR vid entrydagen)
-  TRAILING STOP     stängning under EMA10
+  TRAILING STOP     stängning under EMA10 — först när stoppen flyttats till
+                    breakeven (backtestet: +0,21R/affär mot +0,04R med EMA10
+                    från dag ett, som sålde affärer innan de hunnit gå)
   BE EXIT           när stoppen flyttats till breakeven (ny högre topp efter
                     entry): stängning under gårdagens low
   BEARISH BLOCK     kursen går in i ett bearish order block
@@ -137,11 +139,17 @@ def evaluate_exit(ticker: str, df: pd.DataFrame, entry: float, entry_date, nine=
                      + (f"(flyttad till breakeven {entry:,.2f})" if armed else
                         f"(entry − {vx.ATR_STOP_MULT:g} × ATR14 {atr_e:,.2f})")))
 
-    # TRAILING STOP — EMA10
+    # TRAILING STOP — EMA10, först efter breakeven
     e10 = float(vx._ema(c, 10).iloc[-1])
     out.trailing_stop = round(e10, 2)
-    t.append(Trigger("trail", "Trailing stop (EMA10)", ACTIVE if price < e10 else CLEAR,
-                     f"stängning {price:,.2f} {'<' if price < e10 else '≥'} EMA10 {e10:,.2f}"))
+    below = price < e10
+    if armed:
+        t.append(Trigger("trail", "Trailing stop (EMA10)", ACTIVE if below else CLEAR,
+                         f"stängning {price:,.2f} {'<' if below else '≥'} EMA10 {e10:,.2f}"))
+    else:
+        t.append(Trigger("trail", "Trailing stop (EMA10)", CLEAR,
+                         f"väntar på breakeven — EMA10 gäller först efter ny högre topp "
+                         f"(stängning {price:,.2f} {'<' if below else '≥'} EMA10 {e10:,.2f})"))
 
     # BE EXIT — efter flyttad stopp: stängning under gårdagens low
     if armed:

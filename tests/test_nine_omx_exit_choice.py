@@ -97,8 +97,8 @@ def test_backtest_uses_omxs30_for_nordic_tickers():
 
 def test_exit_presets_change_the_exits():
     tickers = [f"S{i}" for i in range(4)]
-    allr = _bt(tickers)
-    only = _bt(tickers, exit_rules=("trail",))
+    allr = _bt(tickers, trail_after_be=False)
+    only = _bt(tickers, exit_rules=("trail",), trail_after_be=False)
     assert {t.exit_reason for t in only["trades"] if not t.open} <= {"stopp", "breakeven-stopp", "trailing EMA10"}
     assert len({t.exit_reason for t in allr["trades"]}) >= len({t.exit_reason for t in only["trades"]})
     after = _bt(tickers, trail_after_be=True)

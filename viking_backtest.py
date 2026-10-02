@@ -38,10 +38,10 @@ WARMUP_BARS = 60
 EXIT_RULES = {"market": "Marknaden < EMA20", "trail": "Trailing EMA10", "be_exit": "BE exit (under gårdagens low)",
               "gap": "Gap & crap", "signal": "Aktiens signal", "breadth": "Sektor + bredd", "fg": "F&G-target"}
 ALL_EXITS = tuple(EXIT_RULES)
-# Förval: (regler, EMA10 först efter breakeven)
+# Förval: (regler, EMA10 först efter breakeven). Första = systemets regel (samma som viking_exit).
 EXIT_PRESETS = {
-    "Alla regler": (ALL_EXITS, False),
     "EMA10 först efter breakeven": (ALL_EXITS, True),
+    "Alla regler": (ALL_EXITS, False),
     "Kärnan (stopp, breakeven, EMA10, marknad)": (("market", "trail", "be_exit"), False),
     "Bara stopp + EMA10": (("trail",), False),
 }
@@ -65,7 +65,7 @@ class Config:
     atr_mult: float = vx.ATR_STOP_MULT
     years: int = 3
     exit_rules: tuple = ALL_EXITS
-    trail_after_be: bool = False       # EMA10 gäller först när stoppen flyttats till breakeven
+    trail_after_be: bool = True        # EMA10 gäller först när stoppen flyttats till breakeven (som viking_exit)
 
 
 @dataclass
