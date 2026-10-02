@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 HIGH, ELEVATED = "HÖG", "FÖRHÖJD"
 WOLF_HIGH_SIZE_FACTOR = 0.5
 TTL_S = 6 * 3600
+TTL_FAIL_S = 300                   # misslyckad nivå provas igen efter fem minuter
 _NORDIC = (".ST", ".OL", ".CO", ".HE")
 _CACHE: dict = {}
 
@@ -43,7 +44,7 @@ def summarize(r: mr.MarketRisk) -> Optional[dict]:
 def current(market: str, evaluator: Optional[Callable] = None) -> Optional[dict]:
     """Dagens nivå för marknaden (cachad TTL_S i processen). None när den inte gick att räkna."""
     hit = _CACHE.get(market)
-    if hit and time.time() - hit[0] < TTL_S:
+    if hit and time.time() - hit[0] < (TTL_S if hit[1] is not None else TTL_FAIL_S):
         return hit[1]
     try:
         r = (evaluator or (lambda m: mr.evaluate(m, light=True)))(market)

@@ -39,7 +39,8 @@ def _load(market: str) -> mr.MarketRisk:
         return hit[1]
     with st.spinner(f"Räknar {mr.MARKETS[market]['label']} …"):
         res = mr.evaluate(market)
-    cache[market] = (time.time(), res)
+    if not res.error:                                      # ett fel cachas inte — nästa laddning försöker igen
+        cache[market] = (time.time(), res)
     return res
 
 
