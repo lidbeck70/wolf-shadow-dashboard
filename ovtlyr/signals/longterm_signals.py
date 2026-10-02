@@ -26,6 +26,7 @@ def compute_longterm_signal(
     volatility: dict,
     ob_analysis: dict,
     sector_green: bool,
+    nine=None,
 ) -> dict:
     """
     OVTLYR Golden Ticket signal engine.
@@ -247,6 +248,42 @@ def compute_longterm_signal(
     stock_score = int(round(sum(stock_components) / len(stock_components) * 100))
 
     # ------------------------------------------------------------------ #
+    #  Riktig data (ovtlyr_nine.NineResult) ersätter proxyerna när den finns:
+    #  SPY, sektor-ETF:er och aktien — märkt WOLF APPROXIMATION. Utan nine
+    #  (t.ex. Holdings) räknas allt som förut.
+    # ------------------------------------------------------------------ #
+    nine_status: dict = {}
+    if nine is not None:
+        import ovtlyr_nine as _on
+
+        def _from(key):
+            f = nine.get(key)
+            if f is None:
+                nine_status[key] = _on.UNAVAILABLE
+                return False, "DATA UNAVAILABLE — räknas inte som PASS"
+            nine_status[key] = f.status
+            head = "" if f.status in (_on.PASS, _on.FAIL) else f"{f.status} — "
+            return f.passed, f"{head}{f.detail} · {f.source} [{_on.APPROXIMATION}]"
+
+        mkt_trend_ok, mkt_trend_detail = _from("market.trend")
+        mkt_signal_ok, mkt_signal_detail = _from("market.signal")
+        mkt_breadth_ok, mkt_breadth_detail = _from("market.breadth")
+        sec_fg_ok, sec_fg_detail = _from("sector.fear_greed")
+        sec_breadth_ok, sec_breadth_detail = _from("sector.breadth")
+        stk_signal_ok, stk_signal_detail = _from("stock.signal")
+        stk_trend_ok, stk_trend_detail = _from("stock.trend")
+        stk_fg_ok, stk_fg_detail = _from("stock.fear_greed")
+        stk_ob_ok, stk_ob_detail = _from("stock.blocks")
+        spy_sig = nine.get("market.signal")
+        spy_under_20ema = spy_sig is not None and spy_sig.status == _on.FAIL
+        stk_fg = nine.get("stock.fear_greed")
+        if stk_fg is not None and stk_fg.value is not None and stk_fg.status in (_on.PASS, _on.FAIL):
+            fg_known, sentiment_score = True, float(stk_fg.value)
+        market_score = int(round(sum([mkt_trend_ok, mkt_signal_ok, mkt_breadth_ok]) / 3 * 100))
+        sector_score = int(round(sum([sec_fg_ok, sec_breadth_ok]) / 2 * 100))
+        stock_score = int(round(sum([stk_signal_ok, stk_trend_ok, stk_fg_ok, stk_ob_ok]) / 4 * 100))
+
+    # ------------------------------------------------------------------ #
     #  OVTLYR NINE composite score
     # ------------------------------------------------------------------ #
     ovtlyr_nine = int(round(
@@ -263,7 +300,8 @@ def compute_longterm_signal(
     # Sell-off override check
     selloff_override = spy_under_20ema
     if selloff_override:
-        reasons.append("✗ SELL-OFF OVERRIDE: Price < 20EMA (SPY proxy) → NO NEW TRADES")
+        reasons.append("✗ SELL-OFF OVERRIDE: " + ("SPY < 20EMA" if nine is not None else
+                                                  "Price < 20EMA (SPY proxy)") + " → NO NEW TRADES")
 
     # Primary signal logic
     if ovtlyr_nine < 40 or spy_under_20ema or (not mkt_breadth_ok and not mkt_trend_ok):
@@ -347,6 +385,14 @@ def compute_longterm_signal(
     for g in gates:
         g["status"] = ("DATA UNAVAILABLE" if str(g["detail"]).startswith("DATA UNAVAILABLE")
                        else "PASS" if g["passed"] else "FAIL")
+    if nine is not None:
+        keys = ("market.trend", "market.signal", "market.breadth", "sector.fear_greed", "sector.breadth",
+                "stock.signal", "stock.trend", "stock.fear_greed", "stock.blocks")
+        for g, k in zip(gates, keys):
+            g["status"] = nine_status.get(k, g["status"])
+        spy_sig = nine.get("market.signal")
+        if spy_sig is not None:
+            gates[9]["detail"] = f"SPY: {spy_sig.status} — {spy_sig.detail}"
 
     # ------------------------------------------------------------------ #
     #  EXIT TRIGGERS

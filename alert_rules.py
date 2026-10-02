@@ -259,7 +259,7 @@ def wolf_alerts(wolf_data: Optional[dict], prev: Optional[dict],
 
 def viking_alerts(viking_data: Optional[dict], prev: Optional[dict],
                   min_nine: int = VIKING_MIN_NINE) -> tuple:
-    """(larm, nytt tillstånd). Larm när en ticker NYTT når Vikings Nine-ribban
+    """(larm, nytt tillstånd). Larm när en ticker NYTT når Viking Execution-filtrets ribba (V9, egna indikatorer — inte OVTLYR Nine)
     OCH klarar den absoluta grinden (pris > EMA200, ADX >= 20) — utan den är
     en hög Nine bara "bäst i en svag skara".
     """
@@ -292,7 +292,7 @@ def viking_alerts(viking_data: Optional[dict], prev: Optional[dict],
         alerts.append(_alert(
             "viking_nine",
             f"⚔️ Viking: {ticker} på {d['v9']}/9",
-            f"{d['name'] or ticker} nådde Vikings Nine {d['v9']}/9 och "
+            f"{d['name'] or ticker} nådde Viking Execution-filtret {d['v9']}/9 och "
             f"klarar den absoluta grinden (pris > EMA200, ADX ≥ 20){extra}. "
             f"Detaljer i SCREENING → Arc Screener → Viking."))
     return alerts, state

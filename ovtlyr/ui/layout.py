@@ -251,6 +251,33 @@ def _indicator_card(title: str, lines: list[tuple[str, str, str]], color: str) -
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=86400, show_spinner=False)
+def _sector_of(ticker: str):
+    """yfinance-sektorn (till sektor-ETF:en i OVTLYR Nine). None när den saknas."""
+    try:
+        import ovtlyr_nine as _on
+        return _on._sector_default(ticker)
+    except Exception:
+        return None
+
+
+def _load_nine(ticker: str, df: pd.DataFrame, ob_analysis: dict):
+    """OVTLYR Nine på riktiga priser (SPY, sektor-ETF:er, aktien) — None vid fel,
+    då sidan faller tillbaka på de gamla proxyerna."""
+    try:
+        import ovtlyr_nine as _on
+        stock = None
+        if df is not None and "Date" in df.columns and len(df) >= _on.MIN_BARS:
+            stock = df.set_index(pd.to_datetime(df["Date"]))[["Open", "High", "Low", "Close", "Volume"]]
+            if getattr(stock.index, "tz", None) is not None:
+                stock.index = stock.index.tz_localize(None)
+        return _on.evaluate(ticker, stock_df=stock, ob_analysis=ob_analysis, sector_getter=_sector_of)
+    except Exception as exc:
+        import logging as _lg
+        _lg.getLogger(__name__).warning("OVTLYR Nine: %s", exc)
+        return None
+
+
 def _fetch_etf_data_for_bull_list():
     import yfinance as yf
     etf_tickers = ["XLE", "XLF", "XLK", "XLV", "XLI", "XLB", "XLC", "XLY", "XLP", "XLU", "XLRE"]
@@ -627,7 +654,10 @@ def render_ovtlyr_page() -> None:
         }
 
         # Compute signals with scalar trend dict
-        lt_signal  = compute_longterm_signal(trend_scalar, sentiment, volatility, ob_analysis, sector_green)
+        # OVTLYR Nine på riktiga priser ersätter proxyerna (WOLF APPROXIMATION)
+        nine = _load_nine(ticker, df, ob_analysis)
+        lt_signal  = compute_longterm_signal(trend_scalar, sentiment, volatility, ob_analysis, sector_green,
+                                             nine=nine)
         swg_signal = compute_swing_signal(trend_scalar, momentum, volume_data, ob_analysis)
 
     # ── Composite score ───────────────────────────────────────────────
@@ -703,42 +733,48 @@ def render_ovtlyr_page() -> None:
 
     st.markdown("---")
 
-    # OVTLYR Gates Passed
-    st.markdown(
-        f"<div style='color:{CYAN};font-size:0.7rem;text-transform:uppercase;"
-        f"letter-spacing:0.1em;margin:12px 0 8px 0;'>OVTLYR ENTRY GATES</div>",
-        unsafe_allow_html=True,
-    )
-
-    gates = lt_signal.get("gates", [])
-    if gates:
-        passed = sum(1 for g in gates if g.get("passed", False))
-        total = len(gates)
-        gate_color = GREEN if passed >= total * 0.7 else (YELLOW if passed >= total * 0.4 else RED)
-
-        gate_html = f'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">'
-        for g in gates:
-            unknown = g.get("status") == "DATA UNAVAILABLE"
-            c = DIM if unknown else GREEN if g.get("passed") else RED
-            icon = "?" if unknown else "✓" if g.get("passed") else "✗"
-            short_rule = g.get("rule", "")[:30]
-            gate_html += (
-                f'<div style="background:{BG2};border:1px solid {c};border-radius:4px;'
-                f'padding:3px 8px;font-size:0.65rem;">'
-                f'<span style="color:{c};font-weight:700;">{icon}</span> '
-                f'<span style="color:{TEXT};">{short_rule}</span>'
-                f'</div>'
-            )
-        gate_html += f'</div>'
-        n_unknown = sum(1 for g in gates if g.get("status") == "DATA UNAVAILABLE")
-        gate_html += (
-            f'<div style="color:{gate_color};font-size:0.8rem;font-weight:700;">'
-            f'{passed}/{total} GATES PASSED'
-            + (f' <span style="color:{DIM};font-weight:400;">· {n_unknown} DATA UNAVAILABLE '
-               f'(räknas inte som PASS)</span>' if n_unknown else '')
-            + '</div>'
+    # OVTLYR NINE · SLINGSHOT SETUP (riktiga priser) — annars de gamla grindarna
+    if nine is not None:
+        from ovtlyr.ui.nine_card import render_nine_card
+        render_nine_card(nine)
+    else:
+        # OVTLYR Gates Passed
+        st.markdown(
+            f"<div style='color:{CYAN};font-size:0.7rem;text-transform:uppercase;"
+            f"letter-spacing:0.1em;margin:12px 0 8px 0;'>OVTLYR ENTRY GATES</div>",
+            unsafe_allow_html=True,
         )
-        st.markdown(gate_html, unsafe_allow_html=True)
+
+        gates = lt_signal.get("gates", [])
+        if gates:
+            passed = sum(1 for g in gates if g.get("passed", False))
+            total = len(gates)
+            gate_color = GREEN if passed >= total * 0.7 else (YELLOW if passed >= total * 0.4 else RED)
+
+            gate_html = f'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">'
+            for g in gates:
+                unknown = g.get("status") == "DATA UNAVAILABLE"
+                c = DIM if unknown else GREEN if g.get("passed") else RED
+                icon = "?" if unknown else "✓" if g.get("passed") else "✗"
+                short_rule = g.get("rule", "")[:30]
+                gate_html += (
+                    f'<div style="background:{BG2};border:1px solid {c};border-radius:4px;'
+                    f'padding:3px 8px;font-size:0.65rem;">'
+                    f'<span style="color:{c};font-weight:700;">{icon}</span> '
+                    f'<span style="color:{TEXT};">{short_rule}</span>'
+                    f'</div>'
+                )
+            gate_html += f'</div>'
+            n_unknown = sum(1 for g in gates if g.get("status") == "DATA UNAVAILABLE")
+            gate_html += (
+                f'<div style="color:{gate_color};font-size:0.8rem;font-weight:700;">'
+                f'{passed}/{total} GATES PASSED'
+                + (f' <span style="color:{DIM};font-weight:400;">· {n_unknown} DATA UNAVAILABLE '
+                   f'(räknas inte som PASS)</span>' if n_unknown else '')
+                + '</div>'
+            )
+            st.markdown(gate_html, unsafe_allow_html=True)
+
 
     # ── MIDDLE ROW ────────────────────────────────────────────────────
     mid_left, mid_right = st.columns([7, 3])
@@ -1049,7 +1085,7 @@ def render_ovtlyr_page() -> None:
         st.markdown(
             f"<div style='color:{CYAN};font-size:0.7rem;text-transform:uppercase;"
             f"letter-spacing:0.1em;margin:16px 0 8px 0;border-top:1px solid rgba(0,229,255,0.2);"
-            f"padding-top:12px;'>VIKING SCREENER — NINE · F&G · OVERHEAD</div>",
+            f"padding-top:12px;'>VIKING SCREENER — EXECUTION FILTER · F&G · OVERHEAD</div>",
             unsafe_allow_html=True,
         )
 
@@ -1072,7 +1108,9 @@ def render_ovtlyr_page() -> None:
                 f'<div style="{_CARD_CSS.format(color=_vn_score_color)}">'
                 f'<div style="color:{_vn_score_color};font-size:0.78rem;font-weight:700;'
                 f'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">'
-                f"VIKING'S NINE: {_vn_passed}/9</div>"
+                f"VIKING EXECUTION FILTER: {_vn_passed}/9</div>"
+                f'<div style="color:{DIM};font-size:0.65rem;margin-bottom:4px;">'
+                f'egna indikatorer — inte OVTLYR Nine</div>'
                 f'{_vn_lines}'
                 f'</div>',
                 unsafe_allow_html=True,
@@ -1348,6 +1386,19 @@ def render_ovtlyr_page() -> None:
                     st.plotly_chart(fig_hm, width='stretch', config={"displayModeBar": False})
                 except Exception as exc:
                     st.error(f"Heatmap error: {exc}")
+        elif nine is not None and nine.etf_states:
+            st.markdown(
+                f"<div style='color:{CYAN};font-size:0.75rem;letter-spacing:0.1em;'>SEKTOR-ETF:ER MOT EMA50 "
+                f"<span style='color:{DIM};'>— underlaget för marknadsbredden i OVTLYR Nine "
+                f"(WOLF APPROXIMATION)</span></div>", unsafe_allow_html=True)
+            _etf_rows = "".join(
+                f"<tr><td style='text-align:left;'>{_etf}</td>"
+                f"<td style='color:{GREEN if _d > 0 else RED};'>{_d:+.1f} %</td>"
+                f"<td>{'över' if _d > 0 else 'under'}</td></tr>"
+                for _etf, _d in sorted(nine.etf_states.items(), key=lambda kv: -kv[1]))
+            st.markdown(f"<table style='font-size:0.8rem;color:{TEXT};text-align:right;'>"
+                        f"<tr style='color:{DIM};'><th style='text-align:left;'>ETF</th><th>Kurs mot EMA50</th>"
+                        f"<th>Läge</th></tr>{_etf_rows}</table>", unsafe_allow_html=True)
         else:
             st.info("Sector breadth data unavailable.")
 
