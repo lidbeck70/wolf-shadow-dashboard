@@ -870,6 +870,19 @@ def tab_regime():
 
             _risk_amt_sl = _cap_wolf * (_risk_wolf / 100)
             _shares_sl = int(_risk_amt_sl / _sl_dist_sl) if _sl_dist_sl > 0 else 0
+            # 🌩️ Marknadsrisk HÖG → halverad position (market_risk_gate)
+            try:
+                import market_risk_gate as _mg
+                _mr_ticker = st.session_state.get("regime_ticker") or st.session_state.get("reg_ticker") or ""
+                _mr = _mg.for_ticker(_mr_ticker)
+                _mr_factor = _mg.size_factor(_mr)
+                if _mr_factor < 1:
+                    _shares_sl = int(_shares_sl * _mr_factor)
+                    _risk_amt_sl = _shares_sl * _sl_dist_sl
+                    st.warning(f"🌩️ {_mg.describe(_mr)} — Wolf-positionen halveras "
+                               f"({int(_mr_factor * 100)} % av normal storlek).")
+            except Exception:
+                pass
             _pos_val_sl = _shares_sl * _price_sl
             _pos_pct_sl = (_pos_val_sl / _cap_wolf * 100) if _cap_wolf > 0 else 0
 

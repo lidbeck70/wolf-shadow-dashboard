@@ -116,4 +116,5 @@ jobs:
           ALERT_REPO_TOKEN: ${{ secrets.ALERT_REPO_TOKEN }}
           EMBER_GIST_ID: ${{ secrets.EMBER_GIST_ID }}
           CA_GIST_ID: ${{ secrets.CA_GIST_ID }}
+          BORSDATA_API_KEY: ${{ secrets.BORSDATA_API_KEY }}
         run: python alert_scan.py

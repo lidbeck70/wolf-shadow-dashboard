@@ -20,6 +20,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+import market_risk_gate as mg
 import ovtlyr_nine as on
 import storage
 import viking_execution as vx
@@ -27,7 +28,7 @@ import viking_screen as vs
 from ovtlyr.ui.execution_card import render_execution
 from ovtlyr.ui.exit_card import render_exit_section
 from ovtlyr.ui.nine_card import render_nine_card
-from ovtlyr.ui.viking_screens import _ROWS, _earnings, _market_banner, _render_log, _sector
+from ovtlyr.ui.viking_screens import _ROWS, _earnings, _market_banner, _render_log, _risk_banner, _risk_for, _sector
 from ui.charts import PLOTLY_LAYOUT
 from ui.components import note, page_header
 from ui.tokens import AMBER, CYAN, DIM, GOLD, GREEN, RED, TEXT
@@ -127,8 +128,11 @@ def render_viking_nine_regime_page() -> None:
     except Exception:
         trades = []
     earnings = _earnings(ticker)
+    risk = _risk_for(ticker)
+    _risk_banner((mg.market_for(ticker),))
     decision = vx.evaluate_entry(ticker, df, nine=nine, capital=capital, ob_analysis=ob, earnings_date=earnings,
-                                 earnings_known=earnings is not None, trades=trades, max_position_pct=max_pos)
+                                 earnings_known=earnings is not None, trades=trades, max_position_pct=max_pos,
+                                 market_risk=risk)
     try:
         st.plotly_chart(price_chart(ticker, df, decision), use_container_width=True,
                         config={"displayModeBar": False}, key="vnr_chart")

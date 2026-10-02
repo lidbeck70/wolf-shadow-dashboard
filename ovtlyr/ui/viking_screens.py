@@ -40,6 +40,14 @@ def _earnings(ticker: str):
         return None
 
 
+def _risk_for(ticker: str):
+    try:
+        import market_risk_gate as mg
+        return mg.for_ticker(ticker)
+    except Exception:
+        return None
+
+
 def _sector(ticker: str):
     try:
         from ovtlyr.ui.layout import _sector_of
@@ -75,6 +83,27 @@ def _table(rows: list, extra=None) -> str:
             f"text-align:right;'>{head}{''.join(body)}</table></div>")
 
 
+def _risk_banner(markets) -> None:
+    """🌩️ Marknadsrisk för marknaderna — HÖG spärrar nya entries i Viking Nine."""
+    try:
+        import market_risk_gate as mg
+    except ImportError:
+        return
+    parts = []
+    for m in markets:
+        r = mg.current(m)
+        if r is None:
+            parts.append(f"<span style='color:{DIM};'>{m}: okänd</span>")
+            continue
+        col = RED if r["level"] == mg.HIGH else AMBER if r["level"] == mg.ELEVATED else GREEN
+        parts.append(f"<span style='color:{col};font-weight:700;'>{r['label']}: {r['level']}</span>"
+                     f" <span style='color:{DIM};'>({r['points']}/{r['possible']})</span>")
+    high = any((mg.current(m) or {}).get("level") == mg.HIGH for m in markets)
+    st.markdown(f"<div style='font-size:0.8rem;margin:2px 0 6px;'>🌩️ Marknadsrisk: {' · '.join(parts)}"
+                + (f"<div style='color:{RED};font-size:0.75rem;'>HÖG = inga nya entries på den marknaden "
+                   f"(REGIME → 🌩️ Marknadsrisk).</div>" if high else "") + "</div>", unsafe_allow_html=True)
+
+
 def _market_banner() -> None:
     """Marknadslagret i OVTLYR Nine är detsamma för alla aktier — visas en gång."""
     try:
@@ -105,6 +134,7 @@ def render_viking_nine_page() -> None:
     page_header("⚔️ Viking Nine", "OVTLYR Nine + Viking Execution över hela universumet — hittar setups. "
                                   "Beslutet tas i REGIME → Viking Regime. Screening ≠ automatisk entry.")
     _market_banner()
+    _risk_banner(("SPY", "OMXS30"))
     regions, tickers_for = _regions()
     with st.form("vn_form", clear_on_submit=False):
         if regions:
@@ -137,7 +167,8 @@ def render_viking_nine_page() -> None:
                 trades = []
             res = vs.scan(universe, max_candidates=n_cand,
                           progress=lambda i, n, t: bar.progress(i / n, text=f"Steg 2: {t} ({i}/{n})"),
-                          sector_getter=_sector, earnings_getter=_earnings, capital=capital, trades=trades)
+                          sector_getter=_sector, earnings_getter=_earnings, capital=capital, trades=trades,
+                          risk_getter=_risk_for)
             bar.empty()
             st.session_state[_ROWS] = {"rows": res["rows"], "funnel": res["funnel"],
                                        "when": datetime.now().strftime("%Y-%m-%d %H:%M")}

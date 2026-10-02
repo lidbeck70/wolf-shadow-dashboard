@@ -65,6 +65,7 @@ def _ob_analysis(df: pd.DataFrame) -> dict:
 
 def evaluate_ticker(ticker: str, getter: Optional[Callable] = None, sector_getter: Optional[Callable] = None,
                     earnings_getter: Optional[Callable] = None, capital: float = 100_000.0,
+                    risk_getter: Optional[Callable] = None,
                     trades: Optional[list] = None, now: Optional[datetime] = None, today=None) -> dict:
     """En rad: Nine + beslut + kategori. Fel → raden markeras DATA UNAVAILABLE."""
     if getter is None:
@@ -89,8 +90,14 @@ def evaluate_ticker(ticker: str, getter: Optional[Callable] = None, sector_gette
             ed = earnings_getter(ticker)
         except Exception:
             ed = None
+    risk = None
+    if risk_getter is not None:
+        try:
+            risk = risk_getter(ticker)
+        except Exception:
+            risk = None
     d = vx.evaluate_entry(ticker, df, nine=nine, capital=capital, ob_analysis=ob, earnings_date=ed,
-                          earnings_known=ed is not None, trades=trades, now=now)
+                          earnings_known=ed is not None, trades=trades, now=now, market_risk=risk)
     row.update(nine=nine, decision=d, category=vx.watchlist_category(nine.passed, d.status))
     return row
 

@@ -212,13 +212,25 @@ def main() -> int:
     if not isinstance(sheets_data, dict):
         sheets_data = None
 
+    # 🌩️ Marknadsrisk: dagens nivå för SPY och OMXS30 (lätt läge). Ingen nivå
+    # alls → None, så benet fryser sin baslinje.
+    market_risk_data = None
+    try:
+        import market_risk as _mr
+        import market_risk_gate as _mg
+        _levels = {m: _mg.current(m) for m in _mr.MARKETS}
+        if any(v for v in _levels.values()):
+            market_risk_data = _levels
+    except Exception:
+        log.warning("Marknadsrisken kunde inte räknas — benet står stilla.")
+
     # En hoppad temakarta får inte radera Blindspot-baslinjen: behåll den
     # gamla, annars larmar nästa fullkörning om övergångar som aldrig skett.
     alerts, new_state = alert_rules.evaluate(
         regime_data, screener_data, swing_data, themes, prev_state, settings,
         ember_data=ember_data, wolf_data=wolf_data, viking_data=viking_data,
         contrarian_data=contrarian_data, quality_data=quality_data, insider_data=insider_data,
-        screens_data=screens_data, sheets_data=sheets_data)
+        screens_data=screens_data, sheets_data=sheets_data, market_risk_data=market_risk_data)
     if not themes and isinstance(prev_state, dict):
         new_state["blindspot"] = prev_state.get("blindspot",
                                                 new_state["blindspot"])

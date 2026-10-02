@@ -43,6 +43,7 @@ MARKETS = {"SPY": {"label": "S&P 500 (SPY)", "ticker": "SPY", "breadth": "us_sec
                       "bd_index": ("OMX Stockholm 30", "OMXS30"), "bd_breadth_markets": (1,)}}
 BD_MIN_STOCKS = 30                 # färre Large Cap-aktier med kurs en dag → bredden okänd den dagen
 BD_MAX_BARS = 5040                 # 20 år
+LIGHT_BD_BARS = 520                # två år — räcker för SMA200 + 63 dagars bredd
 HORIZON = 63
 DRAWDOWN = 0.10
 LEVELS = (("LÅG", 0), ("FÖRHÖJD", 2), ("HÖG", 4))      # (namn, lägsta poäng)
@@ -324,16 +325,16 @@ def _bd_default():
         return None
 
 
-def _bd_close(api, ins_id) -> Optional[pd.Series]:
+def _bd_close(api, ins_id, max_count: int = BD_MAX_BARS) -> Optional[pd.Series]:
     try:
-        df = api.get_stockprices_df(int(ins_id), max_count=BD_MAX_BARS)
+        df = api.get_stockprices_df(int(ins_id), max_count=max_count)
     except Exception as exc:
         logger.warning("Börsdata %s: %s", ins_id, exc)
         return None
     return None if df is None or df.empty else df["Close"].astype(float).dropna()
 
 
-def borsdata_index(api, hints) -> tuple:
+def borsdata_index(api, hints, max_count: int = BD_MAX_BARS) -> tuple:
     """(serie | None, källtext) — indexet söks på namn/ticker i /instruments."""
     try:
         ins = api.get_instruments() or []
@@ -345,19 +346,19 @@ def borsdata_index(api, hints) -> tuple:
                     or str(i.get("ticker", "")).lower() == hl), None) or \
             next((i for i in ins if hl in str(i.get("name", "")).lower()), None)
         if hit:
-            s = _bd_close(api, hit.get("insId"))
+            s = _bd_close(api, hit.get("insId"), max_count)
             if s is not None and len(s):
                 return s, f"Börsdata · {hit.get('name')} (insId {hit.get('insId')})"
     return None, f"Börsdata: inget index som heter {' / '.join(hints)}"
 
 
-def borsdata_breadth(api, market_ids) -> tuple:
+def borsdata_breadth(api, market_ids, max_count: int = BD_MAX_BARS) -> tuple:
     """(bredd % | None, källtext) — aktierna på Börsdata-marknaderna över EMA50."""
     try:
         ins = [i for i in (api.get_instruments() or []) if i.get("marketId") in set(market_ids)]
     except Exception as exc:
         return None, f"Börsdata instrumentlista: {exc}"
-    closes = {i.get("ticker") or i.get("insId"): _bd_close(api, i.get("insId")) for i in ins}
+    closes = {i.get("ticker") or i.get("insId"): _bd_close(api, i.get("insId"), max_count) for i in ins}
     pct = stocks_breadth_pct(closes)
     if pct is None:
         n = sum(1 for s in closes.values() if s is not None)
@@ -367,7 +368,8 @@ def borsdata_breadth(api, market_ids) -> tuple:
 
 
 def evaluate(market: str, getter: Optional[Callable] = None, fred_getter: Optional[Callable] = None,
-             horizon: int = HORIZON, drawdown: float = DRAWDOWN, bd_api=None) -> MarketRisk:
+             horizon: int = HORIZON, drawdown: float = DRAWDOWN, bd_api=None, light: bool = False) -> MarketRisk:
+    """light=True: bara dagens nivå (två års data, ingen kalibrering) — för riskspärren och larmen."""
     cfg = MARKETS[market]
     out = MarketRisk(market, cfg["label"])
     if getter is None:
@@ -376,7 +378,7 @@ def evaluate(market: str, getter: Optional[Callable] = None, fred_getter: Option
     data = {}
     for t in needed_tickers(market):
         try:
-            data[t] = getter(t, "max")
+            data[t] = getter(t, "2y" if light else "max")
         except Exception as exc:
             logger.warning("marknadsrisk %s: %s", t, exc)
             data[t] = None
@@ -388,12 +390,13 @@ def evaluate(market: str, getter: Optional[Callable] = None, fred_getter: Option
         if api is None:
             out.breadth_source = "Börsdata-nyckel saknas — ingen bredd"
         else:
-            bd_close, why = borsdata_index(api, cfg["bd_index"])
+            bars = LIGHT_BD_BARS if light else BD_MAX_BARS
+            bd_close, why = borsdata_index(api, cfg["bd_index"], bars)
             if bd_close is not None and len(bd_close) >= 260:
                 close, out.source = bd_close, why
             else:
                 out.source += f" (reserv — {why})"
-            breadth_pct, out.breadth_source = borsdata_breadth(api, cfg["bd_breadth_markets"])
+            breadth_pct, out.breadth_source = borsdata_breadth(api, cfg["bd_breadth_markets"], bars)
     else:
         out.breadth_source = "Yahoo Finance · 9 SPDR-sektor-ETF:er över EMA50"
     if close is None or len(close) < 260:
@@ -408,6 +411,6 @@ def evaluate(market: str, getter: Optional[Callable] = None, fred_getter: Option
     out.level = level_of(out.points)
     out.signals = [{"key": k, "label": SIGNALS[k][0], "why": SIGNALS[k][1], "active": bool(active.loc[last, k]),
                     "available": bool(avail.loc[last, k])} for k in active.columns]
-    out.calibration = calibrate(close, active, avail, horizon, drawdown)
+    out.calibration = None if light else calibrate(close, active, avail, horizon, drawdown)
     out.close, out.history = close, score(active)
     return out
