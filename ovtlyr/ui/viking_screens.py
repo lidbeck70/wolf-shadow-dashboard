@@ -1,9 +1,10 @@
 """
 ovtlyr/ui/viking_screens.py — SCREENING → Arc Screener → ⚔️ Viking Nine.
 
-Kör OVTLYR Nine + Viking Execution över en lista tickers och visar
-OVTLYR SCREEN, VIKING MOMENTUM SCREEN, bevakningslistan och signalloggen.
-Screening ≠ automatisk entry.
+Skannar ett helt universum (samma marknader som Viking-screenern) i två steg
+och visar OVTLYR SCREEN, VIKING MOMENTUM SCREEN, bevakningslistan och
+signalloggen. Marknadslagret (SPY + bredd) är gemensamt och visas överst.
+Screening ≠ automatisk entry — beslutet tas i REGIME → Viking Regime.
 """
 
 from __future__ import annotations
@@ -22,14 +23,13 @@ _ROWS = "vn_screen_rows"
 _CAT_COLOR = {"GOLDEN TICKET": GOLD, "READY": GREEN, "DEVELOPING": AMBER, "REJECTED": RED}
 
 
-def _default_universe() -> str:
-    res = st.session_state.get("ovtlyr_results")
+def _regions() -> tuple:
+    """(alla marknader, funktion marknader → tickers) ur ticker_universe, som Viking-screenern."""
     try:
-        if res is not None and len(res) and "Ticker" in res:
-            return ", ".join(list(res["Ticker"])[:30])
+        from ticker_universe import COUNTRY_REGIONS, get_tickers_for_regions
+        return list(COUNTRY_REGIONS), get_tickers_for_regions
     except Exception:
-        pass
-    return ""
+        return [], None
 
 
 def _earnings(ticker: str):
@@ -75,44 +75,89 @@ def _table(rows: list, extra=None) -> str:
             f"text-align:right;'>{head}{''.join(body)}</table></div>")
 
 
+def _market_banner() -> None:
+    """Marknadslagret i OVTLYR Nine är detsamma för alla aktier — visas en gång."""
+    try:
+        import ovtlyr_nine as on
+        from market_prices import ohlcv
+        spy = ohlcv(on.MARKET_TICKER, on.PERIOD)
+        etfs = {t: on._close(ohlcv(t, on.PERIOD)) for t in on.SECTOR_ETFS.values()}
+        today = __import__("pandas").Timestamp.today()
+        c = on._close(spy)
+        facts = [on._gate("market.trend", "Trend", "market", c, "SPY", today, on._trend),
+                 on._gate("market.signal", "Signal", "market", c, "SPY", today, on._signal),
+                 on._market_breadth(etfs, today)[0]]
+    except Exception as exc:
+        note(f"Marknadslagret kunde inte räknas: {exc}")
+        return
+    n = sum(f.passed for f in facts)
+    col = GREEN if n == 3 else AMBER if n else RED
+    marks = " · ".join(f"<span style='color:{GREEN if f.passed else RED if f.status == 'FAIL' else DIM};'>"
+                       f"{'✓' if f.passed else '✗' if f.status == 'FAIL' else '?'} {f.label}</span>" for f in facts)
+    st.markdown(f"<div style='border:1px solid {col};border-radius:6px;padding:6px 10px;margin:6px 0;'>"
+                f"<b style='color:{col};'>MARKET {n}/3</b> <span style='color:{TEXT};'>{marks}</span>"
+                + ("" if n == 3 else f"<div style='color:{DIM};font-size:0.75rem;'>Marknaden är inte 3/3 — ingen "
+                   f"aktie kan nå 9/9 i dag. Skanningen visar ändå var setupen byggs (DEVELOPING).</div>")
+                + "</div>", unsafe_allow_html=True)
+
+
 def render_viking_nine_page() -> None:
-    page_header("⚔️ Viking Nine", "OVTLYR Nine + Viking Execution över en lista tickers — screening, "
-                                  "bevakningslista och signallogg. Screening ≠ automatisk entry.")
+    page_header("⚔️ Viking Nine", "OVTLYR Nine + Viking Execution över hela universumet — hittar setups. "
+                                  "Beslutet tas i REGIME → Viking Regime. Screening ≠ automatisk entry.")
+    _market_banner()
+    regions, tickers_for = _regions()
     with st.form("vn_form", clear_on_submit=False):
-        raw = st.text_area("Tickers (komma eller radbrytning, högst %d)" % vs.MAX_TICKERS, _default_universe(),
-                           key="vn_tickers", height=80, placeholder="t.ex. NVDA, MSFT, VOLV-B.ST, EQNR.OL")
-        c1, c2 = st.columns(2)
-        capital = c1.number_input("Kapital (SEK)", min_value=0.0, value=100000.0, step=10000.0, key="vn_capital")
-        need_vol = c2.checkbox("Kräv relativ volym ≥ %.2f× i momentum-screenen" % vx.RELATIVE_VOLUME_MIN,
-                               value=False, key="vn_need_vol")
-        go = st.form_submit_button("⚔️ Kör screen")
-    note("Förvalda tickers = de 30 första från senaste Viking-screenern (Arc Screener → Viking), om du kört den. "
-         "Varje ticker hämtar ett års dagsdata och sektor; SPY och sektor-ETF:erna delas.")
-    tickers = vs.parse_tickers(raw)
+        if regions:
+            markets = st.multiselect("MARKETS", regions, default=[r for r in ("Norden",) if r in regions],
+                                     key="vn_markets")
+        else:
+            markets = []
+        c1, c2, c3 = st.columns(3)
+        n_cand = c1.number_input("Kandidater till steg 2", min_value=5, max_value=vs.CANDIDATES_CAP,
+                                 value=vs.MAX_CANDIDATES, step=5, key="vn_candidates")
+        capital = c2.number_input("Kapital (SEK)", min_value=0.0, value=100000.0, step=10000.0, key="vn_capital")
+        need_vol = c3.checkbox("Kräv relativ volym ≥ %.2f×" % vx.RELATIVE_VOLUME_MIN, value=False, key="vn_need_vol")
+        extra = st.text_input("Egna tickers (läggs till universumet, valfritt)", key="vn_extra",
+                              placeholder="t.ex. NVDA, MSFT")
+        go = st.form_submit_button("⚔️ SCAN")
+    note("Steg 1 skannar hela universumet på stängningskurser: aktiens Trend (EMA10 > EMA20, kurs > EMA50) och "
+         "Signal (kurs ≥ EMA20) — utan dem kan Nine aldrig bli 9/9. Klara aktier rangordnas på avkastning "
+         "tre månader. Steg 2 ger de bästa kandidaterna full OVTLYR Nine och Viking Execution.")
     log = storage.session_load(vs.LOG_STORE, [])
-    if go and tickers:
-        bar = st.progress(0.0, text="Startar …")
-        try:
-            from trade_journal import load_journal
-            trades = load_journal()
-        except Exception:
-            trades = []
-        rows = vs.run(tickers, progress=lambda i, n, t: bar.progress(i / n, text=f"{t} ({i}/{n})"),
-                      sector_getter=_sector, earnings_getter=_earnings, capital=capital, trades=trades)
-        bar.empty()
-        st.session_state[_ROWS] = {"rows": rows, "when": datetime.now().strftime("%Y-%m-%d %H:%M")}
-        new_log, n = vs.append_log(log, rows)
-        if n:
-            st.session_state[vs.LOG_STORE] = new_log
-            log = new_log
+    if go:
+        universe = list(tickers_for(markets)) if (tickers_for and markets) else []
+        universe += vs.parse_tickers(extra)
+        if not universe:
+            st.warning("Välj minst en marknad eller skriv egna tickers.")
+        else:
+            bar = st.progress(0.0, text=f"Steg 1: hämtar {len(universe)} tickers …")
+            try:
+                from trade_journal import load_journal
+                trades = load_journal()
+            except Exception:
+                trades = []
+            res = vs.scan(universe, max_candidates=n_cand,
+                          progress=lambda i, n, t: bar.progress(i / n, text=f"Steg 2: {t} ({i}/{n})"),
+                          sector_getter=_sector, earnings_getter=_earnings, capital=capital, trades=trades)
+            bar.empty()
+            st.session_state[_ROWS] = {"rows": res["rows"], "funnel": res["funnel"],
+                                       "when": datetime.now().strftime("%Y-%m-%d %H:%M")}
+            new_log, n = vs.append_log(log, res["rows"])
+            if n:
+                st.session_state[vs.LOG_STORE] = new_log
+                log = new_log
     data = st.session_state.get(_ROWS)
     if not data:
-        note("Skriv tickers och tryck ⚔️ Kör screen.")
+        note("Välj marknader och tryck ⚔️ SCAN.")
         rows = []
     else:
         rows = data["rows"]
-        st.markdown(f"<div style='color:{DIM};font-size:0.75rem;'>Senaste körning {data['when']} · "
-                    f"{len(rows)} tickers</div>", unsafe_allow_html=True)
+        f = data.get("funnel") or {}
+        st.markdown(f"<div style='color:{DIM};font-size:0.78rem;'>Senaste skanning {data['when']} · universum "
+                    f"<b style='color:{TEXT};'>{f.get('universe', len(rows))}</b> → med kursdata "
+                    f"<b style='color:{TEXT};'>{f.get('data', '—')}</b> → steg 1 (trend + signal) "
+                    f"<b style='color:{TEXT};'>{f.get('passed', '—')}</b> → steg 2 analyserade "
+                    f"<b style='color:{TEXT};'>{f.get('candidates', len(rows))}</b></div>", unsafe_allow_html=True)
 
     t1, t2, t3, t4 = st.tabs(["OVTLYR SCREEN", "VIKING MOMENTUM SCREEN", "BEVAKNINGSLISTA", "SIGNALLOGG"])
     with t1:
