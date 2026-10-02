@@ -1,6 +1,13 @@
 """
 viking_screen.py — Vikings två screeners, bevakningslistan och signalloggen.
 
+Skanningen går i två steg så att ett helt universum (Norden, USA …) hinner:
+  Steg 1  alla tickers i en batch (bara stängningskurser): aktiens Trend och
+          Signal ur OVTLYR Nine — utan dem kan Nine aldrig bli 9/9. Klara
+          tickers rangordnas på momentum (avkastning 3 mån).
+  Steg 2  de bästa kandidaterna (förval 40) får full OVTLYR Nine (sektor, F&G,
+          order blocks) och Viking Execution. Rapportdatum hämtas bara för 9/9.
+
   OVTLYR SCREEN          alla tickers sorterade på OVTLYR Nine (9/9, 8/9, 7/9 …)
   VIKING MOMENTUM SCREEN Nine ≥ 7/9 · kurs > EMA10 > EMA20 > EMA50 · RSI > 50 och
                          stigande momentum · inget bearish block nära · R/R ≥ 2 ·
@@ -25,7 +32,11 @@ import pandas as pd
 import ovtlyr_nine as on
 import viking_execution as vx
 
-MAX_TICKERS = 60
+MAX_TICKERS = 60                   # egen lista
+MAX_CANDIDATES = 40                # steg 2, förval
+CANDIDATES_CAP = 100
+BATCH_SIZE = 100
+MOMENTUM_DAYS = 63                 # rangordning i steg 1: avkastning tre månader
 MOMENTUM_MIN_NINE = 7
 LOG_STORE = "viking_signals"
 LOG_MAX = 1000
@@ -72,7 +83,7 @@ def evaluate_ticker(ticker: str, getter: Optional[Callable] = None, sector_gette
     ob = _ob_analysis(df)
     nine = on.evaluate(ticker, stock_df=df, ob_analysis=ob, getter=getter, sector_getter=sector_getter, today=today)
     ed = None
-    if earnings_getter is not None:
+    if earnings_getter is not None and nine.passed == on.NINE_TOTAL:      # bara där det kan avgöra GO
         try:
             ed = earnings_getter(ticker)
         except Exception:
@@ -83,12 +94,55 @@ def evaluate_ticker(ticker: str, getter: Optional[Callable] = None, sector_gette
     return row
 
 
+# ── Steg 1: hela universumet ────────────────────────────────────────────────
+def _closes_default(tickers: list) -> dict:
+    from market_prices import closes
+    out = {}
+    for i in range(0, len(tickers), BATCH_SIZE):
+        out.update(closes(tickers[i:i + BATCH_SIZE], on.PERIOD))
+    return out
+
+
+def stage1(closes: dict, today=None) -> tuple:
+    """([(ticker, avkastning 3 mån %)] sorterade fallande, {universe, data, passed})."""
+    today = today if today is not None else pd.Timestamp.today()
+    passed, with_data = [], 0
+    for t, c in (closes or {}).items():
+        if c is None or len(c) < on.MIN_BARS:
+            continue
+        c = c.astype(float).dropna()
+        if len(c) < on.MIN_BARS or on._is_stale(c, today):
+            continue
+        with_data += 1
+        if not (on._trend(c)[0] and on._signal(c)[0]):
+            continue
+        ret = (float(c.iloc[-1]) / float(c.iloc[-min(MOMENTUM_DAYS, len(c) - 1) - 1]) - 1) * 100
+        passed.append((t, round(ret, 1)))
+    passed.sort(key=lambda x: -x[1])
+    return passed, {"universe": len(closes or {}), "data": with_data, "passed": len(passed)}
+
+
+def scan(tickers: list, closes_getter: Optional[Callable] = None, max_candidates: int = MAX_CANDIDATES,
+         progress: Optional[Callable] = None, today=None, **kw) -> dict:
+    """Hela skanningen: steg 1 över universumet, steg 2 på de bästa kandidaterna."""
+    tickers = list(dict.fromkeys(t for t in tickers if t))
+    closes = (closes_getter or _closes_default)(tickers)
+    closes = {t: closes.get(t) for t in tickers}
+    ranked, funnel = stage1(closes, today=today)
+    n = max(1, min(int(max_candidates), CANDIDATES_CAP))
+    cands = [t for t, _r in ranked[:n]]
+    funnel.update(candidates=len(cands), momentum={t: r for t, r in ranked})
+    rows = run(cands, progress=progress, today=today, **kw)
+    return {"rows": rows, "funnel": funnel}
+
+
 def run(tickers: list, progress: Optional[Callable] = None, **kw) -> list:
     rows = []
-    for i, t in enumerate(tickers[:MAX_TICKERS]):
+    tickers = list(tickers[:CANDIDATES_CAP])
+    for i, t in enumerate(tickers):
         rows.append(evaluate_ticker(t, **kw))
         if progress is not None:
-            progress(i + 1, len(tickers[:MAX_TICKERS]), t)
+            progress(i + 1, len(tickers), t)
     return rows
 
 

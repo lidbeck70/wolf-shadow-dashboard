@@ -82,17 +82,55 @@ def test_signal_log_one_row_per_ticker_and_day():
     assert n3 == 1 and len(next_day) == 2
 
 
-def test_page_runs_the_screen(monkeypatch):
+def _closes(tickers):
+    return {t: DATA[t]["Close"] for t in tickers if t in DATA}
+
+
+def test_stage1_scans_the_universe_on_closes():
+    closes = {**_closes(["GOOD", "BAD"]), "SHORT": UP["Close"].tail(20), "OLD": UP["Close"].iloc[:-20]}
+    ranked, funnel = vs.stage1(closes, today=pd.Timestamp(END))
+    assert [t for t, _r in ranked] == ["GOOD"]                         # BAD faller, SHORT/OLD saknar data
+    assert funnel == {"universe": 4, "data": 2, "passed": 1}
+    assert ranked[0][1] > 0                                             # avkastning tre månader
+
+
+def test_scan_runs_stage2_on_the_best_candidates():
+    up2 = _df(step=0.8)                                                 # starkare momentum → först
+    DATA["FAST"] = up2
+    try:
+        res = vs.scan(["GOOD", "BAD", "FAST", "NODATA"], closes_getter=_closes, max_candidates=1,
+                      getter=_getter, sector_getter=lambda t: "Technology",
+                      earnings_getter=lambda t: pd.Timestamp("2026-12-01"), now=NOW, today=pd.Timestamp(END))
+    finally:
+        DATA.pop("FAST")
+    f = res["funnel"]
+    assert f["universe"] == 4 and f["data"] == 3 and f["passed"] == 2 and f["candidates"] == 1
+    assert [r["ticker"] for r in res["rows"]] == ["FAST"]
+
+
+def test_earnings_only_fetched_for_nine_of_nine():
+    asked = []
+    vs.run(["GOOD", "BAD"], getter=_getter, sector_getter=_sector, now=NOW, today=pd.Timestamp(END),
+           earnings_getter=lambda t: asked.append(t) or pd.Timestamp("2026-12-01"))
+    assert asked == ["GOOD"]
+
+
+def test_page_scans_markets(monkeypatch):
     from streamlit.testing.v1 import AppTest
+    import market_prices
     import storage
     import streamlit as st
+    from ovtlyr.ui import viking_screens as ui
     monkeypatch.setattr(storage, "session_load", lambda name, default=None, legacy_file=None:
                         st.session_state.setdefault(name, default))
     monkeypatch.setattr(storage, "is_dirty", lambda name: True)
-    real_run = vs.run
-    monkeypatch.setattr(vs, "run", lambda tickers, progress=None, **kw: real_run(
-        tickers, progress=progress, getter=_getter, sector_getter=_sector,
-        earnings_getter=lambda t: pd.Timestamp("2026-12-01"), now=NOW, today=pd.Timestamp(END)))
+    monkeypatch.setattr(market_prices, "ohlcv", lambda t, p="1y": DATA.get(t, pd.DataFrame()))
+    monkeypatch.setattr(ui, "_regions", lambda: (["Norden", "USA"], lambda m: ["GOOD", "BAD"] if "Norden" in m else []))
+    real_scan = vs.scan
+    monkeypatch.setattr(vs, "scan", lambda tickers, max_candidates=40, progress=None, **kw: real_scan(
+        tickers, closes_getter=_closes, max_candidates=max_candidates, progress=progress, getter=_getter,
+        sector_getter=_sector, earnings_getter=lambda t: pd.Timestamp("2026-12-01"), now=NOW,
+        today=pd.Timestamp(END)))
     monkeypatch.setenv("VN_TEST_ROOT", ROOT)
 
     def app():
@@ -105,13 +143,16 @@ def test_page_runs_the_screen(monkeypatch):
     at = AppTest.from_function(app, default_timeout=90)
     at.run()
     assert not at.exception, at.exception
-    at.text_area(key="vn_tickers").set_value("good, bad, nodata")
-    at.button(key="FormSubmitter:vn_form-⚔️ Kör screen").click().run()
+    html = " ".join(m.value for m in at.markdown)
+    assert "MARKET 3/3" in html and "Välj marknader" in html
+    assert at.multiselect(key="vn_markets").value == ["Norden"]
+    at.text_input(key="vn_extra").set_value("nodata")
+    at.button(key="FormSubmitter:vn_form-⚔️ SCAN").click().run()
     assert not at.exception, at.exception
     html = " ".join(m.value for m in at.markdown)
-    assert "<b>GOOD</b>" in html and "9/9" in html and "REJECTED" in html and "DATA UNAVAILABLE" in html
-    assert "GOLDEN TICKET" in html and "READY" in html and "DEVELOPING" in html
-    assert "timestamp" in html and "GOOD" in html                          # signalloggen har raden
+    assert "universum <b" in html and "steg 1 (trend + signal)" in html
+    assert "<b>GOOD</b>" in html and "9/9" in html                     # BAD och NODATA föll i steg 1
+    assert "<b>BAD</b>" not in html
     assert at.session_state[vs.LOG_STORE][0]["ticker"] == "GOOD"
 
 
