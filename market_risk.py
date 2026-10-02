@@ -38,7 +38,7 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-MARKETS = {"SPY": {"label": "S&P 500 (SPY)", "ticker": "SPY", "breadth": "us_sectors"},
+MARKETS = {"SPY": {"label": "S&P 500 (SPY)", "ticker": "SPY", "breadth": "us_sectors", "fallback": "^GSPC"},
            "OMXS30": {"label": "OMXS30", "ticker": "^OMX", "breadth": "borsdata",
                       "bd_index": ("OMX Stockholm 30", "OMXS30"), "bd_breadth_markets": (1,)}}
 BD_MIN_STOCKS = 30                 # färre Large Cap-aktier med kurs en dag → bredden okänd den dagen
@@ -369,7 +369,7 @@ def borsdata_breadth(api, market_ids, max_count: int = BD_MAX_BARS) -> tuple:
 
 def evaluate(market: str, getter: Optional[Callable] = None, fred_getter: Optional[Callable] = None,
              horizon: int = HORIZON, drawdown: float = DRAWDOWN, bd_api=None, light: bool = False) -> MarketRisk:
-    """light=True: bara dagens nivå (två års data, ingen kalibrering) — för riskspärren och larmen."""
+    """light=True: bara dagens nivå (ingen kalibrering, två års Börsdata) — för riskspärren och larmen."""
     cfg = MARKETS[market]
     out = MarketRisk(market, cfg["label"])
     if getter is None:
@@ -378,12 +378,19 @@ def evaluate(market: str, getter: Optional[Callable] = None, fred_getter: Option
     data = {}
     for t in needed_tickers(market):
         try:
-            data[t] = getter(t, "2y" if light else "max")
+            data[t] = getter(t, "max")                    # samma post som fliken → delad cache
         except Exception as exc:
             logger.warning("marknadsrisk %s: %s", t, exc)
             data[t] = None
     data["T10Y2Y"] = fred_getter("T10Y2Y")
     close, out.source = _close(data.get(cfg["ticker"])), f"Yahoo Finance {cfg['ticker']}"
+    if (close is None or len(close) < 260) and cfg.get("fallback"):
+        try:
+            fb = _close(getter(cfg["fallback"], "max"))
+        except Exception:
+            fb = None
+        if fb is not None and len(fb) >= 260:
+            close, out.source = fb, f"Yahoo Finance {cfg['fallback']} (reserv — {cfg['ticker']} saknades)"
     breadth_pct = None
     if cfg["breadth"] == "borsdata":
         api = bd_api if bd_api is not None else _bd_default()

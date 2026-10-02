@@ -117,3 +117,55 @@ def test_log_ticks():
     assert ui.log_ticks(60, 700) == [100, 200, 500]
     assert ui.log_ticks(900, 3600) == [1000, 2000]
     assert ui.log_ticks(0, 10) == []
+
+
+# ── SPY visade DATA UNAVAILABLE (Yahoo-fel cachades i sex timmar) ────────────
+def test_failed_yahoo_download_is_not_cached(monkeypatch):
+    import yfinance as yf
+    import market_prices as mp
+    calls = []
+
+    def flaky(*a, **k):
+        calls.append(1)
+        if len(calls) == 1:
+            return pd.DataFrame()                                  # t.ex. Too Many Requests
+        idx = pd.bdate_range(end="2026-09-30", periods=5)
+        return pd.DataFrame({"Close": [1.0, 2, 3, 4, 5]}, index=idx)
+    monkeypatch.setattr(yf, "download", flaky)
+    mp.clear()
+    assert mp.ohlcv("SPY", "max").empty                            # första försöket misslyckas …
+    assert len(mp.ohlcv("SPY", "max")) == 5 and len(calls) == 2    # … och provas igen direkt
+    assert len(mp.ohlcv("SPY", "max")) == 5 and len(calls) == 2    # lyckat resultat cachas
+    mp.clear()
+
+
+def test_spy_falls_back_to_gspc():
+    import market_risk as mr
+    from test_market_risk import _data
+    _idx, d = _data(crash=True)
+    d2 = {k: v for k, v in d.items() if k != "SPY"}
+    d2["^GSPC"] = d["SPY"]
+    r = mr.evaluate("SPY", getter=lambda t, p: d2.get(t), fred_getter=lambda s: d2.get(s))
+    assert r.error is None and "^GSPC (reserv — SPY saknades)" in r.source
+
+
+def test_light_mode_shares_the_tab_download():
+    import market_risk as mr
+    from test_market_risk import _data
+    _idx, d = _data()
+    periods = set()
+    mr.evaluate("SPY", getter=lambda t, p: periods.add(p) or d.get(t), fred_getter=lambda s: d.get(s), light=True)
+    assert periods == {"max"}
+
+
+def test_failed_level_is_retried_soon(monkeypatch):
+    import time as _t
+    monkeypatch.setattr(mg, "_CACHE", {"SPY": (_t.time() - mg.TTL_FAIL_S - 1, None)})
+    r = SimpleNamespace(market="SPY", label="S&P 500 (SPY)", level="LÅG", points=0, possible=9, date="d",
+                        error=None, signals=[])
+    assert mg.current("SPY", lambda m: r)["level"] == "LÅG"
+
+
+def test_tab_does_not_cache_an_error():
+    src = open(os.path.join(ROOT, "market_risk_ui.py"), encoding="utf-8").read()
+    assert "if not res.error:" in src

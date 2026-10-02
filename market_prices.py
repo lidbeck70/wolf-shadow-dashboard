@@ -60,14 +60,27 @@ def _flatten(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+class _NoData(Exception):
+    """Tom eller misslyckad nedladdning. Kastas INNE i den cachade funktionen så
+    att ett tillfälligt fel (t.ex. Yahoos 'Too Many Requests') aldrig cachas i
+    sex timmar — nästa anrop försöker igen."""
+
+
 @_cache
+def _ohlcv_raw(ticker: str, period: str) -> pd.DataFrame:
+    import yfinance as yf
+    df = _flatten(yf.download(ticker, period=period, auto_adjust=True, progress=False, threads=False))
+    df = df.dropna(how="all")
+    if df.empty:
+        raise _NoData(f"{ticker} {period}: tom")
+    return df
+
+
 def ohlcv(ticker: str, period: str = "1y") -> pd.DataFrame:
-    """Kurshistorik för EN ticker. Tom DataFrame (aldrig undantag) vid fel."""
+    """Kurshistorik för EN ticker. Tom DataFrame (aldrig undantag) vid fel —
+    och felet cachas inte."""
     try:
-        import yfinance as yf
-        df = yf.download(ticker, period=period, auto_adjust=True, progress=False, threads=False)
-        df = _flatten(df)
-        return df.dropna(how="all")
+        return _ohlcv_raw(ticker, period)
     except Exception as exc:
         log.warning("market_prices: %s %s misslyckades: %s", ticker, period, exc)
         return pd.DataFrame()
@@ -81,17 +94,13 @@ def close(ticker: str, period: str = "1y") -> pd.Series:
 
 
 @_cache
-def _batch(tickers: tuple, period: str) -> dict:
-    try:
-        import yfinance as yf
-        raw = yf.download(list(tickers), period=period, auto_adjust=True, progress=False,
-                          group_by="ticker", threads=True)
-    except Exception as exc:
-        log.warning("market_prices: batch %s misslyckades: %s", period, exc)
-        return {}
+def _batch_raw(tickers: tuple, period: str) -> dict:
+    import yfinance as yf
+    raw = yf.download(list(tickers), period=period, auto_adjust=True, progress=False,
+                      group_by="ticker", threads=True)
     out: dict = {}
     if raw is None or len(raw) == 0:
-        return out
+        raise _NoData(f"batch {period}: tom")
     if isinstance(raw.columns, pd.MultiIndex):
         for t in tickers:
             if t in raw.columns.get_level_values(0):
@@ -99,7 +108,17 @@ def _batch(tickers: tuple, period: str) -> dict:
                 out[t] = s
     elif len(tickers) == 1 and "Close" in raw:
         out[tickers[0]] = raw["Close"].dropna()
+    if not any(len(s) for s in out.values()):
+        raise _NoData(f"batch {period}: inga kurser")
     return out
+
+
+def _batch(tickers: tuple, period: str) -> dict:
+    try:
+        return _batch_raw(tickers, period)
+    except Exception as exc:
+        log.warning("market_prices: batch %s misslyckades: %s", period, exc)
+        return {}
 
 
 def closes(tickers: Iterable[str], period: str = "1y") -> dict:
@@ -110,7 +129,7 @@ def closes(tickers: Iterable[str], period: str = "1y") -> dict:
 
 def clear() -> None:
     """Töm BARA prisdatacachen (inte hela st.cache_data)."""
-    for fn in (ohlcv, _batch):
+    for fn in (_ohlcv_raw, _batch_raw):
         try:
             fn.clear()
         except Exception:
