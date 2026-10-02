@@ -1070,6 +1070,8 @@ _PANEL_GUIDE: list[tuple] = [
      "sektor-ETF:er och aktien — WOLF APPROXIMATION, saknad data räknas aldrig som PASS. "
      "Viking Execution + riskmotor → GOLDEN TICKET / WAIT / NO TRADE (1,5 % risk, 1,5 × ATR, "
      "R/R ≥ 2, no chase 2 %, rapportspärr 5 dagar, max 2 förluster per dag). "
+     "Viking Exit Engine för en öppen position: SPY under EMA20 = CLOSE ALL, initial stopp, "
+     "trailing EMA10, breakeven, bearish block, gap & crap, sektor/bredd, signal, F&G-target, rapport. "
      "Prisgraf + EMA 10/20/50/200 + Order Blocks. Per-ticker Fear & Greed. "
      "Overhead Clusters. SL/TP-kalkylator."),
     ("REGIME → Marknad → Alpha Regime → Quality & Contrarian",
