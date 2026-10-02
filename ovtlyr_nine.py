@@ -42,6 +42,9 @@ PASS, FAIL, UNAVAILABLE, STALE = "PASS", "FAIL", "DATA UNAVAILABLE", "STALE DATA
 FULL, NOT_ALIGNED = "FULL ALIGNMENT", "NOT ALIGNED"
 
 MARKET_TICKER = "SPY"
+NORDIC_SUFFIXES = (".ST", ".OL", ".CO", ".HE")     # nordiska aktier mäts mot OMXS30, övriga mot SPY
+NORDIC_LABEL = "OMXS30"
+NORDIC_BARS = 520                                  # två år räcker för Nine (EMA50 + bredd)
 SECTOR_ETFS = {"Energy": "XLE", "Basic Materials": "XLB", "Industrials": "XLI",
                "Consumer Cyclical": "XLY", "Consumer Defensive": "XLP", "Healthcare": "XLV",
                "Financial Services": "XLF", "Technology": "XLK", "Communication Services": "XLC",
@@ -93,6 +96,7 @@ class NineResult:
     sector_etf: Optional[str] = None
     etf_states: dict = field(default_factory=dict)      # ETF → (kurs/EMA50 − 1) i %
     sector_source: str = ""                             # varifrån sektorn kom (Börsdata / Yahoo)
+    market_label: str = MARKET_TICKER                   # SPY eller OMXS30
 
     @property
     def factors(self) -> list:
@@ -253,27 +257,35 @@ def breadth_series(etf_closes: dict) -> pd.Series:
     return (above.sum(axis=1) / len(df.columns) * 100).rename("breadth")
 
 
+def _breadth_check(noun: str) -> Callable:
+    def check(b):
+        ema = float(_ema(b, BREADTH_EMA).iloc[-1])
+        now = float(b.iloc[-1])
+        ok = now >= BREADTH_MIN_PCT and now >= ema
+        return ok, round(now, 1), (f"{now:.0f} % av {noun} över EMA50 (EMA{BREADTH_EMA} {ema:.0f} %) — "
+                                   f"{'stigande/stabil' if now >= ema else 'fallande'}; kräver ≥ "
+                                   f"{BREADTH_MIN_PCT:.0f} % och inte fallande")
+    return check
+
+
+def _etf_states(etf_closes: dict) -> dict:
+    states = {}
+    for t, c in (etf_closes or {}).items():
+        if c is not None and len(c) >= MIN_BARS:
+            states[t] = round((float(c.iloc[-1]) / float(_ema(c, 50).iloc[-1]) - 1) * 100, 1)
+    return states
+
+
 def _market_breadth(etf_closes: dict, today) -> tuple:
     s = breadth_series(etf_closes)
     n = len([c for c in (etf_closes or {}).values() if c is not None and len(c) >= MIN_BARS])
     if len(s) < MIN_BARS:
         return Factor("market.breadth", "Breadth", "market", UNAVAILABLE,
                       detail=f"sektor-ETF:er med data: {n} av 11 (kräver {BREADTH_MIN_ETFS})",
-                      source="Yahoo Finance (11 SPDR-sektor-ETF:er)"), {}
-
-    def check(b):
-        ema = float(_ema(b, BREADTH_EMA).iloc[-1])
-        now = float(b.iloc[-1])
-        ok = now >= BREADTH_MIN_PCT and now >= ema
-        return ok, round(now, 1), (f"{now:.0f} % av sektorerna över EMA50 (EMA{BREADTH_EMA} {ema:.0f} %) — "
-                                   f"{'stigande/stabil' if now >= ema else 'fallande'}; kräver ≥ "
-                                   f"{BREADTH_MIN_PCT:.0f} % och inte fallande")
-    f = _gate("market.breadth", "Breadth", "market", s, "Yahoo Finance (11 SPDR-sektor-ETF:er)", today, check)
-    states = {}
-    for t, c in (etf_closes or {}).items():
-        if c is not None and len(c) >= MIN_BARS:
-            states[t] = round((float(c.iloc[-1]) / float(_ema(c, 50).iloc[-1]) - 1) * 100, 1)
-    return f, states
+                      source="Yahoo Finance (11 SPDR-sektor-ETF:er)"), _etf_states(etf_closes)
+    f = _gate("market.breadth", "Breadth", "market", s, "Yahoo Finance (11 SPDR-sektor-ETF:er)", today,
+              _breadth_check("sektorerna"))
+    return f, _etf_states(etf_closes)
 
 
 def _blocks(df: pd.DataFrame, ob_analysis: Optional[dict]) -> Callable:
@@ -294,17 +306,31 @@ def _blocks(df: pd.DataFrame, ob_analysis: Optional[dict]) -> Callable:
 # ── Huvudfunktionen ─────────────────────────────────────────────────────────
 def compute(ticker: str, stock_df: Optional[pd.DataFrame], spy_df: Optional[pd.DataFrame],
             sector_etf: Optional[str], sector_df: Optional[pd.DataFrame], etf_closes: dict,
-            ob_analysis: Optional[dict] = None, today=None) -> NineResult:
-    """Ren funktion: alla priser in, NineResult ut. Inget nätverk."""
+            ob_analysis: Optional[dict] = None, today=None, market_label: str = MARKET_TICKER,
+            market_close: Optional[pd.Series] = None, market_source: Optional[str] = None,
+            breadth_pct: Optional[pd.Series] = None, breadth_source: str = "") -> NineResult:
+    """Ren funktion: alla priser in, NineResult ut. Inget nätverk.
+    market_close/breadth_pct ersätter SPY och sektor-ETF-bredden (OMXS30 för nordiska aktier)."""
     today = today if today is not None else pd.Timestamp.today()
     spy_c, stock_c, sec_c = _close(spy_df), _close(stock_df), _close(sector_df)
     yahoo = "Yahoo Finance"
-    r = NineResult(ticker=ticker, sector_etf=sector_etf)
+    r = NineResult(ticker=ticker, sector_etf=sector_etf, market_label=market_label)
+    m_c = market_close.astype(float).dropna() if market_close is not None else spy_c
+    m_src = market_source or f"{yahoo} {MARKET_TICKER}"
 
-    r.market = [_gate("market.trend", "Trend", "market", spy_c, f"{yahoo} {MARKET_TICKER}", today, _trend),
-                _gate("market.signal", "Signal", "market", spy_c, f"{yahoo} {MARKET_TICKER}", today, _signal)]
-    breadth, r.etf_states = _market_breadth(etf_closes, today)
-    r.market.append(breadth)
+    r.market = [_gate("market.trend", "Trend", "market", m_c, m_src, today, _trend),
+                _gate("market.signal", "Signal", "market", m_c, m_src, today, _signal)]
+    if breadth_pct is not None and len(breadth_pct.dropna()) == 0:
+        r.market.append(Factor("market.breadth", "Breadth", "market", UNAVAILABLE,
+                               detail=breadth_source or "bredd saknas", source=breadth_source or ""))
+        r.etf_states = _etf_states(etf_closes)
+    elif breadth_pct is not None:
+        r.market.append(_gate("market.breadth", "Breadth", "market", breadth_pct.dropna(),
+                              breadth_source or "bredd", today, _breadth_check("aktierna")))
+        r.etf_states = _etf_states(etf_closes)
+    else:
+        breadth, r.etf_states = _market_breadth(etf_closes, today)
+        r.market.append(breadth)
 
     if not sector_etf:
         r.sector = [Factor("sector.fear_greed", "Fear & Greed", "sector", UNAVAILABLE,
@@ -401,9 +427,74 @@ def resolve_sector(ticker: str, sector_getter: Optional[Callable] = None,
     return None, "sektor okänd — provade " + " och ".join(tried)
 
 
+def market_for(ticker: str) -> str:
+    return NORDIC_LABEL if str(ticker or "").upper().endswith(NORDIC_SUFFIXES) else MARKET_TICKER
+
+
+_NORDIC_CACHE: dict = {}
+
+
+def nordic_market(bars: int = NORDIC_BARS, getter: Optional[Callable] = None) -> Optional[dict]:
+    """OMXS30 från Börsdata (Yahoo ^OMX som reserv) och bredden ur svenska Large Cap
+    (Börsdata). {close, breadth, source, breadth_source} eller None. Cachat sex timmar
+    i processen; ett misslyckande provas igen efter fem minuter."""
+    import time
+    hit = _NORDIC_CACHE.get(bars)
+    if hit and time.time() - hit[0] < (21_600 if hit[1] is not None else 300):
+        return hit[1]
+    val = None
+    try:
+        import market_risk as mr
+        cfg = mr.MARKETS[NORDIC_LABEL]
+        api = mr._bd_default()
+        close, src, breadth, bsrc = None, "", None, "Börsdata-nyckel saknas — ingen bredd"
+        if api is not None:
+            close, src = mr.borsdata_index(api, cfg["bd_index"], bars)
+            breadth, bsrc = mr.borsdata_breadth(api, cfg["bd_breadth_markets"], bars)
+        if close is None or len(close) < MIN_BARS:
+            if getter is None:
+                from market_prices import ohlcv as getter
+            df = getter(cfg["ticker"], "max")
+            yc = _close(df)
+            if yc is not None and len(yc) >= MIN_BARS:
+                close, src = yc, f"Yahoo Finance {cfg['ticker']} (reserv)"
+        if close is not None and len(close) >= MIN_BARS:
+            if getattr(close.index, "tz", None) is not None:
+                close.index = close.index.tz_localize(None)
+            val = {"close": close, "breadth": breadth, "source": src, "breadth_source": bsrc}
+    except Exception as exc:
+        logger.warning("nine: OMXS30: %s", exc)
+    _NORDIC_CACHE[bars] = (time.time(), val)
+    return val
+
+
+def market_layer(market: str, getter: Optional[Callable] = None, nordic_provider: Optional[Callable] = None,
+                 today=None) -> list:
+    """Marknadslagret (Trend, Signal, Breadth) för SPY eller OMXS30 — samma för alla aktier på marknaden."""
+    if getter is None:
+        from market_prices import ohlcv as getter
+    today = today if today is not None else pd.Timestamp.today()
+    if market == NORDIC_LABEL:
+        nm = (nordic_provider or nordic_market)()
+        if not nm or nm.get("close") is None:
+            return [Factor(f"market.{k}", lbl, "market", UNAVAILABLE, detail="OMXS30 saknas")
+                    for k, lbl in (("trend", "Trend"), ("signal", "Signal"), ("breadth", "Breadth"))]
+        c, src = nm["close"], nm["source"]
+        b = nm.get("breadth")
+        breadth = (_gate("market.breadth", "Breadth", "market", b.dropna(), nm.get("breadth_source", ""), today,
+                         _breadth_check("aktierna")) if b is not None and len(b.dropna()) else
+                   Factor("market.breadth", "Breadth", "market", UNAVAILABLE, detail=nm.get("breadth_source", "")))
+    else:
+        c, src = _close(getter(MARKET_TICKER, PERIOD)), f"Yahoo Finance {MARKET_TICKER}"
+        breadth = _market_breadth({t: _close(getter(t, PERIOD)) for t in SECTOR_ETFS.values()}, today)[0]
+    return [_gate("market.trend", "Trend", "market", c, src, today, _trend),
+            _gate("market.signal", "Signal", "market", c, src, today, _signal), breadth]
+
+
 def evaluate(ticker: str, stock_df: Optional[pd.DataFrame] = None, ob_analysis: Optional[dict] = None,
              getter: Optional[Callable] = None, sector_getter: Optional[Callable] = None,
-             today=None, bd_sector: Optional[Callable] = None) -> NineResult:
+             today=None, bd_sector: Optional[Callable] = None,
+             nordic_provider: Optional[Callable] = None) -> NineResult:
     """Hämtar SPY, sektor-ETF:erna och (vid behov) aktien via den delade
     priscachen och räknar Nine. Saknad data blir DATA UNAVAILABLE."""
     if getter is None:
@@ -428,8 +519,19 @@ def evaluate(ticker: str, stock_df: Optional[pd.DataFrame] = None, ob_analysis: 
     etfs = {t: _get(t) for t in SECTOR_ETFS.values()}
     etf_closes = {t: _close(d) for t, d in etfs.items()}
     sector_etf, sector_src = resolve_sector(ticker, sector_getter, bd_sector)
+    market_kw = {}
+    if market_for(ticker) == NORDIC_LABEL:
+        nm = (nordic_provider or nordic_market)()
+        if nm and nm.get("close") is not None:
+            market_kw = dict(market_label=NORDIC_LABEL, market_close=nm["close"], market_source=nm["source"],
+                             breadth_pct=nm.get("breadth"),
+                             breadth_source=nm.get("breadth_source") or "")
+            if nm.get("breadth") is None:            # ingen Large Cap-bredd → gör den okänd, inte SPY:s
+                market_kw["breadth_pct"] = pd.Series(dtype=float)
+        else:
+            market_kw = dict(market_label=f"{MARKET_TICKER} (OMXS30 saknas)")
     r = compute(ticker, stock_df, spy, sector_etf, etfs.get(sector_etf) if sector_etf else None,
-                etf_closes, ob_analysis=ob_analysis, today=today)
+                etf_closes, ob_analysis=ob_analysis, today=today, **market_kw)
     r.sector_source = sector_src
     if sector_etf is None:
         for f in r.sector:

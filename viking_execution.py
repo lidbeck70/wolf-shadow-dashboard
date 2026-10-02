@@ -21,7 +21,7 @@ svarar på om entryn finns, och hur stor den får vara:
   BESLUT
     GOLDEN TICKET  Nine 9/9 och alla krav i exekveringen och risken klara
     WAIT           bra eller nästan bra setup, men entryn är inte klar
-    NO TRADE       Nine ≤ 6/9, SPY-signal SELL, rapport nära, eller dagsgränsen nådd
+    NO TRADE       Nine ≤ 6/9, marknadens signal SELL (SPY / OMXS30), rapport nära, eller dagsgränsen nådd
 
 Appen förutsäger ingenting: den svarar på hur många villkor som är uppfyllda nu.
 """
@@ -361,7 +361,8 @@ def evaluate_entry(ticker: str, df: pd.DataFrame, nine=None, capital: float = 10
         soft.append(f"OVTLYR Nine {nine_passed}/9 — DEVELOPING, kräver 9/9")
     spy = nine.get("market.signal") if nine is not None and hasattr(nine, "get") else None
     if spy is not None and spy.status == "FAIL":
-        hard.append("SPY under EMA20 — marknadens säljsignal, inga nya affärer")
+        hard.append(f"{getattr(nine, 'market_label', 'SPY')} under EMA20 — marknadens säljsignal, "
+                    f"inga nya affärer")
     if market_risk and market_risk.get("level") == "HÖG":
         d.flags.append(MARKET_RISK_HIGH)
         hard.append(f"{MARKET_RISK_HIGH} ({market_risk.get('label', '')}: {market_risk.get('points')} av "

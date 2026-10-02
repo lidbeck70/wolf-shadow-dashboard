@@ -144,7 +144,7 @@ def test_page_scans_markets(monkeypatch):
     at.run()
     assert not at.exception, at.exception
     html = " ".join(m.value for m in at.markdown)
-    assert "MARKET 3/3" in html and "Välj marknader" in html
+    assert "MARKET SPY 3/3" in html and "MARKET OMXS30" in html and "Välj marknader" in html
     assert at.multiselect(key="vn_markets").value == ["Norden"]
     at.text_input(key="vn_extra").set_value("nodata")
     at.button(key="FormSubmitter:vn_form-⚔️ SCAN").click().run()
