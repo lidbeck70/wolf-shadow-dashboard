@@ -1173,6 +1173,11 @@ _PANEL_GUIDE: list[tuple] = [
     ("INTELLIGENCE → Retail Pulse", "Deep Contrarian: sentiment-overlay",
      "Retail sentiment 0-100. Under 30 = extrem rädsla (köpstöd). Över 70 = "
      "extrem girighet (säljstöd)."),
+    ("INTELLIGENCE → 🕯️ Teknisk analys", "Alla — teknisk översikt per ticker",
+     "Sök valfri ticker (eller snabbval ur Viking Nine-skanningen och dina innehav): pris med EMA "
+     "10/20/50/200 och order blocks, tabell över aktiva block (stöd/motstånd, avstånd), entry patterns "
+     "och exit warnings med när de kom, risk och momentum, volatilitetsfördelning, oscillatorns "
+     "riktning och Bull List %. Underlag — inga köpbeslut."),
     ("INTELLIGENCE → Heatmap", "Alla — överblick",
      "Visuell marknadsvy per sektor och region."),
     ("PORTFOLIO → Swing", "Momentum: alla regler",
