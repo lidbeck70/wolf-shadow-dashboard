@@ -54,8 +54,11 @@ SERIES: dict = {
     ],
     # ── KPI ──
     (CPI, "SEK"): [
-        {"kind": "scb", "id": "PR/PR0101/PR0101A/KPI2020M", "prefer_text": ("fastställ", "2020=100", "index"),
-         "unit": "index 2020=100", "label": "KPI (SCB)"},
+        # "Fastställda tal" i 2020=100-tabellen börjar först 2026; skuggindex är hela serien 1980–
+        {"kind": "scb", "id": "PR/PR0101/PR0101A/KPI2020M", "prefer_text": ("skugg", "2020=100", "index"),
+         "unit": "index 2020=100", "label": "KPI (SCB, skuggindex 2020=100)",
+         "definition": "SCB:s skuggindex är KPI med fler decimaler — samma serie som de fastställda talen "
+                       "men utan avrundning, och den enda med historik före 2026 i basen 2020=100."},
         {"kind": "fred", "id": "CP0000SEM086NEST", "unit": "index", "label": "HIKP Sverige (Eurostat via FRED)"},
     ],
     (CPI, "EUR"): [
