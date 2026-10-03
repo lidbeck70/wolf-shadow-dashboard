@@ -192,3 +192,66 @@ def test_page_survives_total_api_failure(monkeypatch):
     html = " ".join(m.value for m in at.markdown)
     assert fu.NA in html and "0.0 %" not in html.split("FIAT OVERVIEW")[1].split("</table>")[0]
     fd.clear_cache()
+
+
+# ── PR 4: fiat mot guld/silver, reala tillgångar, guld/silver-kvoten ────────
+def test_fiat_vs_gold_lines_and_windows(fake_data):
+    lines = fu.fiat_vs_lines(cfg.GOLD, pd.Timestamp("2005-01-01"))
+    assert set(lines) == set(cfg.CURRENCIES)
+    usd, txt = lines["USD"]
+    assert usd.iloc[0] == pytest.approx(100.0) and usd.iloc[-1] < 100                 # guld +9 %/år → valutan köper mindre
+    rows = fu.window_rows(lines)
+    r = next(x for x in rows if x["Valuta"] == "USD")
+    assert r["1 år"] == pytest.approx((1 / 1.09 - 1) * 100, abs=0.2)
+    assert r["Sedan start"] == pytest.approx(float(usd.iloc[-1]) - 100)
+    old = fu.fiat_vs_lines(cfg.SILVER, pd.Timestamp("1990-01-01"))
+    assert all(s is None and fu.NA in t for s, t in old.values())                     # inget silver 1990
+
+
+def test_power_pair_is_two_separate_series(fake_data):
+    pair = fu.power_pair("SEK", pd.Timestamp("2010-01-01"))
+    assert set(pair) == {"SEK: köpkraft (KPI)", "Guld: köpkraft i SEK"}
+    fiat, gold = pair["SEK: köpkraft (KPI)"], pair["Guld: köpkraft i SEK"]
+    assert fiat.iloc[0] == pytest.approx(100.0) and fiat.iloc[-1] < 100              # KPI stiger
+    assert gold.iloc[0] == pytest.approx(100.0) and gold.iloc[-1] > 100              # guld slår KPI i testdatan
+    assert fu.power_pair("SEK", pd.Timestamp("1980-01-01")) == {}                      # inget guld 1980
+
+
+def test_real_asset_lines(fake_data):
+    lines, notes = fu.real_asset_lines("EUR", pd.Timestamp("2010-01-01"))
+    for name in ("Guld", "Silver", "Koppar", "Olja (Brent)", "Bitcoin", "KPI EUR (prisnivå)"):
+        assert name in lines and lines[name].iloc[0] == pytest.approx(100.0), name
+    assert any("Fastigheter" in n and fu.NA in n for n in notes)
+    lines, notes = fu.real_asset_lines("USD", pd.Timestamp("2000-01-01"))
+    assert "Koppar" not in lines and any("Koppar" in n and "2006" in n for n in notes)   # koppar från 2006
+
+
+def test_gold_silver_ratio_uses_the_existing_engine(fake_data):
+    ratio, rows = fu.gs_ratio()
+    assert ratio is not None and ratio.iloc[-1] > 0
+    periods = [r["Period"] for r in rows]
+    assert periods[0] == "1 år" and periods[-1] == "Hela historiken"
+    assert "20 år" in periods                                                       # 2000–2026 räcker
+    from gold_silver import engine as ge
+    g, s = fd.load_asset(cfg.GOLD), fd.load_asset(cfg.SILVER)
+    assert ratio.equals(ge.ratio_series(g.values, s.values))
+
+
+def test_page_shows_the_new_sections(fake_data, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+    monkeypatch.setenv("FD_TEST_ROOT", ROOT)
+    at = AppTest.from_function(_app, default_timeout=120)
+    at.run()
+    assert not at.exception, at.exception
+    html = " ".join(m.value for m in at.markdown)
+    for part in ("FIAT VS GOLD", "FIAT VS SILVER", "REAL ASSET PROTECTION", "GOLD/SILVER RATIO",
+                 "GULD/SILVER NU", "Fastigheter", "white-space:nowrap"):
+        assert part in html, part
+    at.toggle(key="fd_units_log").set_value(False).run()
+    at.selectbox(key="fd_ra_start").set_value("2020").run()
+    assert not at.exception
+
+
+def test_dead_eurostat_hicp_sources_are_gone():
+    eur = [s.get("dataset") for c in (cfg.CPI, cfg.CORE) for s in cfg.SERIES[(c, "EUR")]]
+    assert "prc_hicp_midx" not in eur

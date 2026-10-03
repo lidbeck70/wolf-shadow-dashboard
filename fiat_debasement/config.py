@@ -62,9 +62,8 @@ SERIES: dict = {
         {"kind": "fred", "id": "CP0000SEM086NEST", "unit": "index", "label": "HIKP Sverige (Eurostat via FRED)"},
     ],
     (CPI, "EUR"): [
-        {"kind": "eurostat", "dataset": "prc_hicp_midx", "params": {"geo": "EA", "coicop": "CP00", "unit": "I25"},
-         "unit": "index 2025=100", "label": "HICP euroområdet (Eurostat)"},
-        {"kind": "fred", "id": "CP0000EZ19M086NEST", "unit": "index", "label": "HICP euroområdet (via FRED)"},
+        # Eurostat har inte HICP 2025=100 i API:t än (sond 2026-10-03) — FRED har redan ombasad serie
+        {"kind": "fred", "id": "CP0000EZ19M086NEST", "unit": "index", "label": "HICP euroområdet (Eurostat via FRED)"},
     ],
     (CPI, "USD"): [
         {"kind": "fred", "id": "CPIAUCSL", "unit": "index 1982–84=100", "label": "CPI-U (BLS via FRED)"},
@@ -83,9 +82,6 @@ SERIES: dict = {
          "unit": "index 2020=100", "label": "KPIF-XE (SCB)"},
     ],
     (CORE, "EUR"): [
-        {"kind": "eurostat", "dataset": "prc_hicp_midx",
-         "params": {"geo": "EA", "coicop": "TOT_X_NRG_FOOD", "unit": "I25"},
-         "unit": "index 2025=100", "label": "HICP exkl. energi och livsmedel (Eurostat)"},
         {"kind": "fred", "id": "00XEFDEZ19M086NEST", "unit": "index",
          "label": "HICP exkl. energi, livsmedel, alkohol och tobak (via FRED)"},
     ],
