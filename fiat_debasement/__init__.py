@@ -8,5 +8,7 @@ fiatvalutor (SEK, EUR, USD) mot reala tillgångar.
   data.py      laddning med reserver, cache, färskhetskontroll och guld/silver-skarven
   engine.py    beräkningarna: YoY, CAGR, köpkraft, Monetary Gap, fiat mot tillgång
   snapshot.py  nyckeltalen per valuta, med källa och datum för varje siffra
+  index.py     Wolf Debasement Index (percentil mot egen historik, vikter) och scenarierna
+  ui.py        sidan REGIME → Makro → 🐺 Fiat Debasement
   probe.py     datasonden: vilka serier går faktiskt att hämta (körs i Actions)
 """
