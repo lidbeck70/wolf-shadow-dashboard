@@ -168,14 +168,18 @@ def test_scb_discovery_walks_folders():
     assert all("Utlåning" not in t for _p, t in found)
 
 
-def test_candidates_cover_every_concept_and_currency():
-    keys = {(c, cur) for c, cur, _f in pr.candidates()}
+def test_candidates_are_exactly_the_configured_sources():
+    from fiat_debasement import config as cfg
+    cands = pr.candidates()
+    n = sum(len(v) for v in cfg.SERIES.values()) + 2 * len(cfg.ASSET_SPLICE)
+    assert len(cands) == n
+    keys = {(c, cur) for c, cur, _f in cands}
     for cur in ("SEK", "EUR", "USD"):
-        for concept in (pr.M2, pr.CPI, pr.GDP, pr.DEBT):
-            assert (concept, cur) in keys, (concept, cur)
-    for concept in (pr.GOLD, pr.SILVER, pr.COPPER, pr.OIL, pr.BTC):
-        assert (concept, "USD") in keys
-    assert (pr.FX, "SEK") in keys and (pr.FX, "EUR") in keys
+        for concept in (cfg.M2, cfg.CPI, cfg.CORE, cfg.GDP, cfg.DEBT):
+            assert (cfg.CONCEPT_LABEL[concept], cur) in keys, (concept, cur)
+    for concept in (cfg.GOLD, cfg.SILVER, cfg.COPPER, cfg.OIL, cfg.BTC):
+        assert (cfg.CONCEPT_LABEL[concept], "USD") in keys
+    assert pr.STALE_DAYS["Q"] >= 300                         # Q1-siffran är aktuell långt in på hösten
 
 
 def test_main_writes_the_step_summary(monkeypatch, tmp_path):
@@ -190,3 +194,17 @@ def test_main_writes_the_step_summary(monkeypatch, tmp_path):
 def test_workflow_exists():
     wf = open(os.path.join(ROOT, ".github", "workflows", "fiat-probe.yml"), encoding="utf-8").read()
     assert "workflow_dispatch" in wf and "python -m fiat_debasement.probe" in wf and "BORSDATA_API_KEY" in wf
+
+
+def test_scb_prefer_text_picks_m2_and_outstanding_amounts():
+    meta = {"title": "Penningmängd", "variables": [
+        {"code": "Penningmangdsmatt", "values": ["M1", "M2", "M3"], "valueTexts": ["M1", "M2", "M3"]},
+        {"code": "ContentsCode", "values": ["T1", "T2"],
+         "valueTexts": ["Tillväxttakt, procent", "Utestående belopp, mnkr"]},
+        {"code": "Tid", "time": True, "values": ["2026M07", "2026M08"]}]}
+    data = {"columns": [{"code": "Penningmangdsmatt"}, {"code": "Tid"}, {"code": "T2"}],
+            "data": [{"key": ["M2", "2026M07"], "values": ["5000000"]}, {"key": ["M2", "2026M08"], "values": ["5010000"]}]}
+    http = _Http({"pm#post": _Resp(payload=data), "pm": _Resp(payload=meta)})
+    sd = src.scb_table("FM/pm", prefer_text=("M2", "utestående"), http=http)
+    assert sd.ok and sd.last_value == 5010000
+    assert sd.meta["chosen"] == {"Penningmangdsmatt": "M2 (M2)", "ContentsCode": "T2 (Utestående belopp, mnkr)"}
