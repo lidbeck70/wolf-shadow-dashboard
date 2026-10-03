@@ -7,8 +7,8 @@ median-R, profit factor, max drawdown, snittvinnare/-förlorare, expectancy,
 flest förluster i rad och snittinnehav — plus R-kurvan, exitorsakerna och
 varje affär. Utan look-ahead; begränsningarna står under resultatet.
 
-Marknadsriskspärren (🌩️ Marknadsrisk) är på som live (HÖG spärrar entries)
-och kan jämföras mot av / FÖRHÖJD. Risknivåerna delar cache med fliken.
+Marknadsriskspärren (🌩️ Marknadsrisk) är på som live (FÖRHÖJD eller HÖG
+spärrar entries) och kan jämföras mot bara HÖG / av. Risknivåerna delar cache med fliken.
 """
 
 from __future__ import annotations
@@ -87,7 +87,7 @@ def render_viking_nine_backtest() -> None:
         r1, r2 = st.columns([3, 2])
         gate = r1.selectbox("Marknadsriskspärr", list(vb.RISK_GATES), key="vnb_risk_gate",
                             help="Signaldagar där 🌩️ Marknadsrisk (SPY, OMXS30 för nordiska) låg på spärrad nivå "
-                                 "ger ingen entry. HÖG = samma regel som live.")
+                                 "ger ingen entry. FÖRHÖJD eller HÖG = samma regel som live.")
         compare_risk = r2.checkbox("Jämför spärrar", value=False, key="vnb_compare_risk",
                                    help="Kör samma tickers med varje spärr och visar nyckeltalen sida vid sida.")
         go_ = st.form_submit_button("⚔️ Kör backtest")

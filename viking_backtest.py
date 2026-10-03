@@ -16,7 +16,7 @@ viking_backtest.py — backtest av Viking Nine (OVTLYR Nine + Viking Execution
 
 Marknadsriskspärren (🌩️ Marknadsrisk) kan slås på: en signaldag där
 marknadens risknivå (SPY, OMXS30 för nordiska) är spärrad ger ingen entry —
-samma regel som live (HÖG stoppar nya Viking Nine-entries). Risknivån är
+samma regel som live (FÖRHÖJD eller HÖG stoppar nya Viking Nine-entries). Risknivån är
 poängen ur market_risk, som bara bygger på data t.o.m. dagen.
 
 Ingår inte (historiska data saknas): rapportspärren, max två förluster per
@@ -52,8 +52,8 @@ EXIT_PRESETS = {
     "Kärnan (stopp, breakeven, EMA10, marknad)": (("market", "trail", "be_exit"), False),
     "Bara stopp + EMA10": (("trail",), False),
 }
-# Marknadsriskspärr: nivåer som stoppar en ny entry. "HÖG" = samma som live.
-RISK_GATES = {"HÖG (som live)": (mrg.HIGH,), "FÖRHÖJD eller HÖG": (mrg.ELEVATED, mrg.HIGH), "Av": ()}
+# Marknadsriskspärr: nivåer som stoppar en ny entry. Första = samma som live (market_risk_gate).
+RISK_GATES = {"FÖRHÖJD eller HÖG (som live)": mrg.VIKING_BLOCK_LEVELS, "Bara HÖG": (mrg.HIGH,), "Av": ()}
 NOTES = (
     "Entry på nästa dags öppning efter en stängd signaldag; stängningsregler ger exit på nästa öppning.",
     "Rapportspärren ingår inte — historiska rapportdatum saknas.",
@@ -75,7 +75,7 @@ class Config:
     years: int = 3
     exit_rules: tuple = ALL_EXITS
     trail_after_be: bool = True        # EMA10 gäller först när stoppen flyttats till breakeven (som viking_exit)
-    risk_gate: tuple = (mrg.HIGH,)     # risknivåer som spärrar entry (kräver risk-serie i run/backtest_ticker)
+    risk_gate: tuple = mrg.VIKING_BLOCK_LEVELS   # nivåer som spärrar entry (kräver risk-serie i run/backtest_ticker)
 
 
 @dataclass

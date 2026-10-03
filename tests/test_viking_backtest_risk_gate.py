@@ -48,10 +48,12 @@ def test_risk_levels_use_last_known_points():
     assert (vb.risk_levels(None, IDX[:5]) == "").all()
 
 
-def test_default_gate_is_high_like_live():
-    assert vb.Config().risk_gate == ("HÖG",)
-    assert vb.RISK_GATES["HÖG (som live)"] == ("HÖG",) and vb.RISK_GATES["Av"] == ()
-    assert set(vb.RISK_GATES["FÖRHÖJD eller HÖG"]) == {"FÖRHÖJD", "HÖG"}
+def test_default_gate_is_elevated_like_live():
+    import market_risk_gate as mrg
+    assert vb.Config().risk_gate == mrg.VIKING_BLOCK_LEVELS == ("FÖRHÖJD", "HÖG")
+    first, levels = next(iter(vb.RISK_GATES.items()))
+    assert first == "FÖRHÖJD eller HÖG (som live)" and levels == mrg.VIKING_BLOCK_LEVELS
+    assert vb.RISK_GATES["Bara HÖG"] == ("HÖG",) and vb.RISK_GATES["Av"] == ()
 
 
 def test_high_risk_blocks_every_entry():
@@ -67,10 +69,10 @@ def test_low_risk_or_gate_off_changes_nothing():
     assert _key(_bt(risk=_pts(5), risk_gate=())["trades"]) == _key(free["trades"])
 
 
-def test_elevated_only_blocks_with_the_stricter_gate():
+def test_elevated_blocks_by_default_but_not_with_high_only():
     free = _bt()
-    assert _key(_bt(risk=_pts(3))["trades"]) == _key(free["trades"])                       # HÖG-spärr: FÖRHÖJD ok
-    strict = _bt(risk=_pts(3), risk_gate=vb.RISK_GATES["FÖRHÖJD eller HÖG"])
+    assert _key(_bt(risk=_pts(3), risk_gate=vb.RISK_GATES["Bara HÖG"])["trades"]) == _key(free["trades"])
+    strict = _bt(risk=_pts(3))
     assert strict["trades"] == [] and strict["risk_blocked"] > 0
 
 
@@ -151,8 +153,8 @@ def test_page_compares_risk_gates(monkeypatch):
     assert not at.exception, at.exception
     html = " ".join(m.value for m in at.markdown)
     assert "JÄMFÖRELSE AV EXITREGLER OCH RISKSPÄRR" in html and "Spärrade" in html
-    assert "Spärr HÖG (som live)" in html and "Spärr Av" in html
+    assert "Spärr FÖRHÖJD eller HÖG (som live)" in html and "Spärr Av" in html
     assert "Marknadsriskspärr:" in html and "signaler spärrade" in html
     runs = at.session_state["vnb_result"]["runs"]
-    assert runs["Spärr Av"]["risk_blocked"] == 0 and runs["Spärr HÖG (som live)"]["risk_blocked"] > 0
-    assert runs["Spärr HÖG (som live)"]["metrics"]["trades"] < runs["Spärr Av"]["metrics"]["trades"]
+    assert runs["Spärr Av"]["risk_blocked"] == 0 and runs["Spärr FÖRHÖJD eller HÖG (som live)"]["risk_blocked"] > 0
+    assert runs["Spärr FÖRHÖJD eller HÖG (som live)"]["metrics"]["trades"] < runs["Spärr Av"]["metrics"]["trades"]

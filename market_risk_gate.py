@@ -3,7 +3,9 @@ market_risk_gate.py — riskspärren ur 🌩️ Marknadsrisk.
 
   HÖG       Viking Nine: inga nya entries (NO TRADE med skäl)
             Wolf: halverad positionsstorlek + varning
-  FÖRHÖJD   bara information (historiskt 1,3–1,4× normalt — för svagt för en spärr)
+  FÖRHÖJD   Viking Nine: inga nya entries — backtestet (20 tickers, 5 år) gav
+            expectancy +0,34R och max DD −3,4R mot +0,14R och −10,4R med
+            spärr bara vid HÖG. Wolf: bara information.
   LÅG       ingenting
 
 Nordiska tickers (.ST .OL .CO .HE) mäts mot OMXS30, övriga mot SPY.
@@ -22,6 +24,7 @@ import market_risk as mr
 logger = logging.getLogger(__name__)
 
 HIGH, ELEVATED = "HÖG", "FÖRHÖJD"
+VIKING_BLOCK_LEVELS = (ELEVATED, HIGH)     # nivåer som stoppar nya Viking Nine-entries
 WOLF_HIGH_SIZE_FACTOR = 0.5
 TTL_S = 6 * 3600
 TTL_FAIL_S = 300                   # misslyckad nivå provas igen efter fem minuter
@@ -61,7 +64,13 @@ def for_ticker(ticker: str, evaluator: Optional[Callable] = None) -> Optional[di
 
 
 def blocks_entry(risk: Optional[dict]) -> bool:
+    """Nivå HÖG (Wolf-halveringen och larmen)."""
     return bool(risk) and risk.get("level") == HIGH
+
+
+def blocks_viking_entry(risk: Optional[dict]) -> bool:
+    """Viking Nine: FÖRHÖJD eller HÖG stoppar nya entries."""
+    return bool(risk) and risk.get("level") in VIKING_BLOCK_LEVELS
 
 
 def size_factor(risk: Optional[dict]) -> float:
