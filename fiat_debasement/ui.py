@@ -1,13 +1,18 @@
 """
 fiat_debasement/ui.py — REGIME → Makro → 🐺 Fiat Debasement.
 
-Sektioner (MVP, PR 3):
+Sektioner:
   1. FIAT OVERVIEW        en rad per valuta: penningmängd, KPI, real BNP,
                           Monetary Gap, statsskuld och köpkraft i guld
   2. MONEY SUPPLY         M2-tillväxt och Monetary Gap för vald valuta
   3. INFLATION            KPI, kärn-KPI och PURCHASING POWER INDEX
   4. WHAT HAPPENED TO 100 UNITS?  kontanter mot KPI, guld och silver
-  5. METHODOLOGY          vad varje mått mäter, antaganden och datakällorna
+  5. FIAT VS GOLD         SEK/EUR/USD mätta i guld (start = 100), 1/5/10 år,
+                          guldets och valutans köpkraft som två serier
+  6. FIAT VS SILVER       samma för silver
+  7. REAL ASSET PROTECTION  guld, silver, koppar, olja, bitcoin mot KPI i vald valuta
+  8. GOLD/SILVER RATIO    kvoten mot historiken och mot valutans köpkraft
+  9. METHODOLOGY          vad varje mått mäter, antaganden och datakällorna
 
 Färgerna är bara visuell hjälp — siffran står alltid bredvid. Saknad data
 visas som DATA UNAVAILABLE, aldrig 0. Sidan säger aldrig köp eller sälj.
@@ -162,6 +167,99 @@ def hundred_units(ccy: str, start: pd.Timestamp, loader=None, asset_loader=None)
     return {"start": eff, "lines": lines, "notes": notes, "segments": segments}
 
 
+WINDOWS = (("1 år", 1), ("5 år", 5), ("10 år", 10))
+REAL_ASSETS = (cfg.GOLD, cfg.SILVER, cfg.COPPER, cfg.OIL, cfg.BTC)
+ASSET_COLOR = {cfg.GOLD: GOLD, cfg.SILVER: "#c0c0c0", cfg.COPPER: "#b87333", cfg.OIL: "#4a90d9", cfg.BTC: "#f7931a"}
+GS_PERIODS = (("1 år", 1), ("5 år", 5), ("10 år", 10), ("20 år", 20), ("Hela historiken", None))
+
+
+def asset_price(name: str, ccy: str, loader=None, asset_loader=None) -> tuple:
+    """(tillgångens pris i valutan | None, Loaded för tillgången)."""
+    load, load_asset = loader or fd.load, asset_loader or fd.load_asset
+    ld = load_asset(name)
+    fx = load(cfg.FX, ccy) if ccy != "USD" else None
+    return fe.price_in(ld.values, ccy, fx.values if fx is not None else None), ld
+
+
+def fiat_vs_lines(name: str, start: pd.Timestamp, loader=None, asset_loader=None) -> dict:
+    """valuta → (valutans värde i tillgången, start = 100 | None, förklaring)."""
+    out = {}
+    for ccy in cfg.CURRENCIES:
+        price, ld = asset_price(name, ccy, loader, asset_loader)
+        ok, first = usable_from(price, start)
+        if not ok:
+            out[ccy] = (None, f"{ccy}/{cfg.CONCEPT_LABEL[name]}: {NA} för {start.date()}")
+            continue
+        out[ccy] = (fe.fiat_vs_asset(price, start), f"{ccy}/{cfg.CONCEPT_LABEL[name]} från {first.date()}")
+    return out
+
+
+def window_rows(lines: dict) -> list:
+    """Förändring (%) i valutans värde mätt i tillgången: 1/5/10 år och sedan start."""
+    rows = []
+    for ccy, (s, _txt) in lines.items():
+        row = {"Valuta": ccy}
+        for label, yrs in WINDOWS:
+            row[label] = fe.change_pct(s, yrs)
+        row["Sedan start"] = None if s is None else float(s.iloc[-1]) - 100
+        rows.append(row)
+    return rows
+
+
+def power_pair(ccy: str, start: pd.Timestamp, name: str = cfg.GOLD, loader=None, asset_loader=None) -> dict:
+    """Två separata serier, start = 100: valutans köpkraft (KPI) och metallens köpkraft
+    (metallpriset i valutan delat med KPI — hur mycket varor en uns köper)."""
+    out = {}
+    cpi = cpi_for_power(ccy, loader)
+    price, _ld = asset_price(name, ccy, loader, asset_loader)
+    if cpi.ok and usable_from(price, start)[0]:
+        eff = max(start, price[price.index >= start].index[0])
+        pp = fe.purchasing_power(cpi.values, eff)
+        if pp is not None:
+            out[f"{ccy}: köpkraft (KPI)"] = pp
+        real = fe.normalize_100(fe.real_price(price, cpi.values, eff), eff)
+        if real is not None:
+            out[f"{cfg.CONCEPT_LABEL[name]}: köpkraft i {ccy}"] = real
+    return out
+
+
+def real_asset_lines(ccy: str, start: pd.Timestamp, loader=None, asset_loader=None) -> tuple:
+    """({namn: pris i valutan, start = 100}, [förklaringar]) — plus KPI som prisnivå."""
+    lines, notes = {}, []
+    for name in REAL_ASSETS:
+        price, ld = asset_price(name, ccy, loader, asset_loader)
+        ok, first = usable_from(price, start)
+        if not ok:
+            since = f" — finns från {price.index[0].date()}" if price is not None and len(price) else ""
+            notes.append(f"{cfg.CONCEPT_LABEL[name]}: {NA} för {start.date()}{since}")
+            continue
+        lines[cfg.CONCEPT_LABEL[name]] = fe.normalize_100(price, start)
+        if first > start + pd.Timedelta(days=31):
+            notes.append(f"{cfg.CONCEPT_LABEL[name]}: börjar {first.date()}")
+    cpi = cpi_for_power(ccy, loader)
+    if cpi.ok and usable_from(cpi.values, start)[0]:
+        lines[f"KPI {ccy} (prisnivå)"] = fe.normalize_100(cpi.values, start)
+    notes.append(f"Fastigheter: {NA} — ingen jämförbar daglig källa för SEK, EUR och USD är vald än.")
+    return lines, notes
+
+
+def gs_ratio(asset_loader=None) -> tuple:
+    """(kvotserie, [{period, nu, snitt, median, min, max, percentil}]) — samma uträkning som 🥇🥈 Guld/Silver."""
+    from gold_silver import engine as ge
+    load_asset = asset_loader or fd.load_asset
+    g, s = load_asset(cfg.GOLD), load_asset(cfg.SILVER)
+    if not (g.ok and s.ok):
+        return None, []
+    ratio = ge.ratio_series(g.values, s.values)
+    rows = []
+    for label, yrs in GS_PERIODS:
+        st_ = ge.period_stats(ratio, label, yrs)
+        if st_ is not None and (st_.complete or yrs is None):
+            rows.append({"Period": label, "Från": st_.start, "Snitt": st_.mean, "Median": st_.median,
+                         "Min": st_.min, "Max": st_.max, "Nu mot perioden (percentil)": st_.percentile})
+    return (ratio if len(ratio) else None), rows
+
+
 # ── Rendering ───────────────────────────────────────────────────────────────
 def _section(title: str, sub: str = "") -> None:
     st.markdown(f"<div style='color:{CYAN};font-family:Courier New;letter-spacing:2px;font-size:0.85rem;"
@@ -174,10 +272,17 @@ def _why(text: str) -> None:
         note(text)
 
 
-def _layout(title: str, height: int = 320, ytitle: str = "") -> dict:
+LOG_TICKS = [m * 10 ** e for e in range(-1, 7) for m in (1, 2, 5)]
+
+
+def _layout(title: str, height: int = 320, ytitle: str = "", log: bool = False) -> dict:
     lay = dict(PLOTLY_LAYOUT)
     lay.update(height=height, title=dict(text=title, font=dict(size=12, color=CYAN)),
-               legend=dict(orientation="h", y=-0.15), yaxis=dict(title=ytitle, gridcolor="rgba(255,255,255,0.05)"))
+               legend=dict(orientation="h", y=-0.15),
+               yaxis=dict(title=ytitle, gridcolor="rgba(255,255,255,0.05)", zeroline=False,
+                          type="log" if log else "linear",
+                          **({"tickmode": "array", "tickvals": LOG_TICKS, "ticktext": [f"{v:g}" for v in LOG_TICKS]}
+                             if log else {})))
     return lay
 
 
@@ -205,6 +310,10 @@ def render_fiat_debasement_page() -> None:
     _money_supply(snaps[ccy])
     _inflation(snaps[ccy])
     _hundred_units()
+    _fiat_vs(cfg.GOLD, ccy)
+    _fiat_vs(cfg.SILVER, ccy)
+    _real_assets(ccy)
+    _gs_ratio(ccy)
     _methodology(snaps)
 
 
@@ -220,8 +329,8 @@ def _overview(snaps: dict) -> None:
             f"{c['text']}</span>{' ⚠' if c['stale'] else ''}</td>" for c in row["cells"])
         body += (f"<tr><td style='text-align:left;color:{CCY_COLOR[row['currency']]};font-weight:700;'>"
                  f"{row['currency']}</td>{cells}</tr>")
-    st.markdown(f"<div style='overflow-x:auto;'><table style='width:100%;font-size:0.8rem;color:{TEXT};"
-                f"text-align:right;'><tr style='color:{DIM};'><th style='text-align:left;'>Valuta</th>{head}</tr>"
+    st.markdown(f"<div style='overflow-x:auto;'><table style='width:100%;font-size:0.74rem;color:{TEXT};"
+                f"text-align:right;white-space:nowrap;'><tr style='color:{DIM};'><th style='text-align:left;'>Valuta</th>{head}</tr>"
                 f"{body}</table></div>", unsafe_allow_html=True)
     note("Färgen är bara visuell hjälp (gränserna står i metodpanelen) — siffran gäller. M2-tillväxt och KPI "
          "är årsförändring; Monetary Gap = M2-tillväxt − real BNP-tillväxt i procentenheter; köpkraft i guld = "
@@ -321,6 +430,8 @@ def _hundred_units() -> None:
     c1, c2 = st.columns(2)
     ccy = c1.radio("Valuta", list(cfg.CURRENCIES), horizontal=True, key="fd_units_ccy")
     choice = c2.selectbox("Start", START_CHOICES[3:-1], index=0, key="fd_units_start")
+    log = st.toggle("Logaritmisk skala", value=True, key="fd_units_log",
+                    help="Lika stora procentuella rörelser blir lika stora i grafen — alla linjer syns.")
     res = hundred_units(ccy, start_date(choice))
     if not res["lines"]:
         note(f"{NA} — " + " ".join(res["notes"]))
@@ -328,7 +439,8 @@ def _hundred_units() -> None:
     fig = go.Figure()
     colors = {"Kontanter, köpkraft (KPI)": RED, "I guld": GOLD, "I silver": GREY}
     fig.add_hline(y=100, line=dict(color=DIM, dash="dot", width=1),
-                  annotation_text=f"100 {ccy} som kontanter (nominellt)", annotation_font_color=DIM)
+                  annotation_text=f"100 {ccy} som kontanter (nominellt)", annotation_font_color=DIM,
+                  annotation_position="top left")
     for name, s in res["lines"].items():
         fig.add_trace(go.Scatter(x=s.index, y=s.values, name=name, line=dict(color=colors.get(name, TEXT), width=1.8)))
     for seg in res["segments"]:
@@ -337,7 +449,7 @@ def _hundred_units() -> None:
                           fillcolor="rgba(201,168,76,0.08)", line_width=0,
                           annotation_text="terminspris", annotation_font_color=DIM)
     fig.update_layout(**_layout(f"100 {ccy} FRÅN {res['start'].date()} — I DAGENS {ccy}", height=380,
-                                ytitle=ccy))
+                                ytitle=ccy, log=log))
     _chart(fig, "fd_units_chart")
     last = {n: float(s.iloc[-1]) for n, s in res["lines"].items() if s is not None and len(s)}
     if last:
@@ -347,6 +459,106 @@ def _hundred_units() -> None:
     _why("Röd linje: vad 100 enheter kontanter köper i dag mätt med KPI (köpkraft). Guld/silver: vad 100 enheter "
          "växlade till metallen vid start är värda i dag, i samma valuta. Visar historisk utveckling — inte vad "
          "som kommer att hända, och inte att guld alltid skyddar (perioder med fallande guldpris finns).")
+
+
+def _fiat_vs(name: str, ccy: str) -> None:
+    label = cfg.CONCEPT_LABEL[name]
+    _section(f"FIAT VS {'GOLD' if name == cfg.GOLD else 'SILVER'}",
+             f"hur mycket {label.lower()} en valutaenhet köper · start = 100")
+    choice = st.selectbox("Start", START_CHOICES[3:-1], index=0, key=f"fd_{name}_start")
+    start = start_date(choice)
+    lines = fiat_vs_lines(name, start)
+    fig = go.Figure()
+    for c, (s, _t) in lines.items():
+        if s is not None:
+            fig.add_trace(go.Scatter(x=s.index, y=s.values, name=f"{c}/{label}", line=dict(color=CCY_COLOR[c], width=1.6)))
+    fig.add_hline(y=100, line=dict(color=DIM, dash="dot", width=1))
+    fig.update_layout(**_layout(f"VALUTA MÄTT I {label.upper()} ({start.year} = 100)", log=True))
+    _chart(fig, f"fd_{name}_chart")
+    rows = window_rows(lines)
+    head = "".join(f"<th>{k}</th>" for k in rows[0]) if rows else ""
+    body = "".join("<tr>" + "".join(
+        f"<td style='text-align:left;color:{CCY_COLOR[r['Valuta']]};font-weight:700;'>{v}</td>" if k == "Valuta"
+        else f"<td style='color:{GREEN if (v or 0) > 0 else RED if v is not None else DIM};'>{fmt(v)}</td>"
+        for k, v in r.items()) + "</tr>" for r in rows)
+    st.markdown(f"<div style='overflow-x:auto;'><table style='width:100%;font-size:0.76rem;color:{TEXT};"
+                f"text-align:right;white-space:nowrap;'><tr style='color:{DIM};'>{head}</tr>{body}</table></div>",
+                unsafe_allow_html=True)
+    for _c, (_s, txt) in lines.items():
+        if NA in txt:
+            note(txt)
+    pair = power_pair(ccy, start, name)
+    if pair:
+        fig = go.Figure()
+        for i, (n, s) in enumerate(pair.items()):
+            fig.add_trace(go.Scatter(x=s.index, y=s.values, name=n,
+                                     line=dict(color=CCY_COLOR[ccy] if i == 0 else ASSET_COLOR[name], width=1.8)))
+        fig.add_hline(y=100, line=dict(color=DIM, dash="dot", width=1))
+        fig.update_layout(**_layout(f"KÖPKRAFT: {label.upper()} VS {ccy} (START = 100)", height=300, log=True))
+        _chart(fig, f"fd_{name}_pair")
+    _why(f"Linjen faller när valutan köper mindre {label.lower()} än vid start, och stiger när den köper mer. "
+         f"Skillnaden mellan SEK, EUR och USD är växelkursens rörelse, eftersom {label.lower()} prissätts i USD. "
+         f"Den nedre grafen visar två separata saker: valutans köpkraft enligt KPI, och hur mycket varor en "
+         f"uns {label.lower()} köper (priset i {ccy} delat med KPI). Stigande metallpris betyder inte "
+         f"nödvändigtvis att valutan kollapsar.")
+
+
+def _real_assets(ccy: str) -> None:
+    _section("REAL ASSET PROTECTION", f"reala tillgångar i {ccy} mot KPI · start = 100")
+    c1, c2 = st.columns([2, 1])
+    choice = c1.selectbox("Start", START_CHOICES[3:-1], index=1, key="fd_ra_start")
+    log = c2.toggle("Log-skala", value=True, key="fd_ra_log")
+    start = start_date(choice)
+    lines, notes = real_asset_lines(ccy, start)
+    if not lines:
+        note(f"{NA} — " + " ".join(notes))
+        return
+    fig = go.Figure()
+    by_label = {cfg.CONCEPT_LABEL[n]: ASSET_COLOR[n] for n in REAL_ASSETS}
+    for n, s in lines.items():
+        dash = "dot" if n.startswith("KPI") else None
+        fig.add_trace(go.Scatter(x=s.index, y=s.values, name=n,
+                                 line=dict(color=by_label.get(n, RED), width=1.6, dash=dash)))
+    fig.update_layout(**_layout(f"REALA TILLGÅNGAR I {ccy} — {start.date()} = 100", height=360, log=log))
+    _chart(fig, "fd_ra_chart")
+    body = "".join(f"<tr><td style='text-align:left;'>{n}</td><td>{float(s.iloc[-1]):,.0f}</td>"
+                   f"<td>{fmt(fe.change_pct(s, 1))}</td><td>{fmt(fe.change_pct(s, 5))}</td></tr>"
+                   for n, s in lines.items() if s is not None and len(s))
+    st.markdown(f"<div style='overflow-x:auto;'><table style='width:100%;font-size:0.76rem;color:{TEXT};"
+                f"text-align:right;white-space:nowrap;'><tr style='color:{DIM};'><th style='text-align:left;'>"
+                f"Tillgång</th><th>Nu (start=100)</th><th>1 år</th><th>5 år</th></tr>{body}</table></div>",
+                unsafe_allow_html=True)
+    for n in notes:
+        note(n)
+    _why("Över den prickade KPI-linjen har tillgången stigit mer än prisnivån i vald valuta under perioden, under "
+         "den mindre. Historik, ingen prognos — reala tillgångar kan falla kraftigt och länge.")
+
+
+def _gs_ratio(ccy: str) -> None:
+    _section("GOLD/SILVER RATIO", "samma kvot som REGIME → Råvaror → 🥇🥈 Guld/Silver")
+    ratio, rows = gs_ratio()
+    if ratio is None:
+        note(f"Guld/silver-kvoten: {NA}")
+        return
+    cur = float(ratio.iloc[-1])
+    avg = next((r["Snitt"] for r in rows if r["Period"] == "Hela historiken"), None)
+    _cards([("GULD/SILVER NU", f"{cur:.1f}", str(ratio.index[-1].date()), GOLD),
+            ("HISTORISKT SNITT", "—" if avg is None else f"{avg:.1f}", f"sedan {ratio.index[0].date()}", CYAN)])
+    if rows:
+        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+    cpi = cpi_for_power(ccy)
+    pp = fe.purchasing_power(cpi.values, ratio.index[0]) if cpi.ok else None
+    fig = go.Figure(go.Scatter(x=ratio.index, y=ratio.values, name="Guld/silver", line=dict(color=GOLD, width=1.4)))
+    if pp is not None:
+        fig.add_trace(go.Scatter(x=pp.index, y=pp.values, name=f"{ccy} köpkraft (KPI, start = 100)", yaxis="y2",
+                                 line=dict(color=CCY_COLOR[ccy], width=1.6)))
+    lay = _layout(f"GULD/SILVER OCH {ccy} KÖPKRAFT", height=320)
+    lay["yaxis2"] = dict(overlaying="y", side="right", showgrid=False, title="köpkraft")
+    fig.update_layout(**lay)
+    _chart(fig, "fd_gs_chart")
+    _why("Kvoten = guldpris / silverpris. Hög kvot = silver billigt relativt guld, låg = dyrt. Grafen visar om "
+         "silver blivit billigare eller dyrare mot guld samtidigt som valutans köpkraft ändrats — två serier "
+         "bredvid varandra, inget orsakssamband. Före 2006 bygger kvoten på terminspris.")
 
 
 METHODOLOGY = (
@@ -372,7 +584,9 @@ METHODOLOGY = (
                       "köpkraft i guld 0/−30 %."),
     ("9. Begränsningar", "Revideringar i BNP och penningmängd, olika M2-definitioner, ombasning av HICP till "
                          "2025=100, USA:s offentliga skuld bara årlig (IMF), guld före 2006 är terminspris, "
-                         "euroområdets sammansättning har ändrats över tid."),
+                         "euroområdets sammansättning har ändrats över tid. Koppar och olja (Börsdata) finns "
+                         "från 2006, bitcoin från 2014; fastigheter saknas än. Guld/silver-kvoten före 2006 "
+                         "bygger på terminspris."),
 )
 PRINCIPLES = ("Inflation ≠ M2-tillväxt", "Valutaförsvagning ≠ KPI-inflation",
               "Penningmängdstillväxt ≠ automatisk förlust av köpkraft",
