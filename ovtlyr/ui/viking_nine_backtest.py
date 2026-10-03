@@ -7,6 +7,9 @@ median-R, profit factor, max drawdown, snittvinnare/-förlorare, expectancy,
 flest förluster i rad och snittinnehav — plus R-kurvan, exitorsakerna och
 varje affär. Utan look-ahead; begränsningarna står under resultatet.
 
+PORTFÖLJ kör samma affärer genom ett konto (viking_portfolio): 1,5 % risk,
+max 25 % per position, max 100 % investerat, max två förluster per dag.
+
 Marknadsriskspärren (🌩️ Marknadsrisk) är på som live (FÖRHÖJD eller HÖG
 spärrar entries) och kan jämföras mot bara HÖG / av. Risknivåerna delar cache med fliken.
 """
@@ -20,6 +23,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 import viking_backtest as vb
+import viking_portfolio as vp
 import viking_screen as vs
 from ovtlyr.ui.viking_screens import _ROWS, _sector
 from ui.charts import PLOTLY_LAYOUT
@@ -41,6 +45,13 @@ def _risk_points(market: str):
     from market_risk_ui import _load
     r = _load(market)
     return None if r.error else r.history
+
+
+def portfolio_of(res: dict) -> dict:
+    """Portföljläget för en körning (räknas en gång; äldre sessionsresultat räknas här)."""
+    if "portfolio" not in res:
+        res["portfolio"] = vp.simulate(res.get("trades") or [], years=getattr(res.get("config"), "years", None))
+    return res["portfolio"]
 
 
 def _fmt(v, f="{:+.2f}R") -> str:
@@ -105,6 +116,7 @@ def render_viking_nine_backtest() -> None:
                          progress=lambda i, n, t, k=k, name=name: bar.progress(
                              (k + i / n) / len(runs), text=f"{name}: {t} ({i}/{n})"))
             res["labels"] = {"exit": ex, "gate": gt}
+            portfolio_of(res)
             out[name] = res
         bar.empty()
         selected = next((nm for nm, ex, gt in runs if ex == preset and gt == gate), runs[0][0])
@@ -152,27 +164,34 @@ def comparison_rows(runs: dict) -> list:
                      "Expectancy R": m.get("expectancy"), "Profit factor": m.get("profit_factor"),
                      "Summa R": m.get("total_r"), "Max DD R": m.get("max_drawdown_r"),
                      "Snittvinnare R": m.get("avg_winner"), "Snittinnehav d": m.get("avg_holding_days")})
+        p = portfolio_of(res)
+        rows[-1].update({"Portfölj affärer": p["taken"], "Portfölj avk. %": p["return_pct"],
+                         "Portfölj DD %": p["max_dd_pct"]})
     return rows
 
 
 def render_comparison(runs: dict) -> None:
     rows = comparison_rows(runs)
     best = max((r for r in rows if r["Expectancy R"] is not None), key=lambda r: r["Expectancy R"], default=None)
-    lowest_dd = min((r["Max DD R"] for r in rows if r["Max DD R"] is not None), default=None)
+    lowest = {k: min((r[k] for r in rows if r.get(k) is not None), default=None) for k in ("Max DD R", "Portfölj DD %")}
+    top_ret = max((r["Portfölj avk. %"] for r in rows if r.get("Portfölj avk. %") is not None), default=None)
     head = "".join(f"<th>{k}</th>" for k in rows[0])
     body = "".join(
         "<tr>" + "".join(
             f"<td style='{'text-align:left;' if k == 'Körning' else ''}"
             f"{'color:' + GREEN + ';font-weight:700;' if best is r and k in ('Körning', 'Expectancy R') else ''}"
-            f"{'color:' + GREEN + ';font-weight:700;' if k == 'Max DD R' and v is not None and v == lowest_dd else ''}'>"
+            f"{'color:' + GREEN + ';font-weight:700;' if k in lowest and v is not None and v == lowest[k] else ''}"
+            f"{'color:' + GREEN + ';font-weight:700;' if k == 'Portfölj avk. %' and v is not None and v == top_ret else ''}'>"
             f"{'—' if v is None else _fmt(v, '{:.2f}') if isinstance(v, float) else v}</td>" for k, v in r.items())
         + "</tr>" for r in rows)
     st.markdown(f"<div style='color:{CYAN};font-size:0.72rem;letter-spacing:0.1em;margin-top:8px;'>JÄMFÖRELSE AV "
                 f"EXITREGLER OCH RISKSPÄRR</div><div style='overflow-x:auto;'><table style='width:100%;font-size:0.76rem;"
                 f"color:{TEXT};text-align:right;'><tr style='color:{DIM};'>{head}</tr>{body}</table></div>",
                 unsafe_allow_html=True)
-    note("Samma tickers — bara exitregler och/eller riskspärr skiljer. Grönt = högst expectancy och lägst max "
-         "drawdown. Spärrade = signaler som stoppades av marknadsrisken. Få affärer ger brusiga tal; jämför helst "
+    note("Samma tickers — bara exitregler och/eller riskspärr skiljer. Grönt = högst expectancy, lägst max "
+         "drawdown och högst portföljavkastning. Portfölj = samma affärer genom ett konto (1,5 % risk, max 25 % "
+         "per position, max 100 % investerat, max två förluster per dag). "
+         "Spärrade = signaler som stoppades av marknadsrisken. Få affärer ger brusiga tal; jämför helst "
          "på 50+ affärer.")
 
 
@@ -218,6 +237,7 @@ def render_result(res: dict, name: str = "") -> None:
                     f"</div><table style='font-size:0.78rem;color:{TEXT};text-align:right;'><tr style='color:{DIM};'>"
                     f"<th style='text-align:left;'>Exit</th><th>Antal</th><th>Snitt</th></tr>{rows}</table>",
                     unsafe_allow_html=True)
+        render_portfolio(portfolio_of(res))
         with st.expander(f"Alla affärer ({len(res['trades'])})"):
             st.dataframe(pd.DataFrame([{
                 "Ticker": t.ticker, "Signal": t.signal_date, "Entry": t.entry_date, "Pris in": round(t.entry, 2),
@@ -234,6 +254,56 @@ def render_result(res: dict, name: str = "") -> None:
     note("Expectancy = win rate × snittvinnare − förlustandel × snittförlorare, i R. " + " ".join(res["notes"])
          + " Marknadsriskens poäng räknas om bakåt med dagens modell; OMXS30-bredden bygger på dagens Large "
            "Cap-lista (överlevnadsbias).")
+
+
+def equity_chart(p: dict) -> go.Figure:
+    pts = p.get("curve") or []
+    fig = go.Figure(go.Scatter(x=[d for d, _v in pts], y=[v for _d, v in pts], mode="lines",
+                               line=dict(color=GOLD, width=1.6), name="Konto %"))
+    fig.add_hline(y=0, line=dict(color=DIM, width=1, dash="dot"))
+    layout = dict(PLOTLY_LAYOUT)
+    layout.update(height=280, showlegend=False, title=dict(text="PORTFÖLJ — KONTOT I % (STÄNGDA AFFÄRER)",
+                                                           font=dict(size=12, color=GOLD)),
+                  yaxis=dict(title="%", gridcolor="rgba(255,255,255,0.05)"))
+    fig.update_layout(**layout)
+    return fig
+
+
+def render_portfolio(p: dict) -> None:
+    """PORTFÖLJ — samma affärer genom ett konto med Vikings gränser."""
+    m = p["metrics"]
+    st.markdown(f"<div style='color:{GOLD};font-size:0.72rem;letter-spacing:0.1em;margin-top:14px;'>PORTFÖLJ — "
+                f"ETT KONTO</div>", unsafe_allow_html=True)
+    if not m.get("trades"):
+        note("Inga stängda affärer i portföljläget. " + p["note"])
+        return
+    cagr = "—" if p["cagr_pct"] is None else f"{p['cagr_pct']:+g} % per år"
+    exp = m["expectancy"]
+    cards = [
+        ("TAGNA AFFÄRER", f"{p['taken']} av {p['candidates']}",
+         f"hoppade över: {p['skipped_full']} fullt · {p['skipped_losses']} förlustspärr · max {p['max_open']} "
+         f"öppna", CYAN),
+        ("AVKASTNING", f"{p['return_pct']:+g} %", f"{cagr} · snittposition {p['avg_position_pct']:g} %", GOLD),
+        ("MAX DRAWDOWN", f"−{p['max_dd_pct']:g} %", f"i R: {_fmt(-m['max_drawdown_r'])} · snittrisk "
+                                                     f"{p['avg_risk_pct']:g} % per affär", AMBER),
+        ("EXPECTANCY", _fmt(exp), f"summa {_fmt(m['total_r'])} · win rate {m['win_rate']:g} % · PF "
+                                  f"{_fmt(m['profit_factor'], '{:.2f}')}", GREEN if exp > 0 else RED),
+    ]
+    cols = st.columns(2)
+    for k, (title, big, sub, col) in enumerate(cards):
+        cols[k % 2].markdown(big_card(title, big, sub, col), unsafe_allow_html=True)
+    try:
+        st.plotly_chart(equity_chart(p), use_container_width=True, config={"displayModeBar": False},
+                        key="vnb_equity")
+    except Exception:
+        pass
+    with st.expander(f"Portföljens affärer ({p['taken']})"):
+        st.dataframe(pd.DataFrame([{
+            "Ticker": r["trade"].ticker, "Entry": r["trade"].entry_date, "Exit": r["trade"].exit_date,
+            "Orsak": r["trade"].exit_reason, "Position %": r["position_pct"], "Risk %": r["risk_pct"],
+            "R": r["trade"].r, "Konto %": r["return_pct"]} for r in p["rows"]]), hide_index=True, width="stretch")
+    note(p["note"] + " Avkastningen räknas med ränta på ränta på stängda affärer — utan courtage, skatt och "
+                     "valuta.")
 
 
 def risk_line(res: dict, gate: tuple) -> str:
