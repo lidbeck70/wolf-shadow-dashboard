@@ -40,13 +40,14 @@ SUBS: dict = {
     # (data/confidence.json); Wolf Asymmetry har sitt eget med Confidence inbyggt.
     "review": ["Rick Rule", "Royalty C", "Poängmodell", "Tiggre", "Insider",
                "🧭 Durrett", "🐺 Wolf Asymmetry", "🚀 Råvaruhävstång", "🎯 Scorecard"],
-    # REGIME delat i två: marknaden (index, sektorer, cykel) och råvarorna.
-    "regime": ["Marknad", "Råvaror"],
+    # REGIME: marknaden (index, sektorer, cykel), råvarorna och makro (penningvärde).
+    "regime": ["Marknad", "Råvaror", "Makro"],
     "regime/Marknad": ["Arc Regime", "Alpha Regime", "Swing Regime",
                        "Flow Divergence", "Market Cycle", "🌩️ Marknadsrisk"],
     "regime/Marknad/Arc Regime": ["Wolf Regime", "Viking Regime", "⚔️ Viking Nine Regime"],
     "regime/Marknad/Alpha Regime": ["Quality & Contrarian", "Long Trend"],
     "regime/Råvaror": ["🌍 EMBER Regime", "Råvarurotation", "🥇🥈 Guld/Silver", "🥇 Guldkvoter"],
+    "regime/Makro": ["🐺 Fiat Debasement"],
     "intel": ["Odin's Blindspot", "Sentiment", "Retail Pulse", "Heatmap", "🕯️ Teknisk analys"],
     "portfolio": ["📓 Trade Journal", "Holdings", "Swing", "Allokering", "Backtest"],
     "rules": ["Regler & Guider", "Position Sizing", "Data Health"],
@@ -60,6 +61,7 @@ HOME_ZONES: tuple = (
     ("regime", "REGIME — VAR KAPITALET SKA", [
         ("Marknad", "Wolf · Viking · Alpha · Swing · Flow Divergence · Market Cycle"),
         ("Råvaror", "🌍 EMBER Regime · Råvarurotation · 🥇🥈 Guld/Silver · 🥇 Guldkvoter"),
+        ("Makro", "🐺 Fiat Debasement — penningmängd, inflation, köpkraft och fiat mot guld"),
     ]),
     ("screening", "SCREENING — VILKA BOLAG SOM KVALAR", [
         ("Arc Screener", "Wolf (EMA/swing) · Viking (OVTLYR) · EMBER (råvaror)"),
@@ -102,6 +104,7 @@ STATE_KEY: dict = {
     "regime/Marknad/Arc Regime": "sub_regime_arc",
     "regime/Marknad/Alpha Regime": "sub_regime_alpha",
     "regime/Råvaror": "sub_regime_commodities",
+    "regime/Makro": "sub_regime_macro",
     "intel": "sub_intel",
     "portfolio": "sub_portfolio",
     "rules": "sub_rules",

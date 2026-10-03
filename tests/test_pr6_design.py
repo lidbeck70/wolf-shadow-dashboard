@@ -39,7 +39,7 @@ def test_nav_tree_is_consistent():
         assert len(opts) == len(set(opts))
     assert "🧭 Durrett" in nav.options("review") and "🐺 Wolf Asymmetry" in nav.options("review")
     assert "🐺 Durrett" not in nav.leaves() and "🧭 Confidence score" not in nav.leaves()
-    assert nav.options("regime") == ["Marknad", "Råvaror"]
+    assert nav.options("regime") == ["Marknad", "Råvaror", "Makro"]
     assert "Market Cycle" in nav.options("regime/Marknad")
     assert "Market Cycle" not in nav.options("screening")
     assert nav.options("screening/Contrarian Alpha")[0] == "Screener"     # inte "Contrarian Alpha → Contrarian Alpha"
