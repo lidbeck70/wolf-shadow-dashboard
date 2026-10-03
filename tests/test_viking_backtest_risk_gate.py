@@ -24,10 +24,10 @@ def _pts(value, start=None):
     return s
 
 
-def _bt(ticker="S0", risk=None, **cfg):
+def _bt(ticker="S0", risk=None, name=None, **cfg):
     stock, sec = DATA[ticker], DATA["XLK"]
     breadth = on.breadth_series({t: DATA[t]["Close"] for t in on.SECTOR_ETFS.values()})
-    return vb.backtest_ticker(ticker, stock, DATA["SPY"], sec, breadth, vb.Config(min_nine=8, years=5, **cfg),
+    return vb.backtest_ticker(name or ticker, stock, DATA["SPY"], sec, breadth, vb.Config(min_nine=8, years=5, **cfg),
                               risk=risk)
 
 
@@ -48,12 +48,15 @@ def test_risk_levels_use_last_known_points():
     assert (vb.risk_levels(None, IDX[:5]) == "").all()
 
 
-def test_default_gate_is_elevated_like_live():
+def test_default_gate_is_per_market_like_live():
     import market_risk_gate as mrg
-    assert vb.Config().risk_gate == mrg.VIKING_BLOCK_LEVELS == ("FÖRHÖJD", "HÖG")
+    assert vb.Config().risk_gate == mrg.VIKING_BLOCK_BY_MARKET == {"OMXS30": ("FÖRHÖJD", "HÖG"), "SPY": ("HÖG",)}
     first, levels = next(iter(vb.RISK_GATES.items()))
-    assert first == "FÖRHÖJD eller HÖG (som live)" and levels == mrg.VIKING_BLOCK_LEVELS
+    assert first == "Per marknad (som live)" and levels == mrg.VIKING_BLOCK_BY_MARKET
+    assert vb.RISK_GATES["FÖRHÖJD eller HÖG"] == ("FÖRHÖJD", "HÖG")
     assert vb.RISK_GATES["Bara HÖG"] == ("HÖG",) and vb.RISK_GATES["Av"] == ()
+    assert vb.gate_levels(levels, "OMXS30") == ("FÖRHÖJD", "HÖG") and vb.gate_levels(levels, "SPY") == ("HÖG",)
+    assert vb.gate_levels(("HÖG",), "OMXS30") == ("HÖG",) and vb.gate_levels((), "SPY") == ()
 
 
 def test_high_risk_blocks_every_entry():
@@ -69,10 +72,14 @@ def test_low_risk_or_gate_off_changes_nothing():
     assert _key(_bt(risk=_pts(5), risk_gate=())["trades"]) == _key(free["trades"])
 
 
-def test_elevated_blocks_by_default_but_not_with_high_only():
+def test_elevated_blocks_nordic_but_not_us_by_default():
     free = _bt()
-    assert _key(_bt(risk=_pts(3), risk_gate=vb.RISK_GATES["Bara HÖG"])["trades"]) == _key(free["trades"])
-    strict = _bt(risk=_pts(3))
+    assert _key(_bt(risk=_pts(3))["trades"]) == _key(free["trades"])                      # SPY: FÖRHÖJD handlas
+    nord = _bt(risk=_pts(3), name="NORD.ST")
+    assert nord["trades"] == [] and nord["risk_blocked"] > 0                               # OMXS30: spärr
+    assert _key(_bt(risk=_pts(3), name="NORD.ST", risk_gate=vb.RISK_GATES["Bara HÖG"])["trades"]) == \
+        _key(free["trades"])
+    strict = _bt(risk=_pts(3), risk_gate=vb.RISK_GATES["FÖRHÖJD eller HÖG"])
     assert strict["trades"] == [] and strict["risk_blocked"] > 0
 
 
@@ -153,8 +160,8 @@ def test_page_compares_risk_gates(monkeypatch):
     assert not at.exception, at.exception
     html = " ".join(m.value for m in at.markdown)
     assert "JÄMFÖRELSE AV EXITREGLER OCH RISKSPÄRR" in html and "Spärrade" in html
-    assert "Spärr FÖRHÖJD eller HÖG (som live)" in html and "Spärr Av" in html
+    assert "Spärr Per marknad (som live)" in html and "Spärr Av" in html
     assert "Marknadsriskspärr:" in html and "signaler spärrade" in html
     runs = at.session_state["vnb_result"]["runs"]
-    assert runs["Spärr Av"]["risk_blocked"] == 0 and runs["Spärr FÖRHÖJD eller HÖG (som live)"]["risk_blocked"] > 0
-    assert runs["Spärr FÖRHÖJD eller HÖG (som live)"]["metrics"]["trades"] < runs["Spärr Av"]["metrics"]["trades"]
+    assert runs["Spärr Av"]["risk_blocked"] == 0 and runs["Spärr Per marknad (som live)"]["risk_blocked"] > 0
+    assert runs["Spärr Per marknad (som live)"]["metrics"]["trades"] < runs["Spärr Av"]["metrics"]["trades"]

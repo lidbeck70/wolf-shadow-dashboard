@@ -335,7 +335,8 @@ def evaluate_entry(ticker: str, df: pd.DataFrame, nine=None, capital: float = 10
                    current_price: Optional[float] = None, max_position_pct: float = MAX_POSITION_PCT,
                    risk_pct: float = MAX_RISK_PCT, market_risk: Optional[dict] = None) -> EntryDecision:
     """Setup (Nine) + exekvering + risk → GOLDEN TICKET / WAIT / NO TRADE med skäl.
-    market_risk: market_risk_gate-nivån för aktiens marknad — FÖRHÖJD eller HÖG spärrar nya entries."""
+    market_risk: market_risk_gate-nivån för aktiens marknad — spärrar nya entries enligt
+    market_risk_gate.VIKING_BLOCK_BY_MARKET (OMXS30 från FÖRHÖJD, SPY vid HÖG)."""
     nine_passed = getattr(nine, "passed", None)
     nine_total = 9
     if df is None or len(df) < 60:

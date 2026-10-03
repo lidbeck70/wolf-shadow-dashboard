@@ -16,7 +16,7 @@ viking_backtest.py — backtest av Viking Nine (OVTLYR Nine + Viking Execution
 
 Marknadsriskspärren (🌩️ Marknadsrisk) kan slås på: en signaldag där
 marknadens risknivå (SPY, OMXS30 för nordiska) är spärrad ger ingen entry —
-samma regel som live (FÖRHÖJD eller HÖG stoppar nya Viking Nine-entries). Risknivån är
+samma regel som live (market_risk_gate: OMXS30 från FÖRHÖJD, SPY vid HÖG). Risknivån är
 poängen ur market_risk, som bara bygger på data t.o.m. dagen.
 
 Ingår inte (historiska data saknas): rapportspärren, max två förluster per
@@ -52,8 +52,17 @@ EXIT_PRESETS = {
     "Kärnan (stopp, breakeven, EMA10, marknad)": (("market", "trail", "be_exit"), False),
     "Bara stopp + EMA10": (("trail",), False),
 }
-# Marknadsriskspärr: nivåer som stoppar en ny entry. Första = samma som live (market_risk_gate).
-RISK_GATES = {"FÖRHÖJD eller HÖG (som live)": mrg.VIKING_BLOCK_LEVELS, "Bara HÖG": (mrg.HIGH,), "Av": ()}
+# Marknadsriskspärr: nivåer som stoppar en ny entry — en tuple för alla marknader eller
+# {marknad: nivåer}. Första = samma som live (market_risk_gate.VIKING_BLOCK_BY_MARKET).
+RISK_GATES = {"Per marknad (som live)": dict(mrg.VIKING_BLOCK_BY_MARKET),
+              "FÖRHÖJD eller HÖG": (mrg.ELEVATED, mrg.HIGH), "Bara HÖG": (mrg.HIGH,), "Av": ()}
+
+
+def gate_levels(gate, market: str) -> tuple:
+    """Spärrens nivåer för en marknad (gate = tuple för alla, eller {marknad: nivåer})."""
+    if isinstance(gate, dict):
+        return tuple(gate.get(market, ()))
+    return tuple(gate or ())
 # Fasta tickerlistor för backtestet — samma lista varje gång ger rättvisa jämförelser.
 NORDIC_50 = (
     "CBRAIN.CO", "DLAB.ST", "TRUE-B.ST", "YUBICO.ST", "ELON.ST", "EMBRAC-B.ST", "MIPS.ST", "OBAB.ST", "SF.ST",
@@ -92,7 +101,7 @@ class Config:
     years: int = 3
     exit_rules: tuple = ALL_EXITS
     trail_after_be: bool = True        # EMA10 gäller först när stoppen flyttats till breakeven (som viking_exit)
-    risk_gate: tuple = mrg.VIKING_BLOCK_LEVELS   # nivåer som spärrar entry (kräver risk-serie i run/backtest_ticker)
+    risk_gate: object = field(default_factory=lambda: dict(mrg.VIKING_BLOCK_BY_MARKET))   # se RISK_GATES
 
 
 @dataclass
@@ -221,7 +230,8 @@ def backtest_ticker(ticker: str, stock: pd.DataFrame, spy: Optional[pd.DataFrame
     count8 = f[eight].sum(axis=1)
     o, h, lo, c = (stock[k].astype(float).values for k in ("Open", "High", "Low", "Close"))
     idx = stock.index
-    levels = risk_levels(risk, idx) if cfg.risk_gate else pd.Series("", index=idx)
+    blocked_levels = gate_levels(cfg.risk_gate, mrg.market_for(ticker))
+    levels = risk_levels(risk, idx) if blocked_levels else pd.Series("", index=idx)
     # Robust start-position lookup: np.searchsorted on a DatetimeIndex crashes in
     # pandas>=2 when the index resolution (s/ms/us) differs from the Timestamp's
     # (ns) — _unbox_scalar uses round_ok=False. A boolean comparison converts
@@ -250,7 +260,7 @@ def backtest_ticker(ticker: str, stock: pd.DataFrame, spy: Optional[pd.DataFrame
             i += 1
             continue
         res["signals"] += 1
-        if levels.iloc[i] in cfg.risk_gate:                         # marknadsrisken spärrar nya entries
+        if levels.iloc[i] in blocked_levels:                        # marknadsrisken spärrar nya entries
             res["risk_blocked"] += 1
             i += 1
             continue
@@ -385,6 +395,8 @@ def run(tickers: list, getter: Optional[Callable] = None, sector_getter: Optiona
     risk, risk_info = {}, {}
     if cfg.risk_gate:
         for m in sorted({mrg.market_for(t) for t in tickers}):
+            if not gate_levels(cfg.risk_gate, m):
+                continue
             try:
                 pts = risk_provider(m) if risk_provider is not None else None
             except Exception:
@@ -394,7 +406,8 @@ def run(tickers: list, getter: Optional[Callable] = None, sector_getter: Optiona
                 risk_info[m] = {"status": "DATA UNAVAILABLE — ingen spärr", "blocked_pct": None}
             else:
                 lv = risk_levels(risk[m], risk[m].index[risk[m].index >= start])
-                risk_info[m] = {"status": "ok", "blocked_pct": round(float(lv.isin(cfg.risk_gate).mean()) * 100, 1)
+                risk_info[m] = {"status": "ok", "blocked_pct": round(float(lv.isin(gate_levels(cfg.risk_gate, m))
+                                                                         .mean()) * 100, 1)
                                 if len(lv) else None}
     per, trades = [], []
     for k, t in enumerate(tickers):

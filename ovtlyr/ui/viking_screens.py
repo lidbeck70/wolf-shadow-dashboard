@@ -82,7 +82,7 @@ def _table(rows: list, extra=None) -> str:
 
 
 def _risk_banner(markets) -> None:
-    """🌩️ Marknadsrisk för marknaderna — FÖRHÖJD eller HÖG spärrar nya entries i Viking Nine."""
+    """🌩️ Marknadsrisk för marknaderna — spärrar nya Viking Nine-entries per marknad."""
     try:
         import market_risk_gate as mg
     except ImportError:
@@ -96,10 +96,10 @@ def _risk_banner(markets) -> None:
         col = RED if r["level"] == mg.HIGH else AMBER if r["level"] == mg.ELEVATED else GREEN
         parts.append(f"<span style='color:{col};font-weight:700;'>{r['label']}: {r['level']}</span>"
                      f" <span style='color:{DIM};'>({r['points']}/{r['possible']})</span>")
-    high = any(mg.blocks_viking_entry(mg.current(m)) for m in markets)
+    blocked = [m for m in markets if mg.blocks_viking_entry(mg.current(m))]
     st.markdown(f"<div style='font-size:0.8rem;margin:2px 0 6px;'>🌩️ Marknadsrisk: {' · '.join(parts)}"
-                + (f"<div style='color:{RED};font-size:0.75rem;'>FÖRHÖJD eller HÖG = inga nya Viking Nine-entries på den marknaden "
-                   f"(REGIME → 🌩️ Marknadsrisk).</div>" if high else "") + "</div>", unsafe_allow_html=True)
+                + (f"<div style='color:{RED};font-size:0.75rem;'>Inga nya Viking Nine-entries: {', '.join(blocked)} "
+                   f"— spärr {mg.viking_rule_text()} (REGIME → 🌩️ Marknadsrisk).</div>" if blocked else "") + "</div>", unsafe_allow_html=True)
 
 
 def _market_banner(markets=("SPY", "OMXS30")) -> None:
