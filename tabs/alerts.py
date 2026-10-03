@@ -397,6 +397,7 @@ def _render_scheduled_settings(send_fn) -> None:
                       "min_score": 7},
         "screens":   {"enabled": True, "channels": ["discord"]},
         "market_risk": {"enabled": True, "channels": ["discord"]},
+        "fiat":      {"enabled": True, "channels": ["discord"]},
         "sheets":    {"enabled": True, "channels": ["discord"]},
     }
     data = storage.session_load("alerts", {k: dict(v)
@@ -457,6 +458,10 @@ def _render_scheduled_settings(send_fn) -> None:
              "När SPY eller OMXS30 går IN i nivå HÖG (4+ av 9 varningar) — Viking Nine "
              "spärrar då nya entries och Wolf halverar positionerna — och när nivån "
              "lämnar HÖG igen. FÖRHÖJD larmar inte.", None),
+            ("fiat", "🐺 Fiat Debasement",
+             "När ett mått NYTT passerar en gräns: M2-tillväxt > 7 %, KPI > 5 %, Monetary Gap > 4 pe "
+             "(per valuta), guld/silver > 80 eller < 50, valutan −10 % mot guld på ett år. Välj reglerna "
+             "nedan. Bakgrundsinformation — ingen köp- eller säljsignal.", None),
             ("sheets", "📋 Arkens övergångar",
              "Färska kurser och nyckeltal mot dina arkrader: Insider-stopp "
              "(−15 % under klustersnitt) och passa (+30 %), Tiggre +100 % "
@@ -483,6 +488,14 @@ def _render_scheduled_settings(send_fn) -> None:
                 key=f"sched_{key}_{t_key}")
             if value != cfg.get(t_key):
                 cfg[t_key] = int(value)
+        if key == "fiat":
+            from fiat_debasement.config import FIAT_ALERT_RULES
+            current_rules = cfg.get("rules") or list(FIAT_ALERT_RULES)
+            picked = st.multiselect("Aktiva regler — 🐺 Fiat Debasement", list(FIAT_ALERT_RULES),
+                                    default=[r for r in current_rules if r in FIAT_ALERT_RULES],
+                                    format_func=lambda r: FIAT_ALERT_RULES[r][0], key="sched_fiat_rules")
+            if picked != cfg.get("rules"):
+                cfg["rules"] = picked
         st.caption(desc)
         if enabled and not channels:
             st.warning("Inga kanaler valda — larmen kommer att hoppas över.",

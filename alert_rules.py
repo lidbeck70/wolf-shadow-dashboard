@@ -608,6 +608,45 @@ def market_risk_alerts(levels: Optional[dict], prev: Optional[dict]) -> tuple:
     return alerts, state
 
 
+# ── 🐺 Fiat Debasement ───────────────────────────────────────────────────────
+FIAT_DEFAULT_RULES = ("m2_high", "cpi_high", "gap_high", "gs_high", "gs_low", "gold_fall")
+
+
+def fiat_alerts(fiat_data: Optional[dict], prev: Optional[dict], rules=None) -> tuple:
+    """(larm, nytt tillstånd) — när ett mått NYTT passerar en gräns ur
+    fiat_debasement.config.FIAT_ALERT_RULES. Bara övergångar larmar; okända
+    värden behåller sitt gamla läge. rules = aktiva regelnycklar (None = alla).
+    Larmen beskriver vad indikatorerna visar — aldrig köp eller sälj."""
+    from fiat_debasement.config import FIAT_ALERT_RULES, CURRENCIES
+    prev_on = dict((prev or {}).get("on") or {}) if isinstance(prev, dict) else {}
+    if not isinstance(fiat_data, dict):
+        return [], (prev if isinstance(prev, dict) else {"on": {}})
+    active = set(FIAT_DEFAULT_RULES if rules is None else rules)
+    now, alerts = dict(prev_on), []
+    metrics = fiat_data.get("metrics") or {}
+    dates = fiat_data.get("dates") or {}
+    for key, (label, metric, op, limit, per_ccy) in FIAT_ALERT_RULES.items():
+        targets = CURRENCIES if per_ccy else ("",)
+        for ccy in targets:
+            value = (metrics.get(ccy) or {}).get(metric) if per_ccy else fiat_data.get(metric)
+            if value is None:
+                continue
+            hit = value > limit if op == ">" else value < limit
+            k = f"{key}|{ccy}"
+            was = prev_on.get(k)
+            now[k] = hit
+            if prev is None or key not in active or not hit or was:
+                continue
+            who = f"{ccy}: " if ccy else ""
+            date = ((dates.get(ccy) or {}).get(metric) if per_ccy else dates.get(metric)) or ""
+            alerts.append(_alert(
+                "fiat_" + key, f"🐺 Fiat Debasement — {who}{label}",
+                f"Enligt valda indikatorer är {metric.replace('_', ' ')} {value:+.1f} "
+                f"(gräns {op} {limit:g}){f', {date}' if date else ''}. Bakgrundsinformation ur "
+                f"REGIME → Makro → 🐺 Fiat Debasement — ingen köp- eller säljsignal."))
+    return alerts, {"on": now}
+
+
 def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
              themes: list, prev_state: Optional[dict],
              settings: Optional[dict] = None,
@@ -619,7 +658,8 @@ def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
              insider_data: Optional[dict] = None,
              screens_data: Optional[dict] = None,
              sheets_data: Optional[dict] = None,
-             market_risk_data: Optional[dict] = None) -> tuple:
+             market_risk_data: Optional[dict] = None,
+             fiat_data: Optional[dict] = None) -> tuple:
     """(larm-med-kanaler, nytt tillstånd) för hela körningen.
 
     settings: data/alerts.json — {"swing": {"enabled", "channels"},
@@ -690,7 +730,11 @@ def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
     mr_alerts, mr_state = market_risk_alerts(market_risk_data, _prev("market_risk"))
     out += _route("market_risk", mr_alerts)
 
+    fiat_cfg = cfg.get("fiat") or {}
+    f_alerts, f_state = fiat_alerts(fiat_data, _prev("fiat"), fiat_cfg.get("rules"))
+    out += _route("fiat", f_alerts)
+
     return out, {"swing": s_state, "blindspot": b_state, "ember": e_state,
                  "wolf": w_state, "viking": v_state, "contrarian": c_state,
                  "quality": q_state, "insider": i_state, "screens": sc_state, "sheets": sh_state,
-                 "market_risk": mr_state}
+                 "market_risk": mr_state, "fiat": f_state}

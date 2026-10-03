@@ -285,6 +285,12 @@ try:
 except ImportError:
     FIAT_AVAILABLE = False
 
+try:
+    from fiat_debasement.environment import render_badge as render_fiat_environment
+    FIAT_ENV_AVAILABLE = True
+except ImportError:
+    FIAT_ENV_AVAILABLE = False
+
 # Portföljallokeraren (Masterguiden Del 2)
 try:
     from allocator import render_allocator_page
@@ -433,6 +439,8 @@ def main():
         with tabs["review"]:
             sub = _sub("review")
             st.markdown("---")
+            if sub in ("Rick Rule", "Royalty C", "🐺 Wolf Asymmetry", "🚀 Råvaruhävstång") and FIAT_ENV_AVAILABLE:
+                render_fiat_environment()             # bakgrund, ingen signal
             if sub in ("Rick Rule", "Royalty C"):
                 if PRODUCERS_AVAILABLE:
                     render_producers_page(sheet=sub)
