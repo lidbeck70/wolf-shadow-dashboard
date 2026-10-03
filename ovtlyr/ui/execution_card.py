@@ -83,7 +83,9 @@ def render_execution(d: vx.EntryDecision) -> None:
              f"({p.shares_by_risk * p.entry:,.0f}), men en position får vara högst {p.max_position_pct:g} % av "
              f"kapitalet. Risk = avståndet till stoppen × antal aktier; exponering = positionens värde.")
     note("GOLDEN TICKET kräver OVTLYR Nine 9/9 och att alla krav i Viking Execution är klara: momentum, "
-         f"trendstruktur, stängd grön triggercandle, högst {vx.MAX_CHASE_PCT:g} % över triggern, R/R ≥ "
+         f"trendstruktur, stängd grön triggercandle"
+         + (f", relativ volym ≥ {vx.RELATIVE_VOLUME_MIN:g}×" if vx.VOLUME_REQUIRED else "")
+         + f", högst {vx.MAX_CHASE_PCT:g} % över triggern, R/R ≥ "
          f"{vx.MINIMUM_RR:g}, ingen rapport inom {vx.EARNINGS_BUFFER_DAYS} handelsdagar och färre än "
-         f"{vx.MAX_DAILY_LOSSES} förlustaffärer i dag. Volym visas men krävs inte förrän den är backtestad. "
+         f"{vx.MAX_DAILY_LOSSES} förlustaffärer i dag. "
          "Appen förutsäger ingenting — den räknar villkor.")

@@ -64,7 +64,8 @@ def test_backtest_no_ema10_exit_before_breakeven():
     spy = pd.DataFrame({"Close": np.linspace(100, 150, n)}, index=idx)
     breadth = pd.Series(80.0, index=idx)
     run = lambda after: vb.backtest_ticker("X", stock, spy, stock.copy(), breadth,  # noqa: E731
-                                           vb.Config(min_nine=7, exit_rules=("trail",), trail_after_be=after))
+                                           vb.Config(min_nine=7, exit_rules=("trail",), trail_after_be=after,
+                                                     require_volume=False))
     res, early = run(True), run(False)
     assert [t.exit_reason for t in res["trades"]] != [t.exit_reason for t in early["trades"]]
     h = stock["High"].values
