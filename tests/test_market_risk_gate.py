@@ -30,8 +30,11 @@ def test_market_for_ticker():
 
 def test_gate_rules():
     assert mg.blocks_entry(_risk("HÖG")) and not mg.blocks_entry(_risk("FÖRHÖJD")) and not mg.blocks_entry(None)
-    assert mg.blocks_viking_entry(_risk("HÖG")) and mg.blocks_viking_entry(_risk("FÖRHÖJD"))
-    assert not mg.blocks_viking_entry(_risk("LÅG")) and not mg.blocks_viking_entry(None)
+    assert mg.blocks_viking_entry(_risk("HÖG")) and mg.blocks_viking_entry(_risk("HÖG", "OMXS30"))
+    assert mg.blocks_viking_entry(_risk("FÖRHÖJD", "OMXS30"))                  # Norden spärras från FÖRHÖJD
+    assert not mg.blocks_viking_entry(_risk("FÖRHÖJD"))                        # USA bara vid HÖG
+    assert not mg.blocks_viking_entry(_risk("LÅG", "OMXS30")) and not mg.blocks_viking_entry(None)
+    assert mg.viking_rule_text() == "OMXS30: FÖRHÖJD eller HÖG · SPY: HÖG"
     assert mg.size_factor(_risk("FÖRHÖJD")) == 1.0                            # Wolf halveras bara vid HÖG
     assert mg.size_factor(_risk("HÖG")) == 0.5 and mg.size_factor(_risk("LÅG")) == 1.0 and mg.size_factor(None) == 1.0
     assert "okänd" in mg.describe(None) and "HÖG (5 av 9 varningar: VIX-spik, Under SMA200)" in mg.describe(_risk("HÖG"))
@@ -62,7 +65,10 @@ def test_viking_nine_blocks_new_entries_at_high_risk():
     assert any("inga nya entries" in r for r in hi.reasons)
     mid = vx.evaluate_entry("NVDA", _df(), nine=_Nine(), earnings_date=FAR, now=AFTER_CLOSE, trades=[],
                             market_risk=_risk("FÖRHÖJD"))
-    assert mid.status == vx.NO_TRADE and vx.MARKET_RISK_ELEVATED in mid.flags   # FÖRHÖJD spärrar också Viking Nine
+    assert mid.status == vx.GO                                                # SPY FÖRHÖJD: handlas
+    nord = vx.evaluate_entry("NVDA", _df(), nine=_Nine(), earnings_date=FAR, now=AFTER_CLOSE, trades=[],
+                             market_risk=_risk("FÖRHÖJD", "OMXS30"))
+    assert nord.status == vx.NO_TRADE and vx.MARKET_RISK_ELEVATED in nord.flags   # OMXS30 FÖRHÖJD: spärr
 
 
 def test_screen_passes_the_risk_per_ticker():
@@ -180,9 +186,13 @@ def test_screen_blocks_viking_at_elevated_risk():
     from test_viking_screen import END, NOW, _getter, _sector
     rows = vs.run(["GOOD"], getter=_getter, sector_getter=_sector, now=NOW, today=pd.Timestamp(END),
                   earnings_getter=lambda t: pd.Timestamp("2026-12-01"),
-                  risk_getter=lambda t: _risk("FÖRHÖJD", points=3))
+                  risk_getter=lambda t: _risk("FÖRHÖJD", "OMXS30", points=3))
     d = rows[0]["decision"]
     assert d.status == vx.NO_TRADE and vx.MARKET_RISK_ELEVATED in d.flags
+    rows = vs.run(["GOOD"], getter=_getter, sector_getter=_sector, now=NOW, today=pd.Timestamp(END),
+                  earnings_getter=lambda t: pd.Timestamp("2026-12-01"),
+                  risk_getter=lambda t: _risk("FÖRHÖJD", points=3))
+    assert vx.MARKET_RISK_ELEVATED not in rows[0]["decision"].flags            # SPY FÖRHÖJD spärrar inte
 
 
 def test_risk_banner_warns_at_elevated(monkeypatch):
@@ -197,10 +207,11 @@ def test_risk_banner_warns_at_elevated(monkeypatch):
         import sys as _s
         _s.path.insert(0, _o.environ["MRG_TEST_ROOT"])
         from ovtlyr.ui.viking_screens import _risk_banner
-        _risk_banner(("SPY",))
+        _risk_banner(("SPY", "OMXS30"))
 
     at = AppTest.from_function(app, default_timeout=30)
     at.run()
     assert not at.exception, at.exception
     html = " ".join(m.value for m in at.markdown)
-    assert "SPY: FÖRHÖJD" in html and "inga nya Viking Nine-entries" in html
+    assert "SPY: FÖRHÖJD" in html and "OMXS30: FÖRHÖJD" in html
+    assert "Inga nya Viking Nine-entries: OMXS30 —" in html and "SPY: HÖG" in html

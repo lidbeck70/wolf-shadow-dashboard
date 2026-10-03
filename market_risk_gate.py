@@ -1,11 +1,12 @@
 """
 market_risk_gate.py — riskspärren ur 🌩️ Marknadsrisk.
 
-  HÖG       Viking Nine: inga nya entries (NO TRADE med skäl)
+  HÖG       Viking Nine: inga nya entries (NO TRADE med skäl), båda marknaderna
             Wolf: halverad positionsstorlek + varning
-  FÖRHÖJD   Viking Nine: inga nya entries — backtestet (20 tickers, 5 år) gav
-            expectancy +0,34R och max DD −3,4R mot +0,14R och −10,4R med
-            spärr bara vid HÖG. Wolf: bara information.
+  FÖRHÖJD   Viking Nine: inga nya entries i NORDEN (OMXS30) — USA (SPY) handlas.
+            Backtest 5 år, portföljläge: Norden 50 +2,3 % / DD −6,7 % med
+            spärren mot −8,4 % / −13,8 % utan; USA 25 −9,6 % / −23,4 % med
+            spärren mot −2,9 % / −18,4 % utan. Wolf: bara information.
   LÅG       ingenting
 
 Nordiska tickers (.ST .OL .CO .HE) mäts mot OMXS30, övriga mot SPY.
@@ -24,7 +25,8 @@ import market_risk as mr
 logger = logging.getLogger(__name__)
 
 HIGH, ELEVATED = "HÖG", "FÖRHÖJD"
-VIKING_BLOCK_LEVELS = (ELEVATED, HIGH)     # nivåer som stoppar nya Viking Nine-entries
+# Nivåer som stoppar nya Viking Nine-entries, per marknad (se backtesten i docstringen)
+VIKING_BLOCK_BY_MARKET = {"OMXS30": (ELEVATED, HIGH), "SPY": (HIGH,)}
 WOLF_HIGH_SIZE_FACTOR = 0.5
 TTL_S = 6 * 3600
 TTL_FAIL_S = 300                   # misslyckad nivå provas igen efter fem minuter
@@ -68,9 +70,17 @@ def blocks_entry(risk: Optional[dict]) -> bool:
     return bool(risk) and risk.get("level") == HIGH
 
 
+def viking_block_levels(market: str) -> tuple:
+    return VIKING_BLOCK_BY_MARKET.get(market, (HIGH,))
+
+
 def blocks_viking_entry(risk: Optional[dict]) -> bool:
-    """Viking Nine: FÖRHÖJD eller HÖG stoppar nya entries."""
-    return bool(risk) and risk.get("level") in VIKING_BLOCK_LEVELS
+    """Viking Nine: OMXS30 spärras från FÖRHÖJD, SPY bara vid HÖG."""
+    return bool(risk) and risk.get("level") in viking_block_levels(risk.get("market", ""))
+
+
+def viking_rule_text() -> str:
+    return " · ".join(f"{m}: {' eller '.join(lv)}" for m, lv in VIKING_BLOCK_BY_MARKET.items())
 
 
 def size_factor(risk: Optional[dict]) -> float:

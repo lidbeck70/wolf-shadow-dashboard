@@ -1097,8 +1097,8 @@ _PANEL_GUIDE: list[tuple] = [
      "Nio varningar för SPY och OMXS30 (Börsdata) — trend, bredd, VIX, kredit, räntekurva, rotation, eufori → "
      "nivå LÅG / FÖRHÖJD / HÖG. Historisk träffbild: hur ofta −10 % inom tre månader följde i varje "
      "nivå mot basfrekvensen, vilka nedgångar som varnades och hur många larm som var falsklarm. "
-     "Riskspärr: FÖRHÖJD eller HÖG = inga nya Viking Nine-entries; HÖG = halverad Wolf-position "
-     "(nordiska aktier mot OMXS30, övriga mot SPY); Discord-larm när nivån går in i eller lämnar HÖG."),
+     "Riskspärr för Viking Nine: OMXS30 FÖRHÖJD eller HÖG / SPY HÖG = inga nya entries (nordiska aktier "
+     "mot OMXS30, övriga mot SPY); HÖG = halverad Wolf-position; Discord-larm när nivån går in i eller lämnar HÖG."),
     ("REGIME → Marknad → Market Cycle", "Quality · Deep Contrarian",
      "Marknadsfas (CAPITULATION → EUPHORIA). Styr både Quality-cykelgaten och "
      "Deep Contrarians ackumulerings-/distributionssteg."),

@@ -10,8 +10,8 @@ varje affär. Utan look-ahead; begränsningarna står under resultatet.
 PORTFÖLJ kör samma affärer genom ett konto (viking_portfolio): 1,5 % risk,
 max 25 % per position, max 100 % investerat, max två förluster per dag.
 
-Marknadsriskspärren (🌩️ Marknadsrisk) är på som live (FÖRHÖJD eller HÖG
-spärrar entries) och kan jämföras mot bara HÖG / av. Risknivåerna delar cache med fliken.
+Marknadsriskspärren (🌩️ Marknadsrisk) är på som live (per marknad: OMXS30
+från FÖRHÖJD, SPY vid HÖG) och kan jämföras mot FÖRHÖJD / bara HÖG / av. Risknivåerna delar cache med fliken.
 """
 
 from __future__ import annotations
@@ -111,7 +111,7 @@ def render_viking_nine_backtest() -> None:
         r1, r2 = st.columns([3, 2])
         gate = r1.selectbox("Marknadsriskspärr", list(vb.RISK_GATES), key="vnb_risk_gate",
                             help="Signaldagar där 🌩️ Marknadsrisk (SPY, OMXS30 för nordiska) låg på spärrad nivå "
-                                 "ger ingen entry. FÖRHÖJD eller HÖG = samma regel som live.")
+                                 "ger ingen entry. Per marknad = samma regel som live (OMXS30 från FÖRHÖJD, SPY vid HÖG).")
         compare_risk = r2.checkbox("Jämför spärrar", value=False, key="vnb_compare_risk",
                                    help="Kör samma tickers med varje spärr och visar nyckeltalen sida vid sida.")
         go_ = st.form_submit_button("⚔️ Kör backtest")
@@ -319,7 +319,7 @@ def render_portfolio(p: dict) -> None:
                      "valuta.")
 
 
-def risk_line(res: dict, gate: tuple) -> str:
+def risk_line(res: dict, gate) -> str:
     """En rad om marknadsriskspärren: nivåer, spärrade signaler och hur ofta varje marknad låg spärrad."""
     if not gate:
         return "Marknadsriskspärr: av"
@@ -327,5 +327,7 @@ def risk_line(res: dict, gate: tuple) -> str:
     for m, info in (res.get("risk") or {}).items():
         pct = info.get("blocked_pct")
         parts.append(f"{m}: {info['status']}" if pct is None else f"{m} spärrad {pct:g} % av dagarna")
-    return (f"Marknadsriskspärr: <b style='color:{TEXT};'>{' eller '.join(gate)}</b> stoppar entry · "
+    rule = (" · ".join(f"{m}: {' eller '.join(lv) or 'av'}" for m, lv in gate.items()) if isinstance(gate, dict)
+            else " eller ".join(gate))
+    return (f"Marknadsriskspärr: <b style='color:{TEXT};'>{rule}</b> stoppar entry · "
             f"{res.get('risk_blocked', 0)} signaler spärrade" + (" · " + " · ".join(parts) if parts else ""))
