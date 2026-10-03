@@ -1,0 +1,31 @@
+name: Fiat Debasement probe (datakällor)
+
+# Manuell diagnostik för 🐺 Fiat Debasement: provar FRED, ECB, Eurostat, SCB,
+# Riksbanken, Yahoo och Börsdata för SEK, EUR och USD och skriver vilka serier
+# som fungerar (från/till, frekvens, nedlagda serier). Ändrar ingenting.
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Probe data sources
+        env:
+          BORSDATA_API_KEY: ${{ secrets.BORSDATA_API_KEY }}
+        run: python -m fiat_debasement.probe
