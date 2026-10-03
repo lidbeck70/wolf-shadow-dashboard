@@ -96,6 +96,9 @@ def test_eurostat_json_stat():
     many = dict(payload, size=[1, 2, 3])
     sd = src.eurostat("x", {}, http=_Http({"eurostat": _Resp(payload=many)}))
     assert not sd.ok and "fler än ett värde" in sd.error
+    none = dict(payload, id=["unit", "time"], size=[0, 3])
+    sd = src.eurostat("x", {"unit": "I25"}, http=_Http({"eurostat": _Resp(payload=none)}))
+    assert not sd.ok and "inga värden för unit" in sd.error
 
 
 def test_scb_table_locks_every_variable_and_reads_the_time_series():

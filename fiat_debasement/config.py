@@ -54,7 +54,7 @@ SERIES: dict = {
     ],
     # ── KPI ──
     (CPI, "SEK"): [
-        {"kind": "scb", "id": "PR/PR0101/PR0101A/KPI2020M", "prefer_text": ("2020=100", "index"),
+        {"kind": "scb", "id": "PR/PR0101/PR0101A/KPI2020M", "prefer_text": ("fastställ", "2020=100", "index"),
          "unit": "index 2020=100", "label": "KPI (SCB)"},
         {"kind": "fred", "id": "CP0000SEM086NEST", "unit": "index", "label": "HIKP Sverige (Eurostat via FRED)"},
     ],
@@ -83,6 +83,8 @@ SERIES: dict = {
         {"kind": "eurostat", "dataset": "prc_hicp_midx",
          "params": {"geo": "EA", "coicop": "TOT_X_NRG_FOOD", "unit": "I25"},
          "unit": "index 2025=100", "label": "HICP exkl. energi och livsmedel (Eurostat)"},
+        {"kind": "fred", "id": "00XEFDEZ19M086NEST", "unit": "index",
+         "label": "HICP exkl. energi, livsmedel, alkohol och tobak (via FRED)"},
     ],
     (CORE, "USD"): [
         {"kind": "fred", "id": "CPILFESL", "unit": "index", "label": "CPI exkl. livsmedel och energi (via FRED)"},
