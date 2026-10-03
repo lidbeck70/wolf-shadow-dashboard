@@ -155,3 +155,28 @@ ASSET_SPLICE: dict = {
              "backfill": {"kind": "yahoo", "id": "SI=F", "unit": "USD/oz", "label": "Silver terminspris (Yahoo SI=F)"}},
 }
 SPOT, FUTURES = "spot", "terminspris"
+
+# ── Wolf Debasement Index (modellvikter — användaren kan ändra dem på sidan) ──
+# Varje komponent mäts så att högre = mer utspädning och normaliseras till sin
+# percentil i valutans egen historik (0–100) innan viktning.
+INDEX_COMPONENTS = {
+    "gap": "Money Supply Gap (M2-tillväxt − real BNP-tillväxt)",
+    "pp_loss": "Köpkraftsförlust, rullande 5 år (KPI)",
+    "debt": "Statsskuld/BNP",
+    "gold": "Valutans värdetapp mot guld, rullande 5 år",
+}
+INDEX_SHORT = {"gap": "Money Supply Gap", "pp_loss": "Köpkraftsförlust 5 år", "debt": "Statsskuld/BNP",
+               "gold": "Tapp mot guld 5 år"}
+DEFAULT_WEIGHTS = {"gap": 40, "pp_loss": 30, "debt": 15, "gold": 15}
+INDEX_WINDOW_YEARS = 5           # fönster för köpkraftsförlust och guldtapp
+INDEX_MIN_OBS = 36               # minst tre års månadsvärden innan en percentil räknas
+INDEX_MIN_WEIGHT_SHARE = 0.5     # minst hälften av vikten måste ha data, annars DATA UNAVAILABLE
+INDEX_SINCE = "2000-01-01"       # gemensam normaliseringsperiod för alla valutor (guld finns från 2000)
+
+# ── Scenarier (analys, inte prognoser) — årliga antaganden i procent ─────────
+SCENARIOS = {
+    "BASE CASE": {"m2": 5.0, "gdp": 2.0, "cpi": 2.5},
+    "BULLISH REAL ASSETS": {"m2": 7.0, "gdp": 1.5, "cpi": 4.0},
+    "DEFENSIVE FIAT": {"m2": 3.0, "gdp": 2.0, "cpi": 2.0},
+}
+SCENARIO_YEARS = 10

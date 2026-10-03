@@ -12,7 +12,9 @@ Sektioner:
   6. FIAT VS SILVER       samma för silver
   7. REAL ASSET PROTECTION  guld, silver, koppar, olja, bitcoin mot KPI i vald valuta
   8. GOLD/SILVER RATIO    kvoten mot historiken och mot valutans köpkraft
-  9. METHODOLOGY          vad varje mått mäter, antaganden och datakällorna
+  9. WOLF DEBASEMENT INDEX  modellbaserad sammanvägning (vikter går att ändra)
+ 10. SCENARIOS            BASE / BULLISH REAL ASSETS / DEFENSIVE FIAT — räkneexempel
+ 11. METHODOLOGY          vad varje mått mäter, antaganden och datakällorna
 
 Färgerna är bara visuell hjälp — siffran står alltid bredvid. Saknad data
 visas som DATA UNAVAILABLE, aldrig 0. Sidan säger aldrig köp eller sälj.
@@ -29,6 +31,7 @@ import streamlit as st
 from fiat_debasement import config as cfg
 from fiat_debasement import data as fd
 from fiat_debasement import engine as fe
+from fiat_debasement import index as fx
 from fiat_debasement import snapshot as fs
 from ui.charts import PLOTLY_LAYOUT
 from ui.components import big_card, note, page_header
@@ -43,7 +46,11 @@ MAX_START_SHIFT_DAYS = 366          # en serie som börjar senare än så räkna
 SCALES = {
     "m2_yoy": (3.0, 7.0, True), "cpi_yoy": (2.5, 5.0, True), "monetary_gap": (2.0, 4.0, True),
     "debt_gdp": (60.0, 100.0, True), "gdp_yoy": (2.0, 0.0, False), "gold_5y": (0.0, -30.0, False),
+    "index": (40.0, 70.0, True),
 }
+INDEX_TITLE = "Wolfpanel Composite Indicator"
+INDEX_DISCLAIMER = ("This is a model-based indicator. It is not an official measure of currency debasement. "
+                    "— En modellbaserad indikator, inte ett officiellt mått på valutautspädning.")
 
 OVERVIEW_COLS = (("m2_yoy", "M2-tillväxt", "%"), ("cpi_yoy", "KPI", "%"), ("gdp_yoy", "Real BNP", "%"),
                  ("monetary_gap", "Monetary Gap", "pe"), ("debt_gdp", "Statsskuld/BNP", "%"),
@@ -67,12 +74,19 @@ def fmt(value: Optional[float], unit: str = "%", sign: bool = True) -> str:
     return f"{num} {unit}".strip()
 
 
-def overview_rows(snaps: dict) -> list:
-    """[{valuta, kolumner: [(nyckel, värde, text, färg, källa, datum, inaktuell)]}]."""
+def overview_rows(snaps: dict, indexes: Optional[dict] = None) -> list:
+    """[{valuta, kolumner: [(nyckel, värde, text, färg, källa, datum, inaktuell)]}].
+    Första kolumnen är Wolf Debasement Index när indexes ges."""
     rows = []
     for ccy in cfg.CURRENCIES:
         snap = snaps.get(ccy)
         cells = []
+        if indexes is not None:
+            ir = indexes.get(ccy)
+            v = ir.value if ir is not None else None
+            cells.append({"key": "index", "value": v, "text": NA if v is None else f"{v:.0f}",
+                          "color": color_for("index", v), "source": f"{INDEX_TITLE} (0–100)",
+                          "as_of": ir.as_of if ir is not None else None, "stale": False})
         for key, _label, unit in OVERVIEW_COLS:
             m = snap.get(key) if snap is not None else fs.Metric()
             cells.append({"key": key, "value": m.value, "text": fmt(m.value, unit, sign=key != "debt_gdp"),
@@ -260,6 +274,30 @@ def gs_ratio(asset_loader=None) -> tuple:
     return (ratio if len(ratio) else None), rows
 
 
+def current_weights() -> dict:
+    """Vikterna från sidans reglage (eller modellens standardvikter)."""
+    return {k: st.session_state.get(f"fd_w_{k}", v) for k, v in cfg.DEFAULT_WEIGHTS.items()}
+
+
+def index_for(ccy: str, weights: Optional[dict] = None, loader=None, asset_loader=None) -> fx.IndexResult:
+    load = loader or fd.load
+    price, _ld = asset_price(cfg.GOLD, ccy, loader, asset_loader)
+    comps = fx.components(m2=load(cfg.M2, ccy).values, gdp=load(cfg.GDP, ccy).values,
+                          cpi=load(cfg.CPI, ccy).values, debt=load(cfg.DEBT, ccy).values, gold_in_ccy=price)
+    return fx.compute(ccy, comps, weights)
+
+
+def scenario_rows(assumptions: dict, years: int) -> list:
+    rows = []
+    for name, a in assumptions.items():
+        r = fx.scenario(a["m2"], a["gdp"], a["cpi"], years)
+        rows.append({"Scenario": name, "M2 %/år": a["m2"], "Real BNP %/år": a["gdp"], "KPI %/år": a["cpi"],
+                     "Monetary Gap pe": r["monetary_gap"], f"Köpkraft efter {years} år": r["purchasing_power_end"],
+                     f"M2 per BNP-enhet efter {years} år": r["money_per_output_end"],
+                     "_path": r["path"]})
+    return rows
+
+
 # ── Rendering ───────────────────────────────────────────────────────────────
 def _section(title: str, sub: str = "") -> None:
     st.markdown(f"<div style='color:{CYAN};font-family:Courier New;letter-spacing:2px;font-size:0.85rem;"
@@ -305,7 +343,8 @@ def render_fiat_debasement_page() -> None:
         fd.clear_cache()
     with st.spinner("Hämtar penningmängd, KPI, BNP, statsskuld, växelkurser och guld …"):
         snaps = _snaps()
-    _overview(snaps)
+        indexes = {c: index_for(c, current_weights()) for c in cfg.CURRENCIES}
+    _overview(snaps, indexes)
     ccy = st.radio("Valuta", list(cfg.CURRENCIES), horizontal=True, key="fd_ccy")
     _money_supply(snaps[ccy])
     _inflation(snaps[ccy])
@@ -314,14 +353,17 @@ def render_fiat_debasement_page() -> None:
     _fiat_vs(cfg.SILVER, ccy)
     _real_assets(ccy)
     _gs_ratio(ccy)
+    _debasement_index(indexes, ccy)
+    _scenarios()
     _methodology(snaps)
 
 
-def _overview(snaps: dict) -> None:
+def _overview(snaps: dict, indexes: Optional[dict] = None) -> None:
     _section("FIAT OVERVIEW", "senaste värdet per valuta · håll över en siffra för källa och datum")
-    head = "".join(f"<th>{label}</th>" for _k, label, _u in OVERVIEW_COLS)
+    head = ("<th>Debasement</th>" if indexes is not None else "") + \
+        "".join(f"<th>{label}</th>" for _k, label, _u in OVERVIEW_COLS)
     body = ""
-    for row in overview_rows(snaps):
+    for row in overview_rows(snaps, indexes):
         cells = "".join(
             f"<td title='{c['source'] or NA} · {c['as_of'] or '—'}'>"
             f"<span style='display:inline-block;width:8px;height:8px;border-radius:50%;background:{c['color']};"
@@ -332,7 +374,8 @@ def _overview(snaps: dict) -> None:
     st.markdown(f"<div style='overflow-x:auto;'><table style='width:100%;font-size:0.74rem;color:{TEXT};"
                 f"text-align:right;white-space:nowrap;'><tr style='color:{DIM};'><th style='text-align:left;'>Valuta</th>{head}</tr>"
                 f"{body}</table></div>", unsafe_allow_html=True)
-    note("Färgen är bara visuell hjälp (gränserna står i metodpanelen) — siffran gäller. M2-tillväxt och KPI "
+    note("Debasement = Wolf Debasement Index (0–100, modellbaserat, se sektionen längre ned). "
+         "Färgen är bara visuell hjälp (gränserna står i metodpanelen) — siffran gäller. M2-tillväxt och KPI "
          "är årsförändring; Monetary Gap = M2-tillväxt − real BNP-tillväxt i procentenheter; köpkraft i guld = "
          "hur mycket mer eller mindre guld en valutaenhet köper än för fem år sedan. ⚠ = inaktuell data.")
     for ccy in cfg.CURRENCIES:
@@ -561,6 +604,84 @@ def _gs_ratio(ccy: str) -> None:
          "bredvid varandra, inget orsakssamband. Före 2006 bygger kvoten på terminspris.")
 
 
+def _debasement_index(indexes: dict, ccy: str) -> None:
+    _section("WOLF DEBASEMENT INDEX", INDEX_TITLE)
+    st.markdown(f"<div style='color:{AMBER};font-size:0.8rem;border:1px solid {AMBER}55;border-radius:6px;"
+                f"padding:8px 10px;margin:4px 0 10px;'>{INDEX_DISCLAIMER}</div>", unsafe_allow_html=True)
+    with st.expander("Vikter (summan räknas om till 100 %)"):
+        cols = st.columns(len(cfg.INDEX_COMPONENTS))
+        for col, (k, label) in zip(cols, cfg.INDEX_COMPONENTS.items()):
+            col.number_input(cfg.INDEX_SHORT[k], help=label, min_value=0, max_value=100, value=int(cfg.DEFAULT_WEIGHTS[k]), step=5,
+                             key=f"fd_w_{k}")
+        if st.button("Återställ modellens vikter (40/30/15/15)", key="fd_w_reset"):
+            for k in cfg.INDEX_COMPONENTS:
+                st.session_state.pop(f"fd_w_{k}", None)
+            st.rerun()
+    _cards([(c, NA if indexes[c].value is None else f"{indexes[c].value:.0f}",
+             (indexes[c].as_of or indexes[c].note or NA), color_for("index", indexes[c].value))
+            for c in cfg.CURRENCIES])
+    ir = indexes[ccy]
+    rows_html = ""
+    for r in ir.rows:
+        raw = NA if r["raw"] is None else (f"{r['raw']:.1f}" if r["key"] == "debt" else f"{r['raw']:+.1f}")
+        pct = "—" if r["percentile"] is None else f"{r['percentile']:.0f}"
+        contrib = "—" if r.get("contribution") is None else f"{r['contribution']:.1f}"
+        rows_html += (f"<tr><td style='text-align:left;' title='{r['label']}'>{cfg.INDEX_SHORT[r['key']]}</td><td>{raw}</td><td>{r['raw_date'] or '—'}</td>"
+                      f"<td>{pct}</td><td>{r['weight']:.0f} %</td><td>{contrib}</td></tr>")
+    st.markdown(f"<div style='color:{DIM};font-size:0.75rem;margin-top:8px;'>Komponenter för {ccy}</div>"
+                f"<div style='overflow-x:auto;'><table style='width:100%;font-size:0.74rem;color:{TEXT};"
+                f"text-align:right;white-space:nowrap;'><tr style='color:{DIM};'><th style='text-align:left;'>"
+                f"Komponent</th><th>Senast</th><th>Datum</th><th>Percentil</th><th>Vikt</th><th>Bidrag</th></tr>"
+                f"{rows_html}</table></div>", unsafe_allow_html=True)
+    if ir.note:
+        note(ir.note)
+    fig = go.Figure()
+    for c in cfg.CURRENCIES:
+        h = indexes[c].history
+        if h is not None:
+            fig.add_trace(go.Scatter(x=h.index, y=h.values, name=c, line=dict(color=CCY_COLOR[c], width=1.6)))
+    for y in (40, 70):
+        fig.add_hline(y=y, line=dict(color=DIM, dash="dot", width=1))
+    lay = _layout("WOLF DEBASEMENT INDEX (0–100)", height=300)
+    lay["yaxis"]["range"] = [0, 100]
+    fig.update_layout(**lay)
+    _chart(fig, "fd_index_chart")
+    _why("Varje komponent mäts så att högre = mer utspädning och görs om till sin percentil i valutans egen "
+         f"historik sedan {cfg.INDEX_SINCE[:4]} (bara data fram till respektive dag). Indexet är det viktade snittet "
+         "av percentilerna. 70 för SEK betyder 'högt för SEK:s egen historik' — inte 'högre än USD'. Saknas en "
+         "komponent fördelas dess vikt på de övriga och det står under tabellen. Indexet är ingen köp- eller "
+         "säljsignal.")
+
+
+def _scenarios() -> None:
+    _section("SCENARIOS", "räkneexempel för analys — inte prognoser")
+    years = st.slider("Horisont (år)", 1, 30, cfg.SCENARIO_YEARS, key="fd_sc_years")
+    assumptions = {}
+    with st.expander("Ändra antaganden"):
+        for name, base in cfg.SCENARIOS.items():
+            st.markdown(f"<div style='color:{GOLD};font-size:0.78rem;margin-top:6px;'>{name}</div>",
+                        unsafe_allow_html=True)
+            c1, c2, c3 = st.columns(3)
+            slug = name.lower().replace(" ", "_")
+            assumptions[name] = {
+                "m2": c1.number_input("M2 %/år", value=float(base["m2"]), step=0.5, key=f"fd_sc_{slug}_m2"),
+                "gdp": c2.number_input("Real BNP %/år", value=float(base["gdp"]), step=0.5, key=f"fd_sc_{slug}_gdp"),
+                "cpi": c3.number_input("KPI %/år", value=float(base["cpi"]), step=0.5, key=f"fd_sc_{slug}_cpi")}
+    rows = scenario_rows(assumptions, years)
+    table = [{k: v for k, v in r.items() if not k.startswith("_")} for r in rows]
+    st.dataframe(pd.DataFrame(table), hide_index=True, width="stretch")
+    fig = go.Figure()
+    for r, color in zip(rows, (CYAN, GOLD, GREEN)):
+        p = r["_path"]
+        fig.add_trace(go.Scatter(x=list(p.index), y=list(p.values), name=r["Scenario"], line=dict(color=color, width=1.8)))
+    fig.update_layout(**_layout(f"KÖPKRAFT FÖR 100 ENHETER — {years} ÅR FRAMÅT ENLIGT ANTAGANDENA", height=280))
+    fig.update_xaxes(title="år")
+    _chart(fig, "fd_sc_chart")
+    note("Scenarierna räknar bara ut vad antagandena innebär: köpkraft = 100 / (1 + KPI)^år, Monetary Gap = "
+         "M2 − real BNP, penningmängd per producerad enhet = ((1 + M2) / (1 + BNP))^år × 100. Ändra siffrorna "
+         "för egna antaganden. Inga sannolikheter, ingen prognos.")
+
+
 METHODOLOGY = (
     ("1. KPI", "Konsumentprisindex mäter priset på en korg av varor och tjänster. SEK: SCB:s KPI (skuggindex "
                "2020=100) och kärnmåttet KPIF-XE. EUR: HICP. USD: CPI-U (BLS)."),
@@ -575,9 +696,12 @@ METHODOLOGY = (
     ("6. Guld och silver", "Börsdata spotpris från 2006; före det Yahoo-terminer, märkta terminspris (ingen "
                            "nivåjustering vid skarven). Priset i SEK/EUR räknas med Riksbankens respektive ECB:s "
                            "växelkurs samma dag — dagar utan växelkurs används inte."),
-    ("7. Wolf Debasement Index", "Byggs i en senare version: komponenterna normaliseras mot sin egen historik "
-                                 "(percentil) innan viktning. Det blir en modellbaserad indikator, inte ett "
-                                 "officiellt mått."),
+    ("7. Wolf Debasement Index", "40 % Money Supply Gap, 30 % köpkraftsförlust (rullande 5 år), 15 % "
+                                 "statsskuld/BNP och 15 % valutans tapp mot guld (rullande 5 år) — vikterna går "
+                                 "att ändra. Varje komponent normaliseras till sin percentil i valutans egen "
+                                 f"historik sedan {cfg.INDEX_SINCE[:4]} (expanderande fönster, minst "
+                                 f"{cfg.INDEX_MIN_OBS} månader) innan viktning. Färggränser 40/70. En modellbaserad "
+                                 "indikator, inte ett officiellt mått."),
     ("8. Antaganden", "Årsförändring jämförs med samma månad/kvartal året innan på kalenderdatum. CAGR kräver "
                       "en observation exakt n år bakåt, annars visas DATA UNAVAILABLE. Färggränser (visuell "
                       "hjälp): M2 3/7 %, KPI 2,5/5 %, Monetary Gap 2/4 pe, statsskuld 60/100 %, real BNP 2/0 %, "
