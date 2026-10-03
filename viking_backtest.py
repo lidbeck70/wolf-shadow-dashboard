@@ -40,6 +40,11 @@ import viking_execution as vx
 import viking_exit as vex
 
 WARMUP_BARS = 60
+# Hypotes att testa (CLAUDE.md: "enter after pullback"): entry bara om dagens låg någon av de
+# senaste PULLBACK_DAYS dagarna nådde ner till EMA20 + PULLBACK_ATR × ATR14 — inte efter en lång rusning.
+PULLBACK_DAYS = 5
+PULLBACK_ATR = 0.5
+ENTRY_MODES = {"Som live (stark dag)": False, "Efter pullback till EMA20": True}
 
 # Exitregler som kan väljas (stopp och breakeven-stopp gäller alltid)
 EXIT_RULES = {"market": "Marknaden < EMA20", "trail": "Trailing EMA10", "be_exit": "BE exit (under gårdagens low)",
@@ -101,6 +106,7 @@ class Config:
     years: int = 3
     exit_rules: tuple = ALL_EXITS
     trail_after_be: bool = True        # EMA10 gäller först när stoppen flyttats till breakeven (som viking_exit)
+    pullback: bool = False             # True = kräv pullback till EMA20 (ENTRY_MODES) — inte live-regeln
     risk_gate: object = field(default_factory=lambda: dict(mrg.VIKING_BLOCK_BY_MARKET))   # se RISK_GATES
 
 
@@ -186,6 +192,8 @@ def execution_frame(stock: pd.DataFrame) -> pd.DataFrame:
     out["volume"] = v / v.shift(1).rolling(20).mean() >= vx.RELATIVE_VOLUME_MIN
     out["atr"] = vx.atr(stock)
     out["ema10"], out["ema20"] = _ema(c, 10), _ema(c, 20)
+    touch = lo <= out["ema20"] + PULLBACK_ATR * out["atr"]
+    out["pullback"] = touch.astype(float).rolling(PULLBACK_DAYS, min_periods=1).max() > 0
     return out
 
 
@@ -222,7 +230,8 @@ def backtest_ticker(ticker: str, stock: pd.DataFrame, spy: Optional[pd.DataFrame
     risk = marknadsriskens poäng per dag (market_risk) — None = ingen spärr."""
     stock = stock.dropna(subset=["Open", "High", "Low", "Close"])
     n = len(stock)
-    res = {"ticker": ticker, "trades": [], "signals": 0, "no_chase": 0, "low_rr": 0, "risk_blocked": 0}
+    res = {"ticker": ticker, "trades": [], "signals": 0, "no_chase": 0, "low_rr": 0, "risk_blocked": 0,
+           "no_pullback": 0}
     if n < WARMUP_BARS + 2:
         return res
     f, x = factor_frame(stock, spy, sector, breadth), execution_frame(stock)
@@ -260,6 +269,10 @@ def backtest_ticker(ticker: str, stock: pd.DataFrame, spy: Optional[pd.DataFrame
             i += 1
             continue
         res["signals"] += 1
+        if cfg.pullback and not ex["pullback"]:                     # ingen pullback till EMA20 nyligen
+            res["no_pullback"] += 1
+            i += 1
+            continue
         if levels.iloc[i] in blocked_levels:                        # marknadsrisken spärrar nya entries
             res["risk_blocked"] += 1
             i += 1
@@ -429,4 +442,5 @@ def run(tickers: list, getter: Optional[Callable] = None, sector_getter: Optiona
         if progress is not None:
             progress(k + 1, len(tickers), t)
     return {"trades": trades, "per_ticker": per, "metrics": metrics(trades), "notes": NOTES, "config": cfg,
-            "risk": risk_info, "risk_blocked": sum(p.get("risk_blocked", 0) for p in per)}
+            "risk": risk_info, "risk_blocked": sum(p.get("risk_blocked", 0) for p in per),
+            "no_pullback": sum(p.get("no_pullback", 0) for p in per)}
