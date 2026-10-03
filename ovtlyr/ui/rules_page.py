@@ -1201,11 +1201,13 @@ _PANEL_GUIDE: list[tuple] = [
     ("PORTFOLIO → 📓 Trade Journal", "Alla — disciplin",
      "Logga varje affär: entry, exit, R, exit-anledning och om du följde planen. "
      "Utan journal går strategin inte att utvärdera."),
-    ("PORTFOLIO → Backtest", "Wolf · Alpha · Viking · ⚔️ Viking Nine",
+    ("PORTFOLIO → Backtest", "Wolf · Alpha · Viking · ⚔️ Viking Nine · 📈 Momentum Swing",
      "Historisk signalvalidering med strategiernas egna parametrar. ⚔️ Viking Nine: OVTLYR Nine + "
      "Viking Execution + exitmotorn utan look-ahead (entry nästa öppning), i R — expectancy, profit "
      "factor, max drawdown, win rate, flest förluster i rad, snittinnehav. Välj exitregler (alla, EMA10 "
-     "först efter breakeven, kärnan, bara stopp + EMA10, egna) och jämför dem sida vid sida."),
+     "först efter breakeven, kärnan, bara stopp + EMA10, egna) och jämför dem sida vid sida. 📈 Momentum "
+     "Swing: veckorutinen på Large + Mid Cap som portfölj (screenerns ranking, setup A/B, regim, stop −10 %, "
+     "MA50, ur topp 40, halva vid +20 %) mot OMXSPI, med varianterna utan setup-krav och utan regimfilter."),
     ("ALERTS", "Alla — larmen",
      "Schemalagda körningar: regim, screeners, håvar, arkens händelser. "
      "Discord-kanalerna och larmloggen."),
