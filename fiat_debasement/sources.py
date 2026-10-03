@@ -185,9 +185,12 @@ def eurostat(dataset: str, params: dict, http=None, **meta) -> SeriesData:
     sd = SeriesData("Eurostat", f"{dataset}?" + "&".join(f"{k}={v}" for k, v in params.items()), **meta)
     try:
         data = _get(EUROSTAT_URL.format(dataset=dataset), http, params=params).json()
-        sizes = data.get("size") or []
-        if any(n != 1 for d, n in zip(data.get("id") or [], sizes) if d != "time"):
-            return _done(sd, None, f"fler än ett värde i någon dimension: {dict(zip(data.get('id'), sizes))}")
+        dims = dict(zip(data.get("id") or [], data.get("size") or []))
+        empty = [d for d, n in dims.items() if n == 0]
+        if empty:
+            return _done(sd, None, f"inga värden för {', '.join(empty)} (koden finns inte i datasetet)")
+        if any(n != 1 for d, n in dims.items() if d != "time"):
+            return _done(sd, None, f"fler än ett värde i någon dimension: {dims}")
         time_idx = data["dimension"]["time"]["category"]["index"]
         vals = data.get("value") or {}
         return _done(sd, _series((p, vals.get(str(i))) for p, i in time_idx.items()))
@@ -204,9 +207,22 @@ def scb_list(path: str, http=None) -> list:
         return []
 
 
-def scb_table(path: str, prefer: Optional[dict] = None, http=None, **meta) -> SeriesData:
-    """En SCB-tabell som tidsserie. Varje variabel utom tiden låses till ett värde:
-    prefer[variabelkod] om angivet, annars det första. Valen sparas i meta."""
+def _pick(values: list, texts: dict, code: str, prefer: dict, prefer_text: tuple):
+    """Värdet för en SCB-variabel: prefer[kod] → första värdet vars text innehåller
+    ett nyckelord ur prefer_text (i ordning) → första värdet."""
+    if prefer.get(code) in values:
+        return prefer[code]
+    for word in prefer_text:
+        for v in values:
+            if word.lower() in str(texts.get(v, v)).lower():
+                return v
+    return values[0] if values else None
+
+
+def scb_table(path: str, prefer: Optional[dict] = None, prefer_text: tuple = (), http=None,
+              **meta) -> SeriesData:
+    """En SCB-tabell som tidsserie. Varje variabel utom tiden låses till ett värde
+    (se _pick). Valen sparas i meta["chosen"] så det syns exakt vad som hämtades."""
     sd = SeriesData("SCB", path, **meta)
     prefer = prefer or {}
     try:
@@ -219,7 +235,7 @@ def scb_table(path: str, prefer: Optional[dict] = None, http=None, **meta) -> Se
                 continue
             values = var.get("values") or []
             texts = dict(zip(values, var.get("valueTexts") or values))
-            pick = prefer.get(code) if prefer.get(code) in values else (values[0] if values else None)
+            pick = _pick(values, texts, code, prefer, prefer_text)
             if pick is None:
                 continue
             chosen[code] = f"{pick} ({texts.get(pick, pick)})"
