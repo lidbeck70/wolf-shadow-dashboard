@@ -30,6 +30,9 @@ def test_market_for_ticker():
 
 def test_gate_rules():
     assert mg.blocks_entry(_risk("HÖG")) and not mg.blocks_entry(_risk("FÖRHÖJD")) and not mg.blocks_entry(None)
+    assert mg.blocks_viking_entry(_risk("HÖG")) and mg.blocks_viking_entry(_risk("FÖRHÖJD"))
+    assert not mg.blocks_viking_entry(_risk("LÅG")) and not mg.blocks_viking_entry(None)
+    assert mg.size_factor(_risk("FÖRHÖJD")) == 1.0                            # Wolf halveras bara vid HÖG
     assert mg.size_factor(_risk("HÖG")) == 0.5 and mg.size_factor(_risk("LÅG")) == 1.0 and mg.size_factor(None) == 1.0
     assert "okänd" in mg.describe(None) and "HÖG (5 av 9 varningar: VIX-spik, Under SMA200)" in mg.describe(_risk("HÖG"))
 
@@ -59,7 +62,7 @@ def test_viking_nine_blocks_new_entries_at_high_risk():
     assert any("inga nya entries" in r for r in hi.reasons)
     mid = vx.evaluate_entry("NVDA", _df(), nine=_Nine(), earnings_date=FAR, now=AFTER_CLOSE, trades=[],
                             market_risk=_risk("FÖRHÖJD"))
-    assert mid.status == vx.GO                                                # FÖRHÖJD är bara information
+    assert mid.status == vx.NO_TRADE and vx.MARKET_RISK_ELEVATED in mid.flags   # FÖRHÖJD spärrar också Viking Nine
 
 
 def test_screen_passes_the_risk_per_ticker():
@@ -169,3 +172,35 @@ def test_failed_level_is_retried_soon(monkeypatch):
 def test_tab_does_not_cache_an_error():
     src = open(os.path.join(ROOT, "market_risk_ui.py"), encoding="utf-8").read()
     assert "if not res.error:" in src
+
+
+# ── Viking Nine spärras från FÖRHÖJD ────────────────────────────────────────
+def test_screen_blocks_viking_at_elevated_risk():
+    import viking_screen as vs
+    from test_viking_screen import END, NOW, _getter, _sector
+    rows = vs.run(["GOOD"], getter=_getter, sector_getter=_sector, now=NOW, today=pd.Timestamp(END),
+                  earnings_getter=lambda t: pd.Timestamp("2026-12-01"),
+                  risk_getter=lambda t: _risk("FÖRHÖJD", points=3))
+    d = rows[0]["decision"]
+    assert d.status == vx.NO_TRADE and vx.MARKET_RISK_ELEVATED in d.flags
+
+
+def test_risk_banner_warns_at_elevated(monkeypatch):
+    from streamlit.testing.v1 import AppTest
+    monkeypatch.setenv("MRG_TEST_ROOT", ROOT)
+    monkeypatch.setattr(mg, "current", lambda m, evaluator=None: {"market": m, "label": m, "level": "FÖRHÖJD",
+                                                                  "points": 3, "possible": 9, "date": "d",
+                                                                  "active": []})
+
+    def app():
+        import os as _o
+        import sys as _s
+        _s.path.insert(0, _o.environ["MRG_TEST_ROOT"])
+        from ovtlyr.ui.viking_screens import _risk_banner
+        _risk_banner(("SPY",))
+
+    at = AppTest.from_function(app, default_timeout=30)
+    at.run()
+    assert not at.exception, at.exception
+    html = " ".join(m.value for m in at.markdown)
+    assert "SPY: FÖRHÖJD" in html and "inga nya Viking Nine-entries" in html

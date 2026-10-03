@@ -69,6 +69,7 @@ CONFIRMED, WAIT_CLOSE, FAILED = "CONFIRMED", "WAIT FOR CLOSE", "FAILED"
 NO_CHASE, INSUFFICIENT_RR = "NO CHASE", "INSUFFICIENT R/R"
 EARNINGS_RISK, DAILY_LIMIT = "EARNINGS RISK", "DAILY LOSS LIMIT REACHED"
 MARKET_RISK_HIGH = "MARKNADSRISK HÖG"
+MARKET_RISK_ELEVATED = "MARKNADSRISK FÖRHÖJD"
 
 _NORDIC = {".ST": ("Europe/Stockholm", time(17, 30)), ".OL": ("Europe/Oslo", time(16, 20)),
            ".CO": ("Europe/Copenhagen", time(17, 0)), ".HE": ("Europe/Helsinki", time(18, 30))}
@@ -334,7 +335,7 @@ def evaluate_entry(ticker: str, df: pd.DataFrame, nine=None, capital: float = 10
                    current_price: Optional[float] = None, max_position_pct: float = MAX_POSITION_PCT,
                    risk_pct: float = MAX_RISK_PCT, market_risk: Optional[dict] = None) -> EntryDecision:
     """Setup (Nine) + exekvering + risk → GOLDEN TICKET / WAIT / NO TRADE med skäl.
-    market_risk: market_risk_gate-nivån för aktiens marknad — HÖG spärrar nya entries."""
+    market_risk: market_risk_gate-nivån för aktiens marknad — FÖRHÖJD eller HÖG spärrar nya entries."""
     nine_passed = getattr(nine, "passed", None)
     nine_total = 9
     if df is None or len(df) < 60:
@@ -363,9 +364,11 @@ def evaluate_entry(ticker: str, df: pd.DataFrame, nine=None, capital: float = 10
     if spy is not None and spy.status == "FAIL":
         hard.append(f"{getattr(nine, 'market_label', 'SPY')} under EMA20 — marknadens säljsignal, "
                     f"inga nya affärer")
-    if market_risk and market_risk.get("level") == "HÖG":
-        d.flags.append(MARKET_RISK_HIGH)
-        hard.append(f"{MARKET_RISK_HIGH} ({market_risk.get('label', '')}: {market_risk.get('points')} av "
+    import market_risk_gate as mrg
+    if mrg.blocks_viking_entry(market_risk):
+        flag = MARKET_RISK_HIGH if market_risk.get("level") == mrg.HIGH else MARKET_RISK_ELEVATED
+        d.flags.append(flag)
+        hard.append(f"{flag} ({market_risk.get('label', '')}: {market_risk.get('points')} av "
                     f"{market_risk.get('possible')} varningar) — inga nya entries")
     if any(c.flag == EARNINGS_RISK for c in checks):
         hard.append("EARNINGS RISK — rapport inom fem handelsdagar")
