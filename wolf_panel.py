@@ -278,6 +278,13 @@ try:
 except ImportError:
     GOLD_RATIOS_AVAILABLE = False
 
+# 🐺 Fiat Debasement (REGIME → Makro) — penningmängd, inflation, köpkraft och fiat mot guld
+try:
+    from fiat_debasement.ui import render_fiat_debasement_page
+    FIAT_AVAILABLE = True
+except ImportError:
+    FIAT_AVAILABLE = False
+
 # Portföljallokeraren (Masterguiden Del 2)
 try:
     from allocator import render_allocator_page
@@ -448,7 +455,7 @@ def main():
                 _page(SCORECARD_AVAILABLE, render_scorecard_page, "Master Scorecard", "scorecard")
 
     # ── REGIME ───────────────────────────────────────────────────────────────
-    # Delat i två: marknaden (index, sektorer, cykel) och råvarorna.
+    # Marknaden (index, sektorer, cykel), råvarorna och makro (penningvärde).
     if _is_open(tabs["regime"]):
         with tabs["regime"]:
             group = _sub("regime")
@@ -482,6 +489,11 @@ def main():
                           "tabs/market_cycle")
                 elif sub == "🌩️ Marknadsrisk":
                     _page(MARKET_RISK_AVAILABLE, render_market_risk_page, "Marknadsrisk", "market_risk_ui")
+            elif group == "Makro":
+                sub = _sub("regime/Makro")
+                st.markdown("---")
+                if sub == "🐺 Fiat Debasement":
+                    _page(FIAT_AVAILABLE, render_fiat_debasement_page, "Fiat Debasement", "fiat_debasement")
             else:
                 sub = _sub("regime/Råvaror")
                 st.markdown("---")
