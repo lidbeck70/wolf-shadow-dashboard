@@ -93,6 +93,7 @@ class Trade:
     r: Optional[float] = None
     days: int = 0
     open: bool = False
+    mom63: Optional[float] = None       # 63-dagarsavkastning på signaldagen (prioritet i portföljläget)
 
 
 # ── Serierna (allt kausalt) ─────────────────────────────────────────────────
@@ -253,7 +254,7 @@ def backtest_ticker(ticker: str, stock: pd.DataFrame, spy: Optional[pd.DataFrame
             i += 1
             continue
         t = Trade(ticker, str(idx[i].date()), str(idx[i + 1].date()), round(entry, 4), round(stop, 4),
-                  round(risk, 4), nine)
+                  round(risk, 4), nine, mom63=round(float(c[i] / c[i - 63] - 1), 4) if i >= 63 else None)
         fg_target = vex.fg_target(float(f["fg"].iloc[i])) if pd.notna(f["fg"].iloc[i]) else None
         pre_high = float(np.max(h[max(0, i + 1 - vex.BE_LOOKBACK):i + 2]))
         armed = False
