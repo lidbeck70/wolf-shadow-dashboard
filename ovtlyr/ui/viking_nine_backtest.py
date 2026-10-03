@@ -34,6 +34,7 @@ _RES = "vnb_result"
 _CUSTOM = "Egna"
 _TICKERS = "vnb_tickers"
 _SCAN = "Senaste ⚔️ Viking Nine-skanningen"
+_COUNTRY = ((".ST", "Sverige"), (".OL", "Norge"), (".CO", "Danmark"), (".HE", "Finland"))
 
 
 def _apply_list() -> None:
@@ -114,25 +115,33 @@ def render_viking_nine_backtest() -> None:
                                  "ger ingen entry. Per marknad = samma regel som live (OMXS30 från FÖRHÖJD, SPY vid HÖG).")
         compare_risk = r2.checkbox("Jämför spärrar", value=False, key="vnb_compare_risk",
                                    help="Kör samma tickers med varje spärr och visar nyckeltalen sida vid sida.")
+        n1, n2 = st.columns([3, 2])
+        entry = n1.selectbox("Entry", list(vb.ENTRY_MODES), key="vnb_entry",
+                             help=f"Efter pullback = entry bara om låget någon av de senaste {vb.PULLBACK_DAYS} dagarna "
+                                  f"nådde EMA20 + {vb.PULLBACK_ATR:g} × ATR. En hypotes att testa — live använder "
+                                  f"'Som live'.")
+        compare_entry = n2.checkbox("Jämför entry", value=False, key="vnb_compare_entry",
+                                    help="Kör samma tickers med båda entrysätten.")
         go_ = st.form_submit_button("⚔️ Kör backtest")
     tickers = vs.parse_tickers(raw)
     if go_ and tickers:
         base = dict(min_nine=int(min_nine), require_volume=bool(need_vol), years=int(years))
-        runs = run_names(preset, gate, compare, compare_risk)
+        runs = run_names(preset, gate, compare, compare_risk, entry, compare_entry)
         out = {}
         bar = st.progress(0.0, text="Hämtar marknadsdata …")
-        for k, (name, ex, gt) in enumerate(runs):
+        for k, (name, ex, gt, en) in enumerate(runs):
             rules, after_be = ((tuple(custom), bool(custom_after_be)) if ex == _CUSTOM
                                else vb.EXIT_PRESETS[ex])
-            cfg = vb.Config(exit_rules=rules, trail_after_be=after_be, risk_gate=vb.RISK_GATES[gt], **base)
+            cfg = vb.Config(exit_rules=rules, trail_after_be=after_be, risk_gate=vb.RISK_GATES[gt],
+                            pullback=vb.ENTRY_MODES[en], **base)
             res = vb.run(tickers, sector_getter=_sector, cfg=cfg, risk_provider=_risk_points,
                          progress=lambda i, n, t, k=k, name=name: bar.progress(
                              (k + i / n) / len(runs), text=f"{name}: {t} ({i}/{n})"))
-            res["labels"] = {"exit": ex, "gate": gt}
+            res["labels"] = {"exit": ex, "gate": gt, "entry": en}
             portfolio_of(res)
             out[name] = res
         bar.empty()
-        selected = next((nm for nm, ex, gt in runs if ex == preset and gt == gate), runs[0][0])
+        selected = next((nm for nm, ex, gt, en in runs if ex == preset and gt == gate and en == entry), runs[0][0])
         st.session_state[_RES] = {"selected": selected, "runs": out}
     state = st.session_state.get(_RES)
     if not state:
@@ -151,20 +160,21 @@ def render_viking_nine_backtest() -> None:
     render_result(state["runs"][shown], shown)
 
 
-def run_names(preset: str, gate: str, compare: bool, compare_risk: bool) -> list:
-    """[(namn, exitförval, spärr)] för körningarna. Namnet visar bara det som jämförs."""
+def run_names(preset: str, gate: str, compare: bool, compare_risk: bool, entry: str = None,
+              compare_entry: bool = False) -> list:
+    """[(namn, exitförval, spärr, entry)] för körningarna. Namnet visar bara det som jämförs."""
+    entry = entry or next(iter(vb.ENTRY_MODES))
     exits = list(vb.EXIT_PRESETS) if compare else [preset]
     gates = list(vb.RISK_GATES) if compare_risk else [gate]
+    entries = list(vb.ENTRY_MODES) if compare_entry else [entry]
     out = []
     for ex in exits:
         for gt in gates:
-            if len(exits) > 1 and len(gates) > 1:
-                name = f"{ex} · spärr {gt}"
-            elif len(gates) > 1:
-                name = f"Spärr {gt}"
-            else:
-                name = ex
-            out.append((name, ex, gt))
+            for en in entries:
+                parts = ([ex] if len(exits) > 1 else []) + ([f"spärr {gt}"] if len(gates) > 1 else []) \
+                    + ([f"entry {en}"] if len(entries) > 1 else [])
+                name = " · ".join(parts) if parts else ex
+                out.append((name[0].upper() + name[1:], ex, gt, en))
     return out
 
 
@@ -215,7 +225,10 @@ def render_result(res: dict, name: str = "") -> None:
     st.markdown(f"<div style='color:{DIM};font-size:0.78rem;'>{len(res['per_ticker'])} tickers · {cfg.years} år · "
                 f"entry vid Nine ≥ {cfg.min_nine}/9 · volymkrav {'på' if cfg.require_volume else 'av'}<br>"
                 f"Exit: <b style='color:{TEXT};'>{name or 'Alla regler'}</b> — stopp, breakeven-stopp, {rules}"
-                f"{' · EMA10 först efter breakeven' if cfg.trail_after_be else ''}<br>{risk_line(res, gate)}</div>",
+                f"{' · EMA10 först efter breakeven' if cfg.trail_after_be else ''}<br>"
+                f"Entry: <b style='color:{TEXT};'>{'efter pullback till EMA20' if getattr(cfg, 'pullback', False) else 'som live (stark dag)'}</b>"
+                f"{' · ' + str(res.get('no_pullback', 0)) + ' signaler utan pullback' if getattr(cfg, 'pullback', False) else ''}"
+                f"<br>{risk_line(res, gate)}</div>",
                 unsafe_allow_html=True)
     if not m.get("trades"):
         note("Inga stängda affärer under perioden. Prova fler tickers, längre period eller lägre minsta Nine "
@@ -250,6 +263,7 @@ def render_result(res: dict, name: str = "") -> None:
                     f"</div><table style='font-size:0.78rem;color:{TEXT};text-align:right;'><tr style='color:{DIM};'>"
                     f"<th style='text-align:left;'>Exit</th><th>Antal</th><th>Snitt</th></tr>{rows}</table>",
                     unsafe_allow_html=True)
+        render_groups(res["trades"])
         render_portfolio(portfolio_of(res))
         with st.expander(f"Alla affärer ({len(res['trades'])})"):
             st.dataframe(pd.DataFrame([{
@@ -257,16 +271,59 @@ def render_result(res: dict, name: str = "") -> None:
                 "Stopp": round(t.stop, 2), "Exit": t.exit_date, "Pris ut": round(t.exit, 2), "Orsak": t.exit_reason,
                 "R": t.r, "Dagar": t.days, "Nine": f"{t.nine}/9"} for t in res["trades"]]),
                 hide_index=True, width="stretch")
-    with st.expander("Per ticker"):
-        st.dataframe(pd.DataFrame([{
-            "Ticker": p["ticker"], "Marknad": p.get("market") or "—", "Sektor-ETF": p.get("sector_etf") or "—",
-            "Signaler": p["signals"],
-            "Affärer": len(p["trades"]), "Spärrade": p.get("risk_blocked", 0), "No chase": p["no_chase"],
-            "R/R < 2": p["low_rr"],
-            "Data": p.get("error") or "ok"} for p in res["per_ticker"]]), hide_index=True, width="stretch")
+    with st.expander("Per ticker (sämst först)"):
+        st.dataframe(pd.DataFrame(ticker_rows(res)), hide_index=True, width="stretch")
     note("Expectancy = win rate × snittvinnare − förlustandel × snittförlorare, i R. " + " ".join(res["notes"])
          + " Marknadsriskens poäng räknas om bakåt med dagens modell; OMXS30-bredden bygger på dagens Large "
            "Cap-lista (överlevnadsbias).")
+
+
+def country_of(ticker: str) -> str:
+    t = str(ticker or "").upper()
+    return next((name for suf, name in _COUNTRY if t.endswith(suf)), "USA/övriga")
+
+
+def group_rows(trades: list, key) -> list:
+    """Nyckeltal i R per grupp (stängda affärer), sämst summa först."""
+    groups = {}
+    for t in trades:
+        if not t.open and t.r is not None:
+            groups.setdefault(key(t), []).append(t)
+    rows = []
+    for g, ts in groups.items():
+        m = vb.metrics(ts)
+        rows.append({"Grupp": g, "Affärer": m["trades"], "Win rate %": m["win_rate"], "Expectancy R": m["expectancy"],
+                     "Summa R": m["total_r"], "Max DD R": m["max_drawdown_r"]})
+    return sorted(rows, key=lambda r: r["Summa R"])
+
+
+def ticker_rows(res: dict) -> list:
+    """Per ticker: signaler, filter och resultat i R — sämst summa först."""
+    stats = {r["Grupp"]: r for r in group_rows(res.get("trades") or [], lambda t: t.ticker)}
+    rows = []
+    for p in res["per_ticker"]:
+        s = stats.get(p["ticker"], {})
+        rows.append({"Ticker": p["ticker"], "Land": country_of(p["ticker"]), "Summa R": s.get("Summa R"),
+                     "Expectancy R": s.get("Expectancy R"), "Win rate %": s.get("Win rate %"),
+                     "Affärer": len(p["trades"]), "Signaler": p["signals"], "Spärrade": p.get("risk_blocked", 0),
+                     "Utan pullback": p.get("no_pullback", 0), "No chase": p["no_chase"], "R/R < 2": p["low_rr"],
+                     "Marknad": p.get("market") or "—", "Sektor-ETF": p.get("sector_etf") or "—",
+                     "Data": p.get("error") or "ok"})
+    return sorted(rows, key=lambda r: (r["Summa R"] is None, r["Summa R"] if r["Summa R"] is not None else 0))
+
+
+def render_groups(trades: list) -> None:
+    rows = group_rows(trades, lambda t: country_of(t.ticker))
+    if not rows:
+        return
+    body = "".join(
+        f"<tr><td style='text-align:left;'>{r['Grupp']}</td><td>{r['Affärer']}</td><td>{r['Win rate %']:g} %</td>"
+        f"<td style='color:{GREEN if r['Expectancy R'] > 0 else RED};'>{r['Expectancy R']:+.2f}R</td>"
+        f"<td>{r['Summa R']:+.1f}R</td><td>{r['Max DD R']:.1f}R</td></tr>" for r in rows)
+    st.markdown(f"<div style='color:{CYAN};font-size:0.72rem;letter-spacing:0.1em;margin-top:8px;'>PER LAND</div>"
+                f"<table style='font-size:0.78rem;color:{TEXT};text-align:right;'><tr style='color:{DIM};'>"
+                f"<th style='text-align:left;'>Land</th><th>Affärer</th><th>Win rate</th><th>Expectancy</th>"
+                f"<th>Summa</th><th>Max DD</th></tr>{body}</table>", unsafe_allow_html=True)
 
 
 def equity_chart(p: dict) -> go.Figure:

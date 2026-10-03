@@ -127,9 +127,9 @@ def test_missing_risk_never_blocks():
 def test_run_names():
     from ovtlyr.ui.viking_nine_backtest import run_names
     first = next(iter(vb.EXIT_PRESETS))
-    assert run_names(first, "Av", False, False) == [(first, first, "Av")]
+    assert run_names(first, "Av", False, False) == [(first, first, "Av", next(iter(vb.ENTRY_MODES)))]
     names = run_names(first, "Av", False, True)
-    assert [n for n, _e, _g in names] == [f"Spärr {g}" for g in vb.RISK_GATES]
+    assert [n for n, *_ in names] == [f"Spärr {g}" for g in vb.RISK_GATES]
     both = run_names(first, "Av", True, True)
     assert len(both) == len(vb.EXIT_PRESETS) * len(vb.RISK_GATES) and " · spärr " in both[0][0]
 
