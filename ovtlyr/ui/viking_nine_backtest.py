@@ -32,6 +32,15 @@ from ui.tokens import AMBER, CYAN, DIM, GOLD, GREEN, RED, TEXT
 
 _RES = "vnb_result"
 _CUSTOM = "Egna"
+_TICKERS = "vnb_tickers"
+_SCAN = "Senaste ⚔️ Viking Nine-skanningen"
+
+
+def _apply_list() -> None:
+    """Tickerlistan → fältet (callback innan sidan ritas om)."""
+    name = st.session_state.get("vnb_list")
+    st.session_state[_TICKERS] = (", ".join(vb.TICKER_LISTS[name]) if name in vb.TICKER_LISTS
+                                  else _default_tickers())
 
 
 def _default_tickers() -> str:
@@ -78,9 +87,13 @@ def curve_chart(m: dict) -> go.Figure:
 def render_viking_nine_backtest() -> None:
     page_header("⚔️ Viking Nine — backtest", "OVTLYR Nine + Viking Execution + exitmotorn bakåt i tiden, "
                                             "rapporterat i R. Inga data som inte var kända vid entry.")
+    if _TICKERS not in st.session_state:
+        _apply_list()
+    st.selectbox("Tickerlista", [_SCAN] + list(vb.TICKER_LISTS), key="vnb_list", on_change=_apply_list,
+                 help="Fyller fältet nedan. Samma fasta lista varje gång ger rättvisa jämförelser; "
+                      "listan går att ändra i fältet innan du kör.")
     with st.form("vnb_form", clear_on_submit=False):
-        raw = st.text_area("Tickers (förval: senaste ⚔️ Viking Nine-skanningen)", _default_tickers(),
-                           key="vnb_tickers", height=70, placeholder="t.ex. NVDA, MSFT, VOLV-B.ST")
+        raw = st.text_area("Tickers", key=_TICKERS, height=90, placeholder="t.ex. NVDA, MSFT, VOLV-B.ST")
         c1, c2, c3 = st.columns(3)
         years = c1.selectbox("Period (år)", [1, 2, 3, 5], index=2, key="vnb_years")
         min_nine = c2.selectbox("Minsta Nine för entry", [9, 8, 7], index=0, key="vnb_min_nine",
