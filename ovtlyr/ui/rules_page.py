@@ -1123,7 +1123,9 @@ _PANEL_GUIDE: list[tuple] = [
     ("REGIME → Makro → 🐺 Fiat Debasement", "Alla — makrobakgrund, ingen signal",
      "SEK, EUR och USD: penningmängd (M2), KPI och kärn-KPI, real BNP, Monetary Gap (M2-tillväxt − "
      "real BNP-tillväxt), statsskuld/BNP och valutans köpkraft i guld. Purchasing Power Index från valt "
-     "år och 'What happened to 100 units?' mot KPI, guld och silver. Varje siffra har källa och datum; "
+     "år, 'What happened to 100 units?', fiat mot guld/silver, reala tillgångar, guld/silver-kvoten, "
+     "Wolf Debasement Index (modell, vikter går att ändra), scenarier och reala råvarupriser. Larm under "
+     "ALERTS; FIAT ENVIRONMENT (Low/Neutral/Elevated) på gruvsidorna. Varje siffra har källa och datum; "
      "saknad data = DATA UNAVAILABLE. Inflation ≠ M2-tillväxt — sidan säger aldrig köp eller sälj."),
     ("SCREENING → Swing Screener", "Momentum: entry #2, #3",
      "Färdig momentum-ranking topp 40 med setup-flaggor A/B och RSI. "

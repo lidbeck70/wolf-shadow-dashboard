@@ -29,6 +29,7 @@ import numpy as np
 import pandas as pd
 
 from fiat_debasement import config as cfg
+from fiat_debasement import data as fd
 from fiat_debasement import engine as fe
 
 
@@ -129,6 +130,17 @@ def compute(currency: str, comps: dict, weights: Optional[dict] = None) -> Index
     if missing:
         res.note = "Saknas (vikten fördelad på övriga): " + ", ".join(missing)
     return res
+
+
+def for_currency(ccy: str, weights: Optional[dict] = None, loader=None, asset_loader=None) -> IndexResult:
+    """Indexet för en valuta ur datalagret (M2, real BNP, KPI, statsskuld, guld i valutan)."""
+    load, load_asset = loader or fd.load, asset_loader or fd.load_asset
+    gold = load_asset(cfg.GOLD)
+    fx = load(cfg.FX, ccy) if ccy != "USD" else None
+    price = fe.price_in(gold.values, ccy, fx.values if fx is not None else None)
+    comps = components(m2=load(cfg.M2, ccy).values, gdp=load(cfg.GDP, ccy).values, cpi=load(cfg.CPI, ccy).values,
+                       debt=load(cfg.DEBT, ccy).values, gold_in_ccy=price)
+    return compute(ccy, comps, weights)
 
 
 # ── Scenarier ───────────────────────────────────────────────────────────────

@@ -224,13 +224,23 @@ def main() -> int:
     except Exception:
         log.warning("Marknadsrisken kunde inte räknas — benet står stilla.")
 
+    # 🐺 Fiat Debasement: dagens nyckeltal per valuta och guld/silver-kvoten.
+    # Ingenting alls → None, så benet fryser sin baslinje.
+    fiat_data = None
+    try:
+        from fiat_debasement.alerts import collect as _fiat_collect
+        fiat_data = _fiat_collect()
+    except Exception:
+        log.warning("Fiat Debasement kunde inte räknas — benet står stilla.")
+
     # En hoppad temakarta får inte radera Blindspot-baslinjen: behåll den
     # gamla, annars larmar nästa fullkörning om övergångar som aldrig skett.
     alerts, new_state = alert_rules.evaluate(
         regime_data, screener_data, swing_data, themes, prev_state, settings,
         ember_data=ember_data, wolf_data=wolf_data, viking_data=viking_data,
         contrarian_data=contrarian_data, quality_data=quality_data, insider_data=insider_data,
-        screens_data=screens_data, sheets_data=sheets_data, market_risk_data=market_risk_data)
+        screens_data=screens_data, sheets_data=sheets_data, market_risk_data=market_risk_data,
+        fiat_data=fiat_data)
     if not themes and isinstance(prev_state, dict):
         new_state["blindspot"] = prev_state.get("blindspot",
                                                 new_state["blindspot"])

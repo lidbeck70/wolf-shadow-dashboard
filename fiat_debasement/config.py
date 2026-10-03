@@ -180,3 +180,17 @@ SCENARIOS = {
     "DEFENSIVE FIAT": {"m2": 3.0, "gdp": 2.0, "cpi": 2.0},
 }
 SCENARIO_YEARS = 10
+
+# ── FIAT ENVIRONMENT (gruvsidorna) — nivå ur Wolf Debasement Index, ingen signal ──
+ENVIRONMENT_CCY = "USD"          # råvaror prissätts i USD
+ENVIRONMENT_LEVELS = ((40.0, "Low"), (70.0, "Neutral"), (101.0, "Elevated"))
+
+# ── Larm (benet "fiat" i ALERTS) — regel: (etikett, mått, jämförelse, gräns, per valuta) ──
+FIAT_ALERT_RULES = {
+    "m2_high": ("M2-tillväxt över 7 %", "m2_yoy", ">", 7.0, True),
+    "cpi_high": ("KPI över 5 %", "cpi_yoy", ">", 5.0, True),
+    "gap_high": ("Monetary Gap över 4 procentenheter", "monetary_gap", ">", 4.0, True),
+    "gs_high": ("Guld/silver-kvoten över 80", "gs_ratio", ">", 80.0, False),
+    "gs_low": ("Guld/silver-kvoten under 50", "gs_ratio", "<", 50.0, False),
+    "gold_fall": ("Valutan tappar mer än 10 % mot guld på ett år", "gold_1y", "<", -10.0, True),
+}

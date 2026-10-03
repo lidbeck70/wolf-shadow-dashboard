@@ -14,7 +14,8 @@ Sektioner:
   8. GOLD/SILVER RATIO    kvoten mot historiken och mot valutans köpkraft
   9. WOLF DEBASEMENT INDEX  modellbaserad sammanvägning (vikter går att ändra)
  10. SCENARIOS            BASE / BULLISH REAL ASSETS / DEFENSIVE FIAT — räkneexempel
- 11. METHODOLOGY          vad varje mått mäter, antaganden och datakällorna
+ 11. REAL COMMODITY PRICES  nominellt pris, fast penningvärde (KPI USD) och mot guld
+ 12. METHODOLOGY          vad varje mått mäter, antaganden och datakällorna
 
 Färgerna är bara visuell hjälp — siffran står alltid bredvid. Saknad data
 visas som DATA UNAVAILABLE, aldrig 0. Sidan säger aldrig köp eller sälj.
@@ -280,11 +281,36 @@ def current_weights() -> dict:
 
 
 def index_for(ccy: str, weights: Optional[dict] = None, loader=None, asset_loader=None) -> fx.IndexResult:
-    load = loader or fd.load
-    price, _ld = asset_price(cfg.GOLD, ccy, loader, asset_loader)
-    comps = fx.components(m2=load(cfg.M2, ccy).values, gdp=load(cfg.GDP, ccy).values,
-                          cpi=load(cfg.CPI, ccy).values, debt=load(cfg.DEBT, ccy).values, gold_in_ccy=price)
-    return fx.compute(ccy, comps, weights)
+    return fx.for_currency(ccy, weights, loader, asset_loader)
+
+
+COMMODITY_CHOICES = (cfg.COPPER, cfg.OIL, cfg.SILVER, cfg.GOLD)
+BASE_YEARS = (2006, 2010, 2015, 2020)
+
+
+def real_commodity(name: str, base_year: int, loader=None, asset_loader=None) -> dict:
+    """Råvarupriset i USD tre sätt (månadsvis): nominellt, i fast penningvärde (KPI USD,
+    basår) och relativt guld. {nominal, real, vs_gold, base, unit, notes}."""
+    load, load_asset = loader or fd.load, asset_loader or fd.load_asset
+    ld = load_asset(name)
+    notes = []
+    nominal = fe.monthly(ld.values)
+    base = pd.Timestamp(f"{base_year}-01-01")
+    cpi = load(cfg.CPI, "USD")
+    real = fe.real_price(ld.values, cpi.values, base) if cpi.ok else None
+    if not cpi.ok:
+        notes.append(f"KPI USD: {NA} — inget fast penningvärde")
+    gold = load_asset(cfg.GOLD)
+    vs_gold = None
+    if name != cfg.GOLD and gold.ok and nominal is not None:
+        g = fe.monthly(gold.values)
+        both = pd.concat({"p": nominal, "g": g}, axis=1, join="inner").dropna()
+        both = both[both["g"] > 0]
+        vs_gold = (both["p"] / both["g"]) if len(both) else None
+    if nominal is not None and nominal.index[0] > base:
+        notes.append(f"{cfg.CONCEPT_LABEL[name]} finns från {nominal.index[0].date()} — basåret ligger före")
+    return {"nominal": nominal, "real": real, "vs_gold": vs_gold, "base": base, "label": cfg.CONCEPT_LABEL[name],
+            "unit": ld.data.unit if ld.ok else "", "notes": notes, "segments": ld.segments}
 
 
 def scenario_rows(assumptions: dict, years: int) -> list:
@@ -355,6 +381,7 @@ def render_fiat_debasement_page() -> None:
     _gs_ratio(ccy)
     _debasement_index(indexes, ccy)
     _scenarios()
+    _real_commodities()
     _methodology(snaps)
 
 
@@ -682,6 +709,42 @@ def _scenarios() -> None:
          "för egna antaganden. Inga sannolikheter, ingen prognos.")
 
 
+def _real_commodities() -> None:
+    _section("REAL COMMODITY PRICES", "nominellt pris, fast penningvärde och relativt guld — för gruvbolagens råvaror")
+    c1, c2 = st.columns(2)
+    name = c1.selectbox("Råvara", COMMODITY_CHOICES, format_func=lambda k: cfg.CONCEPT_LABEL[k], key="fd_rc_name")
+    base_year = c2.selectbox("Fast penningvärde (basår)", BASE_YEARS, index=1, key="fd_rc_base")
+    r = real_commodity(name, int(base_year))
+    if r["nominal"] is None:
+        note(f"{r['label']}: {NA}")
+        return
+    nom, real, rel = r["nominal"], r["real"], r["vs_gold"]
+    d_nom = fe.change_pct(nom, (nom.index[-1] - r["base"]).days / 365.25) if nom.index[0] <= r["base"] else None
+    d_real = fe.change_pct(real, (real.index[-1] - r["base"]).days / 365.25) \
+        if real is not None and real.index[0] <= r["base"] else None
+    _cards([(f"{r['label'].upper()} NOMINELLT", f"{float(nom.iloc[-1]):,.2f}", f"{r['unit']} · {nom.index[-1].date()}", GOLD),
+            (f"I {base_year} ÅRS DOLLAR", NA if real is None else f"{float(real.iloc[-1]):,.2f}",
+             "KPI-justerat (CPI-U)", CYAN),
+            (f"SEDAN {base_year}", fmt(d_nom), f"nominellt · realt {fmt(d_real)}", AMBER)])
+    fig = go.Figure(go.Scatter(x=nom.index, y=nom.values, name="Nominellt (USD)", line=dict(color=GOLD, width=1.6)))
+    if real is not None:
+        fig.add_trace(go.Scatter(x=real.index, y=real.values, name=f"Fast penningvärde ({base_year} USD)",
+                                 line=dict(color=CYAN, width=1.6)))
+    if rel is not None:
+        fig.add_trace(go.Scatter(x=rel.index, y=rel.values, name="Relativt guld (pris / guldpris)", yaxis="y2",
+                                 line=dict(color=GREY, width=1.3, dash="dot")))
+    lay = _layout(f"{r['label'].upper()}: NOMINELLT, REALT OCH MOT GULD", height=320, ytitle=r["unit"])
+    lay["yaxis2"] = dict(overlaying="y", side="right", showgrid=False, title="mot guld")
+    fig.update_layout(**lay)
+    _chart(fig, "fd_rc_chart")
+    for n in r["notes"]:
+        note(n)
+    _why("En stigande råvarukurs i nominella dollar är inte samma sak som en real värdeökning: delar av "
+         "uppgången kan vara att dollarn köper mindre. Fast penningvärde = priset × KPI(basår) / KPI(i dag). "
+         "Relativt guld visar om råvaran gått bättre eller sämre än guld. Underlag för gruvbolagsanalysen — "
+         "ingen köp- eller säljsignal.")
+
+
 METHODOLOGY = (
     ("1. KPI", "Konsumentprisindex mäter priset på en korg av varor och tjänster. SEK: SCB:s KPI (skuggindex "
                "2020=100) och kärnmåttet KPIF-XE. EUR: HICP. USD: CPI-U (BLS)."),
@@ -702,6 +765,11 @@ METHODOLOGY = (
                                  f"historik sedan {cfg.INDEX_SINCE[:4]} (expanderande fönster, minst "
                                  f"{cfg.INDEX_MIN_OBS} månader) innan viktning. Färggränser 40/70. En modellbaserad "
                                  "indikator, inte ett officiellt mått."),
+    ("Larm och FIAT ENVIRONMENT", "ALERTS → 🐺 Fiat Debasement larmar när ett mått NYTT passerar en gräns "
+                                  "(M2 > 7 %, KPI > 5 %, Monetary Gap > 4 pe, guld/silver > 80 eller < 50, "
+                                  "valutan −10 % mot guld på ett år) — du väljer reglerna. FIAT ENVIRONMENT på "
+                                  "gruvsidorna = USD-indexet: Low < 40, Neutral 40–70, Elevated > 70. Båda är "
+                                  "bakgrund och används aldrig som köp- eller säljsignal."),
     ("8. Antaganden", "Årsförändring jämförs med samma månad/kvartal året innan på kalenderdatum. CAGR kräver "
                       "en observation exakt n år bakåt, annars visas DATA UNAVAILABLE. Färggränser (visuell "
                       "hjälp): M2 3/7 %, KPI 2,5/5 %, Monetary Gap 2/4 pe, statsskuld 60/100 %, real BNP 2/0 %, "
