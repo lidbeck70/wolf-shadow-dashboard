@@ -23,6 +23,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 import viking_backtest as vb
+import viking_execution as vx
 import viking_portfolio as vp
 import viking_screen as vs
 from ovtlyr.ui.viking_screens import _ROWS, _sector
@@ -99,7 +100,9 @@ def render_viking_nine_backtest() -> None:
         years = c1.selectbox("Period (år)", [1, 2, 3, 5], index=2, key="vnb_years")
         min_nine = c2.selectbox("Minsta Nine för entry", [9, 8, 7], index=0, key="vnb_min_nine",
                                 help="9 = systemets regel (GOLDEN TICKET). 8/7 visar vad en lösare regel hade gett.")
-        need_vol = c3.checkbox("Kräv relativ volym", value=False, key="vnb_vol")
+        need_vol = c3.checkbox("Kräv relativ volym", value=vx.VOLUME_REQUIRED, key="vnb_vol",
+                               help=f"Relativ volym ≥ {vx.RELATIVE_VOLUME_MIN:g}× på signaldagen. På = samma regel "
+                                    f"som live.")
         e1, e2 = st.columns([3, 2])
         preset = e1.selectbox("Exitregler", list(vb.EXIT_PRESETS) + [_CUSTOM], key="vnb_exit_preset",
                               help="Stopp och breakeven-stopp gäller alltid.")

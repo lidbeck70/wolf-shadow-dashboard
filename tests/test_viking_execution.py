@@ -23,8 +23,9 @@ INTRADAY = datetime(2026, 9, 30, 17, 0, tzinfo=timezone.utc)         # 13:00 New
 FAR = pd.Timestamp("2026-11-15")
 
 
-def _df(n=260, spike=None, last_up=1.5):
-    """Stigande trappa (+1, +1, −0,5); sista dagen grön och starkare. spike = (dagar sedan, high)."""
+def _df(n=260, spike=None, last_up=1.5, last_volume=1.5e6):
+    """Stigande trappa (+1, +1, −0,5); sista dagen grön, starkare och med 1,5× volym.
+    spike = (dagar sedan, high)."""
     steps = np.tile([1.0, 1.0, -0.5], n // 3 + 1)[:n] * 0.5
     steps[-2], steps[-1] = -0.25, last_up
     close = 100 + np.cumsum(steps)
@@ -32,6 +33,7 @@ def _df(n=260, spike=None, last_up=1.5):
     df = pd.DataFrame({"Open": close - 0.3 * np.sign(steps), "High": close + 0.6, "Low": close - 0.6,
                        "Close": close, "Volume": 1e6}, index=idx)
     df.iloc[-1, df.columns.get_loc("Open")] = close[-1] - 1.0
+    df.iloc[-1, df.columns.get_loc("Volume")] = last_volume
     if spike:
         ago, high = spike
         df.iloc[-ago, df.columns.get_loc("High")] = high
@@ -63,7 +65,7 @@ def test_1_golden_ticket():
     assert d.status == vx.GO, d.reasons
     by = {c.key: c for c in d.checks}
     assert all(by[k].passed for k in ("momentum", "trend", "candle", "chase", "rr", "earnings"))
-    assert by["volume"].required is False                       # visas, krävs inte förrän backtestat
+    assert by["volume"].required is True and by["volume"].passed   # volym krävs (backtestat)
     assert d.position.risk_pct <= vx.MAX_RISK_PCT and d.as_dict()["ovtlyr_nine"] == "9/9"
 
 
@@ -176,8 +178,20 @@ def test_cards_render_status_checks_and_risk():
     from ovtlyr.ui.execution_card import decision_html, risk_html
     html = decision_html(_eval())
     assert "GOLDEN TICKET" in html and "OVTLYR Nine <b>9/9</b>" in html and "Viking Execution <b>" in html
-    assert "Momentum" in html and "No chase" in html and "(info)" in html
+    assert "Momentum" in html and "No chase" in html and "Volym" in html
     wait = decision_html(_eval(now=INTRADAY))
     assert ">WAIT<" in wait and "WAIT FOR CLOSE" in wait and "Missing / väntar på" in wait
     risk = risk_html(_eval())
     assert "RISK ENGINE" in risk and "Riskbudget" in risk and "1.5 % = 1,500" in risk and "Exponering" in risk
+
+
+def test_volume_is_required():
+    assert vx.VOLUME_REQUIRED is True
+    d = _eval(df=_df(last_volume=1e6))                          # relativ volym 1,0× < 1,2×
+    by = {c.key: c for c in d.checks}
+    assert d.status == vx.WAIT and by["volume"].required and not by["volume"].passed
+    assert any("Volym" in r for r in d.reasons)
+    gone = _df()
+    gone["Volume"] = 0.0
+    d = _eval(df=gone)
+    assert d.status == vx.WAIT                                  # saknad volym är aldrig grönt

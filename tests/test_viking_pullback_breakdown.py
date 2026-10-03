@@ -8,6 +8,7 @@ import sys
 
 import numpy as np
 import pandas as pd
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -79,7 +80,7 @@ def test_breakdown_per_country_and_ticker():
     assert [r["Summa R"] for r in rows] == sorted(r["Summa R"] for r in rows)   # sämst först
     closed = [t for t in res["trades"] if not t.open]
     assert sum(r["Affärer"] for r in rows) == len(closed)
-    assert round(sum(r["Summa R"] for r in rows), 1) == round(sum(t.r for t in closed), 1)
+    assert sum(r["Summa R"] for r in rows) == pytest.approx(sum(t.r for t in closed), abs=0.05)
     tr = ticker_rows(res)
     assert len(tr) == 4 and tr[0]["Summa R"] == rows[0]["Summa R"] and tr[0]["Land"] == "USA/övriga"
 

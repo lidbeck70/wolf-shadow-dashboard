@@ -7,7 +7,7 @@ svarar på om entryn finns, och hur stor den får vara:
   VIKING EXECUTION (7 filter)
     Momentum      RSI14 > 50 · kurs > föregående dags low · RSI stigande
     Trend         kurs > EMA10 > EMA20 > EMA50
-    Volym         relativ volym ≥ 1,20 — visas men krävs inte förrän backtestat
+    Volym         relativ volym ≥ 1,20 på triggerdagen — krävs (backtestat i båda marknaderna)
     Entry candle  triggercandlen har stängt och är grön (close > open, ≥ föregående close)
     No chase      kursen högst 2 % över triggerns stängning
     R/R           (närmaste motstånd − entry) / (entry − stopp) ≥ 2
@@ -39,7 +39,7 @@ import pandas as pd
 # ── Konfiguration ───────────────────────────────────────────────────────────
 RSI_MIN = 50.0
 RELATIVE_VOLUME_MIN = 1.20
-VOLUME_REQUIRED = False            # krävs först när backtestet visat att det hjälper
+VOLUME_REQUIRED = True             # backtest 5 år, portfölj: Norden 50 +2,3 % → +26,6 %, USA 25 −3,4 % → +5,8 %
 MAX_CHASE_PCT = 2.0
 MINIMUM_RR = 2.0
 RESISTANCE_LOOKBACK = 250          # swing-högsta inom ett år om inget bearish order block finns
@@ -266,7 +266,7 @@ def execution_checks(ticker: str, df: pd.DataFrame, ob_analysis: Optional[dict] 
                         f"kurs {entry:,.2f} · EMA10 {e10:,.2f} · EMA20 {e20:,.2f} · EMA50 {e50:,.2f} — "
                         f"{'kurs > EMA10 > EMA20 > EMA50' if ok else 'stacken är inte i ordning'}"))
 
-    # C. Volym (visas, krävs inte förrän backtestat)
+    # C. Volym — relativ volym ≥ RELATIVE_VOLUME_MIN krävs (VOLUME_REQUIRED, backtestat)
     v = trig["Volume"].astype(float) if "Volume" in trig else None
     if v is None or len(v) < 21 or float(v.iloc[-21:-1].mean()) <= 0:
         checks.append(Check("volume", "Volym", UNAVAILABLE, "volymdata saknas", required=VOLUME_REQUIRED))
