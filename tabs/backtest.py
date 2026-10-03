@@ -757,12 +757,12 @@ def _render_ovtlyr_backtest_ui():
 
 
 def tab_backtest_consolidated():
-    """Unified Backtest tab with dropdown: Wolf / Alpha / Viking / ⚔️ Viking Nine / RS Sector."""
+    """Unified Backtest tab with dropdown: Wolf / Alpha / Viking / ⚔️ Viking Nine / 📈 Momentum Swing / RS Sector."""
     from ui.css import tab_not_found
 
     mode = st.selectbox(
         "BACKTEST MODE",
-        ["Wolf", "Alpha", "Viking", "⚔️ Viking Nine", "RS Sector"],
+        ["Wolf", "Alpha", "Viking", "⚔️ Viking Nine", "📈 Momentum Swing", "RS Sector"],
         key="backtest_mode_select",
     )
 
@@ -794,6 +794,14 @@ def tab_backtest_consolidated():
 
     elif mode == "Viking":
         _render_ovtlyr_backtest_ui()
+
+    elif mode == "📈 Momentum Swing":
+        try:
+            from swing_backtest_ui import render_swing_backtest_page
+        except ImportError:
+            tab_not_found("Momentum Swing backtest", "swing_backtest")
+        else:
+            render_swing_backtest_page()
 
     elif mode == "⚔️ Viking Nine":
         try:
