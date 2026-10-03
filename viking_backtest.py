@@ -54,6 +54,23 @@ EXIT_PRESETS = {
 }
 # Marknadsriskspärr: nivåer som stoppar en ny entry. Första = samma som live (market_risk_gate).
 RISK_GATES = {"FÖRHÖJD eller HÖG (som live)": mrg.VIKING_BLOCK_LEVELS, "Bara HÖG": (mrg.HIGH,), "Av": ()}
+# Fasta tickerlistor för backtestet — samma lista varje gång ger rättvisa jämförelser.
+NORDIC_50 = (
+    "CBRAIN.CO", "DLAB.ST", "TRUE-B.ST", "YUBICO.ST", "ELON.ST", "EMBRAC-B.ST", "MIPS.ST", "OBAB.ST", "SF.ST",
+    "BICO.ST", "BULTEN.ST", "CONTX.OL", "EGTX.ST", "ELTEL.ST", "FASTAT.ST", "FMM-B.ST", "HFRTO-B.ST", "HMPLY.ST",
+    "HUNT.OL", "KHG.HE", "VAR.OL", "ABB.ST", "BOL.ST",
+    "VOLV-B.ST", "ATCO-A.ST", "SAND.ST", "ERIC-B.ST", "HM-B.ST", "INVE-B.ST", "ASSA-B.ST", "EVO.ST", "SAAB-B.ST",
+    "AZN.ST", "SEB-A.ST", "ESSITY-B.ST", "NIBE-B.ST", "SSAB-A.ST", "LIFCO-B.ST",
+    "EQNR.OL", "DNB.OL", "MOWI.OL", "NHY.OL", "KOG.OL",
+    "NOVO-B.CO", "DSV.CO", "VWS.CO", "PNDORA.CO",
+    "NOKIA.HE", "NESTE.HE", "SAMPO.HE",
+)
+US_25 = (
+    "AMC", "KO", "FNV", "AAPL", "MSFT", "NVDA", "AMZN", "META", "JPM", "XOM", "LLY", "UNH", "CAT", "HD", "WMT",
+    "COST", "NEM", "FCX", "LMT", "AMD", "TSLA", "NFLX", "PFE", "INTC", "BA",
+)
+TICKER_LISTS = {"Norden 50": NORDIC_50, "USA 25": US_25, "Norden 50 + USA 25": NORDIC_50 + US_25}
+
 NOTES = (
     "Entry på nästa dags öppning efter en stängd signaldag; stängningsregler ger exit på nästa öppning.",
     "Rapportspärren ingår inte — historiska rapportdatum saknas.",
