@@ -85,7 +85,7 @@ def test_initial_stop_is_entry_minus_atr_at_entry():
 
 def test_trailing_stop_ema10():
     df = _df()
-    d = _exit(_df(last=float(df["Close"].iloc[-1]) - 4), be_moved=False)
+    d = _exit(_df(last=float(df["Close"].iloc[-1]) - 4), be_moved=True)
     assert _by(d)["trail"].active and "EMA10" in _by(d)["trail"].detail
 
 
