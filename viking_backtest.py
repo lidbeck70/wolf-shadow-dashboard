@@ -14,6 +14,11 @@ viking_backtest.py — backtest av Viking Nine (OVTLYR Nine + Viking Execution
     dagen gappar under). Stängningsregler (SPY < EMA20, EMA10, breakeven,
     gap & crap, signal, bredd, F&G) ger exit på NÄSTA dags öppning.
 
+Marknadsriskspärren (🌩️ Marknadsrisk) kan slås på: en signaldag där
+marknadens risknivå (SPY, OMXS30 för nordiska) är spärrad ger ingen entry —
+samma regel som live (HÖG stoppar nya Viking Nine-entries). Risknivån är
+poängen ur market_risk, som bara bygger på data t.o.m. dagen.
+
 Ingår inte (historiska data saknas): rapportspärren, max två förluster per
 dag (portfölj), bearish block som exit. Universum och sektor är dagens —
 överlevnads- och sektorbias. Allt står i resultatets notes.
@@ -28,6 +33,8 @@ from typing import Callable, Optional
 import numpy as np
 import pandas as pd
 
+import market_risk as mr
+import market_risk_gate as mrg
 import ovtlyr_nine as on
 import viking_execution as vx
 import viking_exit as vex
@@ -45,6 +52,8 @@ EXIT_PRESETS = {
     "Kärnan (stopp, breakeven, EMA10, marknad)": (("market", "trail", "be_exit"), False),
     "Bara stopp + EMA10": (("trail",), False),
 }
+# Marknadsriskspärr: nivåer som stoppar en ny entry. "HÖG" = samma som live.
+RISK_GATES = {"HÖG (som live)": (mrg.HIGH,), "FÖRHÖJD eller HÖG": (mrg.ELEVATED, mrg.HIGH), "Av": ()}
 NOTES = (
     "Entry på nästa dags öppning efter en stängd signaldag; stängningsregler ger exit på nästa öppning.",
     "Rapportspärren ingår inte — historiska rapportdatum saknas.",
@@ -66,6 +75,7 @@ class Config:
     years: int = 3
     exit_rules: tuple = ALL_EXITS
     trail_after_be: bool = True        # EMA10 gäller först när stoppen flyttats till breakeven (som viking_exit)
+    risk_gate: tuple = (mrg.HIGH,)     # risknivåer som spärrar entry (kräver risk-serie i run/backtest_ticker)
 
 
 @dataclass
@@ -152,6 +162,18 @@ def execution_frame(stock: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def risk_levels(points: Optional[pd.Series], idx) -> pd.Series:
+    """Marknadsriskens nivå (LÅG/FÖRHÖJD/HÖG) på aktiens dagar — senast KÄNDA poäng,
+    tom sträng före första kända dagen."""
+    if points is None or len(points) == 0:
+        return pd.Series("", index=idx)
+    p = points.astype(float)
+    if getattr(p.index, "tz", None) is not None:
+        p.index = p.index.tz_localize(None)
+    p = p.reindex(p.index.union(idx)).ffill().reindex(idx)
+    return p.map(lambda v: "" if pd.isna(v) else mr.level_of(int(v)))
+
+
 def _blocks_at(stock: pd.DataFrame, i: int) -> tuple:
     """(fritt?, ob_analysis) på kursdata t.o.m. dag i."""
     try:
@@ -168,11 +190,12 @@ def _blocks_at(stock: pd.DataFrame, i: int) -> tuple:
 # ── En ticker ───────────────────────────────────────────────────────────────
 def backtest_ticker(ticker: str, stock: pd.DataFrame, spy: Optional[pd.DataFrame], sector: Optional[pd.DataFrame],
                     breadth: Optional[pd.Series], cfg: Config = Config(), start=None,
-                    market_label: str = "SPY") -> dict:
-    """spy = marknadens index (SPY, eller OMXS30 för nordiska aktier); breadth = marknadens bredd i %."""
+                    market_label: str = "SPY", risk: Optional[pd.Series] = None) -> dict:
+    """spy = marknadens index (SPY, eller OMXS30 för nordiska aktier); breadth = marknadens bredd i %;
+    risk = marknadsriskens poäng per dag (market_risk) — None = ingen spärr."""
     stock = stock.dropna(subset=["Open", "High", "Low", "Close"])
     n = len(stock)
-    res = {"ticker": ticker, "trades": [], "signals": 0, "no_chase": 0, "low_rr": 0}
+    res = {"ticker": ticker, "trades": [], "signals": 0, "no_chase": 0, "low_rr": 0, "risk_blocked": 0}
     if n < WARMUP_BARS + 2:
         return res
     f, x = factor_frame(stock, spy, sector, breadth), execution_frame(stock)
@@ -180,6 +203,7 @@ def backtest_ticker(ticker: str, stock: pd.DataFrame, spy: Optional[pd.DataFrame
     count8 = f[eight].sum(axis=1)
     o, h, lo, c = (stock[k].astype(float).values for k in ("Open", "High", "Low", "Close"))
     idx = stock.index
+    levels = risk_levels(risk, idx) if cfg.risk_gate else pd.Series("", index=idx)
     # Robust start-position lookup: np.searchsorted on a DatetimeIndex crashes in
     # pandas>=2 when the index resolution (s/ms/us) differs from the Timestamp's
     # (ns) — _unbox_scalar uses round_ok=False. A boolean comparison converts
@@ -208,6 +232,10 @@ def backtest_ticker(ticker: str, stock: pd.DataFrame, spy: Optional[pd.DataFrame
             i += 1
             continue
         res["signals"] += 1
+        if levels.iloc[i] in cfg.risk_gate:                         # marknadsrisken spärrar nya entries
+            res["risk_blocked"] += 1
+            i += 1
+            continue
         stop_dist = cfg.atr_mult * float(ex["atr"])
         resist, _src = vx.nearest_resistance(stock.iloc[:i + 1], float(c[i]), oa)
         if resist is not None and stop_dist > 0 and (resist - c[i]) / stop_dist < cfg.min_rr:
@@ -307,9 +335,10 @@ def metrics(trades: list) -> dict:
 # ── Flera tickers ───────────────────────────────────────────────────────────
 def run(tickers: list, getter: Optional[Callable] = None, sector_getter: Optional[Callable] = None,
         cfg: Config = Config(), progress: Optional[Callable] = None, today=None,
-        nordic_provider: Optional[Callable] = None) -> dict:
+        nordic_provider: Optional[Callable] = None, risk_provider: Optional[Callable] = None) -> dict:
     """Nordiska tickers (.ST .OL .CO .HE) testas mot OMXS30 och svensk Large Cap-bredd,
-    övriga mot SPY och sektor-ETF-bredden — samma regel som i Viking Nine."""
+    övriga mot SPY och sektor-ETF-bredden — samma regel som i Viking Nine.
+    risk_provider(marknad) → marknadsriskens poäng per dag ("SPY"/"OMXS30"); None = ingen spärr."""
     if getter is None:
         from market_prices import ohlcv as getter
     period = f"{int(cfg.years) + 1}y"                               # ett extra år för uppvärmning
@@ -335,11 +364,25 @@ def run(tickers: list, getter: Optional[Callable] = None, sector_getter: Optiona
     if any(on.market_for(t) == on.NORDIC_LABEL for t in tickers):
         bars = (int(cfg.years) + 1) * 262
         nordic = (nordic_provider or (lambda: on.nordic_market(bars)))()
+    risk, risk_info = {}, {}
+    if cfg.risk_gate:
+        for m in sorted({mrg.market_for(t) for t in tickers}):
+            try:
+                pts = risk_provider(m) if risk_provider is not None else None
+            except Exception:
+                pts = None
+            risk[m] = pts if pts is not None and len(pts) else None
+            if risk[m] is None:
+                risk_info[m] = {"status": "DATA UNAVAILABLE — ingen spärr", "blocked_pct": None}
+            else:
+                lv = risk_levels(risk[m], risk[m].index[risk[m].index >= start])
+                risk_info[m] = {"status": "ok", "blocked_pct": round(float(lv.isin(cfg.risk_gate).mean()) * 100, 1)
+                                if len(lv) else None}
     per, trades = [], []
     for k, t in enumerate(tickers):
         df = _get(t)
         if df is None:
-            per.append({"ticker": t, "trades": [], "signals": 0, "no_chase": 0, "low_rr": 0,
+            per.append({"ticker": t, "trades": [], "signals": 0, "no_chase": 0, "low_rr": 0, "risk_blocked": 0,
                         "error": "DATA UNAVAILABLE"})
         else:
             etf, _src = on.resolve_sector(t, sector_getter)
@@ -348,10 +391,11 @@ def run(tickers: list, getter: Optional[Callable] = None, sector_getter: Optiona
                 m_df, label = pd.DataFrame({"Close": nordic["close"]}), on.NORDIC_LABEL
                 m_breadth = nordic.get("breadth")
             r = backtest_ticker(t, df, m_df, etfs.get(etf) if etf else None, m_breadth, cfg, start=start,
-                                market_label=label)
+                                market_label=label, risk=risk.get(mrg.market_for(t)))
             r["sector_etf"], r["market"] = etf, label
             per.append(r)
             trades += r["trades"]
         if progress is not None:
             progress(k + 1, len(tickers), t)
-    return {"trades": trades, "per_ticker": per, "metrics": metrics(trades), "notes": NOTES, "config": cfg}
+    return {"trades": trades, "per_ticker": per, "metrics": metrics(trades), "notes": NOTES, "config": cfg,
+            "risk": risk_info, "risk_blocked": sum(p.get("risk_blocked", 0) for p in per)}

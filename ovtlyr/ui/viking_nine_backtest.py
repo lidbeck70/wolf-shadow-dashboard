@@ -6,6 +6,9 @@ skanningen) och visar nyckeltalen i R: antal affärer, win rate, snitt- och
 median-R, profit factor, max drawdown, snittvinnare/-förlorare, expectancy,
 flest förluster i rad och snittinnehav — plus R-kurvan, exitorsakerna och
 varje affär. Utan look-ahead; begränsningarna står under resultatet.
+
+Marknadsriskspärren (🌩️ Marknadsrisk) är på som live (HÖG spärrar entries)
+och kan jämföras mot av / FÖRHÖJD. Risknivåerna delar cache med fliken.
 """
 
 from __future__ import annotations
@@ -31,6 +34,13 @@ def _default_tickers() -> str:
     data = st.session_state.get(_ROWS) or {}
     rows = [r for r in vs.results(data.get("rows") or []) if r.get("nine") is not None]
     return ", ".join(r["ticker"] for r in rows[:20])
+
+
+def _risk_points(market: str):
+    """Marknadsriskens poäng per dag — samma beräkning och sessionscache som 🌩️ Marknadsrisk."""
+    from market_risk_ui import _load
+    r = _load(market)
+    return None if r.error else r.history
 
 
 def _fmt(v, f="{:+.2f}R") -> str:
@@ -74,22 +84,31 @@ def render_viking_nine_backtest() -> None:
                                 default=list(vb.ALL_EXITS), format_func=lambda k: vb.EXIT_RULES[k],
                                 key="vnb_custom_rules")
         custom_after_be = st.checkbox("EMA10 först efter breakeven (egna)", value=False, key="vnb_custom_be")
+        r1, r2 = st.columns([3, 2])
+        gate = r1.selectbox("Marknadsriskspärr", list(vb.RISK_GATES), key="vnb_risk_gate",
+                            help="Signaldagar där 🌩️ Marknadsrisk (SPY, OMXS30 för nordiska) låg på spärrad nivå "
+                                 "ger ingen entry. HÖG = samma regel som live.")
+        compare_risk = r2.checkbox("Jämför spärrar", value=False, key="vnb_compare_risk",
+                                   help="Kör samma tickers med varje spärr och visar nyckeltalen sida vid sida.")
         go_ = st.form_submit_button("⚔️ Kör backtest")
     tickers = vs.parse_tickers(raw)
     if go_ and tickers:
         base = dict(min_nine=int(min_nine), require_volume=bool(need_vol), years=int(years))
-        runs = list(vb.EXIT_PRESETS) if compare else [preset]
+        runs = run_names(preset, gate, compare, compare_risk)
         out = {}
         bar = st.progress(0.0, text="Hämtar marknadsdata …")
-        for k, name in enumerate(runs):
-            rules, after_be = ((tuple(custom), bool(custom_after_be)) if name == _CUSTOM
-                               else vb.EXIT_PRESETS[name])
-            cfg = vb.Config(exit_rules=rules, trail_after_be=after_be, **base)
-            out[name] = vb.run(tickers, sector_getter=_sector, cfg=cfg,
-                               progress=lambda i, n, t, k=k, name=name: bar.progress(
-                                   (k + i / n) / len(runs), text=f"{name}: {t} ({i}/{n})"))
+        for k, (name, ex, gt) in enumerate(runs):
+            rules, after_be = ((tuple(custom), bool(custom_after_be)) if ex == _CUSTOM
+                               else vb.EXIT_PRESETS[ex])
+            cfg = vb.Config(exit_rules=rules, trail_after_be=after_be, risk_gate=vb.RISK_GATES[gt], **base)
+            res = vb.run(tickers, sector_getter=_sector, cfg=cfg, risk_provider=_risk_points,
+                         progress=lambda i, n, t, k=k, name=name: bar.progress(
+                             (k + i / n) / len(runs), text=f"{name}: {t} ({i}/{n})"))
+            res["labels"] = {"exit": ex, "gate": gt}
+            out[name] = res
         bar.empty()
-        st.session_state[_RES] = {"selected": preset if preset in out else runs[0], "runs": out}
+        selected = next((nm for nm, ex, gt in runs if ex == preset and gt == gate), runs[0][0])
+        st.session_state[_RES] = {"selected": selected, "runs": out}
     state = st.session_state.get(_RES)
     if not state:
         note("Välj tickers och tryck ⚔️ Kör backtest. Tips: kör ⚔️ Viking Nine-skanningen först så fylls "
@@ -107,11 +126,29 @@ def render_viking_nine_backtest() -> None:
     render_result(state["runs"][shown], shown)
 
 
+def run_names(preset: str, gate: str, compare: bool, compare_risk: bool) -> list:
+    """[(namn, exitförval, spärr)] för körningarna. Namnet visar bara det som jämförs."""
+    exits = list(vb.EXIT_PRESETS) if compare else [preset]
+    gates = list(vb.RISK_GATES) if compare_risk else [gate]
+    out = []
+    for ex in exits:
+        for gt in gates:
+            if len(exits) > 1 and len(gates) > 1:
+                name = f"{ex} · spärr {gt}"
+            elif len(gates) > 1:
+                name = f"Spärr {gt}"
+            else:
+                name = ex
+            out.append((name, ex, gt))
+    return out
+
+
 def comparison_rows(runs: dict) -> list:
     rows = []
     for name, res in runs.items():
         m = res["metrics"]
-        rows.append({"Exitregler": name, "Affärer": m.get("trades", 0), "Win rate %": m.get("win_rate"),
+        rows.append({"Körning": name, "Affärer": m.get("trades", 0), "Spärrade": res.get("risk_blocked", 0),
+                     "Win rate %": m.get("win_rate"),
                      "Expectancy R": m.get("expectancy"), "Profit factor": m.get("profit_factor"),
                      "Summa R": m.get("total_r"), "Max DD R": m.get("max_drawdown_r"),
                      "Snittvinnare R": m.get("avg_winner"), "Snittinnehav d": m.get("avg_holding_days")})
@@ -121,28 +158,32 @@ def comparison_rows(runs: dict) -> list:
 def render_comparison(runs: dict) -> None:
     rows = comparison_rows(runs)
     best = max((r for r in rows if r["Expectancy R"] is not None), key=lambda r: r["Expectancy R"], default=None)
+    lowest_dd = min((r["Max DD R"] for r in rows if r["Max DD R"] is not None), default=None)
     head = "".join(f"<th>{k}</th>" for k in rows[0])
     body = "".join(
         "<tr>" + "".join(
-            f"<td style='{'text-align:left;' if k == 'Exitregler' else ''}"
-            f"{'color:' + GREEN + ';font-weight:700;' if best is r and k in ('Exitregler', 'Expectancy R') else ''}'>"
+            f"<td style='{'text-align:left;' if k == 'Körning' else ''}"
+            f"{'color:' + GREEN + ';font-weight:700;' if best is r and k in ('Körning', 'Expectancy R') else ''}"
+            f"{'color:' + GREEN + ';font-weight:700;' if k == 'Max DD R' and v is not None and v == lowest_dd else ''}'>"
             f"{'—' if v is None else _fmt(v, '{:.2f}') if isinstance(v, float) else v}</td>" for k, v in r.items())
         + "</tr>" for r in rows)
     st.markdown(f"<div style='color:{CYAN};font-size:0.72rem;letter-spacing:0.1em;margin-top:8px;'>JÄMFÖRELSE AV "
-                f"EXITREGLER</div><div style='overflow-x:auto;'><table style='width:100%;font-size:0.76rem;"
+                f"EXITREGLER OCH RISKSPÄRR</div><div style='overflow-x:auto;'><table style='width:100%;font-size:0.76rem;"
                 f"color:{TEXT};text-align:right;'><tr style='color:{DIM};'>{head}</tr>{body}</table></div>",
                 unsafe_allow_html=True)
-    note("Samma tickers, samma entries — bara exitreglerna skiljer. Grönt = högst expectancy. Få affärer ger "
-         "brusiga tal; jämför helst på 50+ affärer.")
+    note("Samma tickers — bara exitregler och/eller riskspärr skiljer. Grönt = högst expectancy och lägst max "
+         "drawdown. Spärrade = signaler som stoppades av marknadsrisken. Få affärer ger brusiga tal; jämför helst "
+         "på 50+ affärer.")
 
 
 def render_result(res: dict, name: str = "") -> None:
     m, cfg = res["metrics"], res["config"]
     rules = ", ".join(vb.EXIT_RULES[k] for k in cfg.exit_rules) or "bara stopp"
+    gate = getattr(cfg, "risk_gate", ())
     st.markdown(f"<div style='color:{DIM};font-size:0.78rem;'>{len(res['per_ticker'])} tickers · {cfg.years} år · "
                 f"entry vid Nine ≥ {cfg.min_nine}/9 · volymkrav {'på' if cfg.require_volume else 'av'}<br>"
                 f"Exit: <b style='color:{TEXT};'>{name or 'Alla regler'}</b> — stopp, breakeven-stopp, {rules}"
-                f"{' · EMA10 först efter breakeven' if cfg.trail_after_be else ''}</div>",
+                f"{' · EMA10 först efter breakeven' if cfg.trail_after_be else ''}<br>{risk_line(res, gate)}</div>",
                 unsafe_allow_html=True)
     if not m.get("trades"):
         note("Inga stängda affärer under perioden. Prova fler tickers, längre period eller lägre minsta Nine "
@@ -187,6 +228,21 @@ def render_result(res: dict, name: str = "") -> None:
         st.dataframe(pd.DataFrame([{
             "Ticker": p["ticker"], "Marknad": p.get("market") or "—", "Sektor-ETF": p.get("sector_etf") or "—",
             "Signaler": p["signals"],
-            "Affärer": len(p["trades"]), "No chase": p["no_chase"], "R/R < 2": p["low_rr"],
+            "Affärer": len(p["trades"]), "Spärrade": p.get("risk_blocked", 0), "No chase": p["no_chase"],
+            "R/R < 2": p["low_rr"],
             "Data": p.get("error") or "ok"} for p in res["per_ticker"]]), hide_index=True, width="stretch")
-    note("Expectancy = win rate × snittvinnare − förlustandel × snittförlorare, i R. " + " ".join(res["notes"]))
+    note("Expectancy = win rate × snittvinnare − förlustandel × snittförlorare, i R. " + " ".join(res["notes"])
+         + " Marknadsriskens poäng räknas om bakåt med dagens modell; OMXS30-bredden bygger på dagens Large "
+           "Cap-lista (överlevnadsbias).")
+
+
+def risk_line(res: dict, gate: tuple) -> str:
+    """En rad om marknadsriskspärren: nivåer, spärrade signaler och hur ofta varje marknad låg spärrad."""
+    if not gate:
+        return "Marknadsriskspärr: av"
+    parts = []
+    for m, info in (res.get("risk") or {}).items():
+        pct = info.get("blocked_pct")
+        parts.append(f"{m}: {info['status']}" if pct is None else f"{m} spärrad {pct:g} % av dagarna")
+    return (f"Marknadsriskspärr: <b style='color:{TEXT};'>{' eller '.join(gate)}</b> stoppar entry · "
+            f"{res.get('risk_blocked', 0)} signaler spärrade" + (" · " + " · ".join(parts) if parts else ""))
