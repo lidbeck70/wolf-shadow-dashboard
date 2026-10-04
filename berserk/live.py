@@ -244,8 +244,9 @@ def _round(v, nd):
 
 def scan(tickers: list, getter: Optional[Callable] = None, capital: float = 100_000.0, cfg: bt.Config = bt.Config(),
          today=None, nordic_provider: Optional[Callable] = None, progress: Optional[Callable] = None,
-         drivers: Optional[dict] = None, markets: Optional[dict] = None) -> dict:
-    """Skanna listan: {rows, drivers, markets, when}. Okända tickers markeras."""
+         drivers: Optional[dict] = None, markets: Optional[dict] = None, keep: Optional[dict] = None) -> dict:
+    """Skanna listan: {rows, drivers, markets, when}. Okända tickers markeras. keep (valfri dict) fylls med
+    {ticker: {stock, driver, market}} — papperskontot förvaltar positionerna på samma data."""
     getter = _get_fn(getter)
     known = [t for t in tickers if uv.theme_of(t)]
     themes = {uv.theme_of(t) for t in known}
@@ -268,6 +269,8 @@ def scan(tickers: list, getter: Optional[Callable] = None, capital: float = 100_
                 df = None
             sym, drv = drivers.get(theme, (None, None))
             mkt = markets.get(uv.REGION_INDEX[uv.region_of(t)])
+            if keep is not None and df is not None:
+                keep[t] = {"stock": df, "driver": drv, "market": mkt}
             rows.append(evaluate(t, df, drv, mkt if mkt is not None else markets.get("SPY"), capital, cfg, sym))
         if progress is not None:
             progress(k + 1, len(tickers), t)

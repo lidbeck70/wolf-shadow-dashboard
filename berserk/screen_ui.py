@@ -8,7 +8,9 @@ Skannar universumet på senaste stängda dag med backtestets regler:
            stoppas av en grind
 Spärrar mot dina innehav (Holdings): ÄGS REDAN, TEMA FULLT (2), KOMPLEX FULLT (4),
 MAX 8 POSITIONER. KÖP och BEVAKA loggas i signalloggen (en rad per ticker och dag).
-Förvaltning av öppna positioner och larm kommer med papperskontot i PR 3.
+PAPPERSKONTO visar den automatiska körningen (berserk_scan.py, vardagar efter
+USA:s stängning): papperskurvan, öppna positioner med stopp, order, avslutade
+affärer, händelserna som larmats till Discord och senaste automatiska skanningen.
 """
 
 from __future__ import annotations
@@ -25,10 +27,13 @@ from berserk import live
 from berserk import signals as sg
 from berserk import themes as th
 from berserk import universe as uv
-from ui.components import note, page_header
+from berserk import paper
+from ui.components import kpi, note, page_header
 from ui.tokens import AMBER, CYAN, DIM, GOLD, GREEN, GREY, RED, TEXT
 
 _ROWS = "bz_scan"
+_AUTO = "bz_auto"
+SCAN_BLOB, PAPER_BLOB = "berserk_scan.json", "berserk_paper.json"
 LOG_STORE = "berserk_signals"
 LOG_MAX = 2000
 STATUS_COLOR = {live.KOP: GREEN, live.BEVAKA: AMBER, live.INGET: GREY}
@@ -127,7 +132,7 @@ def render_berserk_screen_page() -> None:
                 st.session_state[LOG_STORE] = new_log
                 log = new_log
     res = st.session_state.get(_ROWS)
-    t1, t2 = st.tabs(["SIGNALER", "SIGNALLOGG"])
+    t1, t2, t3 = st.tabs(["SIGNALER", "SIGNALLOGG", "PAPPERSKONTO"])
     with t1:
         if not res:
             note("Välj universum och tryck 🪓 SKANNA. Kör efter stängning — signalerna bedöms på stängd dag och "
@@ -136,6 +141,8 @@ def render_berserk_screen_page() -> None:
             render_results(res)
     with t2:
         render_log(log)
+    with t3:
+        render_paper_tab()
 
 
 def render_results(res: dict) -> None:
@@ -156,7 +163,7 @@ def render_results(res: dict) -> None:
     note("Entry = nästa dags öppning (stängningen visas som ungefärligt pris). Stopp: S1/S2 2 × ATR, S3 3 × ATR. "
          "Position = risk per setup (S1/S2 1,25 %, S3 1 %) / stoppavstånd, max 20 %. Spärrarna räknas mot "
          "Holdings: max 2 per tema, 4 per komplex och 8 positioner. Exit enligt setupens regler — "
-         "förvaltningen och larmen kommer med papperskontot (PR 3).")
+         "papperskontot förvaltar dem automatiskt (fliken PAPPERSKONTO).")
 
 
 def render_log(log: list) -> None:
@@ -174,3 +181,100 @@ def render_log(log: list) -> None:
             except Exception as exc:
                 c2.error(f"Kunde inte spara: {exc}")
     note(f"{len(log)} rader (högst {LOG_MAX}). Lagras i {storage.path_for(LOG_STORE)}.")
+
+
+# ── Papperskontot ───────────────────────────────────────────────────────────
+def load_auto() -> dict:
+    """Den schemalagda körningens resultat ur Gisten."""
+    from gist_storage import load_blob
+    return {"scan": load_blob(SCAN_BLOB, None), "paper": load_blob(PAPER_BLOB, None),
+            "loaded": datetime.now().strftime("%Y-%m-%d %H:%M")}
+
+
+def _df(rows: list, cols: dict) -> pd.DataFrame:
+    return pd.DataFrame([{label: r.get(k) for k, label in cols.items()} for r in rows])
+
+
+def render_paper_tab() -> None:
+    c1, c2 = st.columns([1, 3])
+    if c1.button("📡 Hämta senaste körningen", key="bz_auto_refresh") or _AUTO not in st.session_state:
+        try:
+            st.session_state[_AUTO] = load_auto()
+        except Exception as exc:
+            st.session_state[_AUTO] = {"scan": None, "paper": None, "loaded": "—", "error": str(exc)}
+    auto = st.session_state[_AUTO]
+    c2.markdown(f"<div style='color:{DIM};font-size:0.78rem;padding-top:8px;'>Hämtad {auto.get('loaded')}</div>",
+                unsafe_allow_html=True)
+    render_paper(auto.get("paper"), auto.get("scan"))
+
+
+def render_paper(state, scan) -> None:
+    if not state:
+        note("Papperskontot har inte startat ännu. Det sköts av arbetsflödet BERSERK Scan (vardagar 23:35 svensk "
+             "sommartid / 22:35 vintertid, efter USA:s stängning) — kör det manuellt i GitHub Actions för att "
+             "starta direkt. Riktiga order läggs alltid manuellt.")
+    else:
+        s = paper.summary(state)
+        cols = st.columns(5)
+        cards = [("Papperskonto", f"{s['equity']:.1f}", GREEN if s["return_pct"] >= 0 else RED,
+                  f"{s['return_pct']:+.1f} % sedan {s['since']}"),
+                 ("Max drawdown", f"{s['max_dd_pct']:.1f} %", AMBER, "dagsvärderad"),
+                 ("Affärer", str(s["trades"]), CYAN,
+                  "—" if s["win_rate"] is None else f"{s['win_rate']:.0f} % vinnare"),
+                 ("Snitt R", "—" if s["avg_r"] is None else f"{s['avg_r']:+.2f}", GOLD, f"totalt {s['total_r']:+.1f} R"),
+                 ("Öppna", f"{s['open']} / 8", TEXT, f"värme {s['heat']:.1f} % · {s['orders']} order")]
+        for col, (label, val, color, cap) in zip(cols, cards):
+            col.markdown(kpi(label, val, color, cap), unsafe_allow_html=True)
+        curve = state.get("curve") or []
+        if len(curve) >= 2:
+            st.line_chart(pd.DataFrame(curve).set_index("date")[["equity"]], height=220)
+        _section("ÖPPNA POSITIONER")
+        pos = state.get("positions") or []
+        if pos:
+            for p in pos:
+                p["_r"] = round((p["last_close"] - p["entry"]) / (p["entry"] - p["init_stop"]), 2)
+                p["_note"] = f"SÄLJ PÅ ÖPPNING ({p['pending']})" if p.get("pending") else ""
+            st.dataframe(_df(pos, {"ticker": "Ticker", "setup": "Setup", "theme": "Tema", "entry_date": "Köpt",
+                                   "entry": "Entry", "cur_stop": "Stopp", "last_close": "Senast", "_r": "R",
+                                   "_note": "Åtgärd"}), hide_index=True, width="stretch")
+        else:
+            note("Inga öppna positioner.")
+        orders = state.get("orders") or []
+        if orders:
+            _section("ORDER — KÖP PÅ NÄSTA ÖPPNING")
+            st.dataframe(_df(orders, {"ticker": "Ticker", "setup": "Setup", "theme": "Tema",
+                                      "signal_date": "Signal", "close": "Stängning", "stop": "Stopp ≈",
+                                      "position_pct": "Position %"}), hide_index=True, width="stretch")
+        closed = state.get("closed") or []
+        if closed:
+            _section("AVSLUTADE AFFÄRER")
+            st.dataframe(_df(list(reversed(closed[-200:])),
+                             {"ticker": "Ticker", "setup": "Setup", "entry_date": "Köpt", "exit_date": "Såld",
+                              "entry": "Entry", "exit": "Exit", "r": "R", "result_pct": "Resultat %",
+                              "reason": "Skäl", "days": "Dagar"}), hide_index=True, width="stretch")
+        events = state.get("events") or []
+        if events:
+            _section("HÄNDELSER (LARMADE TILL DISCORD)")
+            st.markdown("<div style='font-size:0.76rem;line-height:1.6;'>" + "<br>".join(
+                f"<span style='color:{DIM};'>{e['date']}</span> {paper.ICON.get(e['kind'], '•')} "
+                f"<b style='color:{TEXT};'>{e['kind']}</b> {e['ticker']} — "
+                f"<span style='color:{DIM};'>{e['text']}</span>" for e in reversed(events[-40:])) + "</div>",
+                unsafe_allow_html=True)
+    if scan:
+        _section("SENASTE AUTOMATISKA SKANNINGEN")
+        cnt = scan.get("counts") or {}
+        st.markdown(f"<div style='color:{DIM};font-size:0.78rem;'>Skannad {scan.get('when')} · "
+                    f"{scan.get('tickers')} tickers · <b style='color:{GREEN};'>{cnt.get(live.KOP, 0)} KÖP</b> · "
+                    f"<b style='color:{AMBER};'>{cnt.get(live.BEVAKA, 0)} BEVAKA</b></div>", unsafe_allow_html=True)
+        if scan.get("rows"):
+            st.markdown(_table(scan["rows"]), unsafe_allow_html=True)
+    note("Papperskontot följer backtestets regler exakt: fyllning på nästa öppning, stopp intradag, "
+         "stängningsregler säljer på nästa öppning, max 8 positioner, 2 per tema, 4 per komplex, 6 % värme, "
+         "ingen belåning. Kontot räknas i procent av start = 100 och i lokal valuta (som backtestet). Jämför "
+         "snitt-R och drawdown med backtestet efter 1–2 månader — det är underlaget för riskskalningen (PR 4). "
+         "Riktiga order läggs manuellt.")
+
+
+def _section(title: str) -> None:
+    st.markdown(f"<div style='color:{CYAN};font-size:0.72rem;letter-spacing:0.1em;margin-top:12px;'>{title}</div>",
+                unsafe_allow_html=True)
