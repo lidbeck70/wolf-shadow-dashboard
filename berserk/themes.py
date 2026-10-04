@@ -20,8 +20,8 @@ COMPLEXES = {"energi": "ENERGI", "basmetaller": "BASMETALLER", "adelmetaller": "
 THEMES: dict = {
     # ── Energi ──────────────────────────────────────────────────────────────
     "olja":        ("Olja", "energi", ("BZ=F", "CL=F", "BNO", "USO")),
-    "naturgas":    ("Naturgas (USA)", "energi", ("NG=F", "UNG")),
-    "naturgas_eu": ("Naturgas (Europa, TTF)", "energi", ("TTF=F",)),
+    "naturgas":    ("Naturgas (Henry Hub)", "energi", ("NG=F", "UNG")),
+    "naturgas_eu": ("Naturgas (TTF)", "energi", ("TTF=F",)),
     "kol":         ("Kol", "energi", ()),                                # MTF=F slutade uppdateras 2025
     "uran":        ("Uran", "energi", ("U-UN.TO", "URNM", "URA")),
     # ── Basmetaller ─────────────────────────────────────────────────────────

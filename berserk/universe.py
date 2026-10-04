@@ -13,7 +13,9 @@ olja (raffinering). Tickers i Yahoo-form; datasonden visar vilka som saknas.
   REGION_INDEX  marknadsgrindens index per region (OMXS30, SPY, TSX, FTSE, ASX 200)
 
 Ett bolag finns bara med en gång (ingen dubbelnotering): Rio Tinto och BHP via
-London, Kinross via NYSE osv.
+London, Kinross via NYSE osv. Datasonden 2026-10 (berserk-probe) sorterade bort
+CTRA, NGD, PCH, MEG.TO (ingen kurshistorik — uppköpta/sammanslagna) och
+ARX.TO (slutade uppdateras).
 
 Uppköpta och omdöpta tickers sorteras via dead_tickers (som i Ember).
 """
@@ -43,7 +45,7 @@ _NORDIC_RAW: dict = {
 _US_RAW: dict = {
     # Energi — olja (producenter, raffinering, service)
     "XOM": "olja", "CVX": "olja", "COP": "olja", "EOG": "olja", "DVN": "olja", "OXY": "olja", "FANG": "olja",
-    "CTRA": "olja", "OVV": "olja", "APA": "olja", "MTDR": "olja", "PR": "olja", "CHRD": "olja", "MGY": "olja",
+    "OVV": "olja", "APA": "olja", "MTDR": "olja", "PR": "olja", "CHRD": "olja", "MGY": "olja",
     "SM": "olja", "MUR": "olja", "NOG": "olja",
     "MPC": "olja", "VLO": "olja", "PSX": "olja", "PBF": "olja", "DK": "olja", "DINO": "olja",
     "SLB": "olja", "HAL": "olja", "BKR": "olja", "NOV": "olja", "FTI": "olja", "RIG": "olja", "VAL": "olja",
@@ -60,14 +62,14 @@ _US_RAW: dict = {
     "ALB": "litium", "SQM": "litium", "SGML": "litium", "LAC": "litium", "MP": "sallsynta",
     # Ädelmetaller
     "NEM": "guld", "AEM": "guld", "GOLD": "guld", "KGC": "guld", "GFI": "guld", "AU": "guld", "HMY": "guld",
-    "EGO": "guld", "IAG": "guld", "AGI": "guld", "BTG": "guld", "NGD": "guld", "OR": "guld", "SSRM": "guld",
+    "EGO": "guld", "IAG": "guld", "AGI": "guld", "BTG": "guld", "OR": "guld", "SSRM": "guld",
     "EQX": "guld", "DRD": "guld", "RGLD": "guld", "WPM": "guld", "FNV": "guld",
     "PAAS": "silver", "HL": "silver", "AG": "silver", "CDE": "silver", "FSM": "silver", "EXK": "silver",
     "SVM": "silver", "ASM": "silver", "SBSW": "platina",
     # Agri och skog
     "NTR": "godsel", "MOS": "godsel", "CF": "godsel", "IPI": "godsel", "LXU": "godsel", "ICL": "godsel",
     "ADM": "majs", "ANDE": "majs", "INGR": "majs", "CTVA": "majs", "BG": "soja",
-    "WY": "skog", "PCH": "skog", "RYN": "skog", "LPX": "skog", "UFPI": "skog", "BCC": "skog",
+    "WY": "skog", "RYN": "skog", "LPX": "skog", "UFPI": "skog", "BCC": "skog",
     # Frakt
     "DHT": "tank", "INSW": "tank", "TNK": "tank", "STNG": "tank", "ASC": "tank", "NAT": "tank",
     "SBLK": "torrbulk", "GNK": "torrbulk", "SB": "torrbulk",
@@ -75,8 +77,8 @@ _US_RAW: dict = {
 
 _CANADA_RAW: dict = {
     "SU.TO": "olja", "CNQ.TO": "olja", "CVE.TO": "olja", "IMO.TO": "olja", "WCP.TO": "olja", "BTE.TO": "olja",
-    "VET.TO": "olja", "MEG.TO": "olja", "PEY.TO": "olja", "PXT.TO": "olja",
-    "TOU.TO": "naturgas", "ARX.TO": "naturgas", "BIR.TO": "naturgas", "AAV.TO": "naturgas",
+    "VET.TO": "olja", "PEY.TO": "olja", "PXT.TO": "olja",
+    "TOU.TO": "naturgas", "BIR.TO": "naturgas", "AAV.TO": "naturgas",
     "LUN.TO": "koppar", "FM.TO": "koppar", "CS.TO": "koppar", "IVN.TO": "koppar", "TKO.TO": "koppar",
     "CIA.TO": "jarnmalm", "LIF.TO": "jarnmalm",
     "LUG.TO": "guld", "WDO.TO": "guld", "TXG.TO": "guld", "DPM.TO": "guld", "OGC.TO": "guld",

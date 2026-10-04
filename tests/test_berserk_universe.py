@@ -152,3 +152,8 @@ def test_probe_checks_region_indices():
     assert syms == {"SPY", "^GSPTSE", "^FTSE", "^AXJO"}
     groups = {g for g, _t, _s in probe.candidates()}
     assert set(uv.REGIONS) <= groups
+
+
+def test_probe_2026_10_removals():
+    for t in ("CTRA", "NGD", "PCH", "MEG.TO", "ARX.TO"):
+        assert t not in uv.PRODUCERS, t
