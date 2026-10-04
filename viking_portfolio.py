@@ -20,8 +20,10 @@ OVTLYR-test (av som förval): 'bäst historik först' — prioritet efter
 aktiens tidigare stängda affärer i R (walk-forward, OVTLYR: "start with
 the highest Signal Return").
 
-Avkastningen räknas på kontot (ränta på ränta, stängda affärer), drawdown i
-procent av kontot och i R. Förenkling: när en affär hoppas över tas inte en
+Avkastningen räknas på kontot (ränta på ränta, stängda affärer). Drawdown
+räknas DAGSVÄRDERAT (mtm_curve): öppna positioner värderas till dagens
+stängning, så att förluster under en affärs löptid syns — drawdown på bara
+stängda affärer underskattar risken (visas som jämförelse). Förenkling: när en affär hoppas över tas inte en
 senare signal i samma aktie under den affärens löptid.
 """
 
@@ -102,6 +104,7 @@ def simulate(trades: list, years: Optional[float] = None, pc: PortfolioConfig = 
         if not t.open and t.r is not None and t.r < 0:
             losses[t.exit_date] += 1
 
+    mtm = mtm_curve(rows, pc)
     closed = sorted((r for r in rows if r["return_pct"] is not None),
                     key=lambda r: (r["trade"].exit_date, r["trade"].ticker))
     eq, peak, max_dd, curve = 1.0, 1.0, 0.0, []
@@ -117,7 +120,11 @@ def simulate(trades: list, years: Optional[float] = None, pc: PortfolioConfig = 
         "metrics": metrics(taken), "rows": rows, "curve": curve, "candidates": len(trades), "taken": len(taken),
         "skipped_full": skipped_full, "skipped_losses": skipped_losses, "skipped_sector": skipped_sector,
         "max_open": max_open,
-        "return_pct": round((eq - 1) * 100, 1), "cagr_pct": cagr, "max_dd_pct": round(max_dd * 100, 1),
+        "return_pct": round((eq - 1) * 100, 1), "cagr_pct": cagr,
+        "max_dd_pct": mtm["max_dd_pct"] if mtm else round(max_dd * 100, 1),     # dagsvärderad när kurser finns
+        "closed_dd_pct": round(max_dd * 100, 1), "mtm": mtm,
+        "cap_share": round(sum(1 for r in rows if r["position_pct"] >= pc.max_position_pct - 1e-9)
+                           / len(rows) * 100, 1) if rows else None,
         "avg_position_pct": round(sum(r["position_pct"] for r in rows) / len(rows), 1) if rows else None,
         "avg_risk_pct": round(sum(r["risk_pct"] for r in rows) / len(rows), 2) if rows else None,
         "note": NOTES.format(risk=pc.risk_pct, pos=pc.max_position_pct, exp=pc.max_exposure_pct,
@@ -125,3 +132,47 @@ def simulate(trades: list, years: Optional[float] = None, pc: PortfolioConfig = 
         + (" En aktie per sektor." if pc.one_per_sector else " Flera aktier per sektor tillåtna.")
         + "".join(f" OVTLYR: {PORTFOLIO_RULES[k][0].lower()}." for k in PORTFOLIO_RULES if getattr(pc, k, False)),
     }
+
+
+def mtm_curve(rows: list, pc: PortfolioConfig = PortfolioConfig()) -> Optional[dict]:
+    """Kontot dag för dag med öppna positioner värderade till dagens stängning.
+
+    Realiserat kapital E växer med ränta på ränta vid varje exit; en dag är kontot
+    E × (1 + Σ position % × (stängning / entry − 1)) för de öppna positionerna.
+    Exitdagen räknas till exitkursen. Kräver Trade.dates/path — annars None."""
+    trades = [r for r in rows if getattr(r["trade"], "dates", None) and getattr(r["trade"], "path", None)]
+    if not trades or len(trades) < len(rows):
+        return None
+    days = sorted({d for r in trades for d in r["trade"].dates})
+    by_day = [{} for _ in days]
+    pos = {d: k for k, d in enumerate(days)}
+    for n, r in enumerate(trades):
+        for d, c in zip(r["trade"].dates, r["trade"].path):
+            by_day[pos[d]][n] = c
+    ends = {}
+    for n, r in enumerate(trades):
+        t = r["trade"]
+        if not t.open:
+            ends.setdefault(t.exit_date, []).append(n)
+    first = {n: r["trade"].dates[0] for n, r in enumerate(trades)}
+    last_close, active = {}, set()
+    eq_real, peak, max_dd, curve, expo = 1.0, 1.0, 0.0, [], []
+    for k, d in enumerate(days):
+        for n, c in by_day[k].items():
+            last_close[n] = c
+            if first[n] == d:
+                active.add(n)
+        for n in ends.get(d, []):                       # exit i dag: realisera till exitkursen
+            t, w = trades[n]["trade"], trades[n]["position_pct"] / 100
+            eq_real *= 1 + w * (t.exit / t.entry - 1)
+            active.discard(n)
+        unreal = sum(trades[n]["position_pct"] / 100 * (last_close[n] / trades[n]["trade"].entry - 1)
+                     for n in active)
+        eq = eq_real * (1 + unreal)
+        peak = max(peak, eq)
+        max_dd = max(max_dd, 1 - eq / peak)
+        curve.append((d, round((eq - 1) * 100, 2)))
+        expo.append(sum(trades[n]["position_pct"] for n in active))
+    return {"max_dd_pct": round(max_dd * 100, 1), "curve": curve,
+            "avg_exposure_pct": round(sum(expo) / len(expo), 1) if expo else 0.0,
+            "max_exposure_pct": round(max(expo), 1) if expo else 0.0}

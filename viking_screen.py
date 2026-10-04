@@ -80,13 +80,14 @@ def sector_busy(ticker: str, sector_etf: Optional[str], held: Optional[dict]) ->
     return owner if owner and owner != str(ticker).upper() else None
 
 
-def parse_tickers(raw: str) -> list:
+def parse_tickers(raw: str, limit: int = MAX_TICKERS) -> list:
+    """Tickers ur fritext (komma, semikolon, mellanslag, radbrytning), unika, högst limit st."""
     out = []
     for part in str(raw or "").replace(";", ",").replace("\n", ",").replace(" ", ",").split(","):
         t = part.strip().upper()
         if t and t not in out:
             out.append(t)
-    return out[:MAX_TICKERS]
+    return out[:limit]
 
 
 def _ob_analysis(df: pd.DataFrame) -> dict:
