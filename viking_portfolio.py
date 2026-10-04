@@ -13,9 +13,12 @@ egna gränser (viking_execution):
   * fler signaler än plats samma dag → högst Nine först, sedan starkast
     63-dagarsavkastning (samma ordning som screenern)
 
-OVTLYR-test (av som förval): en aktie per sektor (sektor-ETF:en) och
-'bäst historik först' — prioritet efter aktiens tidigare stängda affärer i
-R (walk-forward, OVTLYR: "start with the highest Signal Return").
+  * en aktie per sektor (sektor-ETF:en) — som live, där skannern visar
+    SEKTOR UPPTAGEN (backtest: lägre drawdown, högre avkastning i Norden)
+
+OVTLYR-test (av som förval): 'bäst historik först' — prioritet efter
+aktiens tidigare stängda affärer i R (walk-forward, OVTLYR: "start with
+the highest Signal Return").
 
 Avkastningen räknas på kontot (ränta på ränta, stängda affärer), drawdown i
 procent av kontot och i R. Förenkling: när en affär hoppas över tas inte en
@@ -37,12 +40,11 @@ class PortfolioConfig:
     max_position_pct: float = vx.MAX_POSITION_PCT  # 25 % per position
     max_exposure_pct: float = 100.0                # ingen belåning
     max_daily_losses: int = vx.MAX_DAILY_LOSSES    # 2
-    one_per_sector: bool = False                   # OVTLYR: högst en öppen position per sektor
+    one_per_sector: bool = True                    # högst en öppen position per sektor (som live)
     history_first: bool = False                    # OVTLYR: bäst egen historik (hist_r) först, sedan Nine
 
 
 PORTFOLIO_RULES = {
-    "one_per_sector": ("En aktie per sektor", "högst en öppen position per sektor (sektor-ETF)"),
     "history_first": ("Bäst historik först", "fler signaler än plats → aktien med högst summa R i tidigare "
                                              "stängda affärer först (walk-forward), sedan Nine och momentum"),
 }
@@ -120,5 +122,6 @@ def simulate(trades: list, years: Optional[float] = None, pc: PortfolioConfig = 
         "avg_risk_pct": round(sum(r["risk_pct"] for r in rows) / len(rows), 2) if rows else None,
         "note": NOTES.format(risk=pc.risk_pct, pos=pc.max_position_pct, exp=pc.max_exposure_pct,
                              loss=pc.max_daily_losses)
+        + (" En aktie per sektor." if pc.one_per_sector else " Flera aktier per sektor tillåtna.")
         + "".join(f" OVTLYR: {PORTFOLIO_RULES[k][0].lower()}." for k in PORTFOLIO_RULES if getattr(pc, k, False)),
     }

@@ -12,8 +12,11 @@ OVTLYR:s egen beräkning. Definitionerna:
 
   Trend         EMA10 > EMA20 och kurs > EMA50
   Signal        kurs ≥ EMA20 (SPY under EMA20 = OVTLYR:s säljsignal för marknaden)
-  Market breadth  andel av de 11 SPDR-sektor-ETF:erna över EMA50 ≥ 50 %
-                  och inte fallande (≥ sitt EMA5) — ersätter OVTLYR:s Bull List
+  Market breadth  andel av de 11 SPDR-sektor-ETF:erna över EMA50 (OMXS30: svensk
+                  Large Cap) — ersätter OVTLYR:s Bull List. OVTLYR:s regler
+                  (breadth_ok): bredden över sitt EMA10 (ökar); under 25 bara
+                  efter en uppvändning; över 75 och nedvänd = inga nya affärer.
+                  Backtestet (5 år): bättre i Norden, neutralt i USA.
   Sector F&G    syntetiskt F&G (screener_ovtlyr) för sektor-ETF:en: under 90
                 och stigande mot för fem dagar sedan
   Sector breadth  sektor-ETF:en över EMA20 och EMA20 stigande — ETF-trend i
@@ -53,8 +56,10 @@ WEIGHTS = {"market": 40, "sector": 30, "stock": 30}
 LAYER_SIZE = {"market": 3, "sector": 2, "stock": 4}
 NINE_TOTAL = 9
 
-BREADTH_MIN_PCT = 50.0             # minst hälften av sektorerna över EMA50
-BREADTH_EMA = 5                    # "inte fallande" = andelen ≥ sitt EMA5
+BREADTH_SIGNAL_EMA = 10            # OVTLYR: bredden över sitt EMA10 = ökar (Bull List bullish crossover)
+BREADTH_LOW, BREADTH_HIGH = 25.0, 75.0   # under 25 kräver uppvändning · över 75 och nedvänd = stopp
+BREADTH_MIN_PCT = 50.0             # gamla regeln (≥ 50 % och ≥ sitt EMA5) — kvar för backtestets jämförelse
+BREADTH_EMA = 5
 BREADTH_MIN_ETFS = 8               # färre ETF:er med data → DATA UNAVAILABLE
 FG_MAX = 90.0                      # extrem girighet räknas inte som stigande läge
 FG_LOOKBACK = 5                    # F&G stigande mot för så många dagar sedan
@@ -257,14 +262,30 @@ def breadth_series(etf_closes: dict) -> pd.Series:
     return (above.sum(axis=1) / len(df.columns) * 100).rename("breadth")
 
 
+def breadth_ok(b: pd.Series) -> pd.Series:
+    """OVTLYR:s breddregler per dag (kausalt, bara data t.o.m. dagen): bredden inte under sitt
+    EMA10 (ökar eller ligger still efter en ökning) — under 25 bara efter en uppvändning, över 75
+    och nedvänd = inga nya affärer."""
+    b = b.astype(float)
+    eps = 1e-9                                       # flyttalsbrus: bredd som legat still = på sitt EMA10
+    above = b >= _ema(b, BREADTH_SIGNAL_EMA) - eps   # inte under sitt EMA10 (bullish crossover-läge)
+    up, down = b > b.shift(1) + eps, b < b.shift(1) - eps
+    return above & ((b >= BREADTH_LOW) | up) & ~((b > BREADTH_HIGH) & down) & b.notna()
+
+
 def _breadth_check(noun: str) -> Callable:
     def check(b):
-        ema = float(_ema(b, BREADTH_EMA).iloc[-1])
+        ema = float(_ema(b, BREADTH_SIGNAL_EMA).iloc[-1])
         now = float(b.iloc[-1])
-        ok = now >= BREADTH_MIN_PCT and now >= ema
-        return ok, round(now, 1), (f"{now:.0f} % av {noun} över EMA50 (EMA{BREADTH_EMA} {ema:.0f} %) — "
-                                   f"{'stigande/stabil' if now >= ema else 'fallande'}; kräver ≥ "
-                                   f"{BREADTH_MIN_PCT:.0f} % och inte fallande")
+        prev = float(b.iloc[-2]) if len(b) > 1 else now
+        ok = bool(breadth_ok(b).iloc[-1])
+        turn = "vänder upp" if now > prev else "vänder ner" if now < prev else "oförändrad"
+        why = (f"över {BREADTH_HIGH:.0f} och {turn} — inga nya affärer" if now > BREADTH_HIGH and now < prev
+               else f"under {BREADTH_LOW:.0f} — kräver uppvändning ({turn})" if now < BREADTH_LOW
+               else "ökar" if now > ema + 1e-9 else "oförändrad" if now >= ema - 1e-9 else "krymper")
+        return ok, round(now, 1), (f"{now:.0f} % av {noun} över EMA50 (EMA{BREADTH_SIGNAL_EMA} {ema:.0f} %) — "
+                                   f"{why}; OVTLYR: över EMA{BREADTH_SIGNAL_EMA}, < {BREADTH_LOW:.0f} bara efter "
+                                   f"uppvändning, > {BREADTH_HIGH:.0f} och nedvänd = stopp")
     return check
 
 

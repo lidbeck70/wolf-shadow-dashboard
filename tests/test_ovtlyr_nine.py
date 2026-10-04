@@ -75,10 +75,24 @@ def test_trend_and_signal_are_computed_from_spy():
     assert r.get("market.trend").status == on.FAIL or r.get("market.signal").status == on.FAIL
 
 
+def _falling_etfs(keep=3):
+    """Alla sektorer stiger länge; de sista dagarna rasar alla utom `keep` under EMA50 → bredden faller."""
+    out = {}
+    for i, t in enumerate(on.SECTOR_ETFS.values()):
+        c = _df(step=0.4, pop=0)["Close"].copy()
+        if i >= keep:
+            c.iloc[-8:] = c.iloc[-9] * np.linspace(0.97, 0.70, 8)
+        out[t] = c
+    return out
+
+
 def test_market_breadth_from_sector_etfs():
     assert _bull(etf_closes=_etfs(up=11)).get("market.breadth").status == on.PASS
-    weak = _bull(etf_closes=_etfs(up=3))
-    assert weak.get("market.breadth").status == on.FAIL and weak.get("market.breadth").value == pytest.approx(27.3, abs=0.1)
+    flat = _bull(etf_closes=_etfs(up=3))                      # 27 % men oförändrad: varken ökar eller krymper
+    assert flat.get("market.breadth").status == on.PASS and flat.get("market.breadth").value == pytest.approx(27.3, abs=0.1)
+    weak = _bull(etf_closes=_falling_etfs())                  # bredden krymper under sitt EMA10 → FAIL
+    f = weak.get("market.breadth")
+    assert f.status == on.FAIL and f.value == pytest.approx(27.3, abs=0.1) and "EMA10" in f.detail
     gap = _bull(etf_closes={k: v for i, (k, v) in enumerate(_etfs().items()) if i < 5})
     assert gap.get("market.breadth").status == on.UNAVAILABLE and "5 av 11" in gap.get("market.breadth").detail
     assert len(_bull().etf_states) == 11

@@ -73,7 +73,9 @@ def _table(rows: list, extra=None) -> str:
             f"<tr><td style='text-align:left;'><b>{r['ticker']}</b></td><td>{n.passed}/9</td><td>{n.weighted:g}</td>"
             f"<td>{n.layer_passed('market')}/3</td><td>{n.layer_passed('sector')}/2</td>"
             f"<td>{n.layer_passed('stock')}/4</td><td>{d.execution_passed}/{d.execution_total}</td>"
-            f"<td>{d.status}</td><td style='color:{cc};font-weight:700;'>{r['category']}</td>"
+            f"<td>{d.status}</td><td style='color:{cc};font-weight:700;'>{r['category']}"
+            + (f"<br><span style='color:{AMBER};font-size:0.7rem;'>{vs.SECTOR_BUSY} · {r['sector_busy']}</span>"
+               if r.get("sector_busy") else "") + "</td>"
             f"<td>{'—' if d.entry is None else f'{d.entry:,.2f}'}</td>"
             f"<td>{'—' if p is None else f'{p.stop:,.2f}'}</td><td>{rr}</td>"
             + (f"<td style='text-align:left;color:{DIM};'>{extra(r)}</td>" if extra else "") + "</tr>")
@@ -165,10 +167,14 @@ def render_viking_nine_page() -> None:
                 trades = load_journal()
             except Exception:
                 trades = []
+            try:
+                held = vs.held_sectors(sector_getter=_sector)
+            except Exception:
+                held = {}
             res = vs.scan(universe, max_candidates=n_cand,
                           progress=lambda i, n, t: bar.progress(i / n, text=f"Steg 2: {t} ({i}/{n})"),
                           sector_getter=_sector, earnings_getter=_earnings, capital=capital, trades=trades,
-                          risk_getter=_risk_for)
+                          risk_getter=_risk_for, held=held)
             bar.empty()
             st.session_state[_ROWS] = {"rows": res["rows"], "funnel": res["funnel"],
                                        "when": datetime.now().strftime("%Y-%m-%d %H:%M")}
@@ -220,6 +226,13 @@ def _render_results(rows: list) -> None:
          f"kvalitet. Momentumkandidat = Nine ≥ {vs.MOMENTUM_MIN_NINE}/9 · kurs > EMA10 > EMA20 > EMA50 · RSI > "
          f"{vx.RSI_MIN:g} och stigande · inget bearish block nära · R/R ≥ {vx.MINIMUM_RR:g}"
          + (" · relativ volym" if need_vol else "") + ". M/S/St = Market/Sector/Stock. WOLF APPROXIMATION.")
+    busy = sorted({r["ticker"] for r in rows if r.get("sector_busy")})
+    if busy:
+        note(f"{vs.SECTOR_BUSY} ({', '.join(busy)}) = du har redan en öppen position i Viking Portfolio i samma "
+             "sektor. En aktie per sektor — GOLDEN TICKET väntar som READY tills sektorn är ledig.")
+    import ovtlyr_nine as on
+    if any(on.market_for(r["ticker"]) == on.MARKET_TICKER for r in rows):
+        note(vs.US_NOTE)
 
 
 def _render_log(log: list) -> None:
