@@ -19,6 +19,12 @@ marknadens risknivå (SPY, OMXS30 för nordiska) är spärrad ger ingen entry �
 samma regel som live (market_risk_gate: OMXS30 från FÖRHÖJD, SPY vid HÖG). Risknivån är
 poängen ur market_risk, som bara bygger på data t.o.m. dagen.
 
+OVTLYR Golden Ticket (aktieversionen, inga optioner) kan testas regel för
+regel — alla är av som förval, live-reglerna ändras inte (OVTLYR_RULES):
+½ ATR-stopp på stängning med risken räknad på 2 × ATR, ATR-stegtrailing,
+OVTLYR:s breddregler (< 25 / > 75 och EMA10), F&G vänder → exit,
+likviditetsfilter och bara aktier med positiv egen historik (walk-forward).
+
 Ingår inte (historiska data saknas): rapportspärren, max två förluster per
 dag (portfölj), bearish block som exit. Universum och sektor är dagens —
 överlevnads- och sektorbias. Allt står i resultatets notes.
@@ -61,6 +67,34 @@ EXIT_PRESETS = {
 # {marknad: nivåer}. Första = samma som live (market_risk_gate.VIKING_BLOCK_BY_MARKET).
 RISK_GATES = {"Per marknad (som live)": dict(mrg.VIKING_BLOCK_BY_MARKET),
               "FÖRHÖJD eller HÖG": (mrg.ELEVATED, mrg.HIGH), "Bara HÖG": (mrg.HIGH,), "Av": ()}
+
+
+# OVTLYR Golden Ticket — aktieregler som kan testas (av = live-regeln). Nyckel → (etikett, förklaring).
+OVTLYR_RULES = {
+    "ovt_stop": ("½ ATR-stopp på stängning",
+                 "stängning under entry − ½ × ATR → exit nästa öppning; risk och storlek räknas på 2 × ATR "
+                 "(nödstopp intradag där) i stället för 1,5 × ATR intradag"),
+    "atr_step": ("ATR-stegtrailing",
+                 "för varje helt ATR över entry flyttas stoppen till ½ ATR under steget (+1 ATR → +½ ATR, "
+                 "+2 → +1½ …), intradag"),
+    "ovt_breadth": ("Bredd enligt OVTLYR",
+                    "bredden över sin EMA10 (ökar); under 25 bara efter uppvändning, över 75 och nedvänd = "
+                    "inga nya affärer — ersätter '≥ 50 % och stigande'"),
+    "fg_turn": ("F&G vänder → exit", "aktiens F&G lägre än för fem dagar sedan → exit nästa öppning"),
+    "liquidity": ("Likviditetsfilter",
+                  "USA: kurs > 20 $ och snittvolym 30 d > 1 milj aktier · Norden: snittomsättning 30 d "
+                  "> 10 milj SEK/NOK, 7 milj DKK, 1 milj EUR"),
+    "history": ("Positiv egen historik",
+                "bara aktier vars tidigare stängda Viking-affärer summerar ≥ 0R (walk-forward, ingen "
+                "historik = tillåten)"),
+}
+OVT_CLOSE_STOP_ATR = 0.5           # ½ ATR-stopp — på stängning
+OVT_RISK_ATR = 2.0                 # risk/storlek på 2 × ATR (OVTLYR: konto × risk % / (2 × ATR)) — nödstopp intradag
+ATR_STEP_GIVEBACK = 0.5            # stegtrailing: stoppen ½ ATR under senast nådda hela ATR-steg
+BREADTH_LOW, BREADTH_HIGH, BREADTH_SIGNAL_EMA = 25.0, 75.0, 10
+LIQ_DAYS = 30
+LIQ_US_PRICE, LIQ_US_VOLUME = 20.0, 1_000_000
+LIQ_TURNOVER = {".ST": 10e6, ".OL": 10e6, ".CO": 7e6, ".HE": 1e6}   # lokal valuta per dag
 
 
 def gate_levels(gate, market: str) -> tuple:
@@ -108,6 +142,17 @@ class Config:
     trail_after_be: bool = True        # EMA10 gäller först när stoppen flyttats till breakeven (som viking_exit)
     pullback: bool = False             # True = kräv pullback till EMA20 (ENTRY_MODES) — inte live-regeln
     risk_gate: object = field(default_factory=lambda: dict(mrg.VIKING_BLOCK_BY_MARKET))   # se RISK_GATES
+    # OVTLYR Golden Ticket (OVTLYR_RULES) — av = live-regeln
+    ovt_stop: bool = False
+    atr_step: bool = False
+    ovt_breadth: bool = False
+    fg_turn: bool = False
+    liquidity: bool = False
+    history: bool = False
+
+    def ovtlyr_rules(self) -> list:
+        """Påslagna OVTLYR-regler (nycklar i OVTLYR_RULES)."""
+        return [k for k in OVTLYR_RULES if getattr(self, k, False)]
 
 
 @dataclass
@@ -126,6 +171,8 @@ class Trade:
     days: int = 0
     open: bool = False
     mom63: Optional[float] = None       # 63-dagarsavkastning på signaldagen (prioritet i portföljläget)
+    sector: Optional[str] = None        # sektor-ETF (en aktie per sektor i portföljläget)
+    hist_r: Optional[float] = None      # summa R för aktiens tidigare stängda affärer vid signalen (walk-forward)
 
 
 # ── Serierna (allt kausalt) ─────────────────────────────────────────────────
@@ -148,9 +195,29 @@ def _align(s: Optional[pd.Series], idx) -> pd.Series:
     return s.astype(float).reindex(s.index.union(idx)).ffill().reindex(idx).fillna(0).astype(bool)
 
 
+def ovtlyr_breadth_ok(b: pd.Series) -> pd.Series:
+    """OVTLYR:s breddregler per dag (kausalt): bredden över sin EMA10 (ökar) — under 25 bara
+    efter en uppvändning, över 75 och nedvänd = inga nya affärer."""
+    b = b.astype(float)
+    above = b > _ema(b, BREADTH_SIGNAL_EMA)
+    up, down = b > b.shift(1), b < b.shift(1)
+    return above & ((b >= BREADTH_LOW) | up) & ~((b > BREADTH_HIGH) & down) & b.notna()
+
+
+def liquid_series(stock: pd.DataFrame, ticker: str) -> pd.Series:
+    """Likviditetsfiltret per dag (snitt över LIQ_DAYS dagar t.o.m. dagen)."""
+    c, v = stock["Close"].astype(float), stock["Volume"].astype(float)
+    t = str(ticker or "").upper()
+    suffix = next((s for s in LIQ_TURNOVER if t.endswith(s)), None)
+    if suffix is None:
+        return (c > LIQ_US_PRICE) & (v.rolling(LIQ_DAYS).mean() > LIQ_US_VOLUME)
+    return (c * v).rolling(LIQ_DAYS).mean() > LIQ_TURNOVER[suffix]
+
+
 def factor_frame(stock: pd.DataFrame, spy: Optional[pd.DataFrame], sector: Optional[pd.DataFrame],
-                 breadth: Optional[pd.Series]) -> pd.DataFrame:
-    """OVTLYR Nine:s åtta prisfaktorer per dag (order blocks räknas separat)."""
+                 breadth: Optional[pd.Series], ovt_breadth: bool = False) -> pd.DataFrame:
+    """OVTLYR Nine:s åtta prisfaktorer per dag (order blocks räknas separat).
+    ovt_breadth = marknadsbredden enligt OVTLYR (ovtlyr_breadth_ok) i stället för panelens regel."""
     idx = stock.index
     c = stock["Close"].astype(float)
     out = pd.DataFrame(index=idx)
@@ -161,7 +228,8 @@ def factor_frame(stock: pd.DataFrame, spy: Optional[pd.DataFrame], sector: Optio
     else:
         out["market.trend"] = out["market.signal"] = False
     if breadth is not None and len(breadth):
-        ok = (breadth >= on.BREADTH_MIN_PCT) & (breadth >= _ema(breadth, on.BREADTH_EMA))
+        ok = (ovtlyr_breadth_ok(breadth) if ovt_breadth
+              else (breadth >= on.BREADTH_MIN_PCT) & (breadth >= _ema(breadth, on.BREADTH_EMA)))
         out["market.breadth"] = _align(ok, idx)
     else:
         out["market.breadth"] = False
@@ -231,10 +299,11 @@ def backtest_ticker(ticker: str, stock: pd.DataFrame, spy: Optional[pd.DataFrame
     stock = stock.dropna(subset=["Open", "High", "Low", "Close"])
     n = len(stock)
     res = {"ticker": ticker, "trades": [], "signals": 0, "no_chase": 0, "low_rr": 0, "risk_blocked": 0,
-           "no_pullback": 0}
+           "no_pullback": 0, "illiquid": 0}
     if n < WARMUP_BARS + 2:
         return res
-    f, x = factor_frame(stock, spy, sector, breadth), execution_frame(stock)
+    f, x = factor_frame(stock, spy, sector, breadth, ovt_breadth=cfg.ovt_breadth), execution_frame(stock)
+    liquid = liquid_series(stock, ticker) if cfg.liquidity else None
     eight = [k for k in f.columns if "." in k]
     count8 = f[eight].sum(axis=1)
     o, h, lo, c = (stock[k].astype(float).values for k in ("Open", "High", "Low", "Close"))
@@ -269,7 +338,11 @@ def backtest_ticker(ticker: str, stock: pd.DataFrame, spy: Optional[pd.DataFrame
             i += 1
             continue
         res["signals"] += 1
-        if cfg.pullback and not ex["pullback"]:                     # ingen pullback till EMA20 nyligen
+        if liquid is not None and not bool(liquid.iloc[i]):              # OVTLYR: för låg likviditet
+            res["illiquid"] += 1
+            i += 1
+            continue
+        if cfg.pullback and not ex["pullback"]:                    # ingen pullback till EMA20 nyligen
             res["no_pullback"] += 1
             i += 1
             continue
@@ -288,7 +361,10 @@ def backtest_ticker(ticker: str, stock: pd.DataFrame, spy: Optional[pd.DataFrame
             res["no_chase"] += 1
             i += 1
             continue
-        stop = entry - stop_dist
+        atr0 = float(ex["atr"])
+        # OVTLYR: risken (R och storlek) på 2 × ATR med nödstopp där — själva stoppen är ½ ATR på stängning.
+        # R/R-filtret ovan använder live-avståndet, så entryerna blir desamma och bara exiten skiljer.
+        stop = entry - (OVT_RISK_ATR * atr0 if cfg.ovt_stop else stop_dist)
         risk = entry - stop
         if not (risk > 0):
             i += 1
@@ -298,19 +374,26 @@ def backtest_ticker(ticker: str, stock: pd.DataFrame, spy: Optional[pd.DataFrame
         fg_target = vex.fg_target(float(f["fg"].iloc[i])) if pd.notna(f["fg"].iloc[i]) else None
         pre_high = float(np.max(h[max(0, i + 1 - vex.BE_LOOKBACK):i + 2]))
         armed = False
+        step_stop = -math.inf                                       # ATR-stegtrailing (från tidigare dagars high)
+        run_high = -math.inf
         j = i + 1
         pending = None                                              # stängningsregel → exit nästa öppning
         while j < n:
             cur_stop = max(stop, entry) if armed else stop
+            cur_stop = max(cur_stop, step_stop)
             if pending is not None:
                 t.exit, t.exit_reason, t.exit_date = float(o[j]), pending, str(idx[j].date())
                 break
             if lo[j] <= cur_stop:
                 px = float(o[j]) if o[j] < cur_stop else cur_stop
                 t.exit, t.exit_date = px, str(idx[j].date())
-                t.exit_reason = "breakeven-stopp" if armed and cur_stop >= entry else "stopp"
+                t.exit_reason = ("ATR-steg" if step_stop >= cur_stop and step_stop > entry
+                                 else "breakeven-stopp" if armed and cur_stop >= entry
+                                 else "nödstopp 2 ATR" if cfg.ovt_stop else "stopp")
                 break
             reasons, rules = [], cfg.exit_rules
+            if cfg.ovt_stop and c[j] < entry - OVT_CLOSE_STOP_ATR * atr0:
+                reasons.append("½ ATR-stopp")
             if "market" in rules and not f["market.signal"].iloc[j]:
                 reasons.append(f"{market_label} < EMA20")
             if "trail" in rules and (armed or not cfg.trail_after_be) and c[j] < x["ema10"].iloc[j]:
@@ -326,8 +409,16 @@ def backtest_ticker(ticker: str, stock: pd.DataFrame, spy: Optional[pd.DataFrame
             if ("fg" in rules and fg_target is not None and pd.notna(f["fg"].iloc[j])
                     and f["fg"].iloc[j] >= fg_target):
                 reasons.append("F&G-target")
+            if (cfg.fg_turn and j >= on.FG_LOOKBACK and pd.notna(f["fg"].iloc[j])
+                    and pd.notna(f["fg"].iloc[j - on.FG_LOOKBACK]) and f["fg"].iloc[j] < f["fg"].iloc[j - on.FG_LOOKBACK]):
+                reasons.append("F&G vänder")
             if h[j] > pre_high:
                 armed = True
+            if cfg.atr_step and atr0 > 0:
+                run_high = max(run_high, float(h[j]))
+                k = math.floor((run_high - entry) / atr0)
+                if k >= 1:
+                    step_stop = max(step_stop, entry + (k - ATR_STEP_GIVEBACK) * atr0)
             if reasons:
                 pending = reasons[0]
                 if j == n - 1:                                      # ingen nästa dag — stäng på stängningen
@@ -434,8 +525,13 @@ def run(tickers: list, getter: Optional[Callable] = None, sector_getter: Optiona
             if on.market_for(t) == on.NORDIC_LABEL and nordic and nordic.get("close") is not None:
                 m_df, label = pd.DataFrame({"Close": nordic["close"]}), on.NORDIC_LABEL
                 m_breadth = nordic.get("breadth")
-            r = backtest_ticker(t, df, m_df, etfs.get(etf) if etf else None, m_breadth, cfg, start=start,
-                                market_label=label, risk=risk.get(mrg.market_for(t)))
+            # Med historikfiltret körs även uppvärmningsåret, så att aktien har en egen historik vid periodstart.
+            r = backtest_ticker(t, df, m_df, etfs.get(etf) if etf else None, m_breadth, cfg,
+                                start=None if cfg.history else start, market_label=label,
+                                risk=risk.get(mrg.market_for(t)))
+            apply_history(r, start, cfg.history)
+            for tr in r["trades"]:
+                tr.sector = etf
             r["sector_etf"], r["market"] = etf, label
             per.append(r)
             trades += r["trades"]
@@ -443,4 +539,27 @@ def run(tickers: list, getter: Optional[Callable] = None, sector_getter: Optiona
             progress(k + 1, len(tickers), t)
     return {"trades": trades, "per_ticker": per, "metrics": metrics(trades), "notes": NOTES, "config": cfg,
             "risk": risk_info, "risk_blocked": sum(p.get("risk_blocked", 0) for p in per),
-            "no_pullback": sum(p.get("no_pullback", 0) for p in per)}
+            "no_pullback": sum(p.get("no_pullback", 0) for p in per),
+            "illiquid": sum(p.get("illiquid", 0) for p in per),
+            "neg_history": sum(p.get("neg_history", 0) for p in per)}
+
+
+def apply_history(res: dict, start=None, require_positive: bool = False) -> dict:
+    """Sätter Trade.hist_r = summa R för aktiens affärer som stängts FÖRE signaldagen (walk-forward).
+    require_positive: affärer med hist_r < 0 tas bort (räknas i neg_history), liksom affärer med
+    signal före start (de var bara historik). Borttagna affärer räknas ändå in i senare historik
+    — som att följa signalen på papper."""
+    trades = sorted(res.get("trades") or [], key=lambda t: t.signal_date)
+    s0 = str(pd.Timestamp(start).date()) if start is not None else None
+    kept, neg = [], 0
+    for t in trades:
+        prior = [p.r for p in trades if not p.open and p.r is not None and p.exit_date < t.signal_date]
+        t.hist_r = round(float(sum(prior)), 3) if prior else None
+        if require_positive and s0 is not None and t.signal_date < s0:
+            continue
+        if require_positive and t.hist_r is not None and t.hist_r < 0:
+            neg += 1
+            continue
+        kept.append(t)
+    res["trades"], res["neg_history"] = kept, neg
+    return res
