@@ -34,7 +34,7 @@ TOP_LABEL = dict(TOP)
 # kvalar (SCREENING), och vilket av dem som köps (GRANSKNING).
 SUBS: dict = {
     "screening": ["Arc Screener", "Contrarian Alpha", "Swing Screener"],
-    "screening/Arc Screener": ["Wolf", "Viking", "⚔️ Viking Nine", "🔥 EMBER"],
+    "screening/Arc Screener": ["Wolf", "Viking", "⚔️ Viking Nine", "🔥 EMBER", "🪓 BERSERK"],
     "screening/Contrarian Alpha": ["Screener", "Long Screener"],
     # Beslutsunderlaget efter screeningen. Durrett har sitt ark
     # (data/confidence.json); Wolf Asymmetry har sitt eget med Confidence inbyggt.
@@ -46,7 +46,7 @@ SUBS: dict = {
                        "Flow Divergence", "Market Cycle", "🌩️ Marknadsrisk"],
     "regime/Marknad/Arc Regime": ["Wolf Regime", "Viking Regime", "⚔️ Viking Nine Regime"],
     "regime/Marknad/Alpha Regime": ["Quality & Contrarian", "Long Trend"],
-    "regime/Råvaror": ["🌍 EMBER Regime", "Råvarurotation", "🥇🥈 Guld/Silver", "🥇 Guldkvoter"],
+    "regime/Råvaror": ["🌍 EMBER Regime", "🪓 BERSERK Regime", "Råvarurotation", "🥇🥈 Guld/Silver", "🥇 Guldkvoter"],
     "regime/Makro": ["🐺 Fiat Debasement"],
     "intel": ["Odin's Blindspot", "Sentiment", "Retail Pulse", "Heatmap", "🕯️ Teknisk analys"],
     "portfolio": ["📓 Trade Journal", "Holdings", "Swing", "Allokering", "Backtest"],
@@ -60,11 +60,11 @@ SUBS: dict = {
 HOME_ZONES: tuple = (
     ("regime", "REGIME — VAR KAPITALET SKA", [
         ("Marknad", "Wolf · Viking · Alpha · Swing · Flow Divergence · Market Cycle"),
-        ("Råvaror", "🌍 EMBER Regime · Råvarurotation · 🥇🥈 Guld/Silver · 🥇 Guldkvoter"),
+        ("Råvaror", "🌍 EMBER Regime · 🪓 BERSERK Regime · Råvarurotation · 🥇🥈 Guld/Silver · 🥇 Guldkvoter"),
         ("Makro", "🐺 Fiat Debasement — penningmängd, inflation, köpkraft och fiat mot guld"),
     ]),
     ("screening", "SCREENING — VILKA BOLAG SOM KVALAR", [
-        ("Arc Screener", "Wolf (EMA/swing) · Viking (OVTLYR) · EMBER (råvaror)"),
+        ("Arc Screener", "Wolf (EMA/swing) · Viking (OVTLYR) · EMBER (råvaror) · 🪓 BERSERK (råvaror, contrarian)"),
         ("Contrarian Alpha", "Hatade bolag med kvalitet · Long Screener (CAGR)"),
         ("Swing Screener", "Momentum-ranking topp 40 med setup A/B"),
     ]),
