@@ -12,6 +12,10 @@ max 25 % per position, max 100 % investerat, max två förluster per dag.
 
 Marknadsriskspärren (🌩️ Marknadsrisk) är på som live (per marknad: OMXS30
 från FÖRHÖJD, SPY vid HÖG) och kan jämföras mot FÖRHÖJD / bara HÖG / av. Risknivåerna delar cache med fliken.
+
+OVTLYR GOLDEN TICKET (aktier): reglerna ur OVTLYR:s Golden Ticket-material
+kan slås på var för sig (viking_backtest.OVTLYR_RULES + viking_portfolio.
+PORTFOLIO_RULES) eller jämföras en och en mot live-reglerna. Live ändras inte.
 """
 
 from __future__ import annotations
@@ -125,26 +129,45 @@ def render_viking_nine_backtest() -> None:
                                   f"'Som live'.")
         compare_entry = n2.checkbox("Jämför entry", value=False, key="vnb_compare_entry",
                                     help="Kör samma tickers med båda entrysätten.")
+        st.markdown(f"<div style='color:{GOLD};font-size:0.72rem;letter-spacing:0.1em;margin-top:6px;'>OVTLYR GOLDEN "
+                    f"TICKET — AKTIEREGLER ATT TESTA</div>", unsafe_allow_html=True)
+        oc = st.columns(2)
+        ovt = {k: oc[n % 2].checkbox(label, value=False, key=f"vnb_ovt_{k}", help=why)
+               for n, (k, (label, why)) in enumerate(OVT_ALL.items())}
+        compare_ovt = st.checkbox("Jämför OVTLYR-reglerna en och en", value=False, key="vnb_compare_ovt",
+                                  help="Kör live-reglerna, varje OVTLYR-regel för sig och alla tillsammans — med "
+                                       "exitförval, spärr och entry som ovan. De andra jämförelserna hoppas då över.")
         go_ = st.form_submit_button("⚔️ Kör backtest")
     tickers = vs.parse_tickers(raw)
     if go_ and tickers:
         base = dict(min_nine=int(min_nine), require_volume=bool(need_vol), years=int(years))
-        runs = run_names(preset, gate, compare, compare_risk, entry, compare_entry)
-        out = {}
+        chosen = [k for k, on_ in ovt.items() if on_]
+        if compare_ovt:
+            runs = [(name, preset, gate, entry, keys) for name, keys in ovtlyr_variants(chosen)]
+        else:
+            runs = [(name, ex, gt, en, chosen) for name, ex, gt, en in
+                    run_names(preset, gate, compare, compare_risk, entry, compare_entry)]
+        out, cache = {}, {}
         bar = st.progress(0.0, text="Hämtar marknadsdata …")
-        for k, (name, ex, gt, en) in enumerate(runs):
+        for k, (name, ex, gt, en, keys) in enumerate(runs):
             rules, after_be = ((tuple(custom), bool(custom_after_be)) if ex == _CUSTOM
                                else vb.EXIT_PRESETS[ex])
+            bt = {kk: True for kk in keys if kk in vb.OVTLYR_RULES}
+            pc = vp.PortfolioConfig(**{kk: True for kk in keys if kk in vp.PORTFOLIO_RULES})
             cfg = vb.Config(exit_rules=rules, trail_after_be=after_be, risk_gate=vb.RISK_GATES[gt],
-                            pullback=vb.ENTRY_MODES[en], **base)
-            res = vb.run(tickers, sector_getter=_sector, cfg=cfg, risk_provider=_risk_points,
-                         progress=lambda i, n, t, k=k, name=name: bar.progress(
-                             (k + i / n) / len(runs), text=f"{name}: {t} ({i}/{n})"))
-            res["labels"] = {"exit": ex, "gate": gt, "entry": en}
-            portfolio_of(res)
+                            pullback=vb.ENTRY_MODES[en], **base, **bt)
+            ck = (ex, gt, en, tuple(sorted(bt)))
+            if ck not in cache:                                # portföljregler återanvänder samma affärer
+                cache[ck] = vb.run(tickers, sector_getter=_sector, cfg=cfg, risk_provider=_risk_points,
+                                   progress=lambda i, n, t, k=k, name=name: bar.progress(
+                                       (k + i / n) / len(runs), text=f"{name}: {t} ({i}/{n})"))
+            res = dict(cache[ck])
+            res.pop("portfolio", None)
+            res["labels"] = {"exit": ex, "gate": gt, "entry": en, "ovtlyr": list(keys)}
+            res["portfolio"] = vp.simulate(res.get("trades") or [], years=cfg.years, pc=pc)
             out[name] = res
         bar.empty()
-        selected = next((nm for nm, ex, gt, en in runs if ex == preset and gt == gate and en == entry), runs[0][0])
+        selected = next((r[0] for r in runs if r[1] == preset and r[2] == gate and r[3] == entry), runs[0][0])
         st.session_state[_RES] = {"selected": selected, "runs": out}
     state = st.session_state.get(_RES)
     if not state:
@@ -161,6 +184,18 @@ def render_viking_nine_backtest() -> None:
     else:
         shown = next(iter(state["runs"]))
     render_result(state["runs"][shown], shown)
+
+
+OVT_ALL = {**vb.OVTLYR_RULES, **vp.PORTFOLIO_RULES}
+LIVE = "Som live"
+ALL_OVT = "Alla OVTLYR-regler"
+
+
+def ovtlyr_variants(chosen: list = None) -> list:
+    """[(namn, regelnycklar)]: live, varje OVTLYR-regel för sig och alla tillsammans.
+    chosen = ikryssade regler — tomt = alla regler jämförs."""
+    keys = [k for k in OVT_ALL if not chosen or k in chosen]
+    return [(LIVE, [])] + [(OVT_ALL[k][0], [k]) for k in keys] + ([(ALL_OVT, keys)] if len(keys) > 1 else [])
 
 
 def run_names(preset: str, gate: str, compare: bool, compare_risk: bool, entry: str = None,
@@ -192,7 +227,7 @@ def comparison_rows(runs: dict) -> list:
                      "Snittvinnare R": m.get("avg_winner"), "Snittinnehav d": m.get("avg_holding_days")})
         p = portfolio_of(res)
         rows[-1].update({"Portfölj affärer": p["taken"], "Portfölj avk. %": p["return_pct"],
-                         "Portfölj DD %": p["max_dd_pct"]})
+                         "Portfölj CAGR %": p.get("cagr_pct"), "Portfölj DD %": p["max_dd_pct"]})
     return rows
 
 
@@ -200,22 +235,27 @@ def render_comparison(runs: dict) -> None:
     rows = comparison_rows(runs)
     best = max((r for r in rows if r["Expectancy R"] is not None), key=lambda r: r["Expectancy R"], default=None)
     lowest = {k: min((r[k] for r in rows if r.get(k) is not None), default=None) for k in ("Max DD R", "Portfölj DD %")}
-    top_ret = max((r["Portfölj avk. %"] for r in rows if r.get("Portfölj avk. %") is not None), default=None)
+    top = {k: max((r[k] for r in rows if r.get(k) is not None), default=None)
+           for k in ("Portfölj avk. %", "Portfölj CAGR %")}
     head = "".join(f"<th>{k}</th>" for k in rows[0])
     body = "".join(
         "<tr>" + "".join(
             f"<td style='{'text-align:left;' if k == 'Körning' else ''}"
             f"{'color:' + GREEN + ';font-weight:700;' if best is r and k in ('Körning', 'Expectancy R') else ''}"
             f"{'color:' + GREEN + ';font-weight:700;' if k in lowest and v is not None and v == lowest[k] else ''}"
-            f"{'color:' + GREEN + ';font-weight:700;' if k == 'Portfölj avk. %' and v is not None and v == top_ret else ''}'>"
+            f"{'color:' + GREEN + ';font-weight:700;' if k in top and v is not None and v == top[k] else ''}'>"
             f"{'—' if v is None else _fmt(v, '{:.2f}') if isinstance(v, float) else v}</td>" for k, v in r.items())
         + "</tr>" for r in rows)
+    ovt = any((res.get("labels") or {}).get("ovtlyr") for res in runs.values())
+    title = "OVTLYR-REGLERNA MOT LIVE" if ovt else "EXITREGLER OCH RISKSPÄRR"
     st.markdown(f"<div style='color:{CYAN};font-size:0.72rem;letter-spacing:0.1em;margin-top:8px;'>JÄMFÖRELSE AV "
-                f"EXITREGLER OCH RISKSPÄRR</div><div style='overflow-x:auto;'><table style='width:100%;font-size:0.76rem;"
+                f"{title}</div><div style='overflow-x:auto;'><table style='width:100%;font-size:0.76rem;"
                 f"color:{TEXT};text-align:right;'><tr style='color:{DIM};'>{head}</tr>{body}</table></div>",
                 unsafe_allow_html=True)
-    note("Samma tickers — bara exitregler och/eller riskspärr skiljer. Grönt = högst expectancy, lägst max "
-         "drawdown och högst portföljavkastning. Portfölj = samma affärer genom ett konto (1,5 % risk, max 25 % "
+    note("Samma tickers — bara reglerna i körningens namn skiljer. Grönt = högst expectancy, lägst max "
+         "drawdown och högst portföljavkastning/CAGR. En OVTLYR-regel är värd att ta live först om den "
+         "förbättrar både Norden och USA. ½ ATR-stoppet räknar R på 2 × ATR — jämför det på portföljens "
+         "avkastning och drawdown, inte på R. Portfölj = samma affärer genom ett konto (1,5 % risk, max 25 % "
          "per position, max 100 % investerat, max två förluster per dag). "
          "Spärrade = signaler som stoppades av marknadsrisken. Få affärer ger brusiga tal; jämför helst "
          "på 50+ affärer.")
@@ -231,7 +271,7 @@ def render_result(res: dict, name: str = "") -> None:
                 f"{' · EMA10 först efter breakeven' if cfg.trail_after_be else ''}<br>"
                 f"Entry: <b style='color:{TEXT};'>{'efter pullback till EMA20' if getattr(cfg, 'pullback', False) else 'som live (stark dag)'}</b>"
                 f"{' · ' + str(res.get('no_pullback', 0)) + ' signaler utan pullback' if getattr(cfg, 'pullback', False) else ''}"
-                f"<br>{risk_line(res, gate)}</div>",
+                f"<br>{risk_line(res, gate)}{ovtlyr_line(res)}</div>",
                 unsafe_allow_html=True)
     if not m.get("trades"):
         note("Inga stängda affärer under perioden. Prova fler tickers, längre period eller lägre minsta Nine "
@@ -309,7 +349,8 @@ def ticker_rows(res: dict) -> list:
         rows.append({"Ticker": p["ticker"], "Land": country_of(p["ticker"]), "Summa R": s.get("Summa R"),
                      "Expectancy R": s.get("Expectancy R"), "Win rate %": s.get("Win rate %"),
                      "Affärer": len(p["trades"]), "Signaler": p["signals"], "Spärrade": p.get("risk_blocked", 0),
-                     "Utan pullback": p.get("no_pullback", 0), "No chase": p["no_chase"], "R/R < 2": p["low_rr"],
+                     "Utan pullback": p.get("no_pullback", 0), "Illikvid": p.get("illiquid", 0),
+                     "No chase": p["no_chase"], "R/R < 2": p["low_rr"],
                      "Marknad": p.get("market") or "—", "Sektor-ETF": p.get("sector_etf") or "—",
                      "Data": p.get("error") or "ok"})
     return sorted(rows, key=lambda r: (r["Summa R"] is None, r["Summa R"] if r["Summa R"] is not None else 0))
@@ -354,7 +395,8 @@ def render_portfolio(p: dict) -> None:
     exp = m["expectancy"]
     cards = [
         ("TAGNA AFFÄRER", f"{p['taken']} av {p['candidates']}",
-         f"hoppade över: {p['skipped_full']} fullt · {p['skipped_losses']} förlustspärr · max {p['max_open']} "
+         f"hoppade över: {p['skipped_full']} fullt · {p['skipped_losses']} förlustspärr"
+         f"{' · ' + str(p['skipped_sector']) + ' sektor' if p.get('skipped_sector') else ''} · max {p['max_open']} "
          f"öppna", CYAN),
         ("AVKASTNING", f"{p['return_pct']:+g} %", f"{cagr} · snittposition {p['avg_position_pct']:g} %", GOLD),
         ("MAX DRAWDOWN", f"−{p['max_dd_pct']:g} %", f"i R: {_fmt(-m['max_drawdown_r'])} · snittrisk "
@@ -377,6 +419,23 @@ def render_portfolio(p: dict) -> None:
             "R": r["trade"].r, "Konto %": r["return_pct"]} for r in p["rows"]]), hide_index=True, width="stretch")
     note(p["note"] + " Avkastningen räknas med ränta på ränta på stängda affärer — utan courtage, skatt och "
                      "valuta.")
+
+
+def ovtlyr_line(res: dict) -> str:
+    """En rad om påslagna OVTLYR-regler (tom om inga)."""
+    keys = ((res.get("labels") or {}).get("ovtlyr")
+            or getattr(res.get("config"), "ovtlyr_rules", lambda: [])())
+    if not keys:
+        return ""
+    extra = []
+    if "liquidity" in keys:
+        extra.append(f"{res.get('illiquid', 0)} signaler för illikvida")
+    if "history" in keys:
+        extra.append(f"{res.get('neg_history', 0)} affärer bortfiltrerade (negativ historik)")
+    if "one_per_sector" in keys:
+        extra.append(f"{(res.get('portfolio') or {}).get('skipped_sector', 0)} hoppade över (sektorn upptagen)")
+    return (f"<br>OVTLYR: <b style='color:{GOLD};'>{', '.join(OVT_ALL[k][0] for k in keys if k in OVT_ALL)}</b>"
+            + (" · " + " · ".join(extra) if extra else ""))
 
 
 def risk_line(res: dict, gate) -> str:

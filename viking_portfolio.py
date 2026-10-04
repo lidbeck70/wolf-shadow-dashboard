@@ -13,6 +13,10 @@ egna gränser (viking_execution):
   * fler signaler än plats samma dag → högst Nine först, sedan starkast
     63-dagarsavkastning (samma ordning som screenern)
 
+OVTLYR-test (av som förval): en aktie per sektor (sektor-ETF:en) och
+'bäst historik först' — prioritet efter aktiens tidigare stängda affärer i
+R (walk-forward, OVTLYR: "start with the highest Signal Return").
+
 Avkastningen räknas på kontot (ränta på ränta, stängda affärer), drawdown i
 procent av kontot och i R. Förenkling: när en affär hoppas över tas inte en
 senare signal i samma aktie under den affärens löptid.
@@ -33,6 +37,15 @@ class PortfolioConfig:
     max_position_pct: float = vx.MAX_POSITION_PCT  # 25 % per position
     max_exposure_pct: float = 100.0                # ingen belåning
     max_daily_losses: int = vx.MAX_DAILY_LOSSES    # 2
+    one_per_sector: bool = False                   # OVTLYR: högst en öppen position per sektor
+    history_first: bool = False                    # OVTLYR: bäst egen historik (hist_r) först, sedan Nine
+
+
+PORTFOLIO_RULES = {
+    "one_per_sector": ("En aktie per sektor", "högst en öppen position per sektor (sektor-ETF)"),
+    "history_first": ("Bäst historik först", "fler signaler än plats → aktien med högst summa R i tidigare "
+                                             "stängda affärer först (walk-forward), sedan Nine och momentum"),
+}
 
 
 NOTES = (
@@ -50,9 +63,11 @@ def position_pct(t, pc: PortfolioConfig = PortfolioConfig()) -> float:
     return min(pc.risk_pct / stop_pct * 100, pc.max_position_pct)
 
 
-def _priority(t) -> tuple:
+def _priority(t, history_first: bool = False) -> tuple:
     mom = getattr(t, "mom63", None)
-    return (t.entry_date, -int(t.nine), -(mom if mom is not None else float("-inf")), t.ticker)
+    hist = getattr(t, "hist_r", None) if history_first else None
+    return (t.entry_date, -(hist if hist is not None else 0.0), -int(t.nine),
+            -(mom if mom is not None else float("-inf")), t.ticker)
 
 
 def simulate(trades: list, years: Optional[float] = None, pc: PortfolioConfig = PortfolioConfig()) -> dict:
@@ -61,11 +76,15 @@ def simulate(trades: list, years: Optional[float] = None, pc: PortfolioConfig = 
 
     open_, taken, rows = [], [], []
     losses = Counter()
-    skipped_full = skipped_losses = max_open = 0
-    for t in sorted(trades, key=_priority):
+    skipped_full = skipped_losses = skipped_sector = max_open = 0
+    for t in sorted(trades, key=lambda t: _priority(t, pc.history_first)):
         open_ = [(o, p) for o, p in open_ if o.open or o.exit_date >= t.entry_date]
         if losses[t.signal_date] >= pc.max_daily_losses:
             skipped_losses += 1
+            continue
+        sector = getattr(t, "sector", None)
+        if pc.one_per_sector and sector and any(getattr(o, "sector", None) == sector for o, _p in open_):
+            skipped_sector += 1
             continue
         pp = position_pct(t, pc)
         if pp <= 0 or sum(p for _o, p in open_) + pp > pc.max_exposure_pct + 1e-9:
@@ -94,10 +113,12 @@ def simulate(trades: list, years: Optional[float] = None, pc: PortfolioConfig = 
         cagr = round((eq ** (1 / float(years)) - 1) * 100, 1)
     return {
         "metrics": metrics(taken), "rows": rows, "curve": curve, "candidates": len(trades), "taken": len(taken),
-        "skipped_full": skipped_full, "skipped_losses": skipped_losses, "max_open": max_open,
+        "skipped_full": skipped_full, "skipped_losses": skipped_losses, "skipped_sector": skipped_sector,
+        "max_open": max_open,
         "return_pct": round((eq - 1) * 100, 1), "cagr_pct": cagr, "max_dd_pct": round(max_dd * 100, 1),
         "avg_position_pct": round(sum(r["position_pct"] for r in rows) / len(rows), 1) if rows else None,
         "avg_risk_pct": round(sum(r["risk_pct"] for r in rows) / len(rows), 2) if rows else None,
         "note": NOTES.format(risk=pc.risk_pct, pos=pc.max_position_pct, exp=pc.max_exposure_pct,
-                             loss=pc.max_daily_losses),
+                             loss=pc.max_daily_losses)
+        + "".join(f" OVTLYR: {PORTFOLIO_RULES[k][0].lower()}." for k in PORTFOLIO_RULES if getattr(pc, k, False)),
     }
