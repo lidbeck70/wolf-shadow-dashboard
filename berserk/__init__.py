@@ -7,7 +7,7 @@ Long-only, dagsdata, köp nästa dags öppning.
 
   themes.py    teman (olja, koppar, guld, lax, frakt …), komplex och varje temas
                drivare i preferensordning (termin först, ETF som reserv)
-  universe.py  producentbolag (Norden först, sedan Nordamerika/London) och
+  universe.py  producentbolag (Norden först, sedan USA, Kanada, London och Australien) och
                råvaru-ETF:er, var och en kopplad till sitt tema
   probe.py     datasonden: vilka drivare, ETF:er och aktier går att hämta, och
                hur lång historik de har (körs i Actions: berserk-probe.yml)
@@ -17,6 +17,6 @@ Long-only, dagsdata, köp nästa dags öppning.
                portföljläge och robusthetsverktyg
   ui.py        PORTFOLIO → Backtest → 🪓 BERSERK
 
-Skanner och live-regler kommer i PR 2. Temaindelningen följer Ember
+Regime, skanner och automatik kommer i PR 2–3. Temaindelningen följer Ember
 (ember.config) där teman är gemensamma, så att komplexen säger samma sak.
 """

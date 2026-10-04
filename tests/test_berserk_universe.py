@@ -120,3 +120,35 @@ def test_workflow_runs_the_probe():
 def test_probe_findings_are_applied():
     assert "BELCO.OL" not in uv.NORDIC                                       # ingen kurshistorik hos Yahoo
     assert th.drivers("kol") == ()                                           # MTF=F slutade uppdateras 2025
+
+
+# ── PR 1b: större universum och regioner ────────────────────────────────────
+def test_regions_and_sizes():
+    sizes = {k: len(v) for k, v in uv.REGIONS.items()}
+    assert sizes["USA"] >= 120 and sizes["Kanada"] >= 25 and sizes["London"] >= 10 and sizes["Australien"] >= 20
+    assert len(uv.GLOBAL) == sum(v for k, v in sizes.items() if k != "Norden") >= 190
+    assert set(uv.LISTS) == set(uv.REGIONS) | {"Råvaru-ETF:er"}
+    for region, members in uv.REGIONS.items():
+        assert all(uv.region_of(t) == region for t in members), region
+
+
+def test_one_listing_per_company_and_every_theme_known():
+    for dup in ("RIO", "BHP", "K.TO", "CCO.TO", "NXE.TO", "DML.TO", "BHP.AX", "RIO.AX", "FRO", "EDV.TO"):
+        assert dup not in uv.PRODUCERS, dup
+    keys = [k for m in uv.REGIONS.values() for k in m]
+    assert len(keys) == len(set(keys))
+    assert all(theme in th.THEMES for theme in uv.GLOBAL.values())
+
+
+def test_region_index_and_region_of():
+    assert uv.REGION_INDEX == {"Norden": "OMXS30", "USA": "SPY", "Kanada": "^GSPTSE", "London": "^FTSE",
+                               "Australien": "^AXJO"}
+    assert [uv.region_of(t) for t in ("BOL.ST", "SU.TO", "GLEN.L", "FMG.AX", "FCX", "GLD")] == \
+        ["Norden", "Kanada", "London", "Australien", "USA", "USA"]
+
+
+def test_probe_checks_region_indices():
+    syms = {s for g, _t, s in probe.candidates() if g == "Index"}
+    assert syms == {"SPY", "^GSPTSE", "^FTSE", "^AXJO"}
+    groups = {g for g, _t, _s in probe.candidates()}
+    assert set(uv.REGIONS) <= groups

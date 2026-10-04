@@ -63,7 +63,7 @@ class Config:
     start_year: Optional[int] = None
     end_year: Optional[int] = None
     min_turnover_m: float = MIN_TURNOVER_M
-    market_gate: bool = True             # indexet (OMXS30 för nordiska, annars SPY) över SMA200
+    market_gate: bool = True             # regionens index (universe.REGION_INDEX) över SMA200
     risk_by_setup: dict = field(default_factory=lambda: dict(RISK_BY_SETUP))
 
 
@@ -234,12 +234,19 @@ def run(tickers: list, getter: Optional[Callable] = None, cfg: Config = Config()
                 d = _get(s)
                 series[s] = None if d is None else d["Close"].astype(float).dropna()
     chosen = {theme: pick_driver(theme, start, series) for theme in themes}
-    spy = _get(on.MARKET_TICKER)
-    markets = {on.MARKET_TICKER: None if spy is None else spy["Close"].astype(float)}
-    if any(on.market_for(t) == on.NORDIC_LABEL for t in tickers):
-        nm = (nordic_provider or (lambda: on.nordic_market(fetch_years * 262)))()
-        if nm and nm.get("close") is not None:
-            markets[on.NORDIC_LABEL] = vb._cut(nm["close"].astype(float), end)
+    # Marknadsgrinden per region: OMXS30 (Börsdata), SPY, TSX, FTSE, ASX 200 — saknas ett index gäller SPY
+    regions = {uv.region_of(t) for t in tickers}
+    markets = {}
+    for region in sorted(regions | {"USA"}):
+        sym = uv.REGION_INDEX[region]
+        if region == "Norden":
+            nm = (nordic_provider or (lambda: on.nordic_market(fetch_years * 262)))()
+            if nm and nm.get("close") is not None:
+                markets[sym] = vb._cut(nm["close"].astype(float), end)
+        else:
+            d = _get(sym)
+            if d is not None:
+                markets[sym] = d["Close"].astype(float)
     per, trades = [], []
     for k, t in enumerate(tickers):
         theme = uv.theme_of(t)
@@ -250,7 +257,8 @@ def run(tickers: list, getter: Optional[Callable] = None, cfg: Config = Config()
                         "error": "okänd ticker (inte i BERSERK-universumet)" if not theme else "DATA UNAVAILABLE"})
         else:
             sym, drv = chosen.get(theme, (None, None))
-            mkt = markets.get(on.market_for(t)) if markets.get(on.market_for(t)) is not None else markets.get("SPY")
+            idx_sym = uv.REGION_INDEX[uv.region_of(t)]
+            mkt = markets.get(idx_sym) if markets.get(idx_sym) is not None else markets.get("SPY")
             r = backtest_ticker(t, df, drv, cfg, start=start, market=mkt, driver_symbol=sym)
             per.append(r)
             trades += r["trades"]
