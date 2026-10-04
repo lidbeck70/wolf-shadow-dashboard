@@ -189,6 +189,7 @@ def test_screen_page(monkeypatch):
     data = {"BOL.ST": _panic_stock(), "HG=F": _ohlcv(UP), "SPY": _ohlcv(UP)}
     res = live.scan(["BOL.ST", "XYZ"], getter=lambda t, p: data.get(t), nordic_provider=lambda: {"close": _ser(UP)},
                     today=IDX[-1])
-    html = _app("berserk.screen_ui.render_berserk_screen_page", {"bz_scan": res, "berserk_signals": []},
+    html = _app("berserk.screen_ui.render_berserk_screen_page", {"bz_scan": res, "berserk_signals": [],
+                                                                    "bz_auto": {"paper": None, "scan": None}},
                 monkeypatch)
     assert "BOL.ST" in html and "KÖP" in html and "S3" in html and "1 KÖP" in html

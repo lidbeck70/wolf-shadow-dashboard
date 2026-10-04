@@ -1,0 +1,57 @@
+name: BERSERK Scan
+
+on:
+  schedule:
+    # Vardagar efter USA:s stängning (16:00 New York = 20:00 UTC sommar,
+    # 21:00 UTC vinter) — då har alla regioner en stängd dag. 21:35 UTC täcker
+    # båda säsongerna; reserven 22:05 hoppar över sig själv om primären gått
+    # (schedule_gate.sh). Minuter utanför :00 — GitHub försenar jämna klockslag.
+    - cron: "35 21 * * 1-5"
+    - cron: "5 22 * * 1-5"         # reserv
+  workflow_dispatch: {}
+
+concurrency:
+  group: berserk-scan
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read                    # grinden läser arbetsflödets tidigare körningar
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Gate on duplicates
+        id: gate
+        env:
+          SCHEDULE: ${{ github.event.schedule }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/schedule_gate.sh berserk-scan.yml
+
+      - name: Set up Python
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Skanning + papperskonto + Discordlarm (bara övergångar). Resultatet
+      # till Gisten: berserk_scan.json och berserk_paper.json.
+      - name: BERSERK scan and paper account
+        if: steps.gate.outputs.run == 'true'
+        env:
+          BORSDATA_API_KEY: ${{ secrets.BORSDATA_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python berserk_scan.py

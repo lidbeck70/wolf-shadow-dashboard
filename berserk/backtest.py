@@ -140,49 +140,10 @@ def backtest_ticker(ticker: str, stock: pd.DataFrame, driver: Optional[pd.Series
         t = vb.Trade(ticker, str(idx[i].date()), str(idx[i + 1].date()), round(entry, 4), round(stop, 4),
                      round(risk, 4), sg.PRIORITY[setup], mom63=round(_rank(setup, f, i), 4), sector=theme,
                      features=feats)
-        cur_stop, armed_be, trailing, best_close = stop, False, False, -np.inf
-        j, pending = i + 1, None
-        while j < n:
-            if pending is not None:
-                t.exit, t.exit_reason, t.exit_date = float(o[j]), pending, str(idx[j].date())
-                break
-            if lo[j] <= cur_stop:
-                t.exit = float(o[j]) if o[j] < cur_stop else cur_stop
-                t.exit_date = str(idx[j].date())
-                t.exit_reason = "breakeven-stopp" if armed_be else ("katastrofstopp" if setup == sg.S3 else "stopp")
-                break
-            held = j - i                                           # handelsdagar sedan entry (entrydagen = 1)
-            best_close = max(best_close, float(c[j]))
-            reason = None
-            if setup == sg.S1:
-                if trailing and c[j] < f["ema20"].iloc[j]:
-                    reason = "trailing EMA20"
-                elif not bool(f["d_above_sma50"].iloc[j]):
-                    reason = "råvaran under SMA50"
-                elif held >= S1_TIME_DAYS and best_close < entry + S1_TIME_ATR * atr0:
-                    reason = "tidsstopp"
-                if c[j] >= entry + S1_BE_ATR * atr0 and not armed_be:
-                    armed_be, cur_stop = True, max(cur_stop, entry - S1_BE_GIVE * atr0)
-                if c[j] >= entry + S1_TRAIL_ATR * atr0:
-                    trailing = True
-            elif setup == sg.S2:
-                if trailing and c[j] < f["ema50"].iloc[j]:
-                    reason = "trailing EMA50"
-                elif not bool(f["d_above_ema50"].iloc[j]):
-                    reason = "råvaran under EMA50"
-                if c[j] >= entry + S2_TRAIL_ATR * atr0:
-                    trailing = True
-            else:
-                if c[j] > f["sma5"].iloc[j]:
-                    reason = "över SMA5"
-                elif held >= S3_MAX_DAYS:
-                    reason = "efter 5 dagar"
-            if reason:
-                pending = reason
-                if j == n - 1:                                     # ingen nästa dag — stäng på stängningen
-                    t.exit, t.exit_reason, t.exit_date = float(c[j]), reason, str(idx[j].date())
-                    break
-            j += 1
+        out = simulate_exit(o, h, lo, c, f, i, setup, entry, stop, atr0, close_at_end=True)
+        j = out["exit_idx"] if out["exit_idx"] is not None else n
+        if out["exit_idx"] is not None:
+            t.exit, t.exit_reason, t.exit_date = out["exit"], out["reason"], str(idx[j].date())
         if t.exit is None:
             t.exit, t.exit_reason, t.exit_date, t.open = float(c[-1]), "öppen", str(idx[-1].date()), True
             j = n - 1
@@ -194,6 +155,61 @@ def backtest_ticker(ticker: str, stock: pd.DataFrame, driver: Optional[pd.Series
         res["trades"].append(t)
         i = max(j, i + 1)
     return res
+
+
+def simulate_exit(o, h, lo, c, f: pd.DataFrame, i: int, setup: str, entry: float, stop: float, atr0: float,
+                  close_at_end: bool = True) -> dict:
+    """Exitreglerna för en affär med signal dag i och entry dag i+1 — EN källa för backtest och papperskonto.
+
+    Returnerar {exit, reason, exit_idx, pending, cur_stop, armed_be, trailing}. exit_idx = dagen exiten sker
+    (None = fortfarande öppen). En stängningsregel som slår till sista dagen: close_at_end=True stänger på
+    stängningen (backtest), False lämnar den som pending (live: sälj på nästa öppning)."""
+    n = len(c)
+    cur_stop, armed_be, trailing, best_close = stop, False, False, -np.inf
+    j, pending = i + 1, None
+    while j < n:
+        if pending is not None:
+            return {"exit": float(o[j]), "reason": pending, "exit_idx": j, "pending": None, "cur_stop": cur_stop,
+                    "armed_be": armed_be, "trailing": trailing}
+        if lo[j] <= cur_stop:
+            px = float(o[j]) if o[j] < cur_stop else float(cur_stop)
+            reason = "breakeven-stopp" if armed_be else ("katastrofstopp" if setup == sg.S3 else "stopp")
+            return {"exit": px, "reason": reason, "exit_idx": j, "pending": None, "cur_stop": cur_stop,
+                    "armed_be": armed_be, "trailing": trailing}
+        held = j - i                                           # handelsdagar sedan entry (entrydagen = 1)
+        best_close = max(best_close, float(c[j]))
+        reason = None
+        if setup == sg.S1:
+            if trailing and c[j] < f["ema20"].iloc[j]:
+                reason = "trailing EMA20"
+            elif not bool(f["d_above_sma50"].iloc[j]):
+                reason = "råvaran under SMA50"
+            elif held >= S1_TIME_DAYS and best_close < entry + S1_TIME_ATR * atr0:
+                reason = "tidsstopp"
+            if c[j] >= entry + S1_BE_ATR * atr0 and not armed_be:
+                armed_be, cur_stop = True, max(cur_stop, entry - S1_BE_GIVE * atr0)
+            if c[j] >= entry + S1_TRAIL_ATR * atr0:
+                trailing = True
+        elif setup == sg.S2:
+            if trailing and c[j] < f["ema50"].iloc[j]:
+                reason = "trailing EMA50"
+            elif not bool(f["d_above_ema50"].iloc[j]):
+                reason = "råvaran under EMA50"
+            if c[j] >= entry + S2_TRAIL_ATR * atr0:
+                trailing = True
+        else:
+            if c[j] > f["sma5"].iloc[j]:
+                reason = "över SMA5"
+            elif held >= S3_MAX_DAYS:
+                reason = "efter 5 dagar"
+        if reason:
+            pending = reason
+            if j == n - 1 and close_at_end:                    # ingen nästa dag — stäng på stängningen
+                return {"exit": float(c[j]), "reason": reason, "exit_idx": j, "pending": None,
+                        "cur_stop": cur_stop, "armed_be": armed_be, "trailing": trailing}
+        j += 1
+    return {"exit": None, "reason": None, "exit_idx": None, "pending": pending, "cur_stop": cur_stop,
+            "armed_be": armed_be, "trailing": trailing}
 
 
 def _num(v, nd=2):
