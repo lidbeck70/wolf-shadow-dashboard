@@ -26,8 +26,9 @@ from ui.tokens import AMBER, CYAN, DIM, GOLD, GREEN, RED, TEXT
 
 _RES, _TICKERS = "bz_result", "bz_tickers"
 _OWN = "Egen period"
-_ALL = "Allt (Norden + Nordamerika & London + ETF:er)"
-LISTS = {**uv.LISTS, _ALL: tuple(uv.NORDIC) + tuple(uv.GLOBAL) + tuple(uv.ETFS)}
+_GLOBAL = "Utanför Norden (USA, Kanada, London, Australien)"
+_ALL = "Allt (Norden + utanför Norden + ETF:er)"
+LISTS = {**uv.LISTS, _GLOBAL: tuple(uv.GLOBAL), _ALL: tuple(uv.NORDIC) + tuple(uv.GLOBAL) + tuple(uv.ETFS)}
 ALL_SETUPS = "Alla tre"
 
 
@@ -100,9 +101,10 @@ def render_berserk_backtest() -> None:
         min_turn = g1.number_input("Minsta omsättning (milj/dag)", 0.0, 100.0, bt.MIN_TURNOVER_M, 0.5,
                                    key="bz_min_turnover", help="Snitt 20 dagar i lokal valuta (USA: USD).")
         gate = g2.checkbox("Marknaden över SMA200", value=True, key="bz_market_gate",
-                           help="OMXS30 för nordiska, SPY för övriga. Av = köp även i björnmarknad.")
+                           help="Regionens index: OMXS30, SPY, TSX, FTSE eller ASX 200. Av = köp även i "
+                                "björnmarknad.")
         go_ = st.form_submit_button("🪓 Kör backtest")
-    tickers = vs.parse_tickers(raw, limit=250)
+    tickers = vs.parse_tickers(raw, limit=400)
     if go_ and tickers and setups:
         own = years == _OWN
         out = {}
@@ -159,6 +161,7 @@ def render_result(res: dict) -> None:
                        ("PER KOMPLEX", lambda t: th.COMPLEXES.get(t.features.get("complex"), "—")),
                        ("PER TEMA", lambda t: th.label(t.features.get("theme"))),
                        ("PRODUCENT ELLER ETF", lambda t: t.features.get("kind")),
+                       ("PER REGION", lambda t: "ETF" if t.features.get("kind") == "etf" else uv.region_of(t.ticker)),
                        ("EXITORSAK", lambda t: t.exit_reason)):
         rows = sorted(rb.group(trades, key), key=lambda r: -r["Summa R"])
         if rows:
@@ -181,7 +184,8 @@ def render_result(res: dict) -> None:
             "Orsak": t.exit_reason, "R": t.r, "Dagar": t.days} for t in trades]), hide_index=True, width="stretch")
     with st.expander("Per ticker"):
         st.dataframe(pd.DataFrame([{
-            "Ticker": r["ticker"], "Tema": th.label(r.get("theme") or ""), "Affärer": len(r["trades"]),
+            "Ticker": r["ticker"], "Region": uv.region_of(r["ticker"]), "Tema": th.label(r.get("theme") or ""),
+            "Affärer": len(r["trades"]),
             "Summa R": round(sum(t.r for t in r["trades"] if t.r is not None and not t.open), 2),
             **{s.split(" ", 1)[0] + " signaler": r["signals"].get(s, 0) for s in sg.SETUPS},
             "Tunn": r.get("thin", 0), "Marknad": r.get("market_blocked", 0), "Data": r.get("error") or "ok"}

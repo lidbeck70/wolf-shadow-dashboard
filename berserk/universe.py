@@ -6,9 +6,16 @@ intjäning mest. Bolag med flera råvaror står under den största (Boliden →
 koppar, Equinor → olja). Oljeservice och borrning står under olja; Neste under
 olja (raffinering). Tickers i Yahoo-form; datasonden visar vilka som saknas.
 
-  NORDIC   Norden — primärt universum
-  GLOBAL   Nordamerika och London — sekundärt (de största i varje tema)
-  ETFS     råvaru-ETF:er (themes.ETFS) — handlas med setup 2 och 3
+  NORDIC     Norden — primärt universum
+  US, CANADA, LONDON, AUSTRALIA
+             sekundärt — de ledande råvarubolagen i varje tema (GLOBAL = alla fyra)
+  ETFS       råvaru-ETF:er (themes.ETFS) — handlas med setup 2 och 3
+  REGION_INDEX  marknadsgrindens index per region (OMXS30, SPY, TSX, FTSE, ASX 200)
+
+Ett bolag finns bara med en gång (ingen dubbelnotering): Rio Tinto och BHP via
+London, Kinross via NYSE osv. Datasonden 2026-10 (berserk-probe) sorterade bort
+CTRA, NGD, PCH, MEG.TO (ingen kurshistorik — uppköpta/sammanslagna) och
+ARX.TO (slutade uppdateras).
 
 Uppköpta och omdöpta tickers sorteras via dead_tickers (som i Ember).
 """
@@ -35,35 +42,100 @@ _NORDIC_RAW: dict = {
     "2020.OL": "torrbulk",
 }
 
-_GLOBAL_RAW: dict = {
-    # Energi
-    "XOM": "olja", "CVX": "olja", "COP": "olja", "OXY": "olja", "SLB": "olja", "SU.TO": "olja", "CNQ.TO": "olja",
-    "EQT": "naturgas", "AR": "naturgas", "TOU.TO": "naturgas",
-    "BTU": "kol", "AMR": "kol",
-    "CCJ": "uran", "NXE": "uran", "DNN": "uran", "UUUU": "uran",
+_US_RAW: dict = {
+    # Energi — olja (producenter, raffinering, service)
+    "XOM": "olja", "CVX": "olja", "COP": "olja", "EOG": "olja", "DVN": "olja", "OXY": "olja", "FANG": "olja",
+    "OVV": "olja", "APA": "olja", "MTDR": "olja", "PR": "olja", "CHRD": "olja", "MGY": "olja",
+    "SM": "olja", "MUR": "olja", "NOG": "olja",
+    "MPC": "olja", "VLO": "olja", "PSX": "olja", "PBF": "olja", "DK": "olja", "DINO": "olja",
+    "SLB": "olja", "HAL": "olja", "BKR": "olja", "NOV": "olja", "FTI": "olja", "RIG": "olja", "VAL": "olja",
+    "NE": "olja", "HP": "olja", "PTEN": "olja", "LBRT": "olja", "WHD": "olja", "OII": "olja", "TDW": "olja",
+    # Energi — gas, kol, uran
+    "EQT": "naturgas", "AR": "naturgas", "RRC": "naturgas", "CNX": "naturgas", "EXE": "naturgas", "LNG": "naturgas",
+    "BTU": "kol", "AMR": "kol", "ARLP": "kol", "HCC": "kol", "CNR": "kol", "METC": "kol",
+    "CCJ": "uran", "NXE": "uran", "DNN": "uran", "UUUU": "uran", "UEC": "uran", "LEU": "uran", "URG": "uran",
     # Basmetaller
-    "FCX": "koppar", "SCCO": "koppar", "TECK": "koppar", "LUN.TO": "koppar", "FM.TO": "koppar",
-    "ANTO.L": "koppar", "AA": "aluminium", "NUE": "stal", "STLD": "stal", "CLF": "jarnmalm",
-    "RIO.L": "jarnmalm", "BHP.L": "jarnmalm", "ALB": "litium", "SQM": "litium", "MP": "sallsynta",
+    "FCX": "koppar", "SCCO": "koppar", "TECK": "koppar", "HBM": "koppar", "ERO": "koppar",
+    "AA": "aluminium", "CENX": "aluminium", "KALU": "aluminium",
+    "NUE": "stal", "STLD": "stal", "CMC": "stal", "RS": "stal", "MT": "stal", "TX": "stal",
+    "CLF": "jarnmalm", "VALE": "jarnmalm",
+    "ALB": "litium", "SQM": "litium", "SGML": "litium", "LAC": "litium", "MP": "sallsynta",
     # Ädelmetaller
-    "NEM": "guld", "AEM": "guld", "GOLD": "guld", "KGC": "guld", "WPM": "guld", "FNV": "guld",
-    "PAAS": "silver", "HL": "silver", "AG": "silver", "SBSW": "platina",
-    # Agri
-    "NTR": "godsel", "MOS": "godsel", "CF": "godsel", "ADM": "majs", "BG": "soja",
+    "NEM": "guld", "AEM": "guld", "GOLD": "guld", "KGC": "guld", "GFI": "guld", "AU": "guld", "HMY": "guld",
+    "EGO": "guld", "IAG": "guld", "AGI": "guld", "BTG": "guld", "OR": "guld", "SSRM": "guld",
+    "EQX": "guld", "DRD": "guld", "RGLD": "guld", "WPM": "guld", "FNV": "guld",
+    "PAAS": "silver", "HL": "silver", "AG": "silver", "CDE": "silver", "FSM": "silver", "EXK": "silver",
+    "SVM": "silver", "ASM": "silver", "SBSW": "platina",
+    # Agri och skog
+    "NTR": "godsel", "MOS": "godsel", "CF": "godsel", "IPI": "godsel", "LXU": "godsel", "ICL": "godsel",
+    "ADM": "majs", "ANDE": "majs", "INGR": "majs", "CTVA": "majs", "BG": "soja",
+    "WY": "skog", "RYN": "skog", "LPX": "skog", "UFPI": "skog", "BCC": "skog",
     # Frakt
-    "DHT": "tank", "SBLK": "torrbulk",
+    "DHT": "tank", "INSW": "tank", "TNK": "tank", "STNG": "tank", "ASC": "tank", "NAT": "tank",
+    "SBLK": "torrbulk", "GNK": "torrbulk", "SB": "torrbulk",
+}
+
+_CANADA_RAW: dict = {
+    "SU.TO": "olja", "CNQ.TO": "olja", "CVE.TO": "olja", "IMO.TO": "olja", "WCP.TO": "olja", "BTE.TO": "olja",
+    "VET.TO": "olja", "PEY.TO": "olja", "PXT.TO": "olja",
+    "TOU.TO": "naturgas", "BIR.TO": "naturgas", "AAV.TO": "naturgas",
+    "LUN.TO": "koppar", "FM.TO": "koppar", "CS.TO": "koppar", "IVN.TO": "koppar", "TKO.TO": "koppar",
+    "CIA.TO": "jarnmalm", "LIF.TO": "jarnmalm",
+    "LUG.TO": "guld", "WDO.TO": "guld", "TXG.TO": "guld", "DPM.TO": "guld", "OGC.TO": "guld",
+    "WFG.TO": "skog", "CFP.TO": "skog", "IFP.TO": "skog",
+}
+
+_LONDON_RAW: dict = {
+    "BP.L": "olja", "SHEL.L": "olja", "HBR.L": "olja", "TLW.L": "olja", "ENQ.L": "olja",
+    "ANTO.L": "koppar", "GLEN.L": "koppar", "AAL.L": "koppar", "RIO.L": "jarnmalm", "BHP.L": "jarnmalm",
+    "FRES.L": "silver", "HOC.L": "guld", "EDV.L": "guld",
+}
+
+_AUSTRALIA_RAW: dict = {
+    "WDS.AX": "olja", "STO.AX": "olja", "BPT.AX": "naturgas",
+    "WHC.AX": "kol", "NHC.AX": "kol", "YAL.AX": "kol",
+    "PDN.AX": "uran", "BOE.AX": "uran",
+    "FMG.AX": "jarnmalm", "S32.AX": "aluminium", "SFR.AX": "koppar",
+    "PLS.AX": "litium", "MIN.AX": "litium", "IGO.AX": "litium", "LYC.AX": "sallsynta", "ILU.AX": "sallsynta",
+    "NST.AX": "guld", "EVN.AX": "guld", "PRU.AX": "guld", "RMS.AX": "guld",
+    "GNC.AX": "vete", "ELD.AX": "vete", "NUF.AX": "vete",
 }
 
 try:
-    from dead_tickers import alive_map as _alive_map
-    NORDIC: dict = _alive_map(_NORDIC_RAW)
-    GLOBAL: dict = _alive_map(_GLOBAL_RAW)
+    from dead_tickers import alive_map as _alive
 except Exception:  # pragma: no cover
-    NORDIC, GLOBAL = dict(_NORDIC_RAW), dict(_GLOBAL_RAW)
+    def _alive(m):
+        return dict(m)
+
+NORDIC: dict = _alive(_NORDIC_RAW)
+US: dict = _alive(_US_RAW)
+CANADA: dict = _alive(_CANADA_RAW)
+LONDON: dict = _alive(_LONDON_RAW)
+AUSTRALIA: dict = _alive(_AUSTRALIA_RAW)
+GLOBAL: dict = {**US, **CANADA, **LONDON, **AUSTRALIA}        # allt utanför Norden
 
 ETFS: dict = dict(th.ETFS)
 PRODUCERS: dict = {**NORDIC, **GLOBAL}
-LISTS: dict = {"Norden": tuple(NORDIC), "Nordamerika & London": tuple(GLOBAL), "Råvaru-ETF:er": tuple(ETFS)}
+REGIONS: dict = {"Norden": NORDIC, "USA": US, "Kanada": CANADA, "London": LONDON, "Australien": AUSTRALIA}
+LISTS: dict = {**{name: tuple(m) for name, m in REGIONS.items()}, "Råvaru-ETF:er": tuple(ETFS)}
+
+# Marknadsgrinden per region (indexet över SMA200). Norden = OMXS30 (Börsdata), övriga Yahoo-index.
+REGION_INDEX: dict = {"Norden": "OMXS30", "USA": "SPY", "Kanada": "^GSPTSE", "London": "^FTSE",
+                      "Australien": "^AXJO"}
+
+
+def region_of(ticker: str) -> str:
+    """Region ur tickerns suffix (ETF:erna är amerikanska)."""
+    t = str(ticker or "").upper()
+    if t.endswith((".ST", ".OL", ".CO", ".HE")):
+        return "Norden"
+    if t.endswith((".TO", ".V")):
+        return "Kanada"
+    if t.endswith(".L"):
+        return "London"
+    if t.endswith(".AX"):
+        return "Australien"
+    return "USA"
 
 
 def theme_of(ticker: str) -> str:

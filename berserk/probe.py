@@ -5,7 +5,7 @@ berserk/probe.py — datasonden för 🪓 BERSERK (PR 0).
 Provar hos Yahoo (samma väg som panelen: market_prices.ohlcv, period "max"):
   1. varje temas drivare (råvaruterminer och reserv-ETF:er), i preferensordning
   2. alla råvaru-ETF:er i universumet
-  3. alla producentbolag (Norden och Nordamerika/London)
+  3. regionernas index (marknadsgrinden) och alla producentbolag per region
 
 Skriver status, första och sista datum, antal rader och senaste kurs, vilken
 drivare som väljs per tema (första som fungerar och inte är gammal) och hur
@@ -61,12 +61,14 @@ def candidates() -> list:
     for theme in list(th.THEMES) + list(th.BASKETS):
         for s in th.drivers(theme):
             out.append(("Drivare", theme, s))
+    for region, sym in uv.REGION_INDEX.items():
+        if region != "Norden":                                  # OMXS30 kommer från Börsdata
+            out.append(("Index", "", sym))
     for s, theme in uv.ETFS.items():
         out.append(("ETF", theme, s))
-    for s, theme in uv.NORDIC.items():
-        out.append(("Norden", theme, s))
-    for s, theme in uv.GLOBAL.items():
-        out.append(("Nordamerika & London", theme, s))
+    for region, members in uv.REGIONS.items():
+        for s, theme in members.items():
+            out.append((region, theme, s))
     return out
 
 
@@ -111,7 +113,7 @@ def markdown(rows: list) -> str:
                          f"{'ja' if r['oos'] else 'nej'} |")
     if missing:
         lines += ["", "**Drivare saknas:** " + ", ".join(missing)]
-    for group in ("Drivare", "ETF", "Norden", "Nordamerika & London"):
+    for group in ("Drivare", "Index", "ETF", *uv.REGIONS):
         part = [r for r in rows if r["group"] == group]
         if not part:
             continue

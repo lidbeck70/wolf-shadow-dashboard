@@ -241,3 +241,28 @@ def test_page_renders_result(monkeypatch, res):
     for text in ("JÄMFÖRELSE AV SETUPS", "PER SETUP", "PER TEMA", "PER KOMPLEX", "PORTFÖLJ — ETT KONTO",
                  "ROBUSTHET", "MONTE CARLO", "BERSERK-portföljen"):
         assert text in html, text
+
+
+def test_market_gate_uses_the_regions_index():
+    """En kanadensisk aktie spärras av TSX under SMA200 — även när SPY stiger."""
+    data = dict(DATA)
+    data["SU.TO"] = DATA["EQNR.OL"]
+    falling = DATA["SPY"].copy()
+    falling["Close"] = np.linspace(200, 100, len(IDX))                    # TSX i baisse hela vägen
+    data["^GSPTSE"] = falling
+    rising = DATA["SPY"].copy()
+    rising["Close"] = np.linspace(100, 200, len(IDX))
+    data["SPY"] = rising
+    r = bt.run(["SU.TO", "FCX"], getter=lambda t, p: data.get(t), cfg=bt.Config(years=5, min_turnover_m=1.0),
+               today=TODAY)
+    by = {p["ticker"]: p for p in r["per_ticker"]}
+    assert by["SU.TO"]["trades"] == [] and by["SU.TO"]["market_blocked"] > 0
+    assert by["FCX"]["market_blocked"] == 0
+    assert "^GSPTSE" in r["benchmarks"] and "SPY" in r["benchmarks"]
+
+
+def test_all_list_fits_the_page():
+    from berserk.ui import LISTS
+    import viking_screen as vs
+    allt = next(v for k, v in LISTS.items() if k.startswith("Allt"))
+    assert len(vs.parse_tickers(", ".join(allt), limit=400)) == len(set(allt)) >= 250
