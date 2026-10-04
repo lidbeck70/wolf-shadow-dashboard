@@ -43,6 +43,7 @@ def _data(index=None, crash=False):
     idx = _px(base)
     d = {"SPY": _df(idx), "^VIX": _df(_px(vix)), "^VIX3M": _df(_px(np.full(len(IDX), 18.0))),
          "HYG": _df(_walk(0.0002, 0.004, 2)), "IEF": _df(_walk(0.0001, 0.003, 3)),
+         "TLT": _df(_walk(0.0001, 0.004, 4)),
          "T10Y2Y": _px(np.linspace(-0.5, 0.8, len(IDX)))}
     for k, t in enumerate(("XLU", "XLP", "XLK", "XLY") + mr.BREADTH_ETFS):
         d.setdefault(t, _df(_walk(0.0004, 0.01, 10 + k)))
@@ -120,11 +121,11 @@ def test_evaluate_with_getters():
     idx, d = _data(crash=True)
     r = mr.evaluate("SPY", getter=lambda t, p: d.get(t), fred_getter=lambda s: d.get(s))
     assert r.error is None and r.date == "2026-09-30" and r.level in ("LÅG", "FÖRHÖJD", "HÖG")
-    assert r.points == sum(s["active"] for s in r.signals) and r.possible == 9
+    assert r.points == sum(s["active"] for s in r.signals) and r.possible == 10
     assert r.calibration is not None
     omx = dict(d, **{"^OMX": d["SPY"]})
     r2 = mr.evaluate("OMXS30", getter=lambda t, p: omx.get(t), fred_getter=lambda s: omx.get(s))
-    assert r2.possible == 8 and all(s["key"] != "breadth_div" for s in r2.signals)
+    assert r2.possible == 9 and all(s["key"] != "breadth_div" for s in r2.signals)
     gone = mr.evaluate("SPY", getter=lambda t, p: None, fred_getter=lambda s: None)
     assert "DATA UNAVAILABLE" in gone.error
 
@@ -160,7 +161,7 @@ def test_omxs30_from_borsdata_with_large_cap_breadth():
     bd = _FakeBD()
     r = mr.evaluate("OMXS30", getter=lambda t, p: d.get(t), fred_getter=lambda s: d.get(s), bd_api=bd)
     assert r.error is None and r.source.startswith("Börsdata · OMX Stockholm 30")
-    assert "40 Large Cap-aktier" in r.breadth_source and r.possible == 9
+    assert "40 Large Cap-aktier" in r.breadth_source and r.possible == 10
     assert any(s["key"] == "breadth_div" for s in r.signals)
     assert 999 not in bd.calls                                         # bara marknad 1
 
@@ -171,4 +172,22 @@ def test_omxs30_falls_back_to_yahoo_and_reports_why():
     r = mr.evaluate("OMXS30", getter=lambda t, p: omx.get(t), fred_getter=lambda s: omx.get(s),
                     bd_api=_FakeBD(with_index=False, stocks=5))
     assert r.error is None and "Yahoo Finance ^OMX (reserv" in r.source
-    assert "för få aktier" in r.breadth_source and r.possible == 8
+    assert "för få aktier" in r.breadth_source and r.possible == 9
+
+def test_duration_stress_fires_on_tlt_shock_while_index_near_high():
+    """Ränteshock: TLT −8 %/42 d samtidigt som indexet är inom 5 % från årshögsta."""
+    idx, d = _data()                                                   # lugnt index nära sina högsta
+    tlt = 100 * np.ones(len(IDX))
+    tlt[900:942] = np.linspace(100, 88, 42)                            # −12 % på två månader
+    tlt[942:] = 88
+    d["TLT"] = _df(_px(tlt))
+    act, av = mr.compute_signals(idx, d)
+    near = idx >= 0.95 * idx.rolling(252, min_periods=50).max()
+    fired = act["duration_stress"]
+    assert av["duration_stress"].iloc[-1]
+    assert fired.iloc[941] == bool(near.iloc[941])                     # tänder under chocken om nära topp
+    assert not fired.iloc[:900].any()                                  # aldrig före chocken
+    assert not fired.iloc[1100:].any()                                 # släcks när 42-dagarsfönstret passerat
+    d2 = dict(d); d2.pop("TLT")
+    a2, v2 = mr.compute_signals(idx, d2)
+    assert not a2["duration_stress"].any() and not v2["duration_stress"].any()   # saknad data ≠ aktiv

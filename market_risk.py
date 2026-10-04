@@ -61,6 +61,9 @@ SIGNALS = {
     "curve": ("Räntekurvan vänder", "T10Y2Y positiv igen efter att ha varit inverterad de senaste två åren."),
     "rotation": ("Defensiv rotation", "XLU+XLP har gått minst 5 % bättre än XLK+XLY de senaste tre månaderna."),
     "stretch": ("Eufori", "Indexet mer än 15 % över SMA200."),
+    "duration_stress": ("Ränteshock", "TLT (långa statsobligationer) ner mer än 8 % på två månader medan "
+                                      "indexet är inom 5 % från årshögsta — obligationsmarknaden prissätter "
+                                      "stress som aktiemarknaden ännu inte tagit."),
 }
 
 
@@ -168,6 +171,16 @@ def compute_signals(index: pd.Series, data: dict, breadth: bool = True,
         act["rotation"], avail["rotation"] = _on(ok.astype(float), idx) > 0, _on(rel.shift(63), idx).notna()
     else:
         act["rotation"], avail["rotation"] = False, False
+
+    tlt = _close(data.get("TLT"))
+    if tlt is not None:
+        t = tlt.dropna()
+        shock = t / t.shift(42) - 1 < -0.08                 # två månader, satt i förväg
+        near_high = c >= 0.95 * c.rolling(252, min_periods=50).max()
+        act["duration_stress"] = (_on(shock.astype(float), idx) > 0) & near_high
+        avail["duration_stress"] = _on(t.shift(42), idx).notna()
+    else:
+        act["duration_stress"], avail["duration_stress"] = False, False
 
     act = act.fillna(False).astype(bool)
     avail = avail.fillna(False).astype(bool)
@@ -309,7 +322,7 @@ _FRED_CACHE: dict = {}
 
 
 def needed_tickers(market: str) -> list:
-    base = [MARKETS[market]["ticker"], "^VIX", "^VIX3M", "HYG", "IEF", "XLU", "XLP", "XLK", "XLY"]
+    base = [MARKETS[market]["ticker"], "^VIX", "^VIX3M", "HYG", "IEF", "TLT", "XLU", "XLP", "XLK", "XLY"]
     if MARKETS[market]["breadth"] == "us_sectors":
         base += [t for t in BREADTH_ETFS if t not in base]
     return base
