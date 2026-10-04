@@ -1,0 +1,29 @@
+name: BERSERK probe (råvarudata)
+
+# Manuell diagnostik för ⚔️ BERSERK: provar varje temas drivare (råvaruterminer
+# och reserv-ETF:er), råvaru-ETF:erna och producentbolagen hos Yahoo och skriver
+# vilka som fungerar och hur lång historik de har. Ändrar ingenting.
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Probe commodity data
+        run: python -m berserk.probe
