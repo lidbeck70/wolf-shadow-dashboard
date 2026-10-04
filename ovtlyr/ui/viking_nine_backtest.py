@@ -129,6 +129,12 @@ def render_viking_nine_backtest() -> None:
                                   f"'Som live'.")
         compare_entry = n2.checkbox("Jämför entry", value=False, key="vnb_compare_entry",
                                     help="Kör samma tickers med båda entrysätten.")
+        b1, b2 = st.columns([3, 2])
+        breadth_rule = b1.selectbox("Marknadsbredd", list(vb.BREADTH_RULES), key="vnb_breadth",
+                                    help="OVTLYR = live: bredden över sin EMA10, under 25 bara efter uppvändning, "
+                                         "över 75 och nedvänd = inga nya affärer. Gamla = ≥ 50 % och stigande.")
+        one_sector = b2.checkbox("En aktie per sektor", value=True, key="vnb_one_sector",
+                                 help="Portföljläget: högst en öppen position per sektor — som live (SEKTOR UPPTAGEN).")
         st.markdown(f"<div style='color:{GOLD};font-size:0.72rem;letter-spacing:0.1em;margin-top:6px;'>OVTLYR GOLDEN "
                     f"TICKET — AKTIEREGLER ATT TESTA</div>", unsafe_allow_html=True)
         oc = st.columns(2)
@@ -153,10 +159,11 @@ def render_viking_nine_backtest() -> None:
             rules, after_be = ((tuple(custom), bool(custom_after_be)) if ex == _CUSTOM
                                else vb.EXIT_PRESETS[ex])
             bt = {kk: True for kk in keys if kk in vb.OVTLYR_RULES}
-            pc = vp.PortfolioConfig(**{kk: True for kk in keys if kk in vp.PORTFOLIO_RULES})
+            pc = vp.PortfolioConfig(one_per_sector=bool(one_sector),
+                                    **{kk: True for kk in keys if kk in vp.PORTFOLIO_RULES})
             cfg = vb.Config(exit_rules=rules, trail_after_be=after_be, risk_gate=vb.RISK_GATES[gt],
-                            pullback=vb.ENTRY_MODES[en], **base, **bt)
-            ck = (ex, gt, en, tuple(sorted(bt)))
+                            pullback=vb.ENTRY_MODES[en], ovt_breadth=vb.BREADTH_RULES[breadth_rule], **base, **bt)
+            ck = (ex, gt, en, cfg.ovt_breadth, tuple(sorted(bt)))
             if ck not in cache:                                # portföljregler återanvänder samma affärer
                 cache[ck] = vb.run(tickers, sector_getter=_sector, cfg=cfg, risk_provider=_risk_points,
                                    progress=lambda i, n, t, k=k, name=name: bar.progress(
@@ -271,6 +278,8 @@ def render_result(res: dict, name: str = "") -> None:
                 f"{' · EMA10 först efter breakeven' if cfg.trail_after_be else ''}<br>"
                 f"Entry: <b style='color:{TEXT};'>{'efter pullback till EMA20' if getattr(cfg, 'pullback', False) else 'som live (stark dag)'}</b>"
                 f"{' · ' + str(res.get('no_pullback', 0)) + ' signaler utan pullback' if getattr(cfg, 'pullback', False) else ''}"
+                f"<br>Marknadsbredd: <b style='color:{TEXT};'>"
+                f"{'OVTLYR (som live)' if getattr(cfg, 'ovt_breadth', False) else 'gamla: ≥ 50 % och stigande'}</b>"
                 f"<br>{risk_line(res, gate)}{ovtlyr_line(res)}</div>",
                 unsafe_allow_html=True)
     if not m.get("trades"):
@@ -432,8 +441,6 @@ def ovtlyr_line(res: dict) -> str:
         extra.append(f"{res.get('illiquid', 0)} signaler för illikvida")
     if "history" in keys:
         extra.append(f"{res.get('neg_history', 0)} affärer bortfiltrerade (negativ historik)")
-    if "one_per_sector" in keys:
-        extra.append(f"{(res.get('portfolio') or {}).get('skipped_sector', 0)} hoppade över (sektorn upptagen)")
     return (f"<br>OVTLYR: <b style='color:{GOLD};'>{', '.join(OVT_ALL[k][0] for k in keys if k in OVT_ALL)}</b>"
             + (" · " + " · ".join(extra) if extra else ""))
 

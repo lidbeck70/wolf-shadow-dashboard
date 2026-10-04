@@ -40,8 +40,10 @@ def _atr_at(t):
 def test_all_rules_are_off_by_default():
     assert vb.Config().ovtlyr_rules() == []
     pc = vp.PortfolioConfig()
-    assert not pc.one_per_sector and not pc.history_first
-    assert set(vb.OVTLYR_RULES) == {"ovt_stop", "atr_step", "ovt_breadth", "fg_turn", "liquidity", "history"}
+    assert pc.one_per_sector and not pc.history_first          # en aktie per sektor är live sedan breddregel-PR:en
+    assert vb.Config().ovt_breadth is True                    # OVTLYR-bredden är live
+    assert set(vb.OVTLYR_RULES) == {"ovt_stop", "atr_step", "fg_turn", "liquidity", "history"}
+    assert set(vp.PORTFOLIO_RULES) == {"history_first"}
 
 
 def test_live_run_has_no_ovtlyr_exit_reasons(live):
@@ -112,9 +114,10 @@ def test_ovtlyr_breadth_changes_the_market_factor():
     stock, spy, sec = DATA["S0"], DATA["SPY"], DATA["XLK"]
     import ovtlyr_nine as on
     breadth = on.breadth_series({t: DATA[t]["Close"] for t in on.SECTOR_ETFS.values()})
-    a = vb.factor_frame(stock, spy, sec, breadth)["market.breadth"]
-    b = vb.factor_frame(stock, spy, sec, breadth, ovt_breadth=True)["market.breadth"]
+    a = vb.factor_frame(stock, spy, sec, breadth, ovt_breadth=False)["market.breadth"]
+    b = vb.factor_frame(stock, spy, sec, breadth)["market.breadth"]
     assert not a.equals(b)
+    assert vb.ovtlyr_breadth_ok is on.breadth_ok              # backtestet och live delar regeln
 
 
 # ── F&G vänder ──────────────────────────────────────────────────────────────
@@ -190,14 +193,15 @@ def _pt(tk, sig, exit_, sector="XLK", hist=None, nine=9, r=1.0):
 
 def test_one_position_per_sector():
     trades = [_pt("A", 0, 10), _pt("B", 2, 12), _pt("C", 2, 12, sector="XLE"), _pt("D", 12, 15)]
-    p = vp.simulate(trades, pc=vp.PortfolioConfig(one_per_sector=True))
+    p = vp.simulate(trades)
     assert [r["trade"].ticker for r in p["rows"]] == ["A", "C", "D"] and p["skipped_sector"] == 1
-    assert vp.simulate(trades)["skipped_sector"] == 0
-    assert "en aktie per sektor" in p["note"]
+    assert vp.simulate(trades, pc=vp.PortfolioConfig(one_per_sector=False))["skipped_sector"] == 0
+    assert "En aktie per sektor" in p["note"]
 
 
 def test_history_first_priority():
-    trades = [_pt(f"N{k}", 0, 10, hist=-2.0, nine=9) for k in range(10)] + [_pt("BEST", 0, 10, hist=5.0, nine=8)]
+    trades = ([_pt(f"N{k}", 0, 10, hist=-2.0, nine=9, sector=f"S{k}") for k in range(10)]
+              + [_pt("BEST", 0, 10, hist=5.0, nine=8, sector="SB")])
     live = vp.simulate(trades)
     best = vp.simulate(trades, pc=vp.PortfolioConfig(history_first=True))
     assert "BEST" not in [r["trade"].ticker for r in live["rows"]]          # Nine 9 först, kontot fullt
@@ -209,16 +213,16 @@ def test_variants_compare_each_rule_against_live():
     from ovtlyr.ui.viking_nine_backtest import ALL_OVT, LIVE, OVT_ALL, ovtlyr_variants
     v = ovtlyr_variants()
     assert v[0] == (LIVE, []) and v[-1][0] == ALL_OVT and len(v) == len(OVT_ALL) + 2
-    v = ovtlyr_variants(["ovt_stop", "one_per_sector"])
-    assert [n for n, _k in v] == [LIVE, OVT_ALL["ovt_stop"][0], OVT_ALL["one_per_sector"][0], ALL_OVT]
+    v = ovtlyr_variants(["ovt_stop", "history_first"])
+    assert [n for n, _k in v] == [LIVE, OVT_ALL["ovt_stop"][0], OVT_ALL["history_first"][0], ALL_OVT]
     assert ovtlyr_variants(["fg_turn"]) == [(LIVE, []), (OVT_ALL["fg_turn"][0], ["fg_turn"])]
 
 
 def test_page_shows_ovtlyr_controls_and_line(monkeypatch):
     from streamlit.testing.v1 import AppTest
     res = _run(ovt_stop=True, liquidity=True)
-    res["labels"] = {"ovtlyr": ["ovt_stop", "liquidity", "one_per_sector"]}
-    res["portfolio"] = vp.simulate(res["trades"], years=3, pc=vp.PortfolioConfig(one_per_sector=True))
+    res["labels"] = {"ovtlyr": ["ovt_stop", "liquidity"]}
+    res["portfolio"] = vp.simulate(res["trades"], years=3)
     monkeypatch.setenv("VNB_TEST_ROOT", ROOT)
 
     def app():
@@ -234,6 +238,7 @@ def test_page_shows_ovtlyr_controls_and_line(monkeypatch):
     assert not at.exception, at.exception
     labels = [c.label for c in at.checkbox]
     assert "½ ATR-stopp på stängning" in labels and "Jämför OVTLYR-reglerna en och en" in labels
+    assert "En aktie per sektor" in labels and at.selectbox(key="vnb_breadth").value == "OVTLYR (som live)"
     html = " ".join(m.value for m in at.markdown)
     assert "OVTLYR GOLDEN TICKET" in html and "OVTLYR: <b" in html and "signaler för illikvida" in html
-    assert "Portfölj CAGR %" in html
+    assert "Portfölj CAGR %" in html and "Marknadsbredd: <b" in html

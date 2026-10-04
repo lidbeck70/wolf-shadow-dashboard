@@ -19,6 +19,11 @@ Skanningen går i två steg så att ett helt universum (Norden, USA …) hinner:
                          lager, Viking-poäng, entry, stopp, ATR, position, R/R,
                          skäl och åtgärd — en rad per ticker och dag
 
+  SEKTOR UPPTAGEN        en aktie per sektor: har du redan en öppen position i
+                         Viking Portfolio (positions.py) i samma sektor (sektor-ETF)
+                         flaggas kandidaten, och GOLDEN TICKET blir READY — entryn
+                         väntar tills sektorn är ledig (backtest: lägre drawdown)
+
 Screening ≠ automatisk entry. Kategorierna beskriver hur många av systemets
 villkor som är uppfyllda — inte aktiens kvalitet.
 """
@@ -43,6 +48,36 @@ LOG_STORE = "viking_signals"
 LOG_MAX = 1000
 LOGGED_CATEGORIES = ("GOLDEN TICKET", "READY")
 CATEGORY_ORDER = ("GOLDEN TICKET", "READY", "DEVELOPING", "REJECTED")
+SECTOR_BUSY = "SEKTOR UPPTAGEN"
+HELD_BUCKET = "ovtlyr"             # positions.py: Viking Portfolio
+US_NOTE = ("USA-signaler: i backtestet (USA 25, 5 år) gav Viking Nine bara +0,07R per affär — låg kant. "
+           "Bäst som komplement till Norden, inte som eget system.")
+
+
+def held_sectors(sector_getter: Optional[Callable] = None, positions_getter: Optional[Callable] = None,
+                 bd_sector: Optional[Callable] = None) -> dict:
+    """{sektor-ETF: ticker} för öppna positioner i Viking Portfolio. Okänd sektor räknas inte."""
+    if positions_getter is None:
+        import positions
+        positions_getter = lambda: positions.open_positions(bucket=HELD_BUCKET)  # noqa: E731
+    out = {}
+    for p in positions_getter() or []:
+        t = str(p.get("ticker") or "").upper()
+        if not t:
+            continue
+        try:
+            etf, _src = on.resolve_sector(t, sector_getter, bd_sector)
+        except Exception:
+            etf = None
+        if etf and etf not in out:
+            out[etf] = t
+    return out
+
+
+def sector_busy(ticker: str, sector_etf: Optional[str], held: Optional[dict]) -> Optional[str]:
+    """Tickern som redan håller sektorn — None om sektorn är ledig, okänd eller aktien själv ägs."""
+    owner = (held or {}).get(sector_etf) if sector_etf else None
+    return owner if owner and owner != str(ticker).upper() else None
 
 
 def parse_tickers(raw: str) -> list:
@@ -66,11 +101,14 @@ def _ob_analysis(df: pd.DataFrame) -> dict:
 def evaluate_ticker(ticker: str, getter: Optional[Callable] = None, sector_getter: Optional[Callable] = None,
                     earnings_getter: Optional[Callable] = None, capital: float = 100_000.0,
                     risk_getter: Optional[Callable] = None,
-                    trades: Optional[list] = None, now: Optional[datetime] = None, today=None) -> dict:
-    """En rad: Nine + beslut + kategori. Fel → raden markeras DATA UNAVAILABLE."""
+                    trades: Optional[list] = None, now: Optional[datetime] = None, today=None,
+                    held: Optional[dict] = None) -> dict:
+    """En rad: Nine + beslut + kategori. Fel → raden markeras DATA UNAVAILABLE.
+    held = {sektor-ETF: ticker} för öppna positioner (held_sectors) → SEKTOR UPPTAGEN."""
     if getter is None:
         from market_prices import ohlcv as getter
-    row = {"ticker": ticker, "error": None, "nine": None, "decision": None, "category": "REJECTED"}
+    row = {"ticker": ticker, "error": None, "nine": None, "decision": None, "category": "REJECTED",
+           "sector_busy": None}
     try:
         df = getter(ticker, on.PERIOD)
     except Exception as exc:
@@ -98,7 +136,11 @@ def evaluate_ticker(ticker: str, getter: Optional[Callable] = None, sector_gette
             risk = None
     d = vx.evaluate_entry(ticker, df, nine=nine, capital=capital, ob_analysis=ob, earnings_date=ed,
                           earnings_known=ed is not None, trades=trades, now=now, market_risk=risk)
-    row.update(nine=nine, decision=d, category=vx.watchlist_category(nine.passed, d.status))
+    category = vx.watchlist_category(nine.passed, d.status)
+    busy = sector_busy(ticker, nine.sector_etf, held)
+    if busy and category == "GOLDEN TICKET":                     # en aktie per sektor — entryn väntar
+        category = "READY"
+    row.update(nine=nine, decision=d, category=category, sector_busy=busy)
     return row
 
 
@@ -225,7 +267,9 @@ def log_entry(row: dict, now: Optional[datetime] = None, source: str = "screen")
         "entry": d.entry, "stop": p.stop if p else None, "atr": p.atr if p else None,
         "shares": p.shares if p else None, "risk_sek": p.risk_amount if p else None, "rr": d.rr,
         "status": d.status, "action": row.get("category"), "trigger_date": d.trigger_date,
-        "reason": "; ".join(d.reasons)[:400], "source": source, "label": on.APPROXIMATION,
+        "reason": "; ".join(([f"{SECTOR_BUSY} ({row['sector_busy']})"] if row.get("sector_busy") else [])
+                            + list(d.reasons))[:400],
+        "source": source, "label": on.APPROXIMATION,
     }
 
 

@@ -19,10 +19,12 @@ marknadens risknivå (SPY, OMXS30 för nordiska) är spärrad ger ingen entry �
 samma regel som live (market_risk_gate: OMXS30 från FÖRHÖJD, SPY vid HÖG). Risknivån är
 poängen ur market_risk, som bara bygger på data t.o.m. dagen.
 
+Marknadsbredden följer OVTLYR:s regler som live (ovtlyr_nine.breadth_ok);
+den gamla regeln (≥ 50 % och stigande) kan väljas för jämförelse.
+
 OVTLYR Golden Ticket (aktieversionen, inga optioner) kan testas regel för
-regel — alla är av som förval, live-reglerna ändras inte (OVTLYR_RULES):
-½ ATR-stopp på stängning med risken räknad på 2 × ATR, ATR-stegtrailing,
-OVTLYR:s breddregler (< 25 / > 75 och EMA10), F&G vänder → exit,
+regel — alla är av som förval (OVTLYR_RULES): ½ ATR-stopp på stängning med
+risken räknad på 2 × ATR, ATR-stegtrailing, F&G vänder → exit,
 likviditetsfilter och bara aktier med positiv egen historik (walk-forward).
 
 Ingår inte (historiska data saknas): rapportspärren, max två förluster per
@@ -77,9 +79,6 @@ OVTLYR_RULES = {
     "atr_step": ("ATR-stegtrailing",
                  "för varje helt ATR över entry flyttas stoppen till ½ ATR under steget (+1 ATR → +½ ATR, "
                  "+2 → +1½ …), intradag"),
-    "ovt_breadth": ("Bredd enligt OVTLYR",
-                    "bredden över sin EMA10 (ökar); under 25 bara efter uppvändning, över 75 och nedvänd = "
-                    "inga nya affärer — ersätter '≥ 50 % och stigande'"),
     "fg_turn": ("F&G vänder → exit", "aktiens F&G lägre än för fem dagar sedan → exit nästa öppning"),
     "liquidity": ("Likviditetsfilter",
                   "USA: kurs > 20 $ och snittvolym 30 d > 1 milj aktier · Norden: snittomsättning 30 d "
@@ -91,7 +90,9 @@ OVTLYR_RULES = {
 OVT_CLOSE_STOP_ATR = 0.5           # ½ ATR-stopp — på stängning
 OVT_RISK_ATR = 2.0                 # risk/storlek på 2 × ATR (OVTLYR: konto × risk % / (2 × ATR)) — nödstopp intradag
 ATR_STEP_GIVEBACK = 0.5            # stegtrailing: stoppen ½ ATR under senast nådda hela ATR-steg
-BREADTH_LOW, BREADTH_HIGH, BREADTH_SIGNAL_EMA = 25.0, 75.0, 10
+BREADTH_LOW, BREADTH_HIGH, BREADTH_SIGNAL_EMA = on.BREADTH_LOW, on.BREADTH_HIGH, on.BREADTH_SIGNAL_EMA
+# Marknadsbredden: OVTLYR:s regler är live (ovtlyr_nine.breadth_ok); den gamla regeln kan jämföras.
+BREADTH_RULES = {"OVTLYR (som live)": True, "Gamla: ≥ 50 % och stigande": False}
 LIQ_DAYS = 30
 LIQ_US_PRICE, LIQ_US_VOLUME = 20.0, 1_000_000
 LIQ_TURNOVER = {".ST": 10e6, ".OL": 10e6, ".CO": 7e6, ".HE": 1e6}   # lokal valuta per dag
@@ -142,10 +143,10 @@ class Config:
     trail_after_be: bool = True        # EMA10 gäller först när stoppen flyttats till breakeven (som viking_exit)
     pullback: bool = False             # True = kräv pullback till EMA20 (ENTRY_MODES) — inte live-regeln
     risk_gate: object = field(default_factory=lambda: dict(mrg.VIKING_BLOCK_BY_MARKET))   # se RISK_GATES
+    ovt_breadth: bool = True           # marknadsbredden enligt OVTLYR (live); False = gamla regeln
     # OVTLYR Golden Ticket (OVTLYR_RULES) — av = live-regeln
     ovt_stop: bool = False
     atr_step: bool = False
-    ovt_breadth: bool = False
     fg_turn: bool = False
     liquidity: bool = False
     history: bool = False
@@ -195,13 +196,7 @@ def _align(s: Optional[pd.Series], idx) -> pd.Series:
     return s.astype(float).reindex(s.index.union(idx)).ffill().reindex(idx).fillna(0).astype(bool)
 
 
-def ovtlyr_breadth_ok(b: pd.Series) -> pd.Series:
-    """OVTLYR:s breddregler per dag (kausalt): bredden över sin EMA10 (ökar) — under 25 bara
-    efter en uppvändning, över 75 och nedvänd = inga nya affärer."""
-    b = b.astype(float)
-    above = b > _ema(b, BREADTH_SIGNAL_EMA)
-    up, down = b > b.shift(1), b < b.shift(1)
-    return above & ((b >= BREADTH_LOW) | up) & ~((b > BREADTH_HIGH) & down) & b.notna()
+ovtlyr_breadth_ok = on.breadth_ok     # samma regel som live
 
 
 def liquid_series(stock: pd.DataFrame, ticker: str) -> pd.Series:
@@ -215,9 +210,9 @@ def liquid_series(stock: pd.DataFrame, ticker: str) -> pd.Series:
 
 
 def factor_frame(stock: pd.DataFrame, spy: Optional[pd.DataFrame], sector: Optional[pd.DataFrame],
-                 breadth: Optional[pd.Series], ovt_breadth: bool = False) -> pd.DataFrame:
+                 breadth: Optional[pd.Series], ovt_breadth: bool = True) -> pd.DataFrame:
     """OVTLYR Nine:s åtta prisfaktorer per dag (order blocks räknas separat).
-    ovt_breadth = marknadsbredden enligt OVTLYR (ovtlyr_breadth_ok) i stället för panelens regel."""
+    ovt_breadth = marknadsbredden enligt OVTLYR (som live); False = gamla regeln (≥ 50 % och stigande)."""
     idx = stock.index
     c = stock["Close"].astype(float)
     out = pd.DataFrame(index=idx)
