@@ -118,7 +118,23 @@ US_25 = (
     "AMC", "KO", "FNV", "AAPL", "MSFT", "NVDA", "AMZN", "META", "JPM", "XOM", "LLY", "UNH", "CAT", "HD", "WMT",
     "COST", "NEM", "FCX", "LMT", "AMD", "TSLA", "NFLX", "PFE", "INTC", "BA",
 )
-TICKER_LISTS = {"Norden 50": NORDIC_50, "USA 25": US_25, "Norden 50 + USA 25": NORDIC_50 + US_25}
+# Norden OOS 100: Large/Mid Cap i alla fyra länderna som ALDRIG använts när reglerna togs fram —
+# ett test på aktier som reglerna inte sett (fortfarande dagens bolag: överlevnadsbias kvarstår).
+NORDIC_OOS_100 = (
+    "ALFA.ST", "ELUX-B.ST", "GETI-B.ST", "HEXA-B.ST", "KINV-B.ST", "LUND-B.ST", "LUMI.ST", "SCA-B.ST", "SHB-A.ST",
+    "SKA-B.ST", "SKF-B.ST", "SWED-A.ST", "TEL2-B.ST", "TELIA.ST", "AXFO.ST", "BEIJ-B.ST", "HUSQ-B.ST", "INDU-C.ST",
+    "LATO-B.ST", "SECU-B.ST", "TREL-B.ST", "HOLM-B.ST", "ADDT-B.ST", "AAK.ST", "CAST.ST", "FABG.ST", "WALL-B.ST",
+    "SAGA-B.ST", "BALD-B.ST", "SINCH.ST", "THULE.ST", "DOM.ST", "NCC-B.ST", "PEAB-B.ST", "HPOL-B.ST", "INDT.ST",
+    "LOOMIS.ST", "AFRY.ST", "BILL.ST", "SOBI.ST", "VITR.ST", "EPI-A.ST", "NDA-SE.ST", "AZA.ST", "MYCR.ST",
+    "TEL.OL", "ORK.OL", "YAR.OL", "AKRBP.OL", "SALM.OL", "FRO.OL", "SUBC.OL", "HAFNI.OL", "TGS.OL", "AKER.OL",
+    "AKSO.OL", "NOD.OL", "NEL.OL", "STB.OL", "GJF.OL", "SCATC.OL", "BAKKA.OL", "TOM.OL", "LSG.OL", "BWLPG.OL",
+    "MAERSK-B.CO", "CARL-B.CO", "ORSTED.CO", "NSIS-B.CO", "GMAB.CO", "TRYG.CO", "COLO-B.CO", "AMBU-B.CO",
+    "DEMANT.CO", "GN.CO", "RBREW.CO", "JYSK.CO", "DANSKE.CO", "ISS.CO", "FLS.CO", "ROCK-B.CO", "NKT.CO", "ZEAL.CO",
+    "UPM.HE", "FORTUM.HE", "KNEBV.HE", "STERV.HE", "METSO.HE", "KESKOB.HE", "WRT1V.HE", "ORNBV.HE", "TIETO.HE",
+    "VALMT.HE", "ELISA.HE", "HUH1V.HE", "KEMIRA.HE", "FSKRS.HE", "OUT1V.HE", "QTCOM.HE", "KCR.HE",
+)
+TICKER_LISTS = {"Norden 50": NORDIC_50, "USA 25": US_25, "Norden 50 + USA 25": NORDIC_50 + US_25,
+                "Norden OOS 100": NORDIC_OOS_100, "Norden 150 (50 + OOS 100)": NORDIC_50 + NORDIC_OOS_100}
 
 NOTES = (
     "Entry på nästa dags öppning efter en stängd signaldag; stängningsregler ger exit på nästa öppning.",
@@ -144,6 +160,9 @@ class Config:
     pullback: bool = False             # True = kräv pullback till EMA20 (ENTRY_MODES) — inte live-regeln
     risk_gate: object = field(default_factory=lambda: dict(mrg.VIKING_BLOCK_BY_MARKET))   # se RISK_GATES
     ovt_breadth: bool = True           # marknadsbredden enligt OVTLYR (live); False = gamla regeln
+    start_year: Optional[int] = None   # fri period (out-of-sample): från 1 jan start_year …
+    end_year: Optional[int] = None     # … till 31 dec end_year (None = i dag); ersätter years
+    min_turnover_m: float = 0.0        # minsta snittomsättning 30 d, miljoner i lokal valuta/dag (0 = av)
     # OVTLYR Golden Ticket (OVTLYR_RULES) — av = live-regeln
     ovt_stop: bool = False
     atr_step: bool = False
@@ -174,6 +193,9 @@ class Trade:
     mom63: Optional[float] = None       # 63-dagarsavkastning på signaldagen (prioritet i portföljläget)
     sector: Optional[str] = None        # sektor-ETF (en aktie per sektor i portföljläget)
     hist_r: Optional[float] = None      # summa R för aktiens tidigare stängda affärer vid signalen (walk-forward)
+    dates: tuple = ()                   # handelsdagar från entry till exit (dagsvärdering i portföljläget)
+    path: tuple = ()                    # stängningskurs de dagarna
+    features: dict = field(default_factory=dict)   # mått på signaldagen (kantanalysen): ATR %, RVOL, RSI, CLV …
 
 
 # ── Serierna (allt kausalt) ─────────────────────────────────────────────────
@@ -285,6 +307,38 @@ def _blocks_at(stock: pd.DataFrame, i: int) -> tuple:
     return bias not in ("SELL", "REDUCE") and not oa.get("approaching_bearish", False), oa
 
 
+def _close_on(market: Optional[pd.DataFrame], idx) -> Optional[pd.Series]:
+    """Marknadsindexets stängning på aktiens dagar — senast KÄNDA värde."""
+    if market is None or len(market) == 0 or "Close" not in market:
+        return None
+    s = market["Close"].astype(float)
+    return s.reindex(s.index.union(idx)).ffill().reindex(idx)
+
+
+def entry_features(stock: pd.DataFrame, x: pd.DataFrame, i: int, mkt_close: Optional[pd.Series] = None) -> dict:
+    """Mått på signaldagen i (bara data t.o.m. dagen, gapet = nästa öppning) för kantanalysen."""
+    o, h, lo, c, v = (stock[k].astype(float).values for k in ("Open", "High", "Low", "Close", "Volume"))
+    atr = float(x["atr"].iloc[i])
+    rng = h[i] - lo[i]
+    vol20 = float(np.mean(v[max(0, i - 20):i])) if i >= 1 else float("nan")
+    out = {
+        "atr_pct": round(float(atr / c[i] * 100), 2) if c[i] else None,
+        "rvol": round(float(v[i] / vol20), 2) if vol20 > 0 else None,
+        "rsi": round(float(vx.rsi(stock["Close"].astype(float).iloc[:i + 1]).iloc[-1]), 1),
+        "clv": round(float((c[i] - lo[i]) / rng), 2) if rng > 0 else None,
+        "upper_wick": round(float((h[i] - max(o[i], c[i])) / rng), 2) if rng > 0 else None,
+        "gap_atr": round(float((o[i + 1] - c[i]) / atr), 2) if atr > 0 and i + 1 < len(o) else None,
+        "dist_ema20_atr": round(float((c[i] - x["ema20"].iloc[i]) / atr), 2) if atr > 0 else None,
+    }
+    if i >= 63:
+        ret = c[i] / c[i - 63] - 1
+        rs = None
+        if mkt_close is not None and pd.notna(mkt_close.iloc[i]) and pd.notna(mkt_close.iloc[i - 63]):
+            rs = ret - (float(mkt_close.iloc[i]) / float(mkt_close.iloc[i - 63]) - 1)
+        out["rs63"] = None if rs is None else round(float(rs) * 100, 1)
+    return out
+
+
 # ── En ticker ───────────────────────────────────────────────────────────────
 def backtest_ticker(ticker: str, stock: pd.DataFrame, spy: Optional[pd.DataFrame], sector: Optional[pd.DataFrame],
                     breadth: Optional[pd.Series], cfg: Config = Config(), start=None,
@@ -294,11 +348,14 @@ def backtest_ticker(ticker: str, stock: pd.DataFrame, spy: Optional[pd.DataFrame
     stock = stock.dropna(subset=["Open", "High", "Low", "Close"])
     n = len(stock)
     res = {"ticker": ticker, "trades": [], "signals": 0, "no_chase": 0, "low_rr": 0, "risk_blocked": 0,
-           "no_pullback": 0, "illiquid": 0}
+           "no_pullback": 0, "illiquid": 0, "thin": 0}
     if n < WARMUP_BARS + 2:
         return res
     f, x = factor_frame(stock, spy, sector, breadth, ovt_breadth=cfg.ovt_breadth), execution_frame(stock)
     liquid = liquid_series(stock, ticker) if cfg.liquidity else None
+    turnover = ((stock["Close"].astype(float) * stock["Volume"].astype(float)).rolling(LIQ_DAYS).mean()
+                if cfg.min_turnover_m > 0 else None)
+    mkt_close = _close_on(spy, stock.index)
     eight = [k for k in f.columns if "." in k]
     count8 = f[eight].sum(axis=1)
     o, h, lo, c = (stock[k].astype(float).values for k in ("Open", "High", "Low", "Close"))
@@ -337,6 +394,10 @@ def backtest_ticker(ticker: str, stock: pd.DataFrame, spy: Optional[pd.DataFrame
             res["illiquid"] += 1
             i += 1
             continue
+        if turnover is not None and not (turnover.iloc[i] >= cfg.min_turnover_m * 1e6):   # för tunn omsättning
+            res["thin"] += 1
+            i += 1
+            continue
         if cfg.pullback and not ex["pullback"]:                    # ingen pullback till EMA20 nyligen
             res["no_pullback"] += 1
             i += 1
@@ -365,9 +426,11 @@ def backtest_ticker(ticker: str, stock: pd.DataFrame, spy: Optional[pd.DataFrame
             i += 1
             continue
         t = Trade(ticker, str(idx[i].date()), str(idx[i + 1].date()), round(entry, 4), round(stop, 4),
-                  round(risk, 4), nine, mom63=round(float(c[i] / c[i - 63] - 1), 4) if i >= 63 else None)
+                  round(risk, 4), nine, mom63=round(float(c[i] / c[i - 63] - 1), 4) if i >= 63 else None,
+                  features=entry_features(stock, x, i, mkt_close))
         fg_target = vex.fg_target(float(f["fg"].iloc[i])) if pd.notna(f["fg"].iloc[i]) else None
-        pre_high = float(np.max(h[max(0, i + 1 - vex.BE_LOOKBACK):i + 2]))
+        # "ny högre topp" som live (viking_exit.breakeven_armed): högsta high de BE_LOOKBACK dagarna t.o.m. entrydagen
+        pre_high = float(np.max(h[max(0, i + 2 - vex.BE_LOOKBACK):i + 2]))
         armed = False
         step_stop = -math.inf                                       # ATR-stegtrailing (från tidigare dagars high)
         run_high = -math.inf
@@ -422,6 +485,10 @@ def backtest_ticker(ticker: str, stock: pd.DataFrame, spy: Optional[pd.DataFrame
             j += 1
         if t.exit is None:
             t.exit, t.exit_reason, t.exit_date, t.open = float(c[-1]), "öppen", str(idx[-1].date()), True
+            j = n - 1
+        last = min(j, n - 1)
+        t.dates = tuple(str(d.date()) for d in idx[i + 1:last + 1])
+        t.path = tuple(round(float(v), 4) for v in c[i + 1:last + 1])
         t.r = round((t.exit - entry) / risk, 3)
         t.days = int(np.busday_count(pd.Timestamp(t.entry_date).date(), pd.Timestamp(t.exit_date).date()))
         res["trades"].append(t)
@@ -468,7 +535,10 @@ def run(tickers: list, getter: Optional[Callable] = None, sector_getter: Optiona
     risk_provider(marknad) → marknadsriskens poäng per dag ("SPY"/"OMXS30"); None = ingen spärr."""
     if getter is None:
         from market_prices import ohlcv as getter
-    period = f"{int(cfg.years) + 1}y"                               # ett extra år för uppvärmning
+    start, end, years = period_of(cfg, today)
+    fetch_years = int(np.ceil(((pd.Timestamp(today) if today is not None else pd.Timestamp.today()) - start).days
+                              / 365.25)) + 1                       # ett extra år för uppvärmning
+    period = f"{fetch_years}y" if cfg.start_year is None else "max"
 
     def _get(t):
         try:
@@ -480,17 +550,18 @@ def run(tickers: list, getter: Optional[Callable] = None, sector_getter: Optiona
         if getattr(df.index, "tz", None) is not None:
             df = df.copy()
             df.index = df.index.tz_localize(None)
-        return df
+        df = df[df.index <= end]                                    # fri period: inget efter slutdatum
+        return df if len(df) else None
 
     spy = _get(on.MARKET_TICKER)
     etfs = {t: _get(t) for t in on.SECTOR_ETFS.values()}
     breadth = on.breadth_series({t: on._close(d) for t, d in etfs.items()})
-    end = pd.Timestamp(today) if today is not None else pd.Timestamp.today()
-    start = end - pd.DateOffset(years=int(cfg.years))
     nordic = None
     if any(on.market_for(t) == on.NORDIC_LABEL for t in tickers):
-        bars = (int(cfg.years) + 1) * 262
+        bars = fetch_years * 262
         nordic = (nordic_provider or (lambda: on.nordic_market(bars)))()
+        if nordic:
+            nordic = {k: (_cut(v, end) if isinstance(v, pd.Series) else v) for k, v in nordic.items()}
     risk, risk_info = {}, {}
     if cfg.risk_gate:
         for m in sorted({mrg.market_for(t) for t in tickers}):
@@ -500,6 +571,7 @@ def run(tickers: list, getter: Optional[Callable] = None, sector_getter: Optiona
                 pts = risk_provider(m) if risk_provider is not None else None
             except Exception:
                 pts = None
+            pts = _cut(pts, end) if pts is not None else None
             risk[m] = pts if pts is not None and len(pts) else None
             if risk[m] is None:
                 risk_info[m] = {"status": "DATA UNAVAILABLE — ingen spärr", "blocked_pct": None}
@@ -532,11 +604,40 @@ def run(tickers: list, getter: Optional[Callable] = None, sector_getter: Optiona
             trades += r["trades"]
         if progress is not None:
             progress(k + 1, len(tickers), t)
+    bench = {}
+    if spy is not None and any(on.market_for(t) != on.NORDIC_LABEL for t in tickers):
+        bench["SPY"] = spy["Close"].astype(float)
+    if nordic and nordic.get("close") is not None:
+        bench[on.NORDIC_LABEL] = nordic["close"].astype(float)
     return {"trades": trades, "per_ticker": per, "metrics": metrics(trades), "notes": NOTES, "config": cfg,
             "risk": risk_info, "risk_blocked": sum(p.get("risk_blocked", 0) for p in per),
             "no_pullback": sum(p.get("no_pullback", 0) for p in per),
             "illiquid": sum(p.get("illiquid", 0) for p in per),
-            "neg_history": sum(p.get("neg_history", 0) for p in per)}
+            "thin": sum(p.get("thin", 0) for p in per),
+            "neg_history": sum(p.get("neg_history", 0) for p in per),
+            "period": {"start": str(start.date()), "end": str(end.date()), "years": round(years, 2)},
+            "benchmarks": {k: v[(v.index >= start) & (v.index <= end)] for k, v in bench.items()}}
+
+
+def period_of(cfg: Config, today=None) -> tuple:
+    """(start, slut, år) för körningen: fri period (start_year–end_year) eller de senaste cfg.years åren."""
+    now = pd.Timestamp(today) if today is not None else pd.Timestamp.today()
+    if cfg.start_year:
+        start = pd.Timestamp(f"{int(cfg.start_year)}-01-01")
+        end = min(pd.Timestamp(f"{int(cfg.end_year)}-12-31"), now) if cfg.end_year else now
+    else:
+        end, start = now, now - pd.DateOffset(years=int(cfg.years))
+    return start, end, max((end - start).days / 365.25, 1 / 365.25)
+
+
+def _cut(s, end):
+    """Serie t.o.m. slutdatum (tidszon bort)."""
+    if s is None or len(s) == 0:
+        return s
+    s = s.copy()
+    if getattr(s.index, "tz", None) is not None:
+        s.index = s.index.tz_localize(None)
+    return s[s.index <= end]
 
 
 def apply_history(res: dict, start=None, require_positive: bool = False) -> dict:

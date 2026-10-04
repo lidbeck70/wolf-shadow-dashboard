@@ -74,7 +74,7 @@ def test_backtest_no_ema10_exit_before_breakeven():
         if t.exit_reason != "trailing EMA10":
             continue
         i = idx.get_loc(pd.Timestamp(t.signal_date))
-        pre = h[max(0, i + 1 - vex.BE_LOOKBACK):i + 2].max()
+        pre = h[max(0, i + 2 - vex.BE_LOOKBACK):i + 2].max()           # som live: 10 dagar t.o.m. entrydagen
         rule_day = idx.get_loc(pd.Timestamp(t.exit_date)) - 1           # stängningsregel → exit nästa öppning
         assert h[i + 2:rule_day].max() > pre                            # breakeven nådd innan EMA10 fick stänga
         checked += 1

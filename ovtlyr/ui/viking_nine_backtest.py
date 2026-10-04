@@ -40,6 +40,8 @@ _CUSTOM = "Egna"
 _TICKERS = "vnb_tickers"
 _SCAN = "Senaste ⚔️ Viking Nine-skanningen"
 _COUNTRY = ((".ST", "Sverige"), (".OL", "Norge"), (".CO", "Danmark"), (".HE", "Finland"))
+_OWN = "Egen period"
+MAX_BACKTEST_TICKERS = 200          # skannerns gräns (60) klippte Norden 50 + USA 25 till 60 tickers
 
 
 def _apply_list() -> None:
@@ -62,10 +64,15 @@ def _risk_points(market: str):
     return None if r.error else r.history
 
 
+def years_of(res: dict):
+    """Periodens längd i år (fri period eller de senaste N åren)."""
+    return (res.get("period") or {}).get("years") or getattr(res.get("config"), "years", None)
+
+
 def portfolio_of(res: dict) -> dict:
     """Portföljläget för en körning (räknas en gång; äldre sessionsresultat räknas här)."""
     if "portfolio" not in res:
-        res["portfolio"] = vp.simulate(res.get("trades") or [], years=getattr(res.get("config"), "years", None))
+        res["portfolio"] = vp.simulate(res.get("trades") or [], years=years_of(res))
     return res["portfolio"]
 
 
@@ -101,12 +108,21 @@ def render_viking_nine_backtest() -> None:
     with st.form("vnb_form", clear_on_submit=False):
         raw = st.text_area("Tickers", key=_TICKERS, height=90, placeholder="t.ex. NVDA, MSFT, VOLV-B.ST")
         c1, c2, c3 = st.columns(3)
-        years = c1.selectbox("Period (år)", [1, 2, 3, 5], index=2, key="vnb_years")
+        years = c1.selectbox("Period (år)", [1, 2, 3, 5, 10, 15, _OWN], index=2, key="vnb_years",
+                             help="De senaste N åren, eller 'Egen period' med start- och slutår nedan — t.ex. "
+                                  "2008–2020 som out-of-sample (reglerna togs fram på 2021–2026).")
         min_nine = c2.selectbox("Minsta Nine för entry", [9, 8, 7], index=0, key="vnb_min_nine",
                                 help="9 = systemets regel (GOLDEN TICKET). 8/7 visar vad en lösare regel hade gett.")
         need_vol = c3.checkbox("Kräv relativ volym", value=vx.VOLUME_REQUIRED, key="vnb_vol",
                                help=f"Relativ volym ≥ {vx.RELATIVE_VOLUME_MIN:g}× på signaldagen. På = samma regel "
                                     f"som live.")
+        y1, y2, y3 = st.columns(3)
+        this_year = pd.Timestamp.today().year
+        start_year = y1.number_input("Från år (egen period)", 2000, this_year, 2008, 1, key="vnb_start_year")
+        end_year = y2.number_input("Till år (egen period)", 2000, this_year, 2020, 1, key="vnb_end_year")
+        min_turn = y3.number_input("Minsta omsättning (milj/dag)", 0.0, 100.0, 0.0, 0.5, key="vnb_min_turnover",
+                                   help="Snittomsättning 30 dagar i lokal valuta (USA: USD). 0 = av. Förslag för "
+                                        "breda listor: 2–3.")
         e1, e2 = st.columns([3, 2])
         preset = e1.selectbox("Exitregler", list(vb.EXIT_PRESETS) + [_CUSTOM], key="vnb_exit_preset",
                               help="Stopp och breakeven-stopp gäller alltid.")
@@ -144,9 +160,12 @@ def render_viking_nine_backtest() -> None:
                                   help="Kör live-reglerna, varje OVTLYR-regel för sig och alla tillsammans — med "
                                        "exitförval, spärr och entry som ovan. De andra jämförelserna hoppas då över.")
         go_ = st.form_submit_button("⚔️ Kör backtest")
-    tickers = vs.parse_tickers(raw)
+    tickers = vs.parse_tickers(raw, limit=MAX_BACKTEST_TICKERS)
     if go_ and tickers:
-        base = dict(min_nine=int(min_nine), require_volume=bool(need_vol), years=int(years))
+        own = years == _OWN
+        base = dict(min_nine=int(min_nine), require_volume=bool(need_vol), years=5 if own else int(years),
+                    start_year=int(start_year) if own else None,
+                    end_year=int(max(end_year, start_year)) if own else None, min_turnover_m=float(min_turn))
         chosen = [k for k, on_ in ovt.items() if on_]
         if compare_ovt:
             runs = [(name, preset, gate, entry, keys) for name, keys in ovtlyr_variants(chosen)]
@@ -171,7 +190,7 @@ def render_viking_nine_backtest() -> None:
             res = dict(cache[ck])
             res.pop("portfolio", None)
             res["labels"] = {"exit": ex, "gate": gt, "entry": en, "ovtlyr": list(keys)}
-            res["portfolio"] = vp.simulate(res.get("trades") or [], years=cfg.years, pc=pc)
+            res["portfolio"] = vp.simulate(res.get("trades") or [], years=years_of(res), pc=pc)
             out[name] = res
         bar.empty()
         selected = next((r[0] for r in runs if r[1] == preset and r[2] == gate and r[3] == entry), runs[0][0])
@@ -272,7 +291,9 @@ def render_result(res: dict, name: str = "") -> None:
     m, cfg = res["metrics"], res["config"]
     rules = ", ".join(vb.EXIT_RULES[k] for k in cfg.exit_rules) or "bara stopp"
     gate = getattr(cfg, "risk_gate", ())
-    st.markdown(f"<div style='color:{DIM};font-size:0.78rem;'>{len(res['per_ticker'])} tickers · {cfg.years} år · "
+    per = res.get("period") or {}
+    span = f"{per['start']} – {per['end']}" if per else f"{cfg.years} år"
+    st.markdown(f"<div style='color:{DIM};font-size:0.78rem;'>{len(res['per_ticker'])} tickers · {span} · "
                 f"entry vid Nine ≥ {cfg.min_nine}/9 · volymkrav {'på' if cfg.require_volume else 'av'}<br>"
                 f"Exit: <b style='color:{TEXT};'>{name or 'Alla regler'}</b> — stopp, breakeven-stopp, {rules}"
                 f"{' · EMA10 först efter breakeven' if cfg.trail_after_be else ''}<br>"
@@ -317,6 +338,8 @@ def render_result(res: dict, name: str = "") -> None:
                     unsafe_allow_html=True)
         render_groups(res["trades"])
         render_portfolio(portfolio_of(res))
+        from ovtlyr.ui.viking_robustness_ui import render_robustness
+        render_robustness(res, portfolio_of(res))
         with st.expander(f"Alla affärer ({len(res['trades'])})"):
             st.dataframe(pd.DataFrame([{
                 "Ticker": t.ticker, "Signal": t.signal_date, "Entry": t.entry_date, "Pris in": round(t.entry, 2),
@@ -359,6 +382,7 @@ def ticker_rows(res: dict) -> list:
                      "Expectancy R": s.get("Expectancy R"), "Win rate %": s.get("Win rate %"),
                      "Affärer": len(p["trades"]), "Signaler": p["signals"], "Spärrade": p.get("risk_blocked", 0),
                      "Utan pullback": p.get("no_pullback", 0), "Illikvid": p.get("illiquid", 0),
+                     "Tunn omsättning": p.get("thin", 0),
                      "No chase": p["no_chase"], "R/R < 2": p["low_rr"],
                      "Marknad": p.get("market") or "—", "Sektor-ETF": p.get("sector_etf") or "—",
                      "Data": p.get("error") or "ok"})
@@ -380,13 +404,14 @@ def render_groups(trades: list) -> None:
 
 
 def equity_chart(p: dict) -> go.Figure:
-    pts = p.get("curve") or []
+    mtm = p.get("mtm") or {}
+    pts = mtm.get("curve") or p.get("curve") or []
     fig = go.Figure(go.Scatter(x=[d for d, _v in pts], y=[v for _d, v in pts], mode="lines",
                                line=dict(color=GOLD, width=1.6), name="Konto %"))
     fig.add_hline(y=0, line=dict(color=DIM, width=1, dash="dot"))
     layout = dict(PLOTLY_LAYOUT)
-    layout.update(height=280, showlegend=False, title=dict(text="PORTFÖLJ — KONTOT I % (STÄNGDA AFFÄRER)",
-                                                           font=dict(size=12, color=GOLD)),
+    title = "PORTFÖLJ — KONTOT I % (DAGSVÄRDERAT)" if mtm.get("curve") else "PORTFÖLJ — KONTOT I % (STÄNGDA AFFÄRER)"
+    layout.update(height=280, showlegend=False, title=dict(text=title, font=dict(size=12, color=GOLD)),
                   yaxis=dict(title="%", gridcolor="rgba(255,255,255,0.05)"))
     fig.update_layout(**layout)
     return fig
@@ -408,14 +433,18 @@ def render_portfolio(p: dict) -> None:
          f"{' · ' + str(p['skipped_sector']) + ' sektor' if p.get('skipped_sector') else ''} · max {p['max_open']} "
          f"öppna", CYAN),
         ("AVKASTNING", f"{p['return_pct']:+g} %", f"{cagr} · snittposition {p['avg_position_pct']:g} %", GOLD),
-        ("MAX DRAWDOWN", f"−{p['max_dd_pct']:g} %", f"i R: {_fmt(-m['max_drawdown_r'])} · snittrisk "
-                                                     f"{p['avg_risk_pct']:g} % per affär", AMBER),
+        ("MAX DRAWDOWN", f"−{p['max_dd_pct']:g} %",
+         (f"dagsvärderad · bara stängda affärer −{p['closed_dd_pct']:g} %" if p.get("mtm") and "closed_dd_pct" in p
+          else "på stängda affärer") + f" · i R: {_fmt(-m['max_drawdown_r'])}", AMBER),
+        ("KAPITAL I ARBETE", "—" if not p.get("mtm") else f"{p['mtm']['avg_exposure_pct']:g} %",
+         f"snittexponering · snittrisk {p['avg_risk_pct']:g} % per affär · 25 %-taket i "
+         f"{p.get('cap_share') if p.get('cap_share') is not None else '—'} % av affärerna", CYAN),
         ("EXPECTANCY", _fmt(exp), f"summa {_fmt(m['total_r'])} · win rate {m['win_rate']:g} % · PF "
                                   f"{_fmt(m['profit_factor'], '{:.2f}')}", GREEN if exp > 0 else RED),
     ]
-    cols = st.columns(2)
+    cols = st.columns(3)
     for k, (title, big, sub, col) in enumerate(cards):
-        cols[k % 2].markdown(big_card(title, big, sub, col), unsafe_allow_html=True)
+        cols[k % 3].markdown(big_card(title, big, sub, col), unsafe_allow_html=True)
     try:
         st.plotly_chart(equity_chart(p), use_container_width=True, config={"displayModeBar": False},
                         key="vnb_equity")
