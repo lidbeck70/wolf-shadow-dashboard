@@ -437,7 +437,7 @@ def render_portfolio(p: dict) -> None:
          (f"dagsvärderad · bara stängda affärer −{p['closed_dd_pct']:g} %" if p.get("mtm") and "closed_dd_pct" in p
           else "på stängda affärer") + f" · i R: {_fmt(-m['max_drawdown_r'])}", AMBER),
         ("KAPITAL I ARBETE", "—" if not p.get("mtm") else f"{p['mtm']['avg_exposure_pct']:g} %",
-         f"snittexponering · snittrisk {p['avg_risk_pct']:g} % per affär · 25 %-taket i "
+         f"snittexponering · snittrisk {p['avg_risk_pct']:g} % per affär · {p.get('max_position_pct', 25):g} %-taket i "
          f"{p.get('cap_share') if p.get('cap_share') is not None else '—'} % av affärerna", CYAN),
         ("EXPECTANCY", _fmt(exp), f"summa {_fmt(m['total_r'])} · win rate {m['win_rate']:g} % · PF "
                                   f"{_fmt(m['profit_factor'], '{:.2f}')}", GREEN if exp > 0 else RED),

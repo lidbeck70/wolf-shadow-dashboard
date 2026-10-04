@@ -1,5 +1,5 @@
 """
-berserk/themes.py — råvaruteman, komplex och drivare för ⚔️ BERSERK.
+berserk/themes.py — råvaruteman, komplex och drivare för 🪓 BERSERK.
 
 Varje tema har en eller flera DRIVARE (Yahoo-symboler) i preferensordning:
 råvaruterminen först, en ETF/ETC med samma exponering som reserv. Datasonden
@@ -22,7 +22,7 @@ THEMES: dict = {
     "olja":        ("Olja", "energi", ("BZ=F", "CL=F", "BNO", "USO")),
     "naturgas":    ("Naturgas (USA)", "energi", ("NG=F", "UNG")),
     "naturgas_eu": ("Naturgas (Europa, TTF)", "energi", ("TTF=F",)),
-    "kol":         ("Kol", "energi", ("MTF=F",)),
+    "kol":         ("Kol", "energi", ()),                                # MTF=F slutade uppdateras 2025
     "uran":        ("Uran", "energi", ("U-UN.TO", "URNM", "URA")),
     # ── Basmetaller ─────────────────────────────────────────────────────────
     "koppar":      ("Koppar", "basmetaller", ("HG=F", "CPER", "COPX")),

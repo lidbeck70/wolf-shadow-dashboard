@@ -1,6 +1,6 @@
 name: BERSERK probe (råvarudata)
 
-# Manuell diagnostik för ⚔️ BERSERK: provar varje temas drivare (råvaruterminer
+# Manuell diagnostik för 🪓 BERSERK: provar varje temas drivare (råvaruterminer
 # och reserv-ETF:er), råvaru-ETF:erna och producentbolagen hos Yahoo och skriver
 # vilka som fungerar och hur lång historik de har. Ändrar ingenting.
 on:

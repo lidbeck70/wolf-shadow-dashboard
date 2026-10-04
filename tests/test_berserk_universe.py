@@ -1,5 +1,5 @@
 """
-⚔️ BERSERK PR 0 — teman, drivare, universum och datasonden. Inget nätverk:
+🪓 BERSERK PR 0 — teman, drivare, universum och datasonden. Inget nätverk:
 sonden körs med en fejkad hämtare.
 """
 import os
@@ -83,7 +83,8 @@ def _getter(symbol, period):
 
 
 def test_probe_picks_first_working_driver_and_flags_problems():
-    cands = [("Drivare", t, s) for t in ("olja", "naturgas_eu", "kol", "godsel", "lax") for s in th.drivers(t)]
+    cands = [("Drivare", t, s) for t in ("olja", "naturgas_eu", "godsel", "lax") for s in th.drivers(t)]
+    cands += [("Drivare", "kol", "MTF=F")]                                   # nedlagd termin → GAMMAL
     cands += [("ETF", "guld", "GLD"), ("Norden", "koppar", "BOL.ST")]
     rows = probe.run(cands, getter=_getter, out=lambda *_: None, today=TODAY)
     by = {(r["group"], r["symbol"]): r for r in rows}
@@ -114,3 +115,8 @@ def test_workflow_runs_the_probe():
                         "berserk-probe.yml")
     text = open(path, encoding="utf-8").read()
     assert "python -m berserk.probe" in text and "workflow_dispatch" in text
+
+
+def test_probe_findings_are_applied():
+    assert "BELCO.OL" not in uv.NORDIC                                       # ingen kurshistorik hos Yahoo
+    assert th.drivers("kol") == ()                                           # MTF=F slutade uppdateras 2025

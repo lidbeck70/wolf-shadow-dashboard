@@ -1,5 +1,5 @@
 """
-berserk/universe.py — producentbolag och råvaru-ETF:er för ⚔️ BERSERK.
+berserk/universe.py — producentbolag och råvaru-ETF:er för 🪓 BERSERK.
 
 Varje aktie är kopplad till det tema (themes.THEMES) vars råvara driver dess
 intjäning mest. Bolag med flera råvaror står under den största (Boliden →
@@ -32,7 +32,7 @@ _NORDIC_RAW: dict = {
     "METSB.HE": "skog",
     # Frakt
     "FRO.OL": "tank", "HAFNI.OL": "tank", "OET.OL": "tank", "TRMD-A.CO": "tank", "BWLPG.OL": "tank",
-    "2020.OL": "torrbulk", "BELCO.OL": "torrbulk",
+    "2020.OL": "torrbulk",
 }
 
 _GLOBAL_RAW: dict = {
