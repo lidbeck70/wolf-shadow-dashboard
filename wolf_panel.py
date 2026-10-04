@@ -257,6 +257,14 @@ try:
 except ImportError:
     VIKING_NINE_REGIME_AVAILABLE = False
 
+# 🪓 BERSERK (SCREENING → Arc Screener, REGIME → Råvaror) — contrarian swing i råvarumarknaden
+try:
+    from berserk.screen_ui import render_berserk_screen_page
+    from berserk.regime_ui import render_berserk_regime_page
+    BERSERK_AVAILABLE = True
+except ImportError:
+    BERSERK_AVAILABLE = False
+
 # Marknadsrisk (REGIME → Marknad) — riskmodellen för SPY och OMXS30
 try:
     from market_risk_ui import render_market_risk_page
@@ -422,6 +430,8 @@ def main():
                     _page(VIKING_NINE_AVAILABLE, render_viking_nine_page, "Viking Nine", "viking_screen")
                 elif inner == "🔥 EMBER":
                     _page(EMBER_AVAILABLE, render_ember_page, "EMBER", "ember")
+                elif inner == "🪓 BERSERK":
+                    _page(BERSERK_AVAILABLE, render_berserk_screen_page, "BERSERK", "berserk")
             elif sub == "Contrarian Alpha":
                 inner = _sub("screening/Contrarian Alpha")
                 if inner == "Screener":
@@ -507,6 +517,8 @@ def main():
                 st.markdown("---")
                 if sub == "🌍 EMBER Regime":
                     _page(EMBER_AVAILABLE, render_ember_regime_page, "EMBER Regime", "ember")
+                elif sub == "🪓 BERSERK Regime":
+                    _page(BERSERK_AVAILABLE, render_berserk_regime_page, "BERSERK Regime", "berserk")
                 elif sub == "Råvarurotation":
                     _page(ROTATION_AVAILABLE, render_rotation_page, "Råvarurotationen", "rotation")
                 elif sub == "🥇🥈 Guld/Silver":

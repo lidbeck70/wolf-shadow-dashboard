@@ -134,9 +134,10 @@ def frame(stock: pd.DataFrame, driver: Optional[pd.Series] = None, is_etf: bool 
 
     # S1 Divergens — bara producentbolag med drivare (en ETF ÄR råvaran)
     if df is not None and not is_etf:
-        f[S1] = (df["strong"] & (f["divergence"] <= DIV_LAG) & f["up_close"] & f["green"]
-                 & (f["rvol"] >= RVOL_S1))
+        f["s1_setup"] = df["strong"] & (f["divergence"] <= DIV_LAG)          # allt utom triggern (skannerns BEVAKA)
+        f[S1] = f["s1_setup"] & f["up_close"] & f["green"] & (f["rvol"] >= RVOL_S1)
     else:
+        f["s1_setup"] = False
         f[S1] = False
     # S2 Cykelvändning — ETF:en är sin egen drivare
     if df is not None or is_etf:
@@ -145,12 +146,15 @@ def frame(stock: pd.DataFrame, driver: Optional[pd.Series] = None, is_etf: bool 
             .rolling(LOOKBACK_BEAR, min_periods=1).max() > 0
         bear = dd["bear"] if df is not None else dd["bear"].reindex(idx).fillna(False)
         turn = dd["turn"] if df is not None else dd["turn"].reindex(idx).fillna(False)
-        f[S2] = bear & turn & hated & (c > f["high20_prev"]) & (f["rvol"] >= RVOL_S2)
+        f["s2_setup"] = bear & turn & hated
+        f[S2] = f["s2_setup"] & (c > f["high20_prev"]) & (f["rvol"] >= RVOL_S2)
     else:
+        f["s2_setup"] = False
         f[S2] = False
     # S3 Snapback
     trend = df["uptrend"] if df is not None else ((c > f["sma200"]) & (f["sma200"] > f["sma200"].shift(20)))
+    f["s3_trend"] = trend
     f[S3] = trend & (f["rsi2"] < RSI2_MAX) & (c < f["bb_low"])
-    for k in SETUPS:
+    for k in SETUPS + ("s1_setup", "s2_setup", "s3_trend"):
         f[k] = f[k].fillna(False).astype(bool)
     return f
