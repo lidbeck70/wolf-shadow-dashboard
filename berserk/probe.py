@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-berserk/probe.py — datasonden för ⚔️ BERSERK (PR 0).
+berserk/probe.py — datasonden för 🪓 BERSERK (PR 0).
 
 Provar hos Yahoo (samma väg som panelen: market_prices.ohlcv, period "max"):
   1. varje temas drivare (råvaruterminer och reserv-ETF:er), i preferensordning
@@ -96,7 +96,7 @@ def _fmt(v) -> str:
 
 
 def markdown(rows: list) -> str:
-    lines = ["## ⚔️ BERSERK — datasond", "", "### Vald drivare per tema", "",
+    lines = ["## 🪓 BERSERK — datasond", "", "### Vald drivare per tema", "",
              "| Komplex | Tema | Drivare | Från | Till | År | Från 2008? |", "|---|---|---|---|---|---|---|"]
     missing = []
     for theme, r in chosen_drivers(rows).items():

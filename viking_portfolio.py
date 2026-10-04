@@ -44,6 +44,11 @@ class PortfolioConfig:
     max_daily_losses: int = vx.MAX_DAILY_LOSSES    # 2
     one_per_sector: bool = True                    # högst en öppen position per sektor (som live)
     history_first: bool = False                    # OVTLYR: bäst egen historik (hist_r) först, sedan Nine
+    # Valfria gränser (andra strategier, t.ex. 🪓 BERSERK) — förvalen ändrar inget för Viking Nine
+    sector_cap: int = 1                            # positioner per sektor när one_per_sector (BERSERK: per tema)
+    group_caps: tuple = ()                         # ((features-nyckel, max), …) t.ex. (("complex", 4),)
+    max_positions: Optional[int] = None            # max antal öppna positioner
+    max_heat_pct: Optional[float] = None           # max summa öppen risk (% av kapitalet, på initialstoppen)
 
 
 PORTFOLIO_RULES = {
@@ -60,11 +65,13 @@ NOTES = (
 
 
 def position_pct(t, pc: PortfolioConfig = PortfolioConfig()) -> float:
-    """Positionens andel av kapitalet (%): risken på stoppen, taket per position."""
+    """Positionens andel av kapitalet (%): risken på stoppen, taket per position. En affär kan
+    bära egen risk (features["risk_pct"], t.ex. per setup) — annars portföljens."""
     stop_pct = t.risk / t.entry * 100 if t.entry and t.risk else 0.0
     if stop_pct <= 0:
         return 0.0
-    return min(pc.risk_pct / stop_pct * 100, pc.max_position_pct)
+    risk = (getattr(t, "features", None) or {}).get("risk_pct") or pc.risk_pct
+    return min(float(risk) / stop_pct * 100, pc.max_position_pct)
 
 
 def _priority(t, history_first: bool = False) -> tuple:
@@ -80,19 +87,30 @@ def simulate(trades: list, years: Optional[float] = None, pc: PortfolioConfig = 
 
     open_, taken, rows = [], [], []
     losses = Counter()
-    skipped_full = skipped_losses = skipped_sector = max_open = 0
+    skipped_full = skipped_losses = skipped_sector = skipped_group = skipped_heat = max_open = 0
     for t in sorted(trades, key=lambda t: _priority(t, pc.history_first)):
         open_ = [(o, p) for o, p in open_ if o.open or o.exit_date >= t.entry_date]
         if losses[t.signal_date] >= pc.max_daily_losses:
             skipped_losses += 1
             continue
         sector = getattr(t, "sector", None)
-        if pc.one_per_sector and sector and any(getattr(o, "sector", None) == sector for o, _p in open_):
+        if pc.one_per_sector and sector and sum(getattr(o, "sector", None) == sector
+                                                for o, _p in open_) >= max(1, pc.sector_cap):
             skipped_sector += 1
             continue
+        feats = getattr(t, "features", None) or {}
+        if any(feats.get(key) is not None and sum((getattr(o, "features", None) or {}).get(key) == feats.get(key)
+                                                  for o, _p in open_) >= cap for key, cap in pc.group_caps):
+            skipped_group += 1
+            continue
         pp = position_pct(t, pc)
-        if pp <= 0 or sum(p for _o, p in open_) + pp > pc.max_exposure_pct + 1e-9:
+        if (pp <= 0 or sum(p for _o, p in open_) + pp > pc.max_exposure_pct + 1e-9
+                or (pc.max_positions is not None and len(open_) >= pc.max_positions)):
             skipped_full += 1
+            continue
+        if pc.max_heat_pct is not None and (sum(p * (o.risk / o.entry) for o, p in open_) + pp * (t.risk / t.entry)
+                                            > pc.max_heat_pct + 1e-9):
+            skipped_heat += 1
             continue
         open_.append((t, pp))
         max_open = max(max_open, len(open_))
@@ -119,6 +137,8 @@ def simulate(trades: list, years: Optional[float] = None, pc: PortfolioConfig = 
     return {
         "metrics": metrics(taken), "rows": rows, "curve": curve, "candidates": len(trades), "taken": len(taken),
         "skipped_full": skipped_full, "skipped_losses": skipped_losses, "skipped_sector": skipped_sector,
+        "skipped_group": skipped_group, "skipped_heat": skipped_heat,
+        "max_position_pct": pc.max_position_pct,
         "max_open": max_open,
         "return_pct": round((eq - 1) * 100, 1), "cagr_pct": cagr,
         "max_dd_pct": mtm["max_dd_pct"] if mtm else round(max_dd * 100, 1),     # dagsvärderad när kurser finns
