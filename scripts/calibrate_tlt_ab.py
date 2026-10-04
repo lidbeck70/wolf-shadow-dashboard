@@ -36,6 +36,20 @@ def fetch() -> dict:
             data[t] = df if len(df) else None
         except Exception:
             data[t] = None
+    # Enstaka tickers faller ibland bort i batch-nedladdningen — hämta om individuellt
+    import time
+    for t in TICKERS:
+        if data.get(t) is None or not len(data[t]):
+            for attempt in range(3):
+                try:
+                    df = yf.Ticker(t).history(period="max", auto_adjust=True)
+                    if df is not None and len(df):
+                        df.index = pd.DatetimeIndex(df.index).tz_localize(None)
+                        data[t] = df
+                        break
+                except Exception:
+                    pass
+                time.sleep(3 * (attempt + 1))
     data["T10Y2Y"] = mr._fred_default("T10Y2Y")
     return data
 
