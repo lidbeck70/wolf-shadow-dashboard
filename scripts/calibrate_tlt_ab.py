@@ -6,8 +6,14 @@ Jämför träffandel per nivå, varnade episoder och HÖG-larm — med och utan
 TLT-signalen — på identisk data. Ingen optimering: signalen är satt i förväg.
 """
 from __future__ import annotations
+import sys
+import pathlib
 import warnings
 warnings.filterwarnings("ignore")
+
+# Körs som `python scripts/calibrate_tlt_ab.py` — lägg repo-roten på sys.path
+# så `import market_risk` fungerar (sys.path[0] är annars scripts/).
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 import numpy as np
 import pandas as pd
