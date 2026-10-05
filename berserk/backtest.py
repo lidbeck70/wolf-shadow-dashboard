@@ -87,6 +87,20 @@ def portfolio_config(max_heat: float = MAX_HEAT_PCT, max_s3: Optional[int] = Non
                               one_per_sector=True, sector_cap=2, group_caps=caps, max_daily_losses=2)
 
 
+# ── Gällande regler (skanner, papperskonto, larm) ───────────────────────────
+# Valda 2026-10 efter portföljvarianterna (Allt 5 år + 2008–2020): bättre än basen i båda perioderna.
+LIVE_RULES = "S3 av + värme 8 % + råvarugrind + gap"
+
+
+def live_config(**kw) -> Config:
+    """Reglerna som skannern och papperskontot följer (backtestets standard är oförändrad för jämförelse)."""
+    return Config(**{"setups": (sg.S1, sg.S2), "commodity_gate": True, "max_gap_atr": 1.0, **kw})
+
+
+def live_portfolio() -> vp.PortfolioConfig:
+    return portfolio_config(max_heat=8.0)
+
+
 def pick_driver(theme: str, start, series: dict) -> tuple:
     """(symbol, serie) — första drivaren (preferensordning) med data från start; täcker ingen
     starten väljs den med längst historik."""

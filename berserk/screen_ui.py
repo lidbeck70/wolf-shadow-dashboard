@@ -123,7 +123,7 @@ def render_berserk_screen_page() -> None:
             st.warning("Välj minst ett universum.")
         else:
             bar = st.progress(0.0, text="Hämtar drivare och index …")
-            res = live.scan(tickers, capital=float(capital), cfg=bt.Config(min_turnover_m=float(min_turn)),
+            res = live.scan(tickers, capital=float(capital), cfg=bt.live_config(min_turnover_m=float(min_turn)),
                             progress=lambda i, n, t: bar.progress(i / n, text=f"{t} ({i}/{n})"))
             bar.empty()
             live.portfolio_flags(res["rows"], live.held_tickers())
@@ -161,7 +161,8 @@ def render_results(res: dict) -> None:
     missing = [r["ticker"] for r in rows if r.get("error")]
     if missing:
         note(f"Utan data eller okända: {', '.join(missing[:30])}{' …' if len(missing) > 30 else ''}")
-    note("Entry = nästa dags öppning (stängningen visas som ungefärligt pris). Stopp: S1/S2 2 × ATR, S3 3 × ATR. "
+    note(f"Regler: {bt.LIVE_RULES}. Entry = nästa dags öppning (stängningen visas som ungefärligt pris) — köp inte "
+         "om öppningen gappar mer än 1 ATR över stängningen. Stopp: S1/S2 2 × ATR, S3 3 × ATR. "
          "Position = risk per setup (S1/S2 1,25 %, S3 1 %) / stoppavstånd, max 20 %. Spärrarna räknas mot "
          "Holdings: max 2 per tema, 4 per komplex och 8 positioner. Exit enligt setupens regler — "
          "papperskontot förvaltar dem automatiskt (fliken PAPPERSKONTO).")
@@ -269,8 +270,10 @@ def render_paper(state, scan) -> None:
                     f"<b style='color:{AMBER};'>{cnt.get(live.BEVAKA, 0)} BEVAKA</b></div>", unsafe_allow_html=True)
         if scan.get("rows"):
             st.markdown(_table(scan["rows"]), unsafe_allow_html=True)
-    note("Papperskontot följer backtestets regler exakt: fyllning på nästa öppning, stopp intradag, "
-         "stängningsregler säljer på nästa öppning, max 8 positioner, 2 per tema, 4 per komplex, 6 % värme, "
+    note(f"Regler: {bt.LIVE_RULES} (S1 och S2; utanför Norden bara när råvarukorgen DBC är över SMA200; ingen "
+         "fyllning när öppningen gappar mer än 1 ATR över stängningen). "
+         "Papperskontot följer backtestets regler exakt: fyllning på nästa öppning, stopp intradag, "
+         "stängningsregler säljer på nästa öppning, max 8 positioner, 2 per tema, 4 per komplex, 8 % värme, "
          "ingen belåning. Kontot räknas i procent av start = 100 och i lokal valuta (som backtestet). Jämför "
          "snitt-R och drawdown med backtestet efter 1–2 månader — det är underlaget för riskskalningen (PR 4). "
          "Riktiga order läggs manuellt.")

@@ -206,6 +206,7 @@ def _fake_world(day):
 
 def test_script_run_saves_and_alerts(monkeypatch):
     import berserk_scan as bs
+    monkeypatch.setattr(bt, "live_config", lambda **kw: bt.Config(**kw))     # mekaniken, med S3-fixturen
     monkeypatch.setattr(bs, "universe", lambda: ["BOL.ST", "FCX", "NEM"])
     store, sent = {}, []
     kw = dict(nordic_provider=lambda: {"close": UP}, load=lambda f, fb: store.get(f, fb),
@@ -222,6 +223,7 @@ def test_script_run_saves_and_alerts(monkeypatch):
 
 def test_script_dry_run_and_unreadable_paper(monkeypatch):
     import berserk_scan as bs
+    monkeypatch.setattr(bt, "live_config", lambda **kw: bt.Config(**kw))     # mekaniken, med S3-fixturen
     monkeypatch.setattr(bs, "universe", lambda: ["BOL.ST"])
     store = {bs.SCAN_BLOB: {"paper_last_run": "2026-09-29", "paper": {"equity": 101.0}}}
     saves = []
@@ -296,3 +298,37 @@ def test_gap_rule_skips_fill():
     s0, _ = paper.step(None, [_signal_row(stock)], _ctx(stock, K), today=IDX[K])
     s1, ev = paper.step(s0, [], _ctx(stock, K + 1), today=IDX[K + 1], cfg=bt.Config(max_gap_atr=-10.0))
     assert [e["kind"] for e in ev] == [paper.SPARRAD] and "gappade" in ev[0]["text"] and not s1["positions"]
+
+
+def test_live_rules():
+    cfg, pc = bt.live_config(), bt.live_portfolio()
+    assert cfg.setups == (sg.S1, sg.S2) and cfg.commodity_gate and cfg.max_gap_atr == 1.0
+    assert pc.max_heat_pct == 8.0 and bt.Config().setups == sg.SETUPS            # backtestets standard orörd
+    assert bt.live_config(min_turnover_m=2.0).min_turnover_m == 2.0
+
+
+def test_paper_drops_setups_outside_the_rules():
+    stock = _bounce()
+    s0, _ = paper.step(None, [_signal_row(stock)], _ctx(stock, K), today=IDX[K])     # S3-order (gamla regler)
+    s1, ev = paper.step(s0, [_signal_row(stock)], _ctx(stock, K + 1), today=IDX[K + 1], cfg=bt.live_config())
+    assert not s1["orders"] and not s1["positions"]
+    assert [e["kind"] for e in ev] == [paper.UTGANGEN] and "S3 ingår inte" in ev[0]["text"]
+
+
+def test_script_uses_live_rules(monkeypatch):
+    import berserk_scan as bs
+    from berserk import live as lv
+    seen = {}
+    real_scan = lv.scan
+
+    def spy(*a, **kw):
+        seen["cfg"] = kw.get("cfg")
+        return real_scan(*a, **kw)
+
+    monkeypatch.setattr(lv, "scan", spy)
+    monkeypatch.setattr(bs, "universe", lambda: ["BOL.ST"])
+    store = {}
+    out = bs.run(getter=_fake_world(K), nordic_provider=lambda: {"close": UP}, load=lambda f, fb: store.get(f, fb),
+                 save=lambda f, d: store.__setitem__(f, d) or True, send=lambda m: True, today=IDX[K])
+    assert seen["cfg"].setups == (sg.S1, sg.S2) and seen["cfg"].commodity_gate
+    assert out["scan"]["rules"] == bt.LIVE_RULES and not out["paper"]["orders"]       # S3-signalen köps inte
