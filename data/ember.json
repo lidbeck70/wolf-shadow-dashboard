@@ -1,5 +1,6 @@
 {
   "complex_overrides": {
+    "BTO": "adelmetaller",
     "DOFG.OL": "basmetaller",
     "SPG.CO": "energi",
     "VISC.ST": "basmetaller"
