@@ -332,3 +332,25 @@ def test_script_uses_live_rules(monkeypatch):
                  save=lambda f, d: store.__setitem__(f, d) or True, send=lambda m: True, today=IDX[K])
     assert seen["cfg"].setups == (sg.S1, sg.S2) and seen["cfg"].commodity_gate
     assert out["scan"]["rules"] == bt.LIVE_RULES and not out["paper"]["orders"]       # S3-signalen köps inte
+
+
+def test_satellite_cap_in_paper():
+    pc = bt.portfolio_config(max_heat=8.0, max_sat=3)
+    sats = [dict(_pos(f"U{k}", f"t{k}", f"c{k}"), satellite="SAT") for k in range(3)]
+    st_ = {**paper.new_state(), "positions": sats}
+    assert paper.block_reason(st_, "guld", 10, 0.6, pc=pc, satellite=True) == "SATELLIT FULL (3)"
+    assert paper.block_reason(st_, "guld", 10, 1.25, pc=pc, satellite=False) is None   # kärnan får plats
+
+
+def test_rotation_link():
+    from berserk import rotation_link as rl
+    grades = {"koppar": {"hatred": 5, "fundamentals": 5, "catalyst": 4, "case_intact": True},
+              "olja": {"hatred": 1, "fundamentals": 2, "catalyst": 1, "case_intact": True}}
+    assert rl.theme_status("koppar", grades) == "AGERA" and rl.theme_status("olja", grades) == "Vila"
+    assert rl.theme_status("naturgas", grades) is None and rl.theme_status("lax", grades) is None
+    rows = [{"ticker": "BOL.ST", "status": "KÖP", "theme": "koppar"},
+            {"ticker": "EQNR.OL", "status": "KÖP", "theme": "olja", "flags": ["TEMA FULLT"]},
+            {"ticker": "AKRBP.OL", "status": "BEVAKA", "theme": "olja"}]
+    rl.apply(rows, grades)
+    assert rows[0]["rotation"] == "AGERA" and rl.FLAG_VILA not in (rows[0].get("flags") or [])
+    assert rows[1]["flags"] == ["TEMA FULLT", rl.FLAG_VILA] and "flags" not in rows[2]

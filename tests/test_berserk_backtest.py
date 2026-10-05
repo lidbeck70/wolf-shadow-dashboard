@@ -339,17 +339,68 @@ def test_max_s3_and_heat_variants():
 def test_plan_runs():
     from berserk.ui import BASE, M_NONE, M_PORTFOLIO, M_SETUPS, plan_runs
     runs = {n: (c, p) for n, c, p in plan_runs(M_PORTFOLIO, list(sg.SETUPS))}
-    assert list(runs)[0] == BASE and runs[BASE] == ({"setups": sg.SETUPS}, {})
-    assert runs["S3 av + värme 8 %"] == ({"setups": (sg.S1, sg.S2)}, {"max_heat": 8.0})
-    assert runs["S3 av + värme 8 % + råvarugrind + gap"][0] == {"setups": (sg.S1, sg.S2), "commodity_gate": True,
-                                                                "max_gap_atr": 1.0}
-    assert runs["Max 2 S3 + värme 8 % + råvarugrind"] == ({"setups": sg.SETUPS, "commodity_gate": True},
-                                                          {"max_s3": 2, "max_heat": 8.0})
-    assert runs["Bara Norden, S3 av + värme 8 %"][0]["regions"] == ("Norden",)
-    no_s3 = [n for n, _c, _p in plan_runs(M_PORTFOLIO, [sg.S1, sg.S2])]
-    assert no_s3 == [BASE]                                                   # alla varianter rör S3
+    assert list(runs)[0] == BASE
+    live_kw, live_pc = runs[BASE]
+    cfg, ref = bt.Config(**live_kw), bt.live_config()
+    assert (cfg.setups, cfg.commodity_gate, cfg.max_gap_atr) == (ref.setups, ref.commodity_gate, ref.max_gap_atr)
+    assert bt.portfolio_config(**live_pc).max_heat_pct == bt.live_portfolio().max_heat_pct  # = gällande regel
+    sat_kw, sat_pc = runs["Kärna + satellit (koppar/guld) + S1 ej i TOPP"]
+    assert sat_kw["gate_kind"] == bt.GATE_CU_AU and sat_kw["s1_top_block"] and sat_kw["satellite_risk"] == 0.5
+    assert sat_pc == {"max_heat": 8.0, "max_sat": 3}
+    assert runs["Bara Norden (referens)"][0]["regions"] == ("Norden",)
+    assert len(plan_runs(M_PORTFOLIO, [sg.S1, sg.S2])) == len(runs)                 # S3 är redan av
     assert [n for n, _c, _p in plan_runs(M_SETUPS, list(sg.SETUPS))][-1] == "Alla tre"
     assert len(plan_runs(M_NONE, [sg.S1])) == 1
+
+
+# ── PR 3d: kärna + satellit, koppar/guld, Blindspot-TOPP ────────────────────
+def test_topp_threshold_matches_blindspot_and_is_point_in_time():
+    from blindspot.theme_board import _CYKEL_TOPP
+    assert sg.TOP_PCTILE * 100 == _CYKEL_TOPP
+    d = pd.Series(np.r_[np.linspace(100, 50, 1500), np.linspace(50, 200, 1500)],
+                  index=pd.bdate_range("2014-01-01", periods=3000))
+    fr = sg.driver_frame(d)
+    assert fr["pct10"].iloc[:sg.TOP_MIN - 1].isna().all()                        # minst fem års historik
+    assert fr["pct10"].iloc[-1] == pytest.approx(1.0) and fr["pct10"].iloc[1499] < 0.05   # botten = låg percentil
+    cut = sg.driver_frame(d.iloc[:2000])
+    assert cut["pct10"].iloc[-1] == pytest.approx(fr["pct10"].iloc[1999])          # samma värde utan framtiden
+
+
+def test_s1_top_block():
+    cfg = dict(setups=(sg.S1,), min_turnover_m=0, market_gate=False)
+    base = bt.backtest_ticker("FCX", DATA["FCX"], DATA["HG=F"]["Close"], bt.Config(**cfg))
+    fr = sg.frame(DATA["FCX"], DATA["HG=F"]["Close"])
+    fr["d_top"] = True                                                             # råvaran i TOPP hela tiden
+    top = bt.backtest_ticker("FCX", DATA["FCX"], DATA["HG=F"]["Close"], bt.Config(**cfg, s1_top_block=True), frame=fr)
+    assert base["trades"] and top["trades"] == [] and top["top_blocked"] > 0
+    assert bt.backtest_ticker("FCX", DATA["FCX"], DATA["HG=F"]["Close"], bt.Config(**cfg), frame=fr)["trades"]
+
+
+def test_copper_gold_gate_series():
+    r = bt.gate_series(bt.GATE_CU_AU, lambda s: DATA.get(s))
+    hg, gc = DATA["HG=F"]["Close"], DATA["GC=F"]["Close"]
+    assert r.iloc[-1] == pytest.approx(hg.iloc[-1] / gc.iloc[-1])
+    assert bt.gate_series(bt.GATE_DBC, lambda s: None) is None
+    assert bt.gate_series(bt.GATE_CU_AU, lambda s: DATA.get(s) if s != "GC=F" else None) is None
+
+
+def test_satellite_half_risk_core_first_and_cap():
+    cfg = bt.Config(setups=(sg.S1,), min_turnover_m=0, market_gate=False, satellite_risk=0.5, core_first=True)
+    us = bt.backtest_ticker("FCX", DATA["FCX"], DATA["HG=F"]["Close"], cfg)
+    se = bt.backtest_ticker("BOL.ST", DATA["BOL.ST"], DATA["HG=F"]["Close"], cfg)
+    assert {t.features["risk_pct"] for t in us["trades"]} == {bt.RISK_BY_SETUP[sg.S1] * 0.5}
+    assert {t.features["satellite"] for t in us["trades"]} == {"SAT"} and se["trades"][0].features["satellite"] is None
+    assert se["trades"][0].nine == sg.PRIORITY[sg.S1] + 10 and us["trades"][0].nine == sg.PRIORITY[sg.S1]
+    assert bt.is_satellite("GLD", bt.Config()) and not bt.is_satellite("EQNR.OL", bt.Config())
+    sat = [_pt(f"S{k}", f"tema{k}", f"cx{k}", risk_pct=0.5, stop=10.0) for k in range(5)]
+    for t in sat:
+        t.features["satellite"] = "SAT"
+    p = vp.simulate(sat + [_pt("N1", "temaN", "cxN", risk_pct=0.5, stop=10.0)], pc=bt.portfolio_config(max_sat=3))
+    assert p["taken"] == 4 and p["skipped_group"] == 2                               # 3 satelliter + kärnan
+    row = live.evaluate("FCX", DATA["FCX"].iloc[-400:], DATA["HG=F"]["Close"], None, cfg=cfg)
+    assert row["satellite"] == "SAT"
+    if row["setup"]:
+        assert row["risk_pct"] == pytest.approx(bt.RISK_BY_SETUP[row["setup"]] * 0.5)
 
 
 def test_commodity_gate_blocks_outside_norden_only():

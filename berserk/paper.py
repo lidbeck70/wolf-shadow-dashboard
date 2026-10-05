@@ -83,7 +83,7 @@ def _signal_idx(idx, date: str) -> Optional[int]:
 
 # ── Spärrar ─────────────────────────────────────────────────────────────────
 def block_reason(state: dict, theme: str, weight_pct: float, risk_pct: float, extra: list = (),
-                 pc=None) -> Optional[str]:
+                 pc=None, satellite: bool = False) -> Optional[str]:
     """Varför en ny position inte får plats (None = OK). extra = redan accepterade order samma dag."""
     pc = pc or bt.portfolio_config()
     held = [(p["theme"], p["complex"]) for p in state["positions"]] + [(o["theme"], o["complex"]) for o in extra]
@@ -94,6 +94,10 @@ def block_reason(state: dict, theme: str, weight_pct: float, risk_pct: float, ex
     cap = dict(pc.group_caps).get("complex")
     if cap and sum(1 for _t, c in held if c == th.complex_of(theme)) >= cap:
         return "KOMPLEX FULLT"
+    sat_cap = dict(pc.group_caps).get("satellite")
+    if sat_cap and satellite and sum(1 for x in list(state["positions"]) + list(extra)
+                                     if x.get("satellite")) >= sat_cap:
+        return f"SATELLIT FULL ({sat_cap})"
     if pc.max_heat_pct is not None:
         planned = sum(o.get("risk_pct") or 0 for o in extra)
         if heat(state) + planned + risk_pct > pc.max_heat_pct + 1e-9:
@@ -167,7 +171,8 @@ def step(state: Optional[dict], rows: list, frames: dict, today=None, cfg: Optio
         stop_pct = (entry - stop) / entry * 100
         pos_pct = min(o["risk_pct"] / stop_pct * 100, pc.max_position_pct)
         eq = equity(state)
-        reason = block_reason(state, o["theme"], pos_pct, pos_pct * stop_pct / 100, pc=pc)
+        reason = block_reason(state, o["theme"], pos_pct, pos_pct * stop_pct / 100, pc=pc,
+                              satellite=bool(o.get("satellite")))
         weight = min(eq * pos_pct / 100, state["cash"])
         if reason is None and weight < 0.5:
             reason = "INGEN KASSA"
@@ -179,7 +184,7 @@ def step(state: Optional[dict], rows: list, frames: dict, today=None, cfg: Optio
              "region": o.get("region"), "signal_date": o["signal_date"], "entry_date": _d(idx[i + 1]),
              "entry": round(entry, 4), "init_stop": round(stop, 4), "cur_stop": round(stop, 4), "atr": atr0,
              "weight": round(weight, 4), "units": weight / entry, "last_close": entry, "last_date": _d(idx[i + 1]),
-             "pending": None, "armed_be": False, "trailing": False}
+             "pending": None, "armed_be": False, "trailing": False, "satellite": o.get("satellite")}
         state["positions"].append(p)
         filled.append(p)
         ev(KOPT, p["ticker"], f"{_short(p['setup'])} fylld {p['entry_date']} @ {_px(entry)} · stopp {_px(stop)} · "
@@ -199,13 +204,14 @@ def step(state: Optional[dict], rows: list, frames: dict, today=None, cfg: Optio
         if t in taken or (t, sd) in done or r["setup"] not in cfg.setups:
             continue
         reason = block_reason(state, r["theme"], r.get("position_pct") or 0, r.get("risk_pct") or 0, accepted,
-                              pc=pc)
+                              pc=pc, satellite=bool(r.get("satellite")))
         if reason:
             ev(SPARRAD, t, f"{_short(r['setup'])} idag men {reason} — ingen order")
             continue
         o = {"ticker": t, "setup": r["setup"], "theme": r["theme"], "complex": r["complex"],
              "region": r.get("region"), "signal_date": sd, "close": r.get("close"), "stop": r.get("stop"),
              "atr": r.get("atr"), "risk_pct": r.get("risk_pct") or bt.RISK_BY_SETUP.get(r["setup"], 1.0),
+             "satellite": r.get("satellite"),
              "position_pct": r.get("position_pct")}
         if not o["atr"]:
             continue
