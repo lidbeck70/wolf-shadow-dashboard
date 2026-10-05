@@ -101,8 +101,10 @@ def block_reason(state: dict, theme: str, weight_pct: float, risk_pct: float, ex
 
 
 # ── Steget ──────────────────────────────────────────────────────────────────
-def step(state: Optional[dict], rows: list, frames: dict, today=None) -> tuple:
-    """(nytt tillstånd, nya händelser). rows = skannerns rader, frames = scan(keep=…)."""
+def step(state: Optional[dict], rows: list, frames: dict, today=None, cfg: Optional[bt.Config] = None) -> tuple:
+    """(nytt tillstånd, nya händelser). rows = skannerns rader, frames = scan(keep=…). cfg = reglerna
+    (max_gap_atr: fyll inte när öppningen sprungit iväg)."""
+    cfg = cfg or bt.Config()
     today = _d(today or pd.Timestamp.today())
     state = dict(state) if state else new_state(today)
     for k in ("positions", "orders", "closed", "events", "curve"):
@@ -150,6 +152,10 @@ def step(state: Optional[dict], rows: list, frames: dict, today=None) -> tuple:
         stop = entry - bt.STOP_ATR[o["setup"]] * atr0
         if not (entry > stop > 0):
             ev(SPARRAD, o["ticker"], "ogiltigt stopp vid fyllning")
+            continue
+        if cfg.max_gap_atr is not None and (entry - float(a[4][i])) / atr0 > cfg.max_gap_atr:
+            ev(SPARRAD, o["ticker"], f"fylldes inte: öppningen {_px(entry)} gappade mer än {cfg.max_gap_atr:g} ATR "
+                                     f"över stängningen")
             continue
         stop_pct = (entry - stop) / entry * 100
         pos_pct = min(o["risk_pct"] / stop_pct * 100, bt.portfolio_config().max_position_pct)

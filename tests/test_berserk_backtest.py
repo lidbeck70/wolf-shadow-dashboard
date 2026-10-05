@@ -169,10 +169,19 @@ def test_setup_selection_and_gates():
     assert no_gate["market_blocked"] == 0 and len(no_gate["trades"]) >= len(_run()["trades"])
 
 
-def test_free_period_cuts_data():
-    r = _run(start_year=2024, end_year=2025)
-    assert r["period"]["start"] == "2024-01-01" and r["period"]["end"] == "2025-12-31"
-    assert all("2024-01-01" <= t.signal_date and t.exit_date <= "2025-12-31" for t in r["trades"])
+def test_free_period_signals_inside_trades_run_to_completion():
+    """Egen period: signaler bara inom perioden, men affärerna löper klart på senare data — annars räknas
+    förlorarna (stängs snabbt) men inte vinnarna som fortfarande ligger i trend vid periodens slut."""
+    on = _run(start_year=2021, end_year=2022)
+    off = _run(start_year=2021, end_year=2022, exits_after_end=False)
+    assert on["period"]["start"] == "2021-01-01" and on["period"]["end"] == "2022-12-31"
+    for r in (on, off):
+        assert all("2021-01-01" <= t.signal_date <= "2022-12-31" for t in r["trades"])
+    assert all(t.exit_date <= "2022-12-31" for t in off["trades"])
+    assert [t.signal_date for t in on["trades"]] == [t.signal_date for t in off["trades"]]
+    cut = {(t.ticker, t.signal_date) for t in off["trades"] if t.open}
+    assert cut, "fixturen ska ha minst en affär öppen vid periodens slut"
+    assert all(t.exit_date > "2022-12-31" for t in on["trades"] if (t.ticker, t.signal_date) in cut)
 
 
 # ── Portföljen ──────────────────────────────────────────────────────────────
@@ -331,13 +340,52 @@ def test_plan_runs():
     from berserk.ui import BASE, M_NONE, M_PORTFOLIO, M_SETUPS, plan_runs
     runs = {n: (c, p) for n, c, p in plan_runs(M_PORTFOLIO, list(sg.SETUPS))}
     assert list(runs)[0] == BASE and runs[BASE] == ({"setups": sg.SETUPS}, {})
-    assert runs["S3 av"][0]["setups"] == (sg.S1, sg.S2)
-    assert runs["S3 bara Norden"][0] == {"setups": sg.SETUPS, "s3_regions": ("Norden",)}
-    assert runs["Max 2 S3 + värme 8 %"][1] == {"max_s3": 2, "max_heat": 8.0}
+    assert runs["S3 av + värme 8 %"] == ({"setups": (sg.S1, sg.S2)}, {"max_heat": 8.0})
+    assert runs["S3 av + värme 8 % + råvarugrind + gap"][0] == {"setups": (sg.S1, sg.S2), "commodity_gate": True,
+                                                                "max_gap_atr": 1.0}
+    assert runs["Max 2 S3 + värme 8 % + råvarugrind"] == ({"setups": sg.SETUPS, "commodity_gate": True},
+                                                          {"max_s3": 2, "max_heat": 8.0})
+    assert runs["Bara Norden, S3 av + värme 8 %"][0]["regions"] == ("Norden",)
     no_s3 = [n for n, _c, _p in plan_runs(M_PORTFOLIO, [sg.S1, sg.S2])]
-    assert "S3 av" not in no_s3 and "Max 2 S3" not in no_s3 and "Värme 8 %" in no_s3
+    assert no_s3 == [BASE]                                                   # alla varianter rör S3
     assert [n for n, _c, _p in plan_runs(M_SETUPS, list(sg.SETUPS))][-1] == "Alla tre"
     assert len(plan_runs(M_NONE, [sg.S1])) == 1
+
+
+def test_commodity_gate_blocks_outside_norden_only():
+    down = pd.Series(np.linspace(300, 100, len(IDX)), index=IDX)              # DBC i baisse hela tiden
+    cfg = bt.Config(min_turnover_m=0, market_gate=False, commodity_gate=True)
+    us = bt.backtest_ticker("FCX", DATA["FCX"], DATA["HG=F"]["Close"], cfg, commodity=down)
+    se = bt.backtest_ticker("BOL.ST", DATA["BOL.ST"], DATA["HG=F"]["Close"], cfg, commodity=down)
+    free = bt.backtest_ticker("FCX", DATA["FCX"], DATA["HG=F"]["Close"], bt.Config(min_turnover_m=0, market_gate=False),
+                              commodity=down)
+    assert us["trades"] == [] and us["commodity_blocked"] > 0 and free["trades"]
+    assert se["trades"] and se["commodity_blocked"] == 0                    # Norden handlas oavsett
+    row = live.evaluate("FCX", DATA["FCX"].iloc[-400:], DATA["HG=F"]["Close"], None, cfg=cfg, commodity=down)
+    assert row["status"] != live.KOP and (not row["setup"] or any("råvarugrind" in w for w in row["why"]))
+
+
+def test_gap_filter_and_regions():
+    cfg = dict(min_turnover_m=0, market_gate=False)
+    base = bt.backtest_ticker("FCX", DATA["FCX"], DATA["HG=F"]["Close"], bt.Config(**cfg))
+    tight = bt.backtest_ticker("FCX", DATA["FCX"], DATA["HG=F"]["Close"], bt.Config(**cfg, max_gap_atr=-10.0))
+    assert base["trades"] and tight["trades"] == [] and tight["gap_skipped"] > 0
+    assert all(t.features["gap_atr"] <= 0.5 for t in bt.backtest_ticker(
+        "FCX", DATA["FCX"], DATA["HG=F"]["Close"], bt.Config(**cfg, max_gap_atr=0.5))["trades"])
+    r = _run(regions=("Norden",))
+    assert {t.ticker for t in r["trades"]} <= {"BOL.ST", "EQNR.OL", "MOWI.OL"} and r["trades"]
+
+
+def test_frame_cache_gives_identical_results():
+    cache = {}
+    a = bt.run(TICKERS, getter=lambda t, p: DATA.get(t), cfg=bt.Config(
+        years=5, min_turnover_m=1.0), today=TODAY, nordic_provider=lambda: {"close": DATA["SPY"]["Close"]})
+    b = bt.run(TICKERS, getter=lambda t, p: DATA.get(t), cfg=bt.Config(years=5, min_turnover_m=1.0), today=TODAY,
+               nordic_provider=lambda: {"close": DATA["SPY"]["Close"]}, frame_cache=cache)
+    c = bt.run(TICKERS, getter=lambda t, p: DATA.get(t), cfg=bt.Config(years=5, min_turnover_m=1.0), today=TODAY,
+               nordic_provider=lambda: {"close": DATA["SPY"]["Close"]}, frame_cache=cache)
+    key = lambda r: [(t.ticker, t.signal_date, t.exit_date, t.r) for t in r["trades"]]  # noqa: E731
+    assert cache and key(a) == key(b) == key(c)
 
 
 def test_portfolio_variant_page(monkeypatch, res):

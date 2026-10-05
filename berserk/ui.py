@@ -39,13 +39,13 @@ BASE = "Bas (nuvarande regler)"
 # (namn, Config-ändringar, portfolio_config-ändringar) — standardreglerna ändras inte; det här är provkörningar
 PORTFOLIO_VARIANTS = (
     (BASE, {}, {}),
-    ("S3 av", {"drop_s3": True}, {}),
-    ("S3 bara Norden", {"s3_regions": ("Norden",)}, {}),
-    ("Max 2 S3", {}, {"max_s3": 2}),
-    ("Värme 8 %", {}, {"max_heat": 8.0}),
-    ("Värme 10 %", {}, {"max_heat": 10.0}),
-    ("Max 2 S3 + värme 8 %", {}, {"max_s3": 2, "max_heat": 8.0}),
     ("S3 av + värme 8 %", {"drop_s3": True}, {"max_heat": 8.0}),
+    ("Max 2 S3 + värme 8 %", {}, {"max_s3": 2, "max_heat": 8.0}),
+    ("S3 av + värme 8 % + råvarugrind", {"drop_s3": True, "commodity_gate": True}, {"max_heat": 8.0}),
+    ("S3 av + värme 8 % + råvarugrind + gap", {"drop_s3": True, "commodity_gate": True, "max_gap_atr": 1.0},
+     {"max_heat": 8.0}),
+    ("Max 2 S3 + värme 8 % + råvarugrind", {"commodity_gate": True}, {"max_s3": 2, "max_heat": 8.0}),
+    ("Bara Norden, S3 av + värme 8 %", {"drop_s3": True, "regions": ("Norden",)}, {"max_heat": 8.0}),
 )
 
 
@@ -174,9 +174,10 @@ def render_berserk_backtest() -> None:
         s1, s2 = st.columns([3, 2])
         setups = s1.multiselect("Setups", list(sg.SETUPS), default=list(sg.SETUPS), key="bz_setups")
         mode = s2.radio("Jämförelse", MODES, index=0, key="bz_mode",
-                        help="Setups var för sig: S1, S2, S3 och alla tre. Portföljvarianter: samma signaler "
-                             "med olika portföljregler (S3 av/bara Norden, max 2 S3, värmetak 8/10 %) — "
-                             "provkörningar, standardreglerna ändras inte.")
+                        help="Setups var för sig: S1, S2, S3 och alla tre. Portföljvarianter: samma kursdata "
+                             "med olika regler (S3 av / max 2 S3, värmetak 8 %, råvarugrind = utanför "
+                             "Norden bara när DBC är över SMA200, gap = ingen entry när öppningen gappar "
+                             "> 1 ATR, bara Norden) — provkörningar, standardreglerna ändras inte.")
         g1, g2 = st.columns(2)
         min_turn = g1.number_input("Minsta omsättning (milj/dag)", 0.0, 100.0, bt.MIN_TURNOVER_M, 0.5,
                                    key="bz_min_turnover", help="Snitt 20 dagar i lokal valuta (USA: USD).")
@@ -192,6 +193,7 @@ def render_berserk_backtest() -> None:
         keys = list(dict.fromkeys(repr(sorted(cfg_kw.items())) for _n, cfg_kw, _p in runs))
         done = {}                                                    # en backtest per unik signaluppsättning
         getter = stable_getter()                                     # samma kursdata i alla varianter
+        frames: dict = {}                                            # signalerna räknas en gång per ticker
         bar = st.progress(0.0, text="Hämtar kurser och drivare …")
         for name, cfg_kw, pc_kw in runs:
             key = repr(sorted(cfg_kw.items()))
@@ -201,7 +203,7 @@ def render_berserk_backtest() -> None:
                                 start_year=int(start_year) if own else None,
                                 end_year=int(max(end_year, start_year)) if own else None,
                                 min_turnover_m=float(min_turn), market_gate=bool(gate))
-                done[key] = bt.run(tickers, getter=getter, cfg=cfg,
+                done[key] = bt.run(tickers, getter=getter, cfg=cfg, frame_cache=frames,
                                    progress=lambda i, n, t, k=k, name=name: bar.progress(
                                        (k + i / n) / len(keys), text=f"{name}: {t} ({i}/{n})"))
             res = {kk: v for kk, v in done[key].items() if kk not in ("portfolio", "robustness", "mc_cost")}
@@ -244,7 +246,8 @@ def render_result(res: dict) -> None:
                 f"{per.get('start', '—')} – {per.get('end', '—')} · setups: "
                 f"{', '.join(res['config'].setups)} · {res.get('thin', 0)} signaler för tunn omsättning · "
                 f"{res.get('market_blocked', 0)} spärrade av marknaden · {res.get('data_blocked', 0)} spärrade av "
-                f"datavakten</div>", unsafe_allow_html=True)
+                f"datavakten · {res.get('commodity_blocked', 0)} av råvarugrinden · {res.get('gap_skipped', 0)} "
+                f"gap &gt; 1 ATR</div>", unsafe_allow_html=True)
     if not m.get("trades"):
         note("Inga stängda affärer under perioden.")
         return

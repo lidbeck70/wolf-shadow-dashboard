@@ -53,6 +53,8 @@ NOTES = (
     "ETF:erna är amerikanska med lång historik; svenska ETC:er har samma exponering men inte identisk kurs. "
     "Terminsbaserade ETF:er (USO, UNG) tappar på rullningen — det ingår i kursen.",
     "London-aktier noteras i pence: likviditetsgränsen räknas i lokal enhet.",
+    "Egen period: köpsignaler bara inom perioden, men öppna affärer löper klart på senare kurser — annars "
+    "räknas förlorarna (stängs snabbt) men inte vinnarna som ännu ligger i trend vid periodens slut.",
 )
 
 
@@ -66,6 +68,11 @@ class Config:
     market_gate: bool = True             # regionens index (universe.REGION_INDEX) över SMA200
     s3_regions: Optional[tuple] = None   # S3 bara i dessa regioner (None = alla; ETF:er räknas som USA)
     data_guard: bool = True              # inga signaler 20 dagar efter ett dagshopp > 60 % (signals.jump_block)
+    commodity_gate: bool = False         # råvarugrinden: utanför commodity_free bara när DBC är över SMA200
+    commodity_free: tuple = ("Norden",)  # regioner som handlas oavsett råvarugrind
+    max_gap_atr: Optional[float] = None  # ingen entry när öppningen gappar mer än så många ATR över stängningen
+    regions: Optional[tuple] = None      # bara dessa regioner ("Norden", "USA", "Kanada", "London", "ETF")
+    exits_after_end: bool = True         # egen period: signaler inom perioden, affärerna löper klart på senare data
     risk_by_setup: dict = field(default_factory=lambda: dict(RISK_BY_SETUP))
 
 
@@ -100,17 +107,27 @@ def _rank(setup: str, f: pd.DataFrame, i: int) -> float:
     return float(-f["rsi2"].iloc[i])
 
 
+def region_key(ticker: str) -> str:
+    """Region för filter och uppdelning — råvaru-ETF:erna som egen grupp."""
+    return "ETF" if uv.kind_of(ticker) == "etf" else uv.region_of(ticker)
+
+
 def backtest_ticker(ticker: str, stock: pd.DataFrame, driver: Optional[pd.Series], cfg: Config = Config(),
-                    start=None, market: Optional[pd.Series] = None, driver_symbol: Optional[str] = None) -> dict:
+                    start=None, market: Optional[pd.Series] = None, driver_symbol: Optional[str] = None,
+                    end=None, commodity: Optional[pd.Series] = None, frame: Optional[pd.DataFrame] = None) -> dict:
+    """Affärerna för en ticker. end = sista signaldag (affärer får löpa vidare på senare data). frame =
+    färdigräknad signals.frame (återanvänds mellan varianter — beror inte på cfg)."""
     stock = stock.dropna(subset=["Open", "High", "Low", "Close"])
     n = len(stock)
     theme = uv.theme_of(ticker)
     res = {"ticker": ticker, "trades": [], "signals": {s: 0 for s in sg.SETUPS}, "thin": 0, "market_blocked": 0,
-           "data_blocked": 0, "theme": theme, "driver": driver_symbol}
+           "data_blocked": 0, "commodity_blocked": 0, "gap_skipped": 0, "theme": theme, "driver": driver_symbol}
     if n < WARMUP_BARS + 2:
         return res
     is_etf = uv.kind_of(ticker) == "etf"
-    f = sg.frame(stock, driver, is_etf=is_etf, market=market if cfg.market_gate else None)
+    f = frame if frame is not None else sg.frame(stock, driver, is_etf=is_etf, market=market, commodity=commodity)
+    gated = cfg.commodity_gate and uv.region_of(ticker) not in cfg.commodity_free
+    end = pd.Timestamp(end) if end is not None else None
     o, h, lo, c = (stock[k].astype(float).values for k in ("Open", "High", "Low", "Close"))
     idx = stock.index
     first = WARMUP_BARS
@@ -120,6 +137,8 @@ def backtest_ticker(ticker: str, stock: pd.DataFrame, driver: Optional[pd.Series
                                              and uv.region_of(ticker) not in cfg.s3_regions)]
     i = first
     while i < n - 1:
+        if end is not None and idx[i] > end:
+            break
         setups = [s for s in sorted(allowed, key=lambda s: -sg.PRIORITY[s]) if bool(f[s].iloc[i])]
         if not setups:
             i += 1
@@ -134,8 +153,12 @@ def backtest_ticker(ticker: str, stock: pd.DataFrame, driver: Optional[pd.Series
             res["data_blocked"] += 1
             i += 1
             continue
-        if not bool(f["market_ok"].iloc[i]):
+        if cfg.market_gate and not bool(f["market_ok"].iloc[i]):
             res["market_blocked"] += 1
+            i += 1
+            continue
+        if gated and not bool(f["commodity_ok"].iloc[i]):
+            res["commodity_blocked"] += 1
             i += 1
             continue
         atr0 = float(f["atr"].iloc[i])
@@ -143,6 +166,10 @@ def backtest_ticker(ticker: str, stock: pd.DataFrame, driver: Optional[pd.Series
         stop = entry - STOP_ATR[setup] * atr0
         risk = entry - stop
         if not (risk > 0 and atr0 > 0):
+            i += 1
+            continue
+        if cfg.max_gap_atr is not None and (entry - c[i]) / atr0 > cfg.max_gap_atr:
+            res["gap_skipped"] += 1                            # öppningen sprang iväg — köp inte
             i += 1
             continue
         feats = {"setup": setup, "s3": "S3" if setup == sg.S3 else None, "theme": theme, "complex": th.complex_of(theme), "kind": "etf" if is_etf else
@@ -233,8 +260,9 @@ def _num(v, nd=2):
 
 
 def run(tickers: list, getter: Optional[Callable] = None, cfg: Config = Config(), progress: Optional[Callable] = None,
-        today=None, nordic_provider: Optional[Callable] = None) -> dict:
-    """Backtest över tickers (producenter och ETF:er ur berserk.universe; okända hoppas över)."""
+        today=None, nordic_provider: Optional[Callable] = None, frame_cache: Optional[dict] = None) -> dict:
+    """Backtest över tickers (producenter och ETF:er ur berserk.universe; okända hoppas över). frame_cache
+    (valfri dict) delar signals.frame mellan varianter med samma kursdata och period."""
     if getter is None:
         from market_prices import ohlcv as getter
     start, end, years = vb.period_of(cfg, today)
@@ -252,8 +280,12 @@ def run(tickers: list, getter: Optional[Callable] = None, cfg: Config = Config()
         if getattr(df.index, "tz", None) is not None:
             df = df.copy()
             df.index = df.index.tz_localize(None)
-        df = df[df.index <= end]
+        if not cfg.exits_after_end:
+            df = df[df.index <= end]
         return df if len(df) else None
+
+    if cfg.regions is not None:
+        tickers = [t for t in tickers if not uv.theme_of(t) or region_key(t) in cfg.regions]
 
     themes = {uv.theme_of(t) for t in tickers if uv.theme_of(t)}
     series = {}
@@ -271,11 +303,14 @@ def run(tickers: list, getter: Optional[Callable] = None, cfg: Config = Config()
         if region == "Norden":
             nm = (nordic_provider or (lambda: on.nordic_market(fetch_years * 262)))()
             if nm and nm.get("close") is not None:
-                markets[sym] = vb._cut(nm["close"].astype(float), end)
+                markets[sym] = nm["close"].astype(float) if cfg.exits_after_end else vb._cut(
+                    nm["close"].astype(float), end)
         else:
             d = _get(sym)
             if d is not None:
                 markets[sym] = d["Close"].astype(float)
+    dbc = _get("DBC")
+    commodity = dbc["Close"].astype(float) if dbc is not None else None
     per, trades = [], []
     for k, t in enumerate(tickers):
         theme = uv.theme_of(t)
@@ -288,18 +323,26 @@ def run(tickers: list, getter: Optional[Callable] = None, cfg: Config = Config()
             sym, drv = chosen.get(theme, (None, None))
             idx_sym = uv.REGION_INDEX[uv.region_of(t)]
             mkt = markets.get(idx_sym) if markets.get(idx_sym) is not None else markets.get("SPY")
-            r = backtest_ticker(t, df, drv, cfg, start=start, market=mkt, driver_symbol=sym)
+            key = (t, str(start.date()))
+            fr = frame_cache.get(key) if frame_cache is not None else None
+            if fr is None:
+                fr = sg.frame(df.dropna(subset=["Open", "High", "Low", "Close"]), drv,
+                              is_etf=uv.kind_of(t) == "etf", market=mkt, commodity=commodity)
+                if frame_cache is not None:
+                    frame_cache[key] = fr
+            r = backtest_ticker(t, df, drv, cfg, start=start, market=mkt, driver_symbol=sym, end=end,
+                                commodity=commodity, frame=fr)
             per.append(r)
             trades += r["trades"]
         if progress is not None:
             progress(k + 1, len(tickers), t)
     bench = {name: s[(s.index >= start) & (s.index <= end)] for name, s in markets.items() if s is not None}
-    dbc = _get("DBC")
-    if dbc is not None:
-        s = dbc["Close"].astype(float)
-        bench["DBC (råvarukorg)"] = s[(s.index >= start) & (s.index <= end)]
+    if commodity is not None:
+        bench["DBC (råvarukorg)"] = commodity[(commodity.index >= start) & (commodity.index <= end)]
     return {"trades": trades, "per_ticker": per, "metrics": vb.metrics(trades), "notes": NOTES, "config": cfg,
             "period": {"start": str(start.date()), "end": str(end.date()), "years": round(years, 2)},
             "benchmarks": bench, "drivers": {theme: sym for theme, (sym, _x) in chosen.items()},
             "thin": sum(p.get("thin", 0) for p in per), "market_blocked": sum(p.get("market_blocked", 0) for p in per),
-            "data_blocked": sum(p.get("data_blocked", 0) for p in per)}
+            "data_blocked": sum(p.get("data_blocked", 0) for p in per),
+            "commodity_blocked": sum(p.get("commodity_blocked", 0) for p in per),
+            "gap_skipped": sum(p.get("gap_skipped", 0) for p in per)}
