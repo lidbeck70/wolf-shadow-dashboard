@@ -82,9 +82,10 @@ def _signal_idx(idx, date: str) -> Optional[int]:
 
 
 # ── Spärrar ─────────────────────────────────────────────────────────────────
-def block_reason(state: dict, theme: str, weight_pct: float, risk_pct: float, extra: list = ()) -> Optional[str]:
+def block_reason(state: dict, theme: str, weight_pct: float, risk_pct: float, extra: list = (),
+                 pc=None) -> Optional[str]:
     """Varför en ny position inte får plats (None = OK). extra = redan accepterade order samma dag."""
-    pc = bt.portfolio_config()
+    pc = pc or bt.portfolio_config()
     held = [(p["theme"], p["complex"]) for p in state["positions"]] + [(o["theme"], o["complex"]) for o in extra]
     if pc.max_positions and len(held) >= pc.max_positions:
         return f"MAX {pc.max_positions} POSITIONER"
@@ -101,10 +102,12 @@ def block_reason(state: dict, theme: str, weight_pct: float, risk_pct: float, ex
 
 
 # ── Steget ──────────────────────────────────────────────────────────────────
-def step(state: Optional[dict], rows: list, frames: dict, today=None, cfg: Optional[bt.Config] = None) -> tuple:
+def step(state: Optional[dict], rows: list, frames: dict, today=None, cfg: Optional[bt.Config] = None,
+         pc=None) -> tuple:
     """(nytt tillstånd, nya händelser). rows = skannerns rader, frames = scan(keep=…). cfg = reglerna
-    (max_gap_atr: fyll inte när öppningen sprungit iväg)."""
+    (setups; max_gap_atr: fyll inte när öppningen sprungit iväg), pc = portföljreglerna (värmetak m.m.)."""
     cfg = cfg or bt.Config()
+    pc = pc or bt.portfolio_config()
     today = _d(today or pd.Timestamp.today())
     state = dict(state) if state else new_state(today)
     for k in ("positions", "orders", "closed", "events", "curve"):
@@ -132,6 +135,10 @@ def step(state: Optional[dict], rows: list, frames: dict, today=None, cfg: Optio
     for p in [p for p in state["positions"] if not uv.theme_of(p["ticker"])]:
         _close(state, p, p["last_close"], "borttagen ur universumet", p["last_date"], None, ev, SALD)
 
+    for o in [o for o in state["orders"] if o.get("setup") not in cfg.setups]:
+        state["orders"].remove(o)
+        ev(UTGANGEN, o["ticker"], f"ordern struken — {_short(o.get('setup'))} ingår inte i reglerna")
+
     # 1. Förvaltning av öppna positioner
     _manage(state, list(state["positions"]), arr, ev)
 
@@ -158,9 +165,9 @@ def step(state: Optional[dict], rows: list, frames: dict, today=None, cfg: Optio
                                      f"över stängningen")
             continue
         stop_pct = (entry - stop) / entry * 100
-        pos_pct = min(o["risk_pct"] / stop_pct * 100, bt.portfolio_config().max_position_pct)
+        pos_pct = min(o["risk_pct"] / stop_pct * 100, pc.max_position_pct)
         eq = equity(state)
-        reason = block_reason(state, o["theme"], pos_pct, pos_pct * stop_pct / 100)
+        reason = block_reason(state, o["theme"], pos_pct, pos_pct * stop_pct / 100, pc=pc)
         weight = min(eq * pos_pct / 100, state["cash"])
         if reason is None and weight < 0.5:
             reason = "INGEN KASSA"
@@ -189,9 +196,10 @@ def step(state: Optional[dict], rows: list, frames: dict, today=None, cfg: Optio
     for r in sorted((r for r in rows if r.get("status") == "KÖP" and not r.get("error") and r.get("setup")),
                     key=lambda r: (-sg.PRIORITY.get(r["setup"], 0), r["ticker"])):
         t, sd = r["ticker"], r.get("date") or today
-        if t in taken or (t, sd) in done:
+        if t in taken or (t, sd) in done or r["setup"] not in cfg.setups:
             continue
-        reason = block_reason(state, r["theme"], r.get("position_pct") or 0, r.get("risk_pct") or 0, accepted)
+        reason = block_reason(state, r["theme"], r.get("position_pct") or 0, r.get("risk_pct") or 0, accepted,
+                              pc=pc)
         if reason:
             ev(SPARRAD, t, f"{_short(r['setup'])} idag men {reason} — ingen order")
             continue
