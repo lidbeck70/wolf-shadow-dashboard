@@ -28,6 +28,7 @@ from berserk import signals as sg
 from berserk import themes as th
 from berserk import universe as uv
 from berserk import paper
+from berserk import rotation_link as rl
 from ovtlyr.ui.viking_robustness_ui import STICKY
 from ui.components import kpi, note, page_header
 from ui.tokens import AMBER, CYAN, DIM, GOLD, GREEN, GREY, RED, TEXT
@@ -38,6 +39,7 @@ SCAN_BLOB, PAPER_BLOB = "berserk_scan.json", "berserk_paper.json"
 LOG_STORE = "berserk_signals"
 LOG_MAX = 2000
 STATUS_COLOR = {live.KOP: GREEN, live.BEVAKA: AMBER, live.INGET: GREY}
+ROT_COLOR = {"AGERA": GREEN, "Bevaka": AMBER, "Vila": RED}
 SETUP_COLOR = {sg.S1: CYAN, sg.S2: GOLD, sg.S3: GREEN}
 
 
@@ -78,12 +80,12 @@ def _num(v) -> str:
 
 def _table(rows: list) -> str:
     head = ("<tr style='color:%s;'><th style='text-align:left;" + STICKY + "'>Ticker</th><th>Status</th><th>Setup</th>"
-            "<th style='text-align:left;'>Tema</th><th>Region</th><th>Stängning</th><th>Stopp</th><th>Position</th>"
+            "<th style='text-align:left;'>Tema</th><th>Rotation</th><th>Region</th><th>Stängning</th><th>Stopp</th><th>Position</th>"
             "<th>Antal</th><th style='text-align:left;'>Varför</th></tr>") % DIM
     body = []
     for r in rows:
         if r.get("error"):
-            body.append(f"<tr><td style='text-align:left;{STICKY}'>{r['ticker']}</td><td colspan='9' style='color:{DIM};"
+            body.append(f"<tr><td style='text-align:left;{STICKY}'>{r['ticker']}</td><td colspan='10' style='color:{DIM};"
                         f"text-align:left;'>{r['error']}</td></tr>")
             continue
         sc = STATUS_COLOR.get(r["status"], GREY)
@@ -94,7 +96,9 @@ def _table(rows: list) -> str:
             f"<tr><td style='text-align:left;{STICKY}'><b>{r['ticker']}</b>{etf}</td>"
             f"<td style='color:{sc};font-weight:700;'>{r['status'] or '—'}{flags}</td>"
             f"<td style='color:{SETUP_COLOR.get(setup, DIM)};'>{setup.split(' ', 1)[0] if setup else '—'}</td>"
-            f"<td style='text-align:left;'>{r.get('label', '')}</td><td>{r.get('region', '')}</td>"
+            f"<td style='text-align:left;'>{r.get('label', '')}</td>"
+            f"<td style='color:{ROT_COLOR.get(r.get('rotation'), DIM)};'>{r.get('rotation') or '—'}</td>"
+            f"<td>{r.get('region', '')}{' · sat' if r.get('satellite') else ''}</td>"
             f"<td>{_num(r.get('close'))}</td><td>{_num(r.get('stop'))}</td>"
             f"<td>{'—' if r.get('position_pct') is None else str(r['position_pct']) + ' %'}</td>"
             f"<td>{'—' if r.get('shares') is None else r['shares']}</td>"
@@ -127,6 +131,7 @@ def render_berserk_screen_page() -> None:
                             progress=lambda i, n, t: bar.progress(i / n, text=f"{t} ({i}/{n})"))
             bar.empty()
             live.portfolio_flags(res["rows"], live.held_tickers())
+            rl.apply(res["rows"], rl.load_grades())
             st.session_state[_ROWS] = res
             new_log, n = append_log(log, res["rows"])
             if n:
@@ -152,8 +157,14 @@ def render_results(res: dict) -> None:
     st.markdown(f"<div style='color:{DIM};font-size:0.78rem;'>Skannad {res['when']} · {len(rows)} tickers · "
                 f"<b style='color:{GREEN};'>{counts[live.KOP]} KÖP</b> · <b style='color:{AMBER};'>"
                 f"{counts[live.BEVAKA]} BEVAKA</b></div>", unsafe_allow_html=True)
-    show_all = st.checkbox("Visa alla tickers (även utan signal)", value=False, key="bz_scan_all")
+    c1, c2 = st.columns(2)
+    show_all = c1.checkbox("Visa alla tickers (även utan signal)", value=False, key="bz_scan_all")
+    hide_vila = c2.checkbox("Dölj KÖP i teman du satt på Vila (Råvarurotationen)", value=False, key="bz_rot_hide",
+                            help="Din manuella spärr: månadens betyg i Råvarurotationen. Kan inte backtestas — "
+                                 "papperskontot följer bara de mekaniska reglerna.")
     shown = rows if show_all else [r for r in rows if r.get("status") in (live.KOP, live.BEVAKA)]
+    if hide_vila:
+        shown = [r for r in shown if rl.FLAG_VILA not in (r.get("flags") or [])]
     if shown:
         st.markdown(_table(shown), unsafe_allow_html=True)
     else:

@@ -35,17 +35,19 @@ LISTS = {**uv.LISTS, _GLOBAL: tuple(uv.GLOBAL), _ALL: tuple(uv.NORDIC) + tuple(u
 ALL_SETUPS = "Alla tre"
 M_SETUPS, M_PORTFOLIO, M_NONE = "Setups var för sig", "Portföljvarianter", "Ingen jämförelse"
 MODES = (M_SETUPS, M_PORTFOLIO, M_NONE)
-BASE = "Bas (nuvarande regler)"
-# (namn, Config-ändringar, portfolio_config-ändringar) — standardreglerna ändras inte; det här är provkörningar
+BASE = "Nuvarande regel"
+_LIVE = {"drop_s3": True, "commodity_gate": True, "max_gap_atr": 1.0}          # = backtest.live_config()
+_SAT = {**_LIVE, "satellite_risk": 0.5, "core_first": True}                   # kärna Norden + satellit
+_SAT_PC = {"max_heat": 8.0, "max_sat": 3}
+# (namn, Config-ändringar, portfolio_config-ändringar) — provkörningar; den gällande regeln är den första
 PORTFOLIO_VARIANTS = (
-    (BASE, {}, {}),
-    ("S3 av + värme 8 %", {"drop_s3": True}, {"max_heat": 8.0}),
-    ("Max 2 S3 + värme 8 %", {}, {"max_s3": 2, "max_heat": 8.0}),
-    ("S3 av + värme 8 % + råvarugrind", {"drop_s3": True, "commodity_gate": True}, {"max_heat": 8.0}),
-    ("S3 av + värme 8 % + råvarugrind + gap", {"drop_s3": True, "commodity_gate": True, "max_gap_atr": 1.0},
-     {"max_heat": 8.0}),
-    ("Max 2 S3 + värme 8 % + råvarugrind", {"commodity_gate": True}, {"max_s3": 2, "max_heat": 8.0}),
-    ("Bara Norden, S3 av + värme 8 %", {"drop_s3": True, "regions": ("Norden",)}, {"max_heat": 8.0}),
+    (BASE, _LIVE, {"max_heat": 8.0}),
+    ("Kärna + satellit (DBC)", _SAT, _SAT_PC),
+    ("Kärna + satellit (koppar/guld)", {**_SAT, "gate_kind": bt.GATE_CU_AU}, _SAT_PC),
+    ("Kärna + satellit (DBC) + S1 ej i TOPP", {**_SAT, "s1_top_block": True}, _SAT_PC),
+    ("Kärna + satellit (koppar/guld) + S1 ej i TOPP", {**_SAT, "gate_kind": bt.GATE_CU_AU, "s1_top_block": True},
+     _SAT_PC),
+    ("Bara Norden (referens)", {"drop_s3": True, "max_gap_atr": 1.0, "regions": ("Norden",)}, {"max_heat": 8.0}),
 )
 
 
@@ -67,7 +69,8 @@ def plan_runs(mode: str, setups: list) -> list:
         out = []
         for name, cfg_kw, pc_kw in PORTFOLIO_VARIANTS:
             kw = dict(cfg_kw)
-            if (kw.pop("drop_s3", False) or "s3_regions" in kw or "max_s3" in pc_kw) and sg.S3 not in base:
+            kw.pop("drop_s3", None)
+            if ("s3_regions" in kw or "max_s3" in pc_kw) and sg.S3 not in base:
                 continue                                             # varianten handlar om S3 — finns inte valt
             sets = tuple(s for s in base if s != sg.S3) if cfg_kw.get("drop_s3") else base
             out.append((name, {**kw, "setups": sets}, dict(pc_kw)))
@@ -174,10 +177,10 @@ def render_berserk_backtest() -> None:
         s1, s2 = st.columns([3, 2])
         setups = s1.multiselect("Setups", list(sg.SETUPS), default=list(sg.SETUPS), key="bz_setups")
         mode = s2.radio("Jämförelse", MODES, index=0, key="bz_mode",
-                        help="Setups var för sig: S1, S2, S3 och alla tre. Portföljvarianter: samma kursdata "
-                             "med olika regler (S3 av / max 2 S3, värmetak 8 %, råvarugrind = utanför "
-                             "Norden bara när DBC är över SMA200, gap = ingen entry när öppningen gappar "
-                             "> 1 ATR, bara Norden) — provkörningar, standardreglerna ändras inte.")
+                        help="Setups var för sig: S1, S2, S3 och alla tre. Portföljvarianter: den gällande "
+                             "regeln mot kärna + satellit (Norden full risk; övriga regioner och ETF:er halv "
+                             "risk, högst 3 platser, bara när råvarugrinden — DBC eller koppar/guld över "
+                             "SMA200 — är på) med och utan Blindspot-TOPP för S1, och bara Norden.")
         g1, g2 = st.columns(2)
         min_turn = g1.number_input("Minsta omsättning (milj/dag)", 0.0, 100.0, bt.MIN_TURNOVER_M, 0.5,
                                    key="bz_min_turnover", help="Snitt 20 dagar i lokal valuta (USA: USD).")
@@ -247,7 +250,7 @@ def render_result(res: dict) -> None:
                 f"{', '.join(res['config'].setups)} · {res.get('thin', 0)} signaler för tunn omsättning · "
                 f"{res.get('market_blocked', 0)} spärrade av marknaden · {res.get('data_blocked', 0)} spärrade av "
                 f"datavakten · {res.get('commodity_blocked', 0)} av råvarugrinden · {res.get('gap_skipped', 0)} "
-                f"gap &gt; 1 ATR</div>", unsafe_allow_html=True)
+                f"gap &gt; 1 ATR · {res.get('top_blocked', 0)} S1 i TOPP</div>", unsafe_allow_html=True)
     if not m.get("trades"):
         note("Inga stängda affärer under perioden.")
         return
@@ -272,10 +275,11 @@ def render_result(res: dict) -> None:
             st.markdown(_table(rows, "Grupp"), unsafe_allow_html=True)
     p, pc = portfolio_of(res), pc_of(res)
     render_portfolio(p)
-    s3cap = dict(pc.group_caps).get("s3")
+    s3cap, satcap = dict(pc.group_caps).get("s3"), dict(pc.group_caps).get("satellite")
     note(f"BERSERK-portföljen: max {pc.max_positions} positioner, {pc.max_position_pct:g} % per position, "
          f"{pc.sector_cap} per tema, {dict(pc.group_caps).get('complex')} per komplex, {pc.max_heat_pct:g} % öppen "
-         f"risk{f', max {s3cap} S3 samtidigt' if s3cap else ''}. Hoppade över: {p.get('skipped_heat', 0)} värmetak · "
+         f"risk{f', max {s3cap} S3 samtidigt' if s3cap else ''}"
+         f"{f', max {satcap} satellitpositioner (utanför Norden, halv risk)' if satcap else ''}. Hoppade över: {p.get('skipped_heat', 0)} värmetak · "
          f"{p.get('skipped_group', 0)} komplex/S3-tak · {p.get('skipped_sector', 0)} tema.")
     render_robustness(res, p, pc=pc, lists=False)
     with st.expander("Drivare som användes"):

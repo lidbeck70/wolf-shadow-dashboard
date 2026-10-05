@@ -203,7 +203,8 @@ def evaluate(ticker: str, stock: pd.DataFrame, driver: Optional[pd.Series], mark
         row["why"].append("regionen ingår inte i reglerna")
         gates_ok = False
     if cfg.commodity_gate and row["region"] not in cfg.commodity_free and not bool(last["commodity_ok"]):
-        row["why"].append("råvarugrind: råvarukorgen (DBC) under SMA200")
+        row["why"].append(f"råvarugrind: {'koppar/guld-kvoten' if cfg.gate_kind == bt.GATE_CU_AU else 'råvarukorgen (DBC)'}"
+                          " under SMA200")
         gates_ok = False
     if cfg.data_guard and bool(last["data_jump"]):
         row["why"].append(f"datavakt: kurshopp > {sg.JUMP_MAX * 100:.0f} % på en dag senaste "
@@ -212,6 +213,10 @@ def evaluate(ticker: str, stock: pd.DataFrame, driver: Optional[pd.Series], mark
     setups = [s for s in cfg.setups if not (s == sg.S3 and cfg.s3_regions is not None
                                             and row["region"] not in cfg.s3_regions)]
     fired = [s for s in sorted(setups, key=lambda s: -sg.PRIORITY[s]) if bool(last[s])]
+    if cfg.s1_top_block and sg.S1 in fired and bool(last["d_top"]):
+        fired.remove(sg.S1)
+        row["why"].append("S1 spärrad: råvaran i TOPP (tioårspercentil ≥ 90 — Blindspot)")
+    row["satellite"] = "SAT" if bt.is_satellite(ticker, cfg) else None
     if fired:
         row["setup"] = fired[0]
         row["status"] = KOP if gates_ok else BEVAKA
@@ -225,7 +230,7 @@ def evaluate(ticker: str, stock: pd.DataFrame, driver: Optional[pd.Series], mark
     if row["setup"]:
         atr0 = float(last["atr"])
         stop = c - bt.STOP_ATR[row["setup"]] * atr0
-        risk_pct = cfg.risk_by_setup.get(row["setup"], 1.0)
+        risk_pct = cfg.risk_by_setup.get(row["setup"], 1.0) * (cfg.satellite_risk if row["satellite"] else 1.0)
         stop_pct = (c - stop) / c * 100 if c > stop else None
         pos = min(risk_pct / stop_pct * 100, bt.portfolio_config().max_position_pct) if stop_pct else None
         row.update(stop=round(stop, 4), risk_pct=risk_pct, position_pct=None if pos is None else round(pos, 1),
@@ -269,7 +274,7 @@ def scan(tickers: list, getter: Optional[Callable] = None, capital: float = 100_
     commodity = None
     if cfg.commodity_gate:
         try:
-            commodity = _close(getter("DBC", STOCK_PERIOD))
+            commodity = bt.gate_series(cfg.gate_kind, lambda s: getter(s, STOCK_PERIOD))
         except Exception:
             commodity = None
     rows = []

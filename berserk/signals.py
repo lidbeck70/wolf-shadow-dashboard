@@ -40,6 +40,8 @@ RANGE_LOW = 0.20                 # nedre 20 % av femårsintervallet
 LOOKBACK_BEAR = 126              # "någon gång senaste halvåret"
 RSI2_MAX, BB_N, BB_K = 10.0, 20, 2.0
 RET_N = 63
+TOP_PCTILE = 0.90                # Blindspots TOPP: råvaran över 90:e percentilen av sitt tioårsintervall
+TOP_WINDOW, TOP_MIN = 2520, 1260   # tio års handelsdagar (minst fem)
 JUMP_MAX, JUMP_BLOCK_DAYS = 0.60, 20     # datavakt: dagshopp > 60 % (ojusterad split/utdelning/datafel) spärrar 20 dagar
 
 
@@ -96,6 +98,7 @@ def driver_frame(d: pd.Series) -> pd.DataFrame:
     out["uptrend"] = d > out["sma200"]
     out["above_ema50"] = d > out["ema50"]
     out["above_sma50"] = d > out["sma50"]
+    out["pct10"] = d.rolling(TOP_WINDOW, min_periods=TOP_MIN).rank(pct=True)   # dag för dag, utan facit
     return out
 
 
@@ -147,10 +150,12 @@ def frame(stock: pd.DataFrame, driver: Optional[pd.Series] = None, is_etf: bool 
     f["has_driver"] = df is not None
     if df is not None:
         f["d_close"], f["d_ret63"] = df["close"], df["ret63"]
+        f["d_top"] = (df["pct10"] >= TOP_PCTILE).fillna(False).astype(bool)
         f["d_above_sma50"], f["d_above_ema50"] = df["above_sma50"], df["above_ema50"]
         f["divergence"] = f["ret63"] - df["ret63"]
     else:
         f["d_close"] = f["d_ret63"] = f["divergence"] = np.nan
+        f["d_top"] = False
         f["d_above_sma50"] = f["d_above_ema50"] = True
 
     # S1 Divergens — bara producentbolag med drivare (en ETF ÄR råvaran)

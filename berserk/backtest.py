@@ -73,16 +73,25 @@ class Config:
     max_gap_atr: Optional[float] = None  # ingen entry när öppningen gappar mer än så många ATR över stängningen
     regions: Optional[tuple] = None      # bara dessa regioner ("Norden", "USA", "Kanada", "London", "ETF")
     exits_after_end: bool = True         # egen period: signaler inom perioden, affärerna löper klart på senare data
+    gate_kind: str = "DBC"               # råvarugrindens serie: "DBC" (råvarukorgen) eller "koppar/guld" (HG/GC)
+    s1_top_block: bool = False           # inga S1 när råvaran är i TOPP (Blindspot: tioårspercentil ≥ 90)
+    core_regions: tuple = ("Norden",)    # kärnan — övriga regioner och ETF:er är satellit
+    satellite_risk: float = 1.0          # satellitens risk som andel av kärnans (0,5 = halv risk)
+    core_first: bool = False             # samma dag: kärnans signaler före satellitens
     risk_by_setup: dict = field(default_factory=lambda: dict(RISK_BY_SETUP))
 
 
 MAX_HEAT_PCT = 6.0
+GATE_DBC, GATE_CU_AU = "DBC", "koppar/guld"
 
 
-def portfolio_config(max_heat: float = MAX_HEAT_PCT, max_s3: Optional[int] = None) -> vp.PortfolioConfig:
+def portfolio_config(max_heat: float = MAX_HEAT_PCT, max_s3: Optional[int] = None,
+                     max_sat: Optional[int] = None) -> vp.PortfolioConfig:
     """BERSERK:s portfölj: max 8 positioner, 20 % per position, 2 per tema, 4 per komplex, 6 % värme.
-    max_s3 = högst så många samtidiga S3-positioner (None = ingen gräns) — så att S1/S2 får plats."""
-    caps = (("complex", 4),) + ((("s3", int(max_s3)),) if max_s3 else ())
+    max_s3 = högst så många samtidiga S3-positioner, max_sat = högst så många satellitpositioner (utanför
+    kärnan) — så att kärnan alltid får plats. None = ingen gräns."""
+    caps = (("complex", 4),) + ((("s3", int(max_s3)),) if max_s3 else ()) \
+        + ((("satellite", int(max_sat)),) if max_sat else ())
     return vp.PortfolioConfig(max_position_pct=20.0, max_positions=8, max_heat_pct=float(max_heat),
                               one_per_sector=True, sector_cap=2, group_caps=caps, max_daily_losses=2)
 
@@ -99,6 +108,32 @@ def live_config(**kw) -> Config:
 
 def live_portfolio() -> vp.PortfolioConfig:
     return portfolio_config(max_heat=8.0)
+
+
+def _close_of(df) -> Optional[pd.Series]:
+    if df is None or len(df) == 0 or "Close" not in df:
+        return None
+    s = df["Close"].astype(float).dropna()
+    if getattr(s.index, "tz", None) is not None:
+        s = s.copy()
+        s.index = s.index.tz_localize(None)
+    return s if len(s) else None
+
+
+def gate_series(kind: str, get: Callable) -> Optional[pd.Series]:
+    """Råvarugrindens serie: DBC, eller koppar/guld-kvoten (HG=F / GC=F — stigande = tillväxt, risk-på för
+    råvarubolagen). get(symbol) → OHLCV-DataFrame."""
+    if kind == GATE_CU_AU:
+        hg, gc = _close_of(get("HG=F")), _close_of(get("GC=F"))
+        if hg is None or gc is None:
+            return None
+        r = (hg / gc).dropna()
+        return r if len(r) else None
+    return _close_of(get("DBC"))
+
+
+def is_satellite(ticker: str, cfg: "Config") -> bool:
+    return uv.region_of(ticker) not in cfg.core_regions or uv.kind_of(ticker) == "etf"
 
 
 def pick_driver(theme: str, start, series: dict) -> tuple:
@@ -135,12 +170,17 @@ def backtest_ticker(ticker: str, stock: pd.DataFrame, driver: Optional[pd.Series
     n = len(stock)
     theme = uv.theme_of(ticker)
     res = {"ticker": ticker, "trades": [], "signals": {s: 0 for s in sg.SETUPS}, "thin": 0, "market_blocked": 0,
-           "data_blocked": 0, "commodity_blocked": 0, "gap_skipped": 0, "theme": theme, "driver": driver_symbol}
+           "data_blocked": 0, "commodity_blocked": 0, "gap_skipped": 0, "top_blocked": 0, "theme": theme,
+           "driver": driver_symbol}
     if n < WARMUP_BARS + 2:
         return res
     is_etf = uv.kind_of(ticker) == "etf"
     f = frame if frame is not None else sg.frame(stock, driver, is_etf=is_etf, market=market, commodity=commodity)
     gated = cfg.commodity_gate and uv.region_of(ticker) not in cfg.commodity_free
+    cok = sg.above_sma200(commodity, stock.index) if gated else None
+    if gated and cok is None:
+        cok = f["commodity_ok"]
+    sat = is_satellite(ticker, cfg)
     end = pd.Timestamp(end) if end is not None else None
     o, h, lo, c = (stock[k].astype(float).values for k in ("Open", "High", "Low", "Close"))
     idx = stock.index
@@ -171,8 +211,12 @@ def backtest_ticker(ticker: str, stock: pd.DataFrame, driver: Optional[pd.Series
             res["market_blocked"] += 1
             i += 1
             continue
-        if gated and not bool(f["commodity_ok"].iloc[i]):
+        if gated and not bool(cok.iloc[i]):
             res["commodity_blocked"] += 1
+            i += 1
+            continue
+        if cfg.s1_top_block and setup == sg.S1 and bool(f["d_top"].iloc[i]):
+            res["top_blocked"] += 1                            # råvaran redan i TOPP — för sent för S1
             i += 1
             continue
         atr0 = float(f["atr"].iloc[i])
@@ -186,13 +230,16 @@ def backtest_ticker(ticker: str, stock: pd.DataFrame, driver: Optional[pd.Series
             res["gap_skipped"] += 1                            # öppningen sprang iväg — köp inte
             i += 1
             continue
-        feats = {"setup": setup, "s3": "S3" if setup == sg.S3 else None, "theme": theme, "complex": th.complex_of(theme), "kind": "etf" if is_etf else
-                 "producent", "risk_pct": cfg.risk_by_setup.get(setup, 1.0),
+        risk_pct = cfg.risk_by_setup.get(setup, 1.0) * (cfg.satellite_risk if sat else 1.0)
+        feats = {"setup": setup, "s3": "S3" if setup == sg.S3 else None, "satellite": "SAT" if sat else None,
+                 "theme": theme, "complex": th.complex_of(theme), "kind": "etf" if is_etf else "producent",
+                 "risk_pct": risk_pct,
                  "atr_pct": round(atr0 / c[i] * 100, 2), "rvol": _num(f["rvol"].iloc[i]),
                  "rsi2": _num(f["rsi2"].iloc[i], 1), "divergence": _num(f["divergence"].iloc[i] * 100, 1),
                  "dd252": _num(f["dd252"].iloc[i] * 100, 1), "gap_atr": round((o[i + 1] - c[i]) / atr0, 2)}
         t = vb.Trade(ticker, str(idx[i].date()), str(idx[i + 1].date()), round(entry, 4), round(stop, 4),
-                     round(risk, 4), sg.PRIORITY[setup], mom63=round(_rank(setup, f, i), 4), sector=theme,
+                     round(risk, 4), sg.PRIORITY[setup] + (10 if cfg.core_first and not sat else 0),
+                     mom63=round(_rank(setup, f, i), 4), sector=theme,
                      features=feats)
         out = simulate_exit(o, h, lo, c, f, i, setup, entry, stop, atr0, close_at_end=True)
         j = out["exit_idx"] if out["exit_idx"] is not None else n
@@ -323,8 +370,8 @@ def run(tickers: list, getter: Optional[Callable] = None, cfg: Config = Config()
             d = _get(sym)
             if d is not None:
                 markets[sym] = d["Close"].astype(float)
-    dbc = _get("DBC")
-    commodity = dbc["Close"].astype(float) if dbc is not None else None
+    dbc = _close_of(_get("DBC"))
+    commodity = gate_series(cfg.gate_kind, _get) if cfg.commodity_gate else None
     per, trades = [], []
     for k, t in enumerate(tickers):
         theme = uv.theme_of(t)
@@ -341,7 +388,7 @@ def run(tickers: list, getter: Optional[Callable] = None, cfg: Config = Config()
             fr = frame_cache.get(key) if frame_cache is not None else None
             if fr is None:
                 fr = sg.frame(df.dropna(subset=["Open", "High", "Low", "Close"]), drv,
-                              is_etf=uv.kind_of(t) == "etf", market=mkt, commodity=commodity)
+                              is_etf=uv.kind_of(t) == "etf", market=mkt)          # oberoende av grind och cfg
                 if frame_cache is not None:
                     frame_cache[key] = fr
             r = backtest_ticker(t, df, drv, cfg, start=start, market=mkt, driver_symbol=sym, end=end,
@@ -351,12 +398,13 @@ def run(tickers: list, getter: Optional[Callable] = None, cfg: Config = Config()
         if progress is not None:
             progress(k + 1, len(tickers), t)
     bench = {name: s[(s.index >= start) & (s.index <= end)] for name, s in markets.items() if s is not None}
-    if commodity is not None:
-        bench["DBC (råvarukorg)"] = commodity[(commodity.index >= start) & (commodity.index <= end)]
+    if dbc is not None:
+        bench["DBC (råvarukorg)"] = dbc[(dbc.index >= start) & (dbc.index <= end)]
     return {"trades": trades, "per_ticker": per, "metrics": vb.metrics(trades), "notes": NOTES, "config": cfg,
             "period": {"start": str(start.date()), "end": str(end.date()), "years": round(years, 2)},
             "benchmarks": bench, "drivers": {theme: sym for theme, (sym, _x) in chosen.items()},
             "thin": sum(p.get("thin", 0) for p in per), "market_blocked": sum(p.get("market_blocked", 0) for p in per),
             "data_blocked": sum(p.get("data_blocked", 0) for p in per),
             "commodity_blocked": sum(p.get("commodity_blocked", 0) for p in per),
-            "gap_skipped": sum(p.get("gap_skipped", 0) for p in per)}
+            "gap_skipped": sum(p.get("gap_skipped", 0) for p in per),
+            "top_blocked": sum(p.get("top_blocked", 0) for p in per)}
