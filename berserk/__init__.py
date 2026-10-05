@@ -7,7 +7,7 @@ Long-only, dagsdata, köp nästa dags öppning.
 
   themes.py    teman (olja, koppar, guld, lax, frakt …), komplex och varje temas
                drivare i preferensordning (termin först, ETF som reserv)
-  universe.py  producentbolag (Norden först, sedan USA, Kanada, London och Australien) och
+  universe.py  producentbolag (Norden först, sedan USA, Kanada och London) och
                råvaru-ETF:er, var och en kopplad till sitt tema
   probe.py     datasonden: vilka drivare, ETF:er och aktier går att hämta, och
                hur lång historik de har (körs i Actions: berserk-probe.yml)

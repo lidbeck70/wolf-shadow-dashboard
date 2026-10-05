@@ -274,3 +274,18 @@ def test_paper_tab(monkeypatch):
     empty.session_state["bz_auto"] = {"paper": None, "scan": None, "loaded": "—"}
     empty.run()
     assert not empty.exception and "inte startat" in " ".join(m.value for m in empty.markdown)
+
+
+def test_removed_tickers_leave_the_paper_account():
+    """Australien togs bort ur universumet: order stryks, positioner stängs på senaste kurs."""
+    pos = {**_pos("FMG.AX", "jarnmalm", "basmetaller"), "setup": sg.S2, "signal_date": "2026-09-01",
+           "entry_date": "2026-09-02", "last_date": "2026-10-02", "last_close": 110.0, "weight": 20.0}
+    order = {"ticker": "PLS.AX", "setup": sg.S1, "theme": "litium", "complex": "basmetaller",
+             "signal_date": "2026-10-02", "atr": 1.0, "risk_pct": 1.25}
+    state = {**paper.new_state(), "cash": 80.0, "positions": [pos], "orders": [order]}
+    s, ev = paper.step(state, [], {}, today="2026-10-05")
+    assert not s["positions"] and not s["orders"]
+    assert {(e["kind"], e["ticker"]) for e in ev} == {(paper.SALD, "FMG.AX"), (paper.UTGANGEN, "PLS.AX")}
+    c = s["closed"][0]
+    assert c["exit"] == 110.0 and c["reason"] == "borttagen ur universumet" and c["r"] == pytest.approx(2.0)
+    assert paper.equity(s) == pytest.approx(80 + 0.2 * 110)

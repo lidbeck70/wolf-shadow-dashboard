@@ -123,6 +123,13 @@ def step(state: Optional[dict], rows: list, frames: dict, today=None) -> tuple:
             cache[t] = _arrays(t, frames.get(t))
         return cache[t]
 
+    # 0. Borttagna ur universumet (t.ex. Australien 2026-10): order stryks, positioner stängs på senaste kurs
+    for o in [o for o in state["orders"] if not uv.theme_of(o["ticker"])]:
+        state["orders"].remove(o)
+        ev(UTGANGEN, o["ticker"], "ordern struken — tickern är borttagen ur BERSERK-universumet")
+    for p in [p for p in state["positions"] if not uv.theme_of(p["ticker"])]:
+        _close(state, p, p["last_close"], "borttagen ur universumet", p["last_date"], None, ev, SALD)
+
     # 1. Förvaltning av öppna positioner
     _manage(state, list(state["positions"]), arr, ev)
 
@@ -221,21 +228,9 @@ def _manage(state: dict, positions: list, arr, ev) -> None:
         out = bt.simulate_exit(o, h, lo, c, f, i, p["setup"], p["entry"], p["init_stop"], p["atr"],
                                close_at_end=False)
         if out["exit_idx"] is not None:
-            j = out["exit_idx"]
-            px = float(out["exit"])
-            pnl = p["units"] * (px - p["entry"])
-            state["cash"] += p["units"] * px
-            r = (px - p["entry"]) / (p["entry"] - p["init_stop"])
-            closed = {**{k: p[k] for k in ("ticker", "setup", "theme", "complex", "region", "signal_date",
-                                           "entry_date", "entry", "init_stop", "weight")},
-                      "exit_date": _d(idx[j]), "exit": round(px, 4), "reason": out["reason"], "r": round(r, 3),
-                      "result_pct": round((px / p["entry"] - 1) * 100, 2), "pnl": round(pnl, 4),
-                      "days": int(j - i)}
-            state["closed"].append(closed)
-            state["positions"].remove(p)
-            kind = STOPPAD if "stopp" in out["reason"] and "tids" not in out["reason"] else SALD
-            ev(kind, p["ticker"], f"{_short(p['setup'])} {out['reason']} {closed['exit_date']} @ {_px(px)} · "
-                                  f"{r:+.2f} R · {closed['result_pct']:+.1f} %", r=round(r, 3))
+            reason = out["reason"]
+            kind = STOPPAD if "stopp" in reason and "tids" not in reason else SALD
+            _close(state, p, float(out["exit"]), reason, _d(idx[out["exit_idx"]]), int(out["exit_idx"] - i), ev, kind)
             continue
         p["last_close"], p["last_date"] = float(c[-1]), _d(idx[-1])
         if out["cur_stop"] > p["cur_stop"] + 1e-9:
@@ -245,6 +240,21 @@ def _manage(state: dict, positions: list, arr, ev) -> None:
             ev(SALJ_OPEN, p["ticker"], f"{_short(p['setup'])} {out['pending']} — sälj på nästa öppning · "
                                        f"stängde {_px(c[-1])} · {(c[-1] - p['entry']) / (p['entry'] - p['init_stop']):+.2f} R")
         p["pending"], p["armed_be"], p["trailing"] = out["pending"], out["armed_be"], out["trailing"]
+
+
+def _close(state: dict, p: dict, px: float, reason: str, date: str, days, ev, kind: str) -> None:
+    """Stäng positionen på px: kassan, avslutade affärer och händelsen."""
+    pnl = p["units"] * (px - p["entry"])
+    state["cash"] += p["units"] * px
+    r = (px - p["entry"]) / (p["entry"] - p["init_stop"])
+    closed = {**{k: p.get(k) for k in ("ticker", "setup", "theme", "complex", "region", "signal_date",
+                                       "entry_date", "entry", "init_stop", "weight")},
+              "exit_date": date, "exit": round(px, 4), "reason": reason, "r": round(r, 3),
+              "result_pct": round((px / p["entry"] - 1) * 100, 2), "pnl": round(pnl, 4), "days": days}
+    state["closed"].append(closed)
+    state["positions"].remove(p)
+    ev(kind, p["ticker"], f"{_short(p['setup'])} {reason} {date} @ {_px(px)} · {r:+.2f} R · "
+                          f"{closed['result_pct']:+.1f} %", r=round(r, 3))
 
 
 def _short(setup: str) -> str:

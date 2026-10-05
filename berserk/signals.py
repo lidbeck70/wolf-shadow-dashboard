@@ -40,6 +40,7 @@ RANGE_LOW = 0.20                 # nedre 20 % av femårsintervallet
 LOOKBACK_BEAR = 126              # "någon gång senaste halvåret"
 RSI2_MAX, BB_N, BB_K = 10.0, 20, 2.0
 RET_N = 63
+JUMP_MAX, JUMP_BLOCK_DAYS = 0.60, 20     # datavakt: dagshopp > 60 % (ojusterad split/utdelning/datafel) spärrar 20 dagar
 
 
 def _ema(s: pd.Series, n: int) -> pd.Series:
@@ -69,6 +70,13 @@ def align(s: Optional[pd.Series], idx) -> Optional[pd.Series]:
         s = s.copy()
         s.index = s.index.tz_localize(None)
     return s.reindex(s.index.union(idx)).ffill().reindex(idx)
+
+
+def jump_block(close: pd.Series) -> pd.Series:
+    """True de dagar då kursen hoppat mer än JUMP_MAX på en dag inom de senaste JUMP_BLOCK_DAYS dagarna —
+    typiskt en ojusterad split, extrautdelning eller ett datafel. Indikatorerna är då opålitliga."""
+    jump = (close.astype(float).pct_change().abs() > JUMP_MAX).astype(float)
+    return jump.rolling(JUMP_BLOCK_DAYS + 1, min_periods=1).max() > 0
 
 
 def driver_frame(d: pd.Series) -> pd.DataFrame:
@@ -111,6 +119,7 @@ def frame(stock: pd.DataFrame, driver: Optional[pd.Series] = None, is_etf: bool 
     f["high20_prev"] = h.shift(1).rolling(20).max()
     f["green"] = c > o
     f["up_close"] = c > h.shift(1)
+    f["data_jump"] = jump_block(c)
     if market is not None:
         m = align(market, idx)
         f["market_ok"] = m > m.rolling(200).mean() if m is not None else True

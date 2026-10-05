@@ -198,7 +198,13 @@ def evaluate(ticker: str, stock: pd.DataFrame, driver: Optional[pd.Series], mark
     if not bool(last["market_ok"]):
         row["why"].append(f"{uv.REGION_INDEX[row['region']]} under SMA200")
         gates_ok = False
-    fired = [s for s in sorted(cfg.setups, key=lambda s: -sg.PRIORITY[s]) if bool(last[s])]
+    if cfg.data_guard and bool(last["data_jump"]):
+        row["why"].append(f"datavakt: kurshopp > {sg.JUMP_MAX * 100:.0f} % på en dag senaste "
+                          f"{sg.JUMP_BLOCK_DAYS} dagarna — kontrollera split/utdelning")
+        gates_ok = False
+    setups = [s for s in cfg.setups if not (s == sg.S3 and cfg.s3_regions is not None
+                                            and row["region"] not in cfg.s3_regions)]
+    fired = [s for s in sorted(setups, key=lambda s: -sg.PRIORITY[s]) if bool(last[s])]
     if fired:
         row["setup"] = fired[0]
         row["status"] = KOP if gates_ok else BEVAKA

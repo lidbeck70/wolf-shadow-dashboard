@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import viking_backtest as vb  # noqa: E402
 import viking_portfolio as vp  # noqa: E402
 from berserk import backtest as bt  # noqa: E402
+from berserk import live  # noqa: E402
 from berserk import signals as sg  # noqa: E402
 from berserk import themes as th  # noqa: E402
 
@@ -279,4 +280,84 @@ def test_all_list_fits_the_page():
     from berserk.ui import LISTS
     import viking_screen as vs
     allt = next(v for k, v in LISTS.items() if k.startswith("Allt"))
-    assert len(vs.parse_tickers(", ".join(allt), limit=400)) == len(set(allt)) >= 250
+    assert len(vs.parse_tickers(", ".join(allt), limit=400)) == len(set(allt)) >= 225          # 232 efter att Australien togs bort
+
+
+# ── PR 3b: datavakten, S3-regler och portföljvarianter ─────────────────────
+def test_jump_block_marks_twenty_days_after_a_big_jump():
+    c = pd.Series(np.r_[np.full(50, 100.0), np.full(50, 4.0)], index=pd.bdate_range("2026-01-01", periods=100))
+    b = sg.jump_block(c)
+    assert not b.iloc[49] and b.iloc[50] and b.iloc[50 + sg.JUMP_BLOCK_DAYS] and not b.iloc[51 + sg.JUMP_BLOCK_DAYS]
+    assert not sg.jump_block(pd.Series(np.linspace(100, 60, 100))).any()           # vanliga fall spärrar inte
+
+
+def test_data_guard_blocks_signals_in_backtest_and_live():
+    stock = DATA["BOL.ST"].copy()
+    k = 1500
+    stock.iloc[k:, :4] = stock.iloc[k:, :4] * 0.03                                   # ojusterad "split" −97 %
+    up = pd.Series(np.linspace(100, 300, len(IDX)), index=IDX)                       # råvaran i upptrend → S3
+    cfg = dict(setups=(sg.S3,), min_turnover_m=0, market_gate=False)
+    on_ = bt.backtest_ticker("BOL.ST", stock, up, bt.Config(**cfg))
+    off = bt.backtest_ticker("BOL.ST", stock, up, bt.Config(**cfg, data_guard=False))
+    window = {str(d.date()) for d in stock.index[k:k + sg.JUMP_BLOCK_DAYS + 1]}
+    assert any(t.signal_date in window for t in off["trades"])                       # falsk panik utan vakt
+    assert not any(t.signal_date in window for t in on_["trades"]) and on_["data_blocked"] > 0
+    row = live.evaluate("BOL.ST", stock.iloc[:k + 3], up.iloc[:k + 3], None)
+    assert any("datavakt" in w for w in row["why"]) and row["status"] != live.KOP
+
+
+def test_s3_regions_limit_snapback_to_norden():
+    cfg = bt.Config(setups=(sg.S3,), min_turnover_m=0, market_gate=False, s3_regions=("Norden",))
+    us = bt.backtest_ticker("FCX", DATA["FCX"], DATA["HG=F"]["Close"], cfg)
+    se = bt.backtest_ticker("BOL.ST", DATA["BOL.ST"], DATA["HG=F"]["Close"], cfg)
+    assert us["trades"] == [] and se["trades"]
+    base = bt.backtest_ticker("FCX", DATA["FCX"], DATA["HG=F"]["Close"], bt.Config(setups=(sg.S3,), min_turnover_m=0,
+                                                                                    market_gate=False))
+    assert base["trades"]
+
+
+def test_max_s3_and_heat_variants():
+    s3 = [_pt(f"S{k}", f"tema{k}", f"cx{k}", risk_pct=1.0, stop=10.0, setup=sg.S3) for k in range(4)]
+    for t in s3:
+        t.features["s3"] = "S3"
+    p = vp.simulate(s3, pc=bt.portfolio_config(max_s3=2))
+    assert p["taken"] == 2 and p["skipped_group"] == 2
+    trades = [_pt(f"T{k}", f"tema{k}", f"cx{k}", stop=10.0) for k in range(10)]
+    assert vp.simulate(trades, pc=bt.portfolio_config(max_heat=10.0))["taken"] == 8   # 8 × 1,25 = 10 %
+    assert bt.portfolio_config().group_caps == (("complex", 4),)                     # standard oförändrad
+
+
+def test_plan_runs():
+    from berserk.ui import BASE, M_NONE, M_PORTFOLIO, M_SETUPS, plan_runs
+    runs = {n: (c, p) for n, c, p in plan_runs(M_PORTFOLIO, list(sg.SETUPS))}
+    assert list(runs)[0] == BASE and runs[BASE] == ({"setups": sg.SETUPS}, {})
+    assert runs["S3 av"][0]["setups"] == (sg.S1, sg.S2)
+    assert runs["S3 bara Norden"][0] == {"setups": sg.SETUPS, "s3_regions": ("Norden",)}
+    assert runs["Max 2 S3 + värme 8 %"][1] == {"max_s3": 2, "max_heat": 8.0}
+    no_s3 = [n for n, _c, _p in plan_runs(M_PORTFOLIO, [sg.S1, sg.S2])]
+    assert "S3 av" not in no_s3 and "Max 2 S3" not in no_s3 and "Värme 8 %" in no_s3
+    assert [n for n, _c, _p in plan_runs(M_SETUPS, list(sg.SETUPS))][-1] == "Alla tre"
+    assert len(plan_runs(M_NONE, [sg.S1])) == 1
+
+
+def test_portfolio_variant_page(monkeypatch, res):
+    from streamlit.testing.v1 import AppTest
+    from berserk.ui import BASE
+    monkeypatch.setenv("BZ_TEST_ROOT", ROOT)
+
+    def app():
+        import os as _o
+        import sys as _s
+        _s.path.insert(0, _o.environ["BZ_TEST_ROOT"])
+        from berserk.ui import render_berserk_backtest
+        render_berserk_backtest()
+
+    base = {k: v for k, v in res.items() if k not in ("portfolio", "robustness", "mc_cost")}
+    at = AppTest.from_function(app, default_timeout=120)
+    at.session_state["bz_result"] = {"runs": {BASE: dict(base, pc_kw={}),
+                                              "Max 2 S3": dict(base, pc_kw={"max_s3": 2})}, "selected": "Max 2 S3"}
+    at.run()
+    assert not at.exception, at.exception
+    html = " ".join(m.value for m in at.markdown)
+    for text in ("JÄMFÖRELSE AV PORTFÖLJVARIANTER", "MC DD p95", "Tagna %", "max 2 S3 samtidigt", "datavakten"):
+        assert text in html, text
