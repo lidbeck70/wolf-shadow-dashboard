@@ -289,3 +289,10 @@ def test_removed_tickers_leave_the_paper_account():
     c = s["closed"][0]
     assert c["exit"] == 110.0 and c["reason"] == "borttagen ur universumet" and c["r"] == pytest.approx(2.0)
     assert paper.equity(s) == pytest.approx(80 + 0.2 * 110)
+
+
+def test_gap_rule_skips_fill():
+    stock = _bounce()
+    s0, _ = paper.step(None, [_signal_row(stock)], _ctx(stock, K), today=IDX[K])
+    s1, ev = paper.step(s0, [], _ctx(stock, K + 1), today=IDX[K + 1], cfg=bt.Config(max_gap_atr=-10.0))
+    assert [e["kind"] for e in ev] == [paper.SPARRAD] and "gappade" in ev[0]["text"] and not s1["positions"]

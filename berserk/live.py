@@ -173,7 +173,8 @@ def _pct(v) -> Optional[float]:
 
 # ── Skannern ────────────────────────────────────────────────────────────────
 def evaluate(ticker: str, stock: pd.DataFrame, driver: Optional[pd.Series], market: Optional[pd.Series],
-             capital: float = 100_000.0, cfg: bt.Config = bt.Config(), driver_symbol: Optional[str] = None) -> dict:
+             capital: float = 100_000.0, cfg: bt.Config = bt.Config(), driver_symbol: Optional[str] = None,
+             commodity: Optional[pd.Series] = None) -> dict:
     """En rad: status (KÖP/BEVAKA/—), setup, varför, och planen för nästa öppning."""
     theme = uv.theme_of(ticker)
     row = {"ticker": ticker, "theme": theme, "label": th.label(theme), "complex": th.complex_of(theme),
@@ -185,7 +186,7 @@ def evaluate(ticker: str, stock: pd.DataFrame, driver: Optional[pd.Series], mark
         row["error"] = "DATA UNAVAILABLE — för lite kurshistorik"
         return row
     is_etf = row["kind"] == "etf"
-    f = sg.frame(stock, driver, is_etf=is_etf, market=market if cfg.market_gate else None)
+    f = sg.frame(stock, driver, is_etf=is_etf, market=market if cfg.market_gate else None, commodity=commodity)
     last = f.iloc[-1]
     c = float(stock["Close"].iloc[-1])
     row.update(close=round(c, 4), date=str(stock.index[-1].date()), rsi2=_round(last["rsi2"], 1),
@@ -197,6 +198,12 @@ def evaluate(ticker: str, stock: pd.DataFrame, driver: Optional[pd.Series], mark
         gates_ok = False
     if not bool(last["market_ok"]):
         row["why"].append(f"{uv.REGION_INDEX[row['region']]} under SMA200")
+        gates_ok = False
+    if cfg.regions is not None and bt.region_key(ticker) not in cfg.regions:
+        row["why"].append("regionen ingår inte i reglerna")
+        gates_ok = False
+    if cfg.commodity_gate and row["region"] not in cfg.commodity_free and not bool(last["commodity_ok"]):
+        row["why"].append("råvarugrind: råvarukorgen (DBC) under SMA200")
         gates_ok = False
     if cfg.data_guard and bool(last["data_jump"]):
         row["why"].append(f"datavakt: kurshopp > {sg.JUMP_MAX * 100:.0f} % på en dag senaste "
@@ -259,6 +266,12 @@ def scan(tickers: list, getter: Optional[Callable] = None, capital: float = 100_
     drivers = drivers if drivers is not None else load_drivers(themes, getter, today)
     markets = markets if markets is not None else load_markets({uv.region_of(t) for t in known}, getter,
                                                                 nordic_provider)
+    commodity = None
+    if cfg.commodity_gate:
+        try:
+            commodity = _close(getter("DBC", STOCK_PERIOD))
+        except Exception:
+            commodity = None
     rows = []
     for k, t in enumerate(tickers):
         theme = uv.theme_of(t)
@@ -277,7 +290,8 @@ def scan(tickers: list, getter: Optional[Callable] = None, capital: float = 100_
             mkt = markets.get(uv.REGION_INDEX[uv.region_of(t)])
             if keep is not None and df is not None:
                 keep[t] = {"stock": df, "driver": drv, "market": mkt}
-            rows.append(evaluate(t, df, drv, mkt if mkt is not None else markets.get("SPY"), capital, cfg, sym))
+            rows.append(evaluate(t, df, drv, mkt if mkt is not None else markets.get("SPY"), capital, cfg, sym,
+                                 commodity=commodity))
         if progress is not None:
             progress(k + 1, len(tickers), t)
     return {"rows": rows, "drivers": {th_: s for th_, (s, _x) in drivers.items()},

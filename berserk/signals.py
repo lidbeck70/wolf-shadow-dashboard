@@ -99,9 +99,19 @@ def driver_frame(d: pd.Series) -> pd.DataFrame:
     return out
 
 
+def above_sma200(s: Optional[pd.Series], idx) -> Optional[pd.Series]:
+    """Serien över sin SMA200 på dess egen kalender, lagd på aktiens dagar (senast kända värde)."""
+    if s is None or len(s.dropna()) == 0:
+        return None
+    s = s.astype(float).dropna()
+    ok = (s > s.rolling(200).mean()).astype(float)
+    return align(ok, idx).fillna(0) > 0.5
+
+
 def frame(stock: pd.DataFrame, driver: Optional[pd.Series] = None, is_etf: bool = False,
-          market: Optional[pd.Series] = None) -> pd.DataFrame:
-    """Alla mått och de tre setupens signaler per dag för en aktie (eller ETF)."""
+          market: Optional[pd.Series] = None, commodity: Optional[pd.Series] = None) -> pd.DataFrame:
+    """Alla mått och de tre setupens signaler per dag för en aktie (eller ETF). commodity = råvarukorgen
+    (DBC) — commodity_ok = korgen över SMA200 (råvarugrinden)."""
     idx = stock.index
     o, h, lo, c = (stock[k].astype(float) for k in ("Open", "High", "Low", "Close"))
     v = stock["Volume"].astype(float)
@@ -125,6 +135,8 @@ def frame(stock: pd.DataFrame, driver: Optional[pd.Series] = None, is_etf: bool 
         f["market_ok"] = m > m.rolling(200).mean() if m is not None else True
     else:
         f["market_ok"] = True
+    cok = above_sma200(commodity, idx)
+    f["commodity_ok"] = cok if cok is not None else True
 
     df = None
     if driver is not None and len(driver.dropna()) > 0:
