@@ -361,3 +361,41 @@ def test_portfolio_variant_page(monkeypatch, res):
     html = " ".join(m.value for m in at.markdown)
     for text in ("JÄMFÖRELSE AV PORTFÖLJVARIANTER", "MC DD p95", "Tagna %", "max 2 S3 samtidigt", "datavakten"):
         assert text in html, text
+
+
+def test_stable_getter_retries_and_shares_data():
+    from berserk.ui import stable_getter
+    calls, waits = [], []
+    answers = {"A": [None, pd.DataFrame(), DATA["FCX"]], "B": [None, None, None]}
+
+    def base(t, p):
+        calls.append(t)
+        return answers[t].pop(0)
+
+    get = stable_getter(base, tries=3, wait=1.0, sleep=waits.append)
+    assert get("A", "7y") is not None and calls == ["A"] * 3 and waits == [1.0, 2.0]     # Yahoo tomt två gånger
+    assert get("A", "7y") is not None and calls.count("A") == 3                         # samma data, ingen ny hämtning
+    assert get("B", "7y") is None and calls.count("B") == 3
+
+
+def test_missing_data_is_reported(monkeypatch, res):
+    from streamlit.testing.v1 import AppTest
+    from berserk.ui import comparison_rows, missing_of
+    r = dict(res)
+    r["per_ticker"] = list(r["per_ticker"]) + [{"ticker": "MOS", "trades": [], "signals": {x: 0 for x in sg.SETUPS},
+                                             "thin": 0, "market_blocked": 0, "theme": "godsel", "driver": None,
+                                             "error": "DATA UNAVAILABLE"}]
+    assert missing_of(r) == ["MOS"] and comparison_rows({"X": r})[0]["Utan data"] == 1
+    monkeypatch.setenv("BZ_TEST_ROOT", ROOT)
+
+    def app():
+        import os as _o
+        import sys as _s
+        _s.path.insert(0, _o.environ["BZ_TEST_ROOT"])
+        from berserk.ui import render_berserk_backtest
+        render_berserk_backtest()
+
+    at = AppTest.from_function(app, default_timeout=120)
+    at.session_state["bz_result"] = {"runs": {"Alla tre": r}, "selected": "Alla tre"}
+    at.run()
+    assert not at.exception and "saknade kursdata" in at.warning[0].value and "MOS" in at.warning[0].value

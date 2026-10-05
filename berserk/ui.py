@@ -10,6 +10,8 @@ Nine (kostnader, Monte Carlo, kantanalys, köp och behåll).
 
 from __future__ import annotations
 
+import time
+
 import pandas as pd
 import streamlit as st
 
@@ -73,6 +75,36 @@ def plan_runs(mode: str, setups: list) -> list:
     return [(name, {"setups": sets}, {}) for name, sets in variants(setups, mode == M_SETUPS)]
 
 
+def stable_getter(base=None, tries: int = 3, wait: float = 2.0, sleep=time.sleep):
+    """Hämtare som minns varje (ticker, period) och försöker igen när Yahoo svarar tomt (begränsning).
+    Delas av alla varianter i en jämförelse — samma kursdata i varje körning."""
+    if base is None:
+        from market_prices import ohlcv as base
+    memo: dict = {}
+
+    def get(ticker, period):
+        key = (ticker, period)
+        if key not in memo:
+            df = None
+            for k in range(tries):
+                try:
+                    df = base(ticker, period)
+                except Exception:
+                    df = None
+                if df is not None and len(df):
+                    break
+                if k < tries - 1:
+                    sleep(wait * (k + 1))
+            memo[key] = df if df is not None and len(df) else None
+        return memo[key]
+    return get
+
+
+def missing_of(res: dict) -> list:
+    """Tickers i universumet som saknade kursdata i körningen."""
+    return [p["ticker"] for p in res.get("per_ticker") or [] if p.get("error") == "DATA UNAVAILABLE"]
+
+
 def pc_of(res: dict) -> vp.PortfolioConfig:
     return bt.portfolio_config(**(res.get("pc_kw") or {}))
 
@@ -113,7 +145,7 @@ def comparison_rows(runs: dict) -> list:
     rows = []
     for name, res in runs.items():
         m, p, mc = res["metrics"], portfolio_of(res), mc_cost_row(res)
-        rows.append({"Körning": name, "Affärer": m.get("trades", 0), "Win rate %": m.get("win_rate"),
+        rows.append({"Körning": name, "Utan data": len(missing_of(res)), "Affärer": m.get("trades", 0), "Win rate %": m.get("win_rate"),
                      "Expectancy R": m.get("expectancy"), "Profit factor": m.get("profit_factor"),
                      "Summa R": m.get("total_r"), "Snittinnehav d": m.get("avg_holding_days"),
                      "Portfölj affärer": p["taken"], "Portfölj avk. %": p["return_pct"],
@@ -159,6 +191,7 @@ def render_berserk_backtest() -> None:
         runs = plan_runs(mode, setups)
         keys = list(dict.fromkeys(repr(sorted(cfg_kw.items())) for _n, cfg_kw, _p in runs))
         done = {}                                                    # en backtest per unik signaluppsättning
+        getter = stable_getter()                                     # samma kursdata i alla varianter
         bar = st.progress(0.0, text="Hämtar kurser och drivare …")
         for name, cfg_kw, pc_kw in runs:
             key = repr(sorted(cfg_kw.items()))
@@ -168,8 +201,9 @@ def render_berserk_backtest() -> None:
                                 start_year=int(start_year) if own else None,
                                 end_year=int(max(end_year, start_year)) if own else None,
                                 min_turnover_m=float(min_turn), market_gate=bool(gate))
-                done[key] = bt.run(tickers, cfg=cfg, progress=lambda i, n, t, k=k, name=name: bar.progress(
-                    (k + i / n) / len(keys), text=f"{name}: {t} ({i}/{n})"))
+                done[key] = bt.run(tickers, getter=getter, cfg=cfg,
+                                   progress=lambda i, n, t, k=k, name=name: bar.progress(
+                                       (k + i / n) / len(keys), text=f"{name}: {t} ({i}/{n})"))
             res = {kk: v for kk, v in done[key].items() if kk not in ("portfolio", "robustness", "mc_cost")}
             res["pc_kw"] = pc_kw
             portfolio_of(res)
@@ -201,6 +235,11 @@ def render_result(res: dict) -> None:
     from ovtlyr.ui.viking_nine_backtest import render_portfolio
     from ovtlyr.ui.viking_robustness_ui import render_robustness
     m, per = res["metrics"], res.get("period") or {}
+    missing = missing_of(res)
+    if missing:
+        st.warning(f"{len(missing)} tickers saknade kursdata (Yahoo svarade tomt även efter omförsök) — resultatet "
+                   f"bygger på färre bolag. Kör om om en stund. Saknas: {', '.join(missing[:20])}"
+                   f"{' …' if len(missing) > 20 else ''}")
     st.markdown(f"<div style='color:{DIM};font-size:0.78rem;'>{len(res['per_ticker'])} tickers · "
                 f"{per.get('start', '—')} – {per.get('end', '—')} · setups: "
                 f"{', '.join(res['config'].setups)} · {res.get('thin', 0)} signaler för tunn omsättning · "
