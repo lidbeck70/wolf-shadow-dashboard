@@ -64,13 +64,20 @@ class Config:
     end_year: Optional[int] = None
     min_turnover_m: float = MIN_TURNOVER_M
     market_gate: bool = True             # regionens index (universe.REGION_INDEX) över SMA200
+    s3_regions: Optional[tuple] = None   # S3 bara i dessa regioner (None = alla; ETF:er räknas som USA)
+    data_guard: bool = True              # inga signaler 20 dagar efter ett dagshopp > 60 % (signals.jump_block)
     risk_by_setup: dict = field(default_factory=lambda: dict(RISK_BY_SETUP))
 
 
-def portfolio_config() -> vp.PortfolioConfig:
-    """BERSERK:s portfölj: max 8 positioner, 20 % per position, 2 per tema, 4 per komplex, 6 % värme."""
-    return vp.PortfolioConfig(max_position_pct=20.0, max_positions=8, max_heat_pct=6.0, one_per_sector=True,
-                              sector_cap=2, group_caps=(("complex", 4),), max_daily_losses=2)
+MAX_HEAT_PCT = 6.0
+
+
+def portfolio_config(max_heat: float = MAX_HEAT_PCT, max_s3: Optional[int] = None) -> vp.PortfolioConfig:
+    """BERSERK:s portfölj: max 8 positioner, 20 % per position, 2 per tema, 4 per komplex, 6 % värme.
+    max_s3 = högst så många samtidiga S3-positioner (None = ingen gräns) — så att S1/S2 får plats."""
+    caps = (("complex", 4),) + ((("s3", int(max_s3)),) if max_s3 else ())
+    return vp.PortfolioConfig(max_position_pct=20.0, max_positions=8, max_heat_pct=float(max_heat),
+                              one_per_sector=True, sector_cap=2, group_caps=caps, max_daily_losses=2)
 
 
 def pick_driver(theme: str, start, series: dict) -> tuple:
@@ -99,7 +106,7 @@ def backtest_ticker(ticker: str, stock: pd.DataFrame, driver: Optional[pd.Series
     n = len(stock)
     theme = uv.theme_of(ticker)
     res = {"ticker": ticker, "trades": [], "signals": {s: 0 for s in sg.SETUPS}, "thin": 0, "market_blocked": 0,
-           "theme": theme, "driver": driver_symbol}
+           "data_blocked": 0, "theme": theme, "driver": driver_symbol}
     if n < WARMUP_BARS + 2:
         return res
     is_etf = uv.kind_of(ticker) == "etf"
@@ -109,9 +116,11 @@ def backtest_ticker(ticker: str, stock: pd.DataFrame, driver: Optional[pd.Series
     first = WARMUP_BARS
     if start is not None:
         first = max(first, int((idx < pd.Timestamp(start)).sum()))
+    allowed = [s for s in cfg.setups if not (s == sg.S3 and cfg.s3_regions is not None
+                                             and uv.region_of(ticker) not in cfg.s3_regions)]
     i = first
     while i < n - 1:
-        setups = [s for s in sorted(cfg.setups, key=lambda s: -sg.PRIORITY[s]) if bool(f[s].iloc[i])]
+        setups = [s for s in sorted(allowed, key=lambda s: -sg.PRIORITY[s]) if bool(f[s].iloc[i])]
         if not setups:
             i += 1
             continue
@@ -119,6 +128,10 @@ def backtest_ticker(ticker: str, stock: pd.DataFrame, driver: Optional[pd.Series
         res["signals"][setup] += 1
         if cfg.min_turnover_m > 0 and not (f["turnover20"].iloc[i] >= cfg.min_turnover_m * 1e6):
             res["thin"] += 1
+            i += 1
+            continue
+        if cfg.data_guard and bool(f["data_jump"].iloc[i]):
+            res["data_blocked"] += 1
             i += 1
             continue
         if not bool(f["market_ok"].iloc[i]):
@@ -132,7 +145,7 @@ def backtest_ticker(ticker: str, stock: pd.DataFrame, driver: Optional[pd.Series
         if not (risk > 0 and atr0 > 0):
             i += 1
             continue
-        feats = {"setup": setup, "theme": theme, "complex": th.complex_of(theme), "kind": "etf" if is_etf else
+        feats = {"setup": setup, "s3": "S3" if setup == sg.S3 else None, "theme": theme, "complex": th.complex_of(theme), "kind": "etf" if is_etf else
                  "producent", "risk_pct": cfg.risk_by_setup.get(setup, 1.0),
                  "atr_pct": round(atr0 / c[i] * 100, 2), "rvol": _num(f["rvol"].iloc[i]),
                  "rsi2": _num(f["rsi2"].iloc[i], 1), "divergence": _num(f["divergence"].iloc[i] * 100, 1),
@@ -250,7 +263,7 @@ def run(tickers: list, getter: Optional[Callable] = None, cfg: Config = Config()
                 d = _get(s)
                 series[s] = None if d is None else d["Close"].astype(float).dropna()
     chosen = {theme: pick_driver(theme, start, series) for theme in themes}
-    # Marknadsgrinden per region: OMXS30 (Börsdata), SPY, TSX, FTSE, ASX 200 — saknas ett index gäller SPY
+    # Marknadsgrinden per region: OMXS30 (Börsdata), SPY, TSX, FTSE — saknas ett index gäller SPY
     regions = {uv.region_of(t) for t in tickers}
     markets = {}
     for region in sorted(regions | {"USA"}):
@@ -288,4 +301,5 @@ def run(tickers: list, getter: Optional[Callable] = None, cfg: Config = Config()
     return {"trades": trades, "per_ticker": per, "metrics": vb.metrics(trades), "notes": NOTES, "config": cfg,
             "period": {"start": str(start.date()), "end": str(end.date()), "years": round(years, 2)},
             "benchmarks": bench, "drivers": {theme: sym for theme, (sym, _x) in chosen.items()},
-            "thin": sum(p.get("thin", 0) for p in per), "market_blocked": sum(p.get("market_blocked", 0) for p in per)}
+            "thin": sum(p.get("thin", 0) for p in per), "market_blocked": sum(p.get("market_blocked", 0) for p in per),
+            "data_blocked": sum(p.get("data_blocked", 0) for p in per)}

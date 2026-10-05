@@ -7,10 +7,11 @@ koppar, Equinor → olja). Oljeservice och borrning står under olja; Neste unde
 olja (raffinering). Tickers i Yahoo-form; datasonden visar vilka som saknas.
 
   NORDIC     Norden — primärt universum
-  US, CANADA, LONDON, AUSTRALIA
-             sekundärt — de ledande råvarubolagen i varje tema (GLOBAL = alla fyra)
+  US, CANADA, LONDON
+             sekundärt — de ledande råvarubolagen i varje tema (GLOBAL = alla tre).
+             Australien är borttaget (2026-10): ASX går inte att handla hos Nordnet.
   ETFS       råvaru-ETF:er (themes.ETFS) — handlas med setup 2 och 3
-  REGION_INDEX  marknadsgrindens index per region (OMXS30, SPY, TSX, FTSE, ASX 200)
+  REGION_INDEX  marknadsgrindens index per region (OMXS30, SPY, TSX, FTSE)
 
 Ett bolag finns bara med en gång (ingen dubbelnotering): Rio Tinto och BHP via
 London, Kinross via NYSE osv. Datasonden 2026-10 (berserk-probe) sorterade bort
@@ -91,16 +92,6 @@ _LONDON_RAW: dict = {
     "FRES.L": "silver", "HOC.L": "guld", "EDV.L": "guld",
 }
 
-_AUSTRALIA_RAW: dict = {
-    "WDS.AX": "olja", "STO.AX": "olja", "BPT.AX": "naturgas",
-    "WHC.AX": "kol", "NHC.AX": "kol", "YAL.AX": "kol",
-    "PDN.AX": "uran", "BOE.AX": "uran",
-    "FMG.AX": "jarnmalm", "S32.AX": "aluminium", "SFR.AX": "koppar",
-    "PLS.AX": "litium", "MIN.AX": "litium", "IGO.AX": "litium", "LYC.AX": "sallsynta", "ILU.AX": "sallsynta",
-    "NST.AX": "guld", "EVN.AX": "guld", "PRU.AX": "guld", "RMS.AX": "guld",
-    "GNC.AX": "vete", "ELD.AX": "vete", "NUF.AX": "vete",
-}
-
 try:
     from dead_tickers import alive_map as _alive
 except Exception:  # pragma: no cover
@@ -111,17 +102,15 @@ NORDIC: dict = _alive(_NORDIC_RAW)
 US: dict = _alive(_US_RAW)
 CANADA: dict = _alive(_CANADA_RAW)
 LONDON: dict = _alive(_LONDON_RAW)
-AUSTRALIA: dict = _alive(_AUSTRALIA_RAW)
-GLOBAL: dict = {**US, **CANADA, **LONDON, **AUSTRALIA}        # allt utanför Norden
+GLOBAL: dict = {**US, **CANADA, **LONDON}                     # allt utanför Norden
 
 ETFS: dict = dict(th.ETFS)
 PRODUCERS: dict = {**NORDIC, **GLOBAL}
-REGIONS: dict = {"Norden": NORDIC, "USA": US, "Kanada": CANADA, "London": LONDON, "Australien": AUSTRALIA}
+REGIONS: dict = {"Norden": NORDIC, "USA": US, "Kanada": CANADA, "London": LONDON}
 LISTS: dict = {**{name: tuple(m) for name, m in REGIONS.items()}, "Råvaru-ETF:er": tuple(ETFS)}
 
 # Marknadsgrinden per region (indexet över SMA200). Norden = OMXS30 (Börsdata), övriga Yahoo-index.
-REGION_INDEX: dict = {"Norden": "OMXS30", "USA": "SPY", "Kanada": "^GSPTSE", "London": "^FTSE",
-                      "Australien": "^AXJO"}
+REGION_INDEX: dict = {"Norden": "OMXS30", "USA": "SPY", "Kanada": "^GSPTSE", "London": "^FTSE"}
 
 
 def region_of(ticker: str) -> str:
@@ -133,8 +122,6 @@ def region_of(ticker: str) -> str:
         return "Kanada"
     if t.endswith(".L"):
         return "London"
-    if t.endswith(".AX"):
-        return "Australien"
     return "USA"
 
 

@@ -63,7 +63,8 @@ def test_producer_divergence_and_s1_permission():
 def test_market_states():
     rows = {r["region"]: r for r in live.market_states({"SPY": _ser(UP), "^GSPTSE": _ser(DOWN)})}
     assert rows["USA"]["ok"] is True and rows["USA"]["vs_sma200"] > 0
-    assert rows["Kanada"]["ok"] is False and rows["Australien"]["ok"] is None
+    assert rows["Kanada"]["ok"] is False and rows["London"]["ok"] is None
+    assert "Australien" not in rows
 
 
 # ── Skannern ────────────────────────────────────────────────────────────────

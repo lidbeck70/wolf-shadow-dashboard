@@ -5,7 +5,7 @@ berserk_scan.py — 🪓 BERSERK headless: skanning, papperskonto och Discordlar
 Körs av berserk-scan-workflowen vardagar efter USA:s stängning (då har alla
 regioner en stängd dag). Samma regler som panelen:
 
-  1. live.scan över hela universumet (Norden, USA, Kanada, London, Australien
+  1. live.scan över hela universumet (Norden, USA, Kanada, London
      och råvaru-ETF:erna) på senaste stängda dag.
   2. paper.step förvaltar papperskontot: fyller gårdagens order på öppningen,
      stoppar/säljer med backtestets exitregler, lägger dagens KÖP som order.

@@ -27,10 +27,24 @@ from ui.tokens import AMBER, CYAN, DIM, GOLD, GREEN, RED, TEXT
 
 _RES, _TICKERS = "bz_result", "bz_tickers"
 _OWN = "Egen period"
-_GLOBAL = "Utanför Norden (USA, Kanada, London, Australien)"
+_GLOBAL = "Utanför Norden (USA, Kanada, London)"
 _ALL = "Allt (Norden + utanför Norden + ETF:er)"
 LISTS = {**uv.LISTS, _GLOBAL: tuple(uv.GLOBAL), _ALL: tuple(uv.NORDIC) + tuple(uv.GLOBAL) + tuple(uv.ETFS)}
 ALL_SETUPS = "Alla tre"
+M_SETUPS, M_PORTFOLIO, M_NONE = "Setups var för sig", "Portföljvarianter", "Ingen jämförelse"
+MODES = (M_SETUPS, M_PORTFOLIO, M_NONE)
+BASE = "Bas (nuvarande regler)"
+# (namn, Config-ändringar, portfolio_config-ändringar) — standardreglerna ändras inte; det här är provkörningar
+PORTFOLIO_VARIANTS = (
+    (BASE, {}, {}),
+    ("S3 av", {"drop_s3": True}, {}),
+    ("S3 bara Norden", {"s3_regions": ("Norden",)}, {}),
+    ("Max 2 S3", {}, {"max_s3": 2}),
+    ("Värme 8 %", {}, {"max_heat": 8.0}),
+    ("Värme 10 %", {}, {"max_heat": 10.0}),
+    ("Max 2 S3 + värme 8 %", {}, {"max_s3": 2, "max_heat": 8.0}),
+    ("S3 av + värme 8 %", {"drop_s3": True}, {"max_heat": 8.0}),
+)
 
 
 def _apply_list() -> None:
@@ -44,11 +58,38 @@ def variants(setups: list, compare: bool) -> list:
     return [(s, (s,)) for s in sg.SETUPS] + [(ALL_SETUPS, sg.SETUPS)]
 
 
+def plan_runs(mode: str, setups: list) -> list:
+    """[(namn, Config-argument, portfolio_config-argument)] för vald jämförelse."""
+    if mode == M_PORTFOLIO:
+        base = tuple(setups)
+        out = []
+        for name, cfg_kw, pc_kw in PORTFOLIO_VARIANTS:
+            kw = dict(cfg_kw)
+            if (kw.pop("drop_s3", False) or "s3_regions" in kw or "max_s3" in pc_kw) and sg.S3 not in base:
+                continue                                             # varianten handlar om S3 — finns inte valt
+            sets = tuple(s for s in base if s != sg.S3) if cfg_kw.get("drop_s3") else base
+            out.append((name, {**kw, "setups": sets}, dict(pc_kw)))
+        return out
+    return [(name, {"setups": sets}, {}) for name, sets in variants(setups, mode == M_SETUPS)]
+
+
+def pc_of(res: dict) -> vp.PortfolioConfig:
+    return bt.portfolio_config(**(res.get("pc_kw") or {}))
+
+
 def portfolio_of(res: dict) -> dict:
     if "portfolio" not in res:
         res["portfolio"] = vp.simulate(res.get("trades") or [], years=(res.get("period") or {}).get("years"),
-                                       pc=bt.portfolio_config())
+                                       pc=pc_of(res))
     return res["portfolio"]
+
+
+def mc_cost_row(res: dict) -> dict:
+    """Monte Carlo-raden 'Bootstrap + kostnad' (den försiktigaste) — räknas en gång per körning."""
+    if "mc_cost" not in res:
+        rows = rb.monte_carlo(portfolio_of(res).get("rows") or [], (res.get("period") or {}).get("years"))
+        res["mc_cost"] = next((r for r in rows if r["Metod"].startswith("Bootstrap +")), {})
+    return res["mc_cost"]
 
 
 def _table(rows: list, first: str) -> str:
@@ -71,12 +112,16 @@ def _title(text: str, color=CYAN) -> None:
 def comparison_rows(runs: dict) -> list:
     rows = []
     for name, res in runs.items():
-        m, p = res["metrics"], portfolio_of(res)
+        m, p, mc = res["metrics"], portfolio_of(res), mc_cost_row(res)
         rows.append({"Körning": name, "Affärer": m.get("trades", 0), "Win rate %": m.get("win_rate"),
                      "Expectancy R": m.get("expectancy"), "Profit factor": m.get("profit_factor"),
                      "Summa R": m.get("total_r"), "Snittinnehav d": m.get("avg_holding_days"),
                      "Portfölj affärer": p["taken"], "Portfölj avk. %": p["return_pct"],
-                     "Portfölj CAGR %": p.get("cagr_pct"), "Portfölj DD %": p["max_dd_pct"]})
+                     "Portfölj CAGR %": p.get("cagr_pct"), "Portfölj DD %": p["max_dd_pct"],
+                     "Tagna %": round(p["taken"] / max(1, m.get("trades", 0) or 1) * 100, 0),
+                     "Portfölj exp. R": (p.get("metrics") or {}).get("expectancy"),
+                     "MC CAGR p5 %": mc.get("CAGR p5 %"), "MC CAGR p50 %": mc.get("CAGR p50 %"),
+                     "MC DD p95 %": mc.get("DD p95 %")})
     return rows
 
 
@@ -96,31 +141,41 @@ def render_berserk_backtest() -> None:
         end_year = c3.number_input("Till år (egen period)", 2000, this_year, 2020, 1, key="bz_end_year")
         s1, s2 = st.columns([3, 2])
         setups = s1.multiselect("Setups", list(sg.SETUPS), default=list(sg.SETUPS), key="bz_setups")
-        compare = s2.checkbox("Jämför setups", value=True, key="bz_compare",
-                              help="Kör varje setup för sig och alla tre tillsammans på samma data.")
+        mode = s2.radio("Jämförelse", MODES, index=0, key="bz_mode",
+                        help="Setups var för sig: S1, S2, S3 och alla tre. Portföljvarianter: samma signaler "
+                             "med olika portföljregler (S3 av/bara Norden, max 2 S3, värmetak 8/10 %) — "
+                             "provkörningar, standardreglerna ändras inte.")
         g1, g2 = st.columns(2)
         min_turn = g1.number_input("Minsta omsättning (milj/dag)", 0.0, 100.0, bt.MIN_TURNOVER_M, 0.5,
                                    key="bz_min_turnover", help="Snitt 20 dagar i lokal valuta (USA: USD).")
         gate = g2.checkbox("Marknaden över SMA200", value=True, key="bz_market_gate",
-                           help="Regionens index: OMXS30, SPY, TSX, FTSE eller ASX 200. Av = köp även i "
+                           help="Regionens index: OMXS30, SPY, TSX eller FTSE. Av = köp även i "
                                 "björnmarknad.")
         go_ = st.form_submit_button("🪓 Kör backtest")
     tickers = vs.parse_tickers(raw, limit=400)
     if go_ and tickers and setups:
         own = years == _OWN
         out = {}
-        runs = variants(setups, compare)
+        runs = plan_runs(mode, setups)
+        keys = list(dict.fromkeys(repr(sorted(cfg_kw.items())) for _n, cfg_kw, _p in runs))
+        done = {}                                                    # en backtest per unik signaluppsättning
         bar = st.progress(0.0, text="Hämtar kurser och drivare …")
-        for k, (name, sets) in enumerate(runs):
-            cfg = bt.Config(setups=sets, years=5 if own else int(years), start_year=int(start_year) if own else None,
-                            end_year=int(max(end_year, start_year)) if own else None,
-                            min_turnover_m=float(min_turn), market_gate=bool(gate))
-            res = bt.run(tickers, cfg=cfg, progress=lambda i, n, t, k=k, name=name: bar.progress(
-                (k + i / n) / len(runs), text=f"{name}: {t} ({i}/{n})"))
+        for name, cfg_kw, pc_kw in runs:
+            key = repr(sorted(cfg_kw.items()))
+            if key not in done:
+                k = keys.index(key)
+                cfg = bt.Config(**cfg_kw, years=5 if own else int(years),
+                                start_year=int(start_year) if own else None,
+                                end_year=int(max(end_year, start_year)) if own else None,
+                                min_turnover_m=float(min_turn), market_gate=bool(gate))
+                done[key] = bt.run(tickers, cfg=cfg, progress=lambda i, n, t, k=k, name=name: bar.progress(
+                    (k + i / n) / len(keys), text=f"{name}: {t} ({i}/{n})"))
+            res = {kk: v for kk, v in done[key].items() if kk not in ("portfolio", "robustness", "mc_cost")}
+            res["pc_kw"] = pc_kw
             portfolio_of(res)
             out[name] = res
         bar.empty()
-        st.session_state[_RES] = {"runs": out, "selected": runs[-1][0]}
+        st.session_state[_RES] = {"runs": out, "selected": runs[0][0] if mode == M_PORTFOLIO else runs[-1][0]}
     state = st.session_state.get(_RES)
     if not state:
         note("Välj lista och tryck 🪓 Kör backtest. Tips: 'Egen period' 2008–2020 testar reglerna på år de "
@@ -128,8 +183,12 @@ def render_berserk_backtest() -> None:
         return
     runs = state["runs"]
     if len(runs) > 1:
-        _title("JÄMFÖRELSE AV SETUPS")
+        _title("JÄMFÖRELSE AV PORTFÖLJVARIANTER" if BASE in runs else "JÄMFÖRELSE AV SETUPS")
         st.markdown(_table(comparison_rows(runs), "Körning"), unsafe_allow_html=True)
+        note("Tagna % = andel av signalerna som portföljen hann ta. Portfölj exp. R = expectancy på just de "
+             "affärerna — ligger den långt under alla signalers är det urvalet som kostar. MC = Monte Carlo "
+             "(bootstrap + kostnad 0–30 bp): CAGR p5/p50 och DD p95 på stängda affärer — välj det som håller "
+             "både här och 2008–2020, inte det som ser bäst ut i en period.")
         names = list(runs)
         shown = st.selectbox("Visa detaljer för", names, index=names.index(state["selected"])
                              if state["selected"] in names else 0, key="bz_show")
@@ -145,7 +204,8 @@ def render_result(res: dict) -> None:
     st.markdown(f"<div style='color:{DIM};font-size:0.78rem;'>{len(res['per_ticker'])} tickers · "
                 f"{per.get('start', '—')} – {per.get('end', '—')} · setups: "
                 f"{', '.join(res['config'].setups)} · {res.get('thin', 0)} signaler för tunn omsättning · "
-                f"{res.get('market_blocked', 0)} spärrade av marknaden</div>", unsafe_allow_html=True)
+                f"{res.get('market_blocked', 0)} spärrade av marknaden · {res.get('data_blocked', 0)} spärrade av "
+                f"datavakten</div>", unsafe_allow_html=True)
     if not m.get("trades"):
         note("Inga stängda affärer under perioden.")
         return
@@ -168,12 +228,14 @@ def render_result(res: dict) -> None:
         if rows:
             _title(title)
             st.markdown(_table(rows, "Grupp"), unsafe_allow_html=True)
-    p = portfolio_of(res)
+    p, pc = portfolio_of(res), pc_of(res)
     render_portfolio(p)
-    note(f"BERSERK-portföljen: max 8 positioner, 20 % per position, 2 per tema, 4 per komplex, 6 % öppen risk. "
-         f"Hoppade över: {p.get('skipped_heat', 0)} värmetak · {p.get('skipped_group', 0)} komplex · "
-         f"{p.get('skipped_sector', 0)} tema.")
-    render_robustness(res, p, pc=bt.portfolio_config(), lists=False)
+    s3cap = dict(pc.group_caps).get("s3")
+    note(f"BERSERK-portföljen: max {pc.max_positions} positioner, {pc.max_position_pct:g} % per position, "
+         f"{pc.sector_cap} per tema, {dict(pc.group_caps).get('complex')} per komplex, {pc.max_heat_pct:g} % öppen "
+         f"risk{f', max {s3cap} S3 samtidigt' if s3cap else ''}. Hoppade över: {p.get('skipped_heat', 0)} värmetak · "
+         f"{p.get('skipped_group', 0)} komplex/S3-tak · {p.get('skipped_sector', 0)} tema.")
+    render_robustness(res, p, pc=pc, lists=False)
     with st.expander("Drivare som användes"):
         st.markdown(_table([{"Tema": th.label(t), "Komplex": th.COMPLEXES.get(th.complex_of(t), ""),
                              "Drivare": s or "ingen — bara S3"} for t, s in sorted(res.get("drivers", {}).items())],
