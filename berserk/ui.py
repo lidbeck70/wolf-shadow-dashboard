@@ -21,6 +21,7 @@ from berserk import backtest as bt
 from berserk import signals as sg
 from berserk import themes as th
 from berserk import universe as uv
+from ovtlyr.ui.viking_robustness_ui import STICKY
 from ui.components import big_card, note, page_header
 from ui.tokens import AMBER, CYAN, DIM, GOLD, GREEN, RED, TEXT
 
@@ -53,9 +54,9 @@ def portfolio_of(res: dict) -> dict:
 def _table(rows: list, first: str) -> str:
     if not rows:
         return ""
-    head = "".join(f"<th>{k}</th>" for k in rows[0])
+    head = "".join(f"<th style='{STICKY if k == first else ''}'>{k}</th>" for k in rows[0])
     body = "".join("<tr>" + "".join(
-        f"<td style='{'text-align:left;' if k == first else ''}'>"
+        f"<td style='{'text-align:left;' + STICKY if k == first else ''}'>"
         f"{'—' if v is None else (f'{v:g}' if isinstance(v, float) else v)}</td>" for k, v in r.items()) + "</tr>"
         for r in rows)
     return (f"<div style='overflow-x:auto;'><table style='width:100%;font-size:0.74rem;color:{TEXT};"
@@ -172,7 +173,7 @@ def render_result(res: dict) -> None:
     note(f"BERSERK-portföljen: max 8 positioner, 20 % per position, 2 per tema, 4 per komplex, 6 % öppen risk. "
          f"Hoppade över: {p.get('skipped_heat', 0)} värmetak · {p.get('skipped_group', 0)} komplex · "
          f"{p.get('skipped_sector', 0)} tema.")
-    render_robustness(res, p)
+    render_robustness(res, p, pc=bt.portfolio_config(), lists=False)
     with st.expander("Drivare som användes"):
         st.markdown(_table([{"Tema": th.label(t), "Komplex": th.COMPLEXES.get(th.complex_of(t), ""),
                              "Drivare": s or "ingen — bara S3"} for t, s in sorted(res.get("drivers", {}).items())],

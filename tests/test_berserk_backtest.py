@@ -241,6 +241,20 @@ def test_page_renders_result(monkeypatch, res):
     for text in ("JÄMFÖRELSE AV SETUPS", "PER SETUP", "PER TEMA", "PER KOMPLEX", "PORTFÖLJ — ETT KONTO",
                  "ROBUSTHET", "MONTE CARLO", "BERSERK-portföljen"):
         assert text in html, text
+    assert "PER LISTA" not in html and "position:sticky" in html             # inga Viking-listor · låst radnamn
+
+
+def test_cost_table_uses_berserk_portfolio_rules(res):
+    """Kostnadstabellens 0 bp-rad = portföljkortet (samma spärrar), och byte av regler räknar om."""
+    from berserk.ui import portfolio_of
+    from ovtlyr.ui.viking_robustness_ui import robustness_of
+    r = dict(res)
+    p = portfolio_of(r)
+    rob = robustness_of(r, p, bt.portfolio_config())
+    zero = rob["costs"][0]
+    assert zero["Kostnad bp"] == 0 and zero["Avkastning %"] == p["return_pct"] and zero["Max DD %"] == p["max_dd_pct"]
+    viking = robustness_of(r, p)                                             # Vikings förval → räknas om
+    assert viking["pc"] != rob["pc"] and robustness_of(r, p) is viking
 
 
 def test_market_gate_uses_the_regions_index():

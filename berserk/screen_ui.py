@@ -28,6 +28,7 @@ from berserk import signals as sg
 from berserk import themes as th
 from berserk import universe as uv
 from berserk import paper
+from ovtlyr.ui.viking_robustness_ui import STICKY
 from ui.components import kpi, note, page_header
 from ui.tokens import AMBER, CYAN, DIM, GOLD, GREEN, GREY, RED, TEXT
 
@@ -76,13 +77,13 @@ def _num(v) -> str:
 
 
 def _table(rows: list) -> str:
-    head = ("<tr style='color:%s;'><th style='text-align:left;'>Ticker</th><th>Status</th><th>Setup</th>"
+    head = ("<tr style='color:%s;'><th style='text-align:left;" + STICKY + "'>Ticker</th><th>Status</th><th>Setup</th>"
             "<th style='text-align:left;'>Tema</th><th>Region</th><th>Stängning</th><th>Stopp</th><th>Position</th>"
             "<th>Antal</th><th style='text-align:left;'>Varför</th></tr>") % DIM
     body = []
     for r in rows:
         if r.get("error"):
-            body.append(f"<tr><td style='text-align:left;'>{r['ticker']}</td><td colspan='9' style='color:{DIM};"
+            body.append(f"<tr><td style='text-align:left;{STICKY}'>{r['ticker']}</td><td colspan='9' style='color:{DIM};"
                         f"text-align:left;'>{r['error']}</td></tr>")
             continue
         sc = STATUS_COLOR.get(r["status"], GREY)
@@ -90,7 +91,7 @@ def _table(rows: list) -> str:
         flags = "".join(f"<br><span style='color:{RED};font-size:0.66rem;'>{f}</span>" for f in r.get("flags") or [])
         etf = f" <span style='color:{DIM};'>ETF</span>" if r.get("kind") == "etf" else ""
         body.append(
-            f"<tr><td style='text-align:left;'><b>{r['ticker']}</b>{etf}</td>"
+            f"<tr><td style='text-align:left;{STICKY}'><b>{r['ticker']}</b>{etf}</td>"
             f"<td style='color:{sc};font-weight:700;'>{r['status'] or '—'}{flags}</td>"
             f"<td style='color:{SETUP_COLOR.get(setup, DIM)};'>{setup.split(' ', 1)[0] if setup else '—'}</td>"
             f"<td style='text-align:left;'>{r.get('label', '')}</td><td>{r.get('region', '')}</td>"
