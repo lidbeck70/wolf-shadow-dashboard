@@ -101,6 +101,27 @@ def _ca_rows(ca_blobs: list) -> list:
     return list(best.values())
 
 
+_CLASS_TOKENS = {"a", "b", "c", "d", "r", "ser", "ser.", "pref", "a-aktie", "b-aktie"}
+
+
+def company_key(r: dict) -> str:
+    """Samma bolag i flera aktieslag (Orion A/B, Volvo A/B) → en nyckel: namnet utan aktieslag."""
+    words = str(r.get("name") or r.get("ticker") or "").lower().replace(",", " ").split()
+    while len(words) > 1 and words[-1] in _CLASS_TOKENS:
+        words.pop()
+    return " ".join(words) or str(r.get("ticker") or "")
+
+
+def _one_per_company(rows: list) -> list:
+    seen, out = set(), []
+    for r in rows:
+        k = company_key(r)
+        if k not in seen:
+            seen.add(k)
+            out.append(r)
+    return out
+
+
 def _ca_key(r: dict) -> tuple:
     return (_VERDICT_ORDER.get(r.get("verdict"), 3), -(r.get("score") or 0))
 
@@ -110,7 +131,7 @@ def segment_quality(ca_blobs: list, n: int = N_QUALITY) -> dict:
     rows = _ca_rows(ca_blobs)
     out = {}
     for s in sgm.SEGMENTS:
-        mine = sorted((r for r in rows if r["segment"] == s.key), key=_ca_key)
+        mine = _one_per_company(sorted((r for r in rows if r["segment"] == s.key), key=_ca_key))
         out[s.key] = {"picks": [dict(r, source="Quality Contrarian") for r in mine[:n]],
                       "etf": {"signal": s.spdr, "ucits": list(s.ucits)}}
     return out
@@ -162,11 +183,7 @@ def theme_quality(sheets: dict, screens: dict, ca_blobs: list, n: int = N_QUALIT
         ranked += sorted((r for r in screen if ok(r)), key=lambda r: (r.get("ev_ebitda") is None,
                                                                        r.get("ev_ebitda") or 0))
         ranked += sorted((r for r in ca if ok(r)), key=_ca_key)
-        seen, picks = set(), []
-        for r in ranked:
-            if r.get("ticker") and r["ticker"] not in seen:
-                seen.add(r["ticker"])
-                picks.append(r)
+        picks = _one_per_company([r for r in ranked if r.get("ticker")])
         out[theme] = {"picks": picks[:n], "etf": [e for e, t in bth.ETFS.items() if t == theme],
                       "global_allowed": allow_global}
     return out

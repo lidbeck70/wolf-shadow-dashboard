@@ -120,3 +120,12 @@ def test_build_and_empty_sources():
     empty = picks.build([], None, {}, analyze=fake_analyze)
     assert all(not v["picks"] for v in empty["segments"].values())
     assert all(not v["quality"]["picks"] and not v["leverage"]["picks"] for v in empty["themes"].values())
+
+
+def test_one_pick_per_company():
+    assert picks.company_key({"name": "Orion Oyj A"}) == picks.company_key({"name": "Orion Oyj B"})
+    assert picks.company_key({"name": "Volvo, AB ser. B"}) == picks.company_key({"name": "Volvo, AB ser. A"})
+    blob = {"results": [{"ticker": "ORNAV.HE", "name": "Orion Oyj A", "sector": "Health Care", "composite_score": 80},
+                        {"ticker": "ORNBV.HE", "name": "Orion Oyj B", "sector": "Health Care", "composite_score": 79},
+                        {"ticker": "NOVO-B.CO", "name": "Novo Nordisk B", "sector": "Health Care", "composite_score": 60}]}
+    assert [p["ticker"] for p in picks.segment_quality([blob])["healthcare"]["picks"]] == ["ORNAV.HE", "NOVO-B.CO"]
