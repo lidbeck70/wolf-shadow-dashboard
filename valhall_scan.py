@@ -74,6 +74,16 @@ def run(api=None, data_getter=None, getter=None, load=None, save=None, today=Non
     green = [r["label"] for r in board["segments"] if (r.get("nordic") or {}).get("status") == "GRÖN"]
     log.info("Gröna nordiska segment: %s · likvida aktier: %s", ", ".join(green) or "inga", sw.get("liquid"))
     if dry_run:
+        import json
+        for k, v in sw["segments"].items():
+            log.info("SWING %-16s %-11s skannade %2d  %s", k, v["status"], v["scanned"],
+                     [(p["ticker"], p["category"], p["ovtlyr_nine"], p["status"]) for p in v["picks"]])
+        for k, v in sw["themes"].items():
+            if v["status"] == "GRÖN":
+                log.info("TEMA  %-16s %-11s skannade %2d  %s", k, v["status"], v["scanned"],
+                         [(p["ticker"], p["category"], p["ovtlyr_nine"], p["status"]) for p in v["picks"]])
+        log.info("NISCH %s", {k: (len(v["berserk"]), len(v["insider"])) for k, v in nich.items()})
+        log.info("NORDEN %s", json.dumps(payload["nordic"]))
         return {"payload": payload, "saved": False}
     saved = bool(save(BLOB, payload))
     if not saved:
