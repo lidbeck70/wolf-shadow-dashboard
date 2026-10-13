@@ -69,11 +69,14 @@ def equal_weight_index(closes: dict, min_members: int = MIN_MEMBERS,
     return idx
 
 
-def load(api=None, closes_getter: Optional[Callable] = None, period: str = "15y",
-         max_members: Optional[int] = None) -> dict:
-    """{segment: {"index": Series|None, "members": int, "with_data": int}} ur Börsdata + Yahoo.
+ALL = "_all"                       # hela Norden (alla segment) — marknaden som sektorerna mäts mot
 
-    closes_getter(tickers, period) → {ticker: Close} (förval market_prices.closes, en batch per segment)."""
+
+def load(api=None, closes_getter: Optional[Callable] = None, period: str = "max",
+         max_members: Optional[int] = None) -> dict:
+    """{segment: {"index": Series|None, "members": int, "with_data": int}} ur Börsdata + Yahoo, plus
+    ALL = hela Norden likaviktat. closes_getter(tickers, period) → {ticker: Close} (förval
+    market_prices.closes, en batch per segment)."""
     import markets as _markets
     if api is None:
         from borsdata_api import get_api
@@ -83,10 +86,13 @@ def load(api=None, closes_getter: Optional[Callable] = None, period: str = "15y"
     table = _markets.load(api=api)
     nordic = _markets.nordic_stock_ids(table)
     mem = members(api.get_instruments(), nordic, lambda t, m: _markets.to_yf(t, m, table))
-    out = {}
+    out, every = {}, {}
     for seg, tickers in mem.items():
         tickers = tickers[:max_members] if max_members else tickers
         closes = closes_getter(tickers, period) if tickers else {}
+        every.update(closes)
         out[seg] = {"index": equal_weight_index(closes), "members": len(tickers),
                     "with_data": sum(1 for s in closes.values() if s is not None and len(s))}
+    out[ALL] = {"index": equal_weight_index(every), "members": len(every),
+                "with_data": sum(1 for s in every.values() if s is not None and len(s))}
     return out

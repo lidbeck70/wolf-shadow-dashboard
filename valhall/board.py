@@ -1,9 +1,11 @@
 """
 valhall/board.py — Valhalls karta idag: en rad per segment och råvarutema.
 
-  global   segmentets SPDR-fond (signal; handel i UCITS-ETF hos Nordnet)
-  nordic   det nordiska sektorindexet (där swingaffärerna görs) — relativ styrka mot Norden
-  themes   BERSERK:s råvaruteman under segmentet (energi, material, dagligvaror), med temats drivare
+  global   segmentets SPDR-fond (signal; handel i UCITS-ETF hos Nordnet) — cykelläget mot S&P 500
+  nordic   det nordiska sektorindexet (där swingaffärerna görs) — cykelläget mot hela Norden
+  themes   BERSERK:s råvaruteman under segmentet (energi, material, dagligvaror), med temats drivare;
+           teman utan drivare (kol, lax) får en likaviktad korg av temats producenter. Råvaror mäts
+           absolut, som i Blindspot.
 
 Allt med injicerbar hämtare (getter(ticker, period) → OHLCV) så att den schemalagda körningen, sidan
 och testerna delar logiken. Nödvändigheten per tema är Blindspots (blindspot/theme_board.py) där den
@@ -17,7 +19,9 @@ from typing import Callable, Optional
 import pandas as pd
 
 from berserk import themes as bth
+from berserk import universe as buv
 from valhall import cycle
+from valhall import nordic_index as ni
 from valhall import segments as sgm
 
 PERIOD = "15y"
@@ -43,27 +47,34 @@ def _ohlcv(getter: Callable, symbol: str, period: str = PERIOD):
 
 def build(getter: Optional[Callable] = None, nordic: Optional[dict] = None,
           nordic_market: Optional[pd.Series] = None, drivers: Optional[dict] = None,
-          today=None) -> dict:
-    """{segments: [rad], when}. nordic = nordic_index.load() (valfri), nordic_market = OMXS30 (relativ
-    styrka för de nordiska indexen), drivers = {tema: (symbol, serie)} (förval berserk.live.load_drivers)."""
+          today=None, baskets: Optional[dict] = None) -> dict:
+    """{segments: [rad], when}. nordic = nordic_index.load() (valfri; nyckeln nordic_index.ALL = hela
+    Norden), nordic_market = OMXS30 (hat: relativ styrka), drivers = {tema: (symbol, serie)} (förval
+    berserk.live.load_drivers), baskets = {tema: serie} för teman utan drivare (förval: producentkorg)."""
     if getter is None:
         from market_prices import ohlcv as getter
     spy, _v = _ohlcv(getter, "SPY")
     if drivers is None:
         from berserk import live
         drivers = live.load_drivers([t for s in sgm.SEGMENTS for t in s.themes], getter, today)
+    nordic_all = ((nordic or {}).get(ni.ALL) or {}).get("index")
+    baskets = baskets if baskets is not None else {}
     rows = []
     for s in sgm.SEGMENTS:
         close, vol = _ohlcv(getter, s.spdr)
-        g = cycle.state(cycle.cycle_frame(close, vol, spy, s.necessity)) if close is not None else \
-            cycle.state(None)
+        g = cycle.state(cycle.cycle_frame(close, vol, spy, s.necessity, cykel_base=spy)) \
+            if close is not None else cycle.state(None)
         n_info = (nordic or {}).get(s.key) or {}
         n_idx = n_info.get("index")
-        n_state = cycle.state(cycle.cycle_frame(n_idx, None, nordic_market, s.necessity)) \
+        n_state = cycle.state(cycle.cycle_frame(n_idx, None, nordic_market if nordic_market is not None
+                                                else nordic_all, s.necessity, cykel_base=nordic_all)) \
             if n_idx is not None else None
         themes = []
         for t in s.themes:
             sym, d = drivers.get(t, (None, None))
+            if d is None:
+                d = baskets.get(t) if t in baskets else producer_basket(t, getter)
+                sym = "producentkorg" if d is not None else None
             nec = THEME_NECESSITY.get(t, s.necessity)
             themes.append({"theme": t, "label": bth.label(t), "driver": sym, "necessity": nec,
                            "state": cycle.state(cycle.cycle_frame(d, None, spy, nec)) if d is not None
@@ -73,6 +84,18 @@ def build(getter: Optional[Callable] = None, nordic: Optional[dict] = None,
                      "nordic_members": n_info.get("members"), "nordic_with_data": n_info.get("with_data"),
                      "themes": themes})
     return {"segments": rows, "when": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")}
+
+
+def producer_basket(theme: str, getter: Callable, period: str = PERIOD) -> Optional[pd.Series]:
+    """Likaviktad korg av temats producenter (berserk.universe) — drivare för teman utan råvaruserie."""
+    closes = {}
+    for t in buv.by_theme().get(theme, []):
+        if buv.kind_of(t) != "producent":
+            continue
+        c, _v = _ohlcv(getter, t, period)
+        if c is not None:
+            closes[t] = c
+    return ni.equal_weight_index(closes, min_members=2)
 
 
 def cycle_starts(board: dict) -> list:

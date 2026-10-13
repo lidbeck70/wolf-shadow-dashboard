@@ -147,7 +147,8 @@ def _ohlcv(c):
 
 
 def test_board_and_cycle_starts():
-    data = {"SPY": _ohlcv(UP), "XLE": _ohlcv(CRASH_TURN), "XLK": _ohlcv(UP), "XLU": _ohlcv(DOWN)}
+    data = {"SPY": _ohlcv(UP), "XLE": _ohlcv(CRASH_TURN), "XLK": _ohlcv(np.linspace(50, 600, N)),
+            "XLU": _ohlcv(DOWN)}                                               # XLK slår marknaden → TOPP
     drivers = {"olja": ("BZ=F", _ser(CRASH_TURN)), "koppar": ("HG=F", _ser(UP))}
     nordic = {"energy": {"index": _ser(CRASH_TURN), "members": 14, "with_data": 13}}
     b = vb.build(getter=lambda t, p: data.get(t), nordic=nordic, nordic_market=_ser(UP), drivers=drivers)
@@ -157,6 +158,7 @@ def test_board_and_cycle_starts():
     assert rows["energy"]["nordic_members"] == 14 and rows["technology"]["global"]["cykel"] == cycle.TOPP
     assert rows["utilities"]["global"]["status"] == cycle.ROD
     assert rows["healthcare"]["global"]["status"] == cycle.NODATA and rows["healthcare"]["nordic"] is None
+    assert rows["technology"]["global"]["relative"] and not rows["energy"]["nordic"]["relative"]
     olja = next(t for t in rows["energy"]["themes"] if t["theme"] == "olja")
     assert olja["state"]["cycle_start"] and olja["necessity"] == 90
     starts = vb.cycle_starts(b)
@@ -168,3 +170,25 @@ def test_probe_workflow():
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     src = open(os.path.join(root, ".github", "workflows", "valhall-probe.yml"), encoding="utf-8").read()
     assert "workflow_dispatch" in src and "python -m valhall.probe" in src and "BORSDATA_API_KEY" in src
+
+
+def test_equity_cykel_is_relative_to_market():
+    """Ett aktieindex som stiger i takt med marknaden är inte i TOPP — bara det som slår marknaden."""
+    market = _ser(np.linspace(100, 400, N))
+    same = cycle.state(cycle.cycle_frame(market * 1.0, cykel_base=market))
+    absolute = cycle.state(cycle.cycle_frame(market * 1.0))
+    assert absolute["cykel"] == cycle.TOPP and same["cykel"] != cycle.TOPP and same["relative"]
+    lagging = _ser(np.linspace(100, 400, N) * np.linspace(1.0, 0.5, N))         # halkar efter marknaden
+    assert cycle.state(cycle.cycle_frame(lagging, cykel_base=market))["cykel"] == cycle.TIDIG
+
+
+def test_producer_basket_for_themes_without_driver():
+    from berserk import universe as buv
+    lax = [t for t in buv.by_theme()["lax"] if buv.kind_of(t) == "producent"]
+    data = {t: _ohlcv(np.linspace(50, 80, N) * (1 + k / 10)) for k, t in enumerate(lax)}
+    basket = vb.producer_basket("lax", lambda t, p: data.get(t))
+    assert basket is not None and basket.iloc[0] == 100 and basket.iloc[-1] > 150
+    assert vb.producer_basket("lax", lambda t, p: None) is None
+    b = vb.build(getter=lambda t, p: data.get(t) if t in data else _ohlcv(UP) if t == "SPY" else None, drivers={})
+    lax_row = next(t for r in b["segments"] for t in r["themes"] if t["theme"] == "lax")
+    assert lax_row["driver"] == "producentkorg" and lax_row["state"]["phase"] != cycle.NODATA

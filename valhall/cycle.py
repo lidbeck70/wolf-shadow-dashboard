@@ -10,6 +10,10 @@ Två delar, båda återanvända:
                   hela tioårsfönstret i efterhand; här räknas varje dag bara på data fram till dagen,
                   med samma gränser och vikter (testerna håller dem synkade med blindspot/theme_board).
 
+Cykelläget mäts absolut för råvaror (pris i tioårsintervallet, som Blindspot) men RELATIVT MARKNADEN
+för aktiesektorer (cykel_base = S&P 500 resp. hela Norden): aktieindex stiger över tid, så det absoluta
+priset ligger nästan alltid högt i sitt intervall. Hatad = sämre än marknaden, som Rick Rule menar.
+
 Status — bestämd i förväg, prövas i fas 3 (backtest) och i papperskontona:
   GRÖN  fasen är BAISSE · VÄNDER, STARK eller UPPTREND och cykeln är TIDIG eller MITTEN
   GUL   fasen är STARK eller UPPTREND men cykeln är SEN (sent i uppgången)
@@ -115,17 +119,21 @@ def status_of(phase: str, cykel: str) -> str:
 
 
 def cycle_frame(close: pd.Series, volume: Optional[pd.Series] = None, spy: Optional[pd.Series] = None,
-                necessity: int = 50) -> pd.DataFrame:
+                necessity: int = 50, cykel_base: Optional[pd.Series] = None) -> pd.DataFrame:
     """Hela cykelbilden per dag: fas, tioårspercentil, veckolutning, cykelläge, hat, blindspot-poäng,
-    status och cykelstart. Varje rad bygger bara på data fram till den dagen."""
+    status och cykelstart. Varje rad bygger bara på data fram till den dagen. cykel_base = marknaden
+    (S&P 500 / Norden): då mäts percentil och veckolutning på kvoten segment/marknad."""
     c = _clean(close)
     if c is None:
         return pd.DataFrame()
     out = pd.DataFrame(index=c.index)
     out["close"] = c
     out["phase"] = phase_series(c)
-    out["pct10"] = c.rolling(PCT_WINDOW, min_periods=PCT_MIN).rank(pct=True) * 100
-    out["slope200w"] = weekly_slope(c)
+    base = bsg.align(_clean(cykel_base), c.index) if cykel_base is not None else None
+    level = (c / base).dropna() if base is not None else c
+    out["pct10"] = level.rolling(PCT_WINDOW, min_periods=PCT_MIN).rank(pct=True).reindex(c.index) * 100
+    out["slope200w"] = weekly_slope(level).reindex(c.index)
+    out["relative"] = base is not None
     out["cykel"] = [cykel_label(p, s) for p, s in zip(out["pct10"], out["slope200w"])]
     hf = hat_frame(c, volume, spy)
     out = out.join(hf)
@@ -152,6 +160,7 @@ def state(frame: pd.DataFrame) -> dict:
         since = str(run.index[0].date())
     return {"date": str(frame.index[-1].date()), "close": num(last["close"], 4), "phase": last["phase"],
             "cykel": last["cykel"], "status": last["status"], "status_since": since,
+            "relative": bool(last.get("relative", False)),
             "cycle_start": bool(last["cycle_start"]), "pct10": num(last["pct10"]),
             "slope200w": num(last["slope200w"], 2), "hat": num(last["hat"]), "blindspot": num(last["blindspot"]),
             "from_high5": num(last["from_high5"]), "rs_spy": num(last["rs_spy"]), "vol_chg": num(last["vol_chg"])}
