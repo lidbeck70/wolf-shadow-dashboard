@@ -17,6 +17,7 @@ GRÖN/GUL/RÖD — räknat dag för dag utan facit, så att varje regel kan back
   paper.py         fas 4a: papperskonton per strategi, varje affär märkt med segment och cykelläge
   longterm.py      fas 4b: hjälper cykeln de långsiktiga köpen? (segment och kvalitetsaktier, punkt för punkt)
   long_screener.py fas 4c: Long Screener (cagr, oförändrad poäng) med Valhalls cykel
+  long_backtest.py fas 4c: Long Screener punkt för punkt 2008–idag (tre cykelvarianter, screenerns portfölj)
 
 Motorerna först. Panelen ändras först när hela systemet är klart.
 """
