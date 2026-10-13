@@ -14,7 +14,8 @@ GRÖN/GUL/RÖD — räknat dag för dag utan facit, så att varje regel kan back
   swing.py         swingrutorna (styrning A): strategin per segment — Viking Nine, BERSERK eller ingen
   picks.py         kvalitets- och hävstångsköpen (Quality Contrarian, Rick Rule, Durrett, Tiggre)
   backtest.py      fas 3: förbättrar cykelstatusen swingstrategierna? (affärer märkta på signaldagen)
-  paper.py         fas 4: papperskonton per strategi, varje affär märkt med segment och cykelläge
+  paper.py         fas 4a: papperskonton per strategi, varje affär märkt med segment och cykelläge
+  longterm.py      fas 4b: hjälper cykeln de långsiktiga köpen? (segment och kvalitetsaktier, punkt för punkt)
 
 Motorerna först. Panelen ändras först när hela systemet är klart.
 """
