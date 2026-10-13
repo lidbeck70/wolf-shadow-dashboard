@@ -12,7 +12,10 @@ månadsskifte på de likvida nordiska aktierna, med nyckeltalen som de SÅG UT d
               (Börsdatas RS-rank har ingen historik).
   Magic F.    räknas här: Greenblatts rangsumma av EV/EBIT (KPI 10, lågt bäst) och avkastning på kapital
               (KPI 36, högt bäst), som percentil 1–100 (1 = bäst).
-  Insider     uteslutet (1 av 20 poäng) — ingen historik; sänker alla lika mycket.
+  Insider     uteslutet (1 av 20 poäng) — ingen historik.
+  Saknas      F-score, vinst- och FCF-stabilitet har ingen historik i Börsdata-licensen. Poängen räknas då
+              mot det som går att nå (t.ex. 16 av 20), så att procentgränserna för BUY/STRONG BUY är
+              desamma som i panelen.
 
 Cykelpoängen i tre varianter:
   valhall    som i den dagliga körningen (long_screener.cycle_score: sektorindex + hemmamarknadens index)
@@ -44,6 +47,8 @@ EXTRA = {"revenue_m": 53, "ev_ebit": 10, "roc": 36, "roic": 37}      # CAGR, Mag
 VARIANTS = ("valhall", "forval", "ingen")
 MAX_POS, STRONG_W, BUY_W, SECTOR_CAP = 10, 0.10, 0.07, 0.25          # cagr_backtest: regel 8–9
 RS_MONTHS = 6
+FUND_MAX = 20                      # screenerns Börsdata-skala
+OPTIONAL_HISTORY = ("f_score", "earnings_stability", "fcf_stability")   # ett kriterium (1 poäng) var
 
 # Valhalls segment → screenerns sektornamn (cagr_cycle.SECTOR_CONFIG)
 SECTOR_OF = {"energy": "Energy", "materials": "Materials", "industrials": "Industrials",
@@ -144,9 +149,10 @@ def market_regimes(index_closes: dict, dates: list) -> dict:
 
 def signals(closes: dict, turnover: dict, universe: dict, hist: dict, nordic_frames: dict,
             index_closes: dict, dates: list, variants=VARIANTS, min_turnover: float = 1e6,
-            days: int = 60, progress: Optional[Callable] = None) -> list:
+            days: int = 60, progress: Optional[Callable] = None, fund_max: int = FUND_MAX) -> list:
     """En rad per aktie och månadsskifte: screenerns signal per variant, poäng, Valhalls läge och ROIC-grind.
-    closes ska vara rensade (longterm.clean). hist = {ticker: {fält: [{y, v}]}}."""
+    closes ska vara rensade (longterm.clean). hist = {ticker: {fält: [{y, v}]}}. fund_max = poängen som går
+    att nå (20 minus kriterier utan historik) — procentgränserna för BUY/STRONG BUY räknas mot den."""
     from cagr.cagr_scoring import calculate_total_score
     from cagr.cagr_cycle import score_cycle_from_int
     from cagr.cagr_fundamentals import score_fundamentals
@@ -168,7 +174,7 @@ def signals(closes: dict, turnover: dict, universe: dict, hist: dict, nordic_fra
             s = closes[t]
             k = int(s.index.searchsorted(pd.Timestamp(d), side="right"))
             tech = score_technical(pd.DataFrame({"Close": s.iloc[max(0, k - ls.TECH_BARS):k]}))
-            fund = score_fundamentals(info, None)
+            fund = dict(score_fundamentals(info, None), fund_max=fund_max)
             seg = universe[t]["segment"]
             st = lt._state(nordic_frames.get(seg), d)
             mkt = regimes.get(ls.market_index(t), {}).get(d, cycle.NODATA)

@@ -87,16 +87,19 @@ def summary(payload: dict) -> list:
     return lines
 
 
-def _long_screen(board, universe, keep, getter, fundamentals=None) -> dict:
+def _long_screen(board, universe, keep, getter, fundamentals=None, api=None) -> dict:
     """Long Screener med Valhalls cykel på de likvida nordiska aktierna."""
     from valhall import long_screener as ls
     from valhall import swing
     if fundamentals is None:
         from cagr.cagr_loader import fetch_fundamentals_batch_fast as fundamentals
 
-    def index_close(sym):
+    def yahoo(sym):
         df = getter(sym, "2y")
         return df["Close"] if df is not None and len(df) and "Close" in df else None
+
+    def index_close(sym):
+        return ls.index_series(sym, yahoo, api, bars=600)
 
     tickers = sorted(swing.liquid(keep, universe))
     try:                                   # bara bolag Börsdata känner igen — annars en yfinance-hämtning per aktie
@@ -189,7 +192,7 @@ def run(api=None, data_getter=None, getter=None, load=None, save=None, today=Non
                            "sheets": sorted(k for k, v in (src.get("sheets") or {}).items() if v)},
                "nordic": {k: {kk: v.get(kk) for kk in ("members", "with_data", "liquid")} for k, v in indices.items()}}
     try:
-        long_scan = _long_screen(board, universe, keep, getter, long_fundamentals)
+        long_scan = _long_screen(board, universe, keep, getter, long_fundamentals, api)
         payload["long"] = {k: long_scan[k] for k in ("segments", "markets", "scanned", "buys")}
     except Exception as exc:                                      # kartan sparas även om screenern fallerar
         log.exception("Long Screener fallerade: %s", exc)
