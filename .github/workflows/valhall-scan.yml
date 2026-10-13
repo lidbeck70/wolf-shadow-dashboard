@@ -1,0 +1,55 @@
+name: Valhall Scan
+
+on:
+  schedule:
+    # Vardagar efter nordisk stängning (17:30 svensk tid = 15:30 UTC sommar, 16:30 UTC vinter).
+    # 16:47 UTC täcker båda säsongerna; reserven 17:17 hoppar över sig själv om primären gått
+    # (schedule_gate.sh). Minuter utanför :00 — GitHub försenar jämna klockslag.
+    - cron: "47 16 * * 1-5"
+    - cron: "17 17 * * 1-5"        # reserv
+  workflow_dispatch: {}
+
+concurrency:
+  group: valhall-scan
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read                    # grinden läser arbetsflödets tidigare körningar
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Gate on duplicates
+        id: gate
+        env:
+          SCHEDULE: ${{ github.event.schedule }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/schedule_gate.sh valhall-scan.yml
+
+      - name: Set up Python
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Cykelkartan + swingkandidater (Viking Nine i Norden, bara gröna rutor). Resultatet till
+      # Gisten: valhall_board.json. Panelen läser det först när hela Valhall är klart.
+      - name: Valhall scan
+        if: steps.gate.outputs.run == 'true'
+        env:
+          BORSDATA_API_KEY: ${{ secrets.BORSDATA_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+        run: python valhall_scan.py

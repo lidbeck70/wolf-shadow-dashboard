@@ -121,6 +121,43 @@ def _batch(tickers: tuple, period: str) -> dict:
         return {}
 
 
+@_cache
+def _batch_cv_raw(tickers: tuple, period: str) -> dict:
+    import yfinance as yf
+    raw = yf.download(list(tickers), period=period, auto_adjust=True, progress=False,
+                      group_by="ticker", threads=True)
+    if raw is None or len(raw) == 0:
+        raise _NoData(f"batch {period}: tom")
+    out: dict = {}
+    for t in tickers:
+        if isinstance(raw.columns, pd.MultiIndex):
+            if t not in raw.columns.get_level_values(0):
+                continue
+            df = raw[t]
+        elif len(tickers) == 1:
+            df = raw
+        else:
+            continue
+        cols = [c for c in ("Close", "Volume") if c in df]
+        if "Close" in cols:
+            out[t] = df[cols].dropna(subset=["Close"])
+    if not any(len(d) for d in out.values()):
+        raise _NoData(f"batch {period}: inga kurser")
+    return out
+
+
+def closes_volumes(tickers: Iterable[str], period: str = "1y") -> dict:
+    """{ticker: DataFrame[Close, Volume]} ur en batch-nedladdning (för omsättningsfilter)."""
+    tup = tuple(dict.fromkeys(str(t).strip() for t in tickers if t))
+    if not tup:
+        return {}
+    try:
+        return dict(_batch_cv_raw(tup, period))
+    except Exception as exc:
+        log.warning("market_prices: batch close/volume %s misslyckades: %s", period, exc)
+        return {}
+
+
 def closes(tickers: Iterable[str], period: str = "1y") -> dict:
     """{ticker: Close-serie} ur en batch-nedladdning (saknade tickers utelämnas)."""
     tup = tuple(dict.fromkeys(str(t).strip() for t in tickers if t))
@@ -129,7 +166,7 @@ def closes(tickers: Iterable[str], period: str = "1y") -> dict:
 
 def clear() -> None:
     """Töm BARA prisdatacachen (inte hela st.cache_data)."""
-    for fn in (_ohlcv_raw, _batch_raw):
+    for fn in (_ohlcv_raw, _batch_raw, _batch_cv_raw):
         try:
             fn.clear()
         except Exception:

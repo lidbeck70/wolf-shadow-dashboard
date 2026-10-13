@@ -49,7 +49,7 @@ def main() -> int:
         for k, v in nordic.items():
             idx = v["index"]
             span = f"{idx.index[0].date()} → {idx.index[-1].date()}" if idx is not None else "inget index"
-            print(f"  {k:18s} medlemmar {v['members']:4d}  med kurs {v['with_data']:4d}  {span}")
+            print(f"  {k:18s} medlemmar {v['members']:4d}  med kurs {v['with_data']:4d}  likvida idag {v.get('liquid')}  {span}")
     except Exception as exc:
         print(f"  FEL: {exc}")
     print("\n== 3. KARTAN IDAG")
