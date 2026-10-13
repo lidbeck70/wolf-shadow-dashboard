@@ -38,8 +38,9 @@ def _close(df):
     return s
 
 
-def frames(api, getter, data_getter, nordic_market=None) -> dict:
-    """{"nordic": {seg: frame}, "global": {seg: frame}, "themes": {tema: frame}, "universe": {...}}."""
+def frames(api, getter, data_getter, nordic_market=None, keep: dict = None) -> dict:
+    """{"nordic": {seg: frame}, "global": {seg: frame}, "themes": {tema: frame}, "universe": {...},
+    "bench": {"nordic": hela Norden, "global": SPY}}. keep = {} fylls med aktiernas Close/Volume (fas 4b)."""
     import markets as _markets
     from berserk import backtest as bbt
     from berserk import themes as bth
@@ -54,10 +55,10 @@ def frames(api, getter, data_getter, nordic_market=None) -> dict:
     to_yf = lambda t, m: _markets.to_yf(t, m, table)  # noqa: E731
     universe = swing.nordic_universe(instruments, nordic_ids, to_yf)
     indices = ni.build_indices(ni.members(instruments, nordic_ids, to_yf),
-                               {t: v["currency"] for t, v in universe.items()}, data_getter)
+                               {t: v["currency"] for t, v in universe.items()}, data_getter, keep=keep)
     nordic_all = (indices.get(ni.ALL) or {}).get("index")
     spy = _close(getter("SPY", "max"))
-    out = {"nordic": {}, "global": {}, "themes": {}, "universe": universe}
+    out = {"nordic": {}, "global": {}, "themes": {}, "universe": universe, "bench": {"nordic": nordic_all, "global": spy}}
     for s in sgm.SEGMENTS:
         idx = (indices.get(s.key) or {}).get("index")
         if idx is not None:

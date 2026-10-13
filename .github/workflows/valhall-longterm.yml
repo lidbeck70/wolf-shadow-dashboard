@@ -1,0 +1,31 @@
+name: Valhall långsiktigt backtest (fas 4b)
+
+# Manuell: hjälper cykeln de långsiktiga köpen? Segment och kvalitetsaktier 2008–idag. Resultatet i
+# loggen och i Gisten (valhall_fas4b.json). Ändrar inga regler.
+on:
+  workflow_dispatch:
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Valhall fas 4b
+        env:
+          BORSDATA_API_KEY: ${{ secrets.BORSDATA_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+        run: python valhall_fas4b.py
