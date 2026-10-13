@@ -147,3 +147,22 @@ def test_fas4b_runner(monkeypatch):
 def test_longterm_workflow():
     src = open(os.path.join(ROOT, ".github", "workflows", "valhall-longterm.yml"), encoding="utf-8").read()
     assert "workflow_dispatch" in src and "python valhall_fas4b.py" in src and "BORSDATA_API_KEY" in src
+
+
+def test_clean_removes_data_jumps():
+    s = pd.Series([100.0, 101.0, 1010.0, 1020.0, 102.0, 103.0], index=IDX[:6])        # felaktigt ×10-hopp och tillbaka
+    c = lt.clean(s)
+    assert c.iloc[0] == 100.0 and c.iloc[1] == pytest.approx(101.0)
+    assert c.iloc[-1] == pytest.approx(101.0 * 1020 / 1010 * 103 / 102)                # hoppen räknas som 0 %
+    assert lt.clean(s.iloc[:1]).iloc[0] == 100.0
+
+
+def test_kpi_history_batch_passes_max_count():
+    from borsdata_api import BorsdataAPI
+    calls = []
+    api = BorsdataAPI.__new__(BorsdataAPI)
+    api._get = lambda path, params=None: calls.append(params) or {"kpisList": [{"instrument": 7, "values": [{"y": 2006}]}]}
+    assert api.get_kpi_history_batch([7], 37, max_count=20) == {7: [{"y": 2006}]}
+    assert calls[-1] == {"instList": "7", "maxcount": 20}
+    api.get_kpi_history_batch([7], 37)
+    assert calls[-1] == {"instList": "7"}                                             # oförändrat utan max_count

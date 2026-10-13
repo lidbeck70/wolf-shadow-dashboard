@@ -29,6 +29,7 @@ log = logging.getLogger("valhall_fas4b")
 BLOB = "valhall_fas4b.json"
 START = "2008-01-01"
 ROIC_KPI = 37
+ROIC_YEARS = 20                    # Börsdatas standard är 10 år — då börjar aktieraderna först 2017
 
 
 def _close(df):
@@ -45,9 +46,9 @@ def _fmt_seg(rows: list, title: str) -> list:
     for r in rows:
         if r["period"] == "alla" or r["n"] >= 12:
             lines.append(f"  {' · '.join(str(r[k]) for k in r if k not in _NUM and k != 'period'):34s} "
-                         f"{r['period']:10s} n={r['n']:5d} | 12m {r.get('x12')} (träff {r.get('hit12')} %) · "
-                         f"24m {r.get('x24')} · 36m {r.get('x36')} (träff {r.get('hit36')} %) | sälj på RÖD 24m "
-                         f"{r.get('xred24')}")
+                         f"{r['period']:10s} n={r['n']:5d} | 12m {r.get('x12')} (median {r.get('x12_med')}, träff "
+                         f"{r.get('hit12')} %) · 24m {r.get('x24')} (median {r.get('x24_med')}) · 36m {r.get('x36')} "
+                         f"(median {r.get('x36_med')}, träff {r.get('hit36')} %) | sälj på RÖD 24m {r.get('xred24')}")
     return lines
 
 
@@ -77,7 +78,7 @@ def run(api=None, getter=None, data_getter=None, roic_getter=None, today=None, s
         from market_prices import closes_volumes as data_getter
     if roic_getter is None:
         def roic_getter(ids):
-            return api.get_kpi_history_batch(ids, ROIC_KPI, "year", "mean")
+            return api.get_kpi_history_batch(ids, ROIC_KPI, "year", "mean", max_count=ROIC_YEARS)
     keep: dict = {}
     fr = fas3.frames(api, getter, data_getter, keep=keep)
     bench_n, bench_g = fr["bench"]["nordic"], fr["bench"]["global"]
@@ -105,7 +106,9 @@ def run(api=None, getter=None, data_getter=None, roic_getter=None, today=None, s
             turnover[t] = c * v * ni.FX_TO_SEK.get(fr["universe"][t]["currency"], 1.0)
     ids = sorted({universe[t]["ins_id"] for t in closes if universe[t]["ins_id"] is not None})
     roic = roic_getter(ids) if ids else {}
-    log.info("Aktier: %d med kurs, %d med ROIC-historik", len(closes), sum(1 for i in ids if roic.get(i)))
+    years = [int(v["y"]) for vals in roic.values() for v in vals or [] if v.get("y") is not None]
+    log.info("Aktier: %d med kurs, %d med ROIC-historik (år %s–%s)", len(closes), sum(1 for i in ids if roic.get(i)),
+             min(years) if years else "—", max(years) if years else "—")
     stocks = lt.stock_rows(closes, turnover, universe, roic, fr["nordic"], bench_n, START)
     log.info("Aktienivå: %d kvartalsrader (minst en grind)", len(stocks))
 

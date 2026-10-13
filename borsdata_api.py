@@ -718,19 +718,24 @@ class BorsdataAPI:
         kpi_id: int,
         report_type: str = "year",
         price_type: str = "mean",
+        max_count: Optional[int] = None,
     ) -> Dict[int, List[dict]]:
         """
         Get historical KPI for multiple instruments (max 50 per call).
-        Returns dict of ins_id → list of {y, p, v}.
+        Returns dict of ins_id → list of {y, p, v}. max_count = antal år/perioder
+        (Börsdatas standard är 10; år högst 20, r12/kvartal högst 40).
         """
         results: Dict[int, List[dict]] = {}
 
         for i in range(0, len(ins_ids), 50):
             batch = ins_ids[i:i+50]
             id_list = ",".join(str(x) for x in batch)
+            params = {"instList": id_list}
+            if max_count:
+                params["maxcount"] = max_count
             data = self._get(
                 f"/instruments/kpis/{kpi_id}/{report_type}/{price_type}/history",
-                params={"instList": id_list},
+                params=params,
             )
             # Verklig form (probe 2026-09-09): {"kpiId", "reportTime",
             # "priceValue", "kpisList": [{"instrument": 40, "values":
