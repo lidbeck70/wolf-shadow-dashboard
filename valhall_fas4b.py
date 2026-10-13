@@ -64,11 +64,32 @@ def _fmt_port(rows: list) -> list:
     return lines
 
 
-def run(api=None, getter=None, data_getter=None, roic_getter=None, today=None, save=None, no_save=False) -> dict:
+def stock_inputs(api, fr: dict, keep: dict) -> tuple:
+    """(universe {ticker: {segment, ins_id}}, closes, turnover i kr) för de nordiska aktierna med kurs."""
     import markets as _markets
+    from valhall import nordic_index as ni
+    table = _markets.load(api=api)
+    nordic_ids = _markets.nordic_stock_ids(table)
+    ins = {}
+    for i in api.get_instruments():
+        if i.get("marketId") in nordic_ids and i.get("ticker") and i.get("insId") is not None:
+            ins.setdefault(_markets.to_yf(i["ticker"], i["marketId"], table), i["insId"])
+    universe = {t: {"segment": v["segment"], "ins_id": ins.get(t)} for t, v in fr["universe"].items()}
+    closes, turnover = {}, {}
+    for t, df in keep.items():
+        c = _close(df)
+        if c is None or t not in universe:
+            continue
+        closes[t] = c
+        if "Volume" in df:
+            v = df["Volume"].astype(float).reindex(c.index)
+            turnover[t] = c * v * ni.FX_TO_SEK.get(fr["universe"][t]["currency"], 1.0)
+    return universe, closes, turnover
+
+
+def run(api=None, getter=None, data_getter=None, roic_getter=None, today=None, save=None, no_save=False) -> dict:
     import valhall_fas3 as fas3
     from valhall import longterm as lt
-    from valhall import nordic_index as ni
     if api is None:
         from borsdata_api import get_api
         api = get_api()
@@ -88,22 +109,7 @@ def run(api=None, getter=None, data_getter=None, roic_getter=None, today=None, s
            + lt.segment_rows(fr["themes"], None, START, "tema"))
     log.info("Segmentnivå: %d månadsrader", len(seg))
 
-    table = _markets.load(api=api)
-    nordic_ids = _markets.nordic_stock_ids(table)
-    ins = {}
-    for i in api.get_instruments():
-        if i.get("marketId") in nordic_ids and i.get("ticker") and i.get("insId") is not None:
-            ins.setdefault(_markets.to_yf(i["ticker"], i["marketId"], table), i["insId"])
-    universe = {t: {"segment": v["segment"], "ins_id": ins.get(t)} for t, v in fr["universe"].items()}
-    closes, turnover = {}, {}
-    for t, df in keep.items():
-        c = _close(df)
-        if c is None or t not in universe:
-            continue
-        closes[t] = c
-        if "Volume" in df:
-            v = df["Volume"].astype(float).reindex(c.index)
-            turnover[t] = c * v * ni.FX_TO_SEK.get(fr["universe"][t]["currency"], 1.0)
+    universe, closes, turnover = stock_inputs(api, fr, keep)
     ids = sorted({universe[t]["ins_id"] for t in closes if universe[t]["ins_id"] is not None})
     roic = roic_getter(ids) if ids else {}
     years = [int(v["y"]) for vals in roic.values() for v in vals or [] if v.get("y") is not None]
