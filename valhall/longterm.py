@@ -15,7 +15,7 @@ Två nivåer, båda med cykelläget PÅ KÖPDAGEN (cykelmotorns dagliga serie, s
             Framåtavkastningen mot hela Norden, grupperad på segmentets nordiska läge, och en
             kvartalsportfölj (likaviktad, alla som klarar filtret) per filter.
 
-Begränsningar: aktieuniversumet är dagens noterade bolag (avnoterade saknas — överlevnadsbias, lika för
+Kurshopp större än 60 % på en dag räknas som datafel (clean). Begränsningar: aktieuniversumet är dagens noterade bolag (avnoterade saknas — överlevnadsbias, lika för
 alla filter); kvalitetsgrinden är bara ROIC (skärmens fulla poäng har fler delar utan historik);
 överlappande 12–36-månadersfönster gör observationerna beroende — jämför filtren, inte t-värden.
 """
@@ -27,6 +27,7 @@ from typing import Callable, Optional
 import numpy as np
 import pandas as pd
 
+from berserk import signals as bsg
 from valhall import cycle
 
 HORIZONS = (12, 24, 36)
@@ -144,6 +145,17 @@ def segment_rows(frames: dict, bench: Optional[pd.Series], start, where: str, st
 
 
 # ── Aktienivå ───────────────────────────────────────────────────────────────
+def clean(s: pd.Series, max_abs_ret: float = bsg.JUMP_MAX) -> pd.Series:
+    """Kursserien utan datafel: dagsrörelser större än max_abs_ret (Yahoos split- och tickerhopp) räknas
+    som 0 % — samma spärr som de nordiska sektorindexen (nordic_index.equal_weight_index)."""
+    s = s.astype(float).dropna()
+    if len(s) < 2:
+        return s
+    r = s.pct_change(fill_method=None)
+    r = r.where(r.abs() <= max_abs_ret, 0.0).fillna(0.0)
+    return float(s.iloc[0]) * (1 + r).cumprod()
+
+
 def known_roic(values: list, date) -> list:
     """ROIC-värdena (år, %) som var kända på datumet — årsrapporten känd LAG_MONTHS efter årets slut."""
     out = []
@@ -179,7 +191,7 @@ def stock_rows(closes: dict, turnover: dict, universe: dict, roic: dict, nordic_
         seg, vals = info.get("segment"), roic.get(info.get("ins_id"))
         if not seg or not vals or s is None or s.empty:
             continue
-        s = s.astype(float)
+        s = clean(s)
         tv = turnover.get(t)
         liq = tv.rolling(days, min_periods=days // 2).mean().shift(1) if tv is not None else None
         frame = nordic_frames.get(seg)
