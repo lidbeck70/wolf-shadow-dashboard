@@ -39,6 +39,28 @@ SELL_SIGNALS = ("SELL", "STRONG SELL")
 TECH_BARS = 600                    # EMA200 + 52 veckor räcker
 
 
+BD_INDEX = {"OBX.OL": ("OBX", "OBX Index", "OBX Total Return Index")}   # Yahoo ger inte längre OBX.OL-historik
+
+
+def index_series(sym: str, yahoo, api=None, bars: int = 5040) -> Optional[pd.Series]:
+    """Hemmamarknadens index: Börsdata för OBX (market_risk.borsdata_index, samma uppslag som
+    marknadsrisken), annars Yahoo. yahoo(sym) → Close-serie eller None."""
+    if sym in BD_INDEX and api is not None:
+        try:
+            import market_risk as mr
+            s, _src = mr.borsdata_index(api, BD_INDEX[sym], bars)
+            if s is not None and len(s):
+                if getattr(s.index, "tz", None) is not None:
+                    s.index = s.index.tz_localize(None)
+                return s
+        except Exception:
+            pass
+    try:
+        return yahoo(sym)
+    except Exception:
+        return None
+
+
 def market_index(ticker: str) -> str:
     from alpha_regime.quality_scan import benchmark_for
     return benchmark_for(ticker)

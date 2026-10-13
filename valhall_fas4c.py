@@ -86,7 +86,13 @@ def run(api=None, getter=None, data_getter=None, kpi_getter=None, today=None, sa
         for iid, vs in got.items():
             for t in by_ins.get(iid, []):
                 hist.setdefault(t, {})[field] = vs
-    index_closes = {sym: fas4b._close(getter(sym, "max")) for sym in INDICES}
+    from valhall import long_screener as ls
+    index_closes = {sym: ls.index_series(sym, lambda x: fas4b._close(getter(x, "max")), api) for sym in INDICES}
+    log.info("Index: %s", {k: (f"{v.index[0].date()}–{v.index[-1].date()}" if v is not None and len(v) else "saknas")
+                           for k, v in index_closes.items()})
+    missing = ["insider"] + [f for f in lb.OPTIONAL_HISTORY if not any(hist.get(t, {}).get(f) for t in hist)]
+    fund_max = lb.FUND_MAX - len(missing)
+    log.info("Fundamentapoäng räknas mot %d (saknar historik: %s)", fund_max, ", ".join(missing))
     dates = lt.month_ends(bench.index, START) if bench is not None else []
     log.info("Aktier: %d med kurs, %d med nyckeltal · %d månadsskiften", len(closes), len(hist), len(dates))
 
@@ -94,13 +100,15 @@ def run(api=None, getter=None, data_getter=None, kpi_getter=None, today=None, sa
         if i % 12 == 0 or i == n:
             log.info("  %d/%d månader · %d aktier senast", i, n, k)
 
-    rows = lb.signals(closes, turnover, universe, hist, fr["nordic"], index_closes, dates, progress=progress)
+    rows = lb.signals(closes, turnover, universe, hist, fr["nordic"], index_closes, dates, progress=progress,
+                      fund_max=fund_max)
     lb.add_returns(rows, closes, bench)
     buys = lb.buy_table(rows)
     buys += lt.summarize([dict(r, variant="ROIC > 15 % (Contrarian Alpha-grinden)") for r in rows if r["q"]],
                          ("variant",))
     result = {"generated": datetime.now(tz=timezone.utc).isoformat(), "buys": buys,
               "portfolios": lb.portfolios(rows, bench),
+              "fund_max": fund_max, "missing": missing,
               "counts": {"rows": len(rows), "stocks": len(closes), "with_kpis": len(hist), "months": len(dates),
                          **{f"buys_{v}": sum(1 for r in rows if r[f"sig_{v}"] in ("STRONG BUY", "BUY"))
                             for v in lb.VARIANTS}}}

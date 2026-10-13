@@ -102,6 +102,19 @@ def test_signals_rows_per_month_and_variant():
     assert rows[0]["r1"] is not None and rows[0]["x12"] == pytest.approx(rows[0]["r12"] - (1.10 - 1) * 100, abs=0.5)
 
 
+def test_fund_max_rescales_thresholds():
+    closes, hist, uni, turnover, frames = _rows_setup()
+    for f in lb.OPTIONAL_HISTORY:                                                        # som i Börsdata-licensen
+        for h in hist.values():
+            h.pop(f, None)
+    d = [pd.Timestamp("2016-06-30")]
+    full = lb.signals(closes, turnover, uni, hist, frames, {"^OMX": _close(0.10)}, d)
+    fair = lb.signals(closes, turnover, uni, hist, frames, {"^OMX": _close(0.10)}, d, fund_max=16)
+    a_full = next(r for r in full if r["ticker"] == "A.ST")
+    a_fair = next(r for r in fair if r["ticker"] == "A.ST")
+    assert a_fair["pct_ingen"] > a_full["pct_ingen"] and a_fair["fund"] == a_full["fund"]
+
+
 def _prow(t, d, sig, r1, seg="technology", pct=0.8):
     return {"ticker": t, "date": d, "segment": seg, "sig_v": sig, "pct_v": pct, "r1": r1}
 
@@ -151,6 +164,12 @@ def test_fas4c_runner(monkeypatch):
                  data_getter=lambda ts, p: {},
                  kpi_getter=lambda ids, kid: {i: by_id[i][kid_field[kid]] for i in ids}, no_save=True)
     assert out["counts"]["with_kpis"] == 3 and out["counts"]["rows"] > 0 and out["counts"]["buys_ingen"] > 0
+    assert out["fund_max"] == 19 and out["missing"] == ["insider"]
+    no_hist = {lb.kpi_ids()[f] for f in lb.OPTIONAL_HISTORY}                             # licensen saknar historik
+    out2 = vf.run(api=SimpleNamespace(), getter=lambda t, p: pd.DataFrame({"Close": _close(0.10)}),
+                  data_getter=lambda ts, p: {}, no_save=True,
+                  kpi_getter=lambda ids, kid: {} if kid in no_hist else {i: by_id[i][kid_field[kid]] for i in ids})
+    assert out2["fund_max"] == 16 and out2["missing"] == ["insider", *lb.OPTIONAL_HISTORY]
     assert any(r["variant"].startswith("ROIC") for r in out["buys"])
     assert any(r["variant"] == "valhall" and r.get("months") for r in out["portfolios"])
     import json

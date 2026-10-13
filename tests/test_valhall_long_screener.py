@@ -101,3 +101,17 @@ def test_paper_long_account_buys_picks_and_sells_on_sell_signal():
     c = st["closed"][0]
     assert c["entry"] == 102.0 and c["exit"] == 105.0 and c["reason"] == "Long Screener SELL"
     assert vpa.results(st)["by_strategy"][0]["strategy"] == "long"
+
+
+def test_index_series_uses_borsdata_for_obx(monkeypatch):
+    import market_risk as mr
+    bd = _close(0.001)
+    asked = []
+    monkeypatch.setattr(mr, "borsdata_index", lambda api, hints, bars: asked.append(hints) or (bd, "Börsdata · OBX"))
+    yahoo = lambda sym: pd.Series([1.0], index=IDX[:1])                                  # noqa: E731
+    assert ls.index_series("OBX.OL", yahoo, api=object()) is bd and asked == [ls.BD_INDEX["OBX.OL"]]
+    assert len(ls.index_series("^OMX", yahoo, api=object())) == 1 and len(asked) == 1     # övriga: Yahoo
+    assert len(ls.index_series("OBX.OL", yahoo, api=None)) == 1                          # utan Börsdata: Yahoo
+    monkeypatch.setattr(mr, "borsdata_index", lambda api, hints, bars: (None, "inget index"))
+    assert len(ls.index_series("OBX.OL", yahoo, api=object())) == 1                      # Börsdata saknar → Yahoo
+    assert ls.index_series("OBX.OL", lambda s: 1 / 0, api=None) is None
