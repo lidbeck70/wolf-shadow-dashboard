@@ -1,14 +1,17 @@
 """
-valhall/swing.py — swingdelen av Valhalls rutor: två bästa Viking Nine-affärer i Norden per grönt
-segment och råvarutema, plus segmentets nischsignaler.
+valhall/swing.py — swingdelen av Valhalls rutor: de två bästa affärerna i Norden per segment och
+råvarutema, med den strategi som har kant i segmentet, plus segmentets nischsignaler.
 
-All swing görs i Norden (där backtesten visat kant). Grunden är Viking Nine (viking_screen.scan,
-oförändrad); rutan visar affärer bara när segmentet (nordiska sektorindexet) respektive temat är GRÖNT
-enligt cykelmotorn. Universumet är de likvida nordiska aktierna (snittomsättning minst 1 milj kr/dag de
-senaste 60 dagarna).
+All swing görs i Norden. Styrning A (fas 3a, backtest 2008–idag): cykelstatusen VISAS men spärrar inte
+— gröna grinden hjälpte 2008–2020 och skadade 2021–. I stället väljs strategin per segment:
 
-Nischen är segmentets särdrag — i fas 2 samlas de befintliga signalerna per segment (BERSERK för
-råvaruteman, Insider Norden för alla). Fas 3 prövar vilken nisch som fungerar bäst i vilket segment.
+  Viking Nine          Teknik, Finans — kant i båda perioderna (viking_screen.scan, oförändrad)
+  BERSERK              Energi, Material och alla råvaruteman — starkast i Norden (berserk_scan.json:s KÖP)
+  ingen swing          Kraftförsörjning — negativ i båda perioderna
+  Viking Nine (prövas) övriga segment — ingen säker kant; papperskontona (valhall/paper.py) avgör
+
+Universumet för Viking Nine är de likvida nordiska aktierna (snittomsättning minst 1 milj kr/dag de
+senaste 60 dagarna). Nischen är de befintliga signalerna per segment (BERSERK, Insider Norden).
 """
 
 from __future__ import annotations
@@ -23,8 +26,17 @@ from valhall import nordic_index as ni
 from valhall import segments as sgm
 
 N_PICKS = 2
-SEGMENT_CANDIDATES, THEME_CANDIDATES = 8, 5     # Viking Nine steg 2 per segment / tema (steg 1 rankar på momentum)
+SEGMENT_CANDIDATES = 8           # Viking Nine steg 2 per segment (steg 1 rankar på momentum)
 GOOD = ("GOLDEN TICKET", "READY", "DEVELOPING")
+
+VIKING, BERSERK, NONE, TEST = "Viking Nine", "BERSERK", "ingen swing", "Viking Nine (prövas)"
+SWING_BY_SEGMENT = {"technology": VIKING, "financials": VIKING, "energy": BERSERK, "materials": BERSERK,
+                    "utilities": NONE}
+
+
+def swing_of(segment: str) -> str:
+    """Segmentets swingstrategi (styrning A). Övriga segment: Viking Nine som prövas i papperskontot."""
+    return SWING_BY_SEGMENT.get(segment, TEST)
 
 
 def nordic_universe(instruments: Iterable[dict], nordic_ids: set, to_yf: Callable) -> dict:
@@ -79,9 +91,23 @@ def _closes_from(data: dict) -> Callable:
     return get
 
 
+def berserk_picks(berserk_blob: Optional[dict], segment: str, theme: Optional[str] = None,
+                  n: int = N_PICKS) -> list:
+    """BERSERK:s KÖP i Norden för segmentet (eller temat) — sällsyntaste setupen först (signals.PRIORITY)."""
+    from berserk import signals as bsg
+    rows = [r for r in (berserk_blob or {}).get("rows") or []
+            if r.get("status") == "KÖP" and not r.get("error") and buv.region_of(r.get("ticker") or "") == "Norden"
+            and (r.get("theme") == theme if theme else sgm.segment_of_theme(r.get("theme")) == segment)]
+    rows.sort(key=lambda r: (-bsg.PRIORITY.get(r.get("setup"), 0), r.get("ticker") or ""))
+    return [{**{k: r.get(k) for k in ("ticker", "setup", "theme", "close", "stop", "atr", "risk_pct", "date")},
+             "segment": segment, "strategy": BERSERK} for r in rows[:n]]
+
+
 def candidates(board: dict, universe: dict, data: dict, scan_fn: Optional[Callable] = None,
-               min_turnover: float = ni.MIN_TURNOVER_SEK, n: int = N_PICKS, **kw) -> dict:
-    """{segments: {key: {status, picks, scanned}}, themes: {tema: {...}}}. Bara gröna rutor skannas.
+               min_turnover: float = ni.MIN_TURNOVER_SEK, n: int = N_PICKS, berserk_blob: Optional[dict] = None,
+               **kw) -> dict:
+    """{segments: {key: {status, strategy, picks, scanned}}, themes: {tema: {...}}}. Styrning A: strategin per
+    segment (swing_of), cykelstatusen följer med men spärrar inte. Råvaruteman får BERSERK:s KÖP.
     scan_fn = viking_screen.scan (utbytbar i tester); kw går vidare till evaluate_ticker (getter m.m.)."""
     if scan_fn is None:
         import viking_screen as vs
@@ -92,24 +118,22 @@ def candidates(board: dict, universe: dict, data: dict, scan_fn: Optional[Callab
     out = {"segments": {}, "themes": {}, "liquid": len(liq)}
     for r in board.get("segments") or []:
         st = (r.get("nordic") or {}).get("status", cycle.NODATA)
-        entry = {"status": st, "picks": [], "scanned": 0}
+        mode = swing_of(r["key"])
+        entry = {"status": st, "strategy": mode, "picks": [], "scanned": 0}
         tickers = sorted(t for t in liq if universe[t]["segment"] == r["key"])
-        if st == cycle.GRON and tickers:
+        if mode in (VIKING, TEST) and tickers:
             res = scan_fn(tickers, closes_getter=closes_getter, max_candidates=SEGMENT_CANDIDATES, **kw)
             entry["scanned"] = len(res.get("rows") or [])
             entry["picks"] = [c for c in (compact(x, r["key"], None, universe[x["ticker"]]["name"])
                                           for x in pick(res.get("rows") or [], n)) if c]
+            for c in entry["picks"]:
+                c["strategy"] = mode
+        elif mode == BERSERK:
+            entry["picks"] = berserk_picks(berserk_blob, r["key"], n=n)
         out["segments"][r["key"]] = entry
         for t in r["themes"]:
-            tst = t["state"].get("status", cycle.NODATA)
-            te = {"status": tst, "picks": [], "scanned": 0}
-            members = sorted(x for x in liq if buv.theme_of(x) == t["theme"])
-            if tst == cycle.GRON and members:
-                res = scan_fn(members, closes_getter=closes_getter, max_candidates=THEME_CANDIDATES, **kw)
-                te["scanned"] = len(res.get("rows") or [])
-                te["picks"] = [c for c in (compact(x, r["key"], t["theme"], universe.get(x["ticker"], {}).get("name", ""))
-                                           for x in pick(res.get("rows") or [], n)) if c]
-            out["themes"][t["theme"]] = te
+            out["themes"][t["theme"]] = {"status": t["state"].get("status", cycle.NODATA), "strategy": BERSERK,
+                                         "picks": berserk_picks(berserk_blob, r["key"], t["theme"], n), "scanned": 0}
     return out
 
 

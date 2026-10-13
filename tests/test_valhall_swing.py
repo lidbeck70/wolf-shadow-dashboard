@@ -1,6 +1,6 @@
 """
-Valhall fas 2a — likviditetsfilter (dag för dag), swingkandidater per grönt segment/tema (Viking Nine,
-utbytbar), nischsignaler och den schemalagda körningen. Syntetiska data — inget nätverk.
+Valhall fas 2a/4a — likviditetsfilter (dag för dag), swingkandidater per segment enligt styrning A
+(Viking Nine utbytbar, BERSERK ur skanningen), nischsignaler och den schemalagda körningen. Syntetiska data — inget nätverk.
 """
 import os
 import sys
@@ -99,12 +99,26 @@ def _board(nordic_status=cycle.GRON, theme_status=cycle.GRON):
     return {"segments": segs}
 
 
-def test_candidates_only_for_green_cards():
+def test_swing_of_control_a():
+    assert swing.swing_of("technology") == swing.swing_of("financials") == swing.VIKING
+    assert swing.swing_of("energy") == swing.swing_of("materials") == swing.BERSERK
+    assert swing.swing_of("utilities") == swing.NONE and swing.swing_of("industrials") == swing.TEST
+
+
+BERSERK_BLOB = {"rows": [{"ticker": "BOL.ST", "status": "KÖP", "setup": "S1 Divergens", "theme": "koppar", "close": 300.0,
+                          "stop": 280.0, "atr": 8.0, "date": "2026-10-09"},
+                         {"ticker": "LUMI.ST", "status": "KÖP", "setup": "S2 Stark", "theme": "koppar"},
+                         {"ticker": "FCX", "status": "KÖP", "setup": "S1 Divergens", "theme": "koppar"},
+                         {"ticker": "EQNR.OL", "status": "BEVAKA", "setup": "S1 Divergens", "theme": "olja"}]}
+
+
+def test_candidates_follow_strategy_per_segment():
     uni = {"VOLV-B.ST": {"segment": "industrials", "currency": "SEK", "name": "Volvo"},
            "SAND.ST": {"segment": "industrials", "currency": "SEK", "name": "Sandvik"},
            "ATCO-A.ST": {"segment": "industrials", "currency": "SEK", "name": "Atlas"},
            "BOL.ST": {"segment": "materials", "currency": "SEK", "name": "Boliden"},
-           "EQNR.OL": {"segment": "energy", "currency": "NOK", "name": "Equinor"}}
+           "EQNR.OL": {"segment": "energy", "currency": "NOK", "name": "Equinor"},
+           "FORTUM.HE": {"segment": "utilities", "currency": "EUR", "name": "Fortum"}}
     data = {t: _cv(100, 1e6) for t in uni}
     calls = []
 
@@ -115,16 +129,24 @@ def test_candidates_only_for_green_cards():
         assert set(closes_getter(tickers)) == set(tickers)
         return {"rows": rows}
 
-    out = swing.candidates(_board(), uni, data, scan_fn=scan)
+    from berserk import signals as bsg
+    out = swing.candidates(_board(cycle.ROD), uni, data, scan_fn=scan, berserk_blob=BERSERK_BLOB)
     ind = out["segments"]["industrials"]
-    assert ind["status"] == cycle.GRON and len(ind["picks"]) == 2
+    assert ind["status"] == cycle.ROD and ind["strategy"] == swing.TEST and len(ind["picks"]) == 2   # röd spärrar inte
     assert [p["ticker"] for p in ind["picks"]] == ["ATCO-A.ST", "VOLV-B.ST"]           # GOLDEN före READY
     assert ind["picks"][0]["name"] == "Atlas" and ind["picks"][0]["entry"] == 100.0 and ind["picks"][0]["stop"] == 90.0
-    assert out["segments"]["energy"]["picks"] == [] and out["segments"]["energy"]["scanned"] == 0   # röd → ingen skanning
-    assert out["themes"]["koppar"]["picks"][0]["ticker"] == "BOL.ST" and out["themes"]["koppar"]["picks"][0]["theme"] == "koppar"
-    assert all(c[2] == {} for c in calls) and {c[1] for c in calls} == {swing.SEGMENT_CANDIDATES, swing.THEME_CANDIDATES}
-    none = swing.candidates(_board(cycle.ROD, cycle.ROD), uni, data, scan_fn=scan)
-    assert all(not v["picks"] for v in none["segments"].values())
+    assert ind["picks"][0]["strategy"] == swing.TEST
+    assert out["segments"]["utilities"]["picks"] == [] and out["segments"]["utilities"]["scanned"] == 0
+    mat = out["segments"]["materials"]
+    assert mat["strategy"] == swing.BERSERK and mat["scanned"] == 0                     # ingen Viking-skanning
+    expect = sorted(["BOL.ST", "LUMI.ST"], key=lambda t: -bsg.PRIORITY.get(
+        {"BOL.ST": "S1 Divergens", "LUMI.ST": "S2 Stark"}[t], 0))
+    assert [p["ticker"] for p in mat["picks"]] == expect                                # FCX är inte Norden
+    assert out["segments"]["energy"]["picks"] == []                                     # BEVAKA är inget köp
+    assert [p["ticker"] for p in out["themes"]["koppar"]["picks"]] == expect
+    assert out["themes"]["koppar"]["strategy"] == swing.BERSERK and out["themes"]["olja"]["picks"] == []
+    assert all(c[2] == {} for c in calls) and {c[1] for c in calls} == {swing.SEGMENT_CANDIDATES}
+    assert all(set(c[0]) <= {"VOLV-B.ST", "SAND.ST", "ATCO-A.ST"} for c in calls)      # bara Viking-segment
 
 
 def test_niche_signals_by_segment():
@@ -161,7 +183,8 @@ def test_valhall_scan_run(monkeypatch):
     assert p["nordic"]["industrials"]["members"] == 3 and "swing" in p and "niche" in p
     assert "buys" in p and p["sources"] == {"ca_runs": 0, "screens": False, "sheets": []}
     lines = vsn.summary(p)
-    assert len(lines) >= 12 and lines[-1].startswith("Källor")
+    assert len(lines) >= 13 and any(x.startswith("Källor") for x in lines) and lines[-1].startswith("Papperskonton")
+    assert vsn.PAPER_BLOB in saved and p["paper"]["by_strategy"] == [] and saved[vsn.PAPER_BLOB]["orders"] == []
     import json
     json.dumps(saved[vsn.BLOB], default=str)                                   # går att spara som JSON
 
