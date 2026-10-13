@@ -14,6 +14,7 @@ Quality          segmentets kvalitetsköp med Alpha Regime BUY           tidssto
 Rick Rule        råvarans kvalitetsköp (Köpkandidat / Rule-håven / BUY) tidsstopp 3 år
 Durrett          guld/silver: 15-BAGGER, eller nordiskt bolag           tidsstopp 3 år
 Tiggre           övriga råvaror: alla köpgrindar gröna                  tidsstopp 3 år
+Long Screener    segmentets två bästa STRONG BUY/BUY (long_screener.py) screenerns SELL → nästa öppning · 3 år
 BERSERK          eget konto (berserk_paper.json) — bara märkt här
 
 Långsiktiga positioner får dessutom en SKUGGEXIT: första dagen segmentets (temats) status är RÖD noteras
@@ -39,7 +40,8 @@ from valhall import swing as vsw
 SWING, LONG = "swing", "lång"
 STRATEGIES = {"viking": ("Viking Nine", SWING), "insider": ("Insider Norden", SWING), "wolf": ("Wolf", SWING),
               "berserk": ("BERSERK", SWING), "quality": ("Quality Contrarian", LONG), "rule": ("Rick Rule", LONG),
-              "durrett": ("Durrett", LONG), "tiggre": ("Tiggre", LONG)}
+              "durrett": ("Durrett", LONG), "tiggre": ("Tiggre", LONG), "long": ("Long Screener", LONG)}
+LONG_SELL = ("SELL", "STRONG SELL")      # cagr_scoring: EMA200-brott, röd regim eller poäng under 35 %
 LONG_DAYS = 3 * 365                # horisont 0,5–3 år
 INSIDER_DAYS = 548                 # insiderns tidsstopp: 18 månader
 COOLDOWN_DAYS = 14                 # ingen ny affär i samma aktie och strategi två veckor efter en stängning
@@ -118,9 +120,13 @@ def wolf_live(wolf_blob: Optional[dict], wolf_map: dict, today) -> Optional[dict
 
 
 def signals(swing: dict, buys: dict, universe: dict, insider_blob: Optional[dict] = None,
-            wolf: Optional[dict] = None) -> list:
-    """Dagens köpsignaler per strategi. wolf = wolf_live(...)."""
+            wolf: Optional[dict] = None, long_scan: Optional[dict] = None) -> list:
+    """Dagens köpsignaler per strategi. wolf = wolf_live(...), long_scan = long_screener.scan(...)."""
     out = []
+    for key, e in ((long_scan or {}).get("segments") or {}).items():
+        for p in e.get("picks") or []:
+            out.append(_sig("long", p["ticker"], p.get("name"), key, None, True,
+                            f"{p['signal']} · {p['score_pct'] * 100:.0f} % · cykel {p['cycle']}/3"))
     for key, e in ((swing or {}).get("segments") or {}).items():
         if e.get("strategy") in (vsw.VIKING, vsw.TEST):
             for p in e.get("picks") or []:
@@ -180,9 +186,10 @@ def _after(df: pd.DataFrame, date: str) -> int:
 
 def step(state: Optional[dict], sigs: list, board: dict, ohlcv: Callable, market: Optional[pd.DataFrame] = None,
          today=None, wolf: Optional[dict] = None, berserk_state: Optional[dict] = None,
-         universe: Optional[dict] = None) -> tuple:
+         universe: Optional[dict] = None, long_signals: Optional[dict] = None) -> tuple:
     """(nytt tillstånd, nya händelser). ohlcv(ticker) → dagsdata, market = OMXS30 (Viking Nines marknadsexit),
-    wolf = wolf_live(...) (None = listan saknas → inga Wolf-sälj i dag), berserk_state = BERSERK:s konto."""
+    wolf = wolf_live(...) (None = listan saknas → inga Wolf-sälj i dag), berserk_state = BERSERK:s konto,
+    long_signals = {ticker: Long Screener-signal} (None = skanningen saknas → inga sälj i dag)."""
     today = _d(today or pd.Timestamp.today())
     state = dict(state) if state else new_state(today)
     for k in ("orders", "positions", "closed", "events"):
@@ -232,7 +239,7 @@ def step(state: Optional[dict], sigs: list, board: dict, ohlcv: Callable, market
 
     # 2. Förvaltning
     for p in list(state["positions"]):
-        _manage(state, p, data(p["ticker"]), market, wolf, board, today, ev)
+        _manage(state, p, data(p["ticker"]), market, wolf, board, today, ev, long_signals)
 
     # 3. Dagens signaler blir order
     busy = {(x["strategy"], x["ticker"]) for x in state["positions"] + state["orders"]}
@@ -257,7 +264,8 @@ def step(state: Optional[dict], sigs: list, board: dict, ohlcv: Callable, market
     return state, events
 
 
-def _manage(state: dict, p: dict, df: Optional[pd.DataFrame], market, wolf, board, today, ev) -> None:
+def _manage(state: dict, p: dict, df: Optional[pd.DataFrame], market, wolf, board, today, ev,
+            long_signals: Optional[dict] = None) -> None:
     if df is None:
         return
     o, h, lo, c = (df[k].astype(float).values for k in ("Open", "High", "Low", "Close"))
@@ -300,6 +308,10 @@ def _manage(state: dict, p: dict, df: Optional[pd.DataFrame], market, wolf, boar
     if p["strategy"] == "wolf" and wolf is not None and p["ticker"] not in wolf:
         p["pending"] = {"date": p["last_date"], "reason": "föll ur Wolfs topp 40"}
         ev(SALJ_OPEN, p, "föll ur Wolfs topp 40 — sälj på nästa öppning")
+    elif p["strategy"] == "long" and (long_signals or {}).get(p["ticker"]) in LONG_SELL:
+        reason = f"Long Screener {long_signals[p['ticker']]}"
+        p["pending"] = {"date": p["last_date"], "reason": reason}
+        ev(SALJ_OPEN, p, f"{reason} — sälj på nästa öppning")
     tag = cycle_tag(board, p["segment"], p.get("theme"))
     g = _gov(p)
     if tag.get(f"{g}_close") is not None:
