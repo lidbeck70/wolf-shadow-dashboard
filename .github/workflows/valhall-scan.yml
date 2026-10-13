@@ -52,4 +52,6 @@ jobs:
         env:
           BORSDATA_API_KEY: ${{ secrets.BORSDATA_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+          ALERT_REPO_TOKEN: ${{ secrets.ALERT_REPO_TOKEN }}
+          CA_GIST_ID: ${{ secrets.CA_GIST_ID }}
         run: python valhall_scan.py

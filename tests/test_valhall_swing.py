@@ -155,10 +155,13 @@ def test_valhall_scan_run(monkeypatch):
     out = vsn.run(api=SimpleNamespace(get_instruments=lambda: inst),
                   data_getter=lambda ts, p: {t: data[t] for t in ts if t in data}, getter=lambda t, p: None,
                   load=lambda f, fb: fb, save=lambda f, d: saved.__setitem__(f, d) or True,
-                  scan_fn=lambda *a, **k: {"rows": []}, nordic_market=None)
+                  scan_fn=lambda *a, **k: {"rows": []}, nordic_market=None, sources={})
     p = out["payload"]
     assert out["saved"] and vsn.BLOB in saved and len(p["board"]["segments"]) == 11
     assert p["nordic"]["industrials"]["members"] == 3 and "swing" in p and "niche" in p
+    assert "buys" in p and p["sources"] == {"ca_runs": 0, "screens": False, "sheets": []}
+    lines = vsn.summary(p)
+    assert len(lines) >= 12 and lines[-1].startswith("Källor")
     import json
     json.dumps(saved[vsn.BLOB], default=str)                                   # går att spara som JSON
 
