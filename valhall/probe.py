@@ -45,7 +45,7 @@ def main() -> int:
     print("\n== 2. NORDISKA SEKTORINDEX")
     nordic = {}
     try:
-        nordic = ni.load(period="15y")
+        nordic = ni.load()                                   # full historik (Yahoo "max")
         for k, v in nordic.items():
             idx = v["index"]
             span = f"{idx.index[0].date()} → {idx.index[-1].date()}" if idx is not None else "inget index"
