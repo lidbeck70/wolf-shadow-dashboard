@@ -177,11 +177,13 @@ def test_valhall_scan_run(monkeypatch):
     out = vsn.run(api=SimpleNamespace(get_instruments=lambda: inst),
                   data_getter=lambda ts, p: {t: data[t] for t in ts if t in data}, getter=lambda t, p: None,
                   load=lambda f, fb: fb, save=lambda f, d: saved.__setitem__(f, d) or True,
-                  scan_fn=lambda *a, **k: {"rows": []}, nordic_market=None, sources={})
+                  scan_fn=lambda *a, **k: {"rows": []}, nordic_market=None, sources={},
+                  long_fundamentals=lambda ts: {})
     p = out["payload"]
     assert out["saved"] and vsn.BLOB in saved and len(p["board"]["segments"]) == 11
     assert p["nordic"]["industrials"]["members"] == 3 and "swing" in p and "niche" in p
     assert "buys" in p and p["sources"] == {"ca_runs": 0, "screens": False, "sheets": []}
+    assert p["long"]["scanned"] == 3 and set(p["long"]["segments"]) == {s.key for s in ni.sgm.SEGMENTS}
     lines = vsn.summary(p)
     assert len(lines) >= 13 and any(x.startswith("Källor") for x in lines) and lines[-1].startswith("Papperskonton")
     assert vsn.PAPER_BLOB in saved and p["paper"]["by_strategy"] == [] and saved[vsn.PAPER_BLOB]["orders"] == []

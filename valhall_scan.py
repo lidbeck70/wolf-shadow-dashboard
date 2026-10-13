@@ -14,7 +14,9 @@ den kopplas in när hela Valhall är klart.
   4. Köp (valhall.picks): två kvalitetsköp per segment (Quality Contrarian) och per råvara (Rick Rule),
      fem hävstångsköp per råvara (Durrett för guld/silver med 15-BAGGER-regeln, Tiggre för övriga).
      Källor: Quality Contrarian-körningarna och håvarna (Gisten) och dina ark på panel-data.
-  5. Papperskonton (valhall.paper): ett per strategi — varje affär märkt med segment och cykelläge —
+  5. Long Screener (valhall.long_screener): screenerns egen poäng på de likvida nordiska aktierna med
+     Valhalls cykel (sektorindex + hemmamarknadens index) — två bästa STRONG BUY/BUY per segment.
+  6. Papperskonton (valhall.paper): ett per strategi — varje affär märkt med segment och cykelläge —
      sparade i valhall_paper.json; sammanställningen per strategi/segment/status i valhall_board.json.
 
 Gisten: valhall_board.json. Env: BORSDATA_API_KEY, GITHUB_TOKEN (gist-scope), ALERT_REPO_TOKEN (läser
@@ -65,10 +67,11 @@ def summary(payload: dict) -> list:
     sw, buys = payload["swing"], payload["buys"]
     for r in payload["board"]["segments"]:
         k = r["key"]
+        lp = [p["ticker"] for p in (((payload.get("long") or {}).get("segments") or {}).get(k) or {}).get("picks", [])]
         lines.append(f"{r['label']:16s} global {r['global']['status']:11s} Norden "
                      f"{(r.get('nordic') or {}).get('status', '—'):11s} swing ({sw['segments'][k].get('strategy')}) "
                      f"{[(p['ticker'], p.get('category') or p.get('setup')) for p in sw['segments'][k]['picks']]} kvalitet "
-                     f"{[p['ticker'] for p in buys['segments'][k]['picks']]}")
+                     f"{[p['ticker'] for p in buys['segments'][k]['picks']]} long {lp}")
         for t in r["themes"]:
             q = buys["themes"][t["theme"]]["quality"]["picks"]
             lv = buys["themes"][t["theme"]]["leverage"]
@@ -84,8 +87,32 @@ def summary(payload: dict) -> list:
     return lines
 
 
+def _long_screen(board, universe, keep, getter, fundamentals=None) -> dict:
+    """Long Screener med Valhalls cykel på de likvida nordiska aktierna."""
+    from valhall import long_screener as ls
+    from valhall import swing
+    if fundamentals is None:
+        from cagr.cagr_loader import fetch_fundamentals_batch_fast as fundamentals
+
+    def index_close(sym):
+        df = getter(sym, "2y")
+        return df["Close"] if df is not None and len(df) and "Close" in df else None
+
+    tickers = sorted(swing.liquid(keep, universe))
+    try:                                   # bara bolag Börsdata känner igen — annars en yfinance-hämtning per aktie
+        from cagr import cagr_loader as cl
+        if cl._borsdata_available():
+            api = cl._get_borsdata_api()
+            tickers = [t for t in tickers if api.resolve_instrument_id(t) is not None]
+    except Exception as exc:
+        log.warning("Long Screener: Börsdata-uppslaget gick inte (%s) — skannar alla likvida", exc)
+    out = ls.scan(board, universe, keep, tickers, fundamentals, index_close)
+    log.info("Long Screener: %d aktier · %d köp · marknader %s", out["scanned"], out["buys"], out["markets"])
+    return out
+
+
 def _paper(load, state, berserk_state, board, sw, buys, universe, insider_blob, getter, nordic_market, today,
-           instruments, nordic_ids, to_yf) -> tuple:
+           instruments, nordic_ids, to_yf, long_scan=None) -> tuple:
     """Papperskontona ett steg fram: dagens signaler blir order, gårdagens fylls, positionerna förvaltas."""
     import pandas as pd
 
@@ -96,7 +123,7 @@ def _paper(load, state, berserk_state, board, sw, buys, universe, insider_blob, 
         if i.get("marketId") in nordic_ids and i.get("ticker"):
             wolf_map.setdefault(str(i["ticker"]).upper(), to_yf(i["ticker"], i["marketId"]))
     wolf = vpa.wolf_live(load("wolf_screener.json", None), wolf_map, today)
-    sigs = vpa.signals(sw, buys, universe, insider_blob, wolf)
+    sigs = vpa.signals(sw, buys, universe, insider_blob, wolf, long_scan)
     market = None
     if nordic_market is not None and len(nordic_market):
         m = pd.Series(nordic_market).astype(float).dropna()
@@ -108,14 +135,15 @@ def _paper(load, state, berserk_state, board, sw, buys, universe, insider_blob, 
         return getter(t, PAPER_PERIOD)
 
     state, events = vpa.step(state, sigs, board, ohlcv, market=market, today=today, wolf=wolf,
-                             berserk_state=berserk_state, universe=universe)
+                             berserk_state=berserk_state, universe=universe,
+                             long_signals=(long_scan or {}).get("signals") if long_scan else None)
     log.info("Papper: %d signaler · %d händelser · Wolf-listan %s", len(sigs), len(events),
              "saknas/gammal" if wolf is None else f"{len(wolf)} aktier")
     return state, events
 
 
 def run(api=None, data_getter=None, getter=None, load=None, save=None, today=None, dry_run=False,
-        scan_fn=None, nordic_market=None, sources=None, analyze=None) -> dict:
+        scan_fn=None, nordic_market=None, sources=None, analyze=None, long_fundamentals=None) -> dict:
     from valhall import board as vb
     from valhall import nordic_index as ni
     from valhall import paper as vpa
@@ -160,6 +188,12 @@ def run(api=None, data_getter=None, getter=None, load=None, save=None, today=Non
                "sources": {"ca_runs": len(src.get("ca") or []), "screens": bool(src.get("screens")),
                            "sheets": sorted(k for k, v in (src.get("sheets") or {}).items() if v)},
                "nordic": {k: {kk: v.get(kk) for kk in ("members", "with_data", "liquid")} for k, v in indices.items()}}
+    try:
+        long_scan = _long_screen(board, universe, keep, getter, long_fundamentals)
+        payload["long"] = {k: long_scan[k] for k in ("segments", "markets", "scanned", "buys")}
+    except Exception as exc:                                      # kartan sparas även om screenern fallerar
+        log.exception("Long Screener fallerade: %s", exc)
+        long_scan, payload["long"] = None, None
     paper_state, berserk_state = load(PAPER_BLOB, None), load("berserk_paper.json", None)
     prev_paper = (load(BLOB, None) or {}).get("paper") or {}
     if paper_state is None and prev_paper.get("since"):
@@ -170,7 +204,7 @@ def run(api=None, data_getter=None, getter=None, load=None, save=None, today=Non
     else:
         try:
             paper_state, events = _paper(load, paper_state, berserk_state, board, sw, buys, universe, insider_blob,
-                                         getter, nordic_market, today, instruments, nordic_ids, to_yf)
+                                         getter, nordic_market, today, instruments, nordic_ids, to_yf, long_scan)
             payload["paper"] = vpa.results(paper_state, berserk_state)
             for e in events:
                 log.info("Papper: %s %s %s — %s", e["kind"], e["strategy"], e["ticker"], e["text"])
