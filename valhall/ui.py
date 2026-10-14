@@ -1,0 +1,270 @@
+"""
+valhall/ui.py — ⚡ VALHALL: cykelkartan över hela marknaden, korten, papperskontona och backtesterna.
+
+Sidan räknar ingenting själv — den läser de schemalagda körningarnas resultat ur Gisten:
+  valhall_board.json   kartan, swing, köp, Long Screener och papperskontonas sammanställning (vardagar)
+  valhall_fas3.json    fas 3a — cykelstatusen och swing (Viking Nine, BERSERK)
+  valhall_fas4b.json   fas 4b — cykeln och de långsiktiga köpen (segment och kvalitetsaktier)
+  valhall_fas4c.json   fas 4c — Long Screener punkt för punkt
+
+Designen följer 🪓 BERSERK Regime: en ruta per segment med färgad kant efter status, chips för val och
+dämpade detaljrader. Korten är rena funktioner (HTML-strängar) så att de går att testa utan Streamlit.
+"""
+
+from __future__ import annotations
+
+from html import escape
+from typing import Optional
+
+import pandas as pd
+
+from ui.tokens import AMBER, CYAN, DIM, GOLD, GREEN, GREY, RED, TEXT, regime_color
+
+BLOBS = {"board": "valhall_board.json", "fas3": "valhall_fas3.json", "fas4b": "valhall_fas4b.json",
+         "fas4c": "valhall_fas4c.json"}
+_STATE = "valhall_data"
+STRATEGY_LABEL = {"viking": "Viking Nine", "insider": "Insider Norden", "wolf": "Wolf", "berserk": "BERSERK",
+                  "quality": "Quality Contrarian", "rule": "Rick Rule", "durrett": "Durrett", "tiggre": "Tiggre",
+                  "long": "Long Screener", "long_ingen": "Long Screener (utan cykel)"}
+
+
+def load(loader=None) -> dict:
+    """Alla Valhall-resultat ur Gisten (None för det som saknas)."""
+    if loader is None:
+        from gist_storage import load_blob as loader
+    out = {}
+    for k, name in BLOBS.items():
+        try:
+            out[k] = loader(name, None)
+        except Exception:
+            out[k] = None
+    out["loaded"] = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")
+    return out
+
+
+# ── Byggstenar ──────────────────────────────────────────────────────────────
+def _status(st: Optional[dict]) -> str:
+    return (st or {}).get("status") or "DATA SAKNAS"
+
+
+def status_chip(label: str, st: Optional[dict]) -> str:
+    s = _status(st)
+    col = regime_color(s) if s in ("GRÖN", "GUL", "RÖD") else GREY
+    extra = " · ".join(x for x in ((st or {}).get("phase"), (st or {}).get("cykel")) if x and x != s)
+    start = " ⚡ CYKELSTART" if (st or {}).get("cycle_start") else ""
+    return (f"<span style='border:1px solid {col};border-radius:3px;padding:0 5px;color:{col};font-size:0.68rem;"
+            f"font-weight:700;white-space:nowrap;'>{escape(label)} {s}</span>"
+            + (f"<span style='color:{DIM};font-size:0.66rem;'> {escape(extra)}{start}</span>" if extra or start else ""))
+
+
+def pick_chips(picks: list, color: str = CYAN, blocked: bool = False) -> str:
+    if not picks:
+        return f"<span style='color:{DIM};font-size:0.66rem;'>—</span>"
+    col = GREY if blocked else color
+    out = []
+    for p in picks:
+        tag = p.get("category") or p.get("setup") or p.get("signal") or p.get("verdict") or ""
+        if p.get("bagger"):
+            tag = "15-BAGGER"
+        txt = escape(str(p.get("ticker") or "")) + (f" <span style='opacity:0.7;'>{escape(str(tag))}</span>" if tag else "")
+        out.append(f"<span style='border:1px solid {col};border-radius:3px;padding:0 4px;color:{col};"
+                   f"font-size:0.66rem;white-space:nowrap;{'text-decoration:line-through;' if blocked else ''}'>"
+                   f"{txt}</span>")
+    return " ".join(out)
+
+
+def _line(label: str, body: str) -> str:
+    return (f"<div style='font-size:0.7rem;line-height:1.7;'><span style='color:{DIM};'>{label}</span> "
+            f"{body}</div>")
+
+
+def segment_card(row: dict, swing: dict, buys: dict, long: dict, niche: dict) -> str:
+    """Sektorrutan: global (SPDR → UCITS) och nordisk status, swing med segmentets strategi, kvalitetsköp
+    (grind: ej RÖD), Long Screener och nischsignaler."""
+    nordic = row.get("nordic") or {}
+    col = regime_color(_status(nordic)) if _status(nordic) in ("GRÖN", "GUL", "RÖD") else GREY
+    sw = swing or {}
+    gate = (buys or {}).get("gate") or {}
+    blocked = gate.get("open") is False
+    q = pick_chips((buys or {}).get("picks") or [], GOLD, blocked)
+    if blocked:
+        q += f" <span style='color:{RED};font-size:0.64rem;'>SPÄRRAD — sektorn är RÖD</span>"
+    ucits = ", ".join(row.get("ucits") or []) or "—"
+    nb = len((niche or {}).get("berserk") or [])
+    ni = len((niche or {}).get("insider") or [])
+    return (f"<div style='border:1px solid {col};border-left:4px solid {col};border-radius:4px;padding:6px 8px;"
+            f"min-width:0;'><div style='display:flex;justify-content:space-between;gap:6px;flex-wrap:wrap;'>"
+            f"<b style='color:{TEXT};font-size:0.84rem;'>{escape(row.get('label') or row.get('key') or '')}</b>"
+            f"<span>{status_chip('Norden', nordic)}</span></div>"
+            f"<div style='margin:2px 0;'>{status_chip('Globalt', row.get('global'))}"
+            f"<span style='color:{DIM};font-size:0.64rem;'> · {escape(row.get('spdr') or '')} → {escape(ucits)}</span></div>"
+            + _line(f"Swing ({escape(sw.get('strategy') or '—')})", pick_chips(sw.get("picks") or []))
+            + _line("Kvalitet", q)
+            + _line("Long Screener", pick_chips((long or {}).get("picks") or [], GREEN))
+            + (_line("Nisch", f"<span style='color:{TEXT};'>BERSERK {nb} · Insider {ni}</span>") if nb or ni else "")
+            + "</div>")
+
+
+def theme_card(t: dict, swing_t: dict, buys_t: dict) -> str:
+    """Råvarurutan: temats status, BERSERK-swing, Rick Rule-köp och hävstång (Durrett/Tiggre)."""
+    st = t.get("state") or {}
+    col = regime_color(_status(st)) if _status(st) in ("GRÖN", "GUL", "RÖD") else GREY
+    lv = (buys_t or {}).get("leverage") or {}
+    return (f"<div style='border:1px solid {col}88;border-left:3px solid {col};border-radius:4px;padding:5px 7px;"
+            f"min-width:0;'><div style='display:flex;justify-content:space-between;gap:6px;flex-wrap:wrap;'>"
+            f"<b style='color:{TEXT};font-size:0.78rem;'>{escape(t.get('label') or t.get('theme') or '')}</b>"
+            f"<span>{status_chip('', st)}</span></div>"
+            f"<div style='color:{DIM};font-size:0.62rem;'>{escape(t.get('driver') or 'ingen drivare')}</div>"
+            + _line("Swing (BERSERK)", pick_chips((swing_t or {}).get("picks") or []))
+            + _line("Rick Rule", pick_chips(((buys_t or {}).get("quality") or {}).get("picks") or [], GOLD))
+            + _line(f"Hävstång ({escape(lv.get('strategy') or '—')})", pick_chips(lv.get("picks") or [], AMBER))
+            + "</div>")
+
+
+def paper_table(rows: list, keys: tuple) -> pd.DataFrame:
+    """Papperskontonas sammanställning som tabell (svenska rubriker)."""
+    names = {"strategy": "Strategi", "segment": "Segment", "status_in": "Status vid köp", "cykel_in": "Cykel vid köp",
+             "n": "Affärer", "open": "Öppna", "closed": "Stängda", "avg_ret": "Snitt %", "win": "Vinst %",
+             "avg_r": "Snitt R", "sum_r": "Summa R", "avg_excess": "Mot riktmärke %", "avg_red_ret": "Sälj på RÖD %",
+             "red": "Blev RÖD"}
+    cols = list(keys) + ["n", "open", "closed", "avg_ret", "win", "avg_r", "avg_excess", "avg_red_ret"]
+    out = []
+    for r in rows or []:
+        d = {names.get(c, c): r.get(c) for c in cols}
+        if "Strategi" in d:
+            d["Strategi"] = STRATEGY_LABEL.get(d["Strategi"], d["Strategi"])
+        out.append(d)
+    return pd.DataFrame(out)
+
+
+def portfolio_table(rows: list, key: str) -> pd.DataFrame:
+    """Backtestens portföljrader (CAGR, DD m.m.) som tabell."""
+    keep = [r for r in rows or [] if r.get("cagr") is not None]
+    return pd.DataFrame([{"Variant": r.get(key), "Period": r.get("period"), "CAGR %": r.get("cagr"),
+                          "Max DD %": r.get("dd"), "Snitt innehav": r.get("avg_n"),
+                          "Norden %": r.get("bench_cagr")} for r in keep])
+
+
+DECISIONS = (
+    ("Swing per segment (fas 3a)", "Cykelstatusen spärrar inte swing — gröna grinden hjälpte 2008–2020 och skadade "
+     "2021–. Viking Nine i Teknik och Finans, BERSERK i Energi, Material och råvarorna, ingen swing i "
+     "Kraftförsörjning, övriga prövas i papperet."),
+    ("Kvalitet: ej RÖD sektor (fas 4b)", "Kvalitetsköp bara när sektorn inte är RÖD: 17,9 % CAGR / −26 % DD mot "
+     "13,2 % / −34 % för alla, i båda perioderna. Sälj INTE på RÖD — det kostade ≈ 20 procentenheter på 24 mån."),
+    ("Råvaror: contrarian (fas 4b)", "Cykel TIDIG gav +46 % på 36 mån i båda perioderna — Rick Rule-tanken håller "
+     "för råvarorna (men inte för nordiska sektorer, där GRÖN slog RÖD)."),
+    ("Long Screener: cykel \"gron\" (fas 4c)", "Köp bara i GRÖN sektor, sälj när hemmamarknaden är RÖD: 12,3 % CAGR / "
+     "−18 % DD mot 8,7 % / −31 % för första versionen. Utan cykel följs parallellt i papperet."),
+)
+
+
+# ── Sidan ───────────────────────────────────────────────────────────────────
+def render_valhall_page(sub: str = "Kartan") -> None:
+    import streamlit as st
+    from ui.components import page_header
+    page_header("⚡ Valhall", "Cykelkartan över hela marknaden — segment, råvaror, val per ruta och vad som "
+                "fungerar enligt backtesterna och papperskontona.")
+    c1, c2 = st.columns([1, 3])
+    if c1.button("📡 Hämta senaste körningen", key="valhall_refresh") or _STATE not in st.session_state:
+        with st.spinner("Läser Valhalls körningar ur Gisten …"):
+            st.session_state[_STATE] = load()
+    data = st.session_state[_STATE]
+    board = data.get("board") or {}
+    c2.markdown(f"<div style='color:{DIM};font-size:0.78rem;padding-top:8px;'>Körd {escape(str(board.get('generated') or '—')[:16])}"
+                f" · hämtad {data.get('loaded')}</div>", unsafe_allow_html=True)
+    if sub == "Papperskonton":
+        render_paper(board.get("paper"))
+    elif sub == "Backtester":
+        render_backtests(data)
+    else:
+        render_map(board)
+
+
+def render_map(board: dict) -> None:
+    import streamlit as st
+    from ui.components import note
+    segs = ((board or {}).get("board") or {}).get("segments") or []
+    if not segs:
+        note("Kartan har inte körts ännu. Den byggs av arbetsflödet Valhall Scan vardagar efter nordisk stängning "
+             "(16:47 UTC) — kör det manuellt i GitHub Actions för att fylla sidan direkt.")
+        return
+    starts = board.get("cycle_starts") or []
+    if starts:
+        note("⚡ Cykelstart nu (BAISSE · VÄNDER): " + ", ".join(f"{escape(s['segment'])} ({s['where']})" for s in starts))
+    sw, buys, long, niche = (board.get("swing") or {}), (board.get("buys") or {}), (board.get("long") or {}), \
+        (board.get("niche") or {})
+    st.markdown(f"<div style='color:{CYAN};font-size:0.72rem;letter-spacing:0.1em;margin-top:6px;'>SEKTORERNA</div>",
+                unsafe_allow_html=True)
+    st.markdown("<div style='display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px;"
+                "margin-top:4px;'>" + "".join(
+                    segment_card(r, (sw.get("segments") or {}).get(r["key"]), (buys.get("segments") or {}).get(r["key"]),
+                                 (long.get("segments") or {}).get(r["key"]), niche.get(r["key"]))
+                    for r in segs) + "</div>", unsafe_allow_html=True)
+    for r in segs:
+        if not r.get("themes"):
+            continue
+        st.markdown(f"<div style='color:{GOLD};font-size:0.72rem;letter-spacing:0.1em;margin-top:12px;'>"
+                    f"RÅVAROR · {escape(r.get('label') or '')}</div>", unsafe_allow_html=True)
+        st.markdown("<div style='display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;"
+                    "margin-top:4px;'>" + "".join(
+                        theme_card(t, (sw.get("themes") or {}).get(t["theme"]), (buys.get("themes") or {}).get(t["theme"]))
+                        for t in r["themes"]) + "</div>", unsafe_allow_html=True)
+    note("Status: GRÖN = fasen stark/upptrend och cykeln inte sen · GUL = sen cykel i upptrend · RÖD = baisse/svag "
+         "eller cykeltopp. Norden = sektorindexet mot hela Norden, globalt = SPDR-fonden mot S&P 500 (handel i "
+         "UCITS-ETF hos Nordnet), råvaror absolut. Överstrukna kvalitetsköp är spärrade av grinden ej RÖD. "
+         "Riktiga order läggs alltid manuellt.")
+
+
+def render_paper(res: Optional[dict]) -> None:
+    import streamlit as st
+    from ui.components import note
+    if not res or not res.get("by_strategy"):
+        note("Papperskontona har inga affärer ännu. De stegas fram av Valhall Scan varje vardag — köp fylls på "
+             "nästa öppning, så de första affärerna syns dagen efter första körningen.")
+        return
+    note(f"Sedan {escape(str(res.get('since')))} · {res.get('positions')} öppna · {res.get('orders')} order. "
+         "En enhet per signal (ingen kassa), öppna värderade på senaste stängning. Mot riktmärke = segmentets "
+         "index/SPDR/drivare under samma tid. Sälj på RÖD = skuggexit första dagen segmentet blev RÖD.")
+    st.markdown(f"<div style='color:{CYAN};font-size:0.72rem;letter-spacing:0.1em;'>PER STRATEGI</div>",
+                unsafe_allow_html=True)
+    st.dataframe(paper_table(res["by_strategy"], ("strategy",)), hide_index=True, use_container_width=True)
+    view = st.radio("Dela upp på", ["Segment", "Status vid köp", "Cykel vid köp"], horizontal=True, key="valhall_paper_by")
+    key, rows = {"Segment": ("segment", "by_segment"), "Status vid köp": ("status_in", "by_status"),
+                 "Cykel vid köp": ("cykel_in", "by_cykel")}[view]
+    st.dataframe(paper_table(res.get(rows) or [], ("strategy", key)), hide_index=True, use_container_width=True)
+
+
+def render_backtests(data: dict) -> None:
+    import streamlit as st
+    from ui.components import note
+    st.markdown(f"<div style='color:{CYAN};font-size:0.72rem;letter-spacing:0.1em;'>BESLUTEN</div>",
+                unsafe_allow_html=True)
+    for title, text in DECISIONS:
+        st.markdown(f"<div style='border-left:3px solid {GOLD};padding:2px 8px;margin:4px 0;'>"
+                    f"<b style='color:{TEXT};font-size:0.8rem;'>{escape(title)}</b>"
+                    f"<div style='color:{DIM};font-size:0.72rem;line-height:1.5;'>{escape(text)}</div></div>",
+                    unsafe_allow_html=True)
+    f4c = data.get("fas4c") or {}
+    if f4c.get("portfolios"):
+        st.markdown(f"<div style='color:{CYAN};font-size:0.72rem;letter-spacing:0.1em;margin-top:10px;'>LONG SCREENER "
+                    f"— PORTFÖLJEN PER CYKELVARIANT (fas 4c)</div>", unsafe_allow_html=True)
+        st.dataframe(portfolio_table(f4c["portfolios"], "variant"), hide_index=True, use_container_width=True)
+    f4b = data.get("fas4b") or {}
+    if (f4b.get("stocks") or {}).get("portfolios"):
+        st.markdown(f"<div style='color:{CYAN};font-size:0.72rem;letter-spacing:0.1em;margin-top:10px;'>KVALITETSAKTIER "
+                    f"— KVARTALSPORTFÖLJ PER FILTER (fas 4b)</div>", unsafe_allow_html=True)
+        st.dataframe(portfolio_table(f4b["stocks"]["portfolios"], "filter"), hide_index=True, use_container_width=True)
+    f3 = data.get("fas3") or {}
+    for name, label in (("viking", "VIKING NINE"), ("berserk", "BERSERK")):
+        rows = ((f3.get(name) or {}).get("portfolio")) or []
+        if rows:
+            st.markdown(f"<div style='color:{CYAN};font-size:0.72rem;letter-spacing:0.1em;margin-top:10px;'>{label} "
+                        f"— PORTFÖLJ PER CYKELFILTER (fas 3a)</div>", unsafe_allow_html=True)
+            st.dataframe(pd.DataFrame([{"Filter": r.get("filter"), "Affärer": r.get("trades"), "CAGR %": r.get("cagr"),
+                                        "Max DD %": r.get("dd"), "Snitt R": r.get("exp")} for r in rows]),
+                         hide_index=True, use_container_width=True)
+    if not (f4c or f4b or f3):
+        note("Inga backtester sparade i Gisten än — kör Valhall backtest (fas 3), Valhall långsiktigt backtest "
+             "(fas 4b) och Valhall Long Screener-backtest (fas 4c) i GitHub Actions.")
+    note("Alla backtester är punkt för punkt (ingen framtidsdata) men med dagens noterade bolag (överlevnadsbias) — "
+         "jämför varianterna med varandra, inte nivåerna med verkligheten.")

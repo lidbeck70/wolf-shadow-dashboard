@@ -1059,6 +1059,13 @@ def _page_cheatsheet() -> None:
 _PANEL_GUIDE: list[tuple] = [
     # Sökvägarna är exakt navigationsträdets etiketter (ui/nav.py) — testet
     # test_panel_guide_table_uses_real_paths läser dem därifrån.
+    ("VALHALL → Kartan", "Alla strategier: cykeln först",
+     "Cykelkartan över hela marknaden: status per sektor (Norden och globalt) och råvara, swing med "
+     "segmentets strategi, kvalitetsköp (grind ej RÖD), hävstång och Long Screener per ruta."),
+    ("VALHALL → Papperskonton", "Alla strategier: utvärdering",
+     "Varje strategi på papper, märkt med segment och cykelläge vid köp — vilken strategi fungerar var."),
+    ("VALHALL → Backtester", "Besluten",
+     "Varför Valhall gör som det gör: swing per segment, kvalitet ej RÖD, råvaror contrarian, Long Screener gron."),
     ("REGIME → Marknad → Swing Regime", "Momentum: entry #1, #6",
      "Trafikljus GRÖN/GUL/RÖD + regelverk, OMXSPI vs MA200, marknadsbredd "
      "(dör före index) och regimhistorik."),

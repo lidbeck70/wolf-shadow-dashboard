@@ -257,6 +257,14 @@ try:
 except ImportError:
     VIKING_NINE_REGIME_AVAILABLE = False
 
+# ⚡ VALHALL — cykelkartan över hela marknaden (läser de schemalagda körningarna ur Gisten)
+try:
+    from valhall.ui import render_valhall_page
+    VALHALL_AVAILABLE = True
+except Exception:
+    render_valhall_page = None
+    VALHALL_AVAILABLE = False
+
 # 🪓 BERSERK (SCREENING → Arc Screener, REGIME → Råvaror) — contrarian swing i råvarumarknaden
 try:
     from berserk.screen_ui import render_berserk_screen_page
@@ -414,6 +422,16 @@ def main():
     if _is_open(tabs["home"]):
         with tabs["home"]:
             tab_home()
+
+    # ── VALHALL ───────────────────────────────────────────────────────────────
+    if _is_open(tabs["valhall"]):
+        with tabs["valhall"]:
+            sub = _sub("valhall")
+            st.markdown("---")
+            if VALHALL_AVAILABLE:
+                render_valhall_page(sub)
+            else:
+                tab_not_found("Valhall", "valhall")
 
     # ── SCREENING ─────────────────────────────────────────────────────────────
     if _is_open(tabs["screening"]):

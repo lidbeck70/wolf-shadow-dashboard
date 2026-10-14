@@ -18,6 +18,7 @@ import re
 
 TOP: tuple = (
     ("home", "🏠 HOME"),
+    ("valhall", "⚡ VALHALL"),
     ("screening", "🔱 SCREENING"),
     ("review", "🔬 GRANSKNING"),
     ("regime", "📡 REGIME"),
@@ -33,6 +34,8 @@ TOP_LABEL = dict(TOP)
 # Guidens tre steg i ordning: var kapitalet ska (REGIME), vilka bolag som
 # kvalar (SCREENING), och vilket av dem som köps (GRANSKNING).
 SUBS: dict = {
+    # Valhall: cykelkartan över hela marknaden med korten, papperskontona och backtesterna.
+    "valhall": ["Kartan", "Papperskonton", "Backtester"],
     "screening": ["Arc Screener", "Contrarian Alpha", "Swing Screener"],
     "screening/Arc Screener": ["Wolf", "Viking", "⚔️ Viking Nine", "🔥 EMBER", "🪓 BERSERK"],
     "screening/Contrarian Alpha": ["Screener", "Long Screener"],
@@ -82,6 +85,11 @@ HOME_ZONES: tuple = (
         ("Retail Pulse", "Reddit, StockTwits, retail-flöde"),
         ("Heatmap", "Visuell marknadsvy"),
     ]),
+    ("valhall", "VALHALL — HELA SYSTEMET", [
+        ("Kartan", "Cykeln per sektor och råvara med swing, kvalitet, hävstång och Long Screener per ruta"),
+        ("Papperskonton", "Varje strategi på papper — per segment, status och cykel vid köp"),
+        ("Backtester", "Besluten och varför: swing, kvalitet, råvaror och Long Screener 2008–idag"),
+    ]),
     ("portfolio", "PORTFOLIO — HANTERA POSITIONER", [
         ("Holdings", "Positioner och riskexponering"),
         ("📓 Trade Journal", "Logga affärer och granska R"),
@@ -95,6 +103,7 @@ HOME_ZONES: tuple = (
 # _sub(path) ur den här, och djuplänken seedar samma nycklar.
 TABS_KEY = "main_tabs"
 STATE_KEY: dict = {
+    "valhall": "sub_valhall",
     "screening": "sub_screening",
     "screening/Arc Screener": "sub_screening_arc",
     "screening/Contrarian Alpha": "sub_screening_contrarian",
