@@ -9,4 +9,6 @@ för sortering, och sätter ihop analysen per aktie av de motorer som redan finn
   candidates.py  kandidatlistan: Candidate ur varje källa, filter, sortering och sammanfattning (ren logik)
   ticker.py      identiteten: Yahoo-form, Börsdata, segment, hemmaindex, sektor-ETF, råvarutema med källa
   dossier.py     allt om en aktie: kandidatrader, ögonblicksbild, cykel med playbookens grind, arken (läsning)
+  cards.py       korten som rena HTML-funktioner: kandidatrad, verdikt, huvud, läget, cykelremsan, arken
+  ui.py          🔨 THOR-sidan: läget, sök, rullgardinen, listan och analysblocket (bryggor till de gamla sidorna)
 """

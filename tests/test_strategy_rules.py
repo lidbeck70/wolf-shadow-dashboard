@@ -350,7 +350,7 @@ def test_panel_guide_table_uses_real_paths():
     for tab, _rules, _usage in _PANEL_GUIDE:
         parts = [p.strip() for p in tab.split("→")]
         head = parts[0]
-        assert head in {"HOME", "VALHALL", "SCREENING", "GRANSKNING", "REGIME",
+        assert head in {"HOME", "VALHALL", "THOR", "SCREENING", "GRANSKNING", "REGIME",
                         "INTELLIGENCE", "PORTFOLIO", "ALERTS", "RULES",
                         "STRATEGIES", "COPILOT"}, head
         for part in parts[1:]:

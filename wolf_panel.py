@@ -265,6 +265,14 @@ except Exception:
     render_valhall_page = None
     VALHALL_AVAILABLE = False
 
+# 🔨 THOR — alla strategiers kandidater i ett flöde och analysen per aktie (läser körningarna ur Gisten)
+try:
+    from thor.ui import render_thor_page
+    THOR_AVAILABLE = True
+except Exception:
+    render_thor_page = None
+    THOR_AVAILABLE = False
+
 # 🪓 BERSERK (SCREENING → Arc Screener, REGIME → Råvaror) — contrarian swing i råvarumarknaden
 try:
     from berserk.screen_ui import render_berserk_screen_page
@@ -432,6 +440,14 @@ def main():
                 render_valhall_page(sub)
             else:
                 tab_not_found("Valhall", "valhall")
+
+    # ── THOR ──────────────────────────────────────────────────────────────────
+    if _is_open(tabs["thor"]):
+        with tabs["thor"]:
+            if THOR_AVAILABLE:
+                render_thor_page()
+            else:
+                tab_not_found("Thor", "thor")
 
     # ── SCREENING ─────────────────────────────────────────────────────────────
     if _is_open(tabs["screening"]):
