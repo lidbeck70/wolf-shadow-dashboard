@@ -34,6 +34,20 @@ GOOD = {"_data_source": "borsdata", "revenue_growth": 0.20, "earnings_growth": 0
         "dividend_yield": 0.02}
 
 
+def test_picks_take_one_share_class_per_company():
+    uni = {"HLUN-A.CO": {"segment": "healthcare", "name": "H. Lundbeck A"},
+           "HLUN-B.CO": {"segment": "healthcare", "name": "H. Lundbeck B"},
+           "NOVO-B.CO": {"segment": "healthcare", "name": "Novo Nordisk B"}}
+    data = {"HLUN-A.CO": pd.DataFrame({"Close": _close(0.0012)}), "HLUN-B.CO": pd.DataFrame({"Close": _close(0.0011)}),
+            "NOVO-B.CO": pd.DataFrame({"Close": _close(0.001)})}
+    out = ls.scan(_board({"healthcare": cycle.GRON}), uni, data, sorted(uni), lambda ts: {t: dict(GOOD) for t in ts},
+                  lambda sym: _close(0.001))
+    for field in ("picks", "picks_ingen"):
+        tick = [p["ticker"] for p in out["segments"]["healthcare"][field]]
+        assert len(tick) == 2 and "NOVO-B.CO" in tick and len({t[:4] for t in tick}) == 2, (field, tick)
+    assert set(out["signals"]) == set(uni)                                              # signalerna rörs inte
+
+
 def test_market_index_and_regime():
     assert ls.market_index("VOLV-B.ST") == "^OMX" and ls.market_index("EQNR.OL") == "OBX.OL"
     assert ls.market_index("NOVO-B.CO") == "^OMXC25" and ls.market_index("NOKIA.HE") == "^OMXH25"

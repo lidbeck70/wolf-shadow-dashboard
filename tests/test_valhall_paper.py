@@ -237,3 +237,41 @@ def test_results_group_and_excess():
     assert g["avg_excess"] == pytest.approx(5.0)                                       # (+20 − 10) och (−10 + 10)
     assert res["by_cykel"][0]["cykel_in"] == cycle.TIDIG
     assert vpa.summary_lines(res)[1].strip().startswith("Quality Contrarian")
+
+
+def test_quality_order_is_struck_when_gate_closes_before_fill():
+    data = {"HEXA-B.ST": _df(o=np.arange(100, 140, 1.0)), "ORNAV.HE": _df(o=np.arange(100, 140, 1.0))}
+    sigs = [_sig("quality", "HEXA-B.ST"), _sig("quality", "ORNAV.HE", segment="healthcare"),
+            _sig("wolf", "HEXA-B.ST")]
+    st, _ = vpa.step(None, sigs, _board(), lambda t: data[t].loc[:D[1]], today=D[1])
+    red_ind = _board()
+    for r in red_ind["segments"]:
+        if r["key"] == "industrials":
+            r["nordic"]["status"] = cycle.ROD
+    st, ev = vpa.step(st, [], red_ind, lambda t: data[t].loc[:D[2]], today=D[2], wolf={"HEXA-B.ST": {}})
+    kinds = {(e["strategy"], e["ticker"]): e["kind"] for e in ev}
+    assert kinds[("quality", "HEXA-B.ST")] == vpa.SPARRAD and "grinden ej RÖD" in next(
+        e["text"] for e in ev if e["strategy"] == "quality" and e["ticker"] == "HEXA-B.ST")
+    assert kinds[("quality", "ORNAV.HE")] == vpa.KOPT                                    # healthcare inte RÖD
+    assert kinds[("wolf", "HEXA-B.ST")] == vpa.KOPT                                      # grinden gäller bara Quality
+    assert {(p["strategy"], p["ticker"]) for p in st["positions"]} == {("quality", "ORNAV.HE"), ("wolf", "HEXA-B.ST")}
+
+
+def test_one_company_per_account_across_share_classes():
+    data = {t: _df(o=np.arange(100, 140, 1.0)) for t in ("HLUN-A.CO", "HLUN-B.CO", "INVE-A.ST", "INVE-B.ST")}
+    a = {**_sig("long", "HLUN-A.CO", "healthcare"), "name": "H. Lundbeck A"}
+    b = {**_sig("long", "HLUN-B.CO", "healthcare"), "name": "H. Lundbeck B"}
+    # gamla dubbletter från före rättelsen: två order i samma bolag ligger redan i kontot
+    st = vpa.new_state(D[0])
+    st["orders"] = [{**a, "signal_date": D[1], "cycle": vpa.cycle_tag(_board(), "healthcare")},
+                    {**b, "signal_date": D[1], "cycle": vpa.cycle_tag(_board(), "healthcare")}]
+    st, ev = vpa.step(st, [], _board(), lambda t: data[t].loc[:D[2]], today=D[2])
+    assert [p["ticker"] for p in st["positions"]] == ["HLUN-A.CO"]
+    assert any(e["kind"] == vpa.UTGANGEN and e["ticker"] == "HLUN-B.CO" and "aktieslag" in e["text"] for e in ev)
+    # nya signaler: B-aktien i ett ägt bolag blir ingen order; samma bolag i ETT annat konto går bra
+    ia = {**_sig("long", "INVE-A.ST", "financials"), "name": "Investor A"}
+    ib = {**_sig("long", "INVE-B.ST", "financials"), "name": "Investor B"}
+    other = {**_sig("long_ingen", "HLUN-B.CO", "healthcare"), "name": "H. Lundbeck B"}
+    st, ev = vpa.step(st, [b, ia, ib, other], _board(), lambda t: data[t].loc[:D[3]], today=D[3])
+    orders = {(o["strategy"], o["ticker"]) for o in st["orders"]}
+    assert orders == {("long", "INVE-A.ST"), ("long_ingen", "HLUN-B.CO")}
