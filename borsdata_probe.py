@@ -15,6 +15,9 @@ i stället för gissningar:
      77 Nymex och andra marknader av typen "other") med antal år prishistorik,
      plus en namnsökning efter uran, kol, zink, sällsynta metaller m.fl.
      PROBE_SECTION=commodities kör bara den delen (snabbt).
+  5. PROBE_SECTION=kpicalc: vilka calcGroup/calc som ger värden i KPI-screenern för Long Screeners
+     nyckeltal som svarar 400 på last/latest (94, 97, 163, 167, 174, 179, 192) — med Börsdatas
+     felmeddelande, KPI-metadata och referensbolagens värden (enheter). Även historiken (year/mean).
 
 Skriver ingenting, ändrar ingenting. Exit 0 alltid.
 """
@@ -133,6 +136,85 @@ def probe_commodities(api, out=print) -> list:
     return rows
 
 
+# Long Screener (cagr_loader.fetch_fundamentals_batch_fast) får 400 på last/latest för de här
+KPI_CALC_IDS = (94, 97, 163, 167, 174, 179, 192)
+KPI_CALC_CONTROL = 33                                  # ROE — fungerar på last/latest (kontroll)
+CALC_GROUPS = ("last", "1day", "1week", "1month", "3month", "6month", "1year", "3year", "5year", "7year",
+               "10year", "15year", "20year")
+CALCS = ("latest", "mean", "default", "point", "cagr", "return", "rank", "high", "low", "sum", "gmean",
+         "trend", "over", "under", "quarter")
+KPI_REF = ("VOLV B", "INVE B", "NOVO B", "EQNR", "HEXA B")
+
+
+def _raw(path: str, params: dict = None, pause: float = 0.12):
+    """(status, json|None, text) — direkt mot Börsdata, utan klientens 400-tystnad och cache."""
+    import time
+    import requests
+    from borsdata_api import BASE_URL
+    time.sleep(pause)                                   # ≤ 100 anrop / 10 s
+    try:
+        r = requests.get(f"{BASE_URL}{path}", params={"authKey": os.environ["BORSDATA_API_KEY"], **(params or {})},
+                         timeout=20)
+    except Exception as exc:
+        return None, None, str(exc)[:200]
+    try:
+        js = r.json()
+    except Exception:
+        js = None
+    return r.status_code, js, (r.text or "")[:300]
+
+
+def probe_kpi_calc(api, out=print) -> dict:
+    """Vilka calcGroup/calc ger värden för Long Screeners KPI:er? Skriver en tabell och returnerar
+    {kpi: [(grupp, calc, antal, referensvärden)]}."""
+    ins = api.get_instruments()
+    ref = {i.get("insId"): str(i.get("ticker")).upper() for i in ins if str(i.get("ticker", "")).upper() in KPI_REF}
+    out("=" * 72)
+    out("KPI-METADATA")
+    out("=" * 72)
+    st, js, txt = _raw("/instruments/kpis/metadata")
+    meta = {m.get("kpiId"): m for m in ((js or {}).get("kpiHistoryMetadatas") or (js or {}).get("kpiMetadatas") or [])}
+    if not meta:
+        out(f"  metadata: status {st} · {txt[:200]}")
+    for kid in KPI_CALC_IDS + (KPI_CALC_CONTROL,):
+        m = meta.get(kid) or {}
+        out(f"  {kid:>4}  {m.get('nameSv', '?')} / {m.get('nameEn', '?')}  [{m.get('format', '')}] "
+            f"string={m.get('isString')}")
+    found: dict = {}
+    for kid in (KPI_CALC_CONTROL,) + KPI_CALC_IDS:
+        out("=" * 72)
+        out(f"KPI {kid} — {(meta.get(kid) or {}).get('nameSv', '?')}")
+        out("=" * 72)
+        st, js, txt = _raw(f"/instruments/kpis/{kid}/last/latest")
+        out(f"  last/latest → {st} · {txt[:240]}")
+        hits = []
+        for g in CALC_GROUPS:
+            for c in CALCS:
+                st, js, _t = _raw(f"/instruments/kpis/{kid}/{g}/{c}")
+                vals = (js or {}).get("values") or []
+                n = sum(1 for v in vals if v.get("n") is not None or v.get("s"))
+                if st == 200 and n:
+                    sample = {ref[v["i"]]: v.get("n", v.get("s")) for v in vals if v.get("i") in ref}
+                    hits.append((g, c, n, sample))
+                    out(f"  ✅ {g:>7}/{c:<8} {n:5d} bolag · {sample}")
+            if kid == KPI_CALC_CONTROL and hits:
+                break                                   # kontrollen: räcker att den fungerar
+        if not hits:
+            out("  ❌ ingen kombination gav värden")
+        st, js, txt = _raw(f"/instruments/kpis/{kid}/year/mean/history", {"instList": ",".join(str(i) for i in ref)})
+        groups = (js or {}).get("kpisList") or []
+        sample = {ref.get(g.get("instrument")): [(v.get("y"), v.get("v")) for v in (g.get("values") or [])[:3]]
+                  for g in groups}
+        out(f"  historik year/mean → {st} · {sample if groups else txt[:200]}")
+        found[kid] = hits
+    out("=" * 72)
+    out("SAMMANFATTNING — första fungerande kombination per KPI")
+    out("=" * 72)
+    for kid, hits in found.items():
+        out(f"  {kid:>4}: " + (", ".join(f"{g}/{c} ({n})" for g, c, n, _s in hits[:6]) if hits else "INGEN"))
+    return found
+
+
 def main() -> int:
     if not os.environ.get("BORSDATA_API_KEY"):
         print("BORSDATA_API_KEY saknas — inget att göra.")
@@ -142,6 +224,9 @@ def main() -> int:
 
     if os.environ.get("PROBE_SECTION", "all") == "commodities":
         probe_commodities(api)
+        return 0
+    if os.environ.get("PROBE_SECTION", "all") == "kpicalc":
+        probe_kpi_calc(api)
         return 0
 
     print("=" * 72)
