@@ -17,8 +17,10 @@ månadsskifte på de likvida nordiska aktierna, med nyckeltalen som de SÅG UT d
               mot det som går att nå (t.ex. 16 av 20), så att procentgränserna för BUY/STRONG BUY är
               desamma som i panelen.
 
-Cykelpoängen i tre varianter:
+Cykelpoängen i fem varianter:
   valhall    som i den dagliga körningen (long_screener.cycle_score: sektorindex + hemmamarknadens index)
+  gron       som valhall, men köp bara när sektorn är GRÖN (GUL sektor ger inga köp)
+  gron_utan_marknad  köp bara i GRÖN sektor; hemmamarknaden tvingar aldrig fram sälj
   forval     screenerns statiska förval per sektor (cagr_cycle.SECTOR_CONFIG) — som panelen utan reglage
   ingen      alltid 3 — bara bolagets egna kriterier och trendgrindar
 
@@ -44,7 +46,7 @@ KPIS = {"enterpriseToEbitda": (11, 1), "priceToBook": (4, 1), "trailingPE": (2, 
         "earnings_growth": (97, 0.01), "earnings_stability": (174, 1), "fcf_stability": (179, 1),
         "f_score": (167, 1)}
 EXTRA = {"revenue_m": 53, "ev_ebit": 10, "roc": 36, "roic": 37}      # CAGR, Magic Formula, ROIC-grinden (4b)
-VARIANTS = ("valhall", "forval", "ingen")
+VARIANTS = ("valhall", "gron", "gron_utan_marknad", "forval", "ingen")
 MAX_POS, STRONG_W, BUY_W, SECTOR_CAP = 10, 0.10, 0.07, 0.25          # cagr_backtest: regel 8–9
 RS_MONTHS = 6
 FUND_MAX = 20                      # screenerns Börsdata-skala
@@ -120,8 +122,16 @@ def cross_section(infos: dict, closes: dict, date) -> None:
 
 
 def cycle_for(variant: str, segment: str, sector_status: str, market: str) -> int:
+    """Cykelpoängen 0–3 per variant. gron = som valhall men köp bara när sektorn är GRÖN (GUL ger 1 — inga
+    köp); gron_utan_marknad = köp bara i GRÖN sektor, och marknaden tvingar aldrig fram sälj (aldrig 0)."""
     if variant == "ingen":
         return 3
+    if variant == "gron":
+        if market == cycle.ROD:
+            return 0
+        return (2 + (1 if market == cycle.GRON else 0)) if sector_status == cycle.GRON else 1
+    if variant == "gron_utan_marknad":
+        return 3 if sector_status == cycle.GRON else 1
     if variant == "forval":
         from cagr.cagr_cycle import score_cycle_for_sector
         return int(score_cycle_for_sector(SECTOR_OF.get(segment, "Unknown"))["cycle_score"])
