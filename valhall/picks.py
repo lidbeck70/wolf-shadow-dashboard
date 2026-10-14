@@ -290,6 +290,25 @@ def theme_leverage(sheets: dict, screens: dict, analyze=None, n: int = N_LEVERAG
     return out
 
 
+QUALITY_GATE = "ej RÖD"            # fas 4b: kvalitet i RÖD sektor gav ingen merkastning (CAGR 17,9 % mot 13,2 %)
+
+
+def gate_segments(buys: dict, board: dict) -> dict:
+    """Quality-kortets grind (in place): köp bara när segmentets nordiska status inte är RÖD. Backtestet
+    2008–idag (fas 4b): kvalitet i ej RÖD sektor 17,9 % CAGR / −26 % DD mot 13,2 % / −34 % för alla —
+    i båda perioderna. Valen visas ändå; spärrade märks gate_blocked och köps inte av papperskontot.
+    Gäller sektorrutornas kvalitetsköp — inte råvarorna, där contrarian-läget fungerade."""
+    from valhall import cycle
+    status = {r["key"]: (r.get("nordic") or {}).get("status", cycle.NODATA) for r in (board or {}).get("segments") or []}
+    for key, e in ((buys or {}).get("segments") or {}).items():
+        st = status.get(key, cycle.NODATA)
+        blocked = st == cycle.ROD
+        e["gate"] = {"rule": QUALITY_GATE, "status": st, "open": not blocked}
+        for p in e.get("picks") or []:
+            p["gate_blocked"] = blocked
+    return buys
+
+
 def build(ca_blobs: list, screens: Optional[dict], sheets: Optional[dict], analyze=None) -> dict:
     """Alla köp per ruta: {"segments": segment_quality, "themes": {tema: {quality, leverage}}}."""
     tq = theme_quality(sheets, screens, ca_blobs)

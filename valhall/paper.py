@@ -10,7 +10,8 @@ Strategi         Köp (signalen ur dagens Valhall-körning)            Sälj (be
 Viking Nine      GOLDEN TICKET i segment med Viking Nine (swing.py)    viking_exit.evaluate_exit → nästa öppning
 Insider Norden   status KÖP utan passa-flagga (insider.buy_candidates) stopp klustersnitt × 0,85 · 18 mån
 Wolf             topp 20 + setup A i wolf_screener.json                 ur topp 40 → nästa öppning
-Quality          segmentets kvalitetsköp med Alpha Regime BUY           tidsstopp 3 år
+Quality          segmentets kvalitetsköp med Alpha Regime BUY, ej RÖD   tidsstopp 3 år
+                 sektor (picks.gate_segments)
 Rick Rule        råvarans kvalitetsköp (Köpkandidat / Rule-håven / BUY) tidsstopp 3 år
 Durrett          guld/silver: 15-BAGGER, eller nordiskt bolag           tidsstopp 3 år
 Tiggre           övriga råvaror: alla köpgrindar gröna                  tidsstopp 3 år
@@ -90,7 +91,9 @@ def _sig(strategy, ticker, name, segment, theme=None, nordic=None, why="", stop=
 
 
 def buy_ok(p: dict) -> bool:
-    """Kortets köp som papperet tar — varje källas egen köpregel."""
+    """Kortets köp som papperet tar — varje källas egen köpregel, och Quality-kortets grind (ej RÖD sektor)."""
+    if p.get("gate_blocked"):
+        return False
     src = p.get("source")
     if src == "Rick Rule-arket":
         return p.get("verdict") == "Köpkandidat"

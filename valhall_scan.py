@@ -11,8 +11,8 @@ den kopplas in när hela Valhall är klart.
   3. Swing (styrning A, valhall.swing): två bästa affärer per segment med segmentets strategi — Viking
      Nine i Teknik/Finans (och prövas i övriga), BERSERK i Energi/Material och råvaruteman, ingen i
      Kraftförsörjning. Cykelstatusen visas men spärrar inte. Plus nischsignaler ur BERSERK och Insider.
-  4. Köp (valhall.picks): två kvalitetsköp per segment (Quality Contrarian) och per råvara (Rick Rule),
-     fem hävstångsköp per råvara (Durrett för guld/silver med 15-BAGGER-regeln, Tiggre för övriga).
+  4. Köp (valhall.picks): två kvalitetsköp per segment (Quality Contrarian; grind: ej RÖD sektor) och per
+     råvara (Rick Rule), fem hävstångsköp per råvara (Durrett för guld/silver med 15-BAGGER-regeln, Tiggre för övriga).
      Källor: Quality Contrarian-körningarna och håvarna (Gisten) och dina ark på panel-data.
   5. Long Screener (valhall.long_screener): screenerns egen poäng på de likvida nordiska aktierna med
      Valhalls cykel "gron" (köp bara i GRÖN sektor, sälj när hemmamarknaden är RÖD) — två bästa
@@ -72,7 +72,8 @@ def summary(payload: dict) -> list:
         lines.append(f"{r['label']:16s} global {r['global']['status']:11s} Norden "
                      f"{(r.get('nordic') or {}).get('status', '—'):11s} swing ({sw['segments'][k].get('strategy')}) "
                      f"{[(p['ticker'], p.get('category') or p.get('setup')) for p in sw['segments'][k]['picks']]} kvalitet "
-                     f"{[p['ticker'] for p in buys['segments'][k]['picks']]} long {lp}")
+                     f"{[p['ticker'] for p in buys['segments'][k]['picks']]}"
+                     f"{'' if (buys['segments'][k].get('gate') or {}).get('open', True) else ' (SPÄRRAD: RÖD)'} long {lp}")
         for t in r["themes"]:
             q = buys["themes"][t["theme"]]["quality"]["picks"]
             lv = buys["themes"][t["theme"]]["leverage"]
@@ -188,7 +189,8 @@ def run(api=None, data_getter=None, getter=None, load=None, save=None, today=Non
                           berserk_blob=berserk_blob)
     nich = swing.niche(universe, berserk_blob, insider_blob)
     src = sources if sources is not None else _load_sources(load)
-    buys = vp.build(src.get("ca") or [], src.get("screens"), src.get("sheets") or {}, analyze=analyze)
+    buys = vp.gate_segments(vp.build(src.get("ca") or [], src.get("screens"), src.get("sheets") or {},
+                                     analyze=analyze), board)
     payload = {"generated": datetime.now(tz=timezone.utc).isoformat(), "board": _json_safe(board),
                "cycle_starts": vb.cycle_starts(board), "swing": sw, "niche": nich, "buys": buys,
                "sources": {"ca_runs": len(src.get("ca") or []), "screens": bool(src.get("screens")),
