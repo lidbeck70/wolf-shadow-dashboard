@@ -186,6 +186,52 @@ def test_wolf_exit_when_out_of_top40():
     assert st["closed"][0]["exit"] == 105.0 and st["closed"][0]["exit_date"] == D[5]
 
 
+def test_momentum_and_wolf_accounts_are_named_apart():
+    assert vpa.STRATEGIES["wolf"] == ("Momentum Swing", vpa.SWING) and vpa.STRATEGIES["wolf_arc"] == ("Wolf", vpa.SWING)
+
+
+def test_wolf_arc_fills_with_atr_stop_and_exits_on_strategy_rule(monkeypatch):
+    import strategies.wolf as sw
+    data = {"V.ST": _df(o=np.arange(100, 140, 1.0))}
+    arc = [_sig("wolf_arc", "V.ST")]
+    sigs = vpa.signals({}, {}, UNI, None, None, None, arc_sigs=arc)
+    assert [(s["strategy"], s["ticker"]) for s in sigs] == [("wolf_arc", "V.ST")]
+    calls = []
+
+    def fake_exit(pos, df):
+        calls.append((str(df.index[-1].date()), pos.get("bars_below_ema50"), pos.get("stop_loss")))
+        hit = df.index[-1] >= pd.Timestamp(D[32])
+        return {"exit": hit, "reason": "TRAIL_EXIT" if hit else None, "exit_price": None,
+                "partial_tp1": False, "partial_tp2": False}
+
+    monkeypatch.setattr(sw, "exit_fn", fake_exit)
+    st, ev = vpa.step(None, sigs, _board(), lambda t: data[t].loc[:D[25]], today=D[25])   # 26 dagar historik → ATR14
+    assert ev[0]["kind"] == vpa.KOP_OPEN and ev[0]["text"].startswith("Wolf ·")
+    st, ev = vpa.step(st, [], _board(), lambda t: data[t].loc[:D[26]], today=D[26])
+    p = st["positions"][0]
+    d = sw.risk_fn(data["V.ST"].loc[:D[26]], 1.0)["stop_distance"]                  # 2,5 × ATR14 på fyllningsdagen
+    assert p["entry"] == 126.0 and d > 0 and p["init_stop"] == pytest.approx(126.0 - d, abs=1e-6)
+    assert p["below50"] == 0 and calls[0] == (D[26], 0, p["init_stop"])
+    st, ev = vpa.step(st, [], _board(), lambda t: data[t], today=D[-1])
+    c = st["closed"][0]
+    assert c["reason"] == "under Kijun och EMA10" and c["exit_date"] == D[33] and c["exit"] == 133.0   # nästa öppning
+    assert all(b == 0 for _d, b, _s in calls)                                          # stigande: aldrig under EMA50
+
+
+def test_wolf_arc_hard_stop_is_intraday():
+    lo = np.full(40, 99.0)
+    lo[30] = 90.0                                                                      # stoppen (95) nås dag 30
+    data = {"V.ST": _df(o=100.0, lo=lo, c=100.0)}
+    st, _ = vpa.step(None, [_sig("wolf_arc", "V.ST")], _board(), lambda t: data[t].loc[:D[25]], today=D[25])
+    st, _ = vpa.step(st, [], _board(), lambda t: data[t].loc[:D[26]], today=D[26])
+    stop = st["positions"][0]["init_stop"]
+    assert stop == pytest.approx(95.0)                                                 # 100 − 2,5 × ATR14 (= 2)
+    st, ev = vpa.step(st, [], _board(), lambda t: data[t], today=D[-1])
+    c = st["closed"][0]
+    assert c["exit"] == pytest.approx(stop) and c["exit_date"] == D[30] and ev[0]["kind"] == vpa.STOPPAD
+    assert "2,5 × ATR14" in c["reason"] and vpa.results(st)["by_strategy"][0]["avg_r"] == pytest.approx(-1.0)
+
+
 def test_viking_uses_live_exit_engine(monkeypatch):
     import viking_exit as vex
     data = {"VOLV-B.ST": _df(o=np.arange(100, 140, 1.0))}

@@ -184,6 +184,8 @@ def test_valhall_scan_run(monkeypatch):
     assert p["nordic"]["industrials"]["members"] == 3 and "swing" in p and "niche" in p
     assert "buys" in p and p["sources"] == {"ca_runs": 0, "screens": False, "sheets": []}
     assert p["long"]["scanned"] == 3 and set(p["long"]["segments"]) == {s.key for s in ni.sgm.SEGMENTS}
+    assert set(p["wolf"]["segments"]) == {s.key for s in ni.sgm.SEGMENTS}             # Wolf-raderna finns alltid
+    assert p["wolf"]["arc_live"] is False and p["wolf"]["momentum_live"] is False      # listorna saknas → tomma
     lines = vsn.summary(p)
     assert len(lines) >= 13 and any(x.startswith("Källor") for x in lines) and lines[-1].startswith("Papperskonton")
     assert vsn.PAPER_BLOB in saved and p["paper"]["by_strategy"] == [] and saved[vsn.PAPER_BLOB]["orders"] == []

@@ -9,7 +9,10 @@ Valhalls läge: segmentets status, fas och cykelläge i Norden och globalt och r
 Strategi         Köp (signalen ur dagens Valhall-körning)            Sälj (befintliga regler, oförändrade)
 Viking Nine      GOLDEN TICKET i segment med Viking Nine (swing.py)    viking_exit.evaluate_exit → nästa öppning
 Insider Norden   status KÖP utan passa-flagga (insider.buy_candidates) stopp klustersnitt × 0,85 · 18 mån
-Wolf             topp 20 + setup A i wolf_screener.json                 ur topp 40 → nästa öppning
+Momentum Swing   topp 20 + setup A i wolf_screener.json (kontot "wolf") ur topp 40 → nästa öppning
+Wolf             Arc-Wolf-rad vars köpregel är uppfylld (valhall.wolf,   hård stopp 2,5 × ATR14 (intradag) · tre
+                 strategies/wolf.py entry_fn; kontot "wolf_arc")         stängningar under EMA50 eller under Kijun
+                                                                         och EMA10 → nästa öppning (inga delvinster)
 Quality          segmentets kvalitetsköp med Alpha Regime BUY, ej RÖD   tidsstopp 3 år
                  sektor (picks.gate_segments)
 Rick Rule        råvarans kvalitetsköp (Köpkandidat / Rule-håven / BUY) tidsstopp 3 år
@@ -42,8 +45,8 @@ from valhall import segments as sgm
 from valhall import swing as vsw
 
 SWING, LONG = "swing", "lång"
-STRATEGIES = {"viking": ("Viking Nine", SWING), "insider": ("Insider Norden", SWING), "wolf": ("Wolf", SWING),
-              "berserk": ("BERSERK", SWING), "quality": ("Quality Contrarian", LONG), "rule": ("Rick Rule", LONG),
+STRATEGIES = {"viking": ("Viking Nine", SWING), "insider": ("Insider Norden", SWING),
+              "wolf": ("Momentum Swing", SWING), "wolf_arc": ("Wolf", SWING), "berserk": ("BERSERK", SWING), "quality": ("Quality Contrarian", LONG), "rule": ("Rick Rule", LONG),
               "durrett": ("Durrett", LONG), "tiggre": ("Tiggre", LONG), "long": ("Long Screener", LONG),
               "long_ingen": ("Long Screener (utan cykel)", LONG)}
 LONG_SELL = ("SELL", "STRONG SELL")      # cagr_scoring: EMA200-brott, röd regim eller poäng under 35 %
@@ -54,6 +57,9 @@ ORDER_TTL_DAYS = 7
 WOLF_TOP, WOLF_STALE_DAYS = 20, 4
 EVENTS_MAX, CLOSED_MAX = 1000, 3000
 VIKING_WINDOW = 300                # dagar som viking_exit får se (EMA10, ATR14, F&G)
+WOLF_WINDOW = 300                  # dagar som strategies/wolf.exit_fn får se (EMA10/50, Kijun 26, ATR14)
+WOLF_EXIT = {"STOP_LOSS": "hård stopp (2,5 × ATR14)", "EMA50_EXIT": "tre stängningar under EMA50",
+             "TRAIL_EXIT": "under Kijun och EMA10"}
 
 KOP_OPEN, KOPT, SALJ_OPEN, SALD, STOPPAD = "KÖP PÅ ÖPPNING", "KÖPT", "SÄLJ PÅ ÖPPNING", "SÅLD", "STOPPAD"
 SPARRAD, UTGANGEN, ROD = "SPÄRRAD", "UTGÅNGEN", "RÖD (skuggexit)"
@@ -133,9 +139,10 @@ def wolf_live(wolf_blob: Optional[dict], wolf_map: dict, today) -> Optional[dict
 
 
 def signals(swing: dict, buys: dict, universe: dict, insider_blob: Optional[dict] = None,
-            wolf: Optional[dict] = None, long_scan: Optional[dict] = None) -> list:
-    """Dagens köpsignaler per strategi. wolf = wolf_live(...), long_scan = long_screener.scan(...)."""
-    out = []
+            wolf: Optional[dict] = None, long_scan: Optional[dict] = None, arc_sigs: Optional[list] = None) -> list:
+    """Dagens köpsignaler per strategi. wolf = wolf_live(...) (momentumlistan), long_scan = long_screener.scan(...),
+    arc_sigs = valhall.wolf.arc_signals(...) (Arc-Wolf, kontot wolf_arc)."""
+    out = list(arc_sigs or [])
     for key, e in ((long_scan or {}).get("segments") or {}).items():
         for strat, field in (("long", "picks"), ("long_ingen", "picks_ingen")):
             for p in e.get(field) or []:
@@ -252,6 +259,10 @@ def step(state: Optional[dict], sigs: list, board: dict, ohlcv: Callable, market
             import viking_execution as vx
             a = vx.atr(df.iloc[:i + 1])
             stop = entry - vx.ATR_STOP_MULT * float(a.iloc[-1]) if len(a) and pd.notna(a.iloc[-1]) else None
+        elif o["strategy"] == "wolf_arc":
+            from strategies.wolf import risk_fn
+            d = risk_fn(df.iloc[:i + 1], 1.0)["stop_distance"]              # 2,5 × ATR14 på fyllningsdagen
+            stop = entry - float(d) if d and d > 0 else None
         if stop is not None and not (entry > stop > 0):
             ev(SPARRAD, o, f"fylldes inte: öppningen {entry:,.2f} ligger under stoppen {stop:,.2f}")
             continue
@@ -259,6 +270,8 @@ def step(state: Optional[dict], sigs: list, board: dict, ohlcv: Callable, market
              "init_stop": None if stop is None else round(float(stop), 4), "checked": o["signal_date"],
              "last_close": entry, "last_date": _d(df.index[i]), "pending": None, "red": None,
              "bench_last": o["cycle"].get(f"{_gov(o)}_close")}
+        if o["strategy"] == "wolf_arc":
+            p["below50"] = 0                                               # stängningar i rad under EMA50
         state["positions"].append(p)
         held.add(_company(p))
         ev(KOPT, p, f"fylld {p['entry_date']} @ {entry:,.2f}" + (f" · stopp {stop:,.2f}" if stop else ""))
@@ -309,6 +322,7 @@ def _manage(state: dict, p: dict, df: Optional[pd.DataFrame], market, wolf, boar
         return
     kind = STRATEGIES[p["strategy"]][1]
     start = _after(df, p["checked"])
+    e50 = None
     for j in range(start, len(df)):
         date = _d(idx[j])
         p["checked"], p["last_close"], p["last_date"] = date, float(c[j]), date
@@ -320,6 +334,27 @@ def _manage(state: dict, p: dict, df: Optional[pd.DataFrame], market, wolf, boar
                                     p["entry_date"], spy_df=mkt, today=idx[j])
             if dec.status != vex.HOLD:
                 reason = (dec.reasons or [dec.status])[0][:160]
+                if j + 1 < len(df):
+                    _close(state, p, float(o[j + 1]), reason, _d(idx[j + 1]), ev)
+                else:
+                    p["pending"] = {"date": date, "reason": reason}
+                    ev(SALJ_OPEN, p, f"{reason} — sälj på nästa öppning")
+                return
+        elif p["strategy"] == "wolf_arc":
+            stop = p.get("init_stop")
+            if stop and lo[j] <= stop:
+                _close(state, p, float(min(o[j], stop)), WOLF_EXIT["STOP_LOSS"], date, ev, STOPPAD)
+                return
+            from strategies.wolf import exit_fn
+            if e50 is None:
+                e50 = df["Close"].astype(float).ewm(span=50, adjust=False).mean().values
+            p["below50"] = p.get("below50", 0) + 1 if c[j] < e50[j] else 0
+            pos = {"entry_price": p["entry"], "bars_below_ema50": p["below50"]}
+            if stop:
+                pos["stop_loss"] = stop
+            dec = exit_fn(pos, df.iloc[max(0, j + 1 - WOLF_WINDOW):j + 1])
+            if dec.get("exit"):
+                reason = WOLF_EXIT.get(dec.get("reason"), dec.get("reason") or "exit")
                 if j + 1 < len(df):
                     _close(state, p, float(o[j + 1]), reason, _d(idx[j + 1]), ev)
                 else:

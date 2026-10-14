@@ -86,7 +86,7 @@ HOME_ZONES: tuple = (
         ("Heatmap", "Visuell marknadsvy"),
     ]),
     ("valhall", "VALHALL — HELA SYSTEMET", [
-        ("Kartan", "Cykeln per sektor och råvara med swing, kvalitet, hävstång och Long Screener per ruta"),
+        ("Kartan", "Cykeln per sektor och råvara med swing, Wolf, kvalitet, hävstång och Long Screener per ruta"),
         ("Papperskonton", "Varje strategi på papper — per segment, status och cykel vid köp"),
         ("Backtester", "Besluten och varför: swing, kvalitet, råvaror och Long Screener 2008–idag"),
     ]),
