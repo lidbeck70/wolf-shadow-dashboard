@@ -129,3 +129,19 @@ def test_one_pick_per_company():
                         {"ticker": "ORNBV.HE", "name": "Orion Oyj B", "sector": "Health Care", "composite_score": 79},
                         {"ticker": "NOVO-B.CO", "name": "Novo Nordisk B", "sector": "Health Care", "composite_score": 60}]}
     assert [p["ticker"] for p in picks.segment_quality([blob])["healthcare"]["picks"]] == ["ORNAV.HE", "NOVO-B.CO"]
+
+
+def test_quality_gate_not_red():
+    from valhall import cycle
+    from valhall import paper as vpa
+    buys = {"segments": {"technology": {"picks": [{"ticker": "A.ST", "source": "Quality Contrarian", "verdict": "BUY"}]},
+                         "energy": {"picks": [{"ticker": "B.ST", "source": "Quality Contrarian", "verdict": "BUY"}]},
+                         "utilities": {"picks": []}}}
+    board = {"segments": [{"key": "technology", "nordic": {"status": cycle.GUL}},
+                          {"key": "energy", "nordic": {"status": cycle.ROD}}]}
+    out = picks.gate_segments(buys, board)
+    assert out["segments"]["technology"]["gate"] == {"rule": "ej RÖD", "status": cycle.GUL, "open": True}
+    assert out["segments"]["energy"]["gate"]["open"] is False and out["segments"]["energy"]["picks"][0]["gate_blocked"]
+    assert out["segments"]["utilities"]["gate"]["status"] == cycle.NODATA                    # saknas → inte spärrad
+    sigs = vpa.signals({}, out, {})
+    assert [(s["strategy"], s["ticker"]) for s in sigs] == [("quality", "A.ST")]              # spärrad köps inte
