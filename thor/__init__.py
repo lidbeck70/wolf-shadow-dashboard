@@ -7,4 +7,6 @@ för sortering, och sätter ihop analysen per aktie av de motorer som redan finn
 
   registry.py    strategiregistret: etikett, familj, källa, rang-normalisering, playbook, regimlayout, papperskonto
   candidates.py  kandidatlistan: Candidate ur varje källa, filter, sortering och sammanfattning (ren logik)
+  ticker.py      identiteten: Yahoo-form, Börsdata, segment, hemmaindex, sektor-ETF, råvarutema med källa
+  dossier.py     allt om en aktie: kandidatrader, ögonblicksbild, cykel med playbookens grind, arken (läsning)
 """
