@@ -273,10 +273,12 @@ def step(state: Optional[dict], sigs: list, board: dict, ohlcv: Callable, market
     busy = {(x["strategy"], x["ticker"]) for x in state["positions"] + state["orders"]}
     busy_co = {_company(x) for x in state["positions"] + state["orders"]}
     cool = pd.Timestamp(today) - pd.Timedelta(days=COOLDOWN_DAYS)
-    recent = {_company(c) for c in state["closed"] if pd.Timestamp(c["exit_date"]) >= cool}
+    closed_recent = [c for c in state["closed"] if pd.Timestamp(c["exit_date"]) >= cool]
+    recent = {(c["strategy"], c["ticker"]) for c in closed_recent}
+    recent_co = {_company(c) for c in closed_recent}               # karantänen gäller tickern OCH bolaget
     for s in sigs:
         k = (s["strategy"], s["ticker"])
-        if k in busy or _company(s) in busy_co or _company(s) in recent:     # karantänen gäller bolaget
+        if k in busy or k in recent or _company(s) in busy_co or _company(s) in recent_co:
             continue
         o = {**s, "signal_date": today, "cycle": cycle_tag(board, s["segment"], s.get("theme"))}
         state["orders"].append(o)

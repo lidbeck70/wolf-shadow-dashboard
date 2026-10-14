@@ -285,3 +285,7 @@ def test_one_company_per_account_across_share_classes():
     st["closed"].append({**a, "exit_date": D[3], "exit": 100.0})
     st, _ = vpa.step(st, [b], _board(), lambda t: data[t].loc[:D[4]], today=D[4])
     assert ("long", "HLUN-B.CO") not in {(o["strategy"], o["ticker"]) for o in st["orders"]}
+    # … och tickern även om namnet stavas annorlunda i dag ('H. Lundbeck A/S')
+    renamed = {**a, "name": "H. Lundbeck A/S"}
+    st, _ = vpa.step(st, [renamed], _board(), lambda t: data[t].loc[:D[5]], today=D[5])
+    assert ("long", "HLUN-A.CO") not in {(o["strategy"], o["ticker"]) for o in st["orders"]}
