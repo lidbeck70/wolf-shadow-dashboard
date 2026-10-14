@@ -699,7 +699,8 @@ def _extract_borsdata_fundamentals(ticker: str) -> dict:
             if hist:
                 val = hist[-1].get("v")
                 if val is not None:
-                    data[out_key] = val * divisor if divisor != 1 else val
+                    val = val * divisor if divisor != 1 else val
+                    data[out_key] = _cap_growth(val) if out_key in GROWTH_FIELDS else val
         except Exception as exc:
             logger.debug("Börsdata KPI %s for %s: %s", out_key, ticker, exc)
 
@@ -752,7 +753,7 @@ def _extract_borsdata_fundamentals(ticker: str) -> dict:
     # ── Growth history (CAGR) ────────────────────────────────────────────
     try:
         growth = api.get_growth_history(ins_id, years=10)
-        data["revenue_cagr_5y"] = growth.get("revenue_cagr_5y")
+        data["revenue_cagr_5y"] = _cap_growth(growth.get("revenue_cagr_5y"))
         data["revenue_cagr_10y"] = growth.get("revenue_cagr_10y")
         data["earnings_cagr_5y"] = growth.get("earnings_cagr_5y")
         data["earnings_cagr_10y"] = growth.get("earnings_cagr_10y")
@@ -1018,6 +1019,19 @@ def fetch_fundamentals_batch(
 _SCORING_VERSION = "v2_20pt"
 
 
+GROWTH_CAP = 5.0                   # ±500 %
+GROWTH_FIELDS = ("revenue_growth", "earnings_growth", "revenue_cagr_5y")
+
+
+def _cap_growth(x: Optional[float]) -> Optional[float]:
+    """Tillväxt som decimal, begränsad till ±GROWTH_CAP. cagr_fundamentals._normalize_pct gissar enheten och
+    delar allt över 5 med 100 en gång till — +1 024 % (INVE B, vinsttillväxt 14/10) blev 10 %. Vid ±500 %
+    ger varje kriterium samma utfall som det sanna värdet (gränserna är 10–20 %, PEG < 1,5)."""
+    if x is None:
+        return None
+    return max(-GROWTH_CAP, min(GROWTH_CAP, float(x)))
+
+
 def _magic_percentile(values: list) -> list:
     """Börsdatas Magic Formula (last/rank) är en RANGPLATS bland alla bolag (1 = bäst, ~12 000 st).
     Screenern jämför mot "<= 30 (top 30%)" — gör om till percentil 1–100 (lägre = bättre)."""
@@ -1119,7 +1133,8 @@ def fetch_fundamentals_batch_fast(
                     val = entry.get("n")
                     if val is not None:
                         ticker = ins_to_ticker[iid]
-                        results[ticker][out_key] = val * divisor if divisor != 1 else val
+                        val = val * divisor if divisor != 1 else val
+                        results[ticker][out_key] = _cap_growth(val) if out_key in GROWTH_FIELDS else val
         except Exception as exc:
             logger.warning("Batch KPI %s failed: %s", out_key, exc)
 

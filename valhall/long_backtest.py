@@ -79,16 +79,18 @@ def _known(vals: list, date) -> list:
 def fundamentals_at(hist: dict, date) -> dict:
     """Screenerns fundamentaindata som de såg ut på datumet. hist = {fält/extra-nyckel: [{y, v}]}."""
     info = {"_data_source": "borsdata"}
+    from cagr.cagr_loader import GROWTH_FIELDS, _cap_growth
     for field, (_kid, scale) in KPIS.items():
         k = _known(hist.get(field), date)
         if k:
-            info[field] = k[-1][1] * scale
+            v = k[-1][1] * scale
+            info[field] = _cap_growth(v) if field in GROWTH_FIELDS else v       # som den dagliga körningen
     rev = dict(_known(hist.get("revenue_m"), date))
     if rev:
         y = max(rev)
         a, b = rev.get(y), rev.get(y - 5)
         if a and b and a > 0 and b > 0:
-            info["revenue_cagr_5y"] = (a / b) ** (1 / 5) - 1
+            info["revenue_cagr_5y"] = _cap_growth((a / b) ** (1 / 5) - 1)
     for k in ("ev_ebit", "roc", "roic"):
         kk = _known(hist.get(k), date)
         info[f"_{k}"] = kk[-1][1] if kk else None

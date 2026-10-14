@@ -78,3 +78,38 @@ def test_batch_fast_fills_the_long_screener_fields(monkeypatch):
     det = score_fundamentals(out)["details"]
     for crit in ("Revenue Growth", "Earnings Growth", "Revenue CAGR 5y", "RS Rank", "Magic Formula"):
         assert det[crit]["value"] != "N/A", crit                                           # förut alltid N/A
+
+
+def test_growth_above_500_percent_keeps_its_verdict():
+    """INVE B 14/10: vinsttillväxt +1 024 %. Utan taket delade _normalize_pct en gång till → 10 %."""
+    from cagr.cagr_fundamentals import score_fundamentals
+    from cagr.cagr_loader import _cap_growth
+    assert _cap_growth(10.2386) == 5.0 and _cap_growth(-7.0) == -5.0 and _cap_growth(0.2) == 0.2
+    assert _cap_growth(None) is None
+    info = {"_data_source": "borsdata", "revenue_growth": 0.20, "earnings_growth": _cap_growth(10.2386),
+            "trailingPE": 20.0}
+    det = score_fundamentals(info)["details"]
+    assert det["Earnings Growth"]["pass"] is True                                         # +1 024 % > 20 %
+    assert det["Rev > Earn Growth"]["pass"] is False                                     # 20 % < 1 024 %
+    assert det["PEG (approx)"]["pass"] is True                                           # 20 / 500 < 1,5
+
+
+def test_batch_caps_growth(monkeypatch):
+    import cagr.cagr_loader as cl
+
+    class Api:
+        def resolve_instrument_id(self, t):
+            return 1
+
+        def get_instrument_info(self, i):
+            return {"name": "Investor B"}
+
+        def get_kpi_screener(self, kpi_id, calc_group="last", calc="latest"):
+            g, c = bd.screener_calc(kpi_id, calc_group, calc)
+            return [{"i": 1, "n": {(97, "1year", "cagr"): 1023.86, (94, "1year", "cagr"): -650.0}.get((kpi_id, g, c), 10.0)}]
+
+    monkeypatch.setattr(cl, "_borsdata_available", lambda: True)
+    monkeypatch.setattr(cl, "_get_borsdata_api", lambda: Api())
+    fn = getattr(cl.fetch_fundamentals_batch_fast, "__wrapped__", cl.fetch_fundamentals_batch_fast)
+    out = fn(("INVE-B.ST",))["INVE-B.ST"]
+    assert out["earnings_growth"] == 5.0 and out["revenue_growth"] == -5.0 and out["revenue_cagr_5y"] == 0.1
