@@ -158,9 +158,16 @@ def scan(board: dict, universe: dict, data: dict, tickers: list, fundamentals: C
            "buys_ingen": sum(1 for _, r in rows if r["signal"] in BUY_SIGNALS)}
 
     def best(sel, key):
+        from valhall.picks import company_key
         mine = sorted((r for r in sel if r["segment"] == key and r["signal"] in BUY_SIGNALS),
                       key=lambda r: (r["signal"] != "STRONG BUY", -r["score_pct"], r["ticker"]))
-        return mine[:n]
+        seen, one = set(), []                                    # ett aktieslag per bolag (HLUN-A/HLUN-B)
+        for r in mine:
+            k = company_key(r)
+            if k not in seen:
+                seen.add(k)
+                one.append(r)
+        return one[:n]
 
     for sg in sgm.SEGMENTS:
         out["segments"][sg.key] = {
