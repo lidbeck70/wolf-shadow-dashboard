@@ -18,8 +18,8 @@ månadsskifte på de likvida nordiska aktierna, med nyckeltalen som de SÅG UT d
               desamma som i panelen.
 
 Cykelpoängen i fem varianter:
-  valhall    som i den dagliga körningen (long_screener.cycle_score: sektorindex + hemmamarknadens index)
-  gron       som valhall, men köp bara när sektorn är GRÖN (GUL sektor ger inga köp)
+  valhall    första versionen (long_screener.cycle_score "valhall": sektorindex + hemmamarknadens index)
+  gron       som valhall, men köp bara när sektorn är GRÖN — den dagliga körningen sedan fas 4c
   gron_utan_marknad  köp bara i GRÖN sektor; hemmamarknaden tvingar aldrig fram sälj
   forval     screenerns statiska förval per sektor (cagr_cycle.SECTOR_CONFIG) — som panelen utan reglage
   ingen      alltid 3 — bara bolagets egna kriterier och trendgrindar
@@ -127,15 +127,13 @@ def cycle_for(variant: str, segment: str, sector_status: str, market: str) -> in
     if variant == "ingen":
         return 3
     if variant == "gron":
-        if market == cycle.ROD:
-            return 0
-        return (2 + (1 if market == cycle.GRON else 0)) if sector_status == cycle.GRON else 1
+        return ls.cycle_score(sector_status, market, "gron")
     if variant == "gron_utan_marknad":
         return 3 if sector_status == cycle.GRON else 1
     if variant == "forval":
         from cagr.cagr_cycle import score_cycle_for_sector
         return int(score_cycle_for_sector(SECTOR_OF.get(segment, "Unknown"))["cycle_score"])
-    return ls.cycle_score(sector_status, market)
+    return ls.cycle_score(sector_status, market, "valhall")
 
 
 def market_regimes(index_closes: dict, dates: list) -> dict:

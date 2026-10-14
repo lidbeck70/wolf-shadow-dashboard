@@ -44,7 +44,8 @@ def test_market_index_and_regime():
 
 def test_cycle_score_mapping():
     assert ls.cycle_score(cycle.GRON, cycle.GRON) == 3 and ls.cycle_score(cycle.GRON, cycle.GUL) == 2
-    assert ls.cycle_score(cycle.GUL, cycle.GRON) == 2 and ls.cycle_score(cycle.GUL, cycle.GUL) == 1
+    assert ls.cycle_score(cycle.GUL, cycle.GRON) == 1 and ls.cycle_score(cycle.GUL, cycle.GUL) == 1   # gron: GUL köper inte
+    assert ls.cycle_score(cycle.GUL, cycle.GRON, "valhall") == 2 and ls.cycle_score(cycle.GUL, cycle.GUL, "valhall") == 1
     assert ls.cycle_score(cycle.ROD, cycle.GRON) == 1 and ls.cycle_score(cycle.NODATA, cycle.NODATA) == 1
     assert ls.cycle_score(cycle.GRON, cycle.ROD) == 0                                    # röd regim = sälj
 
@@ -76,6 +77,9 @@ def test_scan_picks_per_segment():
     assert tech["picks"][0]["source"] == "Long Screener" and tech["picks"][0]["cycle"] == 3
     assert out["segments"]["industrials"]["picks"] == []                                 # RÖD sektor → cykel 1
     assert out["signals"]["E.ST"] in ls.SELL_SIGNALS and out["signals"]["D.ST"] == "HOLD"
+    ind0 = out["segments"]["industrials"]["picks_ingen"]                                 # utan cykel: RÖD sektor köper
+    assert [p["ticker"] for p in ind0] == ["D.ST"] and ind0[0]["cycle"] == 3 and ind0[0]["source"].endswith("(utan cykel)")
+    assert out["signals_ingen"]["D.ST"] in ls.BUY_SIGNALS and out["buys_ingen"] > out["buys"]
     red = ls.scan(_board({"technology": cycle.GRON}), uni, data, sorted(uni), lambda ts: fund,
                   lambda sym: _close(-0.001))
     assert red["markets"] == {"^OMX": cycle.ROD} and red["buys"] == 0
@@ -101,6 +105,25 @@ def test_paper_long_account_buys_picks_and_sells_on_sell_signal():
     c = st["closed"][0]
     assert c["entry"] == 102.0 and c["exit"] == 105.0 and c["reason"] == "Long Screener SELL"
     assert vpa.results(st)["by_strategy"][0]["strategy"] == "long"
+
+
+def test_paper_long_ingen_runs_in_parallel():
+    pick = {"ticker": "A.ST", "name": "A", "signal": "BUY", "score_pct": 0.7, "cycle": 3}
+    scan_out = {"segments": {"technology": {"picks": [], "picks_ingen": [pick]}}}
+    sigs = vpa.signals({}, {}, {}, long_scan=scan_out)
+    assert [(s["strategy"], s["ticker"]) for s in sigs] == [("long_ingen", "A.ST")]
+    idx = pd.bdate_range("2026-01-01", periods=10)
+    d = [str(x.date()) for x in idx]
+    df = pd.DataFrame({"Open": np.arange(100, 110.0), "High": 130.0, "Low": 90.0, "Close": np.arange(100, 110.0)},
+                      index=idx)
+    board = _board({"technology": cycle.ROD})
+    st, _ = vpa.step(None, sigs, board, lambda t: df.loc[:d[1]], today=d[1])
+    st, _ = vpa.step(st, [], board, lambda t: df.loc[:d[2]], today=d[2], long_signals={"A.ST": "SELL"},
+                     long_ingen_signals={"A.ST": "HOLD"})
+    assert st["positions"] and not st["positions"][0]["pending"]                         # gron-signalen styr inte
+    st, ev = vpa.step(st, [], board, lambda t: df.loc[:d[3]], today=d[3], long_signals={"A.ST": "HOLD"},
+                      long_ingen_signals={"A.ST": "STRONG SELL"})
+    assert ev[0]["kind"] == vpa.SALJ_OPEN and vpa.STRATEGIES["long_ingen"][0] == "Long Screener (utan cykel)"
 
 
 def test_index_series_uses_borsdata_for_obx(monkeypatch):

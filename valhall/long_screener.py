@@ -12,12 +12,16 @@ cagr_cycle.SECTOR_CONFIG). Här räknas den ur Valhall, punkt för punkt:
              GRÖN = kurs > EMA200 och EMA50 > EMA200 · RÖD = under båda · annars GUL
   sektorn    Valhalls nordiska sektorindex (status GRÖN/GUL/RÖD)
 
+Varianten "gron" (vald efter backtestet, fas 4c 2008–idag: CAGR 12,3 % och max drawdown −18 % mot
+8,7 % / −31 % för "valhall" — köp i GUL sektor var svaga i alla varianter):
+
   marknaden RÖD                → 0  (screenerns regel 7: röd regim = sälj)
   sektorn GRÖN                 → 2, +1 om marknaden är GRÖN
-  sektorn GUL                  → 1, +1 om marknaden är GRÖN
-  sektorn RÖD / data saknas    → 1  (inga köp, men tvingar inte fram sälj)
+  sektorn GUL / RÖD / saknas   → 1  (inga köp, men tvingar inte fram sälj)
 
-Screenerns köpgrind kräver cykel ≥ 2: sektorn GRÖN, eller GUL med grön marknad.
+Screenerns köpgrind kräver cykel ≥ 2, alltså GRÖN sektor. "valhall" (första versionen) gav dessutom
+GUL sektor med grön marknad 2 — den finns kvar för backtestet. Parallellt räknas screenern UTAN cykel
+(alltid 3) för papperskontot "Long Screener (utan cykel)" — verkligheten får bekräfta valet.
 
 Universumet är Valhalls likvida nordiska aktier (screenerns egen lista är 50 storbolag — de märks
 in_list). Insiderkriteriet (1 av 20 poäng) räknas inte här (en insynshämtning per aktie är för dyr);
@@ -80,26 +84,35 @@ def market_regime(close: Optional[pd.Series]) -> str:
     return cycle.GUL
 
 
-def cycle_score(sector_status: str, market: str) -> int:
-    """Valhalls läge → screenerns cykelpoäng 0–3 (se modulens docstring)."""
+NO_CYCLE = 3                       # "utan cykel": bara bolagets egna kriterier och trendgrindar
+
+
+def cycle_score(sector_status: str, market: str, variant: str = "gron") -> int:
+    """Valhalls läge → screenerns cykelpoäng 0–3 (se modulens docstring). variant "gron" (daglig) eller
+    "valhall" (första versionen: GUL sektor med grön marknad köper också)."""
     if market == cycle.ROD:
         return 0
     bonus = 1 if market == cycle.GRON else 0
     if sector_status == cycle.GRON:
         return 2 + bonus
-    if sector_status == cycle.GUL:
+    if sector_status == cycle.GUL and variant == "valhall":
         return 1 + bonus
     return 1
 
 
-def score(close: pd.Series, fund_info: dict, cyc: int) -> dict:
-    """Screenerns egen poäng och signal för en aktie (cagr-modulerna oförändrade)."""
-    from cagr.cagr_cycle import score_cycle_from_int
+def parts(close: pd.Series, fund_info: dict) -> tuple:
+    """(fundamenta, teknik) — screenerns delpoäng, räknade en gång per aktie."""
     from cagr.cagr_fundamentals import score_fundamentals
-    from cagr.cagr_scoring import calculate_total_score
     from cagr.cagr_technical import score_technical
-    fund = score_fundamentals(fund_info or {}, None)
-    tech = score_technical(pd.DataFrame({"Close": close.astype(float).tail(TECH_BARS)}))
+    return (score_fundamentals(fund_info or {}, None),
+            score_technical(pd.DataFrame({"Close": close.astype(float).tail(TECH_BARS)})))
+
+
+def score(close: pd.Series, fund_info: dict, cyc: int, pre: Optional[tuple] = None) -> dict:
+    """Screenerns egen poäng och signal för en aktie (cagr-modulerna oförändrade). pre = parts(...)."""
+    from cagr.cagr_cycle import score_cycle_from_int
+    from cagr.cagr_scoring import calculate_total_score
+    fund, tech = pre or parts(close, fund_info)
     total = calculate_total_score(fund, score_cycle_from_int(cyc), tech)
     return {"signal": total["signal"], "score_pct": total["score_pct"], "total": total["total_score"],
             "max": total["max_score"], "fund": total["fund_score"], "fund_max": total["fund_max"],
@@ -109,8 +122,10 @@ def score(close: pd.Series, fund_info: dict, cyc: int) -> dict:
 
 def scan(board: dict, universe: dict, data: dict, tickers: list, fundamentals: Callable,
          index_close: Callable, n: int = N_PICKS) -> dict:
-    """{segments: {key: {sector_status, picks}}, signals: {ticker: signal}, markets: {index: status}, scanned}.
-    tickers = de likvida nordiska; fundamentals(tuple) → {ticker: info}; index_close(symbol) → Close-serie."""
+    """{segments: {key: {sector_status, picks, picks_ingen}}, signals / signals_ingen: {ticker: signal},
+    markets: {index: status}, scanned}. Kortet = cykelvarianten "gron"; *_ingen = screenern utan cykel
+    (papperskontot "Long Screener (utan cykel)"). tickers = de likvida nordiska; fundamentals(tuple) →
+    {ticker: info}; index_close(symbol) → Close-serie."""
     from cagr.cagr_loader import NORDIC_TICKERS
     status = {r["key"]: (r.get("nordic") or {}).get("status", cycle.NODATA) for r in (board or {}).get("segments") or []}
     markets: dict = {}
@@ -130,16 +145,26 @@ def scan(board: dict, universe: dict, data: dict, tickers: list, fundamentals: C
             continue
         cyc = cycle_score(status.get(seg, cycle.NODATA), markets.get(market_index(t), cycle.NODATA))
         try:
-            s = score(df["Close"], fund.get(t) or {}, cyc)
+            pre = parts(df["Close"], fund.get(t) or {})
+            s, s0 = score(df["Close"], {}, cyc, pre), score(df["Close"], {}, NO_CYCLE, pre)
         except Exception:
             continue
-        rows.append({"ticker": t, "name": (universe.get(t) or {}).get("name", ""), "segment": seg,
-                     "in_list": t in NORDIC_TICKERS, "market": market_index(t), **s})
-    out = {"segments": {}, "signals": {r["ticker"]: r["signal"] for r in rows}, "markets": markets,
-           "scanned": len(rows), "buys": sum(1 for r in rows if r["signal"] in BUY_SIGNALS)}
-    for s in sgm.SEGMENTS:
-        mine = sorted((r for r in rows if r["segment"] == s.key and r["signal"] in BUY_SIGNALS),
+        base = {"ticker": t, "name": (universe.get(t) or {}).get("name", ""), "segment": seg,
+                "in_list": t in NORDIC_TICKERS, "market": market_index(t)}
+        rows.append(({**base, **s}, {**base, **s0}))
+    out = {"segments": {}, "signals": {r["ticker"]: r["signal"] for r, _ in rows},
+           "signals_ingen": {r["ticker"]: r["signal"] for _, r in rows}, "markets": markets, "scanned": len(rows),
+           "buys": sum(1 for r, _ in rows if r["signal"] in BUY_SIGNALS),
+           "buys_ingen": sum(1 for _, r in rows if r["signal"] in BUY_SIGNALS)}
+
+    def best(sel, key):
+        mine = sorted((r for r in sel if r["segment"] == key and r["signal"] in BUY_SIGNALS),
                       key=lambda r: (r["signal"] != "STRONG BUY", -r["score_pct"], r["ticker"]))
-        out["segments"][s.key] = {"sector_status": status.get(s.key, cycle.NODATA),
-                                  "picks": [dict(r, source="Long Screener") for r in mine[:n]]}
+        return mine[:n]
+
+    for sg in sgm.SEGMENTS:
+        out["segments"][sg.key] = {
+            "sector_status": status.get(sg.key, cycle.NODATA),
+            "picks": [dict(r, source="Long Screener") for r in best([a for a, _ in rows], sg.key)],
+            "picks_ingen": [dict(r, source="Long Screener (utan cykel)") for r in best([b for _, b in rows], sg.key)]}
     return out
