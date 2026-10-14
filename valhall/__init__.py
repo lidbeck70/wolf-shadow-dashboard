@@ -19,5 +19,5 @@ GRÖN/GUL/RÖD — räknat dag för dag utan facit, så att varje regel kan back
   long_screener.py fas 4c: Long Screener (cagr, oförändrad poäng) med Valhalls cykel
   long_backtest.py fas 4c: Long Screener punkt för punkt 2008–idag (tre cykelvarianter, screenerns portfölj)
 
-Motorerna först. Panelen ändras först när hela systemet är klart.
+Fas 5: panelen — toppfliken ⚡ VALHALL (ui.py) läser de schemalagda körningarna ur Gisten.
 """
