@@ -1,23 +1,19 @@
-import numpy as np
 import pandas as pd
 import yfinance as yf
 import streamlit as st
 from datetime import datetime
 
+import wolf_regime_score as wrs
 from ui.theme import section_title
 from ui.charts import build_gauge
 from utils.presets import SECTOR_ETF_LIST, etf_from_display
 
-# Wolf's real stop distance and risk. The checklist, the 11 gates and the SL/TP
-# calculator used to compute on ½ ATR and a 5 % risk default while the engine
-# (strategies/wolf.py) trades 2.5 × ATR and 2 % — so R:R looked five times
-# better than the stop the strategy actually places.
-try:
-    from strategies.wolf import DEFAULT_PARAMS as _WOLF_P
-    _WOLF_ATR_MULT = float(_WOLF_P["atr_mult"])
-    _WOLF_RISK_PCT = float(_WOLF_P["risk_pct"]) * 100
-except Exception:  # pragma: no cover
-    _WOLF_ATR_MULT, _WOLF_RISK_PCT = 2.5, 2.0
+# Poängen, etiketten, checklistan, de elva grindarna och SL/TP räknas i
+# wolf_regime_score.py (ren modul, samma formler) så att Thors analysblock
+# visar exakt samma siffror som den här sidan. Wolfs riktiga stoppavstånd och
+# risk (strategies/wolf.py) läses därifrån.
+_WOLF_ATR_MULT = wrs.ATR_MULT
+_WOLF_RISK_PCT = wrs.RISK_PCT
 
 
 def tab_regime():
@@ -93,219 +89,20 @@ def tab_regime():
     if should_load:
         with st.spinner(f"📡 Fetching live regime data for {watch_ticker}..."):
             try:
-                def _ema(series, span):
-                    return series.ewm(span=span, adjust=False).mean()
-
-                def _rsi(series, period=14):
-                    delta = series.diff()
-                    gain = delta.clip(lower=0).ewm(com=period - 1, adjust=False).mean()
-                    loss = (-delta.clip(upper=0)).ewm(com=period - 1, adjust=False).mean()
-                    rs = gain / loss.replace(0, np.nan)
-                    return 100 - (100 / (1 + rs))
-
-                def _atr(df, period=14):
-                    high, low, close = df["High"], df["Low"], df["Close"]
-                    tr = pd.concat([
-                        high - low,
-                        (high - close.shift()).abs(),
-                        (low  - close.shift()).abs(),
-                    ], axis=1).max(axis=1)
-                    return tr.ewm(com=period - 1, adjust=False).mean()
-
-                def _adx(df, period=14):
-                    high, low, close = df["High"], df["Low"], df["Close"]
-                    plus_dm  = high.diff()
-                    minus_dm = -low.diff()
-                    plus_dm  = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0.0)
-                    minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0.0)
-                    tr = pd.concat([high-low, (high-close.shift(1)).abs(), (low-close.shift(1)).abs()], axis=1).max(axis=1)
-                    atr_v    = tr.ewm(span=period, adjust=False).mean()
-                    plus_di  = 100 * (plus_dm.ewm(span=period, adjust=False).mean() / atr_v)
-                    minus_di = 100 * (minus_dm.ewm(span=period, adjust=False).mean() / atr_v)
-                    dx = (plus_di - minus_di).abs() / (plus_di + minus_di) * 100
-                    return dx.ewm(span=period, adjust=False).mean()
-
-                def _ichimoku(df):
-                    hi9  = df["High"].rolling(9).max()
-                    lo9  = df["Low"].rolling(9).min()
-                    hi26 = df["High"].rolling(26).max()
-                    lo26 = df["Low"].rolling(26).min()
-                    hi52 = df["High"].rolling(52).max()
-                    lo52 = df["Low"].rolling(52).min()
-                    tenkan  = (hi9  + lo9)  / 2
-                    kijun   = (hi26 + lo26) / 2
-                    span_a  = ((tenkan + kijun) / 2).shift(26)
-                    span_b  = ((hi52 + lo52) / 2).shift(26)
-                    chikou  = df["Close"].shift(-26)
-                    return tenkan, kijun, span_a, span_b, chikou
-
                 def _fetch(ticker, period="1y"):
                     df = yf.download(ticker, period=period, progress=False, auto_adjust=True)
                     if isinstance(df.columns, pd.MultiIndex):
                         df.columns = df.columns.get_level_values(0)
                     return df if len(df) >= 50 else None
 
-                def _score_market(spy_df):
-                    if spy_df is None or len(spy_df) < 60:
-                        return 0
-                    c = spy_df["Close"]
-                    score = 0
-                    e20  = _ema(c, 20).iloc[-1]
-                    e50  = _ema(c, 50).iloc[-1]
-                    e200 = _ema(c, 200).iloc[-1]
-                    last = c.iloc[-1]
-                    rsi  = _rsi(c).iloc[-1]
-                    if last > e200:  score += 10
-                    if e50  > e200:  score += 8
-                    if last > e50:   score += 7
-                    if rsi  > 50:    score += 5
-                    return min(score, 30)
-
-                def _score_sector(sec_df):
-                    if sec_df is None or len(sec_df) < 60:
-                        return 0
-                    c = sec_df["Close"]
-                    score = 0
-                    e20  = _ema(c, 20).iloc[-1]
-                    e50  = _ema(c, 50).iloc[-1]
-                    e200 = _ema(c, 200).iloc[-1]
-                    last = c.iloc[-1]
-                    rsi  = _rsi(c).iloc[-1]
-                    if last > e200:  score += 10
-                    if e50  > e200:  score += 8
-                    if last > e50:   score += 7
-                    if rsi  > 50:    score += 5
-                    return min(score, 30)
-
-                def _score_stock(stk_df):
-                    if stk_df is None or len(stk_df) < 60:
-                        return None
-                    c = stk_df["Close"]
-                    e10  = _ema(c, 10)
-                    e21  = _ema(c, 21)
-                    e50  = _ema(c, 50)
-                    e200 = _ema(c, 200)
-                    rsi_s = _rsi(c)
-                    atr_s = _atr(stk_df)
-                    tenkan, kijun, span_a, span_b, chikou = _ichimoku(stk_df)
-
-                    adx_s    = _adx(stk_df)
-                    last     = c.iloc[-1]
-                    rsi_val  = float(rsi_s.iloc[-1])
-                    atr_val  = float(atr_s.iloc[-1])
-                    adx_val  = float(adx_s.iloc[-1]) if not pd.isna(adx_s.iloc[-1]) else 0.0
-                    e10_last = float(e10.iloc[-1])
-                    e21_last = float(e21.iloc[-1])
-                    e50_last = float(e50.iloc[-1])
-                    e200_last= float(e200.iloc[-1])
-
-                    stk_score = 0
-                    if last > e200_last:                          stk_score += 10
-                    if e50_last > e200_last:                      stk_score += 8
-                    if last > e50_last:                           stk_score += 8
-                    ema_stack = (e10_last > e21_last > e50_last > e200_last)
-                    if ema_stack:                                  stk_score += 10
-                    ema_trend = last > e21_last
-                    if ema_trend:                                  stk_score += 7
-                    if 40 < rsi_val < 75:                         stk_score += 7
-                    stk_score = min(stk_score, 50)
-
-                    ichi_score = 0
-                    sa = float(span_a.iloc[-1]) if not pd.isna(span_a.iloc[-1]) else 0
-                    sb = float(span_b.iloc[-1]) if not pd.isna(span_b.iloc[-1]) else 0
-                    tk = float(tenkan.iloc[-1]) if not pd.isna(tenkan.iloc[-1]) else 0
-                    kj = float(kijun.iloc[-1])  if not pd.isna(kijun.iloc[-1])  else 0
-                    cloud_top = max(sa, sb)
-                    cloud_bot = min(sa, sb)
-                    if last > cloud_top:   ichi_score += 6
-                    elif last > cloud_bot: ichi_score += 2
-                    if tk > kj:            ichi_score += 5
-                    if sa > sb:            ichi_score += 4
-                    ichi_score = min(ichi_score, 15)
-
-                    sl_dist   = 1.5 * atr_val
-                    entry_zone = last
-                    sl_level  = last - sl_dist
-                    risk      = sl_dist
-                    tp1       = last + 2.0 * risk
-                    tp2       = last + 3.0 * risk
-                    has_entry = ema_stack and ema_trend and 45 < rsi_val < 70
-
-                    return {
-                        "stock_score": stk_score,
-                        "ichi_score":  ichi_score,
-                        "close":       float(last),
-                        "rsi":         rsi_val,
-                        "atr":         atr_val,
-                        "adx":         round(adx_val, 1),
-                        "ema_stack":   ema_stack,
-                        "ema_trend":   ema_trend,
-                        "has_entry":   has_entry,
-                        "entry_zone":  entry_zone,
-                        "sl_level":    sl_level,
-                        "tp1_2R":      tp1,
-                        "tp2_3R":      tp2,
-                        "ema10":       e10_last,
-                        "ema21":       e21_last,
-                        "ema50":       e50_last,
-                        "ema200":      e200_last,
-                        "kijun":       kj,
-                    }
-
                 spy_df   = _fetch("SPY",        period="1y")
                 sec_df   = _fetch(watch_sector, period="1y")
                 stock_df = _fetch(watch_ticker, period="1y")
 
-                mkt_score  = _score_market(spy_df)
-                sec_score  = _score_sector(sec_df)
-                stk_result = _score_stock(stock_df)
-
-                stk_score  = stk_result["stock_score"] if stk_result else 0
-                ichi_score = stk_result["ichi_score"]   if stk_result else 0
-                total      = mkt_score + sec_score + stk_score + ichi_score
-
-                close_price = stk_result["close"]      if stk_result else 0
-                rsi_val     = stk_result["rsi"]        if stk_result else 0
-                ema_stack   = stk_result["ema_stack"]  if stk_result else False
-                ema_trend   = stk_result["ema_trend"]  if stk_result else False
-                has_entry   = stk_result["has_entry"]  if stk_result else False
-                entry_zone  = stk_result["entry_zone"] if stk_result else 0
-                sl_level    = stk_result["sl_level"]   if stk_result else 0
-                tp1         = stk_result["tp1_2R"]     if stk_result else 0
-                tp2         = stk_result["tp2_3R"]     if stk_result else 0
-                atr_val     = stk_result["atr"]        if stk_result else 0
-                adx_val_reg = stk_result["adx"]        if stk_result else 0
-
-                ema10_val  = stk_result["ema10"]  if stk_result else 0
-                ema21_val  = stk_result["ema21"]  if stk_result else 0
-                ema50_val  = stk_result["ema50"]  if stk_result else 0
-                ema200_val = stk_result["ema200"] if stk_result else 0
-                kijun_val  = stk_result["kijun"]  if stk_result else 0
-
-                st.session_state.regime_data = {
-                    "mkt_score":   mkt_score,
-                    "sec_score":   sec_score,
-                    "stk_score":   stk_score,
-                    "ichi_score":  ichi_score,
-                    "total":       total,
-                    "close":       close_price,
-                    "rsi":         rsi_val,
-                    "adx":         adx_val_reg,
-                    "ema_stack":   ema_stack,
-                    "ema_trend":   ema_trend,
-                    "has_entry":   has_entry,
-                    "entry_zone":  entry_zone,
-                    "sl_level":    sl_level,
-                    "tp1":         tp1,
-                    "tp2":         tp2,
-                    "atr":         atr_val,
-                    "ema10":       ema10_val,
-                    "ema21":       ema21_val,
-                    "ema50":       ema50_val,
-                    "ema200":      ema200_val,
-                    "kijun":       kijun_val,
-                    "timestamp":   datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                }
+                st.session_state.regime_data = wrs.regime(
+                    spy_df, sec_df, stock_df,
+                    timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                )
                 st.session_state.regime_stock_df = stock_df
                 st.session_state.regime_ticker = watch_ticker
 
@@ -319,18 +116,7 @@ def tab_regime():
         return
 
     total = data["total"]
-    if total >= 85:
-        regime_label = "BULL REGIME"
-        regime_color = "#2d8a4e"
-    elif total >= 65:
-        regime_label = "MODERATE BULL"
-        regime_color = "#d4943a"
-    elif total >= 45:
-        regime_label = "NEUTRAL"
-        regime_color = "#d4943a"
-    else:
-        regime_label = "BEAR / AVOID"
-        regime_color = "#c44545"
+    regime_label, regime_color = wrs.label(total)
 
     score_col, gauge_col = st.columns([1, 3])
 
@@ -426,7 +212,7 @@ def tab_regime():
 
     with s4:
         st.markdown("**REGIME GATE**")
-        gate_ok = total >= 40
+        gate_ok = total >= wrs.GATE_MIN
         st.markdown(status_pill("GATE OPEN" if gate_ok else "GATE CLOSED", gate_ok),
                     unsafe_allow_html=True)
 
@@ -490,123 +276,28 @@ def tab_regime():
     )
 
     # ── WOLF ENTRY CHECKLIST ──────────────────────────────────────────────────
+    _chk = None
     try:
-        _chk_close  = data["close"]
+        _stk_df = st.session_state.get("regime_stock_df")
+        _chk = wrs.checklist(data, _stk_df, _WOLF_ATR_MULT)
+
         _chk_rsi    = data["rsi"]
         _chk_atr    = data["atr"]
         _chk_ema10  = data.get("ema10", 0)
         _chk_ema21  = data.get("ema21", 0)
         _chk_ema50  = data.get("ema50", 0)
         _chk_ema200 = data.get("ema200", 0)
-        _chk_kijun  = data.get("kijun", 0)
         _chk_stack  = data["ema_stack"]
 
-        if _chk_stack:
-            _trend_dir, _trend_clr = "BULL", "#2d8a4e"
-        elif _chk_close > _chk_ema50:
-            _trend_dir, _trend_clr = "NEUTRAL-BULL", "#d4943a"
-        elif _chk_close > _chk_ema200:
-            _trend_dir, _trend_clr = "NEUTRAL", "#d4943a"
-        else:
-            _trend_dir, _trend_clr = "BEAR", "#c44545"
-
+        _trend_dir, _trend_clr = _chk["trend_dir"], _chk["trend_color"]
         _stack_icon = "✓" if _chk_stack else "✗"
-
-        if _chk_rsi > 70:
-            _rsi_state = "OVERBOUGHT"
-        elif _chk_rsi < 30:
-            _rsi_state = "OVERSOLD"
-        elif 40 <= _chk_rsi <= 60:
-            _rsi_state = "NEUTRAL"
-        else:
-            _rsi_state = "ACTIVE"
-
-        _stk_df = st.session_state.get("regime_stock_df")
-        _vol_ratio = 0.0
-        if _stk_df is not None and len(_stk_df) >= 20:
-            _vol_avg = _stk_df["Volume"].rolling(20).mean().iloc[-1]
-            if _vol_avg > 0:
-                _vol_ratio = float(_stk_df["Volume"].iloc[-1] / _vol_avg)
-
-        _hist_vol = 0.0
-        if _stk_df is not None and len(_stk_df) >= 21:
-            _log_ret = np.log(_stk_df["Close"] / _stk_df["Close"].shift(1)).dropna()
-            if len(_log_ret) >= 20:
-                _hist_vol = float(_log_ret.tail(20).std() * np.sqrt(252) * 100)
-
-        _atr_ratio = 1.0
-        if _stk_df is not None and len(_stk_df) >= 64:
-            _high, _low, _cls = _stk_df["High"], _stk_df["Low"], _stk_df["Close"]
-            _tr = pd.concat([_high - _low, (_high - _cls.shift()).abs(), (_low - _cls.shift()).abs()], axis=1).max(axis=1)
-            _atr_series = _tr.ewm(com=13, adjust=False).mean()
-            _atr_avg_50 = _atr_series.tail(50).mean()
-            if _atr_avg_50 > 0:
-                _atr_ratio = float(_atr_series.iloc[-1] / _atr_avg_50)
-
-        _bull_obs, _bear_obs = [], []
-        if _stk_df is not None and len(_stk_df) >= 50:
-            _ob_atr = _chk_atr if _chk_atr > 0 else 1.0
-            _ob_recent = _stk_df.tail(100) if len(_stk_df) >= 100 else _stk_df
-            for _obi in range(2, len(_ob_recent)):
-                _ob_c = _ob_recent.iloc[_obi]
-                _ob_p = _ob_recent.iloc[_obi - 1]
-                _ob_body = abs(float(_ob_c["Close"]) - float(_ob_c["Open"]))
-                if (float(_ob_c["Close"]) > float(_ob_c["Open"])
-                        and _ob_body > _ob_atr * 1.5
-                        and float(_ob_p["Close"]) < float(_ob_p["Open"])):
-                    _bull_obs.append(float(_ob_c["Low"]))
-                if (float(_ob_c["Close"]) < float(_ob_c["Open"])
-                        and _ob_body > _ob_atr * 1.5
-                        and float(_ob_p["Close"]) > float(_ob_p["Open"])):
-                    _bear_obs.append(float(_ob_c["High"]))
-            _bull_obs = _bull_obs[-5:]
-            _bear_obs = _bear_obs[-5:]
-
-        _nearest_bull_ob = min(_bull_obs, key=lambda x: abs(x - _chk_close)) if _bull_obs else None
-        _nearest_bear_ob = min(_bear_obs, key=lambda x: abs(x - _chk_close)) if _bear_obs else None
-        _has_nearby_ob = False
-        if _nearest_bull_ob and abs(_nearest_bull_ob - _chk_close) / _chk_close < 0.03:
-            _has_nearby_ob = True
-        if _nearest_bear_ob and abs(_nearest_bear_ob - _chk_close) / _chk_close < 0.03:
-            _has_nearby_ob = True
-
-        _candle_patterns = []
-        if _stk_df is not None and len(_stk_df) >= 3:
-            _cc = _stk_df.iloc[-1]
-            _cp = _stk_df.iloc[-2]
-            _cbody = float(_cc["Close"]) - float(_cc["Open"])
-            _crange = float(_cc["High"]) - float(_cc["Low"])
-            if _crange > 0:
-                _lower_wick = min(float(_cc["Open"]), float(_cc["Close"])) - float(_cc["Low"])
-                if _lower_wick > abs(_cbody) * 2 and _cbody > 0:
-                    _candle_patterns.append("Hammer (Bull)")
-                if (float(_cp["Close"]) < float(_cp["Open"])
-                        and float(_cc["Close"]) > float(_cc["Open"])
-                        and float(_cc["Close"]) > float(_cp["Open"])
-                        and float(_cc["Open"]) < float(_cp["Close"])):
-                    _candle_patterns.append("Bullish Engulfing")
-                if (float(_cp["Close"]) > float(_cp["Open"])
-                        and float(_cc["Close"]) < float(_cc["Open"])
-                        and float(_cc["Close"]) < float(_cp["Open"])
-                        and float(_cc["Open"]) > float(_cp["Close"])):
-                    _candle_patterns.append("Bearish Engulfing")
-                if abs(_cbody) < _crange * 0.1:
-                    _candle_patterns.append("Doji")
-
-        _is_consolidating = (35 < _chk_rsi < 65) and (_atr_ratio < 0.7)
-        _ema10_dist = abs(_chk_close - _chk_ema10) / _chk_close * 100 if _chk_close > 0 else 99
-        _ema21_dist = abs(_chk_close - _chk_ema21) / _chk_close * 100 if _chk_close > 0 else 99
-        _is_pullback = (min(_ema10_dist, _ema21_dist) < 2.0) and (_chk_close > _chk_ema50)
-        _has_candle = len(_candle_patterns) > 0
-        _pattern_name = ", ".join(_candle_patterns) if _candle_patterns else "Inget mönster"
-        _stop_dist = _chk_atr * _WOLF_ATR_MULT
-        _sl_pct = (_stop_dist / _chk_close * 100) if _chk_close > 0 else 0
-        _rr_ratio = 0.0
-        if _nearest_bear_ob and _stop_dist > 0:
-            _target_dist = abs(_nearest_bear_ob - _chk_close)
-            _rr_ratio = _target_dist / _stop_dist
-
-        _risk_score = min(100, int((_hist_vol / 50) * 100)) if _hist_vol > 0 else 50
+        _rsi_state = _chk["rsi_state"]
+        _vol_ratio, _hist_vol, _atr_ratio = _chk["vol_ratio"], _chk["hist_vol"], _chk["atr_ratio"]
+        _bull_obs, _bear_obs = _chk["bull_obs"], _chk["bear_obs"]
+        _nearest_bull_ob, _nearest_bear_ob = _chk["nearest_bull_ob"], _chk["nearest_bear_ob"]
+        _has_nearby_ob = _chk["has_nearby_ob"]
+        _candle_patterns = _chk["candle_patterns"]
+        _risk_score = _chk["risk_score"]
 
         st.markdown(
             "<div style='color:#00A8BF;font-size:0.7rem;text-transform:uppercase;"
@@ -694,106 +385,18 @@ def tab_regime():
         unsafe_allow_html=True,
     )
 
-    swing_gates = []
+    # Grind 8–11 är process- och disciplinregler och visas som MANUELLA; saknas
+    # checklistans data är grind 2–7 INTE godkända (ett datafel är inget ja).
     try:
-        _g_rsi    = data["rsi"]
-        _g_atr    = data["atr"]
-        _g_close  = data["close"]
-        _g_ema10  = data.get("ema10", 0)
-        _g_ema21  = data.get("ema21", 0)
-        _g_kijun  = data.get("kijun", 0)
-        _g_consol = (35 < _g_rsi < 65)
-        _g_atr_low = False
-        try:
-            _g_atr_low = _atr_ratio < 0.7  # noqa: F821
-        except NameError:
-            pass
-        _g_is_consol = _g_consol and _g_atr_low
-
-        _g_nearby_ob = False
-        try:
-            _g_nearby_ob = _has_nearby_ob  # noqa: F821
-        except NameError:
-            pass
-
-        _g_nearest_ob_val = 0.0
-        try:
-            if _nearest_bull_ob:  # noqa: F821
-                _g_nearest_ob_val = _nearest_bull_ob
-            elif _nearest_bear_ob:  # noqa: F821
-                _g_nearest_ob_val = _nearest_bear_ob
-        except NameError:
-            pass
-
-        _g_ema10_dist = abs(_g_close - _g_ema10) / _g_close * 100 if _g_close > 0 else 99
-        _g_ema21_dist = abs(_g_close - _g_ema21) / _g_close * 100 if _g_close > 0 else 99
-        _g_is_pullback = (min(_g_ema10_dist, _g_ema21_dist) < 2.0) and (_g_close > data.get("ema50", 0))
-
-        _g_has_candle = False
-        _g_pattern_name = "Inget mönster"
-        try:
-            _g_has_candle = _has_candle  # noqa: F821
-            _g_pattern_name = _pattern_name  # noqa: F821
-        except NameError:
-            pass
-
-        _g_vol_ratio = 0.0
-        try:
-            _g_vol_ratio = _vol_ratio  # noqa: F821
-        except NameError:
-            pass
-
-        _g_stop_dist = _g_atr * _WOLF_ATR_MULT
-        _g_sl_pct = (_g_stop_dist / _g_close * 100) if _g_close > 0 else 0
-
-        _g_rr = 0.0
-        try:
-            _g_rr = _rr_ratio  # noqa: F821
-        except NameError:
-            pass
-
-        swing_gates = [
-            {"rule": "1. Trendriktning",       "passed": total >= 50,          "value": f"Score: {total}/125"},
-            {"rule": "2. Ej konsolidering",     "passed": not _g_is_consol,     "value": f"RSI: {_g_rsi:.0f}"},
-            {"rule": "3. Key level (OB)",        "passed": _g_nearby_ob,         "value": f"Närmaste OB: {_g_nearest_ob_val:.2f}" if _g_nearby_ob else "Ingen OB nära"},
-            {"rule": "4. Pullback entry",        "passed": _g_is_pullback,       "value": f"Avstånd EMA10: {_g_ema10_dist:.1f}%"},
-            {"rule": "5. Candle trigger",        "passed": _g_has_candle,        "value": _g_pattern_name},
-            {"rule": "6. Volymbekräftelse",      "passed": _g_vol_ratio >= 1.0,  "value": f"Vol ratio: {_g_vol_ratio:.1f}x"},
-            {"rule": "7. R:R ≥ 1:2",             "passed": _g_rr >= 2.0,         "value": f"R:R 1:{_g_rr:.1f}"},
-            # Grind 8–11 är process- och disciplinregler (positionsstorlek, flytt av
-            # stop, dagsförluster, exit). De går inte att räkna ur kursdata och
-            # visas som MANUELLA — de räknas inte som godkända av sig själva.
-            {"rule": f"8. Max {_WOLF_RISK_PCT:g}% risk (Wolf)", "passed": None,          "value": f"SL {_WOLF_ATR_MULT:g}×ATR: {_g_stop_dist:.2f} ({_g_sl_pct:.1f}%) — bedöm själv"},
-            {"rule": "9. SL → BE efter HH",     "passed": None,                 "value": "Post-entry regel — manuell"},
-            {"rule": "10. Max 2 förluster/dag", "passed": None,                 "value": "Disciplin — manuell"},
-            {"rule": f"11. Kijun trail + {_WOLF_ATR_MULT:g}×ATR", "passed": None,      "value": f"Kijun: {_g_kijun:.2f}, EMA10: {_g_ema10:.2f} — exit-regel"},
-        ]
+        if _chk is None:
+            raise ValueError("checklistan kunde inte räknas")
+        swing_gates = wrs.gates(data, _chk, _WOLF_ATR_MULT, _WOLF_RISK_PCT)
     except Exception as _gate_exc:
-        # Data saknas → grinden är INTE godkänd. Tidigare blev 2–11 gröna vid fel,
-        # så ett datafel visade 10/11 klart.
-        _na = f"Data ej tillgänglig ({type(_gate_exc).__name__})"
-        swing_gates = [
-            {"rule": "1. Trendriktning",       "passed": total >= 50,  "value": f"Score: {total}/125"},
-            {"rule": "2. Ej konsolidering",     "passed": False,        "value": _na},
-            {"rule": "3. Key level (OB)",        "passed": False,        "value": _na},
-            {"rule": "4. Pullback entry",        "passed": False,        "value": _na},
-            {"rule": "5. Candle trigger",        "passed": False,        "value": _na},
-            {"rule": "6. Volymbekräftelse",      "passed": False,        "value": _na},
-            {"rule": "7. R:R ≥ 1:2",             "passed": False,        "value": _na},
-            {"rule": f"8. Max {_WOLF_RISK_PCT:g}% risk (Wolf)", "passed": None,  "value": "Position sizing — manuell"},
-            {"rule": "9. SL → BE efter HH",     "passed": None,         "value": "Post-entry — manuell"},
-            {"rule": "10. Max 2 förluster/dag", "passed": None,         "value": "Disciplin — manuell"},
-            {"rule": f"11. Kijun trail + {_WOLF_ATR_MULT:g}×ATR", "passed": None, "value": "Exit-regel — manuell"},
-        ]
+        swing_gates = wrs.gates_unavailable(data, _gate_exc, _WOLF_ATR_MULT, _WOLF_RISK_PCT)
 
     if swing_gates:
-        measurable = [g for g in swing_gates if g["passed"] is not None]
-        manual = len(swing_gates) - len(measurable)
-        passed = sum(1 for g in measurable if g["passed"])
-        total_gates = len(measurable)
-        # Grönt = högst en mätbar grind saknas; gult = minst hälften (VAL, samma
-        # proportion som förra 8/11 respektive 5/11).
-        gc = "#2d8a4e" if passed >= total_gates - 1 else ("#d4943a" if passed * 2 >= total_gates else "#c44545")
+        _gs = wrs.gate_summary(swing_gates)
+        passed, total_gates, manual, gc = _gs["passed"], _gs["measurable"], _gs["manual"], _gs["color"]
 
         gate_html = '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">'
         for g in swing_gates:
@@ -833,27 +436,6 @@ def tab_regime():
                 unsafe_allow_html=True,
             )
 
-            _close_sl = pd.to_numeric(_sltp_df["Close"], errors="coerce")
-            _high_sl = pd.to_numeric(_sltp_df["High"], errors="coerce")
-            _low_sl = pd.to_numeric(_sltp_df["Low"], errors="coerce")
-            _price_sl = float(_close_sl.dropna().iloc[-1])
-
-            _tr_sl = pd.concat([
-                _high_sl - _low_sl,
-                abs(_high_sl - _close_sl.shift(1)),
-                abs(_low_sl - _close_sl.shift(1)),
-            ], axis=1).max(axis=1)
-            _atr_sl = float(_tr_sl.rolling(14).mean().dropna().iloc[-1])
-            _atr_stop_sl = _atr_sl * _WOLF_ATR_MULT
-            _ema10_sl = float(_close_sl.ewm(span=10).mean().iloc[-1])
-            _kijun_sl = float((_high_sl.rolling(26).max() + _low_sl.rolling(26).min()).iloc[-1] / 2)
-
-            _sl_atr = _price_sl - _atr_stop_sl
-            _sl_val = max(_sl_atr, _kijun_sl)
-            _sl_dist_sl = _price_sl - _sl_val
-            _tp_2r_sl = _price_sl + _sl_dist_sl * 2
-            _tp_3r_sl = _price_sl + _sl_dist_sl * 3
-
             _sltp_c1, _sltp_c2 = st.columns(2)
             with _sltp_c1:
                 _cap_wolf = st.number_input(
@@ -868,23 +450,26 @@ def tab_regime():
                          f"(strategies/wolf.py: risk_pct).",
                 )
 
-            _risk_amt_sl = _cap_wolf * (_risk_wolf / 100)
-            _shares_sl = int(_risk_amt_sl / _sl_dist_sl) if _sl_dist_sl > 0 else 0
             # 🌩️ Marknadsrisk HÖG → halverad position (market_risk_gate)
+            _mr_factor = 1.0
             try:
                 import market_risk_gate as _mg
                 _mr_ticker = st.session_state.get("regime_ticker") or st.session_state.get("reg_ticker") or ""
                 _mr = _mg.for_ticker(_mr_ticker)
                 _mr_factor = _mg.size_factor(_mr)
                 if _mr_factor < 1:
-                    _shares_sl = int(_shares_sl * _mr_factor)
-                    _risk_amt_sl = _shares_sl * _sl_dist_sl
                     st.warning(f"🌩️ {_mg.describe(_mr)} — Wolf-positionen halveras "
                                f"({int(_mr_factor * 100)} % av normal storlek).")
             except Exception:
-                pass
-            _pos_val_sl = _shares_sl * _price_sl
-            _pos_pct_sl = (_pos_val_sl / _cap_wolf * 100) if _cap_wolf > 0 else 0
+                _mr_factor = 1.0
+
+            _p = wrs.sltp(_sltp_df, _cap_wolf, _risk_wolf, _WOLF_ATR_MULT, _mr_factor)
+            _price_sl, _atr_stop_sl = _p["price"], _p["atr_stop"]
+            _ema10_sl, _kijun_sl = _p["ema10"], _p["kijun"]
+            _sl_val, _sl_dist_sl = _p["sl"], _p["sl_dist"]
+            _tp_2r_sl, _tp_3r_sl = _p["tp_2r"], _p["tp_3r"]
+            _risk_amt_sl, _shares_sl = _p["risk_amt"], _p["shares"]
+            _pos_val_sl, _pos_pct_sl = _p["pos_val"], _p["pos_pct"]
 
             _sc1, _sc2, _sc3 = st.columns(3)
             with _sc1:

@@ -207,6 +207,62 @@ def gate_card(gate: dict, playbook: str) -> str:
             f"<div style='color:{DIM};font-size:0.72rem;margin-top:2px;'>{_e((gate or {}).get('note'))}</div></div>")
 
 
+def wolf_score_card(total, label: str, color: str, ticker: str, when: str = "") -> str:
+    """Wolf Regimes stora poängkort: n / 125 MAX och etiketten — samma som sidan, i en kolumn."""
+    return (f"<div style='border:1px solid {color};border-radius:12px;padding:22px 16px;text-align:center;"
+            f"background:linear-gradient(135deg, rgba(0,229,255,0.06) 0%, rgba(139,115,64,0.03) 100%);margin:6px 0;'>"
+            f"<div style='font-size:11px;letter-spacing:4px;color:rgba(0,229,255,0.5);'>REGIME SCORE</div>"
+            f"<div style='font-size:64px;font-weight:900;line-height:1;color:{color};font-family:{FONT_MONO};'>{_e(total)}</div>"
+            f"<div style='font-size:11px;letter-spacing:3px;color:rgba(0,229,255,0.4);margin-top:4px;'>/ 125 MAX</div>"
+            f"<div style='margin-top:12px;'><span style='background:{color}1a;border:1px solid {color};border-radius:20px;"
+            f"color:{color};font-size:11px;font-weight:700;letter-spacing:3px;padding:5px 16px;'>{_e(label)}</span></div>"
+            f"<div style='margin-top:14px;font-size:10px;color:rgba(0,229,255,0.3);letter-spacing:2px;'>{_e(ticker)}"
+            + (f" &nbsp;·&nbsp; {_e(when)}" if when else "") + "</div></div>")
+
+
+def gate_chips(gs: list, summary: dict) -> str:
+    """De elva grindarna som chips (✓ ✗ ◌) och raden 'n/m MÄTBARA GRINDAR · k manuella'."""
+    out = []
+    for g in gs:
+        if g["passed"] is None:
+            c, icon = GREY, "◌"
+        else:
+            c, icon = (GREEN, "✓") if g["passed"] else (RED, "✗")
+        out.append(f"<div style='background:{BG_ALT};border:1px solid {c};border-radius:4px;padding:3px 8px;font-size:0.65rem;'>"
+                   f"<span style='color:{c};font-weight:700;'>{icon}</span> <span style='color:{TEXT};'>{_e(g['rule'])}</span> "
+                   f"<span style='color:{DIM};'>({_e(g['value'])})</span></div>")
+    gc = summary.get("color", DIM)
+    return (f"<div style='display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;'>{''.join(out)}</div>"
+            f"<div style='color:{gc};font-size:0.8rem;font-weight:700;'>{summary.get('passed')}/{summary.get('measurable')} MÄTBARA GRINDAR"
+            f" <span style='color:{DIM};font-weight:400;'>· {summary.get('manual')} manuella (◌) bedömer du själv</span></div>")
+
+
+def check_rows(checks: dict) -> str:
+    """{regel: (PASS/MANUAL/FAIL, notering)} som rader med färgad status (Momentum-reglerna, Long Screeners grindar)."""
+    rows = []
+    for name, (status, note) in checks.items():
+        col = GATE_COLOR.get(str(status).upper(), GREY if str(status).upper() in ("N/A", "—") else AMBER)
+        rows.append(f"<div style='display:flex;gap:8px;font-size:0.78rem;line-height:1.5;padding:2px 0;'>"
+                    f"<span style='color:{col};font-weight:700;min-width:62px;'>{_e(status)}</span>"
+                    f"<span style='color:{TEXT};'>{_e(name)}</span><span style='color:{DIM};'>{_e(note)}</span></div>")
+    return f"<div style='background:{BG_ALT};border:1px solid {BORDER_FAINT};border-radius:6px;padding:6px 10px;'>{''.join(rows)}</div>"
+
+
+def detail_rows(title: str, details: dict, color: str = CYAN, score_text: str = "") -> str:
+    """Kriterier med pass/fail (Long Screeners fundamenta och teknik): ✓/✗, namn, värde."""
+    rows = []
+    for name, d in (details or {}).items():
+        ok = (d or {}).get("pass")
+        c = GREEN if ok else RED if ok is False else GREY
+        val = (d or {}).get("value")
+        rows.append(f"<div style='font-size:0.76rem;line-height:1.5;color:{TEXT};'><span style='color:{c};font-weight:700;'>"
+                    f"{'✓' if ok else '✗' if ok is False else '?'}</span> {_e(name)} <span style='color:{DIM};'>{_e(val)}</span></div>")
+    return (f"<div style='border:1px solid {color}55;border-radius:6px;padding:8px 10px;margin:4px 0;background:{BG_ALT};'>"
+            f"<div style='color:{color};font-size:0.7rem;letter-spacing:0.1em;'>{_e(title)}"
+            + (f" <span style='color:{TEXT};'>{_e(score_text)}</span>" if score_text else "") + "</div>"
+            + "".join(rows) + "</div>")
+
+
 def review_card(key: str, rev: dict) -> str:
     """Granskningens utfall ur ett ark: PASS/MANUAL/FAIL, noteringen och kontrollerna."""
     status = (rev or {}).get("status") or "MANUAL"

@@ -4,8 +4,9 @@ thor/ui.py — 🔨 THOR: läget, tickersök, rullgardinen, listan och analysblo
 Flödet är screening → tryck → analys → köp, utan att byta flik: tryck "Öppna →" på en rad (eller skriv en
 ticker) så öppnas analysblocket överst med aktien och strategin förifyllda, och listan fälls ihop under
 det. Sidan räknar inga signaler: listan läses ur körningarna (thor.candidates) och analysen sätts ihop av
-motorerna som redan finns (thor.dossier). Regim per strategi, Teknik, Råvara, Backtest och Regler fylls
-på i fas 4–6 — tills dess har flikarna bryggknappar till de gamla sidorna med aktien förifylld.
+motorerna som redan finns (thor.dossier). Regim per strategi, Teknik och Regler ritas av thor.regim med
+samma motorer som de gamla sidorna; Råvara och Backtest fylls på i fas 5–6 — tills dess har de
+bryggknappar till de gamla sidorna med aktien förifylld.
 
 Designen följer Valhall: sidans data i st.session_state[_STATE] med en 📡-knapp, kort som rena HTML-
 funktioner (thor/cards.py), bara den öppna sidofliken ritas (st.tabs med on_change="rerun").
@@ -47,7 +48,6 @@ BRIDGE = {"viking_nine": ("regime/marknad/arc-regime/viking-nine-regime", "Vikin
           "alpha_contrarian": ("regime/marknad/alpha-regime/quality-contrarian", "Alpha Regime", "ar_ticker"),
           "long_screener": ("regime/marknad/alpha-regime/long-trend", "Long Trend", "long_regime_ticker_input"),
           "insider": ("review/insider", "Insiderbevakaren", None), "sheet": ("review", "Granskningsarken", None)}
-TEKNIK = ("intel/teknisk-analys", "Teknisk analys", "ta_ticker")
 COPILOT = ("copilot", "Copiloten", "copilot_ticker")
 BACKTEST = ("portfolio/backtest", "Backtest", None)
 SHEET_LINK = {"rule": "review/rick-rule", "royalty": "review/royalty-c", "sprott": "review/poangmodell",
@@ -68,14 +68,19 @@ def load(loader=None) -> dict:
     return out
 
 
-def _ohlcv(ticker: str):
-    """Ett års dagsdata (market_prices, cachad sex timmar). None när det inte går."""
+def _prices(ticker: str, period: str = "1y"):
+    """Dagsdata för en period (market_prices, cachad sex timmar). None när det inte går."""
     try:
         from market_prices import ohlcv
-        df = ohlcv(ticker, "1y")
+        df = ohlcv(ticker, period)
         return df if df is not None and len(df) else None
     except Exception:
         return None
+
+
+def _ohlcv(ticker: str):
+    """Ett års dagsdata — ögonblicksbilden i sidhuvudet."""
+    return _prices(ticker, "1y")
 
 
 def _phase(ticker: str) -> tuple:
@@ -306,19 +311,22 @@ def _bridge(st, label: str, target: tuple, ticker: str, key: str) -> None:
 
 # ── Sidoflikarna ────────────────────────────────────────────────────────────
 def _tab_regim(st, data, ident, strategy, sheets, cands) -> None:
-    from ui.components import note
+    """Strategins eget regimbeslut för aktien (thor.regim) — och knappar till den gamla sidan och Copiloten."""
+    from thor import regim
+    regim.render(st, ident, strategy, data, _prices, cands)
     s = reg.get(strategy)
-    note(f"Regimen per strategi — Viking Nine-, Wolf- och Alpha-layouterna — kommer i fas 4. Tills dess: "
-         f"den gamla sidan med {ident.yf} förifylld.")
     target = BRIDGE.get((s.regime if s else "") or "", BRIDGE["sheet"])
-    _bridge(st, "Öppna i", target, ident.yf, "thor_bridge_regim")
-    _bridge(st, "Öppna i", COPILOT, ident.yf, "thor_bridge_copilot")
+    b1, b2 = st.columns(2)
+    with b1:
+        _bridge(st, "Öppna i", target, ident.yf, "thor_bridge_regim")
+    with b2:
+        _bridge(st, "Öppna i", COPILOT, ident.yf, "thor_bridge_copilot")
 
 
 def _tab_teknik(st, data, ident, strategy, sheets, cands) -> None:
-    from ui.components import note
-    note("Teknisk analys för aktien — pris, EMA, order blocks, mönster, risk — flyttar in här i fas 4.")
-    _bridge(st, "Öppna i", TEKNIK, ident.yf, "thor_bridge_teknik")
+    """Teknisk analys för aktien — samma vy som 🕯️ Teknisk analys."""
+    from thor import regim
+    regim.render_technical(st, ident)
 
 
 def _tab_cykel(st, data, ident, strategy, sheets, cands) -> None:
@@ -420,13 +428,6 @@ def _tab_backtest(st, data, ident, strategy, sheets, cands) -> None:
 
 
 def _tab_regler(st, data, ident, strategy, sheets, cands) -> None:
-    from ui.components import note
-    s = reg.get(strategy)
-    if s and s.playbook:
-        try:
-            from ovtlyr.ui.rules_page import render_inline_rules
-            render_inline_rules(s.playbook)
-            return
-        except Exception as exc:                                 # pragma: no cover
-            note(f"Reglerna kunde inte ritas: {exc}")
-    note(f"{reg.label(strategy)} har ingen playbook i strategy_rules än — den skrivs i fas 7.")
+    """Hela playbooken för strategin — regler och walkthrough, sist på sidan."""
+    from thor import regim
+    regim.render_rules(st, strategy)
