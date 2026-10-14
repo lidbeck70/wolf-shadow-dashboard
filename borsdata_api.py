@@ -256,6 +256,24 @@ def _report_aliases(row):
     return out
 
 
+# KPI-screenerns rätta calcGroup/calc för KPI:er som svarar 400 på last/latest (borsdata_probe
+# PROBE_SECTION=kpicalc, 2026-10-14). 94/97 1year/cagr = årshistorikens senaste värde; 163 last/rank är
+# en RANGPLATS (1 = bäst bland ~12 000 bolag), 192 last/rank en percentil 0–100 (100 = bäst).
+KPI_SCREENER_CALC: dict = {94: ("1year", "cagr"), 97: ("1year", "cagr"), 163: ("last", "rank"),
+                           167: ("last", "point"), 192: ("last", "rank")}
+# Ingen calcGroup/calc ger värden i licensen (probe 2026-10-14): 174 Vinststabilitet, 179 "Fritt Kassaflöde"
+# (stabilitetsgruppen — inte FCF-stabilitet som KPI["fcf_stab"] antar).
+KPI_SCREENER_UNAVAILABLE: frozenset = frozenset({174, 179})
+
+
+def screener_calc(kpi_id: int, calc_group: str = "last", calc: str = "latest") -> tuple:
+    """(calcGroup, calc) som KPI-screenern faktiskt svarar på. Bara standardvalet last/latest byts —
+    den som uttryckligen ber om en annan kombination får den."""
+    if (calc_group, calc) == ("last", "latest"):
+        return KPI_SCREENER_CALC.get(int(kpi_id), (calc_group, calc))
+    return calc_group, calc
+
+
 class BorsdataAPI:
     """
     Börsdata REST-API v1 client.
@@ -408,7 +426,9 @@ class BorsdataAPI:
 
     def get_kpi_screener_global(self, kpi_id: int, calc_group: str = "last",
                                 calc: str = "latest") -> List[dict]:
-        """KPI-screenern för globala instrument. Tom lista utan global licens."""
+        """KPI-screenern för globala instrument. Tom lista utan global licens. last/latest byts som i
+        get_kpi_screener (screener_calc)."""
+        calc_group, calc = screener_calc(kpi_id, calc_group, calc)
         try:
             data = self._get(f"/instruments/global/kpis/{kpi_id}/{calc_group}/{calc}")
         except Exception as e:
@@ -663,7 +683,9 @@ class BorsdataAPI:
         calc       : "latest", "mean", "low", "high", "sum", "count", "return"
 
         Returns list of {i: instrument_id, n: numeric_value, s: string_value}
+        Standardvalet last/latest byts mot den kombination KPI:n faktiskt har (screener_calc).
         """
+        calc_group, calc = screener_calc(kpi_id, calc_group, calc)
         data = self._get(f"/instruments/kpis/{kpi_id}/{calc_group}/{calc}")
         return data.get("values", [])
 
@@ -1028,8 +1050,9 @@ class BorsdataAPI:
 
         for key, (kpi_id, divisor) in kpi_fetch.items():
             KPI_BATCH_ATTEMPTED.add(kpi_id)
-            _screener_path = (f"/instruments/global/kpis/{kpi_id}/last/latest" if _global
-                              else f"/instruments/kpis/{kpi_id}/last/latest")
+            _g, _c = screener_calc(kpi_id)
+            _screener_path = (f"/instruments/global/kpis/{kpi_id}/{_g}/{_c}" if _global
+                              else f"/instruments/kpis/{kpi_id}/{_g}/{_c}")
             try:
                 if _global:
                     all_vals = self.get_kpi_screener_global(kpi_id, "last", "latest")

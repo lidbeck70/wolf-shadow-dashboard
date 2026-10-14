@@ -703,6 +703,21 @@ def _extract_borsdata_fundamentals(ticker: str) -> dict:
         except Exception as exc:
             logger.debug("Börsdata KPI %s for %s: %s", out_key, ticker, exc)
 
+    # F-score, Magic Formula och RS-rank har ingen historik i licensen (400) — dagens värde ur
+    # KPI-screenern (rätt calcGroup/calc väljs i borsdata_api.screener_calc; cachad en timme).
+    for out_key in ("f_score", "magic_formula", "rs_rank"):
+        if data.get(out_key) is not None:
+            continue
+        try:
+            vals = api.get_kpi_screener(KPI[out_key])
+            if out_key == "magic_formula":
+                vals = _magic_percentile(vals)
+            hit = next((v.get("n") for v in vals if v.get("i") == ins_id), None)
+            if hit is not None:
+                data[out_key] = hit
+        except Exception as exc:
+            logger.debug("Börsdata screener %s for %s: %s", out_key, ticker, exc)
+
     # ── Absolute values from reports ─────────────────────────────────────
     try:
         reports = api.get_reports(ins_id, "r12", max_count=2)
@@ -1003,6 +1018,16 @@ def fetch_fundamentals_batch(
 _SCORING_VERSION = "v2_20pt"
 
 
+def _magic_percentile(values: list) -> list:
+    """Börsdatas Magic Formula (last/rank) är en RANGPLATS bland alla bolag (1 = bäst, ~12 000 st).
+    Screenern jämför mot "<= 30 (top 30%)" — gör om till percentil 1–100 (lägre = bättre)."""
+    ranked = [v for v in values or [] if v.get("n") is not None]
+    n = len(ranked)
+    if not n:
+        return []
+    return [{**v, "n": max(1.0, round(float(v["n"]) / n * 100, 1))} for v in ranked]
+
+
 @_cache(ttl=3600)
 def fetch_fundamentals_batch_fast(
     tickers: tuple,
@@ -1077,11 +1102,17 @@ def fetch_fundamentals_batch_fast(
         "f_score":            (KPI["f_score"], 1),
         "magic_formula":      (KPI["magic_formula"], 1),
         "rs_rank":            (KPI["rs_rank"], 1),
+        # Kriterium 4 (omsättningens CAGR 5 år) saknades i batchen — screenern har den som 5year/cagr
+        "revenue_cagr_5y":    (KPI["revenue_growth"], 0.01, ("5year", "cagr")),
     }
 
-    for out_key, (kpi_id, divisor) in kpi_mapping.items():
+    for out_key, (kpi_id, divisor, *calc) in kpi_mapping.items():
         try:
-            all_vals = api.get_kpi_screener(kpi_id, "last", "latest")
+            # last/latest byts mot KPI:ns rätta kombination i borsdata_api (screener_calc) —
+            # tillväxt, F-score, Magic Formula och RS-rank svarade 400 på last/latest.
+            all_vals = api.get_kpi_screener(kpi_id, *(calc[0] if calc else ("last", "latest")))
+            if out_key == "magic_formula":
+                all_vals = _magic_percentile(all_vals)
             for entry in all_vals:
                 iid = entry.get("i")
                 if iid in id_set:
