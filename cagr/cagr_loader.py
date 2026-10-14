@@ -699,9 +699,25 @@ def _extract_borsdata_fundamentals(ticker: str) -> dict:
             if hist:
                 val = hist[-1].get("v")
                 if val is not None:
-                    data[out_key] = val * divisor if divisor != 1 else val
+                    val = val * divisor if divisor != 1 else val
+                    data[out_key] = _cap_growth(val) if out_key in GROWTH_FIELDS else val
         except Exception as exc:
             logger.debug("Börsdata KPI %s for %s: %s", out_key, ticker, exc)
+
+    # F-score, Magic Formula och RS-rank har ingen historik i licensen (400) — dagens värde ur
+    # KPI-screenern (rätt calcGroup/calc väljs i borsdata_api.screener_calc; cachad en timme).
+    for out_key in ("f_score", "magic_formula", "rs_rank"):
+        if data.get(out_key) is not None:
+            continue
+        try:
+            vals = api.get_kpi_screener(KPI[out_key])
+            if out_key == "magic_formula":
+                vals = _magic_percentile(vals)
+            hit = next((v.get("n") for v in vals if v.get("i") == ins_id), None)
+            if hit is not None:
+                data[out_key] = hit
+        except Exception as exc:
+            logger.debug("Börsdata screener %s for %s: %s", out_key, ticker, exc)
 
     # ── Absolute values from reports ─────────────────────────────────────
     try:
@@ -737,7 +753,7 @@ def _extract_borsdata_fundamentals(ticker: str) -> dict:
     # ── Growth history (CAGR) ────────────────────────────────────────────
     try:
         growth = api.get_growth_history(ins_id, years=10)
-        data["revenue_cagr_5y"] = growth.get("revenue_cagr_5y")
+        data["revenue_cagr_5y"] = _cap_growth(growth.get("revenue_cagr_5y"))
         data["revenue_cagr_10y"] = growth.get("revenue_cagr_10y")
         data["earnings_cagr_5y"] = growth.get("earnings_cagr_5y")
         data["earnings_cagr_10y"] = growth.get("earnings_cagr_10y")
@@ -1003,6 +1019,29 @@ def fetch_fundamentals_batch(
 _SCORING_VERSION = "v2_20pt"
 
 
+GROWTH_CAP = 5.0                   # ±500 %
+GROWTH_FIELDS = ("revenue_growth", "earnings_growth", "revenue_cagr_5y")
+
+
+def _cap_growth(x: Optional[float]) -> Optional[float]:
+    """Tillväxt som decimal, begränsad till ±GROWTH_CAP. cagr_fundamentals._normalize_pct gissar enheten och
+    delar allt över 5 med 100 en gång till — +1 024 % (INVE B, vinsttillväxt 14/10) blev 10 %. Vid ±500 %
+    ger varje kriterium samma utfall som det sanna värdet (gränserna är 10–20 %, PEG < 1,5)."""
+    if x is None:
+        return None
+    return max(-GROWTH_CAP, min(GROWTH_CAP, float(x)))
+
+
+def _magic_percentile(values: list) -> list:
+    """Börsdatas Magic Formula (last/rank) är en RANGPLATS bland alla bolag (1 = bäst, ~12 000 st).
+    Screenern jämför mot "<= 30 (top 30%)" — gör om till percentil 1–100 (lägre = bättre)."""
+    ranked = [v for v in values or [] if v.get("n") is not None]
+    n = len(ranked)
+    if not n:
+        return []
+    return [{**v, "n": max(1.0, round(float(v["n"]) / n * 100, 1))} for v in ranked]
+
+
 @_cache(ttl=3600)
 def fetch_fundamentals_batch_fast(
     tickers: tuple,
@@ -1077,18 +1116,25 @@ def fetch_fundamentals_batch_fast(
         "f_score":            (KPI["f_score"], 1),
         "magic_formula":      (KPI["magic_formula"], 1),
         "rs_rank":            (KPI["rs_rank"], 1),
+        # Kriterium 4 (omsättningens CAGR 5 år) saknades i batchen — screenern har den som 5year/cagr
+        "revenue_cagr_5y":    (KPI["revenue_growth"], 0.01, ("5year", "cagr")),
     }
 
-    for out_key, (kpi_id, divisor) in kpi_mapping.items():
+    for out_key, (kpi_id, divisor, *calc) in kpi_mapping.items():
         try:
-            all_vals = api.get_kpi_screener(kpi_id, "last", "latest")
+            # last/latest byts mot KPI:ns rätta kombination i borsdata_api (screener_calc) —
+            # tillväxt, F-score, Magic Formula och RS-rank svarade 400 på last/latest.
+            all_vals = api.get_kpi_screener(kpi_id, *(calc[0] if calc else ("last", "latest")))
+            if out_key == "magic_formula":
+                all_vals = _magic_percentile(all_vals)
             for entry in all_vals:
                 iid = entry.get("i")
                 if iid in id_set:
                     val = entry.get("n")
                     if val is not None:
                         ticker = ins_to_ticker[iid]
-                        results[ticker][out_key] = val * divisor if divisor != 1 else val
+                        val = val * divisor if divisor != 1 else val
+                        results[ticker][out_key] = _cap_growth(val) if out_key in GROWTH_FIELDS else val
         except Exception as exc:
             logger.warning("Batch KPI %s failed: %s", out_key, exc)
 
