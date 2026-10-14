@@ -15,7 +15,8 @@ den kopplas in när hela Valhall är klart.
      fem hävstångsköp per råvara (Durrett för guld/silver med 15-BAGGER-regeln, Tiggre för övriga).
      Källor: Quality Contrarian-körningarna och håvarna (Gisten) och dina ark på panel-data.
   5. Long Screener (valhall.long_screener): screenerns egen poäng på de likvida nordiska aktierna med
-     Valhalls cykel (sektorindex + hemmamarknadens index) — två bästa STRONG BUY/BUY per segment.
+     Valhalls cykel "gron" (köp bara i GRÖN sektor, sälj när hemmamarknaden är RÖD) — två bästa
+     STRONG BUY/BUY per segment; parallellt utan cykel för papperskontot.
   6. Papperskonton (valhall.paper): ett per strategi — varje affär märkt med segment och cykelläge —
      sparade i valhall_paper.json; sammanställningen per strategi/segment/status i valhall_board.json.
 
@@ -110,7 +111,8 @@ def _long_screen(board, universe, keep, getter, fundamentals=None, api=None) -> 
     except Exception as exc:
         log.warning("Long Screener: Börsdata-uppslaget gick inte (%s) — skannar alla likvida", exc)
     out = ls.scan(board, universe, keep, tickers, fundamentals, index_close)
-    log.info("Long Screener: %d aktier · %d köp · marknader %s", out["scanned"], out["buys"], out["markets"])
+    log.info("Long Screener: %d aktier · %d köp (utan cykel %d) · marknader %s", out["scanned"], out["buys"],
+             out["buys_ingen"], out["markets"])
     return out
 
 
@@ -139,7 +141,8 @@ def _paper(load, state, berserk_state, board, sw, buys, universe, insider_blob, 
 
     state, events = vpa.step(state, sigs, board, ohlcv, market=market, today=today, wolf=wolf,
                              berserk_state=berserk_state, universe=universe,
-                             long_signals=(long_scan or {}).get("signals") if long_scan else None)
+                             long_signals=(long_scan or {}).get("signals") if long_scan else None,
+                             long_ingen_signals=(long_scan or {}).get("signals_ingen") if long_scan else None)
     log.info("Papper: %d signaler · %d händelser · Wolf-listan %s", len(sigs), len(events),
              "saknas/gammal" if wolf is None else f"{len(wolf)} aktier")
     return state, events
@@ -193,7 +196,7 @@ def run(api=None, data_getter=None, getter=None, load=None, save=None, today=Non
                "nordic": {k: {kk: v.get(kk) for kk in ("members", "with_data", "liquid")} for k, v in indices.items()}}
     try:
         long_scan = _long_screen(board, universe, keep, getter, long_fundamentals, api)
-        payload["long"] = {k: long_scan[k] for k in ("segments", "markets", "scanned", "buys")}
+        payload["long"] = {k: long_scan[k] for k in ("segments", "markets", "scanned", "buys", "buys_ingen")}
     except Exception as exc:                                      # kartan sparas även om screenern fallerar
         log.exception("Long Screener fallerade: %s", exc)
         long_scan, payload["long"] = None, None
