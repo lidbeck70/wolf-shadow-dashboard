@@ -23,8 +23,9 @@ Långsiktiga positioner får dessutom en SKUGGEXIT: första dagen segmentets (te
 priset — resultaten visar både "behåll" och "sälj på RÖD" (CLAUDE.md: minska vid röd regim — prövas här).
 Avkastningen jämförs med segmentets riktmärke (nordiska sektorindexet, SPDR-fonden eller temats drivare).
 
-Köp fylls på nästa öppning efter signaldagen. Ett bolag ägs en gång per konto (aktieslag slås ihop), och
-Quality-order prövas mot grinden ej RÖD även vid fyllningen. Valutor ignoreras (avkastning i lokal valuta). Riktiga
+Köp fylls på nästa öppning efter signaldagen. Ett bolag ägs en gång per konto (aktieslag slås ihop, även i
+karantänen efter en stängning), och Quality-order prövas mot grinden ej RÖD med signaldagens läge även vid
+fyllningen (order från före grinden). Valutor ignoreras (avkastning i lokal valuta). Riktiga
 order läggs alltid manuellt.
 """
 
@@ -228,8 +229,11 @@ def step(state: Optional[dict], sigs: list, board: dict, ohlcv: Callable, market
     keep = []
     held = {_company(p) for p in state["positions"]}
     for o in state["orders"]:
-        if o["strategy"] == "quality" and cycle_tag(board, o["segment"])["n_status"] == cycle.ROD:
-            ev(SPARRAD, o, "ordern struken: grinden ej RÖD — sektorn är RÖD vid fyllningen")
+        # Grinden ej RÖD med läget PÅ SIGNALDAGEN (ordern bär det) — dagens karta bygger på dagens
+        # stängning, efter öppningen där ordern fylls, och skulle titta framåt. Fångar order som lades
+        # innan grinden fanns (14/10: HEXA-B, NFGAB, BIOMAR var RÖDA redan på signaldagen).
+        if o["strategy"] == "quality" and (o.get("cycle") or {}).get("n_status") == cycle.ROD:
+            ev(SPARRAD, o, "ordern struken: grinden ej RÖD — sektorn var RÖD på signaldagen")
             continue
         if _company(o) in held:
             ev(UTGANGEN, o, "ordern struken: samma bolag finns redan i kontot (annat aktieslag)")
@@ -269,10 +273,10 @@ def step(state: Optional[dict], sigs: list, board: dict, ohlcv: Callable, market
     busy = {(x["strategy"], x["ticker"]) for x in state["positions"] + state["orders"]}
     busy_co = {_company(x) for x in state["positions"] + state["orders"]}
     cool = pd.Timestamp(today) - pd.Timedelta(days=COOLDOWN_DAYS)
-    recent = {(c["strategy"], c["ticker"]) for c in state["closed"] if pd.Timestamp(c["exit_date"]) >= cool}
+    recent = {_company(c) for c in state["closed"] if pd.Timestamp(c["exit_date"]) >= cool}
     for s in sigs:
         k = (s["strategy"], s["ticker"])
-        if k in busy or k in recent or _company(s) in busy_co:
+        if k in busy or _company(s) in busy_co or _company(s) in recent:     # karantänen gäller bolaget
             continue
         o = {**s, "signal_date": today, "cycle": cycle_tag(board, s["segment"], s.get("theme"))}
         state["orders"].append(o)

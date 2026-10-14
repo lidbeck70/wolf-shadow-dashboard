@@ -239,21 +239,26 @@ def test_results_group_and_excess():
     assert vpa.summary_lines(res)[1].strip().startswith("Quality Contrarian")
 
 
-def test_quality_order_is_struck_when_gate_closes_before_fill():
+def test_quality_order_gate_uses_signal_day_status_at_fill():
     data = {"HEXA-B.ST": _df(o=np.arange(100, 140, 1.0)), "ORNAV.HE": _df(o=np.arange(100, 140, 1.0))}
-    sigs = [_sig("quality", "HEXA-B.ST"), _sig("quality", "ORNAV.HE", segment="healthcare"),
-            _sig("wolf", "HEXA-B.ST")]
-    st, _ = vpa.step(None, sigs, _board(), lambda t: data[t].loc[:D[1]], today=D[1])
-    red_ind = _board()
-    for r in red_ind["segments"]:
+    red = _board()
+    for r in red["segments"]:
         if r["key"] == "industrials":
             r["nordic"]["status"] = cycle.ROD
-    st, ev = vpa.step(st, [], red_ind, lambda t: data[t].loc[:D[2]], today=D[2], wolf={"HEXA-B.ST": {}})
-    kinds = {(e["strategy"], e["ticker"]): e["kind"] for e in ev}
-    assert kinds[("quality", "HEXA-B.ST")] == vpa.SPARRAD and "grinden ej RÖD" in next(
-        e["text"] for e in ev if e["strategy"] == "quality" and e["ticker"] == "HEXA-B.ST")
-    assert kinds[("quality", "ORNAV.HE")] == vpa.KOPT                                    # healthcare inte RÖD
-    assert kinds[("wolf", "HEXA-B.ST")] == vpa.KOPT                                      # grinden gäller bara Quality
+    # en order från före grinden: lagd när Industri redan var RÖD (som HEXA-B 14/10)
+    st = vpa.new_state(D[0])
+    st["orders"] = [{**_sig("quality", "HEXA-B.ST"), "signal_date": D[1], "cycle": vpa.cycle_tag(red, "industrials")},
+                    {**_sig("wolf", "HEXA-B.ST"), "signal_date": D[1], "cycle": vpa.cycle_tag(red, "industrials")}]
+    # och en lagd på en GRÖN dag — sektorn blir RÖD på fyllningsdagens stängning (får inte titta framåt)
+    st, ev1 = vpa.step(st, [_sig("quality", "ORNAV.HE", segment="industrials")], _board(),
+                       lambda t: data[t].loc[:D[1]], today=D[1])
+    st, ev2 = vpa.step(st, [], red, lambda t: data[t].loc[:D[2]], today=D[2])
+    evs = {(e["strategy"], e["ticker"], e["kind"]): e for e in ev1 + ev2}
+    hexa = evs[("quality", "HEXA-B.ST", vpa.SPARRAD)]
+    assert hexa in ev1 and "signaldagen" in hexa["text"]                                 # struken direkt
+    assert ("quality", "ORNAV.HE", vpa.KOPT) in evs                                      # ingen framåtblick …
+    assert ("quality", "ORNAV.HE", vpa.ROD) in evs                                       # … men skuggexit noteras
+    assert ("wolf", "HEXA-B.ST", vpa.KOPT) in evs                                        # grinden gäller bara Quality
     assert {(p["strategy"], p["ticker"]) for p in st["positions"]} == {("quality", "ORNAV.HE"), ("wolf", "HEXA-B.ST")}
 
 
@@ -275,3 +280,8 @@ def test_one_company_per_account_across_share_classes():
     st, ev = vpa.step(st, [b, ia, ib, other], _board(), lambda t: data[t].loc[:D[3]], today=D[3])
     orders = {(o["strategy"], o["ticker"]) for o in st["orders"]}
     assert orders == {("long", "INVE-A.ST"), ("long_ingen", "HLUN-B.CO")}
+    # karantänen gäller bolaget: stängd HLUN-A → inget återköp via HLUN-B i två veckor
+    st["positions"] = [p for p in st["positions"] if p["ticker"] != "HLUN-A.CO"]
+    st["closed"].append({**a, "exit_date": D[3], "exit": 100.0})
+    st, _ = vpa.step(st, [b], _board(), lambda t: data[t].loc[:D[4]], today=D[4])
+    assert ("long", "HLUN-B.CO") not in {(o["strategy"], o["ticker"]) for o in st["orders"]}
