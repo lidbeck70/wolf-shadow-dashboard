@@ -179,3 +179,13 @@ def test_fas4c_runner(monkeypatch):
 def test_longscreener_workflow():
     src = open(os.path.join(ROOT, ".github", "workflows", "valhall-longscreener.yml"), encoding="utf-8").read()
     assert "workflow_dispatch" in src and "python valhall_fas4c.py" in src and "BORSDATA_API_KEY" in src
+
+
+def test_green_only_variants():
+    g = lambda s, m: lb.cycle_for("gron", "technology", s, m)                          # noqa: E731
+    assert g(cycle.GRON, cycle.GRON) == 3 and g(cycle.GRON, cycle.GUL) == 2
+    assert g(cycle.GUL, cycle.GRON) == 1 and g(cycle.ROD, cycle.GRON) == 1           # GUL köper inte (valhall: 2)
+    assert g(cycle.GRON, cycle.ROD) == 0 and lb.cycle_for("valhall", "technology", cycle.GUL, cycle.GRON) == 2
+    n = lambda s, m: lb.cycle_for("gron_utan_marknad", "technology", s, m)             # noqa: E731
+    assert n(cycle.GRON, cycle.ROD) == 3 and n(cycle.GUL, cycle.GRON) == 1 and n(cycle.ROD, cycle.ROD) == 1
+    assert set(lb.VARIANTS) >= {"gron", "gron_utan_marknad"}

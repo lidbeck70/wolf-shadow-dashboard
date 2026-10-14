@@ -46,7 +46,7 @@ def _fmt_port(rows: list) -> list:
     lines = ["== LONG SCREENER — PORTFÖLJEN (10 innehav, STRONG BUY 10 % / BUY 7 %, 25 % per sektor, sälj på SELL)"]
     for r in rows:
         if r.get("months"):
-            lines.append(f"  {r['variant']:8s} {r['period']:10s} mån={r['months']:3d} CAGR={r['cagr']:+5.1f} % "
+            lines.append(f"  {r['variant']:17s} {r['period']:10s} mån={r['months']:3d} CAGR={r['cagr']:+5.1f} % "
                          f"DD={r['dd']:+6.1f} % snitt {r['avg_n']:4.1f} innehav · köp {r['buys']:4d} · "
                          f"Norden {r['bench_cagr']} %")
     return lines
