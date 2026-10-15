@@ -855,6 +855,347 @@ EMBER_PB = Playbook(
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+#  8. VIKING NINE  (OVTLYR Nine + Viking Execution + exitmotorn — panelens egen)
+# ═════════════════════════════════════════════════════════════════════════════
+# Talen hämtas ur motorerna (viking_execution, ovtlyr_nine) så att playbooken
+# inte kan glida från det som faktiskt handlas — tests/test_strategy_rules_fas7.py
+# låser dem. Reservvärdena är dagens tal.
+try:  # pragma: no cover - trivial import guard
+    from viking_execution import (
+        MAX_RISK_PCT as _VN_RISK, ATR_STOP_MULT as _VN_ATR, RELATIVE_VOLUME_MIN as _VN_RVOL,
+        MAX_CHASE_PCT as _VN_CHASE, MINIMUM_RR as _VN_RR, EARNINGS_BUFFER_DAYS as _VN_EARN,
+        MAX_DAILY_LOSSES as _VN_LOSSES, MAX_POSITION_PCT as _VN_POS, NINE_DEVELOPING as _VN_DEV,
+    )
+    from ovtlyr_nine import BREADTH_LOW as _VN_BR_LO, BREADTH_HIGH as _VN_BR_HI, FG_MAX as _VN_FG, STALE_BDAYS as _VN_STALE
+except Exception:  # pragma: no cover
+    _VN_RISK, _VN_ATR, _VN_RVOL, _VN_CHASE, _VN_RR = 1.5, 1.5, 1.20, 2.0, 2.0
+    _VN_EARN, _VN_LOSSES, _VN_POS, _VN_DEV = 5, 2, 25.0, 7
+    _VN_BR_LO, _VN_BR_HI, _VN_FG, _VN_STALE = 25.0, 75.0, 90.0, 3
+
+
+def _sv(x: float) -> str:
+    """1.5 → '1,5' — svenskt decimaltecken i regeltext."""
+    return f"{x:g}".replace(".", ",")
+
+
+_VNR = "REGIME → Marknad → Arc Regime → ⚔️ Viking Nine Regime"
+_VNS = "SCREENING → Arc Screener → ⚔️ Viking Nine"
+
+VIKING_NINE = Playbook(
+    key="viking_nine",
+    name="⚔️ Viking Nine",
+    tagline="OVTLYR Nine 9/9 avgör om setupen finns — Viking Execution avgör om entryn finns",
+    color=PURPLE,
+    level=LEVEL_ADVANCED,
+    horizon="Swing — dagar till veckor",
+    universe="Nordiska aktier (Börsdata) mot OMXS30 och svensk Large Cap-bredd · amerikanska mot SPY och SPDR-bredden",
+    where=f"{_VNS}  ·  {_VNR}  ·  Thor (Regim, Backtest)  ·  VALHALL (Kartan, Papperskonton)",
+    idea=(
+        "Panelens egen version av OVTLYR Golden Ticket, räknad på riktiga priser (WOLF APPROXIMATION — aldrig "
+        "OVTLYR:s egen data). Nio faktorer i tre lager måste alla vara gröna: marknaden (trend, signal, bredd), "
+        "sektorn (Fear & Greed, bredd) och aktien (trend, signal, Fear & Greed, order blocks). Nio av nio är en "
+        "setup, inte en affär — Viking Execution kräver dessutom momentum, trendstruktur, en stängd grön "
+        "triggercandle med volym, att du inte jagar, R/R minst 2 och ingen rapport i närheten. Riskmotorn sätter "
+        "storleken. Exitmotorn sköter resten: marknaden under EMA20 stänger allt. Saknad eller gammal data "
+        "räknas aldrig som grönt."
+    ),
+    risk=RiskModel(
+        risk_per_trade=f"{_sv(_VN_RISK)} % av kapitalet (strategies/viking.py: risk_pct = 0.015 — samma tal i Viking Execution)",
+        position_size=f"Risk ÷ stoppavstånd ({_sv(_VN_ATR)} × ATR14), men högst {_sv(_VN_POS)} % av kapitalet i en position",
+        max_positions=f"Portföljens tak (allokeraren: swing-delen, 6 % av totalen per position) · max {_VN_LOSSES} "
+                      f"förlustaffärer per dag, sedan ingen ny entry",
+        stop=f"{_sv(_VN_ATR)} × ATR14 från entry · breakeven efter ny högre topp · EMA10 som trail först när stoppen "
+             f"ligger på breakeven",
+        targets="Inget fast mål — exitmotorn: F&G-target (entry-F&G 0–50 → 63 · 50–75 → +10 · 75+ → +5), trail och marknadsexit",
+    ),
+    entry=_rules([
+        ("Marknadslagret 3/3 — trend, signal och bredd på SPY (OMXS30 för nordiska aktier)",
+         "Trend = EMA10 över EMA20 och kurs över EMA50. Signal = kurs över EMA20 (under = OVTLYR:s säljsignal för "
+         "marknaden, då tas inga affärer). Bredd = andelen av de elva SPDR-sektorfonderna över EMA50 (Norden: svensk "
+         f"Large Cap) enligt OVTLYR:s regler — bredden över sitt EMA10, under {_VN_BR_LO:.0f} bara efter en "
+         f"uppvändning, över {_VN_BR_HI:.0f} och nedvänd = inga nya affärer.",
+         f"{_VNR}: marknadsbannern MARKET SPY n/3 (OMXS30 för nordiska) överst — tre bockar krävs.", True),
+        ("Sektorlagret 2/2 — sektor-ETF:ens Fear & Greed stigande och ETF:en över stigande EMA20",
+         f"Sektorn hämtas ur Börsdata och mappas till en av de elva SPDR-fonderna. Syntetiskt F&G under {_VN_FG:.0f} "
+         "och högre än för fem dagar sedan; ETF:en över EMA20 med EMA20 stigande.",
+         f"{_VNR}: OVTLYR Nine-kortet, raden SECTOR med sektor-ETF:en utskriven."),
+        ("Aktielagret 4/4 — trend, signal, Fear & Greed och inga restriktiva order blocks",
+         "Samma trend- och signalregler på aktien, aktiens syntetiska F&G stigande, och inget bearish order block "
+         "som blockerar vägen uppåt (ovtlyr.indicators.orderblocks).",
+         f"{_VNR}: OVTLYR Nine-kortet, raden STOCK, och grafen med order blocks."),
+        (f"Nine 9/9 är setupen — {_VN_DEV}–8/9 är DEVELOPING och ger WAIT, 6/9 eller lägre ger NO TRADE",
+         f"Setup är inte entry. Saknad data och data äldre än {_VN_STALE} handelsdagar räknas aldrig som PASS — "
+         "en faktor utan data gör att nio av nio inte går att nå.",
+         f"{_VNS}: kategorin GOLDEN TICKET / READY / DEVELOPING / REJECTED per rad, och Nine n/9.", True),
+        ("Viking Execution — momentum och trendstruktur",
+         "RSI14 över 50 och stigande, kursen över gårdagens low, och kurs över EMA10 över EMA20 över EMA50.",
+         f"{_VNR}: VIKING EXECUTION-kortet, raderna Momentum och Trend."),
+        (f"Stängd grön triggercandle med relativ volym ≥ {_VN_RVOL:.2f}×",
+         "Candlen måste ha stängt (Stockholm 17:30, Oslo 16:20, Köpenhamn 17:00, Helsingfors 18:30, New York 16:00) "
+         "och vara grön — stängning över öppning och minst föregående stängning. Volymen den dagen minst "
+         f"{_VN_RVOL:.2f} × snittet; kravet är backtestat i båda marknaderna.",
+         f"{_VNR}: raderna Entry candle och Volym — WAIT FOR CLOSE tills candlen är stängd.", True),
+        (f"Jaga inte — högst {_sv(_VN_CHASE)} % över triggerns stängning, och R/R ≥ {_VN_RR:g} till närmaste motstånd",
+         "Motståndet är närmaste bearish order block, annars swing-högsta inom ett år. Under 2 i R/R = INSUFFICIENT "
+         "R/R, över 2 % ovanför = NO CHASE — båda ger WAIT.",
+         f"{_VNR}: raderna No chase och R/R, med nivåerna utskrivna."),
+        (f"Ingen rapport inom {_VN_EARN} handelsdagar — okänt rapportdatum ger WAIT",
+         "Saknad data är aldrig grönt: finns inget rapportdatum stannar beslutet på WAIT tills du kontrollerat det.",
+         f"{_VNR}: raden Earnings. Rapportdatum ur Börsdata.", True),
+        (f"Riskmotorn — {_sv(_VN_RISK)} % risk, stopp {_sv(_VN_ATR)} × ATR14, högst {_sv(_VN_POS)} % av kapitalet, "
+         f"max {_VN_LOSSES} förlustaffärer per dag",
+         f"Aktier = riskbudget ÷ stoppavstånd, men positionen får aldrig överstiga {_sv(_VN_POS)} % av kapitalet. "
+         f"Efter {_VN_LOSSES} förlustaffärer samma dag tas ingen ny entry (journalen räknar).",
+         f"{_VNR}: RISK ENGINE-kortet med kapital, riskbudget, stopp, antal aktier och exponering.", True),
+        ("Marknadsrisken (🌩️) spärrar — OMXS30 från FÖRHÖJD, SPY vid HÖG",
+         "Samma spärr i skannern, regimsidan och papperskontot (market_risk_gate). Backtestets snabbläge i Thor "
+         "kör utan spärren och säger det.",
+         "REGIME → Marknad → 🌩️ Marknadsrisk: nivån per marknad; bannern på Viking Nine Regime."),
+    ]),
+    exit=_rules([
+        ("Marknaden under EMA20 (SPY, OMXS30 för nordiska) — stäng allt",
+         "Hård exit, inga undantag. Samma regel som entryns signalfaktor, fast omvänd.",
+         f"{_VNR}: exitmotorn, raden HARD MARKET EXIT — CLOSE ALL.", True),
+        (f"Initial stopp {_sv(_VN_ATR)} × ATR14 från entry",
+         "ATR på entrydagen. Stoppen ligger intradag: low under stoppen = ut på stoppen, gap under = öppningen.",
+         f"{_VNR}: exitmotorn, raden INITIAL STOP.", True),
+        ("Breakeven efter ny högre topp — sedan är stängning under gårdagens low en exit",
+         "Ny högre topp = high över högsta high de tio dagarna före entry. Då flyttas stoppen till entry.",
+         f"{_VNR}: exitmotorn, raden BE EXIT och fältet breakeven armed."),
+        ("EMA10 som trailing stop — först när stoppen ligger på breakeven",
+         "Backtestet: +0,21 R per affär mot +0,04 R med EMA10 från dag ett, som sålde affärer innan de hunnit gå.",
+         f"{_VNR}: exitmotorn, raden TRAILING STOP med EMA10-nivån."),
+        ("Bearish order block — kursen går in i ett restriktivt block",
+         "Blocket som entryn räknade R/R mot är nu nått: motståndet håller.",
+         f"{_VNR}: exitmotorn, raden BEARISH BLOCK, och grafen."),
+        ("Gap & crap — gap upp över gårdagens high som stänger under gårdagens stängning",
+         "Falsk styrka. Exit på nästa öppning.",
+         f"{_VNR}: exitmotorn, raden GAP & CRAP."),
+        ("Sektorn bearish och marknadsbredden faller — ut ur sektorn",
+         "Samma två faktorer som i OVTLYR Nine, fast som exit: sektor-ETF:en under EMA20 och bredden under sitt EMA10.",
+         f"{_VNR}: exitmotorn, raden SECTOR/BREADTH."),
+        ("Aktiens signal SELL — stängning under EMA20",
+         "Signalfaktorn på aktien bryts. Exit på nästa öppning.",
+         f"{_VNR}: exitmotorn, raden STOCK SIGNAL."),
+        ("F&G-target — entry-F&G 0–50 → exit vid 63 · 50–75 → +10 · 75+ → +5",
+         "Målet sätts av var sentimentet stod när du köpte, inte av en kursnivå.",
+         f"{_VNR}: exitmotorn, raden F&G EXIT med entry-F&G och target."),
+        (f"Rapport inom {_VN_EARN} handelsdagar — EXIT eller REDUCE BEFORE EARNINGS",
+         "Samma fönster som entryspärren. Ingen position över rapport.",
+         f"{_VNR}: exitmotorn, raden EARNINGS.", True),
+    ]),
+    mindset=_rules([
+        ("Nio av nio eller ingenting — 'nästan' finns inte",
+         "Strategins kant är att alla lager pekar åt samma håll. Åtta av nio är en annan strategi.",
+         f"{_VNS}: DEVELOPING-raderna är bevakning, inte köp."),
+        ("Saknad data är aldrig grönt",
+         "DATA UNAVAILABLE och STALE DATA är FAIL i praktiken. Då väntar du eller letar data — du gissar inte.",
+         f"{_VNR}: statusen per faktor i Nine-kortet."),
+        ("Exitmotorn äger utgången",
+         "Inga egna vinstmål. Marknadsexiten, stoppen, breakeven, trailen och F&G-target bestämmer.",
+         f"{_VNR}: exitmotorn för en öppen position — fyll i entry och datum."),
+    ]),
+    workflow=(
+        f"{_VNS}: kör skanningen (två steg: trend + signal på hela universumet, sedan full Nine på de bästa). "
+        "Läs kategorin — GOLDEN TICKET och READY är kandidater.",
+        f"{_VNR}: öppna aktien. Marknadsbannern n/3, Nine-kortet lager för lager, VIKING EXECUTION-kortet.",
+        "GOLDEN TICKET = alla krav klara. WAIT = setupen finns men entryn är inte klar — vänta på stängd candle, "
+        "volym, rätt pris eller rapportdatum. NO TRADE = Nine ≤ 6/9, marknadens signal SELL, rapport nära eller "
+        "dagsgränsen nådd.",
+        f"Riskmotorn ger antal aktier: {_sv(_VN_RISK)} % risk, {_sv(_VN_ATR)} × ATR14, högst {_sv(_VN_POS)} % av kapitalet.",
+        "Lägg stoppen hos mäklaren direkt och logga affären i PORTFOLIO → 📓 Trade Journal.",
+        f"Varje dag: exitmotorn på {_VNR} — marknaden under EMA20 stänger allt, oavsett aktie.",
+        "Thor: samma motor i fliken Regim, backtestet i fliken Backtest (signal på stängning, entry nästa öppning, "
+        "stopp intradag).",
+    ),
+    cheatsheet=(
+        ("Setup", "OVTLYR Nine 9/9 — marknad 3 · sektor 2 · aktie 4"),
+        ("Entry", f"stängd grön candle · rvol ≥ {_VN_RVOL:.2f}× · ≤ {_sv(_VN_CHASE)} % över trigger · R/R ≥ {_VN_RR:g}"),
+        ("Risk/trade", f"{_sv(_VN_RISK)} % av kapitalet"),
+        ("Stop", f"{_sv(_VN_ATR)} × ATR14 · breakeven efter ny topp · trail EMA10 därefter"),
+        ("Position", f"högst {_sv(_VN_POS)} % av kapitalet · 6 % av totalen (allokeraren)"),
+        ("Hård exit", "marknaden under EMA20 = stäng allt"),
+        ("Rapport", f"ingen entry inom {_VN_EARN} handelsdagar · okänt datum = WAIT"),
+        ("Dagsgräns", f"max {_VN_LOSSES} förlustaffärer per dag"),
+    ),
+    pitfalls=(
+        "Ta affären på 8/9 för att den nionde faktorn 'bara saknar data'. Saknad data är ett nej.",
+        "Köpa på en candle som inte stängt — nordisk stängning 17:30, inte lunch.",
+        "Jaga en GOLDEN TICKET som redan gått mer än 2 % från triggern.",
+        "Flytta EMA10-trailen före breakeven — backtestet sålde då vinnarna för tidigt.",
+        "Sitta kvar när SPY eller OMXS30 stängt under EMA20 för att aktien 'ser stark ut'.",
+    ),
+    note="Viking (OVTLYR Golden Ticket) är den äldre tio-kravs-formuleringen av samma idé; Viking Nine är motorn "
+         "som skannern, regimsidan, papperskontot och backtestet faktiskt kör.",
+    support=SUPPORT_FULL,
+    support_note="Skannern (⚔️ Viking Nine), regimsidan, exitmotorn, Valhalls papperskonto och backtestet kör samma "
+                 "funktioner (ovtlyr_nine, viking_execution, viking_exit, viking_backtest).",
+    source="Panelen (ovtlyr_nine.py, viking_execution.py, viking_exit.py)",
+)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  9. BERSERK  (råvaran först — tre setups mot råvarucykeln)
+# ═════════════════════════════════════════════════════════════════════════════
+try:  # pragma: no cover - trivial import guard
+    from berserk import signals as _bsg
+    from berserk.backtest import (
+        MIN_TURNOVER_M as _BK_TURN, RISK_BY_SETUP as _BK_RISK, STOP_ATR as _BK_STOP,
+        live_config as _bk_live_config, live_portfolio as _bk_live_portfolio,
+    )
+    _BK_CFG, _BK_PORT = _bk_live_config(), _bk_live_portfolio()
+    _BK_S1, _BK_S2, _BK_S3 = _bsg.S1, _bsg.S2, _bsg.S3
+    _BK_S3_LIVE = _BK_S3 in _BK_CFG.setups
+    _BK_GAP = float(_BK_CFG.max_gap_atr or 0)
+    _BK_FREE = ", ".join(_BK_CFG.commodity_free)
+    _BK_NPOS, _BK_POSPCT, _BK_HEAT = _BK_PORT.max_positions, _BK_PORT.max_position_pct, _BK_PORT.max_heat_pct
+    _BK_LAG, _BK_RV1, _BK_RV2 = abs(_bsg.DIV_LAG) * 100, _bsg.RVOL_S1, _bsg.RVOL_S2
+    _BK_BEAR, _BK_HATED, _BK_HATED_ETF = abs(_bsg.BEAR_DD) * 100, abs(_bsg.HATED_DD) * 100, abs(_bsg.HATED_DD_ETF) * 100
+    _BK_RANGE, _BK_LOOK, _BK_RSI2 = _bsg.RANGE_LOW * 100, _bsg.LOOKBACK_BEAR, _bsg.RSI2_MAX
+    _BK_JUMP, _BK_JUMP_DAYS = _bsg.JUMP_MAX * 100, _bsg.JUMP_BLOCK_DAYS
+except Exception:  # pragma: no cover
+    _BK_S1, _BK_S2, _BK_S3 = "S1 Divergens", "S2 Cykelvändning", "S3 Snapback"
+    _BK_RISK, _BK_STOP = {_BK_S1: 1.25, _BK_S2: 1.25, _BK_S3: 1.0}, {_BK_S1: 2.0, _BK_S2: 2.0, _BK_S3: 3.0}
+    _BK_TURN, _BK_S3_LIVE, _BK_GAP, _BK_FREE = 5.0, False, 1.0, "Norden"
+    _BK_NPOS, _BK_POSPCT, _BK_HEAT = 8, 20.0, 8.0
+    _BK_LAG, _BK_RV1, _BK_RV2, _BK_BEAR, _BK_HATED, _BK_HATED_ETF = 10.0, 1.2, 1.5, 30.0, 40.0, 30.0
+    _BK_RANGE, _BK_LOOK, _BK_RSI2, _BK_JUMP, _BK_JUMP_DAYS = 20.0, 126, 10.0, 60.0, 20
+
+_BKR = "REGIME → Råvaror → 🪓 BERSERK Regime"
+_BKS = "SCREENING → Arc Screener → 🪓 BERSERK"
+
+BERSERK_PB = Playbook(
+    key="berserk",
+    name="🪓 BERSERK",
+    tagline="Råvaran först — tre setups för när råvarucykeln och aktien pekar åt olika håll",
+    color=AMBER,
+    level=LEVEL_ADVANCED,
+    horizon="Swing — dagar till veckor",
+    universe="berserk.universe: nordiska råvaruproducenter (kärnan) samt USA, Kanada, London och råvaru-ETF:er (satelliter)",
+    where=f"{_BKS}  ·  {_BKR}  ·  Thor (Regim, Råvara, Backtest)  ·  VALHALL (Kartan, Papperskonton)",
+    idea=(
+        "Varje råvaruaktie mäts mot sin egen råvara — drivaren (koppar mot HG=F, guld mot GC=F, uran mot URA …). "
+        f"{_BK_S1}: råvaran är stark men aktien har halkat efter och vänder nu upp. {_BK_S2}: råvaran har varit i "
+        "baisse och vänder, aktien är hatad och bryter upp — det sällsynta, stora läget. "
+        f"{_BK_S3}: en snabb återhämtning i en stigande råvara (av i live, kvar i backtestet). Marknadsgrinden, "
+        "råvarugrinden, likviditeten och datavakten måste alla vara öppna, annars är raden BEVAKA, inte KÖP. "
+        "Signalen bedöms på stängd dag, entry nästa öppning, stoppar intradag — samma motor i skannern, "
+        "regimsidan, Valhalls papperskonto och backtestet."
+    ),
+    risk=RiskModel(
+        risk_per_trade=f"{_sv(_BK_RISK[_BK_S1])} % av kapitalet för {_BK_S1} och {_BK_S2}, {_sv(_BK_RISK[_BK_S3])} % för "
+                       f"{_BK_S3} (berserk/backtest.py: RISK_BY_SETUP)",
+        position_size=f"Risk ÷ stoppavstånd, men högst {_sv(_BK_POSPCT)} % av BERSERK-boken per position",
+        max_positions=f"{_BK_NPOS} positioner · högst 2 per tema · 4 per komplex · samlad värme {_sv(_BK_HEAT)} % (live_portfolio)",
+        stop=f"{_BK_S1} och {_BK_S2} {_sv(_BK_STOP[_BK_S1])} × ATR14 · {_BK_S3} {_sv(_BK_STOP[_BK_S3])} × ATR14 "
+             "(katastrofstopp) — intradag, gap under ger öppningen",
+        targets="Inga fasta mål — exitreglerna per setup: trail på EMA20 (S1) eller EMA50 (S2), tesen bruten, tidsstopp",
+    ),
+    entry=_rules([
+        ("Råvaran är drivaren — temat har en prisserie och signalen bedöms mot den, på stängd dag",
+         "Drivaren per tema väljs i preferensordning (den första med data från periodens start). Råvarans värden "
+         "läggs på aktiens dagar med senast kända värde — aldrig ett senare. Teman utan drivare kan bara få S3.",
+         f"{_BKR}: temakortet med drivaren, fasen (BAISSE · VÄNDER, BAISSE, STARK, UPPTREND, SVAG) och producenterna "
+         "mot råvaran.", True),
+        (f"{_BK_S1} — råvaran stark, aktien efter och vänder",
+         f"Råvaran över SMA50 och positiv på 63 dagar; aktien minst {_BK_LAG:.0f} procentenheter efter råvaran på 63 "
+         f"dagar; vändningen = stängning över gårdagens high, grön dag och relativ volym ≥ {_sv(_BK_RV1)}×.",
+         f"{_BKS}: raden med setup {_BK_S1}, divergensen i procentenheter och rvol."),
+        (f"{_BK_S2} — råvaran i baisse och vänder, aktien hatad och bryter upp",
+         f"Råvaran minst {_BK_BEAR:.0f} % under 52-veckorshögsta eller i nedre {_BK_RANGE:.0f} % av sitt femårsintervall "
+         f"någon gång de senaste {_BK_LOOK} dagarna, och vänder (över EMA50, EMA20 stigande). Aktien minst "
+         f"{_BK_HATED:.0f} % under sin topp de senaste {_BK_LOOK} dagarna (ETF {_BK_HATED_ETF:.0f} %) och bryter "
+         f"20-dagarshögsta med relativ volym ≥ {_sv(_BK_RV2)}×. Flera setups samma dag — S2 före S1 före S3.",
+         f"{_BKS}: raden med setup {_BK_S2} och dd252. Thor-listan ger S2 högst rang.", True),
+        (f"{_BK_S3} — {'på' if _BK_S3_LIVE else 'av'} i live, kvar i backtestet",
+         f"Råvaran över SMA200 (utan drivare: aktien över stigande SMA200), RSI(2) under {_BK_RSI2:.0f} och stängning "
+         "under nedre Bollinger (20, 2). Portföljvarianterna 2026-10 valde S3 av, värme 8 %, råvarugrind och "
+         "gapregel — bättre än basen i båda perioderna.",
+         f"{_BKS}: skannern följer live_config — S3-rader visas bara om setupen är på."),
+        ("Marknadsgrinden — regionens index över SMA200 (OMXS30, SPY, TSX, FTSE)",
+         "Index under SMA200 gör raden BEVAKA även om setupen finns. Saknas regionens index gäller SPY.",
+         f"{_BKR}: marknadschipen per region, och raden 'under SMA200' i skälen.", True),
+        (f"Råvarugrinden — råvarukorgen DBC över SMA200 för satelliter; {_BK_FREE} är fri",
+         "Utanför kärnan krävs att råvarorna som helhet stiger. Nordiska producenter handlas utan den grinden.",
+         f"{_BKS}: skälet 'råvarugrind' på raden; {_BKR}: DBC-chipet."),
+        (f"Likviditet ≥ {_sv(_BK_TURN)} miljoner per dag (snitt 20 dagar, lokal valuta) och datavakten",
+         f"Omsättning under gränsen = BEVAKA. Datavakten spärrar {_BK_JUMP_DAYS} dagar efter ett dagshopp över "
+         f"{_BK_JUMP:.0f} % (ojusterad split, extrautdelning eller datafel — indikatorerna är då opålitliga).",
+         f"{_BKS}: skälen 'omsättning under' och 'datavakt' på raden."),
+        (f"Entry nästa öppning — men inte om öppningen gappar mer än {_sv(_BK_GAP)} × ATR över signalstängningen",
+         "Gapregeln ur portföljvarianterna: ett stort gap äter risken innan affären börjat. Då hoppas signalen över.",
+         f"{_BKS}: planen för nästa öppning på raden; VALHALL (Papperskonton) fyller på samma regel."),
+        ("KÖP kräver setup i dag och alla grindar öppna — annars BEVAKA",
+         "Setup utan grindar = BEVAKA med skälet utskrivet. Nästan-setup (watch_reason) = BEVAKA. Inget av det = tom rad.",
+         f"{_BKS}: statuskolumnen KÖP / BEVAKA med skälen; Thor-listan översätter rakt av.", True),
+    ]),
+    exit=_rules([
+        (f"{_BK_S1} — stopp {_sv(_BK_STOP[_BK_S1])} × ATR14; +1 ATR flyttar stoppen till entry − 0,25 ATR; "
+         "+2 ATR ger trail på stängning under EMA20",
+         "ATR på signaldagen. Stängningsreglerna ger exit nästa öppning; stoppen ligger intradag.",
+         f"{_BKR}: exitplanen per setup; VALHALL (Papperskonton): samma simulate_exit.", True),
+        (f"{_BK_S1} — tesen bruten när råvaran stänger under SMA50; tidsstopp 15 dagar utan stängning ≥ +0,5 ATR",
+         "Divergensen ska stängas av att aktien kommer ikapp — gör den inte det inom 15 dagar är caset fel.",
+         f"{_BKR}: drivarens SMA50 på temakortet."),
+        (f"{_BK_S2} — stopp {_sv(_BK_STOP[_BK_S2])} × ATR14; +2 ATR ger trail på stängning under EMA50; "
+         "tesen bruten när råvaran stänger under EMA50",
+         "Cykelvändningen ska hålla i råvaran — faller drivaren tillbaka under EMA50 är vändningen falsk.",
+         f"{_BKR}: drivarens EMA50 på temakortet.", True),
+        (f"{_BK_S3} — katastrofstopp {_sv(_BK_STOP[_BK_S3])} × ATR14, exit vid stängning över SMA5 eller efter 5 dagar",
+         "Snapbacken är en kort affär: målet är medelvärdet, inte trenden.",
+         f"{_BKS}: bara när S3 är på i live_config."),
+        ("Stoppar intradag — low under stoppen ger exit på stoppen, gap under ger öppningen",
+         "Samma fyllnadsregel i backtestet och papperskontot. Lägg stoppen hos mäklaren.",
+         "VALHALL (Papperskonton): kontot wolf_arc/berserk visar fyllnaderna; Thor fliken Backtest märker regeln."),
+        (f"Max {_BK_PORT.max_daily_losses} förlustaffärer per dag och rapportspärren sköter du själv",
+         "Portföljregeln finns i portfolio_config; rapportdatum finns inte i backtestet (historiska datum saknas) — "
+         "kontrollera dem i Börsdata innan entry.",
+         "PORTFOLIO → 📓 Trade Journal: räkna dagens förluster. Rapportdatum ur Börsdata."),
+    ]),
+    mindset=_rules([
+        ("Råvaran bestämmer — aktien är bara hävstången",
+         "En BERSERK-affär är ett bet på råvarans läge. Går drivaren fel är affären fel, oavsett aktiens graf.",
+         f"{_BKR}: temakortet före aktieraden."),
+        ("S2 är det stora läget och det sällsynta — vänta på det",
+         "Cykelvändningar i hatade råvaror kommer få gånger per decennium. S1 fyller tiden däremellan, S3 är av.",
+         f"{_BKS}: sortera på setup; VALHALL (Kartan): ⚡ cykelstart på temat."),
+    ]),
+    workflow=(
+        f"{_BKR}: vilka teman är i BAISSE · VÄNDER eller STARK? Vilka marknadsgrindar är öppna? DBC över SMA200?",
+        f"{_BKS}: raderna med KÖP — setup i dag och alla grindar. BEVAKA-rader har skälet utskrivet.",
+        "Kontrollera drivaren och aktien i Thor (Regim: setupen och planen; Råvara: temats cykel, hävstång och kvoter).",
+        f"Storlek = risk ÷ stoppavstånd ({_sv(_BK_RISK[_BK_S1])} % för S1/S2), högst {_sv(_BK_POSPCT)} % av boken, "
+        f"högst 2 per tema och 4 per komplex, värme under {_sv(_BK_HEAT)} %.",
+        "Entry nästa öppning om gapet är under 1 × ATR. Lägg stoppen hos mäklaren direkt.",
+        "Följ exitplanen per setup varje dag — trail, tesen bruten, tidsstopp. Logga i PORTFOLIO → 📓 Trade Journal.",
+    ),
+    cheatsheet=(
+        ("Setups", f"{_BK_S1} (råvara stark, aktie efter) · {_BK_S2} (råvara vänder, aktie hatad) · S3 {'på' if _BK_S3_LIVE else 'av'}"),
+        ("Grindar", f"index över SMA200 · DBC över SMA200 (ej {_BK_FREE}) · ≥ {_sv(_BK_TURN)} milj/dag · datavakt"),
+        ("Risk/affär", f"{_sv(_BK_RISK[_BK_S1])} % (S1/S2) · {_sv(_BK_RISK[_BK_S3])} % (S3)"),
+        ("Stop", f"{_sv(_BK_STOP[_BK_S1])} × ATR14 (S1/S2) · {_sv(_BK_STOP[_BK_S3])} × ATR14 (S3) · intradag"),
+        ("Trail", "S1 under EMA20 efter +2 ATR · S2 under EMA50 efter +2 ATR"),
+        ("Tesen bruten", "S1 råvaran under SMA50 · S2 råvaran under EMA50"),
+        ("Bok", f"{_BK_NPOS} positioner · {_sv(_BK_POSPCT)} % per position · 2 per tema · 4 per komplex · värme {_sv(_BK_HEAT)} %"),
+        ("Fyllnad", f"signal på stängning · entry nästa öppning (gap ≤ {_sv(_BK_GAP)} × ATR) · stopp intradag"),
+    ),
+    pitfalls=(
+        "Köpa en BEVAKA-rad för att setupen 'nästan' är där — grinden som stängde den finns av en anledning.",
+        "Handla S1 i ett tema där råvaran står i TOPP (tioårspercentil ≥ 90) utan att läsa Blindspot-chipet.",
+        "Ignorera tesen-bruten-regeln för att aktien fortfarande stiger — drivaren under SMA50/EMA50 är exit.",
+        "Fylla boken med fyra kopparaktier: högst två per tema, fyra per komplex.",
+        "Köpa på öppningen efter ett gap över 1 × ATR — risken är redan uppäten.",
+    ),
+    note="Backtestet (berserk.backtest) rapporterar i R och säger själv vad som inte ingår: rapportspärr, "
+         "överlevnadsbias i universumet, rullning i terminsbaserade ETF:er.",
+    support=SUPPORT_FULL,
+    support_note="Skannern (berserk_scan), 🪓 BERSERK Regime, Valhalls papperskonto och backtestet kör samma regler "
+                 "(berserk.live.evaluate, berserk.backtest.simulate_exit, live_config).",
+    source="Panelen (berserk/signals.py, berserk/backtest.py, berserk/live.py)",
+)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 #  Registry + helpers
 # ═════════════════════════════════════════════════════════════════════════════
 
@@ -863,9 +1204,11 @@ PLAYBOOKS: dict[str, Playbook] = {
     "quality": QUALITY,
     "alpha": ALPHA,
     "viking": VIKING,
+    "viking_nine": VIKING_NINE,
     "wolf": WOLF,
     "contrarian": DEEP_CONTRARIAN,
     "ember": EMBER_PB,
+    "berserk": BERSERK_PB,
 }
 
 # Masterguiden's non-native strategies (Rule · Sprott · Durrett · Tiggre ·
@@ -882,7 +1225,7 @@ except Exception:  # pragma: no cover
 # Panel-native strategies come first; the Masterguide commodity family follows,
 # ordered from the safest (Royalty) to the most speculative (Sprott/Tiggre).
 LEARNING_ORDER: tuple[str, ...] = (
-    "momentum", "quality", "alpha", "viking", "wolf", "contrarian", "ember",
+    "momentum", "quality", "alpha", "viking", "viking_nine", "wolf", "contrarian", "ember", "berserk",
     "royalty", "insider", "rule", "durrett", "tiggre", "sprott",
 )
 

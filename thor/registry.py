@@ -37,13 +37,13 @@ class Strategy:
 
 STRATEGIES: dict = {s.key: s for s in (
     Strategy("viking_nine", "Viking Nine", SWING, "valhall_board.json (swing)", "vägd Nine 0–100",
-             "viking", "viking_nine", "viking"),
+             "viking_nine", "viking_nine", "viking"),
     Strategy("wolf", "Wolf", SWING, "arc_screeners.json (wolf)", "regimpoäng 0–125 ÷ 1,25", "wolf", "wolf", "wolf_arc"),
     Strategy("viking", "Viking", SWING, "arc_screeners.json (viking)", "V9 0–9 × 100/9", "viking", "viking"),
     Strategy("momentum", "Momentum Swing", SWING, "wolf_screener.json", "rad 1 = 100, rad 40 = 2,5",
              "momentum", "momentum", "wolf"),
     Strategy("berserk", "BERSERK", RAVARA, "berserk_scan.json", "setup S2 100 · S1 80 · S3 60, BEVAKA −20",
-             "", "berserk", "berserk"),
+             "berserk", "berserk", "berserk"),
     Strategy("ember", "EMBER", RAVARA, "ember_results.json", "setup_score 0–100", "ember", "ember"),
     Strategy("quality", "Quality Contrarian", LANG, "contrarian_alpha_results_quality.json",
              "composite 0–100 (tak 100)", "quality", "alpha_quality", "quality"),

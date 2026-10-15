@@ -61,7 +61,9 @@ BUCKET_KEYS: tuple = tuple(BUCKETS)
 STRATEGIES: tuple = ("Quality", "Deep Contrarian", "Viking", "Wolf", "Untagged",
                      "Momentum", "Tiggre",
                      # masterguidens övriga (copiloten loggar dem hit sedan steg 3)
-                     "Alpha", "Ember", "Sprott", "Durrett", "Rule", "Royalty", "Insider")
+                     "Alpha", "Ember", "Sprott", "Durrett", "Rule", "Royalty", "Insider",
+                     # Thor fas 7: panelens egna swingmotorer med egen playbook
+                     "Viking Nine", "BERSERK")
 STRATEGY_BUCKET: dict = {
     "Quality":         "long",
     "Deep Contrarian": "long",
@@ -77,6 +79,8 @@ STRATEGY_BUCKET: dict = {
     "Rule":            "long",
     "Royalty":         "long",
     "Insider":         "long",
+    "Viking Nine":     "ovtlyr",
+    "BERSERK":         "swing",
 }
 
 # Strategitagg ↔ playbook-nyckel (strategy_rules.PLAYBOOKS, copiloten,
@@ -86,6 +90,7 @@ PLAYBOOK_TAG: dict = {
     "alpha": "Alpha", "quality": "Quality", "contrarian": "Deep Contrarian",
     "rule": "Rule", "sprott": "Sprott", "tiggre": "Tiggre", "durrett": "Durrett",
     "royalty": "Royalty", "insider": "Insider",
+    "viking_nine": "Viking Nine", "berserk": "BERSERK",
 }
 TAG_PLAYBOOK: dict = {v: k for k, v in PLAYBOOK_TAG.items()}
 ALLOCATOR_RULE: dict = {**{tag: key for key, tag in PLAYBOOK_TAG.items()},

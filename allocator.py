@@ -87,6 +87,7 @@ SLEEVE_BY_KEY = {s.key: s for s in SLEEVES}
 # den långsiktiga portföljen; resten är masterguidens egna.
 STRATEGY_SLEEVE = {
     "momentum": "swing", "wolf": "swing", "viking": "swing", "ember": "swing",
+    "viking_nine": "swing", "berserk": "swing",
     "alpha": "langsiktigt", "quality": "langsiktigt", "contrarian": "langsiktigt",
     "rule": "producenter", "sprott": "optionalitet", "tiggre": "optionalitet",
     "durrett": "durrett", "royalty": "royalty", "insider": "insider",
@@ -122,6 +123,8 @@ POSITION_RULES: tuple[PositionRule, ...] = (
     PositionRule("wolf", "Wolf x Shadow", "swing", 15, 30, 6.0),
     PositionRule("viking", "Viking (OVTLYR)", "swing", 15, 30, 6.0),
     PositionRule("ember", "Ember", "swing", 15, 30, 6.0),
+    PositionRule("viking_nine", "Viking Nine", "swing", 15, 30, 6.0),
+    PositionRule("berserk", "BERSERK", "swing", 15, 30, 6.0),
     PositionRule("alpha", "Alpha Trend / Regim", "langsiktigt", 8, 12.5, 10.0),
     PositionRule("quality", "Quality", "langsiktigt", 8, 12.5, 10.0),
     PositionRule("contrarian", "Deep Contrarian", "langsiktigt", 8, 12.5, 10.0),

@@ -65,7 +65,9 @@ def test_cycle_with_injected_phase_and_board():
     assert out["segment"]["view"] == "temat" and out["segment"]["status"] == "GRÖN" and out["segment"]["cykel"] == "TIDIG"
     assert out["segment"]["all"]["n_status"] == "RÖD"                            # segmentets läge följer med
     assert out["gate"]["status"] == "PASS" and "HOPE" in out["phases"]["buy"] and out["playbook"] == "quality"
-    assert td.cycle(ident, "berserk", BOARD, phase)["gate"] == {"status": "MANUAL", "note": td.NO_PLAYBOOK}
+    gate = td.cycle(ident, "berserk", BOARD, phase)["gate"]            # BERSERK:s playbook nämner inga cykelfaser
+    assert gate["status"] == "MANUAL" and "nämns inte i playbookens regler" in gate["note"]
+    assert td.cycle(ident, "hav", BOARD, phase)["gate"] == {"status": "MANUAL", "note": td.NO_PLAYBOOK}
 
     def boom(t):
         raise RuntimeError("nät")

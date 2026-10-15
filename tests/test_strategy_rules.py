@@ -183,7 +183,7 @@ def test_ember_thresholds_track_ember_config():
     assert f"−{RS_FULL_PCT:.0f}…+{RS_FULL_PCT:.0f} %" in why_text, why_text
 
 
-_PANEL_NATIVE = ("momentum", "quality", "alpha", "viking", "wolf", "contrarian", "ember")
+_PANEL_NATIVE = ("momentum", "quality", "alpha", "viking", "viking_nine", "wolf", "contrarian", "ember", "berserk")
 _COMMODITY = ("royalty", "insider", "rule", "durrett", "tiggre", "sprott")
 
 

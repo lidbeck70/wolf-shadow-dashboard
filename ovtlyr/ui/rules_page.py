@@ -1085,6 +1085,13 @@ _PANEL_GUIDE: list[tuple] = [
      "nordiska), OVTLYR Nine-kortet, graf med entry/stopp/motstånd, Viking "
      "Execution + riskmotor (GOLDEN TICKET / WAIT / NO TRADE), exitmotorn för en öppen position och "
      "signalloggen. Välj ticker direkt ur senaste ⚔️ Viking Nine-skanningen."),
+    ("SCREENING → Arc Screener → 🪓 BERSERK", "BERSERK: setups och grindar över råvaruuniversumet",
+     "Varje råvaruaktie mot sin egen drivare: S1 Divergens, S2 Cykelvändning (S3 Snapback av i live). KÖP = setup i "
+     "dag och alla grindar öppna (index över SMA200, DBC över SMA200 för satelliter, likviditet, datavakt), annars "
+     "BEVAKA med skälet utskrivet. Planen för nästa öppning: stopp, risk per setup, position."),
+    ("REGIME → Råvaror → 🪓 BERSERK Regime", "BERSERK: temats läge",
+     "Temakorten med drivaren och fasen (BAISSE · VÄNDER / BAISSE / STARK / UPPTREND / SVAG), producenterna mot "
+     "råvaran, marknadschipen per region och DBC-grinden. Samma motor som skannern och Valhalls papperskonto."),
     ("REGIME → Marknad → Arc Regime → Viking Regime", "Viking: OVTLYR Nine + Viking Execution-filter",
      "OVTLYR Nine (Market 40 % · Sector 30 % · Stock 30 %) på riktiga priser för SPY, "
      "sektor-ETF:er och aktien — WOLF APPROXIMATION, saknad data räknas aldrig som PASS. "

@@ -239,7 +239,8 @@ def test_the_seven_position_rules_match_the_guide():
     }
     assert {k: got[k] for k in guide} == guide
     assert set(got) - set(guide) == {"wolf", "viking", "ember",
-                                     "alpha", "quality", "contrarian"}
+                                     "alpha", "quality", "contrarian",
+                                     "viking_nine", "berserk"}          # Thor fas 7: samma swing-tak
 
 
 def test_sprott_and_tiggre_share_a_sleeve_but_not_a_cap():

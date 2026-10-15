@@ -197,7 +197,7 @@ def test_technical_tab_is_the_tech_analysis_view(engines):
 def test_rules_tab_is_the_whole_playbook(engines):
     from strategy_rules import PLAYBOOKS
     _at, text = _run("viking_nine", "BOL.ST", "regler")
-    for part in (PLAYBOOKS["viking"].name, "RISKMODELL", "SÅ GÖR DU — STEG FÖR STEG", "ENTRY", "EXIT", "MINDSET",
+    for part in (PLAYBOOKS[reg.get("viking_nine").playbook].name, "RISKMODELL", "SÅ GÖR DU — STEG FÖR STEG", "ENTRY", "EXIT", "MINDSET",
                  "FUSKLAPP", "FALLGROPAR", "strategy_rules.py"):
         assert part in text, part
     _at, text = _run("wolf", "BOL.ST", "regler")
