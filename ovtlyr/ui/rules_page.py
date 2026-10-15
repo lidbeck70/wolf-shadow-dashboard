@@ -1066,6 +1066,9 @@ _PANEL_GUIDE: list[tuple] = [
      "Varje strategi på papper, märkt med segment och cykelläge vid köp — vilken strategi fungerar var."),
     ("VALHALL → Backtester", "Besluten",
      "Varför Valhall gör som det gör: swing per segment, kvalitet ej RÖD, råvaror contrarian, Long Screener gron."),
+    ("THOR", "Alla strategier: screening → analys → köp",
+     "Alla strategiers kandidater i ett flöde (rullgardin per strategi, filter, tickersök). Tryck Öppna på en "
+     "aktie så kommer analysen på samma sida: regim, teknik, cykel, råvara, arken, backtest och regler."),
     ("REGIME → Marknad → Swing Regime", "Momentum: entry #1, #6",
      "Trafikljus GRÖN/GUL/RÖD + regelverk, OMXSPI vs MA200, marknadsbredd "
      "(dör före index) och regimhistorik."),

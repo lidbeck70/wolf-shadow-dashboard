@@ -19,6 +19,7 @@ import re
 TOP: tuple = (
     ("home", "🏠 HOME"),
     ("valhall", "⚡ VALHALL"),
+    ("thor", "🔨 THOR"),
     ("screening", "🔱 SCREENING"),
     ("review", "🔬 GRANSKNING"),
     ("regime", "📡 REGIME"),
