@@ -2,7 +2,7 @@
 valhall/ui.py — ⚡ VALHALL: cykelkartan över hela marknaden, korten, papperskontona och backtesterna.
 
 Sidan räknar ingenting själv — den läser de schemalagda körningarnas resultat ur Gisten:
-  valhall_board.json   kartan, swing, köp, Long Screener och papperskontonas sammanställning (vardagar)
+  valhall_board.json   kartan, swing, Wolf, köp, Long Screener och papperskontonas sammanställning (vardagar)
   valhall_fas3.json    fas 3a — cykelstatusen och swing (Viking Nine, BERSERK)
   valhall_fas4b.json   fas 4b — cykeln och de långsiktiga köpen (segment och kvalitetsaktier)
   valhall_fas4c.json   fas 4c — Long Screener punkt för punkt
@@ -18,12 +18,13 @@ from typing import Optional
 
 import pandas as pd
 
-from ui.tokens import AMBER, CYAN, DIM, GOLD, GREEN, GREY, RED, TEXT, regime_color
+from ui.tokens import AMBER, CYAN, DIM, GOLD, GREEN, GREY, PURPLE, RED, TEXT, regime_color
 
 BLOBS = {"board": "valhall_board.json", "fas3": "valhall_fas3.json", "fas4b": "valhall_fas4b.json",
          "fas4c": "valhall_fas4c.json"}
 _STATE = "valhall_data"
-STRATEGY_LABEL = {"viking": "Viking Nine", "insider": "Insider Norden", "wolf": "Wolf", "berserk": "BERSERK",
+STRATEGY_LABEL = {"viking": "Viking Nine", "insider": "Insider Norden", "wolf": "Momentum Swing", "wolf_arc": "Wolf",
+                  "berserk": "BERSERK",
                   "quality": "Quality Contrarian", "rule": "Rick Rule", "durrett": "Durrett", "tiggre": "Tiggre",
                   "long": "Long Screener", "long_ingen": "Long Screener (utan cykel)"}
 
@@ -63,7 +64,7 @@ def pick_chips(picks: list, color: str = CYAN, blocked: bool = False) -> str:
     col = GREY if blocked else color
     out = []
     for p in picks:
-        tag = p.get("category") or p.get("setup") or p.get("signal") or p.get("verdict") or ""
+        tag = p.get("tag") or p.get("category") or p.get("setup") or p.get("signal") or p.get("verdict") or ""
         if p.get("bagger"):
             tag = "15-BAGGER"
         txt = escape(str(p.get("ticker") or "")) + (f" <span style='opacity:0.7;'>{escape(str(tag))}</span>" if tag else "")
@@ -78,9 +79,10 @@ def _line(label: str, body: str) -> str:
             f"{body}</div>")
 
 
-def segment_card(row: dict, swing: dict, buys: dict, long: dict, niche: dict) -> str:
-    """Sektorrutan: global (SPDR → UCITS) och nordisk status, swing med segmentets strategi, kvalitetsköp
-    (grind: ej RÖD), Long Screener och nischsignaler."""
+def segment_card(row: dict, swing: dict, buys: dict, long: dict, niche: dict, wolf: Optional[dict] = None) -> str:
+    """Sektorrutan: global (SPDR → UCITS) och nordisk status, swing med segmentets strategi, Wolf (Arc-Wolf —
+    ENTRY när köpregeln är uppfylld) och Momentum (topp 20 med setup A), kvalitetsköp (grind: ej RÖD),
+    Long Screener och nischsignaler."""
     nordic = row.get("nordic") or {}
     col = regime_color(_status(nordic)) if _status(nordic) in ("GRÖN", "GUL", "RÖD") else GREY
     sw = swing or {}
@@ -99,6 +101,8 @@ def segment_card(row: dict, swing: dict, buys: dict, long: dict, niche: dict) ->
             f"<div style='margin:2px 0;'>{status_chip('Globalt', row.get('global'))}"
             f"<span style='color:{DIM};font-size:0.64rem;'> · {escape(row.get('spdr') or '')} → {escape(ucits)}</span></div>"
             + _line(f"Swing ({escape(sw.get('strategy') or '—')})", pick_chips(sw.get("picks") or []))
+            + _line("Wolf", pick_chips((wolf or {}).get("arc") or [], PURPLE))
+            + _line("Momentum", pick_chips((wolf or {}).get("momentum") or [], TEXT))
             + _line("Kvalitet", q)
             + _line("Long Screener", pick_chips((long or {}).get("picks") or [], GREEN))
             + (_line("Nisch", f"<span style='color:{TEXT};'>BERSERK {nb} · Insider {ni}</span>") if nb or ni else "")
@@ -193,12 +197,13 @@ def render_map(board: dict) -> None:
         note("⚡ Cykelstart nu (BAISSE · VÄNDER): " + ", ".join(f"{escape(s['segment'])} ({s['where']})" for s in starts))
     sw, buys, long, niche = (board.get("swing") or {}), (board.get("buys") or {}), (board.get("long") or {}), \
         (board.get("niche") or {})
+    wolf = (board.get("wolf") or {}).get("segments") or {}
     st.markdown(f"<div style='color:{CYAN};font-size:0.72rem;letter-spacing:0.1em;margin-top:6px;'>SEKTORERNA</div>",
                 unsafe_allow_html=True)
     st.markdown("<div style='display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px;"
                 "margin-top:4px;'>" + "".join(
                     segment_card(r, (sw.get("segments") or {}).get(r["key"]), (buys.get("segments") or {}).get(r["key"]),
-                                 (long.get("segments") or {}).get(r["key"]), niche.get(r["key"]))
+                                 (long.get("segments") or {}).get(r["key"]), niche.get(r["key"]), wolf.get(r["key"]))
                     for r in segs) + "</div>", unsafe_allow_html=True)
     for r in segs:
         if not r.get("themes"):
@@ -212,7 +217,8 @@ def render_map(board: dict) -> None:
     note("Status: GRÖN = fasen stark/upptrend och cykeln inte sen · GUL = sen cykel i upptrend · RÖD = baisse/svag "
          "eller cykeltopp. Norden = sektorindexet mot hela Norden, globalt = SPDR-fonden mot S&P 500 (handel i "
          "UCITS-ETF hos Nordnet), råvaror absolut. Överstrukna kvalitetsköp är spärrade av grinden ej RÖD. "
-         "Riktiga order läggs alltid manuellt.")
+         "Wolf = Arc-Wolfs regimpoäng (ENTRY när strategins köpregel är uppfylld) · Momentum = Swing Screenerns "
+         "topp 20 med setup A. Riktiga order läggs alltid manuellt.")
 
 
 def render_paper(res: Optional[dict]) -> None:

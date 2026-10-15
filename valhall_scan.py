@@ -11,6 +11,8 @@ den kopplas in när hela Valhall är klart.
   3. Swing (styrning A, valhall.swing): två bästa affärer per segment med segmentets strategi — Viking
      Nine i Teknik/Finans (och prövas i övriga), BERSERK i Energi/Material och råvaruteman, ingen i
      Kraftförsörjning. Cykelstatusen visas men spärrar inte. Plus nischsignaler ur BERSERK och Insider.
+     Wolf (valhall.wolf): Arc-Wolfs rader (arc_screeners.json) och momentumlistans topp 20 med setup A
+     (wolf_screener.json) per segment — och Arc-Wolfs köpsignaler till papperskontot "Wolf".
   4. Köp (valhall.picks): två kvalitetsköp per segment (Quality Contrarian; grind: ej RÖD sektor) och per
      råvara (Rick Rule), fem hävstångsköp per råvara (Durrett för guld/silver med 15-BAGGER-regeln, Tiggre för övriga).
      Källor: Quality Contrarian-körningarna och håvarna (Gisten) och dina ark på panel-data.
@@ -69,11 +71,14 @@ def summary(payload: dict) -> list:
     for r in payload["board"]["segments"]:
         k = r["key"]
         lp = [p["ticker"] for p in (((payload.get("long") or {}).get("segments") or {}).get(k) or {}).get("picks", [])]
+        wr = ((payload.get("wolf") or {}).get("segments") or {}).get(k) or {}
         lines.append(f"{r['label']:16s} global {r['global']['status']:11s} Norden "
                      f"{(r.get('nordic') or {}).get('status', '—'):11s} swing ({sw['segments'][k].get('strategy')}) "
                      f"{[(p['ticker'], p.get('category') or p.get('setup')) for p in sw['segments'][k]['picks']]} kvalitet "
                      f"{[p['ticker'] for p in buys['segments'][k]['picks']]}"
-                     f"{'' if (buys['segments'][k].get('gate') or {}).get('open', True) else ' (SPÄRRAD: RÖD)'} long {lp}")
+                     f"{'' if (buys['segments'][k].get('gate') or {}).get('open', True) else ' (SPÄRRAD: RÖD)'} long {lp} "
+                     f"wolf {[(p['ticker'], p['tag']) for p in wr.get('arc') or []]} "
+                     f"momentum {[p['ticker'] for p in wr.get('momentum') or []]}")
         for t in r["themes"]:
             q = buys["themes"][t["theme"]]["quality"]["picks"]
             lv = buys["themes"][t["theme"]]["leverage"]
@@ -117,19 +122,31 @@ def _long_screen(board, universe, keep, getter, fundamentals=None, api=None) -> 
     return out
 
 
-def _paper(load, state, berserk_state, board, sw, buys, universe, insider_blob, getter, nordic_market, today,
-           instruments, nordic_ids, to_yf, long_scan=None) -> tuple:
-    """Papperskontona ett steg fram: dagens signaler blir order, gårdagens fylls, positionerna förvaltas."""
-    import pandas as pd
-
+def _wolf(load, instruments, nordic_ids, to_yf, universe, getter, today) -> tuple:
+    """(momentumlistan, Arc-Wolfs rader, köpregeln per rad) — Kartans Wolf-rader och papperets Wolf-signaler."""
     from valhall import paper as vpa
-    today = pd.Timestamp(today) if today is not None else pd.Timestamp.today().normalize()
+    from valhall import wolf as vwolf
     wolf_map = {}
     for i in instruments:
         if i.get("marketId") in nordic_ids and i.get("ticker"):
             wolf_map.setdefault(str(i["ticker"]).upper(), to_yf(i["ticker"], i["marketId"]))
     wolf = vpa.wolf_live(load("wolf_screener.json", None), wolf_map, today)
-    sigs = vpa.signals(sw, buys, universe, insider_blob, wolf, long_scan)
+    arc = vwolf.arc_live(load(vwolf.ARC_BLOB, None), universe, today)
+    entries = vwolf.arc_entries(arc, lambda t: getter(t, "2y"))
+    log.info("Wolf: momentumlistan %s · Arc-Wolf %s · köpregeln uppfylld %d",
+             "saknas/gammal" if wolf is None else f"{len(wolf)} aktier",
+             "saknas/gammal" if arc is None else f"{len(arc)} rader", sum(1 for e in entries.values() if e["signal"] == "BUY"))
+    return wolf, arc, entries
+
+
+def _paper(state, berserk_state, board, sw, buys, universe, insider_blob, getter, nordic_market, today,
+           wolf=None, long_scan=None, arc_sigs=None) -> tuple:
+    """Papperskontona ett steg fram: dagens signaler blir order, gårdagens fylls, positionerna förvaltas."""
+    import pandas as pd
+
+    from valhall import paper as vpa
+    today = pd.Timestamp(today) if today is not None else pd.Timestamp.today().normalize()
+    sigs = vpa.signals(sw, buys, universe, insider_blob, wolf, long_scan, arc_sigs)
     market = None
     if nordic_market is not None and len(nordic_market):
         m = pd.Series(nordic_market).astype(float).dropna()
@@ -144,8 +161,7 @@ def _paper(load, state, berserk_state, board, sw, buys, universe, insider_blob, 
                              berserk_state=berserk_state, universe=universe,
                              long_signals=(long_scan or {}).get("signals") if long_scan else None,
                              long_ingen_signals=(long_scan or {}).get("signals_ingen") if long_scan else None)
-    log.info("Papper: %d signaler · %d händelser · Wolf-listan %s", len(sigs), len(events),
-             "saknas/gammal" if wolf is None else f"{len(wolf)} aktier")
+    log.info("Papper: %d signaler · %d händelser", len(sigs), len(events))
     return state, events
 
 
@@ -188,11 +204,18 @@ def run(api=None, data_getter=None, getter=None, load=None, save=None, today=Non
     sw = swing.candidates(board, universe, keep, scan_fn=scan_fn, getter=getter, today=today,
                           berserk_blob=berserk_blob)
     nich = swing.niche(universe, berserk_blob, insider_blob)
+    import pandas as pd
+
+    from valhall import wolf as vwolf
+    _today = pd.Timestamp(today) if today is not None else pd.Timestamp.today().normalize()
+    wolf, arc, entries = _wolf(load, instruments, nordic_ids, to_yf, universe, getter, _today)
+    arc_sigs = vwolf.arc_signals(arc, entries, universe)
     src = sources if sources is not None else _load_sources(load)
     buys = vp.gate_segments(vp.build(src.get("ca") or [], src.get("screens"), src.get("sheets") or {},
                                      analyze=analyze), board)
     payload = {"generated": datetime.now(tz=timezone.utc).isoformat(), "board": _json_safe(board),
                "cycle_starts": vb.cycle_starts(board), "swing": sw, "niche": nich, "buys": buys,
+               "wolf": vwolf.by_segment(arc, entries, wolf, universe),
                "sources": {"ca_runs": len(src.get("ca") or []), "screens": bool(src.get("screens")),
                            "sheets": sorted(k for k, v in (src.get("sheets") or {}).items() if v)},
                "nordic": {k: {kk: v.get(kk) for kk in ("members", "with_data", "liquid")} for k, v in indices.items()}}
@@ -211,8 +234,8 @@ def run(api=None, data_getter=None, getter=None, load=None, save=None, today=Non
         payload["paper"], paper_state = prev_paper, None
     else:
         try:
-            paper_state, events = _paper(load, paper_state, berserk_state, board, sw, buys, universe, insider_blob,
-                                         getter, nordic_market, today, instruments, nordic_ids, to_yf, long_scan)
+            paper_state, events = _paper(paper_state, berserk_state, board, sw, buys, universe, insider_blob,
+                                         getter, nordic_market, today, wolf, long_scan, arc_sigs)
             payload["paper"] = vpa.results(paper_state, berserk_state)
             for e in events:
                 log.info("Papper: %s %s %s — %s", e["kind"], e["strategy"], e["ticker"], e["text"])

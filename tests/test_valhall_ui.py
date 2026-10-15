@@ -35,6 +35,9 @@ BOARD = {"generated": "2026-10-14T16:50:00+00:00",
                   "themes": {"guld": {"quality": {"picks": [{"ticker": "NEM"}]},
                                       "leverage": {"strategy": "Durrett", "picks": [{"ticker": "MMY.V", "bagger": True}]}}}},
          "long": {"segments": {"technology": {"picks": [{"ticker": "LAGR-B.ST", "signal": "STRONG BUY"}]}}},
+         "wolf": {"arc_live": True, "momentum_live": True,
+                  "segments": {"technology": {"arc": [{"ticker": "ERIC-B.ST", "tag": "ENTRY · 88"}],
+                                              "momentum": [{"ticker": "HEXA-B.ST", "tag": "#2"}]}}},
          "niche": {"technology": {"berserk": [], "insider": [{"ticker": "X"}]}},
          "paper": {"since": "2026-10-13", "positions": 3, "orders": 1,
                    "by_strategy": [{"strategy": "long", "n": 2, "open": 2, "closed": 0, "avg_ret": 1.5, "win": 50.0,
@@ -56,10 +59,13 @@ def test_nav_has_valhall_top_tab_after_home():
 
 def test_segment_card_shows_status_picks_and_gate():
     sw, buys = BOARD["swing"]["segments"]["technology"], BOARD["buys"]["segments"]["technology"]
-    html = vui.segment_card(ROW, sw, buys, BOARD["long"]["segments"]["technology"], BOARD["niche"]["technology"])
+    html = vui.segment_card(ROW, sw, buys, BOARD["long"]["segments"]["technology"], BOARD["niche"]["technology"],
+                            BOARD["wolf"]["segments"]["technology"])
     for text in ("Teknik", "Norden GRÖN", "Globalt RÖD", "XLK → IUIT.L", "Swing (Viking Nine)", "HEXA-B.ST",
-                 "GOLDEN TICKET", "MYCR.ST", "LAGR-B.ST", "Insider 1"):
+                 "GOLDEN TICKET", "MYCR.ST", "LAGR-B.ST", "Insider 1", ">Wolf</span>", "ERIC-B.ST", "ENTRY · 88",
+                 ">Momentum</span>", "#2"):
         assert text in html, text
+    assert vui.STRATEGY_LABEL["wolf"] == "Momentum Swing" and vui.STRATEGY_LABEL["wolf_arc"] == "Wolf"
     assert "SPÄRRAD" not in html
     mat = BOARD["board"]["segments"][1]
     blocked = vui.segment_card(mat, {}, BOARD["buys"]["segments"]["materials"], {}, {})

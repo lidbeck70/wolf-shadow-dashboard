@@ -1061,7 +1061,7 @@ _PANEL_GUIDE: list[tuple] = [
     # test_panel_guide_table_uses_real_paths läser dem därifrån.
     ("VALHALL → Kartan", "Alla strategier: cykeln först",
      "Cykelkartan över hela marknaden: status per sektor (Norden och globalt) och råvara, swing med "
-     "segmentets strategi, kvalitetsköp (grind ej RÖD), hävstång och Long Screener per ruta."),
+     "segmentets strategi, Wolf och Momentum, kvalitetsköp (grind ej RÖD), hävstång och Long Screener per ruta."),
     ("VALHALL → Papperskonton", "Alla strategier: utvärdering",
      "Varje strategi på papper, märkt med segment och cykelläge vid köp — vilken strategi fungerar var."),
     ("VALHALL → Backtester", "Besluten",
