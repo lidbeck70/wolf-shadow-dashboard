@@ -138,7 +138,8 @@ def test_workflow_and_ember_source_fix():
     assert "schedule" in src and "GIST_TOKEN" in src
     scan = open(os.path.join(ROOT, "scheduled_scan.py"), encoding="utf-8").read()
     from ember import universe as eu
-    assert "universe_source=SOURCE_BOTH" in scan and 'universe_source="both"' not in scan
+    assert ("universe_source=SOURCE_BOTH" in scan or "universe_source=SOURCE_REGISTRY" in scan)
+    assert 'universe_source="both"' not in scan
     assert eu.SOURCE_BOTH == "Båda" and eu.build_universe("both")[0] == []        # 'both' var ett okänt val
 
 
