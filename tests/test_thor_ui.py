@@ -94,12 +94,26 @@ def _script():
 
 
 def _patch(monkeypatch):
+    import market_prices
+    import market_risk_gate
+    import swing
+    import wolf_regime_ui
+    import wolf_screener_ui
+    from berserk import live
     monkeypatch.setattr(tui, "load", lambda loader=None: dict(DATA))
     monkeypatch.setattr(tui, "_stores", lambda: {})
     monkeypatch.setattr(tui, "_ohlcv", lambda t: _df())
+    monkeypatch.setattr(tui, "_prices", lambda t, p="1y": _df())
     monkeypatch.setattr(tui, "_phase", lambda t: ({"phase": "HOPE", "confidence": 69.0}, None))
     monkeypatch.setattr(tui, "_api", lambda: None)
     monkeypatch.setattr(tui, "_table", lambda: None)
+    # Regim-flikens motorer utan nätverk (BERSERK för BOL.ST, Momentum för ERIC-B.ST)
+    monkeypatch.setattr(market_prices, "ohlcv", lambda t, p="1y": _df())
+    monkeypatch.setattr(market_risk_gate, "for_ticker", lambda t, evaluator=None: None)
+    monkeypatch.setattr(live, "load_markets", lambda regions, getter=None, nordic_provider=None: {})
+    monkeypatch.setattr(wolf_screener_ui, "_get_data", lambda force=False: fx.MOMENTUM)
+    monkeypatch.setattr(wolf_regime_ui, "_get_data", lambda force=False: DATA["regime"])
+    monkeypatch.setattr(swing, "rules_data", lambda: {"positions": []})
 
 
 def test_page_renders_the_list(monkeypatch):
@@ -127,6 +141,7 @@ def test_opening_a_ticker_shows_the_analysis_block(monkeypatch):
     assert at.selectbox(key="thor_strategy").value == "BERSERK"                   # bästa raden: BERSERK KÖP
     labels = [b.label for b in at.button]
     assert "Öppna i BERSERK Regime →" in labels and "◀ Tillbaka till listan" in labels   # bara Regim-fliken ritas
+    assert "BERSERK — AKTIEN" in text and "Koppar" in text                          # BERSERK-layouten (thor.regim)
     assert "Cykelgrinden" not in text                                               # Cykel ritas först när den öppnas
     assert "Koppar · BERSERK-listan" in text and "Råvara" in [t.label for t in at.tabs]
 
@@ -161,7 +176,7 @@ def test_cycle_sheets_and_rules_tabs_render(monkeypatch):
     assert "Rick Rule:" in text and len(at.dataframe) == 1                               # granskningen och positionen
     labels = [b.label for b in at.button]
     assert "Rick Rule →" in labels and "Öppna Backtest →" in labels
-    assert any(e.label.startswith("Regler") for e in at.expander)                       # playbooken (Viking)
+    assert "SÅ GÖR DU — STEG FÖR STEG" in text and "FUSKLAPP" in text                   # hela playbooken (Viking)
 
 
 def test_deep_link_t_opens_the_ticker(monkeypatch):
@@ -175,6 +190,7 @@ def test_deep_link_t_opens_the_ticker(monkeypatch):
     assert at.selectbox(key="thor_strategy").value == "Momentum Swing"            # rad 1 · setup A vinner
     text = " ".join(m.value for m in at.markdown)
     assert "Momentum Swing: rad 1 · setup A" in text and "Råvara" not in [t.label for t in at.tabs]
+    assert "SWING-DOMEN" in text and "KÖP-KANDIDAT" in text                        # Momentum-layouten (thor.regim)
 
 
 @pytest.mark.parametrize("fn", [tui._goto, tui._close, tui._more, tui._jump])

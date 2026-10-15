@@ -163,9 +163,13 @@ def test_scheduled_scan_runs_once_per_local_hour_and_wolf_data_does_not_overlap(
 
 # ── Wolf-checklistan ──────────────────────────────────────────────────────────
 def test_wolf_checklist_has_no_hardcoded_passes():
-    src = open(os.path.join(ROOT, "tabs", "regime.py"), encoding="utf-8").read()
-    block = src[src.index("swing_gates = ["):src.index("MÄTBARA GRINDAR")]
+    # Grindarna bor i wolf_regime_score.py (Thor fas 4) — sidan tabs/regime.py läser dem därifrån.
+    src = open(os.path.join(ROOT, "wolf_regime_score.py"), encoding="utf-8").read()
+    block = src[src.index("def gates("):src.index("def gate_summary(")]
     assert '"passed": True' not in block                                 # inget godkänns av sig självt
     assert block.count('"passed": None') == 8                           # 4 manuella × 2 grenar
-    assert 'Data ej tillgänglig ({type(_gate_exc).__name__})' in block   # fel → ej godkänd, med orsak
-    assert "measurable = [g for g in swing_gates if g[\"passed\"] is not None]" in src
+    assert 'Data ej tillgänglig ({type(exc).__name__})' in block         # fel → ej godkänd, med orsak
+    assert 'measurable = [g for g in gs if g["passed"] is not None]' in src
+    page = open(os.path.join(ROOT, "tabs", "regime.py"), encoding="utf-8").read()
+    assert "wrs.gates(" in page and "wrs.gates_unavailable(" in page and "wrs.gate_summary(" in page
+    assert '"passed": True' not in page and '"passed": None' not in page

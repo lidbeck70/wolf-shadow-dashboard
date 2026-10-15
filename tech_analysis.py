@@ -185,6 +185,15 @@ def render_tech_analysis_page() -> None:
     _render(ticker, df, src)
 
 
+def _num(value, default: float) -> float:
+    """float eller default — None och NaN (indikatorerna svarar NaN på kort data) blir default."""
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return default
+    return default if f != f else f
+
+
 def _render(ticker: str, df: pd.DataFrame, src: str) -> None:
     from ovtlyr.indicators.candlesticks import detect_patterns
     from ovtlyr.indicators.momentum import compute_momentum
@@ -241,8 +250,8 @@ def _render(ticker: str, df: pd.DataFrame, src: str) -> None:
     b.markdown(f"<div style='background:{BG_CARD};border-left:3px solid {CYAN};border-radius:6px;padding:10px 12px;"
                f"font-size:0.85rem;color:{TEXT};line-height:1.8;'>RSI 14 <b style='float:right;'>{rsi:.1f}</b><br>"
                f"State <b style='float:right;color:{CYAN};'>{str(mom.get('ob_os_flag', 'neutral')).upper()}</b><br>"
-               f"Vol ratio <b style='float:right;'>{float(volume.get('ratio', 1.0) or 1.0):.2f}x</b><br>"
-               f"ATR 14 <b style='float:right;'>{float(vol.get('atr', 0) or 0):.2f}</b><br>"
+               f"Vol ratio <b style='float:right;'>{_num(volume.get('volume_ratio'), 1.0):.2f}x</b><br>"
+               f"ATR 14 <b style='float:right;'>{_num(vol.get('atr14'), 0.0):.2f}</b><br>"
                f"Trend <b style='float:right;'>{str(trend.get('trend_state', '—'))}</b></div>",
                unsafe_allow_html=True)
 
