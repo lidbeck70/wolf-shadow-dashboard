@@ -288,17 +288,35 @@ def _closes(api, ins_id: int) -> list:
     return [float(b["c"]) for b in bars]
 
 
-def scan(api, today: Optional[date] = None) -> dict:
+def registry_nordic(loader=None) -> Optional[list]:
+    """Nordens Börsdata-bolag ur universum-registret som instrumentrader — alla listor (insynsköp i småbolag
+    är poängen), bara bolag med insId. None när registret saknas i Gisten."""
+    from universe import scan as uscan
+    members = uscan.members_for("insider", loader=loader, main_boards=False)
+    return None if members is None else uscan.as_instruments(members)
+
+
+def scan(api, today: Optional[date] = None, loader=None) -> dict:
     import insider as ins   # arkets rena funktioner — samma regler
 
     out = {"generated": _now(), "universe": 0, "with_buys": 0,
-           "clusters": [], "error": None}
+           "clusters": [], "error": None, "universe_source": "Börsdata"}
     today = today or date.today()
     try:
         table = _markets.load(api=api)
-        nordic_ids = _markets.nordic_stock_ids(table)
-        instruments = api.get_instruments()
-        nordic = [i for i in instruments if i.get("marketId") in nordic_ids]
+        nordic = None
+        try:
+            nordic = registry_nordic(loader)
+        except Exception as exc:
+            log.warning("Universum-registret gick inte att läsa (%s) — Börsdatas lista som förut.", exc)
+        if nordic is not None:
+            out["universe_source"] = "universum-registret"
+            log.info("Universum-registret: %d nordiska bolag", len(nordic))
+        else:
+            log.info("Universum-registret saknas i Gisten — Börsdatas lista som förut.")
+            nordic_ids = _markets.nordic_stock_ids(table)
+            instruments = api.get_instruments()
+            nordic = [i for i in instruments if i.get("marketId") in nordic_ids]
         by_id = {int(i["insId"]): i for i in nordic if i.get("insId") is not None}
         out["universe"] = len(by_id)
         log.info("Universum: %d nordiska instrument", len(by_id))

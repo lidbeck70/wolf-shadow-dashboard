@@ -72,6 +72,20 @@ def tickers_for(strategy: str, **kw) -> Optional[list]:
     return None if members is None else [m.ticker for m in members]
 
 
+def as_instruments(members: Iterable[ur.Member]) -> list:
+    """Registrets Börsdata-bolag som instrumentrader i Börsdatas form (insId, ticker, name, marketId, sectorId,
+    branchId, stockPriceCurrency) — för skannrar som förut läste api.get_instruments(). Listornas bolag utan
+    insId hoppas över."""
+    out = []
+    for m in members or []:
+        if m.ins_id is None or m.market_id is None:
+            continue
+        out.append({"insId": m.ins_id, "ticker": m.bd_ticker or m.ticker, "name": m.name, "marketId": m.market_id,
+                    "sectorId": m.sector_id, "branchId": m.branch_id, "stockPriceCurrency": m.currency,
+                    "market": m.market})
+    return out
+
+
 def describe(members: Iterable[ur.Member]) -> str:
     """'412 bolag · Norden 120 · USA 240 · Kanada 52 · kurerade 230 · bara Börsdata 182'."""
     rows = list(members or [])
