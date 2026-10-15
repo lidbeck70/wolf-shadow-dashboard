@@ -95,6 +95,22 @@ def nordic_stock_market_ids():
         return mk.nordic_stock_ids(mk.FALLBACK)
 
 
+REGISTRY_LOADER = None     # universum-registrets läsare (gist_storage.load_blob); tester sätter en egen
+
+
+def registry_ins_ids():
+    """insId för Nordens Börsdata-bolag i universum-registret (alla listor), eller None när registret saknas."""
+    try:
+        from universe import scan as uscan
+        members = uscan.members_for("momentum", loader=REGISTRY_LOADER, main_boards=False)
+    except Exception as exc:
+        print(f"VARNING: universum-registret gick inte att läsa ({exc}) — Börsdatas lista som förut")
+        return None
+    if members is None:
+        return None
+    return {m.ins_id for m in members if m.ins_id is not None}
+
+
 def build_universe():
     ins = pd.DataFrame(_get("/instruments")["instruments"])
     # Börsdatas fält heter instrumentType (0 = aktie); det gamla filtret på
@@ -104,6 +120,12 @@ def build_universe():
         ins = ins[ins[type_col] == 0]
     if "marketId" in ins.columns:
         ins = ins[ins["marketId"].isin(nordic_stock_market_ids())]
+    reg = registry_ins_ids()
+    if reg:
+        # Universum-registret (Norden, alla aktielistor): samma bolag som Börsdatas lista i praktiken, men ur
+        # ett register som alla strategier delar — och bara bolag som finns där.
+        ins = ins[ins["insId"].isin(reg)]
+        print(f"Universum-registret: {len(ins)} nordiska bolag")
     csvp = CONFIG["UNIVERSE_CSV"]
     if csvp and os.path.exists(csvp):
         uni = pd.read_csv(csvp, sep=None, engine="python")

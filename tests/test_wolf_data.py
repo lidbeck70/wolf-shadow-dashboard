@@ -64,6 +64,7 @@ def _run_pipeline():
     w.CONFIG["UNIVERSE_CSV"] = os.path.join(tmp, "absent.csv")  # -> full mocked universe
     w.CONFIG["API_KEY"] = "test-key"                            # passes the guard
     w.CONFIG["PUSH_TO_GIST"] = False                            # no network
+    w.REGISTRY_LOADER = lambda name, fb: fb                     # no universe register in the Gist here
     w._get = _fake_get
     w._last = [0.0]
     w.main()
