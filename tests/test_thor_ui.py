@@ -193,8 +193,10 @@ def test_cycle_sheets_and_rules_tabs_render(monkeypatch):
     assert "Cykelgrinden (quality): PASS" in text and "Hope" in text and "^OMX: HOPE 69 %" in text
     assert "Råvarucykeln" in text and ">AGERA<" in text and "Guld/koppar" in text          # Råvara (thor.ravara)
     assert "Rick Rule:" in text and len(at.dataframe) == 1                               # granskningen och positionen
+    assert "har ingen backtestmotor per aktie" in text                                   # Backtest: Quality → Valhall
     labels = [b.label for b in at.button]
     assert "Rick Rule →" in labels and "Öppna Backtest →" in labels and "Öppna i BERSERK Regime →" in labels
+    assert "Öppna Valhalls backtester →" in labels
     assert "SÅ GÖR DU — STEG FÖR STEG" in text and "FUSKLAPP" in text                   # hela playbooken (Viking)
 
 

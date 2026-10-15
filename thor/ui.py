@@ -5,8 +5,8 @@ Flödet är screening → tryck → analys → köp, utan att byta flik: tryck "
 ticker) så öppnas analysblocket överst med aktien och strategin förifyllda, och listan fälls ihop under
 det. Sidan räknar inga signaler: listan läses ur körningarna (thor.candidates) och analysen sätts ihop av
 motorerna som redan finns (thor.dossier). Regim per strategi, Teknik och Regler ritas av thor.regim, Cykel av
-thor.cykel och Råvara av thor.ravara — samma motorer som de gamla sidorna. Backtest fylls på i fas 6; tills
-dess har den en bryggknapp till den gamla sidan.
+thor.cykel, Råvara av thor.ravara, Arken av thor.arken och Backtest av thor.backtest — samma motorer som de
+gamla sidorna, som har bryggknappar kvar tills städningen.
 
 Designen följer Valhall: sidans data i st.session_state[_STATE] med en 📡-knapp, kort som rena HTML-
 funktioner (thor/cards.py), bara den öppna sidofliken ritas (st.tabs med on_change="rerun").
@@ -52,6 +52,7 @@ BRIDGE = {"viking_nine": ("regime/marknad/arc-regime/viking-nine-regime", "Vikin
           "insider": ("review/insider", "Insiderbevakaren", None), "sheet": ("review", "Granskningsarken", None)}
 COPILOT = ("copilot", "Copiloten", "copilot_ticker")
 BACKTEST = ("portfolio/backtest", "Backtest", None)
+VALHALL_BT = ("valhall/backtester", "Valhalls backtester", None)
 SHEET_LINK = {"rule": "review/rick-rule", "royalty": "review/royalty-c", "sprott": "review/poangmodell",
               "durrett": "review/poangmodell", "tiggre": "review/tiggre", "insider": "review/insider"}
 
@@ -350,59 +351,16 @@ def _tab_ravara(st, data, ident, strategy, sheets, cands) -> None:
 
 
 def _tab_arken(st, data, ident, strategy, sheets, cands) -> None:
-    from ui.components import note
-    if not sheets["found"]:
-        note(f"{ident.yf} finns inte i något ark än. Ordningen är screener → granskning → köp: lägg in bolaget i "
-             f"rätt ark först.")
-    for key, rev in sheets["reviews"].items():
-        st.markdown(cards.review_card(key, rev), unsafe_allow_html=True)
-        details = []
-        try:
-            import review_link
-            details = review_link.detail_lines(key, rev.get("row") or {})
-        except Exception:
-            details = []
-        if details:
-            with st.expander(f"Underlaget i {rev.get('sheet') or key}", expanded=False):
-                for line in details:
-                    st.caption(line.strip())
-    conf = sheets.get("confidence")
-    if conf:
-        st.markdown(cards.chip(f"Durrett/Wolf Asymmetry: {conf.get('name') or ident.yf} · {conf.get('commodity') or '—'} · "
-                               f"{conf.get('stage') or ''}".strip(" ·"), AMBER), unsafe_allow_html=True)
-    if sheets.get("scorecard"):
-        try:
-            from scorecard import gate_state
-            for k, card in sheets["scorecard"].items():
-                g = gate_state(card, {"ticker": ident.yf})
-                label = f"Scorecard: {'READY' if g.get('ready') else 'NO TRADE'} · {card.get('strategy') or ''}"
-                st.markdown(cards.chip(label, GREEN if g.get("ready") else AMBER), unsafe_allow_html=True)
-        except Exception:
-            pass
-    if sheets["positions"]:
-        st.markdown(f"<div style='color:{CYAN};font-size:0.72rem;letter-spacing:0.1em;margin-top:8px;'>POSITIONER</div>",
-                    unsafe_allow_html=True)
-        st.dataframe(pd.DataFrame([{"Hink": p.get("_bucket"), "Strategi": p.get("strategy"), "Antal": p.get("shares"),
-                                    "Entry": p.get("entry_price"), "Datum": p.get("entry_date"), "Stopp": p.get("stop"),
-                                    "Mål": p.get("target")} for p in sheets["positions"]]),
-                     hide_index=True, use_container_width=True)
-    if sheets["journal"]:
-        st.markdown(f"<div style='color:{CYAN};font-size:0.72rem;letter-spacing:0.1em;margin-top:8px;'>JOURNALEN</div>",
-                    unsafe_allow_html=True)
-        st.dataframe(pd.DataFrame([{"Strategi": t.get("strategy"), "In": t.get("entry_date"), "Ut": t.get("exit_date"),
-                                    "Resultat %": t.get("pnl_pct"), "R": t.get("r_multiple"), "Skäl": t.get("exit_reason")}
-                                   for t in sheets["journal"]]), hide_index=True, use_container_width=True)
-    cols = st.columns(3)
-    for i, (key, path) in enumerate(SHEET_LINK.items()):
-        if key in sheets["reviews"] or i < 3:
-            cols[i % 3].button(f"{reg.label(key) if reg.get(key) else key.title()} →", key=f"thor_sheet_{key}",
-                               on_click=_jump, args=(path, None, ident.yf), width="stretch")
+    """Vad arken säger om bolaget — granskningarna, motorerna, scorecardet, insiderklustret, registret (thor.arken)."""
+    from thor import arken
+    arken.render(st, data, ident, sheets, cands, SHEET_LINK, _jump)
 
 
 def _tab_backtest(st, data, ident, strategy, sheets, cands) -> None:
-    from ui.components import note
-    note("Strategin på aktien med en knapp — nyckeltal, affärer och kursgraf med entry/exit — kommer i fas 6 "
-         "(Viking Nine, BERSERK, Momentum och Wolf). Tills dess finns PORTFOLIO → Backtest.")
+    """Strategin på aktien med en knapp (thor.backtest); utan per-aktie-motor: Valhalls backtester och gamla sidan."""
+    from thor import backtest
+    if not backtest.render(st, ident, strategy, _prices):
+        _bridge(st, "Öppna", VALHALL_BT, ident.yf, "thor_bridge_valhall_bt")
     _bridge(st, "Öppna", BACKTEST, ident.yf, "thor_bridge_backtest")
 
 
