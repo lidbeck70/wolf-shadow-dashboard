@@ -92,7 +92,7 @@ INSIDER = {"generated": GEN, "clusters": [
     {"ticker": "X.ST", "name": "X", "score": 7, "status": "KÖP — logga i journalen", "chase": True}]}
 SCREENS = {"generated": GEN, "screens": {
     "rule": {"label": "Överlevarna (Rule)", "sheet": "Rick Rule",
-             "rows": [{"ticker": "AEM", "name": "Agnico", "universe": "CA", "mcap_musd": 30000}], "new": [{"ticker": "AEM"}]},
+             "rows": [{"ticker": "AEM", "name": "Agnico", "universe": "CA", "mcap_musd": 30000}], "new": ["AEM"]},
     "tiggre": {"label": "Tiggre (sweet spot)", "sheet": "Tiggre",
                "rows": [{"ticker": "CU.V", "name": "Cu", "universe": "CA"}], "new": []}}}
 BLOBS = {"board": BOARD, "berserk": BERSERK, "arc": ARC, "momentum": MOMENTUM, "ember": EMBER, "ca_quality": CA_Q,
@@ -232,6 +232,26 @@ def test_screen_rows():
     assert a.status == "Överlevarna (Rule)" and a.status_class == tc.TRAFF and a.new and a.score is None
     assert a.score_text == "CA · 30,000 MUSD" and a.why == "Rick Rule" and a.family == reg.HAV
     assert not rows[("hav", "CU.V")].new
+    # screens_scan skriver "new" som tickersträngar (riktiga filen); rader som dict tolereras också, skräp hoppas över
+    alt = {"generated": GEN, "screens": {"rule": {"rows": [{"ticker": "AEM"}, "skräp", None], "new": [{"ticker": "aem"}]},
+                                         "trasig": "inte en dict", "tom": None}}
+    rows = tc.from_screens(alt, CTX)
+    assert [(c.ticker, c.new) for c in rows] == [("AEM", True)]
+
+
+def test_build_survives_a_broken_source(monkeypatch):
+    def boom(*_a, **_k):
+        raise RuntimeError("fel form")
+    monkeypatch.setattr(tc, "from_ember", boom)
+    errors = {}
+    rows = tc.build(BLOBS, today="2026-10-15", errors=errors)
+    assert errors == {"ember": "RuntimeError: fel form"}
+    assert rows and not any(c.strategy == "ember" for c in rows) and any(c.strategy == "berserk" for c in rows)
+    assert len(tc.build(BLOBS, today="2026-10-15")) == len(rows)                                   # utan errors: tyst
+    bad = {**BLOBS, "insider": {"generated": GEN, "clusters": "x"}, "board": {"board": {"segments": "x"}}}
+    errors = {}
+    tc.build(bad, errors=errors)
+    assert "insider" in errors and "AttributeError" in errors["insider"]
 
 
 # ── Listan ───────────────────────────────────────────────────────────────────

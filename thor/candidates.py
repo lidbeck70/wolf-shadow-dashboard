@@ -108,6 +108,11 @@ def _norm_name(r: dict, fallback: str = "") -> str:
     return str(r.get("name") or fallback or "")
 
 
+def _ticker_of(x) -> str:
+    """Tickern ur en rad (dict) eller en ren sträng — screens.json skriver dagens nya träffar som strängar."""
+    return str(x.get("ticker") or "") if isinstance(x, dict) else str(x or "")
+
+
 def segment_context(board: Optional[dict]) -> dict:
     """{segments: {key: {status, cykel, phase}}, themes: {tema: {status, cykel, phase, segment}}} ur kartan."""
     out: dict = {"segments": {}, "themes": {}}
@@ -384,8 +389,11 @@ def from_screens(blob: Optional[dict], ctx: dict) -> list:
     """Håvarna: varje träff är en rad (TRÄFF), nya träffar märks — utan rang (en håv säger ja eller nej)."""
     out, asof = [], _day((blob or {}).get("generated"))
     for key, sc in ((blob or {}).get("screens") or {}).items():
-        new = {yf(r.get("ticker")) for r in (sc or {}).get("new") or []}
-        for r in (sc or {}).get("rows") or []:
+        sc = sc if isinstance(sc, dict) else {}
+        new = {yf(_ticker_of(x)) for x in sc.get("new") or []}
+        for r in sc.get("rows") or []:
+            if not isinstance(r, dict):
+                continue
             t = yf(r.get("ticker"))
             mc = _f(r.get("mcap_musd"))
             out.append(_tag(Candidate(
@@ -423,16 +431,36 @@ def mark_stale(rows: list, today=None, days: int = STALE_DAYS) -> list:
     return rows
 
 
-def build(blobs: dict, today=None, momentum_map: Optional[dict] = None) -> list:
-    """Hela listan ur de lästa filerna (load_blobs-nycklar), sorterad och utan dubbletter."""
+def _collect(errors: Optional[dict], name: str, fn, *args) -> list:
+    """En källa i taget: en fil med oväntad form ger en tom lista och ett fel i errors — aldrig en krasch."""
+    try:
+        return list(fn(*args) or [])
+    except Exception as exc:
+        if errors is not None:
+            errors[name] = f"{type(exc).__name__}: {exc}"
+        return []
+
+
+def build(blobs: dict, today=None, momentum_map: Optional[dict] = None, errors: Optional[dict] = None) -> list:
+    """Hela listan ur de lästa filerna (load_blobs-nycklar), sorterad och utan dubbletter. Källor som inte går
+    att läsa hoppas över och skrivs i errors ({källa: fel}) så att sidan kan säga vad som saknas."""
     b = blobs or {}
     board = b.get("board") or {}
-    ctx = segment_context(board)
-    rows = (from_viking_nine(board, ctx) + from_long(board, ctx) + from_themes(board, ctx)
-            + from_berserk(b.get("berserk"), ctx) + from_arc(b.get("arc"), board, ctx)
-            + from_momentum(b.get("momentum"), ctx, momentum_map) + from_ember(b.get("ember"), ctx)
-            + from_contrarian(b.get("ca_quality"), ctx, "quality") + from_contrarian(b.get("ca_deep"), ctx, "deep")
-            + from_insider(b.get("insider"), ctx) + from_screens(b.get("screens"), ctx))
+    try:
+        ctx = segment_context(board)
+    except Exception as exc:
+        if errors is not None:
+            errors["board"] = f"{type(exc).__name__}: {exc}"
+        ctx = {"segments": {}, "themes": {}}
+    sources = (("viking_nine", from_viking_nine, (board, ctx)), ("long", from_long, (board, ctx)),
+               ("themes", from_themes, (board, ctx)), ("berserk", from_berserk, (b.get("berserk"), ctx)),
+               ("arc", from_arc, (b.get("arc"), board, ctx)), ("momentum", from_momentum, (b.get("momentum"), ctx, momentum_map)),
+               ("ember", from_ember, (b.get("ember"), ctx)), ("quality", from_contrarian, (b.get("ca_quality"), ctx, "quality")),
+               ("deep", from_contrarian, (b.get("ca_deep"), ctx, "deep")), ("insider", from_insider, (b.get("insider"), ctx)),
+               ("screens", from_screens, (b.get("screens"), ctx)))
+    rows: list = []
+    for name, fn, args in sources:
+        rows += _collect(errors, name, fn, *args)
     return mark_stale(dedupe(rows), today)
 
 

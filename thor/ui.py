@@ -211,7 +211,9 @@ def render_thor_page() -> None:
     if c1.button("📡 Uppdatera", key="thor_refresh") or _STATE not in st.session_state:
         with st.spinner("Läser körningarna ur Gisten …"):
             data = load()
-            data["rows"] = tc.build(data)
+            errors: dict = {}
+            data["rows"] = tc.build(data, errors=errors)
+            data["errors"] = errors
             st.session_state[_STATE] = data
             st.session_state.pop(_CACHE, None)
     data = st.session_state[_STATE]
@@ -219,6 +221,9 @@ def render_thor_page() -> None:
     c2.markdown(f"<div style='color:{DIM};font-size:0.78rem;padding-top:8px;'>hämtad {data.get('loaded')} · "
                 f"{len(rows)} rader</div>", unsafe_allow_html=True)
     st.markdown(cards.kpi_row(lage_items(data, rows)), unsafe_allow_html=True)
+    if data.get("errors"):
+        note("Kunde inte läsa " + ", ".join(f"{k} ({v})" for k, v in data["errors"].items())
+             + " — de raderna saknas i listan tills filen är rättad eller körningen körd om.")
     ticker = tc.yf(st.text_input("Ticker", key="thor_ticker", label_visibility="collapsed",
                                  placeholder="Skriv en ticker — BOL.ST, ERIC B, NEM — eller tryck Öppna på en rad"))
     if ticker:
