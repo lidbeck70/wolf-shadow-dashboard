@@ -319,10 +319,15 @@ def _bridge(st, label: str, target: tuple, ticker: str, key: str) -> None:
 
 # ── Sidoflikarna ────────────────────────────────────────────────────────────
 def _tab_regim(st, data, ident, strategy, sheets, cands) -> None:
-    """Strategins eget regimbeslut för aktien (thor.regim) — och knappar till den gamla sidan och Copiloten."""
-    from thor import regim
-    regim.render(st, ident, strategy, data, _prices, cands)
+    """Strategins eget regimbeslut för aktien (thor.regim) — för arkstrategierna Arkens dom (thor.dom) — och
+    knappar till den gamla sidan och Copiloten."""
     s = reg.get(strategy)
+    if ((s.regime if s else "") or "sheet") in ("sheet", "insider"):
+        from thor import dom
+        dom.render(st, data, ident, strategy, sheets, cands, _prices)
+    else:
+        from thor import regim
+        regim.render(st, ident, strategy, data, _prices, cands)
     target = BRIDGE.get((s.regime if s else "") or "", BRIDGE["sheet"])
     b1, b2 = st.columns(2)
     with b1:
