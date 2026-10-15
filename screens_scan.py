@@ -21,10 +21,13 @@ Mining" står vid respektive konstant.
   royalty  Royalty: Kanada/USA/Australien · bruttomarginal > 70 % ·
            EBIT-marginal > 40 % · skuld/EBITDA < 1,5
 
-Universum: Norden (alltid) + globalt (/instruments/global, kräver Börsdata
-Pro+ global). Sprott, Tiggre och Royalty har geografi utanför Norden och
-ger därför bara träffar med global licens; utan den får de error satt och
-larmbenet fryser sina baslinjer för just dem.
+Universum: universum-registret (universe/registry.py — Norden, USA, Kanada,
+London, Australien ur Börsdata, utan OTC) när det finns i Gisten, annars
+Norden (/instruments) + globalt (/instruments/global, kräver Börsdata Pro+
+global) som förut. Sprott, Tiggre och Royalty har geografi utanför Norden
+och ger därför bara träffar med global licens; utan den får de error satt
+och larmbenet fryser sina baslinjer för just dem. Håvarna siktar på
+juniorer, så registrets alla listor räknas (även TSX Venture och CSE).
 
 Blob: {"generated", "global_available", "screens": {key: {"label",
 "criteria", "rows": [{ticker, name, ins_id, universe, country, branch_id,
@@ -387,8 +390,28 @@ def mark_first_seen(result: dict, prev: Optional[dict]) -> dict:
     return result
 
 
-def scan(api) -> dict:
-    out = {"generated": _now(), "global_available": False,
+def registry_instruments(loader=None) -> Optional[tuple]:
+    """(nordiska, globala, ctry) ur universum-registret som instrumentrader åt run_universe — None när
+    registret saknas i Gisten. Bara Börsdata-bolag (de har insId); countryId sätts till registrets
+    marknadsnyckel och ctry pekar på den, så håvarnas geografi läses precis som förut."""
+    from universe import registry as ur
+    u = ur.load(loader=loader)
+    if u is None or not u.members:
+        return None
+    nordic, glob = [], []
+    for m in u.members.values():
+        if m.ins_id is None or m.market_id is None or m.kind != ur.STOCK:
+            continue
+        inst = {"insId": m.ins_id, "ticker": m.bd_ticker or m.ticker, "name": m.name, "marketId": m.market_id,
+                "branchId": m.branch_id, "sectorId": m.sector_id, "countryId": m.market,
+                "stockPriceCurrency": m.currency}
+        (nordic if m.market == ur.NORDEN else glob).append(inst)
+    ctry = {CA: {ur.KANADA}, AU: {ur.AUSTRALIEN}, US: {ur.USA}, NORDIC: {ur.NORDEN}}
+    return nordic, glob, ctry
+
+
+def scan(api, loader=None) -> dict:
+    out = {"generated": _now(), "global_available": False, "universe_source": "Börsdata",
            "screens": {s.key: {"label": s.label, "criteria": s.criteria,
                                "sheet": s.sheet, "rows": [], "error": None}
                        for s in SCREENS}}
@@ -397,20 +420,31 @@ def scan(api) -> dict:
         # panelen (utan egen licens) räknar med samma tabell som jobbet.
         table = _markets.load(api=api)
         out["markets"] = _markets.serialize(table)
-        ctry = country_ids(api.get_countries())
-        if not ctry.get(AU):
-            log.warning("Australien saknas i /countries — Sprott/Durrett/Tiggre/Royalty "
-                        "får inga ASX-träffar förrän Börsdata täcker ASX.")
-        nordic_ids = _markets.nordic_stock_ids(table)
-        nordic = [i for i in api.get_instruments() if i.get("marketId") in nordic_ids]
-        log.info("Norden: %d instrument", len(nordic))
+        reg = None
+        try:
+            reg = registry_instruments(loader)
+        except Exception as exc:
+            log.warning("Universum-registret gick inte att läsa (%s) — Börsdatas listor som förut.", exc)
+        if reg is not None:
+            nordic, glob, ctry = reg
+            out["universe_source"] = "universum-registret"
+            log.info("Universum-registret: Norden %d · globalt %d instrument", len(nordic), len(glob))
+        else:
+            log.info("Universum-registret saknas i Gisten — Börsdatas listor som förut.")
+            ctry = country_ids(api.get_countries())
+            if not ctry.get(AU):
+                log.warning("Australien saknas i /countries — Sprott/Durrett/Tiggre/Royalty "
+                            "får inga ASX-träffar förrän Börsdata täcker ASX.")
+            nordic_ids = _markets.nordic_stock_ids(table)
+            nordic = [i for i in api.get_instruments() if i.get("marketId") in nordic_ids]
+            log.info("Norden: %d instrument", len(nordic))
+            glob = api.get_global_instruments_list()
         res_n = run_universe(api, nordic, "nordic",
                              lambda kid: api.get_kpi_screener(kid, "last", "latest"), ctry,
                              table=table)
         for k, rows in res_n.items():
             out["screens"][k]["rows"].extend(rows)
 
-        glob = api.get_global_instruments_list()
         if glob:
             out["global_available"] = True
             log.info("Globalt: %d instrument", len(glob))
