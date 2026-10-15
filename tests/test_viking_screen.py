@@ -125,6 +125,10 @@ def test_page_scans_markets(monkeypatch):
                         st.session_state.setdefault(name, default))
     monkeypatch.setattr(storage, "is_dirty", lambda name: True)
     monkeypatch.setattr(market_prices, "ohlcv", lambda t, p="1y": DATA.get(t, pd.DataFrame()))
+    # Marknadsbannern räknar mot dagens datum; de syntetiska kurserna slutar vid END och skulle annars vara
+    # "gamla" (STALE) så fort kalendern gått vidare — lås dagen till END, som resten av testet.
+    real_layer = on.market_layer
+    monkeypatch.setattr(on, "market_layer", lambda m, **kw: real_layer(m, today=pd.Timestamp(END), **kw))
     monkeypatch.setattr(ui, "_regions", lambda: (["Norden", "USA"], lambda m: ["GOOD", "BAD"] if "Norden" in m else []))
     real_scan = vs.scan
     monkeypatch.setattr(vs, "scan", lambda tickers, max_candidates=40, progress=None, **kw: real_scan(

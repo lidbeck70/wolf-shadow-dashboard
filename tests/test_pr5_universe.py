@@ -158,9 +158,14 @@ def test_unknown_currency_leaves_market_cap_blank_instead_of_pretending_usd():
 
 
 # ── Ember: en karta ──────────────────────────────────────────────────────────
-def test_ember_complex_map_is_derived_from_the_theme_map():
+def test_ember_complex_map_is_derived_from_the_theme_map(monkeypatch):
+    import ember.regime as er
     from ember.config import TICKER_THEME_MAP, THEME_TO_COMPLEX
     from ember.regime import TICKER_COMPLEX_MAP, detect_complex
+    # Sista källan i detect_complex är Yahoos bransch — med nätverk (CI) vet Yahoo att Boliden är basmetaller.
+    # Testet gäller kartan, inte Yahoo: ingen bransch från Yahoo och inget innehav i registret.
+    monkeypatch.setattr(er, "yahoo_theme", lambda ticker, info_getter=None: None)
+    monkeypatch.setattr(er, "register_sector", lambda ticker: None)
     assert set(TICKER_COMPLEX_MAP) == set(TICKER_THEME_MAP)
     for t, theme in TICKER_THEME_MAP.items():
         assert TICKER_COMPLEX_MAP[t] == THEME_TO_COMPLEX[theme], t

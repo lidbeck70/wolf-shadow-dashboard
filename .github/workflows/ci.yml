@@ -20,7 +20,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          pip install pytest flake8
+          pip install pytest flake8 pyyaml   # pyyaml: bara testerna (läser arbetsflödenas scheman)
 
       - name: Lint (flake8)
         run: |
