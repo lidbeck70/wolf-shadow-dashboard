@@ -26,13 +26,31 @@ logging.basicConfig(level=logging.INFO,
 log = logging.getLogger("scheduled_scan")
 
 
+def _nordic_market_ids(loader=None) -> list:
+    """Nordens aktielistor ur universum-registret (de listor registrets nordiska bolag står på — levande, ur
+    Börsdatas /markets), annars den frysta ALL_NORDIC_MARKETS som förut."""
+    from borsdata_api import ALL_NORDIC_MARKETS
+    members = None
+    try:
+        from universe import scan as uscan
+        members = uscan.members_for("quality", loader=loader, main_boards=False)
+    except Exception as exc:
+        log.warning("Universum-registret gick inte att läsa (%s) — ALL_NORDIC_MARKETS som förut.", exc)
+    ids = sorted({m.market_id for m in members or [] if m.market_id is not None})
+    if not ids:
+        log.info("Universum-registret saknas — Contrarian Alpha skannar ALL_NORDIC_MARKETS (%d listor).",
+                 len(ALL_NORDIC_MARKETS))
+        return list(ALL_NORDIC_MARKETS)
+    log.info("Universum-registret: Nordens %d aktielistor %s.", len(ids), ids)
+    return ids
+
+
 def _run_contrarian(mode: str) -> None:
     from contrarian_alpha.engine import PipelineConfig, run_pipeline
     from contrarian_alpha.cache import save_screener_results
-    from borsdata_api import ALL_NORDIC_MARKETS
     t0 = time.time()
     log.info("Contrarian Alpha [%s] starting...", mode)
-    cfg = PipelineConfig(mode=mode, market_ids=list(ALL_NORDIC_MARKETS), top_n=40)
+    cfg = PipelineConfig(mode=mode, market_ids=_nordic_market_ids(), top_n=40)
     res = run_pipeline(cfg)
     extra = None
     if mode == "quality":
