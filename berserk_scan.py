@@ -6,7 +6,8 @@ Körs av berserk-scan-workflowen vardagar efter USA:s stängning (då har alla
 regioner en stängd dag). Samma regler som panelen:
 
   1. live.scan över hela universumet (Norden, USA, Kanada, London
-     och råvaru-ETF:erna) på senaste stängda dag.
+     och råvaru-ETF:erna — plus universum-registrets råvarubolag på huvudlistorna
+     i Norden, USA och Kanada när registret finns i Gisten) på senaste stängda dag.
   Reglerna är backtest.live_config()/live_portfolio() (LIVE_RULES: S3 av, värme 8 %,
   råvarugrind utanför Norden, ingen entry vid gap > 1 ATR).
   2. paper.step förvaltar papperskontot: fyller gårdagens order på öppningen,
@@ -39,11 +40,36 @@ SCAN_BLOB = "berserk_scan.json"
 PAPER_BLOB = "berserk_paper.json"
 ROW_KEYS = ("ticker", "status", "setup", "label", "theme", "complex", "region", "kind", "driver", "close", "stop",
             "position_pct", "risk_pct", "atr", "date", "why", "rsi2", "rvol", "divergence", "dd252")
+EXTRA_MAX = 300                    # tak för registrets bolag utöver listorna — körtiden (berserk-scan.yml 40 min)
 
 
-def universe() -> list:
+def lists() -> list:
+    """BERSERK:s egna listor: Norden, USA, Kanada, London och råvaru-ETF:erna."""
     from berserk import universe as uv
     return list(dict.fromkeys(t for lst in uv.LISTS.values() for t in lst))
+
+
+def universe(loader=None) -> list:
+    """Dagens lista: listorna, plus universum-registrets bolag för BERSERK (Norden + USA + Kanada med råvarutema
+    på huvudlistorna, högst EXTRA_MAX nya) — bara listorna när registret inte finns i Gisten."""
+    from berserk import themes as th
+    from berserk import universe as uv
+    base = lists()
+    try:
+        from universe import scan as uscan
+        members = uscan.members_for("berserk", loader=loader, themes=set(th.THEMES))
+    except Exception as exc:
+        log.warning("Universum-registret gick inte att läsa (%s) — BERSERK skannar listorna (%d).", exc, len(base))
+        return base
+    if members is None:
+        log.info("Universum-registret saknas i Gisten — BERSERK skannar listorna (%d).", len(base))
+        return base
+    have = set(base)
+    extra = [m for m in members if m.ticker not in have][:EXTRA_MAX]
+    uv.register({m.ticker: m.theme for m in extra})
+    log.info("Universum-registret: %s · %d nya utöver listorna (tak %d)", uscan.describe(members), len(extra),
+             EXTRA_MAX)
+    return base + [m.ticker for m in extra]
 
 
 def scan_payload(res: dict, paper_state: Optional[dict], paper_last_run: Optional[str] = None,

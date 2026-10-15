@@ -11,6 +11,8 @@ olja (raffinering). Tickers i Yahoo-form; datasonden visar vilka som saknas.
              sekundärt — de ledande råvarubolagen i varje tema (GLOBAL = alla tre).
              Australien är borttaget (2026-10): ASX går inte att handla hos Nordnet.
   ETFS       råvaru-ETF:er (themes.ETFS) — handlas med setup 2 och 3
+  REGISTRY   universum-registrets bolag (universe/registry.py), lagda ovanpå listorna av skanningen
+             (register) — theme_of/kind_of känner dem, listorna själva ändras inte
   REGION_INDEX  marknadsgrindens index per region (OMXS30, SPY, TSX, FTSE)
 
 Ett bolag finns bara med en gång (ingen dubbelnotering): Rio Tinto och BHP via
@@ -113,6 +115,24 @@ LISTS: dict = {**{name: tuple(m) for name, m in REGIONS.items()}, "Råvaru-ETF:e
 REGION_INDEX: dict = {"Norden": "OMXS30", "USA": "SPY", "Kanada": "^GSPTSE", "London": "^FTSE"}
 
 
+# Universum-registrets bolag (universe/registry.py) läggs ovanpå listorna av skanningen (berserk_scan.universe):
+# {ticker: tema} — listorna vinner när båda känner tickern, och registret ändrar aldrig listorna själva.
+REGISTRY: dict = {}
+
+
+def register(mapping: dict) -> int:
+    """Lägg registrets {ticker: tema} ovanpå listorna (bara kända teman). Returnerar antalet nya tickers."""
+    added = 0
+    for t, theme in (mapping or {}).items():
+        key = str(t or "").strip().upper()
+        if not key or theme not in th.THEMES or key in PRODUCERS or key in ETFS:
+            continue
+        if key not in REGISTRY:
+            added += 1
+        REGISTRY[key] = theme
+    return added
+
+
 def region_of(ticker: str) -> str:
     """Region ur tickerns suffix (ETF:erna är amerikanska)."""
     t = str(ticker or "").upper()
@@ -127,13 +147,13 @@ def region_of(ticker: str) -> str:
 
 def theme_of(ticker: str) -> str:
     t = str(ticker or "").upper()
-    return PRODUCERS.get(t) or ETFS.get(t) or ""
+    return PRODUCERS.get(t) or ETFS.get(t) or REGISTRY.get(t) or ""
 
 
 def kind_of(ticker: str) -> str:
     """'producent', 'etf' eller '' (okänd)."""
     t = str(ticker or "").upper()
-    return "etf" if t in ETFS else "producent" if t in PRODUCERS else ""
+    return "etf" if t in ETFS else "producent" if t in PRODUCERS or t in REGISTRY else ""
 
 
 def driver_candidates(ticker: str) -> tuple:
