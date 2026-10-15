@@ -4,9 +4,9 @@ thor/ui.py — 🔨 THOR: läget, tickersök, rullgardinen, listan och analysblo
 Flödet är screening → tryck → analys → köp, utan att byta flik: tryck "Öppna →" på en rad (eller skriv en
 ticker) så öppnas analysblocket överst med aktien och strategin förifyllda, och listan fälls ihop under
 det. Sidan räknar inga signaler: listan läses ur körningarna (thor.candidates) och analysen sätts ihop av
-motorerna som redan finns (thor.dossier). Regim per strategi, Teknik och Regler ritas av thor.regim med
-samma motorer som de gamla sidorna; Råvara och Backtest fylls på i fas 5–6 — tills dess har de
-bryggknappar till de gamla sidorna med aktien förifylld.
+motorerna som redan finns (thor.dossier). Regim per strategi, Teknik och Regler ritas av thor.regim, Cykel av
+thor.cykel och Råvara av thor.ravara — samma motorer som de gamla sidorna. Backtest fylls på i fas 6; tills
+dess har den en bryggknapp till den gamla sidan.
 
 Designen följer Valhall: sidans data i st.session_state[_STATE] med en 📡-knapp, kort som rena HTML-
 funktioner (thor/cards.py), bara den öppna sidofliken ritas (st.tabs med on_change="rerun").
@@ -32,9 +32,11 @@ ALL = "Alla strategier"
 FAMILY_ALL = {f"{lbl} (alla)": key for key, lbl in reg.FAMILIES}
 FILTERS = ("bara KÖP", "bara Norden", "bara nya")
 TABS = ("Regim", "Teknik", "Cykel", "Råvara", "Arken", "Backtest", "Regler")
-STORES = ("producers", "scoring", "tiggre", "insider", "holdings", "confidence", "scorecard", "copilot_journal")
+STORES = ("producers", "scoring", "tiggre", "insider", "holdings", "confidence", "scorecard", "copilot_journal",
+          "rotation")
 STORE_DEFAULT = {"confidence": {"companies": {}, "commodity_overrides": {}, "strategies": {}},
-                 "scorecard": {"cards": {}}, "copilot_journal": {"entries": []}}
+                 "scorecard": {"cards": {}}, "copilot_journal": {"entries": []},
+                 "rotation": {"month": "", "grades": {}, "history": []}}
 
 # Bryggorna till de gamla sidorna tills fas 4–6: regimlayout → (djuplänk, sidans namn, widget att förifylla).
 # Wolf Regime och Viking Regime sätter egna startvärden i sina fält — där navigerar vi bara.
@@ -335,43 +337,15 @@ def _tab_teknik(st, data, ident, strategy, sheets, cands) -> None:
 
 
 def _tab_cykel(st, data, ident, strategy, sheets, cands) -> None:
-    from ui.components import note
-    cyc = td.cycle(ident, strategy, data.get("board"), _phase)
-    st.markdown(cards.gate_card(cyc["gate"], cyc["playbook"]), unsafe_allow_html=True)
-    own = cyc.get("phase") or {}
-    st.markdown(cards.phase_strip(own.get("phase"), cyc["phases"]["buy"], cyc["phases"]["hold"], cyc["phases"]["sell"]),
-                unsafe_allow_html=True)
-    chips = []
-    bench = cyc.get("benchmark") or {}
-    if (bench.get("phase") or {}).get("phase"):
-        chips.append(cards.chip(f"{bench['index']}: {bench['phase']['phase'].replace('_', ' ')} "
-                                f"{bench['phase'].get('confidence', 0):.0f} %", CYAN))
-    seg = cyc.get("segment") or {}
-    if seg.get("status"):
-        parts = (f"Valhall {seg.get('view')}", seg.get("status"), seg.get("phase"), seg.get("cykel"))
-        chips.append(cards.chip(" · ".join(x for x in parts if x), regime_color(seg.get("status"))))
-    if chips:
-        st.markdown("<div style='display:flex;flex-wrap:wrap;gap:4px;margin:4px 0;'>" + "".join(chips) + "</div>",
-                    unsafe_allow_html=True)
-    if own.get("phase"):
-        try:
-            from tabs.market_cycle import _build_gauge
-            st.plotly_chart(_build_gauge(own["phase"], float(own.get("confidence") or 0)), use_container_width=True,
-                            key="thor_cycle_gauge")
-        except Exception as exc:                                 # pragma: no cover - ritningen är inte regeln
-            note(f"Mätaren kunde inte ritas: {exc}")
-    elif cyc.get("error"):
-        note(f"Aktiens fas kunde inte läsas: {cyc['error']}")
-    note("Aktiens egen psykologifas (Market Cycle Engine, 14 faser) och hemmamarknadens. Grinden läser playbookens "
-         "köp-, håll- och säljfaser ordagrant — grön = köpfas, gul = håll eller fasen nämns inte, röd = säljfas.")
+    """Aktiens psykologifas med regelutfall och tidslinje, hemmamarknaden, Valhall-läget och grinden (thor.cykel)."""
+    from thor import cykel
+    cykel.render(st, data, ident, strategy, _phase)
 
 
 def _tab_ravara(st, data, ident, strategy, sheets, cands) -> None:
-    from ui.components import note
-    st.markdown(cards.chip(f"{ident.theme_label or ident.theme} · källa: {ident.theme_source}", AMBER),
-                unsafe_allow_html=True)
-    note("Råvarucykeln (BERSERK, Valhall, Blindspot, rotationsbetyget), hävstången mot råvaran, debasement och "
-         "kvoterna för just det här temat kommer i fas 5.")
+    """Råvaran bakom aktien: cykeln, hävstången, debasement och kvoterna (thor.ravara) — och BERSERK-sidan."""
+    from thor import ravara
+    ravara.render(st, ident, data, sheets.get("rotation"), _prices)
     _bridge(st, "Öppna i", BRIDGE["berserk"], ident.yf, "thor_bridge_berserk")
 
 

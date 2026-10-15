@@ -100,6 +100,10 @@ def _patch(monkeypatch):
     import wolf_regime_ui
     import wolf_screener_ui
     from berserk import live
+    from test_thor_ravara import patch_engines
+    from thor import cykel
+    patch_engines(monkeypatch)                                   # Råvara-flikens motorer utan nätverk
+    monkeypatch.setattr(cykel, "_engine", lambda: (lambda t, p: {}, lambda t, p: []))   # Market Cycle Engine tyst
     monkeypatch.setattr(tui, "load", lambda loader=None: dict(DATA))
     monkeypatch.setattr(tui, "_stores", lambda: {})
     monkeypatch.setattr(tui, "_ohlcv", lambda t: _df())
@@ -166,10 +170,13 @@ def _script_tabs():
                                            "unit_cost": 6000.0, "ev_ebitda": 5.0, "nd_ebitda": 0.5, "mine_life": 12.0,
                                            "rp_ratio": 15.0}], "royalty": []},
               "holdings": {"long": [{"ticker": "BOL.ST", "name": "Boliden", "strategy": "Quality", "entry_price": 300.0,
-                                     "shares": 10}]}}
+                                     "shares": 10}]},
+              "rotation": {"month": "2026-10", "grades": {"koppar": {"hatred": 5, "fundamentals": 4, "catalyst": 4,
+                                                                     "case_intact": True}}}}
     sheets = d.sheets_for("BOL.ST", stores)
     data = st.session_state.get("_data") or {}
     t._tab_cykel(st, data, ident, "quality", sheets, [])
+    t._tab_ravara(st, data, ident, "quality", sheets, [])
     t._tab_arken(st, data, ident, "quality", sheets, [])
     t._tab_regler(st, data, ident, "viking_nine", sheets, [])
     t._tab_backtest(st, data, ident, "quality", sheets, [])
@@ -184,9 +191,10 @@ def test_cycle_sheets_and_rules_tabs_render(monkeypatch):
     assert not at.exception
     text = " ".join(m.value for m in at.markdown)
     assert "Cykelgrinden (quality): PASS" in text and "Hope" in text and "^OMX: HOPE 69 %" in text
+    assert "Råvarucykeln" in text and ">AGERA<" in text and "Guld/koppar" in text          # Råvara (thor.ravara)
     assert "Rick Rule:" in text and len(at.dataframe) == 1                               # granskningen och positionen
     labels = [b.label for b in at.button]
-    assert "Rick Rule →" in labels and "Öppna Backtest →" in labels
+    assert "Rick Rule →" in labels and "Öppna Backtest →" in labels and "Öppna i BERSERK Regime →" in labels
     assert "SÅ GÖR DU — STEG FÖR STEG" in text and "FUSKLAPP" in text                   # hela playbooken (Viking)
 
 
