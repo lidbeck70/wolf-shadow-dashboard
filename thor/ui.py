@@ -5,7 +5,8 @@ Flödet är screening → tryck → analys → köp, utan att byta flik: tryck "
 ticker) så öppnas analysblocket överst med aktien och strategin förifyllda, och listan fälls ihop under
 det. Sidan räknar inga signaler: listan läses ur körningarna (thor.candidates) och analysen sätts ihop av
 motorerna som redan finns (thor.dossier). Regim per strategi, Teknik och Regler ritas av thor.regim, Cykel av
-thor.cykel, Råvara av thor.ravara, Arken av thor.arken och Backtest av thor.backtest — samma motorer som de
+thor.cykel, Råvara av thor.ravara, Asymmetri av thor.asymmetri (Wolf Asymmetrys Snabbkoll med riktpris,
+kurshävstång och tillväxtscenarier), Arken av thor.arken och Backtest av thor.backtest — samma motorer som de
 gamla sidorna, som har bryggknappar kvar tills städningen.
 
 Designen följer Valhall: sidans data i st.session_state[_STATE] med en 📡-knapp, kort som rena HTML-
@@ -31,7 +32,7 @@ CACHE_TTL_S = 3600                 # identitet och ögonblicksbild per aktie
 ALL = "Alla strategier"
 FAMILY_ALL = {f"{lbl} (alla)": key for key, lbl in reg.FAMILIES}
 FILTERS = ("bara KÖP", "bara Norden", "bara nya")
-TABS = ("Regim", "Teknik", "Cykel", "Råvara", "Arken", "Backtest", "Regler")
+TABS = ("Regim", "Teknik", "Cykel", "Råvara", "Asymmetri", "Arken", "Backtest", "Regler")
 STORES = ("producers", "scoring", "tiggre", "insider", "holdings", "confidence", "scorecard", "copilot_journal",
           "rotation")
 STORE_DEFAULT = {"confidence": {"companies": {}, "commodity_overrides": {}, "strategies": {}},
@@ -51,6 +52,7 @@ BRIDGE = {"viking_nine": ("regime/marknad/arc-regime/viking-nine-regime", "Vikin
           "long_screener": ("regime/marknad/alpha-regime/long-trend", "Long Trend", "long_regime_ticker_input"),
           "insider": ("review/insider", "Insiderbevakaren", None), "sheet": ("review", "Granskningsarken", None)}
 COPILOT = ("copilot", "Copiloten", "copilot_ticker")
+ASYMMETRY = ("review/wolf-asymmetry", "Wolf Asymmetry", "asym_quick_ticker")
 BACKTEST = ("portfolio/backtest", "Backtest", None)
 VALHALL_BT = ("valhall/backtester", "Valhalls backtester", None)
 SHEET_LINK = {"rule": "review/rick-rule", "royalty": "review/royalty-c", "sprott": "review/poangmodell",
@@ -304,7 +306,7 @@ def _analysis(st, data: dict, rows: list, ticker: str) -> None:
     labels = [x for x in TABS if x != "Råvara" or ident.is_commodity]
     tabs = st.tabs(labels, on_change="rerun", key="thor_tabs")
     render = {"Regim": _tab_regim, "Teknik": _tab_teknik, "Cykel": _tab_cykel, "Råvara": _tab_ravara,
-              "Arken": _tab_arken, "Backtest": _tab_backtest, "Regler": _tab_regler}
+              "Asymmetri": _tab_asymmetri, "Arken": _tab_arken, "Backtest": _tab_backtest, "Regler": _tab_regler}
     for lbl, tab in zip(labels, tabs):
         if getattr(tab, "open", None) is False:
             continue
@@ -348,6 +350,14 @@ def _tab_ravara(st, data, ident, strategy, sheets, cands) -> None:
     from thor import ravara
     ravara.render(st, ident, data, sheets.get("rotation"), _prices)
     _bridge(st, "Öppna i", BRIDGE["berserk"], ident.yf, "thor_bridge_berserk")
+
+
+def _tab_asymmetri(st, data, ident, strategy, sheets, cands) -> None:
+    """Wolf Asymmetrys Snabbkoll för aktien, för alla strategier, med riktpris, kurshävstång och tillväxtscenarier
+    (thor.asymmetri) — och knappen till Wolf Asymmetry-sidan."""
+    from thor import asymmetri
+    asymmetri.render(st, ident, strategy, _api())
+    _bridge(st, "Öppna i", ASYMMETRY, ident.yf, "thor_bridge_asym")
 
 
 def _tab_arken(st, data, ident, strategy, sheets, cands) -> None:
