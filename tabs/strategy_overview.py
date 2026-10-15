@@ -398,7 +398,8 @@ def tab_strategy_overview() -> None:
     # learning order so the easiest strategy leads.
     _registry_keys = {s.get("key") for s in STRATEGIES.values()}
     _badges = {"momentum": "Manuell rutin", "quality": "Motor: contrarian_alpha",
-               "contrarian": "Motor: contrarian_alpha", "ember": "Motor: ember"}
+               "contrarian": "Motor: contrarian_alpha", "ember": "Motor: ember",
+               "viking_nine": "Motor: ovtlyr_nine + viking_execution", "berserk": "Motor: berserk"}
     try:
         from strategy_rules import LEARNING_ORDER as _ORDER
     except Exception:
