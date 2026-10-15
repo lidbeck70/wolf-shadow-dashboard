@@ -412,9 +412,16 @@ def save(u: Universe, saver: Optional[Callable] = None) -> dict:
     return out
 
 
+def default_loader() -> Callable:
+    """Registrets förvalda läsare: Gisten (gist_storage.load_blob — går att läsa utan token). Testerna byter ut
+    den (tests/conftest.py) så att ingen test läser det levande registret av misstag."""
+    from gist_storage import load_blob
+    return load_blob
+
+
 def load_index(loader: Optional[Callable] = None) -> Optional[dict]:
     if loader is None:
-        from gist_storage import load_blob as loader
+        loader = default_loader()
     try:
         return loader(INDEX_BLOB, None)
     except Exception:
@@ -424,7 +431,7 @@ def load_index(loader: Optional[Callable] = None) -> Optional[dict]:
 def load(markets: Optional[Iterable[str]] = None, loader: Optional[Callable] = None) -> Optional[Universe]:
     """Registret ur Gisten (indexet och de marknader som begärs — alla som förval). None när inget sparats."""
     if loader is None:
-        from gist_storage import load_blob as loader
+        loader = default_loader()
     index = load_index(loader)
     blobs = []
     for key in (markets or [m.key for m in MARKETS]):
