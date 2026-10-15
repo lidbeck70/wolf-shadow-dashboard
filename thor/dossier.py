@@ -117,7 +117,8 @@ def sheets_for(ticker, stores: Optional[dict]) -> dict:
     journal = [t for t in (stores.get("journal") or []) if mine(t)]
     copilot = [e for e in ((stores.get("copilot_journal") or {}).get("entries") or []) if mine(e)]
     return {"reviews": reviews, "confidence": conf, "scorecard": cards, "positions": open_rows, "closed": closed,
-            "journal": journal, "copilot": copilot, "found": bool(reviews or conf or cards or open_rows)}
+            "journal": journal, "copilot": copilot, "found": bool(reviews or conf or cards or open_rows),
+            "rotation": stores.get("rotation")}
 
 
 def assemble(raw, rows: Optional[list] = None, board: Optional[dict] = None, stores: Optional[dict] = None,
