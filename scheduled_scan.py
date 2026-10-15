@@ -57,9 +57,12 @@ def _run_contrarian(mode: str) -> None:
 def _run_ember() -> None:
     from ember.engine import run_ember_scan
     from ember.cache import save_ember_results
+    from ember.universe import SOURCE_BOTH
     t0 = time.time()
     log.info("EMBER starting...")
-    res = run_ember_scan(universe_source="both", use_prefilter=True)
+    # Universumvalet heter "Båda" i ember.universe — "both" kände build_universe inte igen, och körningen
+    # föll tyst tillbaka på den kurerade USA-listan (universum-registret, 2026-10).
+    res = run_ember_scan(universe_source=SOURCE_BOTH, use_prefilter=True)
     ok = save_ember_results(res)
     log.info("EMBER done: %d eligible, %d near-miss in %.0fs, gist_saved=%s",
              len(res.eligible), len(res.near_misses), time.time() - t0, ok)

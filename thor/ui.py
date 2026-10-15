@@ -15,6 +15,7 @@ funktioner (thor/cards.py), bara den öppna sidofliken ritas (st.tabs med on_cha
 from __future__ import annotations
 
 import time
+from html import escape
 from typing import Optional
 
 import pandas as pd
@@ -24,6 +25,7 @@ from thor import cards
 from thor import dossier as td
 from thor import registry as reg
 from ui.tokens import AMBER, CYAN, DIM, GREEN, GREY, regime_color
+from universe import registry as ur
 
 _STATE, _CACHE = "thor_data", "thor_cache"
 PAGE = 20                          # rader per "Visa fler"
@@ -37,6 +39,9 @@ STORES = ("producers", "scoring", "tiggre", "insider", "holdings", "confidence",
 STORE_DEFAULT = {"confidence": {"companies": {}, "commodity_overrides": {}, "strategies": {}},
                  "scorecard": {"cards": {}}, "copilot_journal": {"entries": []},
                  "rotation": {"month": "", "grades": {}, "history": []}}
+# Universum-registret i Thor: marknadsfiltret (registrets etiketter) och medlemmarna per marknad i sessionen.
+MARKET_LABELS = {m.label: m.key for m in ur.MARKETS}
+_UNIVERSE = "thor_universe"
 
 # Bryggorna till de gamla sidorna tills fas 4–6: regimlayout → (djuplänk, sidans namn, widget att förifylla).
 # Wolf Regime och Viking Regime sätter egna startvärden i sina fält — där navigerar vi bara.
@@ -67,8 +72,43 @@ def load(loader=None) -> dict:
         out["regime"] = loader("wolf_regime.json", None)
     except Exception:
         out["regime"] = None
+    out["universe"] = ur.load_index(loader)                 # registrets index: statistik och Nordens tickerkarta
     out["loaded"] = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")
     return out
+
+
+def universe_member(st, ticker: str, loader=None):
+    """Registrets medlem för tickern — marknadens fil läses ur Gisten första gången och ligger kvar i sessionen."""
+    key = ur.market_of(ticker)
+    if not key:
+        return None
+    store = st.session_state.setdefault(_UNIVERSE, {})
+    if key not in store:
+        try:
+            u = ur.load([key], loader)
+        except Exception:
+            u = None
+        store[key] = u.members if u else {}
+    return store[key].get(str(ticker or "").strip().upper())
+
+
+def fill_from_universe(ident, member) -> bool:
+    """Namn, valuta och råvarutema ur registret när Börsdata Norden inte kände tickern. True om något fylldes."""
+    if member is None:
+        return False
+    filled = False
+    if not ident.name and member.name:
+        ident.name, filled = member.name, True
+    if not ident.currency and member.currency:
+        ident.currency, filled = member.currency, True
+    if not ident.theme and member.theme:
+        from berserk import themes as bth
+        try:
+            ident.theme_label = bth.label(member.theme)
+        except Exception:
+            ident.theme_label = member.theme
+        ident.theme, ident.theme_source, filled = member.theme, "universum-registret", True
+    return filled
 
 
 def _prices(ticker: str, period: str = "1y"):
@@ -158,11 +198,15 @@ def pick_to_filter(pick: str) -> tuple:
     return None, None
 
 
-def shown_rows(rows: list, pick: str, filters) -> list:
+def shown_rows(rows: list, pick: str, filters, markets=None) -> list:
+    """Listans filter: rullgardinen, chipsen och marknaderna (registrets etiketter; tomt = alla)."""
     family, strategy = pick_to_filter(pick)
     flt = set(filters or [])
     out = tc.filter_rows(rows, family=family, strategy=strategy, only_buy="bara KÖP" in flt,
                          nordic_only="bara Norden" in flt)
+    keys = {MARKET_LABELS.get(m, m) for m in (markets or [])}
+    if keys:
+        out = [c for c in out if ur.market_of(c.ticker) in keys]
     return [c for c in out if c.new] if "bara nya" in flt else out
 
 
@@ -215,7 +259,8 @@ def render_thor_page() -> None:
         with st.spinner("Läser körningarna ur Gisten …"):
             data = load()
             errors: dict = {}
-            data["rows"] = tc.build(data, errors=errors)
+            bd_map = (data.get("universe") or {}).get("bd_map") or None   # 'EQNR' → 'EQNR.OL', inte '.ST'
+            data["rows"] = tc.build(data, errors=errors, momentum_map=bd_map)
             data["errors"] = errors
             st.session_state[_STATE] = data
             st.session_state.pop(_CACHE, None)
@@ -235,6 +280,8 @@ def render_thor_page() -> None:
             _list(st, rows)
     else:
         _list(st, rows)
+    with st.expander("Universum-registret", expanded=False):
+        _universe_box(st, data.get("universe"))
     note("Thor-rank 0–100 är bara en sorteringsskala mellan strategier — strategins egen siffra står alltid "
          "bredvid. KÖP/BEVAKA/HÅLL/SPÄRRAD är strategins eget verdikt, översatt rakt av. Listan läses ur de "
          "schemalagda körningarna; kör dem i GitHub Actions för färska rader. Riktiga order läggs alltid manuellt.")
@@ -245,9 +292,12 @@ def _list(st, rows: list) -> None:
                         key="thor_pick", label_visibility="collapsed")
     if hasattr(st, "pills"):
         flt = st.pills("Filter", list(FILTERS), selection_mode="multi", key="thor_filters", label_visibility="collapsed")
+        mkts = st.pills("Marknad", list(MARKET_LABELS), selection_mode="multi", key="thor_markets",
+                        label_visibility="collapsed", help="Universum-registrets marknader — inget valt = alla")
     else:                                                       # pragma: no cover - äldre Streamlit
         flt = st.multiselect("Filter", list(FILTERS), key="thor_filters", label_visibility="collapsed")
-    shown = shown_rows(rows, pick, flt)
+        mkts = st.multiselect("Marknad", list(MARKET_LABELS), key="thor_markets", label_visibility="collapsed")
+    shown = shown_rows(rows, pick, flt, mkts)
     s = tc.summary(shown)
     st.markdown(f"<div style='color:{CYAN};font-size:0.72rem;letter-spacing:0.1em;margin:6px 0 2px;'>"
                 f"{s['n']} KANDIDATER · {s['buy']} KÖP · {pick.upper()}</div>", unsafe_allow_html=True)
@@ -265,6 +315,29 @@ def _list(st, rows: list) -> None:
         st.button(f"Visa fler ({len(shown) - n} till)", key="thor_more", on_click=_more, width="stretch")
 
 
+def _universe_box(st, index: Optional[dict]) -> None:
+    """Registrets läge: bolag per marknad, förvalet per strategi och hur det byggs."""
+    from ui.components import note
+    if not index:
+        note("Universum-registret har inte byggts än — kör Universum-registret i GitHub Actions (måndagar automatiskt). "
+             "Tills dess läser Thor strategiernas egna listor som förut.")
+    else:
+        st.markdown(f"<div style='color:{DIM};font-size:0.74rem;'>byggt {escape(str(index.get('generated') or '—')[:16])} · "
+                    f"{index.get('members') or 0} bolag · källor: "
+                    + " · ".join(f"{escape(str(k))} {v}" for k, v in sorted((index.get("stats") or {}).items(),
+                                                                            key=lambda kv: -kv[1]))
+                    + "</div>", unsafe_allow_html=True)
+        st.dataframe(pd.DataFrame(ur.summary_rows(index)), hide_index=True, use_container_width=True)
+        for n_ in index.get("notes") or []:
+            note(str(n_))
+    st.markdown(f"<div style='color:{CYAN};font-size:0.72rem;letter-spacing:0.1em;margin-top:6px;'>FÖRVALET PER "
+                f"STRATEGI</div>", unsafe_allow_html=True)
+    st.dataframe(pd.DataFrame(ur.strategy_rows()), hide_index=True, use_container_width=True)
+    note("Ett universum för alla strategier: Norden som förval, USA och Kanada för råvarustrategierna (BERSERK, EMBER, "
+         "Rick Rule, Durrett, Tiggre, Håvarna) — alla marknader går att välja i marknadsfiltret ovan. Registret byggs ur "
+         "Börsdata (nordiskt + globalt) och panelens egna listor; skannrarna läser det i egna steg.")
+
+
 def _dossier(st, ticker: str, stores: dict) -> dict:
     """Identiteten och ögonblicksbilden, cachade en timme per aktie (arken läses varje gång — de ändras)."""
     cache = st.session_state.setdefault(_CACHE, {})
@@ -273,6 +346,11 @@ def _dossier(st, ticker: str, stores: dict) -> dict:
         return hit[1]
     with st.spinner(f"Hämtar {ticker} …"):
         ident = td.identify(ticker, _api(), stores, _table())
+        if not ident.name or not ident.theme:
+            try:
+                fill_from_universe(ident, universe_member(st, ident.yf))   # registret som reserv för okända tickers
+            except Exception:
+                pass
         snap, err = td.snapshot(_ohlcv(ident.yf), ident.yf)
     out = {"ident": ident, "snapshot": snap, "snapshot_error": err}
     cache[ticker] = (time.time(), out)
