@@ -246,16 +246,33 @@ def yahoo_theme(ticker: str, info_getter=None) -> Optional[str]:
     return theme
 
 
+# Universum-registrets teman (ember.universe.registry_members) — läses efter temakartan, före arket och Yahoo.
+_THEME_OVERLAY: dict = {}
+
+
+def register_themes(mapping: dict) -> int:
+    """Lägg {ticker: tema} ovanpå temakartan (bara teman med ett komplex). Returnerar antalet nya."""
+    from ember.config import THEME_TO_COMPLEX
+    added = 0
+    for t, theme in (mapping or {}).items():
+        key = str(t or "").strip().upper()
+        if not key or theme not in THEME_TO_COMPLEX:
+            continue
+        added += key not in _THEME_OVERLAY
+        _THEME_OVERLAY[key] = theme
+    return added
+
+
 def detect_theme(ticker: str, auto: bool = True) -> Optional[str]:
     """Ticker → EMBER-tema (sektor-ETF och cykelfas ur Odins temabräda), i ordning:
-    temakartan, råvaran i arket (COMMODITY_TO_THEME), sektortexten i registret,
+    temakartan, universum-registrets tema, råvaran i arket (COMMODITY_TO_THEME), sektortexten i registret,
     det valda komplexets bärande tema, och sist Yahoos bransch (auto=True) —
     så ett bolag får cykelfas utan att du rör Holdings eller arket."""
     from ember.config import COMMODITY_TO_THEME, COMPLEX_DEFAULT_THEME, TICKER_THEME_MAP
     t = str(ticker or "").strip().upper()
     if not t:
         return None
-    hit = TICKER_THEME_MAP.get(t)
+    hit = TICKER_THEME_MAP.get(t) or _THEME_OVERLAY.get(t)
     if hit:
         return hit
     key = sheet_commodity(t)

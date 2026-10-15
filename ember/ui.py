@@ -16,7 +16,7 @@ from ember.config import (
     EMBER_ETF_UNIVERSE, EMBER_STOCK_UNIVERSE, RISK_PCT, GLOBAL_MIN_MCAP_MUSD,
 )
 from ember.universe import (
-    ALL_SOURCES, SOURCE_CURATED, SOURCE_AUTO, SOURCE_BOTH,
+    ALL_SOURCES, SOURCE_CURATED, SOURCE_AUTO, SOURCE_BOTH, SOURCE_REGISTRY, REGISTRY_MAX,
     US_INTL_CURATED, UniverseStats,
 )
 from ember.regime import VERDICT_PA, VERDICT_SELEKTIV, VERDICT_AV, detect_complex
@@ -450,6 +450,16 @@ def _render_universe_info(source: str) -> None:
             f"Förfilter tillämpas: omsättning &gt; 5 MSEK/dag + pris &gt; SMA200"
             f"</span>"
         )
+    elif source == SOURCE_REGISTRY:
+        body = (
+            f"<b style='color:{GOLD};'>Universum:</b> "
+            f"universum-registret — råvarubolag på huvudlistorna i Norden, USA och Kanada (högst {REGISTRY_MAX}) "
+            f"+ {len(EMBER_ETF_UNIVERSE)} ETF:er<br/>"
+            f"<span style='font-size:0.68rem;color:{DIM};'>"
+            f"Byggs av jobbet Universum-registret (måndagar); saknas det i Gisten skannas Båda. "
+            f"Förfilter tillämpas: omsättning &gt; 5 MSEK/dag + pris &gt; SMA200"
+            f"</span>"
+        )
     else:  # BOTH
         curated_n = len(EMBER_ETF_UNIVERSE) + len(EMBER_STOCK_UNIVERSE)
         body = (
@@ -474,6 +484,10 @@ def _render_universe_stats(stats: Optional[UniverseStats]) -> None:
     if stats is None or stats.source == SOURCE_CURATED:
         return
     parts = []
+    if stats.registry_raw > 0:
+        parts.append(f"Universum-registret: {stats.registry_raw} råvarubolag")
+    elif stats.registry_missing:
+        parts.append("⚠ Universum-registret saknas i Gisten — Båda skannades i stället")
     if stats.nordic_raw > 0:
         parts.append(f"Norden: {stats.nordic_raw} råvarubolag")
     if stats.global_raw > 0:
@@ -591,7 +605,9 @@ def render_ember_page() -> None:
             "Kurerad lista: fast statisk lista (25 ticker, snabb). "
             "Auto: Börsdata Norden + USA/Kanada/Australien (Börsdata global) + "
             "kurerade US/INTL-råvaror med förfilter. "
-            "Båda: union av alla, förfiltrat."
+            "Båda: union av alla, förfiltrat. "
+            "Universum-registret: registrets råvarubolag på huvudlistorna i Norden, USA och Kanada "
+            "(det schemalagda jobbet använder den här), förfiltrat."
         ),
     )
 
@@ -629,6 +645,7 @@ def render_ember_page() -> None:
             SOURCE_CURATED: "Skannar kurerad lista…",
             SOURCE_AUTO:    "Bygger råvaruuniversum (Norden + USA/Kanada/Australien + US/INTL) och förfiltrerar — ca 2–4 min…",
             SOURCE_BOTH:    "Bygger fullständigt universum och förfiltrerar — ca 2 min…",
+            SOURCE_REGISTRY: "Läser universum-registret ur Gisten och förfiltrerar — ca 2 min…",
         }.get(source, "Skannar…")
 
         with st.spinner(spinner_msg):

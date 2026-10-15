@@ -38,7 +38,11 @@ logger = logging.getLogger(__name__)
 SOURCE_CURATED = "Kurerad lista"
 SOURCE_AUTO    = "Auto: Norden + US-råvaror"   # etiketten sparad i session/inställningar — oförändrad
 SOURCE_BOTH    = "Båda"
-ALL_SOURCES    = [SOURCE_CURATED, SOURCE_AUTO, SOURCE_BOTH]
+SOURCE_REGISTRY = "Universum-registret"         # universe/registry.py: Norden + USA + Kanada med råvarutema
+ALL_SOURCES    = [SOURCE_CURATED, SOURCE_AUTO, SOURCE_BOTH, SOURCE_REGISTRY]
+REGISTRY_MAX   = 400                            # tak för registrets bolag (förfiltret laddar ett års kurs per bolag)
+# Registrets teman (BERSERK-vokabulär) som EMBER saknar men har ett komplex för
+REGISTRY_THEME_ALIAS = {"litium": "sallsynta", "godsel": "agri", "majs": "agri", "soja": "agri", "socker": "agri"}
 
 
 # ── Börsdata branch/sector keyword filter ─────────────────────────────────────
@@ -188,6 +192,8 @@ class UniverseStats:
     passed_prefilter: int       = 0
     borsdata_available: bool    = False
     borsdata_error: str         = ""
+    registry_raw: int           = 0      # bolag ur universum-registret
+    registry_missing: bool      = False  # registret fanns inte i Gisten → Båda som reserv
 
 
 # ── Nordic Börsdata fetch ─────────────────────────────────────────────────────
@@ -453,6 +459,23 @@ def batch_prefilter(
     return passed, total_downloaded
 
 
+# ── Universum-registret ───────────────────────────────────────────────────────
+
+def registry_members(loader=None, max_members: int = REGISTRY_MAX) -> "list[str] | None":
+    """Registrets råvarubolag för EMBER (Norden + USA + Kanada, huvudlistorna, teman EMBER har ett komplex för),
+    med temat registrerat i ember.regime så cykelfasen hittas utan Yahoo. None när registret saknas i Gisten."""
+    from ember.config import THEME_TO_COMPLEX
+    from ember.regime import register_themes
+    from universe import scan as uscan
+    themes = set(THEME_TO_COMPLEX) | set(REGISTRY_THEME_ALIAS)
+    members = uscan.members_for("ember", loader=loader, themes=themes, max_members=max_members)
+    if members is None:
+        return None
+    register_themes({m.ticker: REGISTRY_THEME_ALIAS.get(m.theme, m.theme) for m in members})
+    logger.info("Universum-registret: %s", uscan.describe(members))
+    return [m.ticker for m in members]
+
+
 # ── Universe builder ──────────────────────────────────────────────────────────
 
 def build_universe(
@@ -464,8 +487,8 @@ def build_universe(
 
     Parameters
     ----------
-    source       : one of SOURCE_CURATED, SOURCE_AUTO, SOURCE_BOTH
-    use_prefilter: apply turnover + SMA200 pre-filter for AUTO/BOTH
+    source       : one of SOURCE_CURATED, SOURCE_AUTO, SOURCE_BOTH, SOURCE_REGISTRY (Båda när registret saknas)
+    use_prefilter: apply turnover + SMA200 pre-filter for AUTO/BOTH/REGISTRY
 
     Returns
     -------
@@ -480,6 +503,17 @@ def build_universe(
         return tickers, stats
 
     base: list[str] = []
+
+    if source == SOURCE_REGISTRY:
+        members = registry_members()
+        if members is None:
+            logger.warning("Universum-registret saknas i Gisten — EMBER skannar '%s' i stället.", SOURCE_BOTH)
+            stats.registry_missing = True
+            source = SOURCE_BOTH
+        else:
+            stats.registry_raw = len(members)
+            base.extend(EMBER_ETF_UNIVERSE)
+            base.extend(members)
 
     if source in (SOURCE_AUTO, SOURCE_BOTH):
         nordic, bd_ok, bd_err = fetch_nordic_commodity_tickers()
