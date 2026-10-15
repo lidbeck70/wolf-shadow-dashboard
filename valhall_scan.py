@@ -165,6 +165,23 @@ def _paper(state, berserk_state, board, sw, buys, universe, insider_blob, getter
     return state, events
 
 
+def instruments_for(api, load) -> tuple:
+    """(instrumentrader, källa): Nordens Börsdata-bolag ur universum-registret (alla listor) i Börsdatas form —
+    annars api.get_instruments() precis som förut."""
+    rows = []
+    try:
+        from universe import scan as uscan
+        members = uscan.members_for("viking_nine", loader=load, main_boards=False)
+        rows = uscan.as_instruments(members) if members else []
+    except Exception as exc:
+        log.warning("Universum-registret gick inte att läsa (%s) — Börsdatas instrumentlista som förut.", exc)
+    if rows:
+        log.info("Universum-registret: %d nordiska bolag som instrumentrader.", len(rows))
+        return rows, "universum-registret"
+    log.info("Universum-registret saknas — Börsdatas instrumentlista som förut.")
+    return api.get_instruments(), "Börsdata"
+
+
 def run(api=None, data_getter=None, getter=None, load=None, save=None, today=None, dry_run=False,
         scan_fn=None, nordic_market=None, sources=None, analyze=None, long_fundamentals=None) -> dict:
     from valhall import board as vb
@@ -185,7 +202,7 @@ def run(api=None, data_getter=None, getter=None, load=None, save=None, today=Non
     import markets as _markets
     table = _markets.load(api=api)
     nordic_ids = _markets.nordic_stock_ids(table)
-    instruments = api.get_instruments()
+    instruments, universe_source = instruments_for(api, load)
     to_yf = lambda t, m: _markets.to_yf(t, m, table)  # noqa: E731
     universe = swing.nordic_universe(instruments, nordic_ids, to_yf)
     mem = ni.members(instruments, nordic_ids, to_yf)
@@ -213,7 +230,8 @@ def run(api=None, data_getter=None, getter=None, load=None, save=None, today=Non
     src = sources if sources is not None else _load_sources(load)
     buys = vp.gate_segments(vp.build(src.get("ca") or [], src.get("screens"), src.get("sheets") or {},
                                      analyze=analyze), board)
-    payload = {"generated": datetime.now(tz=timezone.utc).isoformat(), "board": _json_safe(board),
+    payload = {"generated": datetime.now(tz=timezone.utc).isoformat(), "universe_source": universe_source,
+               "board": _json_safe(board),
                "cycle_starts": vb.cycle_starts(board), "swing": sw, "niche": nich, "buys": buys,
                "wolf": vwolf.by_segment(arc, entries, wolf, universe),
                "sources": {"ca_runs": len(src.get("ca") or []), "screens": bool(src.get("screens")),
