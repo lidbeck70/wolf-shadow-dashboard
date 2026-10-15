@@ -129,6 +129,17 @@ def test_page_renders_the_list(monkeypatch):
     assert "HEXA-B.ST" in text and "GOLDEN TICKET" in text
 
 
+def test_a_broken_source_is_reported_not_fatal(monkeypatch):
+    from streamlit.testing.v1 import AppTest
+    _patch(monkeypatch)
+    monkeypatch.setattr(tui, "load", lambda loader=None: {**DATA, "screens": {"generated": "2026-10-14", "screens": 7}})
+    at = AppTest.from_function(_script)
+    at.run(timeout=60)
+    assert not at.exception
+    text = " ".join(m.value for m in at.markdown)
+    assert "Kunde inte läsa screens (AttributeError" in text and "HEXA-B.ST" in text         # resten av listan finns
+
+
 def test_opening_a_ticker_shows_the_analysis_block(monkeypatch):
     from streamlit.testing.v1 import AppTest
     _patch(monkeypatch)
