@@ -35,7 +35,11 @@ CLASS_ORDER = {KOP: 0, BEVAKA: 1, TRAFF: 2, HALL: 3, SPARRAD: 4, SALJ: 5}
 NORDIC_SUFFIX = (".ST", ".OL", ".CO", ".HE", ".IC")
 STALE_DAYS = 4                                 # en körning äldre än så visas, men märks gammal
 BLOBS = {"board": "valhall_board.json", "berserk": "berserk_scan.json", "arc": "arc_screeners.json",
-         "momentum": "wolf_screener.json", "insider": "insider_scan.json", "screens": "screens.json"}
+         "momentum": "wolf_screener.json", "insider": "insider_scan.json", "screens": "screens.json",
+         "royalty": "royalty_scan.json"}
+# Håvar vars träffar INTE dubbleras under en egen strategi: Royalty-motorn väljer själv ur håven (producenterna
+# som passerar marginalfiltret hör till Rick Rule) och ger varje bolag verdikt och rang i from_royalty.
+SCREEN_OWN_SKIP = frozenset({"royalty"})
 WOLF_BANDS = ((85, "BULL"), (65, "MODERATE"), (45, "NEUTRAL"))      # Wolf Regime-sidans etiketter
 
 
@@ -405,7 +409,8 @@ def from_screens(blob: Optional[dict], ctx: dict) -> list:
     for key, sc in ((blob or {}).get("screens") or {}).items():
         sc = sc if isinstance(sc, dict) else {}
         new = {yf(_ticker_of(x)) for x in sc.get("new") or []}
-        strategies = ("hav",) + ((key,) if key != "hav" and reg.get(key) is not None else ())
+        own = key != "hav" and key not in SCREEN_OWN_SKIP and reg.get(key) is not None
+        strategies = ("hav",) + ((key,) if own else ())
         for r in sc.get("rows") or []:
             if not isinstance(r, dict):
                 continue
@@ -417,6 +422,33 @@ def from_screens(blob: Optional[dict], ctx: dict) -> list:
                     score_text=" · ".join(x for x in (str(r.get("universe") or ""),
                                                       f"{mc:,.0f} MUSD" if mc is not None else "") if x),
                     nordic=is_nordic(t), new=t in new, asof=asof, why=str(sc.get("sheet") or "")), ctx))
+    return out
+
+
+def from_royalty(blob: Optional[dict], ctx: dict) -> list:
+    """Royalty-motorn (royalty_scan.json): BUY CANDIDATE → KÖP, WATCH → BEVAKA, PASS → HÅLL med orsaken i statusen;
+    rang = composite 0–100, siffran visar pelarna. Temat ger kartans läge."""
+    out, asof = [], _day((blob or {}).get("generated"))
+    for r in (blob or {}).get("rows") or []:
+        if not isinstance(r, dict):
+            continue
+        t = yf(r.get("ticker"))
+        if not t:
+            continue
+        v = str(r.get("verdict") or "")
+        cls = {"BUY CANDIDATE": KOP, "WATCH": BEVAKA}.get(v, HALL)
+        why = [str(x) for x in (r.get("why") or [])]
+        comp = _f(r.get("composite"))
+        p = r.get("pillars") or {}
+        labels = (("hate", "hat"), ("value", "värde"), ("quality", "kvalitet"), ("catalyst", "kat"))
+        parts = [f"{lbl} {_f(p.get(k)) or 0:.0f}" for k, lbl in labels]
+        theme = r.get("theme") or None
+        out.append(_tag(Candidate(
+            t, _norm_name(r), "royalty", (f"{v} · {why[0]}" if cls == HALL and why else v) or "—", cls,
+            score=None if comp is None else min(round(comp, 1), 100.0),
+            score_text=" · ".join(([f"composite {comp:.0f}"] if comp is not None else []) + parts),
+            segment=_segment_of_theme(theme), theme=theme, nordic=is_nordic(t), asof=asof,
+            why="; ".join(why[:2]) if why else str(r.get("kind") or "royalty")), ctx))
     return out
 
 
@@ -474,7 +506,7 @@ def build(blobs: dict, today=None, momentum_map: Optional[dict] = None, errors: 
                ("arc", from_arc, (b.get("arc"), board, ctx)), ("momentum", from_momentum, (b.get("momentum"), ctx, momentum_map)),
                ("ember", from_ember, (b.get("ember"), ctx)), ("quality", from_contrarian, (b.get("ca_quality"), ctx, "quality")),
                ("deep", from_contrarian, (b.get("ca_deep"), ctx, "deep")), ("insider", from_insider, (b.get("insider"), ctx)),
-               ("screens", from_screens, (b.get("screens"), ctx)))
+               ("screens", from_screens, (b.get("screens"), ctx)), ("royalty", from_royalty, (b.get("royalty"), ctx)))
     rows: list = []
     for name, fn, args in sources:
         rows += _collect(errors, name, fn, *args)

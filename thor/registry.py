@@ -57,6 +57,8 @@ STRATEGIES: dict = {s.key: s for s in (
              "durrett", "sheet", "durrett"),
     Strategy("tiggre", "Tiggre", RAVARA, "valhall_board.json (råvaror) + screens.json", "faktorpoäng 0–10 × 10",
              "tiggre", "sheet", "tiggre"),
+    Strategy("royalty", "Royalty", RAVARA, "royalty_scan.json", "composite 0–100 (playbookens grindar + CA-pelarna)",
+             "royalty", "royalty"),
     Strategy("hav", "Håvarna", HAV, "screens.json", "ingen — en träff är en träff"),
 )}
 ORDER: list = list(STRATEGIES)                 # listans ordning vid lika rang

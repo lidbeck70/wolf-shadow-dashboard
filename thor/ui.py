@@ -55,7 +55,8 @@ BRIDGE = {"viking_nine": ("regime/marknad/arc-regime/viking-nine-regime", "Vikin
           "alpha_quality": ("regime/marknad/alpha-regime/quality-contrarian", "Alpha Regime", "ar_ticker"),
           "alpha_contrarian": ("regime/marknad/alpha-regime/quality-contrarian", "Alpha Regime", "ar_ticker"),
           "long_screener": ("regime/marknad/alpha-regime/long-trend", "Long Trend", "long_regime_ticker_input"),
-          "insider": ("review/insider", "Insiderbevakaren", None), "sheet": ("review", "Granskningsarken", None)}
+          "insider": ("review/insider", "Insiderbevakaren", None), "sheet": ("review", "Granskningsarken", None),
+          "royalty": ("review/royalty-c", "Royalty C", None)}
 COPILOT = ("copilot", "Copiloten", "copilot_ticker")
 ASYMMETRY = ("review/wolf-asymmetry", "Wolf Asymmetry", "asym_quick_ticker")
 BACKTEST = ("portfolio/backtest", "Backtest", None)

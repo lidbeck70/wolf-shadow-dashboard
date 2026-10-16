@@ -251,6 +251,50 @@ def test_screen_rows():
                                                              ("hav", "SPR.V", False)]
 
 
+ROYALTY = {"generated": GEN, "weights": {"hate": 0.35, "value": 0.30, "quality": 0.20, "catalyst": 0.15},
+           "thresholds": {"buy": 65.0, "watch": 50.0}, "max_above_sma200_pct": 10.0, "rows": [
+               {"ticker": "FNV.TO", "name": "Franco-Nevada", "kind": "royalty", "theme": "guld", "verdict": "BUY CANDIDATE",
+                "composite": 71.4, "pillars": {"hate": 72.0, "value": 80.0, "quality": 66.0, "catalyst": 40.0}, "why": [],
+                "gates": {"ok": True, "fails": []}, "guard": {"ok": True, "above_sma200_pct": -8.0},
+                "kpi": {"gross_margin": 93.0, "ebit_margin": 61.0, "nd_ebitda": -0.5, "fcf": 900.0, "ev_ebitda": 22.0,
+                        "p_fcf": 30.0, "mcap_musd": 30000.0},
+                "price": {"close": 150.0, "sma200": 163.0, "low_52w": 140.0, "from_low_52w_pct": 7.1}, "regime": "orange",
+                "notes": ["P/NAV-botten och GEO-tillväxt läses i Royalty C-arket (finns inte i Börsdata)"]},
+               {"ticker": "PSK.TO", "name": "PrairieSky Royalty", "kind": "royalty", "theme": "olja", "verdict": "WATCH",
+                "composite": 55.0, "pillars": {"hate": 50.0, "value": 60.0, "quality": 70.0, "catalyst": 30.0}, "why": []},
+               {"ticker": "LEV.TO", "name": "Levered Royalty", "kind": "håven", "theme": None, "verdict": "PASS",
+                "composite": 40.0, "pillars": {}, "why": ["skuld/EBITDA 3.1 (kräver < 1.5)"],
+                "gates": {"ok": False, "fails": ["skuld/EBITDA 3.1 (kräver < 1.5)"]},
+                "guard": {"ok": True, "above_sma200_pct": -2.0}}]}
+
+
+def test_royalty_rows_follow_the_engines_verdict():
+    rows = _by(tc.from_royalty(ROYALTY, CTX))
+    fnv = rows[("royalty", "FNV.TO")]
+    assert fnv.status == "BUY CANDIDATE" and fnv.status_class == tc.KOP and fnv.score == 71.4 and fnv.family == reg.RAVARA
+    assert fnv.score_text == "composite 71 · hat 72 · värde 80 · kvalitet 66 · kat 40" and fnv.why == "royalty"
+    assert fnv.theme == "guld" and fnv.segment == "materials" and fnv.segment_status == "GRÖN" and not fnv.nordic
+    assert rows[("royalty", "PSK.TO")].status_class == tc.BEVAKA and rows[("royalty", "PSK.TO")].score == 55.0
+    lev = rows[("royalty", "LEV.TO")]
+    assert lev.status == "PASS · skuld/EBITDA 3.1 (kräver < 1.5)" and lev.status_class == tc.HALL and lev.theme is None
+    assert lev.why == "skuld/EBITDA 3.1 (kräver < 1.5)" and lev.score == 40.0
+    assert tc.from_royalty(None, CTX) == [] and tc.from_royalty({"rows": ["skräp", {"ticker": ""}]}, CTX) == []
+    built = _by(tc.build({**BLOBS, "royalty": ROYALTY}, today="2026-10-15"))
+    assert built[("royalty", "FNV.TO")].status_class == tc.KOP and ("royalty", "LEV.TO") in built
+    s = tc.summary(tc.build({**BLOBS, "royalty": ROYALTY}, today="2026-10-15"))
+    assert s["by_strategy"]["royalty"] == {"n": 3, "buy": 1, "asof": "2026-10-14", "stale": False}
+    assert tc.BLOBS["royalty"] == "royalty_scan.json" and reg.get("royalty").regime == "royalty"
+
+
+def test_royalty_screen_hits_are_not_duplicated_under_the_strategy():
+    alt = {"generated": GEN, "screens": {
+        "royalty": {"label": "Royalty", "sheet": "Royalty C", "rows": [{"ticker": "BHP", "name": "BHP Group"}], "new": []},
+        "rule": {"label": "Överlevarna (Rule)", "sheet": "Rick Rule", "rows": [{"ticker": "AEM"}], "new": []}}}
+    keys = [(c.strategy, c.ticker) for c in tc.from_screens(alt, CTX)]
+    assert keys == [("hav", "BHP"), ("hav", "AEM"), ("rule", "AEM")]           # motorn väljer själv ur Royalty-håven
+    assert "royalty" in tc.SCREEN_OWN_SKIP
+
+
 def test_screen_hits_under_their_own_strategy_yield_to_the_sheets():
     alt = {"generated": GEN, "screens": {"durrett": {
         "label": "Durrett", "sheet": "Durrett", "new": ["NEW.V"],

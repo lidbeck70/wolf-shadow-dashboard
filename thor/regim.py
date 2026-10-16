@@ -357,9 +357,64 @@ def _sheet(st, ident, strategy, data, ohlcv, cands) -> None:
          f"egen bedömning (fliken Arken). Dagens rad i listan står i verdiktkortet ovan.")
 
 
+def _royalty(st, ident, strategy, data, ohlcv, cands) -> None:
+    """Royalty-motorns rad för aktien ur royalty_scan.json (ingen motor körs i panelen): verdiktet med orsaken,
+    composite och pelarna med vikterna, playbookens grindar och SMA200-vakten, värdering och kurs, noterna."""
+    from royalty import engine as re_
+    from ui.components import note
+    blob = (data or {}).get("royalty") or {}
+    row = next((r for r in blob.get("rows") or [] if str(r.get("ticker") or "").upper() == ident.yf.upper()), None)
+    if row is None:
+        note(f"Royalty-motorn har ingen rad för {ident.yf} — bolaget är inte i royaltyuniversumet (listan plus håvens "
+             f"royalty/streaming-träffar) eller så har Royalty-steget i scheduled-scan inte körts än.")
+        return
+    v, why = str(row.get("verdict") or "—"), [str(x) for x in (row.get("why") or [])]
+    col = GREEN if v == re_.BUY else AMBER if v == re_.WATCH else RED
+    st.markdown(cards.verdict_card(v, why[0] if why else "grindarna, vakten och rangen håller", "; ".join(why[1:4]),
+                                   col, label="ROYALTY — AKTIEN"), unsafe_allow_html=True)
+    p, w = row.get("pillars") or {}, blob.get("weights") or re_.WEIGHTS
+    thr = blob.get("thresholds") or {"buy": re_.BUY_MIN, "watch": re_.WATCH_MIN}
+
+    def num(x, suf="", nd=0):
+        return "—" if x is None else f"{float(x):.{nd}f}{suf}"
+    st.markdown(cards.kpi_row([
+        ("Composite", num(row.get("composite")), CYAN, f"BUY ≥ {thr['buy']:.0f} · WATCH ≥ {thr['watch']:.0f}"),
+        ("Hat", num(p.get("hate")), AMBER, f"vikt {w.get('hate', 0):.2f} · SMA200, 52v, cykel, volym"),
+        ("Värde", num(p.get("value")), GREEN, f"vikt {w.get('value', 0):.2f} · mot egen historik"),
+        ("Kvalitet", num(p.get("quality")), TEXT, f"vikt {w.get('quality', 0):.2f} · styrkepoängen"),
+        ("Katalysator", num(p.get("catalyst")), DIM, f"vikt {w.get('catalyst', 0):.2f} · vändning, regim")]),
+        unsafe_allow_html=True)
+    _section(st, "GRINDARNA (PLAYBOOKEN) OCH VAKTEN")
+    k, fails, gd = row.get("kpi") or {}, [str(x).lower() for x in ((row.get("gates") or {}).get("fails") or [])], row.get("guard") or {}
+
+    def gate_col(prefix):
+        return RED if any(f.startswith(prefix) for f in fails) else GREEN
+    st.markdown(cards.kpi_row([
+        ("Bruttomarginal", num(k.get("gross_margin"), " %"), gate_col("bruttomarginal"), "> 70 %"),
+        ("EBIT-marginal", num(k.get("ebit_margin"), " %"), gate_col("ebit-marginal"), "> 40 %"),
+        ("Skuld/EBITDA", num(k.get("nd_ebitda"), "", 1), gate_col("skuld/ebitda"), "< 1,5"),
+        ("FCF", num(k.get("fcf")), gate_col("fcf"), "> 0 (M i bolagets valuta)"),
+        ("Mot SMA200", num(gd.get("above_sma200_pct"), " %"), GREEN if gd.get("ok") else RED,
+         f"vakten: högst +{float(blob.get('max_above_sma200_pct') or re_.MAX_ABOVE_SMA200_PCT):.0f} %")]),
+        unsafe_allow_html=True)
+    _section(st, "VÄRDERING OCH KURS")
+    pr = row.get("price") or {}
+    st.markdown(cards.kpi_row([
+        ("EV/EBITDA", num(k.get("ev_ebitda"), "", 1), TEXT, "12–25 är normalt för royalty"),
+        ("P/FCF", num(k.get("p_fcf"), "", 1), TEXT, "mot egen historik"),
+        ("Från 52v-lägsta", num(pr.get("from_low_52w_pct"), " %"), AMBER, f"kurs {num(pr.get('close'), '', 2)}"),
+        ("Regim", str(row.get("regime") or "—"), DIM, "OVTLYR-färg"),
+        ("Börsvärde", num(k.get("mcap_musd")), DIM, "MUSD")]), unsafe_allow_html=True)
+    for n in row.get("notes") or []:
+        note(n)
+    note("Samma pelare som Deep Contrarian (contrarian_alpha hate/value/strength/catalyst) på royaltyuniversumet; "
+         "grindarna är Royalty-playbookens. Raden räknas i Royalty-steget i scheduled-scan — kör det i GitHub Actions "
+         "för en färsk rad.")
+
+
 LAYOUTS = {"viking_nine": _viking_nine, "viking": _viking_nine, "wolf": _wolf, "momentum": _momentum, "berserk": _berserk,
            "ember": _ember, "alpha_quality": _alpha, "alpha_contrarian": _alpha, "long_screener": _long_screener,
-           "sheet": _sheet, "insider": _sheet}
+           "sheet": _sheet, "insider": _sheet, "royalty": _royalty}
 
 
 # ── Teknik ──────────────────────────────────────────────────────────────────
