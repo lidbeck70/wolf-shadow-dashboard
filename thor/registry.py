@@ -51,11 +51,12 @@ STRATEGIES: dict = {s.key: s for s in (
              "composite 0–100 (tak 100)", "contrarian", "alpha_contrarian"),
     Strategy("long", "Long Screener", LANG, "valhall_board.json (long)", "poäng % × 100", "alpha", "long_screener", "long"),
     Strategy("insider", "Insider Norden", INSIDER, "insider_scan.json", "poäng 0–10 × 10", "insider", "insider", "insider"),
-    Strategy("rule", "Rick Rule", RAVARA, "valhall_board.json (råvaror)", "arket 0–5 × 20 · Quality composite · håven utan rang",
+    Strategy("rule", "Rick Rule", RAVARA, "valhall_board.json (råvaror) + screens.json", "arket 0–5 × 20 · Quality composite · håven utan rang",
              "rule", "sheet", "rule"),
-    Strategy("durrett", "Durrett", RAVARA, "valhall_board.json (råvaror)", "Durrett-motorns kvalitet 0–100",
+    Strategy("durrett", "Durrett", RAVARA, "valhall_board.json (råvaror) + screens.json", "Durrett-motorns kvalitet 0–100",
              "durrett", "sheet", "durrett"),
-    Strategy("tiggre", "Tiggre", RAVARA, "valhall_board.json (råvaror)", "faktorpoäng 0–10 × 10", "tiggre", "sheet", "tiggre"),
+    Strategy("tiggre", "Tiggre", RAVARA, "valhall_board.json (råvaror) + screens.json", "faktorpoäng 0–10 × 10",
+             "tiggre", "sheet", "tiggre"),
     Strategy("hav", "Håvarna", HAV, "screens.json", "ingen — en träff är en träff"),
 )}
 ORDER: list = list(STRATEGIES)                 # listans ordning vid lika rang

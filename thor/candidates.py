@@ -211,16 +211,27 @@ def from_themes(board: Optional[dict], ctx: dict) -> list:
                                               (f"kvalitet {q:.0f}" if q is not None else "")) if x)
                 score = q
             else:
-                sc, un = _f(p.get("score")), _f(p.get("un"))
-                status = f"grindar {p.get('gates_passed')}/{p.get('gates_total')}"
-                text = " · ".join(x for x in ((f"{sc:g}/10" if sc is not None else ""),
-                                              (f"U/N {un:g}" if un is not None else "")) if x)
-                score = None if sc is None else sc * 10
+                status, text, score = _tiggre_fields(p)
             out.append(_tag(Candidate(
                 yf(p.get("ticker")), _norm_name(p), strat, status, KOP if buy_ok(p) else BEVAKA, score=score,
                 score_text=text, segment=seg, theme=theme, nordic=is_nordic(p.get("ticker")), asof=asof,
                 why=str(p.get("source") or lv.get("strategy") or "")), ctx))
+    for p in ((board or {}).get("buys") or {}).get("unknown_commodity") or []:   # Tiggre-arket utan känd råvara
+        status, text, score = _tiggre_fields(p)
+        out.append(_tag(Candidate(
+            yf(p.get("ticker")), _norm_name(p), "tiggre", f"{status} · okänd råvara", BEVAKA, score=score,
+            score_text=text, nordic=is_nordic(p.get("ticker")), asof=asof,
+            why="Tiggre — råvaran saknas i arket, så kartan kan inte ge tema och cykel (papperet köper inte)"), ctx))
     return out
+
+
+def _tiggre_fields(p: dict) -> tuple:
+    """(status, siffran, rang) för en Tiggre-rad: grindarna, faktorpoängen 0–10 × 10 och U/N."""
+    sc, un = _f(p.get("score")), _f(p.get("un"))
+    status = f"grindar {p.get('gates_passed')}/{p.get('gates_total')}"
+    text = " · ".join(x for x in ((f"{sc:g}/10" if sc is not None else ""),
+                                  (f"U/N {un:g}" if un is not None else "")) if x)
+    return status, text, (None if sc is None else sc * 10)
 
 
 def from_berserk(blob: Optional[dict], ctx: dict) -> list:
@@ -386,20 +397,26 @@ def from_insider(blob: Optional[dict], ctx: dict) -> list:
 
 
 def from_screens(blob: Optional[dict], ctx: dict) -> list:
-    """Håvarna: varje träff är en rad (TRÄFF), nya träffar märks — utan rang (en håv säger ja eller nej)."""
+    """Håvarna: varje träff är en rad (TRÄFF), nya träffar märks — utan rang (en håv säger ja eller nej).
+    Har håven en egen strategi i registret (Rick Rule, Durrett, Tiggre …) får träffen även en rad där, så att
+    strategin visar sina träffar; arkets KÖP/BEVAKA för samma bolag vinner i dedupe. Sprott och andra håvar utan
+    egen strategi syns bara under Håvarna."""
     out, asof = [], _day((blob or {}).get("generated"))
     for key, sc in ((blob or {}).get("screens") or {}).items():
         sc = sc if isinstance(sc, dict) else {}
         new = {yf(_ticker_of(x)) for x in sc.get("new") or []}
+        strategies = ("hav",) + ((key,) if key != "hav" and reg.get(key) is not None else ())
         for r in sc.get("rows") or []:
             if not isinstance(r, dict):
                 continue
             t = yf(r.get("ticker"))
             mc = _f(r.get("mcap_musd"))
-            out.append(_tag(Candidate(
-                t, _norm_name(r), "hav", str(sc.get("label") or key), TRAFF, score=None,
-                score_text=" · ".join(x for x in (str(r.get("universe") or ""), f"{mc:,.0f} MUSD" if mc is not None else "") if x),
-                nordic=is_nordic(t), new=t in new, asof=asof, why=str(sc.get("sheet") or "")), ctx))
+            for strategy in strategies:
+                out.append(_tag(Candidate(
+                    t, _norm_name(r), strategy, str(sc.get("label") or key), TRAFF, score=None,
+                    score_text=" · ".join(x for x in (str(r.get("universe") or ""),
+                                                      f"{mc:,.0f} MUSD" if mc is not None else "") if x),
+                    nordic=is_nordic(t), new=t in new, asof=asof, why=str(sc.get("sheet") or "")), ctx))
     return out
 
 

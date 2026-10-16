@@ -42,7 +42,7 @@ def test_lage_items_and_pick_filter():
     rows = _rows()
     items = tui.lage_items(DATA, rows)
     assert [i[0] for i in items] == ["Swing-regim", "Norden", "Globalt", "Kandidater"]
-    assert items[0][1] == "GRÖN" and items[1][1] == "1/2 GRÖN" and items[3][1] == "31 · 13 KÖP" and "2026-10-14" in items[3][3]
+    assert items[0][1] == "GRÖN" and items[1][1] == "1/2 GRÖN" and items[3][1] == "32 · 13 KÖP" and "2026-10-14" in items[3][3]
     assert tui.lage_items({}, [])[0][1] == "OKÄND" and tui.lage_items({}, [])[1][1] == "—"
     assert tui.pick_to_filter(tui.ALL) == (None, None) and tui.pick_to_filter("Swing (alla)") == (reg.SWING, None)
     assert tui.pick_to_filter("Viking Nine") == (None, "viking_nine")
@@ -127,7 +127,7 @@ def test_page_renders_the_list(monkeypatch):
     at.run(timeout=60)
     assert not at.exception
     text = " ".join(m.value for m in at.markdown)
-    assert "THOR" in text and "Swing-regim" in text and "31 KANDIDATER · 13 KÖP" in text and "VAD SKA JAG GÖRA?" not in text
+    assert "THOR" in text and "Swing-regim" in text and "32 KANDIDATER · 13 KÖP" in text and "VAD SKA JAG GÖRA?" not in text
     opens = [b for b in at.button if b.label == "Öppna →"]
     assert len(opens) == tui.PAGE and any(b.label.startswith("Visa fler") for b in at.button)
     assert "HEXA-B.ST" in text and "GOLDEN TICKET" in text
@@ -152,7 +152,7 @@ def test_opening_a_ticker_shows_the_analysis_block(monkeypatch):
     at.run(timeout=90)
     assert not at.exception
     text = " ".join(m.value for m in at.markdown)
-    assert "VAD SKA JAG GÖRA?" in text and "BOL.ST" in text and "Kandidater (31)" in " ".join(e.label for e in at.expander)
+    assert "VAD SKA JAG GÖRA?" in text and "BOL.ST" in text and "Kandidater (32)" in " ".join(e.label for e in at.expander)
     assert at.selectbox(key="thor_strategy").value == "BERSERK"                   # bästa raden: BERSERK KÖP
     labels = [b.label for b in at.button]
     assert "Öppna i BERSERK Regime →" in labels and "◀ Tillbaka till listan" in labels   # bara Regim-fliken ritas
