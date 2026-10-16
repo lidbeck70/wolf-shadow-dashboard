@@ -89,6 +89,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
         run: python screens_scan.py
 
+      # Royalty — playbookens grindar och Contrarian Alpha-rangen på royalty-
+      # universumet (listan + Royalty-håvens royalty/streaming-träffar). Körs
+      # efter håvarna så screens.json är färsk. Gisten: royalty_scan.json.
+      - name: Royalty
+        if: always() && steps.gate.outputs.run == 'true'
+        env:
+          BORSDATA_API_KEY: ${{ secrets.BORSDATA_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+        run: python royalty_scan.py
+
       # Arkens sifferuppdatering — färska kurser/nyckeltal för raderna i
       # Insider/Tiggre/Rick Rule/Royalty/Poängmodellen som FÖRSLAG (Gisten:
       # sheets_refresh.json) + övergångar räknade med arkens egna regler.
