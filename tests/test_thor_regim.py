@@ -76,7 +76,8 @@ def _script():
     strategy, ticker, what = (st.session_state[k] for k in ("_strategy", "_ticker", "_what"))
     ident = d.identify(ticker)
     if what == "regim":
-        r.render(st, ident, strategy, {"board": st.session_state.get("_board") or {}}, t._prices, [])
+        r.render(st, ident, strategy, {"board": st.session_state.get("_board") or {},
+                                       "royalty": st.session_state.get("_royalty") or {}}, t._prices, [])
     elif what == "teknik":
         r.render_technical(st, ident)
     elif what == "teknik_nodata":
@@ -85,11 +86,12 @@ def _script():
         r.render_rules(st, strategy)
 
 
-def _run(strategy, ticker, what="regim"):
+def _run(strategy, ticker, what="regim", royalty=None):
     from streamlit.testing.v1 import AppTest
     at = AppTest.from_function(_script, default_timeout=120)
     at.session_state["_strategy"], at.session_state["_ticker"], at.session_state["_what"] = strategy, ticker, what
     at.session_state["_board"] = fx.BOARD
+    at.session_state["_royalty"] = royalty or {}
     at.run()
     assert not at.exception, at.exception
     return at, " ".join(m.value for m in at.markdown)
@@ -161,6 +163,19 @@ def test_ember_and_sheet_layouts(engines):
     assert "EMBER RENDERED NEM" in text
     _at, text = _run("rule", "X")
     assert "Rick Rule har ingen regimmotor per aktie" in text
+
+
+def test_royalty_layout_reads_the_engines_row(engines):
+    _at, text = _run("royalty", "FNV.TO", royalty=fx.ROYALTY)
+    assert "ROYALTY — AKTIEN" in text and "BUY CANDIDATE" in text and "71" in text and "GRINDARNA" in text
+    assert "Bruttomarginal" in text and "93 %" in text and "-8 %" in text and "12–25 är normalt" in text
+    assert "Royalty C-arket" in text and "Deep Contrarian" in text
+    _at, text = _run("royalty", "LEV.TO", royalty=fx.ROYALTY)
+    assert "PASS" in text and "skuld/EBITDA 3.1" in text
+    _at, text = _run("royalty", "ERIC-B.ST", royalty=fx.ROYALTY)                      # inte i universumet
+    assert "har ingen rad för ERIC-B.ST" in text and "ROYALTY — AKTIEN" not in text
+    _at, text = _run("royalty", "FNV.TO")                                               # bloben saknas
+    assert "har ingen rad" in text
 
 
 def test_viking_nine_layout_shows_the_whole_decision_chain(engines):
