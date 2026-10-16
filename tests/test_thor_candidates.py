@@ -46,7 +46,10 @@ BOARD = {
                  "koppar": {"quality": {"picks": []},
                             "leverage": {"strategy": "Tiggre", "picks": [
                                 {"ticker": "CU.V", "name": "Cu", "source": "Tiggre", "buy": True, "score": 8, "un": 4.2,
-                                 "gates_passed": 6, "gates_total": 6}]}}}},
+                                 "gates_passed": 6, "gates_total": 6}]}}},
+             "unknown_commodity": [
+                 {"ticker": "UNK.V", "name": "Unknown Minerals", "source": "Tiggre", "buy": True, "score": 7, "un": 3.0,
+                  "gates_passed": 6, "gates_total": 6}]},
     "wolf": {"segments": {"technology": {"arc": [{"ticker": "ERIC-B.ST", "entry": True, "score": 88.0, "stop": 70.0,
                                                   "tp1": 90.0, "segment": "technology"}], "momentum": []}}},
 }
@@ -155,6 +158,9 @@ def test_theme_rows_follow_the_paper_accounts_buy_rule():
     cu = rows[("tiggre", "CU.V")]
     assert cu.status == "grindar 6/6" and cu.status_class == tc.KOP and cu.score == 80.0 and cu.score_text == "8/10 · U/N 4.2"
     assert cu.theme == "koppar" and cu.segment == "materials" and cu.segment_status == "RÖD"  # temat saknas på kartan → segmentet
+    unk = rows[("tiggre", "UNK.V")]                                                          # okänd råvara: aldrig KÖP
+    assert unk.status == "grindar 6/6 · okänd råvara" and unk.status_class == tc.BEVAKA and unk.score == 70.0
+    assert unk.score_text == "7/10 · U/N 3" and unk.theme is None and unk.segment is None and "råvaran saknas" in unk.why
 
 
 def test_berserk_rows():
@@ -232,11 +238,28 @@ def test_screen_rows():
     assert a.status == "Överlevarna (Rule)" and a.status_class == tc.TRAFF and a.new and a.score is None
     assert a.score_text == "CA · 30,000 MUSD" and a.why == "Rick Rule" and a.family == reg.HAV
     assert not rows[("hav", "CU.V")].new
+    # håvar med egen strategi i registret ger träffen även där — samma rad, annan strategi (Sprott har ingen)
+    r = rows[("rule", "AEM")]
+    assert r.status == a.status and r.status_class == tc.TRAFF and r.new and r.score is None and r.family == reg.RAVARA
+    assert rows[("tiggre", "CU.V")].status == "Tiggre (sweet spot)" and not rows[("tiggre", "CU.V")].new
     # screens_scan skriver "new" som tickersträngar (riktiga filen); rader som dict tolereras också, skräp hoppas över
     alt = {"generated": GEN, "screens": {"rule": {"rows": [{"ticker": "AEM"}, "skräp", None], "new": [{"ticker": "aem"}]},
+                                         "sprott": {"rows": [{"ticker": "SPR.V"}]},
                                          "trasig": "inte en dict", "tom": None}}
     rows = tc.from_screens(alt, CTX)
-    assert [(c.ticker, c.new) for c in rows] == [("AEM", True)]
+    assert [(c.strategy, c.ticker, c.new) for c in rows] == [("hav", "AEM", True), ("rule", "AEM", True),
+                                                             ("hav", "SPR.V", False)]
+
+
+def test_screen_hits_under_their_own_strategy_yield_to_the_sheets():
+    alt = {"generated": GEN, "screens": {"durrett": {
+        "label": "Durrett", "sheet": "Durrett", "new": ["NEW.V"],
+        "rows": [{"ticker": "MMY.V", "name": "Monument"}, {"ticker": "NEW.V", "name": "New Gold"}]}}}
+    rows = _by(tc.build({**BLOBS, "screens": alt}, today="2026-10-15"))
+    mmy = rows[("durrett", "MMY.V")]
+    assert mmy.status == "15-BAGGER" and mmy.status_class == tc.KOP                   # arkets KÖP vinner över träffen
+    assert rows[("durrett", "NEW.V")].status_class == tc.TRAFF and rows[("durrett", "NEW.V")].new
+    assert rows[("hav", "NEW.V")].new and rows[("hav", "MMY.V")].status_class == tc.TRAFF   # Håvarna som förut
 
 
 def test_build_survives_a_broken_source(monkeypatch):
@@ -258,7 +281,7 @@ def test_build_survives_a_broken_source(monkeypatch):
 def test_build_sorts_dedupes_marks_stale_and_filters():
     rows = tc.build(BLOBS, today="2026-10-15")
     keys = [(c.strategy, c.ticker) for c in rows]
-    assert len(keys) == len(set(keys)) and len(rows) == 31
+    assert len(keys) == len(set(keys)) and len(rows) == 32
     assert rows[0].status_class == tc.KOP and rows[0].score == 100.0
     classes = [tc.CLASS_ORDER[c.status_class] for c in rows]
     assert classes == sorted(classes)                                                             # KÖP → BEVAKA → TRÄFF → HÅLL → SPÄRRAD
@@ -280,7 +303,7 @@ def test_build_sorts_dedupes_marks_stale_and_filters():
 
 def test_summary():
     s = tc.summary(tc.build(BLOBS, today="2026-10-15"))
-    assert s["n"] == 31 and s["buy"] == 13
+    assert s["n"] == 32 and s["buy"] == 13
     assert s["by_family"][reg.HAV] == 2 and s["by_strategy"]["quality"] == {"n": 5, "buy": 1, "asof": "2026-10-14", "stale": False}
 
 
