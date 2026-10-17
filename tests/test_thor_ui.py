@@ -63,6 +63,20 @@ def test_lage_items_and_pick_filter():
     assert len(tui.shown_rows(rows, tui.ALL, [], None, tui.SEGMENT_ALL)) == len(rows)
 
 
+def test_load_builds_the_segment_map_from_the_register():
+    import markets as mk
+    from universe import registry as ur
+    nordic = [{"insId": 2, "ticker": "ALIF B", "name": "AddLife", "marketId": 1, "sectorId": 4, "stockPriceCurrency": "SEK"}]
+    u = ur.build(table=mk.FALLBACK, nordic=nordic, global_=[], include_lists=False)
+    saved = {}
+    ur.save(u, lambda name, data: saved.setdefault(name, data) is not None)
+    out = tui.load(lambda name, fb: saved.get(name, fb))
+    assert out["segment_map"]["ALIF-B.ST"] == "healthcare" and out["universe"]["members"] >= 1
+    assert tui.load(lambda name, fb: fb)["segment_map"] == {}                       # inget register: tom karta
+    broken = tui.load(lambda name, fb: (_ for _ in ()).throw(RuntimeError("nere")))
+    assert broken["segment_map"] == {} and broken["universe"] is None
+
+
 def test_cards_are_plain_html():
     rows = {(c.strategy, c.ticker): c for c in _rows()}
     h = cards.candidate_card(rows[("viking_nine", "HEXA-B.ST")])

@@ -130,8 +130,26 @@ def segment_context(board: Optional[dict]) -> dict:
     return out
 
 
+def segment_map_from_register(universe) -> dict:
+    """{ticker: Valhall-segment} ur universum-registret (Börsdatas sektor/bransch via valhall.segments, annars
+    råvarutemats segment) — så att rader utan eget segment ändå går att filtrera per segment."""
+    from thor.ticker import segment_for
+    out = {}
+    for t, m in (getattr(universe, "members", None) or {}).items():
+        try:
+            seg = segment_for(getattr(m, "sector_id", None), getattr(m, "branch_id", None), getattr(m, "theme", None))
+        except Exception:
+            seg = None
+        if seg:
+            out[str(t).upper()] = seg
+    return out
+
+
 def _tag(c: Candidate, ctx: dict) -> Candidate:
-    """Kartans läge på raden: temats om raden har ett tema på kartan, annars segmentets."""
+    """Kartans läge på raden: temats om raden har ett tema på kartan, annars segmentets. Saknar raden segment
+    (Viking, Wolf utan entry, Insider …) tas det ur registrets sektor (ctx["segment_of"]: ticker → segment)."""
+    if not c.segment and not c.theme:
+        c.segment = (ctx.get("segment_of") or {}).get(c.ticker) or None
     st = (ctx.get("themes") or {}).get(c.theme) if c.theme else None
     if not st and c.segment:
         st = (ctx.get("segments") or {}).get(c.segment)
@@ -490,9 +508,11 @@ def _collect(errors: Optional[dict], name: str, fn, *args) -> list:
         return []
 
 
-def build(blobs: dict, today=None, momentum_map: Optional[dict] = None, errors: Optional[dict] = None) -> list:
+def build(blobs: dict, today=None, momentum_map: Optional[dict] = None, errors: Optional[dict] = None,
+          segment_map: Optional[dict] = None) -> list:
     """Hela listan ur de lästa filerna (load_blobs-nycklar), sorterad och utan dubbletter. Källor som inte går
-    att läsa hoppas över och skrivs i errors ({källa: fel}) så att sidan kan säga vad som saknas."""
+    att läsa hoppas över och skrivs i errors ({källa: fel}) så att sidan kan säga vad som saknas.
+    segment_map = {ticker: segment} ur registret (segment_map_from_register) för rader utan eget segment."""
     b = blobs or {}
     board = b.get("board") or {}
     try:
@@ -501,6 +521,7 @@ def build(blobs: dict, today=None, momentum_map: Optional[dict] = None, errors: 
         if errors is not None:
             errors["board"] = f"{type(exc).__name__}: {exc}"
         ctx = {"segments": {}, "themes": {}}
+    ctx["segment_of"] = {str(k).upper(): v for k, v in (segment_map or {}).items() if v}
     sources = (("viking_nine", from_viking_nine, (board, ctx)), ("long", from_long, (board, ctx)),
                ("themes", from_themes, (board, ctx)), ("berserk", from_berserk, (b.get("berserk"), ctx)),
                ("arc", from_arc, (b.get("arc"), board, ctx)), ("momentum", from_momentum, (b.get("momentum"), ctx, momentum_map)),

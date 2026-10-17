@@ -76,6 +76,10 @@ def load(loader=None) -> dict:
     except Exception:
         out["regime"] = None
     out["universe"] = ur.load_index(loader)                 # registrets index: statistik och Nordens tickerkarta
+    try:                                                    # registrets sektorer → segment för rader utan eget
+        out["segment_map"] = tc.segment_map_from_register(ur.load(None, loader))
+    except Exception:
+        out["segment_map"] = {}
     out["loaded"] = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")
     return out
 
@@ -279,7 +283,7 @@ def render_thor_page() -> None:
             data = load()
             errors: dict = {}
             bd_map = (data.get("universe") or {}).get("bd_map") or None   # 'EQNR' → 'EQNR.OL', inte '.ST'
-            data["rows"] = tc.build(data, errors=errors, momentum_map=bd_map)
+            data["rows"] = tc.build(data, errors=errors, momentum_map=bd_map, segment_map=data.get("segment_map"))
             data["errors"] = errors
             st.session_state[_STATE] = data
             st.session_state.pop(_CACHE, None)
