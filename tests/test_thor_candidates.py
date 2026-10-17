@@ -188,6 +188,28 @@ def test_arc_rows_wolf_and_viking():
     assert tc.from_arc(None, None, CTX) == []
 
 
+def test_rows_without_a_segment_take_it_from_the_register():
+    import markets as mk
+    from universe import registry as ur
+    nordic = [{"insId": 1, "ticker": "ATCO A", "name": "Atlas Copco", "marketId": 1, "sectorId": 5, "stockPriceCurrency": "SEK"},
+              {"insId": 2, "ticker": "ALIF B", "name": "AddLife", "marketId": 1, "sectorId": 4, "stockPriceCurrency": "SEK"},
+              {"insId": 3, "ticker": "SKF B", "name": "SKF", "marketId": 1, "stockPriceCurrency": "SEK"}]   # ingen sektor
+    u = ur.build(table=mk.FALLBACK, nordic=nordic, global_=[], include_lists=False)
+    smap = tc.segment_map_from_register(u)
+    assert smap["ATCO-A.ST"] == "industrials" and smap["ALIF-B.ST"] == "healthcare" and "SKF-B.ST" not in smap
+    themed = ur.build(table=mk.FALLBACK, nordic=[], global_=[], include_lists=True)       # listorna: temat → segmentet
+    assert tc.segment_map_from_register(themed).get("BOL.ST") == "materials"
+    plain = _by(tc.build(BLOBS, today="2026-10-15"))
+    assert plain[("viking", "ATCO-A.ST")].segment is None               # Viking-raden har inget segment själv
+    rows = _by(tc.build(BLOBS, today="2026-10-15", segment_map={"ATCO-A.ST": "technology", "skf-b.st": "industrials"}))
+    a = rows[("viking", "ATCO-A.ST")]
+    assert a.segment == "technology" and a.segment_status == "GRÖN" and a.cykel == "MITTEN"   # kartans läge följer med
+    assert rows[("viking", "SKF-B.ST")].segment == "industrials" and rows[("viking", "SKF-B.ST")].segment_status is None
+    assert rows[("wolf", "ERIC-B.ST")].segment == "technology"           # eget segment vinner
+    assert rows[("berserk", "FCX")].segment == "materials"               # temats segment som förut
+    assert [c.ticker for c in tc.filter_rows(list(rows.values()), segment="technology") if c.strategy == "viking"] == ["ATCO-A.ST"]
+
+
 def test_momentum_rows_map_borsdata_form_and_rank():
     rows = _by(tc.from_momentum(MOMENTUM, CTX))
     e = rows[("momentum", "ERIC-B.ST")]
