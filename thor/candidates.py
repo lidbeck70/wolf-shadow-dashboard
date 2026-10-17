@@ -284,40 +284,43 @@ def _wolf_band(score: float) -> str:
 def from_arc(blob: Optional[dict], board: Optional[dict], ctx: dict) -> list:
     """Arc-Wolf (regimpoäng 0–125; ENTRY ur kartans Wolf-rader när köpregeln är uppfylld) och Viking (V9)."""
     out = []
-    w = (blob or {}).get("wolf") or {}
     entries = {}
     for e in (((board or {}).get("wolf") or {}).get("segments") or {}).values():
         for p in e.get("arc") or []:
             entries[yf(p.get("ticker"))] = p
-    asof = _day(w.get("generated"))
-    for r in w.get("rows") or []:
-        sc = _f(r.get("score"))
-        if sc is None:
-            continue
-        t = yf(r.get("ticker"))
-        p = entries.get(t) or {}
-        band = _wolf_band(sc)
-        entry = bool(p.get("entry"))
-        cls = KOP if entry else BEVAKA if band in ("BULL", "MODERATE") else HALL
-        out.append(_tag(Candidate(
-            t, _norm_name(r), "wolf", f"ENTRY · {band}" if entry else band, cls, score=round(sc / 1.25, 1),
-            score_text=f"{sc:.0f}/125" + (f" · grindar {p['gates']}" if p.get("gates") else ""),
-            segment=p.get("segment"), stop=_f(p.get("stop")) if entry else None, target=_f(p.get("tp1")) if entry else None,
-            nordic=is_nordic(t), asof=asof, why="strategins köpregel uppfylld" if entry else "regimpoängen — ingen entry ännu"), ctx))
-    v = (blob or {}).get("viking") or {}
-    asof = _day(v.get("generated"))
-    for r in v.get("rows") or []:
-        v9 = _f(r.get("v9"))
-        if v9 is None:
-            continue
-        sig = str(r.get("signal") or "")
-        comp = _f(r.get("composite"))
-        t = yf(r.get("ticker"))
-        out.append(_tag(Candidate(
-            t, _norm_name(r), "viking", f"{sig} · V9 {v9:.0f}/9" if sig else f"V9 {v9:.0f}/9",
-            KOP if sig == "BUY" else BEVAKA if sig == "WATCH" else HALL, score=round(v9 / 9 * 100, 1),
-            score_text=f"V9 {v9:.0f}/9" + (f" · composite {comp:.0f}" if comp is not None else ""),
-            nordic=is_nordic(t), asof=asof, why="OVTLYR z-score"), ctx))
+    for part in ("wolf", "wolf_usa"):                        # Norden och registrets USA (arc_scan) — samma form
+        w = (blob or {}).get(part) or {}
+        asof = _day(w.get("generated"))
+        for r in w.get("rows") or []:
+            sc = _f(r.get("score"))
+            if sc is None:
+                continue
+            t = yf(r.get("ticker"))
+            p = entries.get(t) or {}
+            band = _wolf_band(sc)
+            entry = bool(p.get("entry"))
+            cls = KOP if entry else BEVAKA if band in ("BULL", "MODERATE") else HALL
+            out.append(_tag(Candidate(
+                t, _norm_name(r), "wolf", f"ENTRY · {band}" if entry else band, cls, score=round(sc / 1.25, 1),
+                score_text=f"{sc:.0f}/125" + (f" · grindar {p['gates']}" if p.get("gates") else ""),
+                segment=p.get("segment"), stop=_f(p.get("stop")) if entry else None,
+                target=_f(p.get("tp1")) if entry else None, nordic=is_nordic(t), asof=asof,
+                why="strategins köpregel uppfylld" if entry else "regimpoängen — ingen entry ännu"), ctx))
+    for part in ("viking", "viking_usa"):
+        v = (blob or {}).get(part) or {}
+        asof = _day(v.get("generated"))
+        for r in v.get("rows") or []:
+            v9 = _f(r.get("v9"))
+            if v9 is None:
+                continue
+            sig = str(r.get("signal") or "")
+            comp = _f(r.get("composite"))
+            t = yf(r.get("ticker"))
+            out.append(_tag(Candidate(
+                t, _norm_name(r), "viking", f"{sig} · V9 {v9:.0f}/9" if sig else f"V9 {v9:.0f}/9",
+                KOP if sig == "BUY" else BEVAKA if sig == "WATCH" else HALL, score=round(v9 / 9 * 100, 1),
+                score_text=f"V9 {v9:.0f}/9" + (f" · composite {comp:.0f}" if comp is not None else ""),
+                nordic=is_nordic(t), asof=asof, why="OVTLYR z-score"), ctx))
     return out
 
 
