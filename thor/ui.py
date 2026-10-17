@@ -201,12 +201,28 @@ def pick_to_filter(pick: str) -> tuple:
     return None, None
 
 
-def shown_rows(rows: list, pick: str, filters, markets=None) -> list:
-    """Listans filter: rullgardinen, chipsen och marknaderna (registrets etiketter; tomt = alla)."""
+SEGMENT_ALL = "alla"                         # segmentrullgardinens "Alla segment"
+
+
+def segment_choices(board: Optional[dict] = None) -> list:
+    """[(nyckel, text)] för segmentrullgardinen: "Alla segment" först, sedan Valhalls segment i kartans ordning
+    med den nordiska statusen när kartan finns ("Hälsovård · GRÖN") — så du kan söka köp bara där det är grönt."""
+    from valhall import segments as sgm
+    status = tc.segment_context(board).get("segments") or {}
+    out = [(SEGMENT_ALL, "Alla segment")]
+    for s in sgm.SEGMENTS:
+        st_ = (status.get(s.key) or {}).get("status")
+        out.append((s.key, f"{s.label} · {st_}" if st_ else s.label))
+    return out
+
+
+def shown_rows(rows: list, pick: str, filters, markets=None, segment: Optional[str] = None) -> list:
+    """Listans filter: rullgardinen, chipsen, marknaderna (registrets etiketter; tomt = alla) och segmentet
+    (Valhall-kartans nyckel; raden måste ha segmentet, eller ett tema som hör till det)."""
     family, strategy = pick_to_filter(pick)
     flt = set(filters or [])
     out = tc.filter_rows(rows, family=family, strategy=strategy, only_buy="bara KÖP" in flt,
-                         nordic_only="bara Norden" in flt)
+                         nordic_only="bara Norden" in flt, segment=None if segment in (None, SEGMENT_ALL) else segment)
     keys = {MARKET_LABELS.get(m, m) for m in (markets or [])}
     if keys:
         out = [c for c in out if ur.market_of(c.ticker) in keys]
@@ -280,9 +296,9 @@ def render_thor_page() -> None:
     if ticker:
         _analysis(st, data, rows, ticker)
         with st.expander(f"◀ Kandidater ({len(rows)})", expanded=False):
-            _list(st, rows)
+            _list(st, rows, data.get("board"))
     else:
-        _list(st, rows)
+        _list(st, rows, data.get("board"))
     with st.expander("Universum-registret", expanded=False):
         _universe_box(st, data.get("universe"))
     note("Thor-rank 0–100 är bara en sorteringsskala mellan strategier — strategins egen siffra står alltid "
@@ -290,9 +306,14 @@ def render_thor_page() -> None:
          "schemalagda körningarna; kör dem i GitHub Actions för färska rader. Riktiga order läggs alltid manuellt.")
 
 
-def _list(st, rows: list) -> None:
-    pick = st.selectbox("Screening", [ALL] + list(FAMILY_ALL) + [s.label for s in reg.STRATEGIES.values()],
+def _list(st, rows: list, board: Optional[dict] = None) -> None:
+    c1, c2 = st.columns([3, 2])
+    pick = c1.selectbox("Screening", [ALL] + list(FAMILY_ALL) + [s.label for s in reg.STRATEGIES.values()],
                         key="thor_pick", label_visibility="collapsed")
+    choices = dict(segment_choices(board))
+    seg = c2.selectbox("Segment", list(choices), format_func=lambda k: choices.get(k, str(k)), key="thor_segment",
+                       label_visibility="collapsed",
+                       help="Valhall-kartans segment med nordisk status — sök köp bara där det är grönt")
     if hasattr(st, "pills"):
         flt = st.pills("Filter", list(FILTERS), selection_mode="multi", key="thor_filters", label_visibility="collapsed")
         mkts = st.pills("Marknad", list(MARKET_LABELS), selection_mode="multi", key="thor_markets",
@@ -300,10 +321,11 @@ def _list(st, rows: list) -> None:
     else:                                                       # pragma: no cover - äldre Streamlit
         flt = st.multiselect("Filter", list(FILTERS), key="thor_filters", label_visibility="collapsed")
         mkts = st.multiselect("Marknad", list(MARKET_LABELS), key="thor_markets", label_visibility="collapsed")
-    shown = shown_rows(rows, pick, flt, mkts)
+    shown = shown_rows(rows, pick, flt, mkts, seg)
     s = tc.summary(shown)
+    where = f" · {escape(choices.get(seg, str(seg)).upper())}" if seg and seg != SEGMENT_ALL else ""
     st.markdown(f"<div style='color:{CYAN};font-size:0.72rem;letter-spacing:0.1em;margin:6px 0 2px;'>"
-                f"{s['n']} KANDIDATER · {s['buy']} KÖP · {pick.upper()}</div>", unsafe_allow_html=True)
+                f"{s['n']} KANDIDATER · {s['buy']} KÖP · {pick.upper()}{where}</div>", unsafe_allow_html=True)
     if not shown:
         from ui.components import empty_state
         empty_state("Inga rader med de filtren. Kör skanningarna i GitHub Actions eller lätta på filtren.")
