@@ -50,6 +50,17 @@ def test_lage_items_and_pick_filter():
     assert all(c.status_class == tc.KOP and c.nordic for c in tui.shown_rows(rows, tui.ALL, ["bara KÖP", "bara Norden"]))
     assert [c.ticker for c in tui.shown_rows(rows, tui.ALL, ["bara nya"])] == ["AEM"]
     assert [c.strategy for c in tui.shown_rows(rows, "Long Screener", None)] == ["long"]
+    # segmentrullgardinen: kartans segment med nordisk status; raden måste ha segmentet (eller temats segment)
+    choices = dict(tui.segment_choices(DATA["board"]))
+    assert choices[tui.SEGMENT_ALL] == "Alla segment" and choices["technology"] == "Teknik · GRÖN"
+    assert choices["materials"] == "Material · RÖD" and choices["healthcare"] == "Hälsovård"      # inte på kartan
+    tech = tui.shown_rows(rows, tui.ALL, [], None, "technology")
+    assert {c.segment for c in tech} == {"technology"} and len(tech) == 5
+    assert [c.ticker for c in tui.shown_rows(rows, tui.ALL, ["bara KÖP"], None, "technology")] == \
+        [c.ticker for c in tech if c.status_class == tc.KOP]
+    assert {c.ticker for c in tui.shown_rows(rows, "Råvara (alla)", [], None, "materials")} >= {"BOL.ST", "MMY.V", "NEM"}
+    assert tui.shown_rows(rows, tui.ALL, [], None, "healthcare") == []
+    assert len(tui.shown_rows(rows, tui.ALL, [], None, tui.SEGMENT_ALL)) == len(rows)
 
 
 def test_cards_are_plain_html():
@@ -131,6 +142,23 @@ def test_page_renders_the_list(monkeypatch):
     opens = [b for b in at.button if b.label == "Öppna →"]
     assert len(opens) == tui.PAGE and any(b.label.startswith("Visa fler") for b in at.button)
     assert "HEXA-B.ST" in text and "GOLDEN TICKET" in text
+
+
+def test_segment_dropdown_narrows_the_list(monkeypatch):
+    from streamlit.testing.v1 import AppTest
+    _patch(monkeypatch)
+    at = AppTest.from_function(_script)
+    at.run(timeout=60)
+    assert at.selectbox(key="thor_segment").value == tui.SEGMENT_ALL
+    at.selectbox(key="thor_segment").select("technology").run(timeout=60)
+    assert not at.exception
+    text = " ".join(m.value for m in at.markdown)
+    assert "5 KANDIDATER · 4 KÖP · ALLA STRATEGIER · TEKNIK · GRÖN" in text
+    opens = [b for b in at.button if b.label == "Öppna →"]
+    assert len(opens) == 5 and "HEXA-B.ST" in text and "MMY.V" not in text
+    at.selectbox(key="thor_segment").select("healthcare").run(timeout=60)
+    text = " ".join(m.value for m in at.markdown)
+    assert "0 KANDIDATER · 0 KÖP · ALLA STRATEGIER · HÄLSOVÅRD" in text and "Inga rader med de filtren" in text
 
 
 def test_a_broken_source_is_reported_not_fatal(monkeypatch):
