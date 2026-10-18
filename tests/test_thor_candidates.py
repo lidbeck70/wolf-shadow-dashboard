@@ -183,8 +183,9 @@ def test_arc_rows_wolf_and_viking():
     s = rows[("wolf", "SAND.ST")]
     assert s.status == "NEUTRAL" and s.status_class == tc.HALL and s.score == 40.0 and s.stop is None
     a = rows[("viking", "ATCO-A.ST")]
-    assert a.status == "BUY · V9 8/9" and a.status_class == tc.KOP and a.score == 88.9 and a.score_text == "V9 8/9 · composite 78"
+    assert a.status == "BUY · screener 8/9" and a.status_class == tc.KOP and a.score == 88.9 and a.score_text == "screener 8/9 · composite 78"
     assert rows[("viking", "SKF-B.ST")].status_class == tc.BEVAKA
+    assert "inte Viking Nines OVTLYR Nine" in a.why                                      # två olika 9-poängsmått
     assert tc.from_arc(None, None, CTX) == []
 
 
@@ -220,7 +221,7 @@ def test_arc_usa_parts_become_wolf_and_viking_rows():
     assert lly.status == "BULL" and lly.status_class == tc.BEVAKA and lly.score == 72.8 and not lly.nordic   # ingen entry i USA
     assert lly.segment == "healthcare" and lly.segment_status is None                                  # kartan är nordisk
     unh = rows[("viking", "UNH")]
-    assert unh.status == "BUY · V9 8/9" and unh.status_class == tc.KOP and unh.segment == "healthcare" and not unh.nordic
+    assert unh.status == "BUY · screener 8/9" and unh.status_class == tc.KOP and unh.segment == "healthcare" and not unh.nordic
     assert ("wolf", "ERIC-B.ST") in rows and ("viking", "ATCO-A.ST") in rows                           # Norden som förut
     assert [c.ticker for c in tc.filter_rows(list(rows.values()), segment="healthcare")] == ["LLY", "UNH"]
 

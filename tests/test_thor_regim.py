@@ -184,7 +184,7 @@ def test_viking_nine_layout_shows_the_whole_decision_chain(engines):
         assert part in text, part
     assert len(at.get("plotly_chart")) == 1 and at.number_input(key="thor_capital").value == 100000.0
     _at, text = _run("viking", "NEM")
-    assert "bedöms här med Viking Nine-motorn" in text
+    assert "Motorn nedan är Viking Nine" in text and "inte är OVTLYR Nine" in text
 
 
 def test_a_failing_layout_becomes_a_note(engines, monkeypatch):

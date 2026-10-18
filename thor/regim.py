@@ -70,6 +70,12 @@ def _viking_nine(st, ident, strategy, data, ohlcv, cands) -> None:
     from ovtlyr.ui.nine_card import render_nine_card
     from ovtlyr.ui.viking_nine_regime import price_chart
     from ovtlyr.ui.viking_screens import _earnings, _market_banner, _risk_banner, _risk_for, _sector
+    if strategy == "viking":
+        from ui.components import note
+        note("Motorn nedan är Viking Nine (OVTLYR Nine + Viking Execution) — Viking har ingen egen regimmotor per aktie. "
+             "Vikings eget verdikt står i kortet ovan: screenerns BUY (över EMA200, ADX ≥ 20, composite ≥ 60) och dess "
+             "egna nio faktorer, som inte är OVTLYR Nine. Viking Nines regel 7–8/9 = WAIT och rapportspärren gäller "
+             "motorn nedan, inte screenerns siffra.")
     from ui.components import note
     df = _frame(ohlcv(ident.yf, on.PERIOD))
     if df is None or len(df) < on.MIN_BARS:
@@ -102,8 +108,6 @@ def _viking_nine(st, ident, strategy, data, ohlcv, cands) -> None:
         note(f"Grafen kunde inte ritas: {exc}")
     render_execution(decision)
     render_exit_section(ident.yf, df, nine, ob, earnings)
-    if strategy == "viking":
-        note("Viking (OVTLYR z-score) bedöms här med Viking Nine-motorn — samma OVTLYR Nine, samma exit.")
 
 
 def _wolf(st, ident, strategy, data, ohlcv, cands) -> None:

@@ -317,10 +317,12 @@ def from_arc(blob: Optional[dict], board: Optional[dict], ctx: dict) -> list:
             comp = _f(r.get("composite"))
             t = yf(r.get("ticker"))
             out.append(_tag(Candidate(
-                t, _norm_name(r), "viking", f"{sig} · V9 {v9:.0f}/9" if sig else f"V9 {v9:.0f}/9",
+                t, _norm_name(r), "viking", f"{sig} · screener {v9:.0f}/9" if sig else f"screener {v9:.0f}/9",
                 KOP if sig == "BUY" else BEVAKA if sig == "WATCH" else HALL, score=round(v9 / 9 * 100, 1),
-                score_text=f"V9 {v9:.0f}/9" + (f" · composite {comp:.0f}" if comp is not None else ""),
-                nordic=is_nordic(t), asof=asof, why="OVTLYR z-score"), ctx))
+                score_text=f"screener {v9:.0f}/9" + (f" · composite {comp:.0f}" if comp is not None else ""),
+                nordic=is_nordic(t), asof=asof,
+                why="Viking-screenern: BUY = över EMA200, ADX ≥ 20 och composite ≥ 60 — screenerns egna nio faktorer, "
+                    "inte Viking Nines OVTLYR Nine"), ctx))
     return out
 
 
