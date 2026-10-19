@@ -34,6 +34,11 @@ logger = logging.getLogger(__name__)
 
 # ── Data model ────────────────────────────────────────────────────────────────
 
+# Sen-cykel-flaggan när temats 10-årspercentil saknas: blockerar inte (poängen visas), men score_setup ger då
+# högst BEVAKA — saknad data är aldrig ett ja.
+CYCLE_UNKNOWN_DETAIL = "DATA_GAP — cykelposition okänd → högst BEVAKA (saknad data är aldrig ett ja)"
+
+
 @dataclass
 class GateResult:
     name: str
@@ -440,8 +445,8 @@ def compute_notrade_flags(
     else:
         flags.append(GateResult(
             name=f"Sen cykel (10å-percentil > {LATE_CYCLE_PCT:.0f}%)",
-            passed=False,   # DATA_GAP → assume OK (no block)
-            detail="DATA_GAP — cykelpositon okänd, antas OK",
+            passed=False,   # DATA_GAP blockerar inte — men score_setup ger högst BEVAKA (CYCLE_UNKNOWN_DETAIL)
+            detail=CYCLE_UNKNOWN_DETAIL,
             is_blocker=True,
         ))
 

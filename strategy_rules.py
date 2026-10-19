@@ -790,7 +790,8 @@ EMBER_PB = Playbook(
          "inte mot ENERGI.", True),
         (f"Hård grind: pris över 50-veckors EMA och inte sen cykel (10å-percentil ≤ {_EMBER_LATE:.0f})",
          "Rätt komplex i rätt fas. Under 50V EMA eller på cykeltoppen övervägs ingen entry, "
-         "oavsett setup-poäng.",
+         "oavsett setup-poäng. Okänd cykel (temats percentil saknas, DATA_GAP) ger högst BEVAKA — "
+         "saknad data är aldrig ett ja.",
          "SCREENING → Arc Screener → 🔥 EMBER: grindarna märkta HÅRD på setup-kortet.", True),
         (f"Setup-poäng ≥ {_EMBER_BUY:.0f} = KÖPLÄGE, {_EMBER_WATCH:.0f}–{_EMBER_BUY:.0f} = BEVAKA",
          "Trend och entry är poäng, inte grindar: 20D > 50D EMA (15), relativ styrka mot "

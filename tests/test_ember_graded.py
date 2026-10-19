@@ -122,8 +122,13 @@ def test_scan_ticker_end_to_end_without_network(monkeypatch):
     monkeypatch.setattr(g, "_download_robust", lambda tk, period: _etf(rising=False))
     monkeypatch.setattr(e, "compute_macro_score", lambda ratios, cykel: e.MacroScore())
     monkeypatch.setattr(e, "compute_sentiment_score", lambda t: e.SentimentScore())
-    r = e._scan_ticker("TST", "Aktie", "Guld", "GDX", {}, None, 100_000.0)
-    assert r.error is None and r.verdict == cfg.SETUP_KOP and r.eligible and r.hard_pass
+    monkeypatch.setattr(e, "_theme_for", lambda t: "guld")
+    board = {"guld": {"cykel_label": "TIDIG", "percentile_10y": 40.0, "hat_score": 60, "necessity": 3}}
+    blind = e._scan_ticker("TST", "Aktie", "Guld", "GDX", {}, None, 100_000.0)        # temabrädan saknas
+    assert blind.verdict == cfg.SETUP_BEVAKA and not blind.eligible and blind.cykel_label == "DATA_GAP"
+    r = e._scan_ticker("TST", "Aktie", "Guld", "GDX", board, None, 100_000.0)
+    assert blind.setup_score == r.setup_score                                           # samma poäng, lägre verdikt
+    assert r.error is None and r.verdict == cfg.SETUP_KOP and r.eligible and r.hard_pass and r.cykel_label == "TIDIG"
     assert r.setup_score >= cfg.VERDICT_BUY_MIN and r.entry_pass and r.trend_pass
     assert r.stop is not None and r.stop < r.entry and r.shares and r.shares > 0
     from ember.cache import _setup_to_dict
@@ -137,3 +142,16 @@ def test_rules_page_reads_the_new_thresholds():
     assert "KÖPLÄGE" in text and "70" in text and "50" in text
     assert "HÅRD" in text and "Chop-zonen" in text
     assert "alla hårda, alla måste passera" not in text
+
+
+def test_unknown_cycle_caps_the_verdict_at_watch(monkeypatch):
+    """Samma köpsetup som ovan men utan temats 10-årspercentil: poängen är densamma, verdiktet högst BEVAKA."""
+    c, df = _series()
+    tg, eg, nf = _gates(monkeypatch, c, df, _etf(rising=False), pct=None)
+    late = next(f for f in nf if f.name.startswith("Sen cykel"))
+    assert late.is_blocker and not late.passed and late.detail == g.CYCLE_UNKNOWN_DETAIL and "högst BEVAKA" in late.detail
+    score, verdict, hard = e.score_setup(tg, eg, nf)
+    known = e.score_setup(*_gates(monkeypatch, c, df, _etf(rising=False)))
+    assert known[1] == cfg.SETUP_KOP and score == known[0] and score >= cfg.VERDICT_BUY_MIN
+    assert hard and verdict == cfg.SETUP_BEVAKA and e.cycle_unknown(nf) and not e.cycle_unknown(_gates(
+        monkeypatch, c, df, _etf(rising=False))[2])
