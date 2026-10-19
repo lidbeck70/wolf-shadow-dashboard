@@ -116,11 +116,18 @@ def sector_etf_for(ticker: str) -> str:
 
 # ── Setup-poäng ───────────────────────────────────────────────────────────────
 
+def cycle_unknown(notrade_flags: list) -> bool:
+    """True när sen-cykel-grinden inte kunde mätas (temats 10-årspercentil saknas)."""
+    from ember.gates import CYCLE_UNKNOWN_DETAIL
+    return any(getattr(f, "detail", "") == CYCLE_UNKNOWN_DETAIL for f in notrade_flags or [])
+
+
 def score_setup(trend_gates: list, entry_gates: list, notrade_flags: list) -> tuple[float, str, bool]:
     """(poäng 0–100, verdikt, hårda grindar ok). Poängen = summan av de
     graderade grindarnas points / summan av deras max × 100, minus avdragen
     ur aktiva flaggor. Faller en hård grind (50V EMA, sen cykel) blir
-    verdiktet AVVAKTA oavsett poäng — poängen visas ändå."""
+    verdiktet AVVAKTA oavsett poäng — poängen visas ändå. Okänd cykel (DATA_GAP på sen-cykel-grinden) ger högst
+    BEVAKA: saknad data är aldrig ett ja."""
     graded_gates = [g for g in trend_gates + entry_gates if g.max_points > 0]
     mx = sum(g.max_points for g in graded_gates)
     pts = sum(g.points for g in graded_gates)
@@ -131,7 +138,7 @@ def score_setup(trend_gates: list, entry_gates: list, notrade_flags: list) -> tu
             and not any(f.passed and f.is_blocker for f in notrade_flags))
     if not hard:
         verdict = SETUP_AVVAKTA
-    elif score >= VERDICT_BUY_MIN:
+    elif score >= VERDICT_BUY_MIN and not cycle_unknown(notrade_flags):
         verdict = SETUP_KOP
     elif score >= VERDICT_WATCH_MIN:
         verdict = SETUP_BEVAKA
