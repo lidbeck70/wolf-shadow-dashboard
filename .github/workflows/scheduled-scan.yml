@@ -26,7 +26,7 @@ permissions:
 jobs:
   screen:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 55             # Viking Nine (Norden + USA) lade till ~6–10 min
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -70,6 +70,15 @@ jobs:
           BORSDATA_API_KEY: ${{ secrets.BORSDATA_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
         run: python arc_scan.py
+
+      # Viking Nine över hela universum-registret (Norden + USA mid/large cap) —
+      # samma två steg som fliken. Resultatet till Gisten (viking_nine_scan.json), Thor läser det.
+      - name: Viking Nine
+        if: always() && steps.gate.outputs.run == 'true'
+        env:
+          BORSDATA_API_KEY: ${{ secrets.BORSDATA_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+        run: python viking_nine_scan.py
 
       # Insiderbevakaren headless — kluster ur Börsdatas insynsregister med
       # arkets poäng/grind/trigger. Resultatet till Gisten (insider_scan.json).
