@@ -2,7 +2,8 @@
 Royalty-motorn — Royalty-playbookens grindar och en rang byggd av Contrarian Alphas pelare.
 
 Grindarna är playbookens (strategy_rules_masterguide ROYALTY): bruttomarginal > 70 %, EBIT-marginal > 40 %,
-nettoskuld/EBITDA < 1,5 — plus FCF > 0 (styrkepelarens egen grind). Rangen 0–100 ordnar bolagen INOM grindarna,
+nettoskuld/EBITDA < 1,5. FCF är ingen grind (borttagen på ägarens beslut) — det väger in i kvalitetspelaren och
+visas i Thor. Rangen 0–100 ordnar bolagen INOM grindarna,
 som Deep Contrarian gör, med Royaltys vikter:
   hat 0,35        kurs mot SMA200, nära 52v-lägsta, under eget flerårssnitt, volymtorka, värderingsdepression
                   (contrarian_alpha.hate — samma kod)
@@ -85,9 +86,9 @@ def fund_from_kpis(kpi: dict) -> dict:
 
 
 def gates(kpi: dict) -> tuple:
-    """(håller, [varför inte]) — playbookens tre filter plus FCF > 0; saknat nyckeltal håller inte."""
+    """(håller, [varför inte]) — playbookens tre filter; saknat nyckeltal håller inte. FCF är ingen grind."""
     fails = []
-    gm, em, nd, fcf = (kpi.get(k) for k in ("gross_margin", "ebit_margin", "nd_ebitda", "fcf"))
+    gm, em, nd = (kpi.get(k) for k in ("gross_margin", "ebit_margin", "nd_ebitda"))
     if gm is None:
         fails.append("bruttomarginal saknas")
     elif gm <= GATES["gross_margin"]:
@@ -100,10 +101,6 @@ def gates(kpi: dict) -> tuple:
         fails.append("skuld/EBITDA saknas")
     elif nd >= GATES["nd_ebitda"]:
         fails.append(f"skuld/EBITDA {nd:.1f} (kräver < {GATES['nd_ebitda']:.1f})")
-    if fcf is None:
-        fails.append("FCF saknas")
-    elif fcf <= 0:
-        fails.append("FCF negativt")
     return (not fails), fails
 
 
