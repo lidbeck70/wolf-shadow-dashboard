@@ -60,9 +60,18 @@ def save_ember_results(scan_result) -> bool:
     except Exception as e:
         logger.debug("Local EMBER write failed: %s", e)
 
+    main_ok = False
+    try:                                   # huvudgisten (gist_storage) — panelen hittar den utan EMBER_GIST_ID
+        from gist_storage import save_blob
+        main_ok = bool(save_blob(_GIST_FILENAME, payload))
+    except Exception as e:
+        logger.debug("EMBER main-gist save failed: %s", e)
+
     token = _get_github_token()
     if not token or not _GIST_API_URL:
-        return False
+        if main_ok:
+            logger.info("EMBER results saved to main Gist (%d eligible)", len(payload["eligible"]))
+        return main_ok
     try:
         import requests
         body = {"files": {_GIST_FILENAME: {"content": json.dumps(payload, indent=2, default=str)}}}
@@ -73,11 +82,13 @@ def save_ember_results(scan_result) -> bool:
         logger.warning("EMBER Gist save failed: HTTP %d", r.status_code)
     except Exception as e:
         logger.warning("EMBER Gist save exception: %s", e)
-    return False
+    return main_ok
 
 
 def load_ember_results() -> dict:
-    """Load last-saved EMBER results. Priority: Gist -> local -> empty."""
+    """Load last-saved EMBER results. Priority: EMBER-gisten -> huvudgisten -> local -> empty.
+    Huvudgisten (gist_storage.load_blob) läses utan token och utan EMBER_GIST_ID — panelen på Streamlit hade
+    annars ingen väg till de schemalagda resultaten och Thor såg aldrig EMBER:s köp."""
     if _GIST_API_URL:
         try:
             import requests
@@ -91,6 +102,13 @@ def load_ember_results() -> dict:
                         return data
         except Exception as e:
             logger.debug("EMBER Gist load failed: %s", e)
+    try:
+        from gist_storage import load_blob
+        data = load_blob(_GIST_FILENAME, None)
+        if isinstance(data, dict) and data.get("eligible") is not None:
+            return data
+    except Exception as e:
+        logger.debug("EMBER main-gist load failed: %s", e)
     try:
         if os.path.exists(_LOCAL_FALLBACK):
             with open(_LOCAL_FALLBACK, encoding="utf-8") as f:
