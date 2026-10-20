@@ -24,6 +24,7 @@ import pandas as pd
 from thor import candidates as tc
 from thor import cards
 from thor import dossier as td
+from thor import live
 from thor import registry as reg
 from ui.tokens import AMBER, CYAN, DIM, GREEN, GREY, regime_color
 from universe import registry as ur
@@ -81,6 +82,24 @@ def load(loader=None) -> dict:
     except Exception:
         out["segment_map"] = {}
     out["loaded"] = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")
+    return out
+
+
+def rebuild(data: dict) -> dict:
+    """Listans rader ur källorna i data (samma bygge efter 📡 Uppdatera och efter ⚡ Skanna nu)."""
+    errors: dict = {}
+    bd_map = (data.get("universe") or {}).get("bd_map") or None   # 'EQNR' → 'EQNR.OL', inte '.ST'
+    data["rows"] = tc.build(data, errors=errors, momentum_map=bd_map, segment_map=data.get("segment_map"))
+    data["errors"] = errors
+    return data
+
+
+def freshness_rows(rows: list, data: dict) -> list:
+    """Körningarnas läge per strategi som tabellrader — och hur strategin körs (live eller bara i schemat)."""
+    out = []
+    for key, label, n, asof, state in live.freshness(rows, data):
+        how = f"schemat — {live.HEAVY[key]}" if key in live.HEAVY else "⚡ Skanna nu" if live.can_run(key) else "schemat"
+        out.append({"Strategi": label, "Läge": state, "Rader": n, "Körd": asof or "—", "Körs": how})
     return out
 
 
@@ -280,12 +299,7 @@ def render_thor_page() -> None:
     c1, c2 = st.columns([1, 3])
     if c1.button("📡 Uppdatera", key="thor_refresh") or _STATE not in st.session_state:
         with st.spinner("Läser körningarna ur Gisten …"):
-            data = load()
-            errors: dict = {}
-            bd_map = (data.get("universe") or {}).get("bd_map") or None   # 'EQNR' → 'EQNR.OL', inte '.ST'
-            data["rows"] = tc.build(data, errors=errors, momentum_map=bd_map, segment_map=data.get("segment_map"))
-            data["errors"] = errors
-            st.session_state[_STATE] = data
+            st.session_state[_STATE] = rebuild(load())
             st.session_state.pop(_CACHE, None)
     data = st.session_state[_STATE]
     rows = data.get("rows") or []
@@ -295,14 +309,21 @@ def render_thor_page() -> None:
     if data.get("errors"):
         note("Kunde inte läsa " + ", ".join(f"{k} ({v})" for k, v in data["errors"].items())
              + " — de raderna saknas i listan tills filen är rättad eller körningen körd om.")
+    fresh = freshness_rows(rows, data)
+    old = [r["Strategi"] for r in fresh if r["Läge"] in ("GAMMAL", "SAKNAS")]
+    with st.expander("Körningar per strategi" + (f" · {len(old)} gamla/saknas" if old else " · alla färska"),
+                     expanded=False):
+        st.dataframe(pd.DataFrame(fresh), hide_index=True, use_container_width=True)
+        note("LIVE = körd med ⚡ Skanna nu i den här sessionen (📡 Uppdatera läser Gisten igen). GAMMAL = äldre än "
+             "strategins gräns. De tunga skanningarna körs bara i schemat (GitHub Actions).")
     ticker = tc.yf(st.text_input("Ticker", key="thor_ticker", label_visibility="collapsed",
                                  placeholder="Skriv en ticker — BOL.ST, ERIC B, NEM — eller tryck Öppna på en rad"))
     if ticker:
         _analysis(st, data, rows, ticker)
         with st.expander(f"◀ Kandidater ({len(rows)})", expanded=False):
-            _list(st, rows, data.get("board"))
+            _list(st, rows, data.get("board"), data)
     else:
-        _list(st, rows, data.get("board"))
+        _list(st, rows, data.get("board"), data)
     with st.expander("Universum-registret", expanded=False):
         _universe_box(st, data.get("universe"))
     note("Thor-rank 0–100 är bara en sorteringsskala mellan strategier — strategins egen siffra står alltid "
@@ -310,7 +331,30 @@ def render_thor_page() -> None:
          "schemalagda körningarna; kör dem i GitHub Actions för färska rader. Riktiga order läggs alltid manuellt.")
 
 
-def _list(st, rows: list, board: Optional[dict] = None) -> None:
+def _scan_now(st, data: dict, strategy: str) -> None:
+    """⚡ Skanna nu för en vald strategi: samma headless-skanning som schemat, raderna byts i sessionen."""
+    if strategy in live.HEAVY:
+        asof = (tc.summary(data.get("rows") or [])["by_strategy"].get(strategy) or {}).get("asof")
+        st.caption(f"{live.HEAVY[strategy]} körs i schemat (GitHub Actions) — senast {asof or 'aldrig'}.")
+        return
+    if not live.can_run(strategy):
+        return
+    stamp = (data.get("live") or {}).get(strategy)
+    c1, c2 = st.columns([1, 3])
+    c2.caption(f"skannad live {stamp}" if stamp else "Skannar strategin nu med schemats förval — Gisten rörs inte.")
+    if c1.button("⚡ Skanna nu", key=f"thor_scan_{strategy}"):
+        with st.spinner(f"Skannar {reg.label(strategy)} …"):
+            try:
+                new = rebuild(live.run(strategy, data))
+            except Exception as exc:
+                st.error(f"Skanningen fallerade: {exc}")
+                return
+        st.session_state[_STATE] = new
+        st.session_state.pop(_CACHE, None)
+        st.rerun()
+
+
+def _list(st, rows: list, board: Optional[dict] = None, data: Optional[dict] = None) -> None:
     c1, c2 = st.columns([3, 2])
     pick = c1.selectbox("Screening", [ALL] + list(FAMILY_ALL) + [s.label for s in reg.STRATEGIES.values()],
                         key="thor_pick", label_visibility="collapsed")
@@ -325,6 +369,9 @@ def _list(st, rows: list, board: Optional[dict] = None) -> None:
     else:                                                       # pragma: no cover - äldre Streamlit
         flt = st.multiselect("Filter", list(FILTERS), key="thor_filters", label_visibility="collapsed")
         mkts = st.multiselect("Marknad", list(MARKET_LABELS), key="thor_markets", label_visibility="collapsed")
+    strategy = pick_to_filter(pick)[1]
+    if strategy and data is not None:
+        _scan_now(st, data, strategy)
     shown = shown_rows(rows, pick, flt, mkts, seg)
     s = tc.summary(shown)
     where = f" · {escape(choices.get(seg, str(seg)).upper())}" if seg and seg != SEGMENT_ALL else ""
