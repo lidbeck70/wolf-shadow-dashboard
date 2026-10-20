@@ -220,7 +220,7 @@ def test_page_shows_the_universe_box_and_market_pills(monkeypatch):
     text = " ".join(m.value for m in at.markdown)
     assert "559 bolag" in text and "FÖRVALET PER STRATEGI" in text and "Börsdata global tom" in " ".join(
         m.value for m in at.markdown)
-    assert any("Universum-registret" in e.label for e in at.expander) and len(at.dataframe) == 2
+    assert any("Universum-registret" in e.label for e in at.expander) and len(at.dataframe) == 3   # + körningar per strategi
     monkeypatch.setattr(tui, "load", lambda loader=None: {**DATA, "universe": None})
     at = AppTest.from_function(_script)
     at.run(timeout=60)

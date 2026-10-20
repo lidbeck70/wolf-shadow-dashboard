@@ -33,8 +33,9 @@ MAX_CANDIDATES = {"norden": 60, "usa": 60}      # steg 2 per marknad (flikens f�
 KEEP = ("GOLDEN TICKET", "READY", "DEVELOPING")  # REJECTED och fel sparas inte
 
 
-def universes(loader=None, usa_api=None) -> dict:
-    """{marknad: {ticker: (namn, segment)}} ur registret — tomt för en marknad som inte går att läsa."""
+def universes(loader=None, usa_api=None, usa: bool = True) -> dict:
+    """{marknad: {ticker: (namn, segment)}} ur registret — tomt för en marknad som inte går att läsa.
+    usa=False hoppar över USA (Thors "Skanna nu" kör bara Norden live)."""
     from thor import candidates as tc
     from universe import registry as ur
     from universe import scan as uscan
@@ -50,13 +51,15 @@ def universes(loader=None, usa_api=None) -> dict:
     segs = tc.segment_map_from_register(reg)
     for m in uscan.members_for("viking_nine", universe=reg, markets=("norden",)) or []:
         out["norden"][m.ticker] = (m.name or m.ticker, segs.get(m.ticker))
+    if not usa:
+        return out
     try:
         import arc_scan
-        usa = arc_scan.registry_usa(loader, usa_api) or {}
+        usa_reg = arc_scan.registry_usa(loader, usa_api) or {}
     except Exception as exc:
         log.warning("USA-universumet gick inte att räkna (%s) — USA hoppas över.", exc)
-        usa = {}
-    for t, name in usa.items():
+        usa_reg = {}
+    for t, name in usa_reg.items():
         out["usa"][t] = (name, segs.get(t.upper()))
     return out
 
