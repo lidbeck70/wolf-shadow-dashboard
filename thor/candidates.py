@@ -36,7 +36,7 @@ NORDIC_SUFFIX = (".ST", ".OL", ".CO", ".HE", ".IC")
 STALE_DAYS = 4                                 # en körning äldre än så visas, men märks gammal
 BLOBS = {"board": "valhall_board.json", "berserk": "berserk_scan.json", "arc": "arc_screeners.json",
          "momentum": "wolf_screener.json", "insider": "insider_scan.json", "screens": "screens.json",
-         "royalty": "royalty_scan.json"}
+         "royalty": "royalty_scan.json", "viking_nine": "viking_nine_scan.json"}
 # Håvar vars träffar INTE dubbleras under en egen strategi: Royalty-motorn väljer själv ur håven (producenterna
 # som passerar marginalfiltret hör till Rick Rule) och ger varje bolag verdikt och rang i from_royalty.
 SCREEN_OWN_SKIP = frozenset({"royalty"})
@@ -166,21 +166,31 @@ def _segment_of_theme(theme) -> Optional[str]:
 
 
 # ── Källorna ────────────────────────────────────────────────────────────────
-def from_viking_nine(board: Optional[dict], ctx: dict) -> list:
-    """Kartans swing-val i segment som styrs av Viking Nine (även "prövas"): GOLDEN TICKET → KÖP, annars BEVAKA."""
+def from_viking_nine(board: Optional[dict], ctx: dict, scan: Optional[dict] = None) -> list:
+    """Viking Nine: kartans swing-val i segment som styrs av Viking Nine (även "prövas") och den schemalagda
+    skanningen över hela registret (viking_nine_scan.json, Norden och USA). GOLDEN TICKET → KÖP, annars BEVAKA;
+    samma bolag i båda → den bästa raden vinner i dedupe."""
     from valhall import swing as vsw
+
+    def row(p, segment, asof, why):
+        cat = str(p.get("category") or p.get("action") or "")
+        w = _f(p.get("nine_weighted"))
+        t = yf(p.get("ticker"))
+        return _tag(Candidate(
+            t, _norm_name(p), "viking_nine", cat, KOP if cat == "GOLDEN TICKET" else BEVAKA,
+            score=w, score_text=f"{p.get('ovtlyr_nine') or '?'} · {w:.0f}" if w is not None else str(p.get("ovtlyr_nine") or ""),
+            segment=segment, entry=_f(p.get("entry")), stop=_f(p.get("stop")), rr=_f(p.get("rr")), nordic=is_nordic(t),
+            asof=asof, why=why), ctx)
     out, asof = [], _day((board or {}).get("generated"))
     for key, e in (((board or {}).get("swing") or {}).get("segments") or {}).items():
         if e.get("strategy") not in (vsw.VIKING, vsw.TEST):
             continue
         for p in e.get("picks") or []:
-            cat = str(p.get("category") or p.get("action") or "")
-            w = _f(p.get("nine_weighted"))
-            out.append(_tag(Candidate(
-                yf(p.get("ticker")), _norm_name(p), "viking_nine", cat, KOP if cat == "GOLDEN TICKET" else BEVAKA,
-                score=w, score_text=f"{p.get('ovtlyr_nine') or '?'} · {w:.0f}" if w is not None else str(p.get("ovtlyr_nine") or ""),
-                segment=key, entry=_f(p.get("entry")), stop=_f(p.get("stop")), rr=_f(p.get("rr")), nordic=True,
-                asof=asof, why=str(p.get("reason") or e.get("strategy") or "")), ctx))
+            out.append(row(p, key, asof, str(p.get("reason") or e.get("strategy") or "")))
+    asof = _day((scan or {}).get("generated"))
+    for p in (scan or {}).get("rows") or []:
+        if isinstance(p, dict) and p.get("ticker"):
+            out.append(row(p, p.get("segment") or None, asof, str(p.get("reason") or "Viking Nine-skanningen")))
     return out
 
 
@@ -527,7 +537,7 @@ def build(blobs: dict, today=None, momentum_map: Optional[dict] = None, errors: 
             errors["board"] = f"{type(exc).__name__}: {exc}"
         ctx = {"segments": {}, "themes": {}}
     ctx["segment_of"] = {str(k).upper(): v for k, v in (segment_map or {}).items() if v}
-    sources = (("viking_nine", from_viking_nine, (board, ctx)), ("long", from_long, (board, ctx)),
+    sources = (("viking_nine", from_viking_nine, (board, ctx, b.get("viking_nine"))), ("long", from_long, (board, ctx)),
                ("themes", from_themes, (board, ctx)), ("berserk", from_berserk, (b.get("berserk"), ctx)),
                ("arc", from_arc, (b.get("arc"), board, ctx)), ("momentum", from_momentum, (b.get("momentum"), ctx, momentum_map)),
                ("ember", from_ember, (b.get("ember"), ctx)), ("quality", from_contrarian, (b.get("ca_quality"), ctx, "quality")),
