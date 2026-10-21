@@ -1,7 +1,23 @@
 {
   "cash": 21000.0,
   "closed": [],
-  "long": [],
+  "long": [
+    {
+      "entry_date": "2026-10-21",
+      "entry_price": 32.53,
+      "extras": {},
+      "id": "e5365eb7",
+      "name": "",
+      "notes": "",
+      "sector": "Sällanköpsvaror ",
+      "shares": 70,
+      "source": "holdings",
+      "stop": null,
+      "strategy": "Quality",
+      "target": null,
+      "ticker": "HUSQ-B.ST"
+    }
+  ],
   "momentum": [
     {
       "entry_date": "2026-08-12",
