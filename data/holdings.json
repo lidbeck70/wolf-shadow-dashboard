@@ -1,7 +1,23 @@
 {
   "cash": 0.0,
   "closed": [],
-  "long": [],
+  "long": [
+    {
+      "entry_date": "2026-10-21",
+      "entry_price": 31.99,
+      "extras": {},
+      "id": "8c8c2fc5",
+      "name": "",
+      "notes": "",
+      "sector": "Unknown",
+      "shares": 70,
+      "source": "copilot",
+      "stop": 29.99,
+      "strategy": "Quality",
+      "target": 40.0,
+      "ticker": "HUSQ-B.ST"
+    }
+  ],
   "momentum": [
     {
       "entry_date": "2026-08-12",
