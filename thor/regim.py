@@ -397,7 +397,7 @@ def _royalty(st, ident, strategy, data, ohlcv, cands) -> None:
         ("Bruttomarginal", num(k.get("gross_margin"), " %"), gate_col("bruttomarginal"), "> 70 %"),
         ("EBIT-marginal", num(k.get("ebit_margin"), " %"), gate_col("ebit-marginal"), "> 40 %"),
         ("Skuld/EBITDA", num(k.get("nd_ebitda"), "", 1), gate_col("skuld/ebitda"), "< 1,5"),
-        ("FCF", num(k.get("fcf")), gate_col("fcf"), "> 0 (M i bolagets valuta)"),
+        ("FCF", num(k.get("fcf")), TEXT, "info · väger in i kvalitet (M i bolagets valuta)"),
         ("Mot SMA200", num(gd.get("above_sma200_pct"), " %"), GREEN if gd.get("ok") else RED,
          f"vakten: högst +{float(blob.get('max_above_sma200_pct') or re_.MAX_ABOVE_SMA200_PCT):.0f} %")]),
         unsafe_allow_html=True)

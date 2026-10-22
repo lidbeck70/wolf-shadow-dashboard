@@ -96,9 +96,10 @@ def test_build_merges_list_and_screen_and_fills_from_register():
 def test_gates_are_the_playbooks():
     assert eng.gates(GOOD_KPI) == (True, [])
     ok, fails = eng.gates(dict(GOOD_KPI, gross_margin=65.0, nd_ebitda=2.0, fcf=-5.0))
-    assert not ok and fails == ["bruttomarginal 65 % (kräver > 70 %)", "skuld/EBITDA 2.0 (kräver < 1.5)", "FCF negativt"]
+    assert not ok and fails == ["bruttomarginal 65 % (kräver > 70 %)", "skuld/EBITDA 2.0 (kräver < 1.5)"]
+    assert eng.gates(dict(GOOD_KPI, fcf=-5.0)) == (True, []) and eng.gates(dict(GOOD_KPI, fcf=None)) == (True, [])
     ok, fails = eng.gates({})
-    assert not ok and fails == ["bruttomarginal saknas", "EBIT-marginal saknas", "skuld/EBITDA saknas", "FCF saknas"]
+    assert not ok and fails == ["bruttomarginal saknas", "EBIT-marginal saknas", "skuld/EBITDA saknas"]
     assert eng.gates(dict(GOOD_KPI, ebit_margin=40.0))[1] == ["EBIT-marginal 40 % (kräver > 40 %)"]
 
 
