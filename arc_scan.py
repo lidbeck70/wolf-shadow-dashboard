@@ -334,6 +334,11 @@ def main() -> int:
     args = parser.parse_args()
 
     payload = scan_all(usa_api=borsdata_for_usa())
+    try:
+        import market_prices
+        log.info("Arc: %s.", market_prices.stats_text())
+    except Exception:
+        pass
     if args.dry_run:
         log.info("[DRY-RUN] sparar inte till Gisten.")
         return 0
