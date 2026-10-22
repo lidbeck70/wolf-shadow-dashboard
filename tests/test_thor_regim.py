@@ -100,7 +100,7 @@ def _run(strategy, ticker, what="regim", royalty=None):
 # ── Registret och layouterna hänger ihop ─────────────────────────────────────
 def test_every_regime_layout_in_the_registry_has_a_renderer():
     assert {s.regime for s in reg.STRATEGIES.values() if s.regime} <= set(regim.LAYOUTS)
-    assert regim.LAYOUTS["viking"] is regim.LAYOUTS["viking_nine"] and regim.LAYOUTS["insider"] is regim.LAYOUTS["sheet"]
+    assert regim.LAYOUTS["viking"] is regim._viking and regim.LAYOUTS["insider"] is regim.LAYOUTS["sheet"]
     assert list(regim.TA_PERIODS) == ["6 mån", "1 år", "2 år"]
 
 
@@ -180,12 +180,15 @@ def test_royalty_layout_reads_the_engines_row(engines):
 
 def test_viking_nine_layout_shows_the_whole_decision_chain(engines):
     at, text = _run("viking_nine", "NEM")
-    for part in ("MARKET SPY", "OVTLYR NINE", "VIKING EXECUTION", "RISK ENGINE", "VIKING EXIT ENGINE"):
+    for part in ("MARKET SPY", "OVTLYR NINE", "VIKING EXECUTION", "RISK ENGINE", "VIKING EXIT ENGINE",
+                 "Stoppar:", "Stängda candles: aktien t.o.m.", "TOTAL"):
         assert part in text, part
     assert len(at.get("plotly_chart")) == 1 and at.number_input(key="thor_capital").value == 100000.0
-    assert any("Stängda candles: aktien t.o.m." in c.value for c in at.caption)     # motorn säger vilken stängning
-    _at, text = _run("viking", "NEM")
-    assert "Motorn nedan är Viking Nine" in text and "inte är OVTLYR Nine" in text
+    labels = [e.label for e in at.expander]
+    assert "Kapital och positionstak" in labels and any(lbl.startswith("Varför") for lbl in labels)
+    at2, text = _run("viking", "NEM")
+    assert "Viking är screenern" in text and "OVTLYR NINE" not in text               # ingen motor under Viking
+    assert "⚔️ Viking Nine för samma aktie →" in [b.label for b in at2.button]
 
 
 def test_a_failing_layout_becomes_a_note(engines, monkeypatch):

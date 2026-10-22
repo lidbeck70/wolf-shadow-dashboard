@@ -12,7 +12,7 @@ from typing import Optional
 
 from thor import candidates as tc
 from thor import registry as reg
-from ui.tokens import AMBER, BG_ALT, BORDER_FAINT, CYAN, DIM, EMBER, FONT_MONO, GREEN, GREY, RED, TEXT, regime_color
+from ui.tokens import AMBER, BG_ALT, BORDER_FAINT, CYAN, DIM, EMBER, FONT_MONO, GOLD, GREEN, GREY, RED, TEXT, regime_color
 
 CLASS_COLOR = {tc.KOP: GREEN, tc.BEVAKA: AMBER, tc.TRAFF: CYAN, tc.HALL: GREY, tc.SPARRAD: RED, tc.SALJ: RED}
 VERDICT_WORD = {tc.KOP: "KÖP", tc.BEVAKA: "BEVAKA", tc.TRAFF: "GRANSKA", tc.HALL: "AVVAKTA", tc.SPARRAD: "SPÄRRAD",
@@ -142,6 +142,59 @@ def verdict_for(c: Optional[tc.Candidate], strategy: str) -> str:
     run = (f"körd {c.asof}" if c.asof else "") + (f" på stängning {c.data_asof}" if c.data_asof else "")
     detail = " · ".join(x for x in (levels_text(c), c.why, run.strip()) if x)
     return verdict_card(VERDICT_WORD.get(c.status_class, c.status_class), sentence, detail, col)
+
+
+# ── Viking Nine i Thor: en beslutsrad, en kompakt 9-ruta, en Execution-rad ──
+VN_STATUS_COLOR = {"GOLDEN TICKET": GOLD, "WAIT": AMBER, "NO TRADE": RED}
+
+
+def vn_decision_row(status: str, nine_text: str, exec_text: str, block: str, block_color: str, levels: str,
+                    bars: str) -> str:
+    """Beslutet i en rad: verdiktet, Nine och Execution som siffror, den första grinden som stoppar, nivåerna
+    och vilka stängningar motorn räknade på. Orsakerna i detalj ligger i expandern under."""
+    col = VN_STATUS_COLOR.get(status, GREY)
+    return (f"<div style='border:2px solid {col}66;background:{col}0d;border-radius:10px;padding:12px 14px;margin:8px 0;'>"
+            f"<div style='display:flex;flex-wrap:wrap;gap:12px;align-items:baseline;'>"
+            f"<div style='color:{col};font-size:1.5rem;font-weight:900;letter-spacing:0.06em;'>{_e(status)}</div>"
+            f"<div style='color:{TEXT};font-size:0.9rem;'>Nine <b>{_e(nine_text)}</b> · Execution <b>{_e(exec_text)}</b>"
+            f"</div></div>"
+            f"<div style='color:{block_color};font-size:0.86rem;margin-top:6px;'>Stoppar: {_e(block)}</div>"
+            + (f"<div style='color:{TEXT};font-size:0.8rem;margin-top:2px;'>{_e(levels)}</div>" if levels else "")
+            + f"<div style='color:{DIM};font-size:0.72rem;margin-top:4px;'>{_e(bars)}</div></div>")
+
+
+def vn_nine_compact(nine) -> str:
+    """OVTLYR Nine i en rad: MARKET SPY 1/3 ✗✗✓ · SECTOR XLV 1/2 · STOCK 4/4 · TOTAL — faktorn som fattas står
+    i underraden. nine = ovtlyr_nine.NineResult."""
+    cells = []
+    for name in ("market", "sector", "stock"):
+        fs = nine.layer(name)
+        n = nine.layer_passed(name)
+        marks = "".join("✓" if f.passed else "✗" if f.status == "FAIL" else "?" for f in fs)
+        tag = {"market": nine.market_label, "sector": nine.sector_etf or "—"}.get(name, "")
+        col = GREEN if fs and n == len(fs) else AMBER if n else RED
+        gaps = " · ".join(f.label for f in fs if not f.passed)
+        cells.append((f"{name.upper()} {tag}".strip(), f"{n}/{len(fs)} {marks}", col, gaps or "allt grönt"))
+    cells.append(("TOTAL", f"{nine.passed}/9 · viktat {nine.weighted:g}", GOLD if nine.passed == 9 else CYAN, nine.status))
+    return kpi_row(cells)
+
+
+def vn_execution_row(decision) -> str:
+    """Viking Executions filter som chips på en rad: ✓ grönt fyllt, ✗ rött (gult när filtret bara är information),
+    ? när data saknas; flaggan (WAIT FOR CLOSE, NO CHASE …) står på chipet. decision = viking_execution.EntryDecision."""
+    chips = []
+    for c in decision.checks:
+        if c.status == "PASS":
+            col, m = GREEN, "✓"
+        elif c.status == "FAIL":
+            col, m = (RED if c.required else AMBER), "✗"
+        else:
+            col, m = DIM, "?"
+        text = f"{m} {c.label}" + (f" · {c.flag}" if c.flag else "") + ("" if c.required else " (info)")
+        chips.append(chip(text, col, filled=c.status == "PASS"))
+    return (f"<div style='margin:4px 0 8px;'><div style='color:{CYAN};font-size:0.66rem;letter-spacing:0.12em;'>"
+            f"VIKING EXECUTION {decision.execution_passed}/{decision.execution_total}</div>"
+            f"<div style='display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;'>{''.join(chips)}</div></div>")
 
 
 def snapshot_row(snap: Optional[dict]) -> str:
