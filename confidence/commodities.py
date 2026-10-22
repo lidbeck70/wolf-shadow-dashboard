@@ -121,7 +121,7 @@ REGISTRY: dict = {c.key: c for c in (
     _c("cocoa", "Kakao", "USD/t", ("kakao", "cocoa"), 40.0, theme_key="kakao", ember_complex="agri",
        proxies=("CC=F",)),
     _c("timber", "Skog", "USD/mbf", ("skog", "skogsbruk", "timber", "forest", "forestry", "lumber"), 60.0,
-       theme_key="skog", ember_complex="agri", proxies=("WOOD",)),
+       theme_key="skog", ember_complex="skog", proxies=("WOOD",)),
 )}
 
 _ALIAS: dict = {}

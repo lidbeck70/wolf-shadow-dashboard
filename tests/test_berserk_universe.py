@@ -26,8 +26,10 @@ def test_themes_shared_with_ember_have_the_same_complex():
     from ember.config import THEME_TO_COMPLEX
     shared = set(th.THEMES) & set(THEME_TO_COMPLEX)
     assert {"olja", "koppar", "guld", "uran", "skog", "vete"} <= shared
-    for theme in shared:
+    for theme in shared - {"skog"}:
         assert th.complex_of(theme) == THEME_TO_COMPLEX[theme], theme
+    # Undantaget: EMBER har skog som eget komplex (SKOG & MASSA); BERSERKs egen indelning "AGRI, SKOG & HAV" är orörd.
+    assert th.complex_of("skog") == "agri" and THEME_TO_COMPLEX["skog"] == "skog"
 
 
 def test_whole_commodity_market_is_covered():
