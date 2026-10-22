@@ -1,5 +1,5 @@
 """
-valhall/long_screener.py — Long Screener (SCREENING → Contrarian Alpha → Long Screener, cagr/) i Valhall.
+valhall/long_screener.py — Long Screener (THOR → Long Screener, cagr/) i Valhall.
 
 Screenern (Kvalitetsaktiepodden-inspirerad: vinstacceleration, ROE, F-score, relativ styrka, finansiell
 styrka + trend) körs OFÖRÄNDRAD: cagr_fundamentals.score_fundamentals (Börsdata, 0–20),

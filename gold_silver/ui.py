@@ -1,5 +1,5 @@
 """
-gold_silver/ui.py — REGIME → Råvaror → 🥇🥈 Guld/Silver.
+gold_silver/ui.py — ODINS VISDOM → Råvaror → 🥇🥈 Guld/Silver.
 
 Överst dagens läge, sedan historiken, revalveringsmotorn, matrisen
 guldpris × kvot och de tre referenskvoterna (geologisk, produktion,

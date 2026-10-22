@@ -9,6 +9,6 @@ fiatvalutor (SEK, EUR, USD) mot reala tillgångar.
   engine.py    beräkningarna: YoY, CAGR, köpkraft, Monetary Gap, fiat mot tillgång
   snapshot.py  nyckeltalen per valuta, med källa och datum för varje siffra
   index.py     Wolf Debasement Index (percentil mot egen historik, vikter) och scenarierna
-  ui.py        sidan REGIME → Makro → 🐺 Fiat Debasement
+  ui.py        sidan ODINS VISDOM → Makro → 🐺 Fiat Debasement
   probe.py     datasonden: vilka serier går faktiskt att hämta (körs i Actions)
 """

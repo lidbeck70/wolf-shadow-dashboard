@@ -356,7 +356,7 @@ def _render_market_phase(ticker: str, strategy_key: str):
         f'<span style="color:{color};font-weight:700;">Marknadscykelfas: '
         f'{phase.replace("_", " ")} · {state["confidence"]:g} % säkerhet</span>'
         f'<div style="color:{_DIM};font-size:11px;margin-top:2px;">'
-        f'Market Cycle Engine — samma motor som REGIME-fliken. Playbookens '
+        f'Market Cycle Engine — samma motor som ODINS VISDOM. Playbookens '
         f'köpfaser: {", ".join(sorted(sets["buy"])) or "–"}.</div></div>',
         unsafe_allow_html=True)
     return state
@@ -365,7 +365,7 @@ def _render_market_phase(ticker: str, strategy_key: str):
 def _swing_rule_checks(ticker: str, strategy_key: str):
     """Momentum-reglernas underlag: regimljus, ranking, setup, veckotak.
 
-    Läser samma sessioncachade data som REGIME- och SCREENING-flikarna, plus
+    Läser samma sessioncachade data som ODINS VISDOM och THOR, plus
     swing-lagret. Bara för momentum — övriga strategier får None och
     regelkontrollen faller tillbaka på sina vanliga vägar.
     """

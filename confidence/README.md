@@ -3,7 +3,7 @@
 Poängmotor för gruv-, råvaru- och strategiska mineralbolag. Två tal som
 aldrig blandas: **Case Score 0–100** (hur bra är caset) och **Confidence
 Score 0–100** (hur säkra är vi på bedömningen). Fliken heter
-"🧭 Confidence score" under GRANSKNING. Namnet WOLF används inte — det är
+"🧭 Confidence score" under GRANSKNING (i dag 📒 ARKEN). Namnet WOLF används inte — det är
 Arc-regimens poäng.
 
 ## Principer

@@ -1,6 +1,6 @@
 """
 confidence — Case Score + Confidence Score för gruv-, råvaru- och
-strategiska mineralbolag (GRANSKNING → 🧭 Confidence score).
+strategiska mineralbolag (ARKEN → 🧭 Confidence score).
 
 Två poäng som aldrig blandas:
   Case Score        0–100  hur attraktivt caset är (åtta pelare)

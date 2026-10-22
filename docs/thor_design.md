@@ -1,6 +1,6 @@
 # 🔨 THOR — designen
 
-*Status: förslag, väntar på godkännande. Inget i den befintliga panelen ändras förrän Thor är klar.*
+*Status: genomförd (fas 1–8, PR #196–#224). 🔨 THOR ersätter 🔱 SCREENING, 👁 ODINS VISDOM samlar 📡 REGIME och 👁 INTELLIGENCE, 📒 ARKEN är 🔬 GRANSKNING. Gamla länkar landar rätt (ui/nav.py LEGACY_PATHS). Dokumentet nedan är designen som den godkändes.*
 
 Målet är en mycket snabbare överblick: **alla strategiers kandidater på ett ställe, ett klick till allt
 panelen vet om en aktie, och en ärlig bedömning av vad som verkligen behövs i panelen efteråt.**

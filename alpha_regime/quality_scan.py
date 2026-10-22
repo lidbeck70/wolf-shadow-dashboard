@@ -3,7 +3,7 @@ alpha_regime/quality_scan.py — Quality-köpsignaler för den schemalagda skann
 
 Quality-strategins regel (strategy_rules.QUALITY): "Alla fyra gates gröna =
 BUY. Tre gröna = WATCH. Två eller färre = WAIT." — trend, värdering,
-marknadscykel och bolagskvalitet. Samma analys som REGIME → Alpha Regime →
+marknadscykel och bolagskvalitet. Samma analys som ODINS VISDOM → Marknad → Alpha Regime →
 Quality & Contrarian (run_regime_analysis i quality-läge) körs här på
 bolagen i Quality-listan, och verdiktet sparas med listan så larmet kan
 säga till när ett bolag NYTT står i BUY.

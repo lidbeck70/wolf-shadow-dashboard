@@ -407,7 +407,7 @@ def render_producers_page(sheet: Optional[str] = None) -> None:
 
     sheet väljer arket direkt. Utan det ritas en egen väljare, så funktionen
     fungerar både som underflik och fristående — panelen skickar in valet
-    eftersom arken numera är egna underflikar under GRANSKNING.
+    eftersom arken numera är egna underflikar under ARKEN.
     """
     data = _load()
     storage_ui.save_bar(STORE, "Granskningsarken")

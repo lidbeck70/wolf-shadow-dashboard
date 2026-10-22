@@ -1,5 +1,5 @@
 """
-berserk/regime_ui.py — REGIME → Råvaror → 🪓 BERSERK Regime.
+berserk/regime_ui.py — ODINS VISDOM → Råvaror → 🪓 BERSERK Regime.
 
 Var i råvarucykeln varje tema står idag och vilka BERSERK-setups det tillåter:
 marknaderna (regionernas index mot SMA200), en karta per komplex med temats

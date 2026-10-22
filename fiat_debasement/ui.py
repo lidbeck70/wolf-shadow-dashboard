@@ -1,5 +1,5 @@
 """
-fiat_debasement/ui.py — REGIME → Makro → 🐺 Fiat Debasement.
+fiat_debasement/ui.py — ODINS VISDOM → Makro → 🐺 Fiat Debasement.
 
 Sektioner:
   1. FIAT OVERVIEW        en rad per valuta: penningmängd, KPI, real BNP,
@@ -605,7 +605,7 @@ def _real_assets(ccy: str) -> None:
 
 
 def _gs_ratio(ccy: str) -> None:
-    _section("GOLD/SILVER RATIO", "samma kvot som REGIME → Råvaror → 🥇🥈 Guld/Silver")
+    _section("GOLD/SILVER RATIO", "samma kvot som ODINS VISDOM → Råvaror → 🥇🥈 Guld/Silver")
     ratio, rows = gs_ratio()
     if ratio is None:
         note(f"Guld/silver-kvoten: {NA}")

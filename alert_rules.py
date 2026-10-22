@@ -87,7 +87,7 @@ def swing_alerts(regime_data: dict, screener_data: dict, swing_data: dict,
     if light and prev_light and light != prev_light:
         rules = (regime_data or {}).get("rules", []) or []
         body = ("\n".join(f"• {r}" for r in rules)
-                or "Se REGIME → Swing Regime för regelverket.")
+                or "Se ODINS VISDOM → Marknad → Swing Regime för regelverket.")
         alerts.append(_alert(
             "swing_regime",
             f"Swing-regimen skiftade: {prev_light} → {light}",
@@ -253,7 +253,7 @@ def wolf_alerts(wolf_data: Optional[dict], prev: Optional[dict],
             f"🐺 Wolf-screenern: {ticker} nådde {d['score']:g}/125",
             f"{d['name'] or ticker} klev över larmribban {min_score:g} i "
             f"4-lagersscoren (Market · Sector · Stock · Ichimoku). "
-            f"Detaljer i SCREENING → Arc Screener → Wolf."))
+            f"Detaljer i THOR → Wolf."))
     return alerts, state
 
 
@@ -294,7 +294,7 @@ def viking_alerts(viking_data: Optional[dict], prev: Optional[dict],
             f"⚔️ Viking: {ticker} på {d['v9']}/9",
             f"{d['name'] or ticker} nådde Viking Execution-filtret {d['v9']}/9 och "
             f"klarar den absoluta grinden (pris > EMA200, ADX ≥ 20){extra}. "
-            f"Detaljer i SCREENING → Arc Screener → Viking."))
+            f"Detaljer i THOR → Viking."))
     return alerts, state
 
 
@@ -403,7 +403,7 @@ def quality_alerts(q_data: Optional[dict], prev: Optional[dict]) -> tuple:
             f"💎 Quality: {ticker} köpsignal ({d['passed']}/{d['total']})",
             f"{d['name'] or ticker}{sector}{rank}. {gates}. Cykel {d['phase'] or '?'} "
             f"mot {d['benchmark'] or '?'}. Alla fyra gates gröna = köp enligt Quality — "
-            f"kontrollera i REGIME → Alpha Regime → Quality & Contrarian, max 10 % per "
+            f"kontrollera i ODINS VISDOM → Marknad → Alpha Regime → Quality & Contrarian, max 10 % per "
             f"aktie och 20–25 % per sektor."))
     return alerts, state
 
@@ -471,7 +471,7 @@ def insider_alerts(insider_data: Optional[dict], prev: Optional[dict],
         alerts.append(_alert(
             "insider_cluster",
             f"👥 Insiderkluster: {ticker} {d['score']}/10 p — {d['status']}",
-            _body(d) + " Öppna GRANSKNING → Insider → Automatisk skanning och "
+            _body(d) + " Öppna ARKEN → Insider → Automatisk skanning och "
                        "lägg in klustret i arket."))
     for ticker, d in buy.items():
         if ticker in prev_b:
@@ -537,7 +537,7 @@ def screen_alerts(screens_data: Optional[dict], prev: Optional[dict]) -> tuple:
             f"{_SCREEN_ICON.get(key, '🕸')} Håven {label}: {len(new)} ny"
             f"{'a' if len(new) > 1 else 'tt'} bolag",
             f"{' · '.join(parts)}{more}. Kvalar in på håvens kriterier — "
-            f"öppna GRANSKNING → {s.get('sheet') or label} → Håven och lägg in "
+            f"öppna ARKEN → {s.get('sheet') or label} → Håven och lägg in "
             f"den du vill granska."))
     return alerts, state
 
@@ -599,7 +599,7 @@ def market_risk_alerts(levels: Optional[dict], prev: Optional[dict]) -> tuple:
                 f"{r.get('points')} av {r.get('possible')} varningar lyser: {act} ({r.get('date')}). "
                 f"Viking Nine tar inga nya entries på marknaden och Wolf halverar positionerna. Historiskt har "
                 f"−10 % inom tre månader följt betydligt oftare än normalt i HÖG — träffbilden finns i "
-                f"REGIME → Marknad → 🌩️ Marknadsrisk."))
+                f"ODINS VISDOM → Marknad → 🌩️ Marknadsrisk."))
         elif old == "HÖG" and new != "HÖG":
             alerts.append(_alert(
                 "market_risk_clear", f"✅ Marknadsrisk {r.get('label', m)} ner till {new}",
@@ -643,7 +643,7 @@ def fiat_alerts(fiat_data: Optional[dict], prev: Optional[dict], rules=None) -> 
                 "fiat_" + key, f"🐺 Fiat Debasement — {who}{label}",
                 f"Enligt valda indikatorer är {metric.replace('_', ' ')} {value:+.1f} "
                 f"(gräns {op} {limit:g}){f', {date}' if date else ''}. Bakgrundsinformation ur "
-                f"REGIME → Makro → 🐺 Fiat Debasement — ingen köp- eller säljsignal."))
+                f"ODINS VISDOM → Makro → 🐺 Fiat Debasement — ingen köp- eller säljsignal."))
     return alerts, {"on": now}
 
 
