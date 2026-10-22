@@ -173,6 +173,7 @@ def test_one_result_list_sorted_by_category_with_momentum_filter():
 
 def test_navigation():
     from ui import nav
-    assert "⚔️ Viking Nine" in nav.options("screening/Arc Screener") and "Viking" in nav.options("screening/Arc Screener")
-    src = open(os.path.join(ROOT, "wolf_panel.py"), encoding="utf-8").read()
-    assert 'elif inner == "⚔️ Viking Nine":' in src and "render_viking_nine_page" in src
+    # Fas 8: skannern körs i Thor (viking_nine_scan + ⚡ Skanna nu); gamla länkar landar där.
+    assert nav.resolve("screening/arc-screener/viking-nine") == ["thor"]
+    from thor import live
+    assert live.can_run("viking_nine")

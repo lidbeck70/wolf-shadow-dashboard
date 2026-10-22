@@ -146,10 +146,10 @@ def _guide_quality() -> None:
         st.markdown(
             _gs("5. Var i panelen",
                 _ul([
-                    "<b>Hitta kandidater:</b> SCREENING → Contrarian Alpha (sortera på kvalitetspoäng).",
-                    "<b>Bekräfta köpläge:</b> REGIME → Alpha Regime → Quality & Contrarian (Quality-läge) → tryck ANALYSERA.",
+                    "<b>Hitta kandidater:</b> THOR → Quality Contrarian (sortera på kvalitetspoäng).",
+                    "<b>Bekräfta köpläge:</b> ODINS VISDOM → Marknad → Alpha Regime → Quality & Contrarian (Quality-läge) → tryck ANALYSERA.",
                     "<b>Kontrollera portföljrisk:</b> PORTFOLIO → Holdings (korrelation + sektorexponering).",
-                    "<b>Bevaka regimskifte:</b> REGIME → Wolf Regime (trendfilter) eller Viking Regime (EMA-alignment).",
+                    "<b>Bevaka regimskifte:</b> ODINS VISDOM → Marknad → Arc Regime → Wolf Regime (trendfilter) eller Viking Regime (EMA-alignment).",
                 ], _CYAN),
                 _CYAN),
             unsafe_allow_html=True,
@@ -233,12 +233,12 @@ def _guide_contrarian() -> None:
         st.markdown(
             _gs("5. Var i panelen",
                 _ul([
-                    "<b>Hitta fas:</b> REGIME → Alpha Regime → välj Deep Contrarian → tryck ANALYSERA.",
+                    "<b>Hitta fas:</b> ODINS VISDOM → Marknad → Alpha Regime → välj Deep Contrarian → tryck ANALYSERA.",
                     "<b>Gummisnodde-bekräftelse:</b> Välj 'Commodity exposure' i Alpha Regime för att se "
                     "om råvaruratios är historiskt sträckta (≥ 90:e percentilen).",
-                    "<b>Hitta kandidater:</b> SCREENING → Contrarian Alpha, läge Deep Contrarian "
+                    "<b>Hitta kandidater:</b> THOR → Deep Contrarian "
                     "(bara råvarubolag · Hat Score + Necessity).",
-                    "<b>Sentiment:</b> INTELLIGENCE → Retail Pulse.",
+                    "<b>Sentiment:</b> ODINS VISDOM → Marknad → Retail Pulse.",
                 ], _CYAN),
                 _CYAN),
             unsafe_allow_html=True,
@@ -315,10 +315,10 @@ def _guide_wolf() -> None:
         st.markdown(
             _gs("5. Var i panelen",
                 _ul([
-                    "<b>Screena kandidater:</b> SCREENING → Arc Screener.",
-                    "<b>Kontrollera alla 11 regler:</b> REGIME → Wolf Regime → Entry Checklist (auto pass/fail).",
-                    "<b>SL/TP-kalkylator:</b> REGIME → Wolf Regime → SL/TP-sektion.",
-                    "<b>Trendfilter:</b> REGIME → Wolf Regime → Regime Score (grön badge = handla long).",
+                    "<b>Screena kandidater:</b> THOR.",
+                    "<b>Kontrollera alla 11 regler:</b> ODINS VISDOM → Marknad → Arc Regime → Wolf Regime → Entry Checklist (auto pass/fail).",
+                    "<b>SL/TP-kalkylator:</b> ODINS VISDOM → Marknad → Arc Regime → Wolf Regime → SL/TP-sektion.",
+                    "<b>Trendfilter:</b> ODINS VISDOM → Marknad → Arc Regime → Wolf Regime → Regime Score (grön badge = handla long).",
                 ], _CYAN),
                 _CYAN),
             unsafe_allow_html=True,
@@ -403,11 +403,11 @@ def _guide_viking() -> None:
         st.markdown(
             _gs("5. Var i panelen",
                 _ul([
-                    "<b>Alla 10 entry-regler:</b> REGIME → Viking Regime (OVTLYR Nine-kortet: Market · Sector · Stock).",
-                    "<b>Screena momentum:</b> SCREENING → Arc Screener (Viking-filter).",
-                    "<b>Marknadsbreadd:</b> REGIME → Viking Regime → Bull List % gauge.",
-                    "<b>Sektor:</b> INTELLIGENCE → Heatmap / Flow Divergence.",
-                    "<b>F&amp;G per aktie:</b> REGIME → Viking Regime → Oscillator Direction.",
+                    "<b>Alla 10 entry-regler:</b> ODINS VISDOM → Marknad → Arc Regime → Viking Regime (OVTLYR Nine-kortet: Market · Sector · Stock).",
+                    "<b>Screena momentum:</b> THOR → Viking.",
+                    "<b>Marknadsbreadd:</b> ODINS VISDOM → Marknad → Arc Regime → Viking Regime → Bull List % gauge.",
+                    "<b>Sektor:</b> ODINS VISDOM → Marknad → Heatmap / Flow Divergence.",
+                    "<b>F&amp;G per aktie:</b> ODINS VISDOM → Marknad → Arc Regime → Viking Regime → Oscillator Direction.",
                 ], _CYAN),
                 _CYAN),
             unsafe_allow_html=True,
@@ -490,13 +490,13 @@ def _guide_ember() -> None:
             _gs("5. Var i panelen — full kill chain",
                 "<b>Använd i denna ordning:</b>"
                 + _ul([
-                    "<b>1. INTELLIGENCE → Odin's Blindspot → Tema-tavlan:</b> "
+                    "<b>1. ODINS VISDOM → Råvaror → Odin's Blindspot → Tema-tavlan:</b> "
                     "vilka råvarukategorier är TIDIG/MITTEN i cykeln just nu?",
-                    "<b>2. REGIME → Råvaror → 🌍 EMBER Regime:</b> "
+                    "<b>2. ODINS VISDOM → Råvaror → 🌍 EMBER Regime:</b> "
                     "är makromiljön rätt? (PÅ / SELEKTIV / AV) — "
                     "handla aldrig mot regimen.",
-                    "<b>3. SCREENING → Arc Screener → 🔥 EMBER → SKANNA:</b> "
-                    "välj universum, tryck SKANNA, granska TOPP 3 — "
+                    "<b>3. THOR → EMBER → ⚡ Skanna nu:</b> "
+                    "välj EMBER i rullgardinen, tryck ⚡ Skanna nu, granska TOPP 3 — "
                     "bekräfta att alla 4 trendgates och båda entry-hårda gates är gröna.",
                     "<b>4. Discipline (i setup-kortet):</b> "
                     "fyll i 'Ogiltigförklaras om' och 'Trolig trigger' "
@@ -1066,33 +1066,27 @@ _PANEL_GUIDE: list[tuple] = [
      "Varje strategi på papper, märkt med segment och cykelläge vid köp — vilken strategi fungerar var."),
     ("VALHALL → Backtester", "Besluten",
      "Varför Valhall gör som det gör: swing per segment, kvalitet ej RÖD, råvaror contrarian, Long Screener gron."),
-    ("THOR", "Alla strategier: screening → analys → köp",
-     "Alla strategiers kandidater i ett flöde (rullgardin per strategi, filter, tickersök). Tryck Öppna på en "
-     "aktie så kommer analysen på samma sida: regim, teknik, cykel, råvara, arken, backtest och regler."),
-    ("REGIME → Marknad → Swing Regime", "Momentum: entry #1, #6",
+    ("THOR", "Alla strategier: screening → analys → köp (ersätter SCREENING och Teknisk analys)",
+     "Alla strategiers kandidater i ett flöde (rullgardin per strategi, segment, filter, tickersök). Välj en "
+     "strategi och tryck ⚡ Skanna nu för en färsk skanning med schemats förval (de tunga — Quality, Deep "
+     "Contrarian, Momentum Swing, Long Screener — körs i schemat); Körningar per strategi visar hur färsk varje "
+     "lista är. Tryck Öppna på en aktie så kommer analysen på samma sida: regim, teknik, cykel, råvara, "
+     "asymmetri, arken, backtest och regler."),
+    ("ODINS VISDOM → Marknad → Swing Regime", "Momentum: entry #1, #6",
      "Trafikljus GRÖN/GUL/RÖD + regelverk, OMXSPI vs MA200, marknadsbredd "
      "(dör före index) och regimhistorik."),
-    ("REGIME → Marknad → Arc Regime → Wolf Regime", "Wolf: alla regler",
+    ("ODINS VISDOM → Marknad → Arc Regime → Wolf Regime", "Wolf: alla regler",
      "4-lagers regime + Entry Checklist (Trend/Volatilitet/Momentum/Candlestick/"
      "OB) med auto-pass/fail. SL/TP-kalkylator. Benchmark RS."),
-    ("SCREENING → Arc Screener → ⚔️ Viking Nine", "Viking: OVTLYR Nine + Viking Execution över universumet",
-     "Skannar valda marknader i två steg (trend + signal på hela universumet, sedan full Nine på de "
-     "bästa kandidaterna). En resultatlista sorterad på kategori (GOLDEN TICKET / READY / DEVELOPING / "
-     "REJECTED) och Nine, med filtret Bara momentumkandidater (Nine ≥ 7, EMA-stack, RSI > 50, inget "
-     "bearish block, R/R ≥ 2), och signallogg. Screening ≠ automatisk entry."),
-    ("REGIME → Marknad → Arc Regime → ⚔️ Viking Nine Regime", "Viking Nine: beslutet för en aktie",
+    ("ODINS VISDOM → Marknad → Arc Regime → ⚔️ Viking Nine Regime", "Viking Nine: beslutet för en aktie",
      "Marknadslagret (SPY + bredd för amerikanska aktier, OMXS30 + svensk Large Cap-bredd för "
      "nordiska), OVTLYR Nine-kortet, graf med entry/stopp/motstånd, Viking "
      "Execution + riskmotor (GOLDEN TICKET / WAIT / NO TRADE), exitmotorn för en öppen position och "
      "signalloggen. Välj ticker direkt ur senaste ⚔️ Viking Nine-skanningen."),
-    ("SCREENING → Arc Screener → 🪓 BERSERK", "BERSERK: setups och grindar över råvaruuniversumet",
-     "Varje råvaruaktie mot sin egen drivare: S1 Divergens, S2 Cykelvändning (S3 Snapback av i live). KÖP = setup i "
-     "dag och alla grindar öppna (index över SMA200, DBC över SMA200 för satelliter, likviditet, datavakt), annars "
-     "BEVAKA med skälet utskrivet. Planen för nästa öppning: stopp, risk per setup, position."),
-    ("REGIME → Råvaror → 🪓 BERSERK Regime", "BERSERK: temats läge",
+    ("ODINS VISDOM → Råvaror → 🪓 BERSERK Regime", "BERSERK: temats läge",
      "Temakorten med drivaren och fasen (BAISSE · VÄNDER / BAISSE / STARK / UPPTREND / SVAG), producenterna mot "
      "råvaran, marknadschipen per region och DBC-grinden. Samma motor som skannern och Valhalls papperskonto."),
-    ("REGIME → Marknad → Arc Regime → Viking Regime", "Viking: OVTLYR Nine + Viking Execution-filter",
+    ("ODINS VISDOM → Marknad → Arc Regime → Viking Regime", "Viking: OVTLYR Nine + Viking Execution-filter",
      "OVTLYR Nine (Market 40 % · Sector 30 % · Stock 30 %) på riktiga priser för SPY, "
      "sektor-ETF:er och aktien — WOLF APPROXIMATION, saknad data räknas aldrig som PASS. "
      "Viking Execution + riskmotor → GOLDEN TICKET / WAIT / NO TRADE (1,5 % risk, 1,5 × ATR, "
@@ -1101,109 +1095,92 @@ _PANEL_GUIDE: list[tuple] = [
      "trailing EMA10, breakeven, bearish block, gap & crap, sektor/bredd, signal, F&G-target, rapport. "
      "Prisgraf + EMA 10/20/50/200 + Order Blocks. Per-ticker Fear & Greed. "
      "Overhead Clusters. SL/TP-kalkylator."),
-    ("REGIME → Marknad → Alpha Regime → Quality & Contrarian",
+    ("ODINS VISDOM → Marknad → Alpha Regime → Quality & Contrarian",
      "Alpha #1-10 · Quality · Deep Contrarian",
      "Alla regler som live gates. GRÖN/ORANGE/RÖD badge. Quality-läge och "
      "Deep Contrarian-läge (cykelfas + ackumulerings-/distributionssteg)."),
-    ("REGIME → Marknad → Alpha Regime → Long Trend", "Alpha #2, #6, #9",
+    ("ODINS VISDOM → Marknad → Alpha Regime → Long Trend", "Alpha #2, #6, #9",
      "Tio grindar för en långsiktig position: EMA200, sektor, F&G, "
      "positionsstorlek på EMA200-stoppen."),
-    ("REGIME → Marknad → Flow Divergence", "Alpha #4 · Viking sektor",
+    ("ODINS VISDOM → Marknad → Flow Divergence", "Alpha #4 · Viking sektor",
      "Global sektorsbredd och makrocykel — sektorhjulet grön/gul/röd."),
-    ("REGIME → Marknad → 🌩️ Marknadsrisk", "Alla — riskspärr, ingen kristallkula",
+    ("ODINS VISDOM → Marknad → 🌩️ Marknadsrisk", "Alla — riskspärr, ingen kristallkula",
      "Nio varningar för SPY och OMXS30 (Börsdata) — trend, bredd, VIX, kredit, räntekurva, rotation, eufori → "
      "nivå LÅG / FÖRHÖJD / HÖG. Historisk träffbild: hur ofta −10 % inom tre månader följde i varje "
      "nivå mot basfrekvensen, vilka nedgångar som varnades och hur många larm som var falsklarm. "
      "Riskspärr för Viking Nine: OMXS30 FÖRHÖJD eller HÖG / SPY HÖG = inga nya entries (nordiska aktier "
      "mot OMXS30, övriga mot SPY); HÖG = halverad Wolf-position; Discord-larm när nivån går in i eller lämnar HÖG."),
-    ("REGIME → Marknad → Market Cycle", "Quality · Deep Contrarian",
+    ("ODINS VISDOM → Marknad → Market Cycle", "Quality · Deep Contrarian",
      "Marknadsfas (CAPITULATION → EUPHORIA). Styr både Quality-cykelgaten och "
      "Deep Contrarians ackumulerings-/distributionssteg."),
-    ("REGIME → Råvaror → 🌍 EMBER Regime", "Ember: makro/cykelfilter",
+    ("ODINS VISDOM → Råvaror → 🌍 EMBER Regime", "Ember: makro/cykelfilter",
      "Regimbadge per råvarukomplex som avgör om Ember-entries överhuvudtaget "
      "är tillåtna. DATA_GAP blir aldrig GRÖN."),
-    ("REGIME → Råvaror → Råvarurotation", "Rule · Sprott · Durrett · Tiggre — var kapitalet ska",
+    ("ODINS VISDOM → Råvaror → Råvarurotation", "Rule · Sprott · Durrett · Tiggre — var kapitalet ska",
      "Hat-betyg per råvara en gång i månaden; AGERA-råvarorna styr vilka "
      "screeners som är värda att köra."),
-    ("REGIME → Råvaror → 🥇🥈 Guld/Silver", "Durrett: silvervarianten (kvot > 85)",
+    ("ODINS VISDOM → Råvaror → 🥇🥈 Guld/Silver", "Durrett: silvervarianten (kvot > 85)",
      "Kvoten nu och i historiken (1–20 år, percentiler), guidens zoner 85/50, "
      "geologisk referens ~19 (inte fair value), produktions- och ovanjordskvot med "
      "källa, silverpris per kvot och matrisen guldpris × kvot. Silverbolag kan "
      "köras genom Snabbkollens motor per kvotscenario."),
-    ("REGIME → Råvaror → 🥇 Guldkvoter", "Rule · Sprott · Durrett — råvaror och index mätta i guld",
+    ("ODINS VISDOM → Råvaror → 🥇 Guldkvoter", "Rule · Sprott · Durrett — råvaror och index mätta i guld",
      "Platina, palladium, koppar, olja (WTI/Brent), naturgas, vete, kaffe och kakao "
      "som guld ÷ råvara, Dow och S&P 500 som index ÷ guld. Översikt över alla kvoter "
      "mot egen historik, sedan per par: historik (1–20 år, percentiler), pris per "
      "kvot och matrisen. Referens = kvotens egen median, målkvoter = egna percentiler "
      "— inget fair value. Bolag kan köras genom Snabbkollens motor per kvotscenario "
      "(råvarorna, inte Brent eller index)."),
-    ("REGIME → Makro → 🐺 Fiat Debasement", "Alla — makrobakgrund, ingen signal",
+    ("ODINS VISDOM → Makro → 🐺 Fiat Debasement", "Alla — makrobakgrund, ingen signal",
      "SEK, EUR och USD: penningmängd (M2), KPI och kärn-KPI, real BNP, Monetary Gap (M2-tillväxt − "
      "real BNP-tillväxt), statsskuld/BNP och valutans köpkraft i guld. Purchasing Power Index från valt "
      "år, 'What happened to 100 units?', fiat mot guld/silver, reala tillgångar, guld/silver-kvoten, "
      "Wolf Debasement Index (modell, vikter går att ändra), scenarier och reala råvarupriser. Larm under "
      "ALERTS; FIAT ENVIRONMENT (Low/Neutral/Elevated) på gruvsidorna. Varje siffra har källa och datum; "
      "saknad data = DATA UNAVAILABLE. Inflation ≠ M2-tillväxt — sidan säger aldrig köp eller sälj."),
-    ("SCREENING → Swing Screener", "Momentum: entry #2, #3",
-     "Färdig momentum-ranking topp 40 med setup-flaggor A/B och RSI. "
-     "'→ Bevakning' skickar kandidaten till Swing-fliken."),
-    ("SCREENING → Arc Screener", "Wolf / Viking / Ember",
-     "Wolf: Regime Score + volymbekräftelse. Viking: Z-score composite + Vikings "
-     "Nine. Ember: råvarusetups med T/E-grindar och no-trade-flaggor."),
-    ("SCREENING → Contrarian Alpha → Screener", "Quality / Deep Contrarian",
-     "Quality: hela universumet, kvalitetspoäng och KAP-badge. Deep Contrarian: bara "
-     "råvaror (olja & gas, kol, uran, gruvor), Hat Score + Necessity. Detaljkort med "
-     "bransch, saknade Börsdata-fält, gate-checklista och score-breakdown."),
-    ("SCREENING → Contrarian Alpha → Long Screener", "Alpha: kandidater",
-     "CAGR-composite för långsiktiga innehav — kandidaterna till Alpha Regime."),
-    ("GRANSKNING → Rick Rule", "Rule: granskningen",
+    ("ARKEN → Rick Rule", "Rule: granskningen",
      "Guidens 'Producenter A': marginal mot kostnadskurvan, de tre "
      "disciplinfrågorna och strykregeln för döende tillgång (gruvlivslängd "
      "< 5 år, R/P < 8 år). EV/NAV (NAV efter skatt) som egen värderingsrad "
      "utanför poängen: under 0,7× billigt. AQS och CSM visas när positionen kräver dem."),
-    ("GRANSKNING → 🚀 Råvaruhävstång", "Ember · Durrett · Wolf Asymmetry: vilket bolag ger mest hävstång",
+    ("ARKEN → 🚀 Råvaruhävstång", "Ember · Durrett · Wolf Asymmetry: vilket bolag ger mest hävstång",
      "Upp till åtta bolag mot sin råvara: resultathävstång 0–10 och break-even ur "
      "bolagets egna år, kursbeta (veckor, 3 år) med upp/ned-asymmetri, 5×-potential "
      "och fritt råvarupris genom 5×-kedjan. Kursbetat fungerar även för juniorer."),
-    ("GRANSKNING → Royalty C", "Royalty: köpsignalen",
+    ("ARKEN → Royalty C", "Royalty: köpsignalen",
      "Rabatt mot egen P/NAV-botten, mot egen EV/EBITDA-median och "
      "GEO-tillväxt per aktie. Krympande GEO slår ut köpläget."),
-    ("GRANSKNING → Poängmodell", "Sprott · Durrett (snabbpoäng)",
+    ("ARKEN → Poängmodell", "Sprott · Durrett (snabbpoäng)",
      "Fem faktorer 0–2, runway ur kassa/burn (18-månadersgrinden), MCap/uns "
      "och MCap/framtida vinst mot 10x-regeln. DS-sektionen låser köp vid hög "
      "utspädningsrisk."),
-    ("GRANSKNING → Tiggre", "Tiggre: alla grindar",
+    ("ARKEN → Tiggre", "Tiggre: alla grindar",
      "Lobo-arket: grovsållning, U/N-kalkyl, fem faktorer, "
      "katalysatorkalendern med säljregeln, free ride vid +100 %, 0,8–1,0× NAV "
      "och −40 %-omvärderingen."),
-    ("GRANSKNING → Insider", "Insider: alla regler",
+    ("ARKEN → Insider", "Insider: alla regler",
      "Poängen 0–10, kvalitetsgrinden, teknisk trigger och statusflödet. "
      "Visar vs klustersnittet och stoppen −15 %. Insynsflödet läses i "
      "Börsdata."),
-    ("GRANSKNING → 🧭 Durrett", "Durrett: 10 steg",
+    ("ARKEN → 🧭 Durrett", "Durrett: 10 steg",
      "Durretts 10-stegsmetod (kvalitet, risk, upside) med eget ark. Håven "
      "fyller på ur Börsdata-screenern. Confidence-caset ligger i Wolf Asymmetry."),
-    ("GRANSKNING → 🐺 Wolf Asymmetry", "Alla — hävstång och margin of safety",
+    ("ARKEN → 🐺 Wolf Asymmetry", "Alla — hävstång och margin of safety",
      "En sida per bolag, komplement till vilken strategi som helst: Commodity "
      "Leverage 0–10, Margin of Safety 0–10, break-even-marginal, Confidence, "
      "asymmetri, stressmatris pris × capex och uppsida justerad för confidence. "
      "Samma ark som Durrett. DATA_MISSING är aldrig noll."),
-    ("GRANSKNING → 🎯 Scorecard", "Alla — köpgrinden",
+    ("ARKEN → 🎯 Scorecard", "Alla — köpgrinden",
      "Sista steget före köp. Läser kandidaterna ur de andra flikarna och "
      "kräver sju gröna kryss. Luckor i tabellen = standardbeslut INGEN AFFÄR."),
-    ("INTELLIGENCE → Odin's Blindspot", "Rotation: hat-signalen",
+    ("ODINS VISDOM → Råvaror → Odin's Blindspot", "Rotation: hat-signalen",
      "Contrarian sektorintelligens — vilka teman är mest hatade just nu."),
-    ("INTELLIGENCE → Sentiment", "Alpha #5 · Viking #5, #9",
+    ("ODINS VISDOM → Makro → Sentiment", "Alpha #5 · Viking #5, #9",
      "Fear & Greed gauge 0-100. Under 60 = OK att köpa. Över 60 = vänta."),
-    ("INTELLIGENCE → Retail Pulse", "Deep Contrarian: sentiment-overlay",
+    ("ODINS VISDOM → Marknad → Retail Pulse", "Deep Contrarian: sentiment-overlay",
      "Retail sentiment 0-100. Under 30 = extrem rädsla (köpstöd). Över 70 = "
      "extrem girighet (säljstöd)."),
-    ("INTELLIGENCE → 🕯️ Teknisk analys", "Alla — teknisk översikt per ticker",
-     "Sök valfri ticker (eller snabbval ur Viking Nine-skanningen och dina innehav): pris med EMA "
-     "10/20/50/200 och order blocks, tabell över aktiva block (stöd/motstånd, avstånd), entry patterns "
-     "och exit warnings med när de kom, risk och momentum, volatilitetsfördelning, oscillatorns "
-     "riktning och Bull List %. Underlag — inga köpbeslut."),
-    ("INTELLIGENCE → Heatmap", "Alla — överblick",
+    ("ODINS VISDOM → Marknad → Heatmap", "Alla — överblick",
      "Visuell marknadsvy per sektor och region."),
     ("PORTFOLIO → Swing", "Momentum: alla regler",
      "Veckochecklistan, bevakningslistan och positionerna med automatiska "

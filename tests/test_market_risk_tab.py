@@ -80,7 +80,7 @@ def test_page_handles_missing_data(monkeypatch):
 def test_navigation_and_guide():
     from ui import nav
     from ovtlyr.ui.rules_page import _PANEL_GUIDE
-    assert "🌩️ Marknadsrisk" in nav.options("regime/Marknad")
-    assert any(t == "REGIME → Marknad → 🌩️ Marknadsrisk" for t, _r, _u in _PANEL_GUIDE)
+    assert "🌩️ Marknadsrisk" in nav.options("odin/Marknad")
+    assert any(t == "ODINS VISDOM → Marknad → 🌩️ Marknadsrisk" for t, _r, _u in _PANEL_GUIDE)
     src = open(os.path.join(ROOT, "wolf_panel.py"), encoding="utf-8").read()
     assert 'elif sub == "🌩️ Marknadsrisk":' in src

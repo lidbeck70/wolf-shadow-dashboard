@@ -184,7 +184,7 @@ def _wolf(st, ident, strategy, data, ohlcv, cands) -> None:
                                    ("Trail", f"Kijun {p['kijun']:.2f}", AMBER, f"EMA10 {p['ema10']:.2f}")]), unsafe_allow_html=True)
     if risk_text:
         note(risk_text)
-    note("Samma formler som REGIME → Arc Regime → Wolf Regime (wolf_regime_score.py). Entry kräver EMA-stack, trend "
+    note("Samma formler som ODINS VISDOM → Marknad → Arc Regime → Wolf Regime (wolf_regime_score.py). Entry kräver EMA-stack, trend "
          "och RSI 45–70; grindarna 8–11 bedömer du själv.")
 
 

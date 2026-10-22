@@ -165,9 +165,9 @@ def test_page_renders_overview_and_pairs(monkeypatch):
 
 def test_navigation_and_guide():
     from ui import nav
-    assert "🥇 Guldkvoter" in nav.options("regime/Råvaror")
-    assert "🥇🥈 Guld/Silver" in nav.options("regime/Råvaror")                # Guld/Silver kvar
+    assert "🥇 Guldkvoter" in nav.options("odin/Råvaror")
+    assert "🥇🥈 Guld/Silver" in nav.options("odin/Råvaror")                # Guld/Silver kvar
     src = open(os.path.join(ROOT, "wolf_panel.py"), encoding="utf-8").read()
     assert 'elif sub == "🥇 Guldkvoter":' in src and "render_gold_ratios_page" in src
     from ovtlyr.ui.rules_page import _PANEL_GUIDE
-    assert any(t == "REGIME → Råvaror → 🥇 Guldkvoter" for t, _r, _u in _PANEL_GUIDE)
+    assert any(t == "ODINS VISDOM → Råvaror → 🥇 Guldkvoter" for t, _r, _u in _PANEL_GUIDE)

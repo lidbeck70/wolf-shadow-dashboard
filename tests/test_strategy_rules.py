@@ -311,6 +311,10 @@ def test_panel_guides_point_at_tabs_that_exist():
         "Quality & Contrarian", "Long Trend", "Odin's Blindspot",
         "Marknad", "Råvaror", "Screener",
     }
+    # Thors rullgardin (fas 8): "THOR → EMBER" pekar på strategins lista i Thor.
+    from thor import registry as _treg
+    allowed_extra |= {s.label for s in _treg.STRATEGIES.values()}
+
     # Tab labels carry emoji ("🔥 EMBER"); the extractor below sees only the
     # letters, so index both forms.
     def _plain(name: str) -> str:
@@ -319,7 +323,7 @@ def test_panel_guides_point_at_tabs_that_exist():
     known = {n.strip() for n in real} | allowed_extra
     known |= {_plain(n) for n in known}
     # Uppercase top-level tokens that must resolve.
-    tops = {"HOME", "SCREENING", "GRANSKNING", "REGIME", "INTELLIGENCE",
+    tops = {"HOME", "THOR", "ODINS VISDOM", "ODINS", "ARKEN", "VALHALL",
             "PORTFOLIO", "ALERTS", "RULES", "STRATEGIES"}
     for _t in real:
         stripped = _t.strip().strip("🏠🔱📡👁💼🔔📋🧬 ")
@@ -350,9 +354,8 @@ def test_panel_guide_table_uses_real_paths():
     for tab, _rules, _usage in _PANEL_GUIDE:
         parts = [p.strip() for p in tab.split("→")]
         head = parts[0]
-        assert head in {"HOME", "VALHALL", "THOR", "SCREENING", "GRANSKNING", "REGIME",
-                        "INTELLIGENCE", "PORTFOLIO", "ALERTS", "RULES",
-                        "STRATEGIES", "COPILOT"}, head
+        assert head in {"HOME", "VALHALL", "THOR", "ODINS VISDOM", "ARKEN",
+                        "PORTFOLIO", "ALERTS", "RULES", "STRATEGIES", "COPILOT"}, head
         for part in parts[1:]:
             clean = "".join(c for c in part if c.isalnum() or c in " &'-").strip()
             assert part in real or clean in plain, (
@@ -415,7 +418,7 @@ def test_no_strategy_claims_to_be_fully_manual_anymore():
 def test_rule_points_at_its_own_review_sheet():
     """Guiden kallar det "Producenter A-arket" — panelen ska säga samma sak."""
     pb = sr.PLAYBOOKS["rule"]
-    assert "GRANSKNING → Rick Rule" in pb.where
+    assert "ARKEN → Rick Rule" in pb.where
     assert "Producenter A" in pb.where
     assert "Producenter A" in pb.support_note
     assert "gruvlivslängd" in pb.support_note.lower()
@@ -431,9 +434,8 @@ def _sub_tabs(state_key: str) -> set:
     """The sub-tab labels of one top-level tab, from the navigation tree
     (ui/nav.py) that wolf_panel renders its radios from."""
     from ui import nav
-    paths = {"sub_screening": ["screening"], "sub_review": ["review"],
-             "sub_portfolio": ["portfolio"],
-             "sub_regime": ["regime", "regime/Marknad", "regime/Råvaror"]}[state_key]
+    paths = {"sub_review": ["review"], "sub_portfolio": ["portfolio"],
+             "sub_odin": ["odin", "odin/Marknad", "odin/Råvaror", "odin/Makro"]}[state_key]
     out = set()
     for p in paths:
         out |= set(nav.options(p))
@@ -441,34 +443,22 @@ def _sub_tabs(state_key: str) -> set:
     return out
 
 
-def test_screening_holds_only_screeners():
-    """The structural rule: nothing that merely reviews a candidate belongs
-    under SCREENING.
-
-    The review sheets are the decision layer AFTER screening — the screening
-    itself happens in Börsdata — so they live under GRANSKNING. This test is
-    what stops the next sheet from being dropped into SCREENING because that
-    is where the others used to be.
-    """
-    screening = _sub_tabs("sub_screening")
+def test_review_sheets_live_in_arken():
+    """Arken (förr GRANSKNING) är beslutslagret efter screeningen — screeningen
+    sker i Thor och Börsdata. Arken screenar inget och Thor granskar inget."""
     review = _sub_tabs("sub_review")
-
     for sheet in ("Rick Rule", "Royalty C", "Poängmodell", "Tiggre", "Insider",
                   "🎯 Scorecard"):
-        assert sheet in review, f"{sheet} saknas i GRANSKNING"
-        assert sheet not in screening, f"{sheet} granskar, den screenar inte"
-
-    # ...och SCREENING behåller det som faktiskt screenar
-    assert "Arc Screener" in screening
-    assert "Swing Screener" in screening
+        assert sheet in review, f"{sheet} saknas i ARKEN"
+    from ui import nav
+    assert not nav.options("thor")                                  # Thor: en sida, inga underflikar
 
 
 def test_swing_is_a_position_manager_not_a_screener():
     """Watchlist, open positions and sell-rule flags — that is portfolio work."""
     assert "Swing" in _sub_tabs("sub_portfolio")
-    assert "Swing" not in _sub_tabs("sub_screening")
-    # Swing Screener är en annan sak och stannar
-    assert "Swing Screener" not in _sub_tabs("sub_portfolio")
+    assert "Swing" not in _sub_tabs("sub_odin")
+    assert "Swing Screener" not in _sub_tabs("sub_portfolio")    # momentumlistan finns i Thor
 
 
 def test_regime_stays_about_market_state():
@@ -477,16 +467,18 @@ def test_regime_stays_about_market_state():
     Moving the review sheets here was the alternative considered; this records
     why it was not done.
     """
-    regime = _sub_tabs("sub_regime")
+    regime = _sub_tabs("sub_odin")
     for sheet in ("Rick Rule", "Poängmodell", "Insider", "🎯 Scorecard"):
         assert sheet not in regime
     assert "Råvarurotation" in regime
 
 
 def test_the_three_steps_are_three_tabs():
-    """Guidens flöde: var (REGIME) -> vilka (SCREENING) -> vilket (GRANSKNING)."""
+    """Guidens flöde: var (ODINS VISDOM) -> vilka och analysen (THOR) -> vilket (ARKEN)."""
     from ui import nav
     labels = [label for _k, label in nav.TOP]
-    for label in ("🔱 SCREENING", "🔬 GRANSKNING", "📡 REGIME"):
+    for label in ("👁 ODINS VISDOM", "🔨 THOR", "📒 ARKEN"):
         assert label in labels, label
+    for gone in ("🔱 SCREENING", "🔬 GRANSKNING", "📡 REGIME", "👁 INTELLIGENCE"):
+        assert gone not in labels, gone
     assert "nav.TOP" in _panel_src()

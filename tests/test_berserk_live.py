@@ -148,11 +148,10 @@ def test_signal_log_one_row_per_ticker_and_day():
 # ── Navigation och sidor ────────────────────────────────────────────────────
 def test_navigation():
     from ui import nav
-    assert "🪓 BERSERK" in nav.options("screening/Arc Screener")
-    assert "🪓 BERSERK Regime" in nav.options("regime/Råvaror")
+    assert "🪓 BERSERK Regime" in nav.options("odin/Råvaror")                  # skannern finns i Thor (fas 8)
+    assert nav.resolve("screening/arc-screener/berserk") == ["thor"]
     src = open(os.path.join(ROOT, "wolf_panel.py"), encoding="utf-8").read()
-    assert 'elif inner == "🪓 BERSERK":' in src and 'elif sub == "🪓 BERSERK Regime":' in src
-    assert "render_berserk_screen_page" in src and "render_berserk_regime_page" in src
+    assert 'elif sub == "🪓 BERSERK Regime":' in src and "render_berserk_regime_page" in src
 
 
 def _app(func_name, state, monkeypatch):

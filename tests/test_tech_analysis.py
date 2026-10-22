@@ -86,7 +86,7 @@ def test_page_renders_all_sections(monkeypatch):
 def test_navigation_and_guide():
     from ui import nav
     from ovtlyr.ui.rules_page import _PANEL_GUIDE
-    assert "🕯️ Teknisk analys" in nav.options("intel")
-    assert any(t == "INTELLIGENCE → 🕯️ Teknisk analys" for t, _r, _u in _PANEL_GUIDE)
-    src = open(os.path.join(ROOT, "wolf_panel.py"), encoding="utf-8").read()
-    assert 'elif sub == "🕯️ Teknisk analys":' in src
+    # Fas 8: Thors Teknik-flik ersätter fliken — modulen ligger kvar, gamla länkar landar i Thor.
+    assert "🕯️ Teknisk analys" not in nav.leaves()
+    assert not any("Teknisk analys" in t for t, _r, _u in _PANEL_GUIDE)
+    assert nav.resolve("intel/teknisk-analys") == ["thor"]
