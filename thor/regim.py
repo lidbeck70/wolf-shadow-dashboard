@@ -23,7 +23,7 @@ import pandas as pd
 from thor import cards
 from thor import registry as reg
 from thor.ticker import Ticker
-from ui.tokens import AMBER, CYAN, DIM, GREEN, GREY, RED, TEXT
+from ui.tokens import AMBER, CYAN, DIM, GOLD, GREEN, GREY, RED, TEXT
 
 TA_PERIODS = {"6 mån": "6mo", "1 år": "1y", "2 år": "2y"}
 
@@ -72,7 +72,61 @@ def bars_caption(nine) -> str:
             "har stängt — kortet ovan bygger på körningens stängning, motorn här på den senaste.")
 
 
+_LAYER = {"market": "Market", "sector": "Sector", "stock": "Stock"}
+
+
+def first_block(nine, decision) -> tuple:
+    """(text, färg) för den första grinden som stoppar en entry, i spelordningen: OVTLYR Nine (marknad → sektor →
+    aktie), sedan Viking Executions krav, sist de hårda spärrarna (förlustgränsen). Allt grönt → GOLDEN TICKET."""
+    import ovtlyr_nine as on
+    import viking_execution as vx
+    for f in nine.factors:
+        if not f.passed:
+            fail = f.status == on.FAIL
+            return (f"Nine: {_LAYER[f.layer]} {f.label} ({'FAIL' if fail else f.status}) — {f.detail}"[:180],
+                    RED if fail else DIM)
+    for c in decision.missing:
+        return (f"Execution: {c.label}" + (f" ({c.flag})" if c.flag else "") + f" — {c.detail}")[:180], AMBER
+    if decision.status != vx.GO and decision.reasons:
+        return str(decision.reasons[0])[:180], RED
+    return "inget — alla nio faktorer och alla Execution-filter är gröna", GOLD
+
+
+def _levels(decision) -> str:
+    p = decision.position
+    parts = [f"entry {decision.entry:,.2f}" if decision.entry is not None else "",
+             f"stopp {p.stop:,.2f}" if p is not None else "", f"{p.shares} aktier" if p is not None else "",
+             "R fri väg" if decision.rr is None and decision.resistance is None else
+             f"R {decision.rr:.1f}" if decision.rr is not None else ""]
+    return " · ".join(x for x in parts if x)
+
+
+def _switch_strategy(strategy: str) -> None:
+    """Knappen i Viking-layouten: byt 'Bedöm som' till Viking Nine för samma aktie (callback, före omritningen)."""
+    import streamlit as st
+    st.session_state["thor_strategy"] = reg.label(strategy)
+    st.session_state["_thor_strategy_set"] = True
+
+
+def _viking(st, ident, strategy, data, ohlcv, cands) -> None:
+    """Viking är screenern — ingen motor per aktie. Dagens screenerrad och en knapp till Viking Nine, i stället för
+    att rita Viking Nines motor under Vikings verdikt (det såg ut som en regelkonflikt)."""
+    from ui.components import note
+    c = next((x for x in cands if x.strategy == "viking"), None)
+    if c is not None:
+        st.markdown(cards.candidate_card(c), unsafe_allow_html=True)
+    else:
+        note(f"Viking har inte {ident.yf} i dagens screenerlista — raden kommer ur schemats Arc-körning (Norden och USA).")
+    note("Viking är screenern: BUY när kursen är över EMA200, ADX ≥ 20 och composite-poängen ≥ 60 mot resten av "
+         "universumet; 'screener n/9' är dess egna nio faktorer, inte OVTLYR Nine. Entryn för en swing tas med "
+         "Viking Nine (OVTLYR Nine + Viking Execution) — samma aktie, en knapp bort.")
+    st.button("⚔️ Viking Nine för samma aktie →", key="thor_viking_to_nine", on_click=_switch_strategy,
+              args=("viking_nine",))
+
+
 def _viking_nine(st, ident, strategy, data, ohlcv, cands) -> None:
+    """En beslutsrad, en kompakt 9-ruta och en Execution-rad — orsakerna, riskmotorn och de fullständiga korten
+    i en expander. Samma motorer och regler som förut; bara ordningen och upprepningen är ändrad."""
     import ovtlyr_nine as on
     import viking_execution as vx
     import viking_screen as vs
@@ -80,46 +134,48 @@ def _viking_nine(st, ident, strategy, data, ohlcv, cands) -> None:
     from ovtlyr.ui.exit_card import render_exit_section
     from ovtlyr.ui.nine_card import render_nine_card
     from ovtlyr.ui.viking_nine_regime import price_chart
-    from ovtlyr.ui.viking_screens import _earnings, _market_banner, _risk_banner, _risk_for, _sector
-    if strategy == "viking":
-        from ui.components import note
-        note("Motorn nedan är Viking Nine (OVTLYR Nine + Viking Execution) — Viking har ingen egen regimmotor per aktie. "
-             "Vikings eget verdikt står i kortet ovan: screenerns BUY (över EMA200, ADX ≥ 20, composite ≥ 60) och dess "
-             "egna nio faktorer, som inte är OVTLYR Nine. Viking Nines regel 7–8/9 = WAIT och rapportspärren gäller "
-             "motorn nedan, inte screenerns siffra.")
+    from ovtlyr.ui.viking_screens import _earnings, _risk_banner, _risk_for, _sector
     from ui.components import note
     df = _frame(ohlcv(ident.yf, on.PERIOD))
     if df is None or len(df) < on.MIN_BARS:
         note(f"DATA UNAVAILABLE — ingen kurshistorik för {ident.yf} (kräver {on.MIN_BARS} dagar).")
         return
-    _market_banner((ident.market,))
+    head = st.container()                  # beslutsraden, 9-rutan och Execution-raden fylls i efter uträkningen
+    with st.expander("Kapital och positionstak", expanded=False):
+        k1, k2 = st.columns(2)
+        capital = k1.number_input("Kapital (SEK)", min_value=0.0, value=100000.0, step=10000.0, key="thor_capital")
+        max_pos = k2.number_input("Max position (% av kapitalet)", min_value=5.0, max_value=100.0,
+                                  value=float(vx.MAX_POSITION_PCT), step=5.0, key="thor_max_pos")
     dfc = on.closed_only(df, ident.yf)                 # Nine och order blocks på stängda staplar (playbooken)
     ob = vs._ob_analysis(dfc)
     nine = on.evaluate(ident.yf, stock_df=dfc, ob_analysis=ob, sector_getter=_sector)
-    _section(st, "OVTLYR NINE — SETUP")
-    st.caption(bars_caption(nine))
-    render_nine_card(nine)
-    _section(st, "VIKING EXECUTION · RISK ENGINE · FINAL DECISION")
-    k1, k2 = st.columns(2)
-    capital = k1.number_input("Kapital (SEK)", min_value=0.0, value=100000.0, step=10000.0, key="thor_capital")
-    max_pos = k2.number_input("Max position (% av kapitalet)", min_value=5.0, max_value=100.0,
-                              value=float(vx.MAX_POSITION_PCT), step=5.0, key="thor_max_pos")
     try:
         from trade_journal import load_journal
         trades = load_journal()
     except Exception:
         trades = []
     earnings = _earnings(ident.yf)
-    _risk_banner((ident.market,))
     decision = vx.evaluate_entry(ident.yf, df, nine=nine, capital=capital, ob_analysis=ob, earnings_date=earnings,
                                  earnings_known=earnings is not None, trades=trades, max_position_pct=max_pos,
                                  market_risk=_risk_for(ident.yf))
+    block, bcol = first_block(nine, decision)
+    with head:
+        st.markdown(cards.vn_decision_row(decision.status, f"{nine.passed}/{on.NINE_TOTAL}",
+                                          f"{decision.execution_passed}/{decision.execution_total}", block, bcol,
+                                          _levels(decision), bars_caption(nine)), unsafe_allow_html=True)
+        st.markdown(cards.vn_nine_compact(nine), unsafe_allow_html=True)
+        st.markdown(cards.vn_execution_row(decision), unsafe_allow_html=True)
+    _risk_banner((ident.market,))
+    with st.expander("Varför — varje faktor, varje filter och riskmotorn", expanded=False):
+        _section(st, "OVTLYR NINE — SETUP")
+        render_nine_card(nine)
+        _section(st, "VIKING EXECUTION · RISK ENGINE · FINAL DECISION")
+        render_execution(decision)
     try:
         st.plotly_chart(price_chart(ident.yf, df, decision), use_container_width=True, config={"displayModeBar": False},
                         key="thor_vn_chart")
     except Exception as exc:                                     # pragma: no cover - grafen är inte regeln
         note(f"Grafen kunde inte ritas: {exc}")
-    render_execution(decision)
     render_exit_section(ident.yf, df, nine, ob, earnings)
 
 
@@ -429,7 +485,7 @@ def _royalty(st, ident, strategy, data, ohlcv, cands) -> None:
          "för en färsk rad.")
 
 
-LAYOUTS = {"viking_nine": _viking_nine, "viking": _viking_nine, "wolf": _wolf, "momentum": _momentum, "berserk": _berserk,
+LAYOUTS = {"viking_nine": _viking_nine, "viking": _viking, "wolf": _wolf, "momentum": _momentum, "berserk": _berserk,
            "ember": _ember, "alpha_quality": _alpha, "alpha_contrarian": _alpha, "long_screener": _long_screener,
            "sheet": _sheet, "insider": _sheet, "royalty": _royalty}
 
