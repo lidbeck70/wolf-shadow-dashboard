@@ -122,7 +122,8 @@ def evaluate_ticker(ticker: str, getter: Optional[Callable] = None, sector_gette
         df = df.copy()
         df.index = df.index.tz_localize(None)
     ob = _ob_analysis(df)
-    nine = on.evaluate(ticker, stock_df=df, ob_analysis=ob, getter=getter, sector_getter=sector_getter, today=today)
+    nine = on.evaluate(ticker, stock_df=df, ob_analysis=ob, getter=getter, sector_getter=sector_getter, today=today,
+                       now=now)
     ed = None
     if earnings_getter is not None and nine.passed == on.NINE_TOTAL:      # bara där det kan avgöra GO
         try:
@@ -254,6 +255,11 @@ def results(rows: list, momentum_only: bool = False, require_volume: bool = Fals
 
 
 # ── Signalloggen ────────────────────────────────────────────────────────────
+def bar_date(nine) -> Optional[str]:
+    """Datumet för den stängning OVTLYR Nine räknades på — aktiens lager (marknaden kan sluta en annan dag)."""
+    return next((f.timestamp for f in getattr(nine, "stock", []) if f.timestamp), None)
+
+
 def log_entry(row: dict, now: Optional[datetime] = None, source: str = "screen") -> Optional[dict]:
     n, d = row.get("nine"), row.get("decision")
     if n is None or d is None:
@@ -268,6 +274,7 @@ def log_entry(row: dict, now: Optional[datetime] = None, source: str = "screen")
         "entry": d.entry, "stop": p.stop if p else None, "atr": p.atr if p else None,
         "shares": p.shares if p else None, "risk_sek": p.risk_amount if p else None, "rr": d.rr,
         "status": d.status, "action": row.get("category"), "trigger_date": d.trigger_date,
+        "bar_date": bar_date(n),                          # stängningen Nine räknades på (aktiens lager)
         "reason": "; ".join(([f"{SECTOR_BUSY} ({row['sector_busy']})"] if row.get("sector_busy") else [])
                             + list(d.reasons))[:400],
         "source": source, "label": on.APPROXIMATION,

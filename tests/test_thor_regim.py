@@ -183,6 +183,7 @@ def test_viking_nine_layout_shows_the_whole_decision_chain(engines):
     for part in ("MARKET SPY", "OVTLYR NINE", "VIKING EXECUTION", "RISK ENGINE", "VIKING EXIT ENGINE"):
         assert part in text, part
     assert len(at.get("plotly_chart")) == 1 and at.number_input(key="thor_capital").value == 100000.0
+    assert any("Stängda candles: aktien t.o.m." in c.value for c in at.caption)     # motorn säger vilken stängning
     _at, text = _run("viking", "NEM")
     assert "Motorn nedan är Viking Nine" in text and "inte är OVTLYR Nine" in text
 
