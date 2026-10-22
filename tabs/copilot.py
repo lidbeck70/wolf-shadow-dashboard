@@ -337,7 +337,7 @@ def _render_review(ticker: str, strategy_key: str):
 def _render_market_phase(ticker: str, strategy_key: str):
     """Fas-boxen för contrarian/quality. Returnerar fas-dicten eller None.
 
-    Motorn är densamma som REGIME → Market Cycle och cachas en timme — samma
+    Motorn är densamma som ODINS VISDOM → Marknad → Market Cycle och cachas en timme — samma
     fas där som här.
     """
     if not cycle.requires_market_cycle(strategy_key):

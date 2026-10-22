@@ -45,17 +45,17 @@ STORE_DEFAULT = {"confidence": {"companies": {}, "commodity_overrides": {}, "str
 MARKET_LABELS = {m.label: m.key for m in ur.MARKETS}
 _UNIVERSE = "thor_universe"
 
-# Bryggorna till de gamla sidorna tills fas 4–6: regimlayout → (djuplänk, sidans namn, widget att förifylla).
+# Bryggorna till sidorna i Odins visdom och Arken: regimlayout → (djuplänk, sidans namn, widget att förifylla).
 # Wolf Regime och Viking Regime sätter egna startvärden i sina fält — där navigerar vi bara.
-BRIDGE = {"viking_nine": ("regime/marknad/arc-regime/viking-nine-regime", "Viking Nine Regime", "vnr_ticker"),
-          "viking": ("regime/marknad/arc-regime/viking-regime", "Viking Regime", None),
-          "wolf": ("regime/marknad/arc-regime/wolf-regime", "Wolf Regime", None),
-          "momentum": ("regime/marknad/swing-regime", "Swing Regime", "swreg_ticker"),
-          "berserk": ("regime/ravaror/berserk-regime", "BERSERK Regime", None),
-          "ember": ("regime/ravaror/ember-regime", "EMBER Regime", None),
-          "alpha_quality": ("regime/marknad/alpha-regime/quality-contrarian", "Alpha Regime", "ar_ticker"),
-          "alpha_contrarian": ("regime/marknad/alpha-regime/quality-contrarian", "Alpha Regime", "ar_ticker"),
-          "long_screener": ("regime/marknad/alpha-regime/long-trend", "Long Trend", "long_regime_ticker_input"),
+BRIDGE = {"viking_nine": ("odin/marknad/arc-regime/viking-nine-regime", "Viking Nine Regime", "vnr_ticker"),
+          "viking": ("odin/marknad/arc-regime/viking-regime", "Viking Regime", None),
+          "wolf": ("odin/marknad/arc-regime/wolf-regime", "Wolf Regime", None),
+          "momentum": ("odin/marknad/swing-regime", "Swing Regime", "swreg_ticker"),
+          "berserk": ("odin/ravaror/berserk-regime", "BERSERK Regime", None),
+          "ember": ("odin/ravaror/ember-regime", "EMBER Regime", None),
+          "alpha_quality": ("odin/marknad/alpha-regime/quality-contrarian", "Alpha Regime", "ar_ticker"),
+          "alpha_contrarian": ("odin/marknad/alpha-regime/quality-contrarian", "Alpha Regime", "ar_ticker"),
+          "long_screener": ("odin/marknad/alpha-regime/long-trend", "Long Trend", "long_regime_ticker_input"),
           "insider": ("review/insider", "Insiderbevakaren", None), "sheet": ("review", "Granskningsarken", None),
           "royalty": ("review/royalty-c", "Royalty C", None)}
 COPILOT = ("copilot", "Copiloten", "copilot_ticker")

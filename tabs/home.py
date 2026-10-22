@@ -21,8 +21,8 @@ from ui.components import card, kpi
 from ui.theme import section_title
 from ui.tokens import ACCENT, DIM, EMBER, GREEN, GREY, PURPLE, TEXT, regime_color
 
-_ZONE_COLOR = {"regime": PURPLE, "screening": ACCENT, "review": "#c9a84c",
-               "intel": EMBER, "portfolio": GREEN}
+_ZONE_COLOR = {"odin": PURPLE, "thor": ACCENT, "review": "#c9a84c",
+               "valhall": EMBER, "portfolio": GREEN}
 _WEEKDAYS = ("måndag", "tisdag", "onsdag", "torsdag", "fredag", "lördag", "söndag")
 _MONTHS = ("januari", "februari", "mars", "april", "maj", "juni", "juli",
            "augusti", "september", "oktober", "november", "december")
@@ -78,7 +78,7 @@ def _next_step(status: dict) -> str:
     if swing == "GUL":
         return "🟡 GUL regim — halv positionsstorlek. Kör screenern, men var selektiv."
     if swing == "GRÖN":
-        return "🟢 GRÖN regim — kör SCREENING → Swing Screener och kontrollera setup A/B."
+        return "🟢 GRÖN regim — välj Momentum Swing i THOR och kontrollera setup A/B."
     return "🔍 Ingen regimdata ännu — kör wolf_data.py eller vänta på nästa schemalagda körning."
 
 
@@ -151,15 +151,15 @@ def tab_home() -> None:
     section_title("Mission Control", "🔱")
     st.markdown(
         f'<p style="color:{DIM};font-size:0.8rem;margin:-8px 0 20px;">'
-        f'Nordic Arc Systems — regim → screening → granskning → köp.  '
+        f'Nordic Arc Systems — Odins visdom → Thor → Arken → köp.  '
         f'<span style="font-size:0.72rem;">{swedish_date(datetime.now())}</span></p>',
         unsafe_allow_html=True)
 
     status = _load_status()
     _render_pulse(status)
     _render_zones()
-    st.caption("Adressfältet följer fliken — kopiera URL:en (t.ex. `?p=regime/marknad/"
-               "arc-regime/wolf-regime`) för en direktlänk. Alla länkar står i "
+    st.caption("Adressfältet följer fliken — kopiera URL:en (t.ex. `?p=odin/marknad/"
+               "swing-regime`) för en direktlänk. Alla länkar står i "
                "RULES → Regler & Guider → 🗺 FLIKGUIDE.")
     st.markdown("<br>", unsafe_allow_html=True)
     _render_recent_events(status)

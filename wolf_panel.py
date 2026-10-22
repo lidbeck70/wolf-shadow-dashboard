@@ -380,7 +380,7 @@ def _sub(path: str) -> str:
 
 
 def _apply_deep_link() -> None:
-    """?p=regime/marknad/arc-regime/wolf-regime i adressfältet, eller
+    """?p=odin/marknad/arc-regime/wolf-regime i adressfältet (gamla regime/…-länkar fungerar), eller
     nav_goto från ett Home-kort, väljer flik och underflikar INNAN
     widgetarna ritas. Bara en gång per mål — annars skulle varje omritning
     dra användaren tillbaka till länken när hen klickat vidare."""
@@ -449,36 +449,9 @@ def main():
             else:
                 tab_not_found("Thor", "thor")
 
-    # ── SCREENING ─────────────────────────────────────────────────────────────
-    if _is_open(tabs["screening"]):
-        with tabs["screening"]:
-            sub = _sub("screening")
-            st.markdown("---")
-            if sub == "Arc Screener":
-                inner = _sub("screening/Arc Screener")
-                if inner == "Wolf":
-                    tab_screener()
-                elif inner == "Viking":
-                    _page(OVTLYR_AVAILABLE, render_viking_screener, "Viking Screener", "screener_ovtlyr")
-                elif inner == "⚔️ Viking Nine":
-                    _page(VIKING_NINE_AVAILABLE, render_viking_nine_page, "Viking Nine", "viking_screen")
-                elif inner == "🔥 EMBER":
-                    _page(EMBER_AVAILABLE, render_ember_page, "EMBER", "ember")
-                elif inner == "🪓 BERSERK":
-                    _page(BERSERK_AVAILABLE, render_berserk_screen_page, "BERSERK", "berserk")
-            elif sub == "Contrarian Alpha":
-                inner = _sub("screening/Contrarian Alpha")
-                if inner == "Screener":
-                    _page(CONTRARIAN_ALPHA_AVAILABLE, render_contrarian_alpha_page,
-                          "Contrarian Alpha", "contrarian_alpha")
-                elif inner == "Long Screener":
-                    _page(CAGR_AVAILABLE, render_cagr_page, "Long Screener", "cagr")
-            elif sub == "Swing Screener":
-                _page(WOLF_SCREENER_AVAILABLE, render_wolf_screener_page, "Swing Screener", "wolf_screener_ui")
-
-    # ── GRANSKNING ───────────────────────────────────────────────────────────
+    # ── ARKEN (förr GRANSKNING) ──────────────────────────────────────────────
     # Beslutsunderlaget efter screeningen. Inget här screenar — screeningen
-    # sker i Börsdata; det här är arken som avgör vilket bolag som köps.
+    # sker i Thor och Börsdata; det här är arken som avgör vilket bolag som köps.
     if _is_open(tabs["review"]):
         with tabs["review"]:
             sub = _sub("review")
@@ -506,16 +479,17 @@ def main():
             elif sub == "🎯 Scorecard":
                 _page(SCORECARD_AVAILABLE, render_scorecard_page, "Master Scorecard", "scorecard")
 
-    # ── REGIME ───────────────────────────────────────────────────────────────
-    # Marknaden (index, sektorer, cykel), råvarorna och makro (penningvärde).
-    if _is_open(tabs["regime"]):
-        with tabs["regime"]:
-            group = _sub("regime")
+    # ── ODINS VISDOM (förr REGIME + INTELLIGENCE) ────────────────────────────
+    # Råvarorna, makro och marknaden. SCREENING-sidorna och Teknisk analys har
+    # ingen flik längre — Thor gör det jobbet; koden ligger kvar tills städningen.
+    if _is_open(tabs["odin"]):
+        with tabs["odin"]:
+            group = _sub("odin")
             if group == "Marknad":
-                sub = _sub("regime/Marknad")
+                sub = _sub("odin/Marknad")
                 st.markdown("---")
                 if sub == "Arc Regime":
-                    inner = _sub("regime/Marknad/Arc Regime")
+                    inner = _sub("odin/Marknad/Arc Regime")
                     if inner == "Wolf Regime":
                         _page(True, tab_regime, "Wolf Regime", "tabs/regime", rules_key="wolf")
                     elif inner == "Viking Regime":
@@ -524,7 +498,7 @@ def main():
                         _page(VIKING_NINE_REGIME_AVAILABLE, render_viking_nine_regime_page, "Viking Nine Regime",
                               "viking_nine_regime")
                 elif sub == "Alpha Regime":
-                    inner = _sub("regime/Marknad/Alpha Regime")
+                    inner = _sub("odin/Marknad/Alpha Regime")
                     if inner == "Quality & Contrarian":
                         _page(ALPHA_REGIME_AVAILABLE, render_alpha_regime, "Alpha Regime Monitor",
                               "alpha_regime", rules_key="alpha")
@@ -541,15 +515,24 @@ def main():
                           "tabs/market_cycle")
                 elif sub == "🌩️ Marknadsrisk":
                     _page(MARKET_RISK_AVAILABLE, render_market_risk_page, "Marknadsrisk", "market_risk_ui")
+                elif sub == "Heatmap":
+                    _page(HEATMAP_AVAILABLE, render_heatmap_page, "Heatmap", "heatmap")
+                elif sub == "Retail Pulse":
+                    _page(RETAIL_SENTIMENT_AVAILABLE, render_retail_sentiment_page, "Retail Sentiment",
+                          "retail_sentiment")
             elif group == "Makro":
-                sub = _sub("regime/Makro")
+                sub = _sub("odin/Makro")
                 st.markdown("---")
                 if sub == "🐺 Fiat Debasement":
                     _page(FIAT_AVAILABLE, render_fiat_debasement_page, "Fiat Debasement", "fiat_debasement")
+                elif sub == "Sentiment":
+                    _page(SENTIMENT_AVAILABLE, render_sentiment_page, "Sentiment & Flow", "sentiment")
             else:
-                sub = _sub("regime/Råvaror")
+                sub = _sub("odin/Råvaror")
                 st.markdown("---")
-                if sub == "🌍 EMBER Regime":
+                if sub == "Odin's Blindspot":
+                    _page(BLINDSPOT_AVAILABLE, render_blindspot_page, "Odin's Blindspot Index", "blindspot")
+                elif sub == "🌍 EMBER Regime":
                     _page(EMBER_AVAILABLE, render_ember_regime_page, "EMBER Regime", "ember")
                 elif sub == "🪓 BERSERK Regime":
                     _page(BERSERK_AVAILABLE, render_berserk_regime_page, "BERSERK Regime", "berserk")
@@ -559,23 +542,6 @@ def main():
                     _page(GOLD_SILVER_AVAILABLE, render_gold_silver_page, "Guld/Silver", "gold_silver")
                 elif sub == "🥇 Guldkvoter":
                     _page(GOLD_RATIOS_AVAILABLE, render_gold_ratios_page, "Guldkvoter", "gold_ratios")
-
-    # ── INTELLIGENCE ─────────────────────────────────────────────────────────
-    if _is_open(tabs["intel"]):
-        with tabs["intel"]:
-            sub = _sub("intel")
-            st.markdown("---")
-            if sub == "Odin's Blindspot":
-                _page(BLINDSPOT_AVAILABLE, render_blindspot_page, "Odin's Blindspot Index", "blindspot")
-            elif sub == "Sentiment":
-                _page(SENTIMENT_AVAILABLE, render_sentiment_page, "Sentiment & Flow", "sentiment")
-            elif sub == "Retail Pulse":
-                _page(RETAIL_SENTIMENT_AVAILABLE, render_retail_sentiment_page, "Retail Sentiment",
-                      "retail_sentiment")
-            elif sub == "Heatmap":
-                _page(HEATMAP_AVAILABLE, render_heatmap_page, "Heatmap", "heatmap")
-            elif sub == "🕯️ Teknisk analys":
-                _page(TECH_ANALYSIS_AVAILABLE, render_tech_analysis_page, "Teknisk analys", "tech_analysis")
 
     # ── PORTFOLIO ─────────────────────────────────────────────────────────────
     if _is_open(tabs["portfolio"]):

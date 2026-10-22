@@ -39,7 +39,7 @@ def test_tab_is_wired_under_review_after_durrett():
     assert review.index(TAB) == review.index("🧭 Durrett") + 1
     assert nav.resolve("granskning/wolf-asymmetry") == ["review", TAB]
     assert f'sub == "{TAB}"' in _src("wolf_panel.py")
-    assert f"GRANSKNING → {TAB}" in _src(os.path.join("ovtlyr", "ui", "rules_page.py"))
+    assert f"ARKEN → {TAB}" in _src(os.path.join("ovtlyr", "ui", "rules_page.py"))
     import sheets_refresh as sr
     assert "asymmetry" not in sr.SHEET_FILES and "asymmetry" not in sr._BUCKETS   # ett ark, inte två
 

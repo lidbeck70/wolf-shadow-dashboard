@@ -39,11 +39,12 @@ def test_nav_tree_is_consistent():
         assert len(opts) == len(set(opts))
     assert "🧭 Durrett" in nav.options("review") and "🐺 Wolf Asymmetry" in nav.options("review")
     assert "🐺 Durrett" not in nav.leaves() and "🧭 Confidence score" not in nav.leaves()
-    assert nav.options("regime") == ["Marknad", "Råvaror", "Makro"]
-    assert "Market Cycle" in nav.options("regime/Marknad")
-    assert "Market Cycle" not in nav.options("screening")
-    assert nav.options("screening/Contrarian Alpha")[0] == "Screener"     # inte "Contrarian Alpha → Contrarian Alpha"
-    assert "REGIME → Råvaror → 🌍 EMBER Regime" in nav.paths()
+    assert nav.options("odin") == ["Råvaror", "Makro", "Marknad"]
+    assert "Market Cycle" in nav.options("odin/Marknad")
+    keys = [k for k, _l in nav.TOP]
+    assert "screening" not in keys and "regime" not in keys and "intel" not in keys     # fas 8
+    assert nav.TOP_LABEL["odin"] == "👁 ODINS VISDOM" and nav.TOP_LABEL["review"] == "📒 ARKEN"
+    assert "ODINS VISDOM → Råvaror → 🌍 EMBER Regime" in nav.paths()
 
 
 def test_panel_renders_its_radios_from_the_tree():
@@ -56,7 +57,7 @@ def test_panel_renders_its_radios_from_the_tree():
 
 def test_home_zones_cover_review_and_only_name_real_tabs():
     zone_keys = [k for k, _t, _c in nav.HOME_ZONES]
-    assert "review" in zone_keys and zone_keys[0] == "regime"     # guidens ordning
+    assert zone_keys[:3] == ["odin", "thor", "review"]            # guidens ordning
     leaves = nav.leaves()
     for _k, _t, cards in nav.HOME_ZONES:
         for name, _desc in cards:
@@ -75,7 +76,7 @@ def test_flikguide_paths_exist_in_the_tree_and_cover_every_top_tab():
         heads.add(parts[0])
         for p in parts[1:]:
             assert p in leaves, f"FLIKGUIDE: '{p}' i '{tab}' är ingen flik"
-    assert {"REGIME", "SCREENING", "GRANSKNING", "INTELLIGENCE", "PORTFOLIO",
+    assert {"THOR", "ODINS VISDOM", "ARKEN", "VALHALL", "PORTFOLIO",
             "ALERTS", "RULES", "COPILOT"} <= heads
     assert any("🧭 Durrett" in t for t, _r, _u in _PANEL_GUIDE)
     assert any("Wolf Asymmetry" in t for t, _r, _u in _PANEL_GUIDE)
@@ -140,7 +141,7 @@ def test_home_speaks_swedish_and_reads_the_regime():
     assert home.swedish_date(datetime(2026, 9, 23)) == "onsdag 23 september 2026"
     assert "RÖD" in home._next_step({"swing": {"label": "RÖD"}}) and "inga nya köp" in home._next_step({"swing": {"label": "RÖD"}})
     assert "GUL" in home._next_step({"swing": {"label": "GUL"}})
-    assert "Swing Screener" in home._next_step({"swing": {"label": "GRÖN"}})
+    assert "Momentum Swing i THOR" in home._next_step({"swing": {"label": "GRÖN"}})
     assert "wolf_data.py" in home._next_step({})
     src = _src("tabs", "home.py")
     assert "wolf_regime_status" not in src and "ALERT_LOG" not in src

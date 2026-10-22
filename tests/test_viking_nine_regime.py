@@ -81,8 +81,8 @@ def test_ticker_can_be_picked_from_the_last_scan(monkeypatch):
 def test_navigation_and_guide():
     from ui import nav
     from ovtlyr.ui.rules_page import _PANEL_GUIDE
-    opts = nav.options("regime/Marknad/Arc Regime")
+    opts = nav.options("odin/Marknad/Arc Regime")
     assert "⚔️ Viking Nine Regime" in opts and "Viking Regime" in opts and "Wolf Regime" in opts
-    assert any(t == "REGIME → Marknad → Arc Regime → ⚔️ Viking Nine Regime" for t, _r, _u in _PANEL_GUIDE)
+    assert any(t == "ODINS VISDOM → Marknad → Arc Regime → ⚔️ Viking Nine Regime" for t, _r, _u in _PANEL_GUIDE)
     src = open(os.path.join(ROOT, "wolf_panel.py"), encoding="utf-8").read()
     assert 'elif inner == "⚔️ Viking Nine Regime":' in src
