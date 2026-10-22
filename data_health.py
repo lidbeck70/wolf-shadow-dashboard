@@ -115,10 +115,25 @@ def probe_sentiment() -> SourceStatus:
                             "Ej naabar just nu - sentiment hoppar over")
 
 
+def probe_prices() -> SourceStatus:
+    """Kurslagret (market_prices): Borsdata forst for bolag med Borsdata-id, Yahoo for ETF:er, terminer och
+    tickers utan id - och som reserv. Raknaren galler den har processen."""
+    try:
+        import market_prices as mp
+        bd = mp._bd_api() is not None
+        return SourceStatus("Kurslagret (market_prices)", "Karna", "OK" if bd else "FALLBACK",
+                            (("Borsdata forst, Yahoo som reserv" if bd else "Bara Yahoo - ingen Borsdata-nyckel")
+                             + f" - {mp.stats_text()} i den har sessionen"),
+                            fallback="yfinance for allt")
+    except Exception as e:
+        return SourceStatus("Kurslagret (market_prices)", "Karna", "ERROR", f"Fel: {type(e).__name__}"[:90])
+
+
 def run_all_probes() -> list[SourceStatus]:
     """Run every probe. Order: core first, then optional/free/macro/sentiment."""
     return [
         probe_borsdata(),
+        probe_prices(),
         probe_yfinance(),
         probe_eodhd(),
         probe_fred(),

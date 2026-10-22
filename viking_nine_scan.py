@@ -128,6 +128,11 @@ def main(argv=None) -> int:
     except Exception:                                             # pragma: no cover
         _earnings = None
     run(usa_api=arc_scan.borsdata_for_usa(), dry_run=args.dry_run, earnings_getter=_earnings, held={})
+    try:
+        import market_prices
+        log.info("Viking Nine: %s.", market_prices.stats_text())
+    except Exception:
+        pass
     return 0
 
 

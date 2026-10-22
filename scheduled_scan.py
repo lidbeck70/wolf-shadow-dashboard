@@ -105,6 +105,11 @@ def main() -> int:
             log.error("%s FAILED:\n%s", name, traceback.format_exc())
 
     log.info("Scheduled scan complete. %d/%d screeners failed.", failures, len(tasks))
+    try:
+        import market_prices
+        log.info("Scheduled scan: %s.", market_prices.stats_text())
+    except Exception:
+        pass
     return 0   # always succeed so one failure does not abort the workflow
 
 
