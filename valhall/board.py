@@ -28,7 +28,10 @@ PERIOD = "15y"
 # Blindspots nödvändighet per tema (NECESSITY_* i blindspot/theme_board.py); övriga ärver segmentets
 THEME_NECESSITY = {"uran": 90, "koppar": 95, "olja": 90, "silver": 75, "guld": 70, "naturgas": 80,
                    "naturgas_eu": 80, "kol": 60, "sallsynta": 85, "platina": 70, "palladium": 65, "vete": 90,
-                   "majs": 70, "soja": 70, "socker": 70, "skog": 60, "kaffe": 50, "kakao": 45}
+                   "majs": 70, "soja": 70, "socker": 70, "skog": 60, "kaffe": 50, "kakao": 45,
+                   # BERSERKs övriga teman (fas 8) — samma värden som brädan
+                   "aluminium": 80, "zink_nickel": 80, "stal": 85, "jarnmalm": 80, "litium": 70, "godsel": 85,
+                   "lax": 50, "tank": 65, "torrbulk": 65}
 
 
 def _ohlcv(getter: Callable, symbol: str, period: str = PERIOD):

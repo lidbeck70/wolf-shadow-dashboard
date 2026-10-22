@@ -19,7 +19,7 @@ def test_skog_maps_to_its_own_complex():
     assert cfg.THEME_TO_COMPLEX["skog"] == "skog" and cfg.COMMODITY_TO_COMPLEX["timber"] == "skog"
     assert cfg.COMPLEX_LABEL["skog"] == "SKOG & MASSA" and cfg.COMPLEX_DEFAULT_THEME["skog"] == "skog"
     assert cfg.THEME_TO_COMPLEX["vete"] == "agri" and cfg.THEME_TO_COMPLEX["agri"] == "agri"      # agri orört
-    assert set(cfg.COMPLEX_LABEL) == {"energi", "adelmetaller", "basmetaller", "agri", "skog"}
+    assert set(cfg.COMPLEX_LABEL) == {"energi", "adelmetaller", "basmetaller", "agri", "skog", "frakt"}
     from confidence.commodities import REGISTRY
     assert REGISTRY["timber"].ember_complex == "skog"
 

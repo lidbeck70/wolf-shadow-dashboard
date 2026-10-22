@@ -103,9 +103,10 @@ BEAR_AT_TOP_MULTIPLE = "min"
 # Asymmetrin kommer ur bolagets egen historik: omvärdering (multipel mot egen
 # median), marginalåterhämtning (EBITDA-marginal mot egen median) och tillväxt.
 MODE_AUTO, MODE_COMMODITY, MODE_VALUE = "Auto", "Råvara", "Värde"
-# Teman som gör ett bolag till ett råvarubolag (ember THEME_TO_COMPLEX-nycklar)
-COMMODITY_THEMES = ("guld", "silver", "koppar", "sallsynta", "uran", "olja", "naturgas", "kol", "agri",
-                    "platina", "palladium", "vete", "kaffe", "kakao", "skog")
+# Teman som gör ett bolag till ett råvarubolag — EMBER:s temalista (= BERSERKs sedan fas 8)
+from ember.config import THEME_TO_COMPLEX as _T2C
+
+COMMODITY_THEMES = tuple(_T2C)
 VALUE_MIN_YEARS = 5                # minst så många år med omsättning och EBITDA
 # Börsdatas branscher där EBITDA inte bär värderingen (banker, nischbanker,
 # kredit, investmentbolag, försäkring, fastighet) → DATA_GAP med förklaring

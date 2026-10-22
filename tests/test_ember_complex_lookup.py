@@ -72,7 +72,7 @@ def test_sector_etf_and_theme_follow_the_sheet_commodity(monkeypatch):
     st.session_state.clear()
     assert e.sector_etf_for("FCX") == "COPX" and e.sector_etf_for("CCJ") == "URA"      # temakartan
     assert rg.detect_theme("visc.st") == "koppar" and e.sector_etf_for("VISC.ST") == "COPX"
-    assert e.sector_etf_for("LEX") == "REMX"
+    assert e.sector_etf_for("LEX") == "LIT"                                            # litium: eget tema (fas 8)
     assert e.sector_etf_for("OKÄND") == cfg.DEFAULT_SECTOR_ETF                          # GLD bara när okänt
     rg.set_complex_override("OKÄND", "energi")
     assert rg.detect_theme("OKÄND") == "olja" and e.sector_etf_for("OKÄND") == "XLE"    # valt komplex → bärande tema

@@ -780,7 +780,7 @@ EMBER_PB = Playbook(
     ),
     entry=_rules([
         ("Komplex-regimen måste tillåta handel",
-         "Varje råvarukomplex (Energi, Ädelmetaller, Basmetaller, Agri, Skog & massa) har en egen "
+         "Varje råvarukomplex (Energi, Ädelmetaller, Basmetaller, Agri, Skog & massa, Frakt) har en egen "
          "regim med 5 pelare. Netto = gröna − röda (gul och DATA_GAP räknas 0): "
          f"netto ≥ {_EMBER_REG_PA} = PÅ (full storlek), 0–{_EMBER_REG_PA - 1} = SELEKTIV (halverad, endast "
          f"topp-1 och topp-2), under 0 eller ≥ {_EMBER_REG_RED} röda = AV (inga nya trades "

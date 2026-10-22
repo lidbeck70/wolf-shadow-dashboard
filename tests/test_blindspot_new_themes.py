@@ -21,7 +21,7 @@ NEW = {"platina": ("PPLT", "Platina"), "palladium": ("PALL", "Palladium"), "vete
 
 def test_the_board_has_the_new_themes_with_their_series():
     specs = {s.key: s for s in tb._THEMES}
-    assert len(specs) == 15 and "sallsynta" in specs
+    assert len(specs) == 28 and "sallsynta" in specs                       # 15 + BERSERKs 13 (fas 8)
     for key, (ticker, label) in NEW.items():
         assert specs[key].primary_tickers[0] == ticker and specs[key].label == label
         assert 0 < specs[key].necessity <= 100
