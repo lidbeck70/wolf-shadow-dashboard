@@ -33,6 +33,8 @@ def _patch(monkeypatch):
     monkeypatch.setattr(page, "_earnings", lambda t: pd.Timestamp("2026-12-01"))
     monkeypatch.setattr(on, "STALE_BDAYS", 10 ** 6)          # testdatan slutar 2026-09-30 — får inte bli gammal
     monkeypatch.setenv("VNR_TEST_ROOT", ROOT)
+    import gist_storage                                       # ingen riktig Gist i testet (CI har en token)
+    monkeypatch.setattr(gist_storage, "load_blob", lambda name, fallback=None: fallback)
 
 
 def _app():
