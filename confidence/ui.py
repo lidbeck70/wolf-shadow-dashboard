@@ -1,5 +1,5 @@
 """
-confidence/ui.py — fliken "🧭 Confidence score" under GRANSKNING.
+confidence/ui.py — fliken "🧭 Confidence score" under ARKEN.
 
 Fyra delar: Analys (Investment Card, Case, Confidence, Why Now, regional
 knapphet, scenarier, Thesis Killer, rapport), Indata (fält per pelare med

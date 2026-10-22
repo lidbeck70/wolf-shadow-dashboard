@@ -1,5 +1,5 @@
 """
-berserk/screen_ui.py — SCREENING → Arc Screener → 🪓 BERSERK.
+berserk/screen_ui.py — THOR → BERSERK.
 
 Skannar universumet på senaste stängda dag med backtestets regler:
   KÖP      en setup triggade idag och grindarna (omsättning, marknad) är gröna

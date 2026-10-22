@@ -1,5 +1,5 @@
 """
-engines/durrett/ui.py — fliken "🐺 Durrett" under GRANSKNING, byggd som
+engines/durrett/ui.py — fliken "🐺 Durrett" under ARKEN, byggd som
 granskningsarken (Rick Rule, Poängmodellen, Tiggre):
 
   ➕ Ny kandidat        ticker, bolag, råvara, typ

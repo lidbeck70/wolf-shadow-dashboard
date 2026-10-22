@@ -1,5 +1,5 @@
 """
-asymmetry/ui.py — fliken "🐺 Wolf Asymmetry" under GRANSKNING. Tre poäng, ett kort.
+asymmetry/ui.py — fliken "🐺 Wolf Asymmetry" under ARKEN. Tre poäng, ett kort.
 
   🚀 Commodity Leverage · 🛡️ Margin of Safety · 🎯 Confidence
 

@@ -1,5 +1,5 @@
 """
-commodity_leverage/ui.py — GRANSKNING → 🚀 Råvaruhävstång.
+commodity_leverage/ui.py — ARKEN → 🚀 Råvaruhävstång.
 
 Skriv ett eller flera bolag (upp till åtta) och se hävstången mot råvaran:
 resultathävstång (Snabbkollens motor), kurshävstång (beta, upp/ned) och

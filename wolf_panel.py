@@ -236,21 +236,21 @@ try:
 except ImportError:
     COMMODITY_LEVERAGE_AVAILABLE = False
 
-# Guld/silver-kvoten (REGIME → Råvaror)
+# Guld/silver-kvoten (ODINS VISDOM → Råvaror)
 try:
     from gold_silver.ui import render_gold_silver_page
     GOLD_SILVER_AVAILABLE = True
 except ImportError:
     GOLD_SILVER_AVAILABLE = False
 
-# Viking Nine (SCREENING → Arc Screener) — OVTLYR Nine + Viking Execution över en lista
+# Viking Nine (THOR) — OVTLYR Nine + Viking Execution över en lista
 try:
     from ovtlyr.ui.viking_screens import render_viking_nine_page
     VIKING_NINE_AVAILABLE = True
 except ImportError:
     VIKING_NINE_AVAILABLE = False
 
-# Viking Nine Regime (REGIME → Arc Regime) — beslutet för en aktie i Viking Nine
+# Viking Nine Regime (ODINS VISDOM → Marknad → Arc Regime) — beslutet för en aktie i Viking Nine
 try:
     from ovtlyr.ui.viking_nine_regime import render_viking_nine_regime_page
     VIKING_NINE_REGIME_AVAILABLE = True
@@ -273,7 +273,7 @@ except Exception:
     render_thor_page = None
     THOR_AVAILABLE = False
 
-# 🪓 BERSERK (SCREENING → Arc Screener, REGIME → Råvaror) — contrarian swing i råvarumarknaden
+# 🪓 BERSERK (THOR, ODINS VISDOM → Råvaror) — contrarian swing i råvarumarknaden
 try:
     from berserk.screen_ui import render_berserk_screen_page
     from berserk.regime_ui import render_berserk_regime_page
@@ -281,7 +281,7 @@ try:
 except ImportError:
     BERSERK_AVAILABLE = False
 
-# Marknadsrisk (REGIME → Marknad) — riskmodellen för SPY och OMXS30
+# Marknadsrisk (ODINS VISDOM → Marknad) — riskmodellen för SPY och OMXS30
 try:
     from market_risk_ui import render_market_risk_page
     MARKET_RISK_AVAILABLE = True
@@ -295,14 +295,14 @@ try:
 except ImportError:
     TECH_ANALYSIS_AVAILABLE = False
 
-# Guldkvoter (REGIME → Råvaror) — råvaror och index mätta i guld
+# Guldkvoter (ODINS VISDOM → Råvaror) — råvaror och index mätta i guld
 try:
     from gold_ratios.ui import render_gold_ratios_page
     GOLD_RATIOS_AVAILABLE = True
 except ImportError:
     GOLD_RATIOS_AVAILABLE = False
 
-# 🐺 Fiat Debasement (REGIME → Makro) — penningmängd, inflation, köpkraft och fiat mot guld
+# 🐺 Fiat Debasement (ODINS VISDOM → Makro) — penningmängd, inflation, köpkraft och fiat mot guld
 try:
     from fiat_debasement.ui import render_fiat_debasement_page
     FIAT_AVAILABLE = True

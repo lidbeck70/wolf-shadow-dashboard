@@ -3,7 +3,7 @@
 insider_scan.py — headless Insiderbevakaren.
 
 Körs av scheduled-scan-workflowen (08/12/18 vardagar) före larmsteget, precis
-som Deep Contrarian. Arket i GRANSKNING → Insider är helt manuellt; det här
+som Deep Contrarian. Arket i ARKEN → Insider är helt manuellt; det här
 jobbet räknar samma sak ur Börsdatas insynsregister (/holdings/insider) så
 att kluster upptäcks och larmas även när panelen är stängd.
 

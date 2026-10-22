@@ -55,7 +55,7 @@ def test_page_shows_the_full_decision_chain(monkeypatch):
     assert "MARKET SPY 3/3" in html and "OVTLYR NINE" in html and "TOTAL 9 / 9" in html
     assert "VIKING EXECUTION" in html and "RISK ENGINE" in html and "VIKING EXIT ENGINE" in html
     assert any("GOOD" in c.proto.spec and "EMA10" in c.proto.spec for c in at.get("plotly_chart"))
-    assert "Kör ⚔️ Viking Nine under SCREENING" in html                    # ingen skanning än
+    assert "Ingen Viking Nine-skanning än" in html                    # ingen skanning än
     at.text_input(key="vnr_ticker").set_value("NOPE").run()
     assert not at.exception and "DATA UNAVAILABLE" in " ".join(m.value for m in at.markdown)
 
@@ -86,3 +86,17 @@ def test_navigation_and_guide():
     assert any(t == "ODINS VISDOM → Marknad → Arc Regime → ⚔️ Viking Nine Regime" for t, _r, _u in _PANEL_GUIDE)
     src = open(os.path.join(ROOT, "wolf_panel.py"), encoding="utf-8").read()
     assert 'elif inner == "⚔️ Viking Nine Regime":' in src
+
+
+def test_candidates_come_from_thor_or_the_schedule_when_the_tab_is_gone(monkeypatch):
+    """Fas 8: skanningsfliken finns inte i menyn — listan läses ur Thors rader eller schemats fil."""
+    import streamlit as st
+    from ovtlyr.ui import viking_nine_regime as vnr
+    blob = {"rows": [{"ticker": "BOL.ST", "category": "GOLDEN TICKET"}, {"ticker": "NEM", "category": "DEVELOPING"}]}
+    assert vnr.scan_rows(blob) == [("BOL.ST", "GOLDEN TICKET"), ("NEM", "DEVELOPING")] and vnr.scan_rows(None) == []
+    monkeypatch.setattr(st, "session_state", {"thor_data": {"viking_nine": blob}})
+    assert vnr._scanned()[0] == ("BOL.ST", "GOLDEN TICKET")
+    import gist_storage
+    monkeypatch.setattr(gist_storage, "load_blob", lambda name, fb=None: blob if name == "viking_nine_scan.json" else fb)
+    monkeypatch.setattr(st, "session_state", {})
+    assert [t for t, _c in vnr._scanned()] == ["BOL.ST", "NEM"]

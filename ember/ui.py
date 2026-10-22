@@ -734,7 +734,7 @@ def render_ember_page() -> None:
             f"EMBER REGIME PER KOMPLEX</span><br>{_chips}"
             f"<div style='color:{DIM};font-size:0.68rem;margin-top:5px;'>"
             f"Varje setup nedan grindas mot sitt eget komplex "
-            f"(konfigurera i REGIME → Råvaror → 🌍 EMBER Regime)</div></div>",
+            f"(konfigurera i ODINS VISDOM → Råvaror → 🌍 EMBER Regime)</div></div>",
             unsafe_allow_html=True,
         )
     elif st.session_state.get("ember_regime"):
@@ -750,7 +750,7 @@ def render_ember_page() -> None:
             f"{_vico} EMBER REGIME{f' ({_lbl})' if _lbl else ''}: {_regime.verdict}</span>"
             f"<span style='color:{DIM};'> — {_regime.action_text}</span>"
             f"<span style='color:{DIM};font-size:0.68rem;'>"
-            f" (konfigurera i REGIME → Råvaror → 🌍 EMBER Regime)</span>"
+            f" (konfigurera i ODINS VISDOM → Råvaror → 🌍 EMBER Regime)</span>"
             f"</div>",
             unsafe_allow_html=True,
         )

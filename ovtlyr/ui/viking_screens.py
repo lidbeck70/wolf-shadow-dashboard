@@ -1,10 +1,10 @@
 """
-ovtlyr/ui/viking_screens.py — SCREENING → Arc Screener → ⚔️ Viking Nine.
+ovtlyr/ui/viking_screens.py — THOR → Viking Nine.
 
 Skannar ett helt universum (samma marknader som Viking-screenern) i två steg
 och visar EN resultatlista (kategori, Nine, momentumkrav — med filter för
 momentumkandidater) och signalloggen. Marknadslagret (SPY + bredd) är gemensamt och visas överst.
-Screening ≠ automatisk entry — beslutet tas i REGIME → Viking Regime.
+Screening ≠ automatisk entry — beslutet tas i ODINS VISDOM → Marknad → Arc Regime → Viking Regime.
 """
 
 from __future__ import annotations
@@ -101,7 +101,7 @@ def _risk_banner(markets) -> None:
     blocked = [m for m in markets if mg.blocks_viking_entry(mg.current(m))]
     st.markdown(f"<div style='font-size:0.8rem;margin:2px 0 6px;'>🌩️ Marknadsrisk: {' · '.join(parts)}"
                 + (f"<div style='color:{RED};font-size:0.75rem;'>Inga nya Viking Nine-entries: {', '.join(blocked)} "
-                   f"— spärr {mg.viking_rule_text()} (REGIME → 🌩️ Marknadsrisk).</div>" if blocked else "") + "</div>", unsafe_allow_html=True)
+                   f"— spärr {mg.viking_rule_text()} (ODINS VISDOM → Marknad → 🌩️ Marknadsrisk).</div>" if blocked else "") + "</div>", unsafe_allow_html=True)
 
 
 def _market_banner(markets=("SPY", "OMXS30")) -> None:
@@ -134,7 +134,7 @@ def _market_banner(markets=("SPY", "OMXS30")) -> None:
 
 def render_viking_nine_page() -> None:
     page_header("⚔️ Viking Nine", "OVTLYR Nine + Viking Execution över hela universumet — hittar setups. "
-                                  "Beslutet tas i REGIME → Viking Regime. Screening ≠ automatisk entry.")
+                                  "Beslutet tas i ODINS VISDOM → Marknad → Arc Regime → Viking Regime. Screening ≠ automatisk entry.")
     _market_banner()
     _risk_banner(("SPY", "OMXS30"))
     regions, tickers_for = _regions()

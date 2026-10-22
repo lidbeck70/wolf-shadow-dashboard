@@ -1,1 +1,1 @@
-"""GRANSKNING → 🚀 Råvaruhävstång — ett bolags hävstång mot sin råvara."""
+"""ARKEN → 🚀 Råvaruhävstång — ett bolags hävstång mot sin råvara."""

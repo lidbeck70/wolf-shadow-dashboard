@@ -1,5 +1,5 @@
 """
-market_risk_ui.py — REGIME → Marknad → 🌩️ Marknadsrisk.
+market_risk_ui.py — ODINS VISDOM → Marknad → 🌩️ Marknadsrisk.
 
 Överst nivån för SPY och OMXS30 sida vid sida. För vald marknad: vilka
 varningar som lyser, index och poäng över tid, och den historiska

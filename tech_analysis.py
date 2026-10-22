@@ -1,5 +1,5 @@
 """
-tech_analysis.py — INTELLIGENCE → 🕯️ Teknisk analys.
+tech_analysis.py — THOR → Teknik (förr INTELLIGENCE → 🕯️ Teknisk analys).
 
 En sökbar teknisk översikt för valfri ticker, byggd på samma indikatorer
 och grafer som Viking Regime (ovtlyr/indicators, ovtlyr/ui/charts) — men

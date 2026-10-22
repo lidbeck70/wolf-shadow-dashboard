@@ -1,7 +1,7 @@
 # Durrett Engine
 
 Don Durretts 10-stegsmetod som fristående, deterministisk och förklarbar
-analysmotor i Wolfpanel. Paket: `engines/durrett/`. Flik: GRANSKNING →
+analysmotor i Wolfpanel. Paket: `engines/durrett/`. Flik: ARKEN (förr GRANSKNING) →
 **🐺 Durrett**. Kontrakt: `engines/contract.py` (samma format som framtida
 Rick Rule-, Graham-, Buffett/Munger-, Lynch- och Lukacs-motorer).
 

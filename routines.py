@@ -83,9 +83,9 @@ ROUTINES: tuple[Routine, ...] = (
         steps=(
             Step("Kolla marknadsfiltret först — rött ljus låser alla köp, "
                  "då är söndagen kort.",
-                 "REGIME → Swing Regime"),
+                 "ODINS VISDOM → Marknad → Swing Regime"),
             Step("Kör momentum-screenern och gå igenom topp 40.",
-                 "SCREENING → Swing Screener"),
+                 "THOR → Momentum Swing"),
             Step("Uppdatera bevakningslistan: skicka nya kandidater dit, "
                  "rensa dem som tappat setupen.",
                  "PORTFOLIO → Swing"),
@@ -111,18 +111,18 @@ ROUTINES: tuple[Routine, ...] = (
         steps=(
             Step("Triple Signal per råvara: hat räknas ur checklistan, "
                  "fundamenta och katalysator bedöms 1–5, case intakt Ja/Nej.",
-                 "REGIME → Råvarurotation"),
+                 "ODINS VISDOM → Råvaror → Råvarurotation"),
             Step("Läs av vilka som hamnar på AGERA — kapitalet går till de 2–3 "
                  "mest hatade med intakta case.",
-                 "REGIME → Råvarurotation"),
+                 "ODINS VISDOM → Råvaror → Råvarurotation"),
             Step("Kör screenern för de råvarorna och poängsätt kandidaterna.",
                  ""),
             Step("Kör AQS, DS och CSM på de seriösa kandidaterna — i den "
                  "omfattning proportionalitetsregeln kräver.",
-                 "GRANSKNING → 🎯 Scorecard"),
+                 "ARKEN → 🎯 Scorecard"),
             Step("Guld och royaltybenet ligger kvar oavsett betyg — de "
                  "roterar inte.",
-                 "REGIME → Råvarurotation"),
+                 "ODINS VISDOM → Råvaror → Råvarurotation"),
         ),
         note="Inget på AGERA är ett giltigt utfall. Då är rutinen klar på "
              "20 minuter och du gör ingenting.",
@@ -146,7 +146,7 @@ ROUTINES: tuple[Routine, ...] = (
             Step("Rapportuppdatering: katalysatorerna — har någon flyttats?",
                  ""),
             Step("Kör Tiggre-screenern och uppdatera Lobo-arket.",
-                 "GRANSKNING → Tiggre"),
+                 "ARKEN → Tiggre"),
         ),
         note="Fast datum, satt i förväg. Kvartalsgenomgången är det enda "
              "tillfället då ramarna får ändras.",
@@ -162,7 +162,7 @@ ROUTINES: tuple[Routine, ...] = (
         steps=(
             Step("Uppdatera prisriktmärkena för varje råvara — "
                  "incitamentspriser flyttar sig.",
-                 "REGIME → Råvarurotation"),
+                 "ODINS VISDOM → Råvaror → Råvarurotation"),
             Step("Läs årets Fraser-ranking och stryk jurisdiktioner som "
                  "tappat.",
                  ""),

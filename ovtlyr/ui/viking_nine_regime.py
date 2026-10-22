@@ -1,8 +1,8 @@
 """
-ovtlyr/ui/viking_nine_regime.py — REGIME → Marknad → Arc Regime → ⚔️ Viking Nine Regime.
+ovtlyr/ui/viking_nine_regime.py — ODINS VISDOM → Marknad → Arc Regime → ⚔️ Viking Nine Regime.
 
-Beslutssidan för EN aktie i Viking Nine-systemet — screenern (⚔️ Viking Nine)
-hittar kandidaterna, här tas beslutet:
+Beslutssidan för EN aktie i Viking Nine-systemet — skanningen (THOR → Viking Nine, schemats
+viking_nine_scan.json) hittar kandidaterna, här tas beslutet:
 
   MARKET (SPY + bredd)  →  OVTLYR NINE (setup)  →  graf  →
   VIKING EXECUTION + RISK ENGINE (GOLDEN TICKET / WAIT / NO TRADE)  →
@@ -41,11 +41,33 @@ def _section(title: str) -> None:
                 f"margin:14px 0 6px 0;'>{title}</div>", unsafe_allow_html=True)
 
 
+_GIST_SCAN = "vnr_gist_scan"
+
+
 def _scanned() -> list:
-    """[(ticker, kategori)] från senaste ⚔️ Viking Nine-skanningen, bästa först."""
+    """[(ticker, kategori)] från senaste Viking Nine-skanningen, bästa först: flikens skanning i sessionen om
+    den finns, annars Thors rader (⚡ Skanna nu eller schemat), annars viking_nine_scan.json ur Gisten."""
     data = st.session_state.get(_ROWS) or {}
     rows = vs.results(data.get("rows") or [])
-    return [(r["ticker"], r["category"]) for r in rows if r.get("nine") is not None]
+    if rows:
+        return [(r["ticker"], r["category"]) for r in rows if r.get("nine") is not None]
+    return scan_rows((st.session_state.get("thor_data") or {}).get("viking_nine") or _gist_scan())
+
+
+def _gist_scan() -> Optional[dict]:
+    """Schemats viking_nine_scan.json — läses en gång per session."""
+    if _GIST_SCAN not in st.session_state:
+        try:
+            from gist_storage import load_blob
+            st.session_state[_GIST_SCAN] = load_blob("viking_nine_scan.json", None)
+        except Exception:
+            st.session_state[_GIST_SCAN] = None
+    return st.session_state[_GIST_SCAN]
+
+
+def scan_rows(blob: Optional[dict]) -> list:
+    """[(ticker, kategori)] ur skanningsfilen (redan sorterad: GOLDEN TICKET, READY, DEVELOPING)."""
+    return [(r["ticker"], r.get("category") or "—") for r in (blob or {}).get("rows") or [] if r.get("ticker")]
 
 
 def _load(ticker: str) -> Optional[pd.DataFrame]:
@@ -88,7 +110,7 @@ def price_chart(ticker: str, df: pd.DataFrame, decision: Optional[vx.EntryDecisi
 
 def render_viking_nine_regime_page() -> None:
     page_header("⚔️ Viking Nine Regime", "Beslutet för en aktie: OVTLYR Nine (setup) → Viking Execution och "
-                                         "risk (entry) → exit. Kandidaterna hittas i SCREENING → ⚔️ Viking Nine.")
+                                         "risk (entry) → exit. Kandidaterna hittas i THOR → Viking Nine.")
     _market_banner()
 
     scanned = _scanned()
@@ -103,7 +125,8 @@ def render_viking_nine_regime_page() -> None:
                 st.session_state[_TICKER] = pick.split(" · ")[0]
     ticker = (c1.text_input("TICKER", key=_TICKER) or "").strip().upper()
     if not scanned:
-        note("Kör ⚔️ Viking Nine under SCREENING för att få kandidaterna i en lista här — eller skriv en ticker.")
+        note("Ingen Viking Nine-skanning än — kör den i THOR (välj Viking Nine, ⚡ Skanna nu) eller vänta på "
+             "schemat. Du kan också skriva en ticker.")
     if not ticker:
         return
 
