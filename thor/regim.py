@@ -61,6 +61,17 @@ def render(st, ident: Ticker, strategy: str, data: dict, ohlcv: Optional[Callabl
         note(f"Regimen för {reg.label(strategy)} kunde inte ritas för {ident.yf}: {exc}")
 
 
+def bars_caption(nine) -> str:
+    """Vilka stängningar motorn räknar på — aktien och marknaden kan sluta olika dagar (olika börstider), och
+    kortet ovanför (schemats rad) kan bygga på en annan stängning än motorn här."""
+    def stamp(layer):
+        return next((f.timestamp for f in nine.layer(layer) if f.timestamp), None)
+    s, m = stamp("stock"), stamp("market")
+    parts = [f"aktien t.o.m. {s}" if s else "", f"marknaden ({nine.market_label}) t.o.m. {m}" if m else ""]
+    return ("Stängda candles: " + " · ".join(p for p in parts if p) + ". Dagens stapel räknas först när börsen "
+            "har stängt — kortet ovan bygger på körningens stängning, motorn här på den senaste.")
+
+
 def _viking_nine(st, ident, strategy, data, ohlcv, cands) -> None:
     import ovtlyr_nine as on
     import viking_execution as vx
@@ -82,9 +93,11 @@ def _viking_nine(st, ident, strategy, data, ohlcv, cands) -> None:
         note(f"DATA UNAVAILABLE — ingen kurshistorik för {ident.yf} (kräver {on.MIN_BARS} dagar).")
         return
     _market_banner((ident.market,))
-    ob = vs._ob_analysis(df)
-    nine = on.evaluate(ident.yf, stock_df=df, ob_analysis=ob, sector_getter=_sector)
+    dfc = on.closed_only(df, ident.yf)                 # Nine och order blocks på stängda staplar (playbooken)
+    ob = vs._ob_analysis(dfc)
+    nine = on.evaluate(ident.yf, stock_df=dfc, ob_analysis=ob, sector_getter=_sector)
     _section(st, "OVTLYR NINE — SETUP")
+    st.caption(bars_caption(nine))
     render_nine_card(nine)
     _section(st, "VIKING EXECUTION · RISK ENGINE · FINAL DECISION")
     k1, k2 = st.columns(2)

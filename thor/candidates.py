@@ -65,6 +65,7 @@ class Candidate:
     asof: str = ""                 # körningens datum
     stale: bool = False            # körningen äldre än STALE_DAYS
     why: str = ""
+    data_asof: str = ""            # stängningen motorn räknade på (Viking Nine) — tomt när källan inte säger
 
     @property
     def family(self) -> str:
@@ -180,7 +181,7 @@ def from_viking_nine(board: Optional[dict], ctx: dict, scan: Optional[dict] = No
             t, _norm_name(p), "viking_nine", cat, KOP if cat == "GOLDEN TICKET" else BEVAKA,
             score=w, score_text=f"{p.get('ovtlyr_nine') or '?'} · {w:.0f}" if w is not None else str(p.get("ovtlyr_nine") or ""),
             segment=segment, entry=_f(p.get("entry")), stop=_f(p.get("stop")), rr=_f(p.get("rr")), nordic=is_nordic(t),
-            asof=asof, why=why), ctx)
+            asof=asof, why=why, data_asof=str(p.get("bar_date") or "")), ctx)
     out, asof = [], _day((board or {}).get("generated"))
     for key, e in (((board or {}).get("swing") or {}).get("segments") or {}).items():
         if e.get("strategy") not in (vsw.VIKING, vsw.TEST):

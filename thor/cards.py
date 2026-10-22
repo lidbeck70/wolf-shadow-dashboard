@@ -139,7 +139,8 @@ def verdict_for(c: Optional[tc.Candidate], strategy: str) -> str:
                             "Analysen nedan gäller ändå — regimen per strategi kommer i fas 4.", GREY)
     col = CLASS_COLOR.get(c.status_class, GREY)
     sentence = f"{c.label}: {c.status}" + (f" · {c.score_text}" if c.score_text else "")
-    detail = " · ".join(x for x in (levels_text(c), c.why, f"körd {c.asof}" if c.asof else "") if x)
+    run = (f"körd {c.asof}" if c.asof else "") + (f" på stängning {c.data_asof}" if c.data_asof else "")
+    detail = " · ".join(x for x in (levels_text(c), c.why, run.strip()) if x)
     return verdict_card(VERDICT_WORD.get(c.status_class, c.status_class), sentence, detail, col)
 
 

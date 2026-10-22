@@ -165,6 +165,23 @@ def _stamp(s: pd.Series) -> str:
     return str(s.index[-1])[:10]
 
 
+def closed_only(x, ticker: str, now=None):
+    """Bara stängda dagsstaplar: dagens stapel tas bort medan tickerns börs är öppen (viking_execution.candle_closed
+    avgör per börs — .ST 17:30, .OL 16:20, .CO 17:00, .HE 18:30, USA 16:00 New York). Playbooken räknar på
+    stängda candles; Yahoo ger dagens halva stapel under handelsdagen, och den fick förut Trend och Signal att
+    svänga under dagen. Serie eller DataFrame in, samma typ ut."""
+    if x is None or len(x) == 0:
+        return x
+    try:
+        import viking_execution as vx
+        if vx.candle_closed(ticker, x.index[-1], now):
+            return x
+    except Exception as exc:                            # pragma: no cover — skyddsnät
+        logger.warning("nine: closed_only %s: %s", ticker, exc)
+        return x
+    return x.iloc[:-1]
+
+
 def _is_stale(s: pd.Series, today) -> bool:
     last = pd.Timestamp(s.index[-1])
     if last.tzinfo is not None:
@@ -489,9 +506,13 @@ def nordic_market(bars: int = NORDIC_BARS, getter: Optional[Callable] = None) ->
     return val
 
 
+NORDIC_CLOCK = "OMXS30.ST"          # pseudo-ticker: OMXS30 och Large Cap-bredden följer Stockholms stängning
+
+
 def market_layer(market: str, getter: Optional[Callable] = None, nordic_provider: Optional[Callable] = None,
-                 today=None) -> list:
-    """Marknadslagret (Trend, Signal, Breadth) för SPY eller OMXS30 — samma för alla aktier på marknaden."""
+                 today=None, now=None) -> list:
+    """Marknadslagret (Trend, Signal, Breadth) för SPY eller OMXS30 — samma för alla aktier på marknaden.
+    Bara stängda staplar (closed_only)."""
     if getter is None:
         from market_prices import ohlcv as getter
     today = today if today is not None else pd.Timestamp.today()
@@ -500,14 +521,16 @@ def market_layer(market: str, getter: Optional[Callable] = None, nordic_provider
         if not nm or nm.get("close") is None:
             return [Factor(f"market.{k}", lbl, "market", UNAVAILABLE, detail="OMXS30 saknas")
                     for k, lbl in (("trend", "Trend"), ("signal", "Signal"), ("breadth", "Breadth"))]
-        c, src = nm["close"], nm["source"]
+        c, src = closed_only(nm["close"], NORDIC_CLOCK, now), nm["source"]
         b = nm.get("breadth")
-        breadth = (_gate("market.breadth", "Breadth", "market", b.dropna(), nm.get("breadth_source", ""), today,
-                         _breadth_check("aktierna")) if b is not None and len(b.dropna()) else
+        b = closed_only(b.dropna(), NORDIC_CLOCK, now) if b is not None else None
+        breadth = (_gate("market.breadth", "Breadth", "market", b, nm.get("breadth_source", ""), today,
+                         _breadth_check("aktierna")) if b is not None and len(b) else
                    Factor("market.breadth", "Breadth", "market", UNAVAILABLE, detail=nm.get("breadth_source", "")))
     else:
-        c, src = _close(getter(MARKET_TICKER, PERIOD)), f"Yahoo Finance {MARKET_TICKER}"
-        breadth = _market_breadth({t: _close(getter(t, PERIOD)) for t in SECTOR_ETFS.values()}, today)[0]
+        c, src = closed_only(_close(getter(MARKET_TICKER, PERIOD)), MARKET_TICKER, now), f"Yahoo Finance {MARKET_TICKER}"
+        breadth = _market_breadth({t: closed_only(_close(getter(t, PERIOD)), t, now) for t in SECTOR_ETFS.values()},
+                                  today)[0]
     return [_gate("market.trend", "Trend", "market", c, src, today, _trend),
             _gate("market.signal", "Signal", "market", c, src, today, _signal), breadth]
 
@@ -515,9 +538,10 @@ def market_layer(market: str, getter: Optional[Callable] = None, nordic_provider
 def evaluate(ticker: str, stock_df: Optional[pd.DataFrame] = None, ob_analysis: Optional[dict] = None,
              getter: Optional[Callable] = None, sector_getter: Optional[Callable] = None,
              today=None, bd_sector: Optional[Callable] = None,
-             nordic_provider: Optional[Callable] = None) -> NineResult:
+             nordic_provider: Optional[Callable] = None, now=None) -> NineResult:
     """Hämtar SPY, sektor-ETF:erna och (vid behov) aktien via den delade
-    priscachen och räknar Nine. Saknad data blir DATA UNAVAILABLE."""
+    priscachen och räknar Nine på STÄNGDA staplar (closed_only; now = klockslaget, för tester).
+    Saknad data blir DATA UNAVAILABLE."""
     if getter is None:
         from market_prices import ohlcv as getter
 
@@ -532,10 +556,12 @@ def evaluate(ticker: str, stock_df: Optional[pd.DataFrame] = None, ob_analysis: 
         if getattr(df.index, "tz", None) is not None:
             df = df.copy()
             df.index = df.index.tz_localize(None)
-        return df
+        return closed_only(df, t, now)
 
     if stock_df is None:
         stock_df = _get(ticker)
+    else:
+        stock_df = closed_only(stock_df, ticker, now)
     spy = _get(MARKET_TICKER)
     etfs = {t: _get(t) for t in SECTOR_ETFS.values()}
     etf_closes = {t: _close(d) for t, d in etfs.items()}
@@ -544,8 +570,10 @@ def evaluate(ticker: str, stock_df: Optional[pd.DataFrame] = None, ob_analysis: 
     if market_for(ticker) == NORDIC_LABEL:
         nm = (nordic_provider or nordic_market)()
         if nm and nm.get("close") is not None:
-            market_kw = dict(market_label=NORDIC_LABEL, market_close=nm["close"], market_source=nm["source"],
-                             breadth_pct=nm.get("breadth"),
+            b = nm.get("breadth")
+            market_kw = dict(market_label=NORDIC_LABEL, market_close=closed_only(nm["close"], NORDIC_CLOCK, now),
+                             market_source=nm["source"],
+                             breadth_pct=closed_only(b, NORDIC_CLOCK, now) if b is not None else None,
                              breadth_source=nm.get("breadth_source") or "")
             if nm.get("breadth") is None:            # ingen Large Cap-bredd → gör den okänd, inte SPY:s
                 market_kw["breadth_pct"] = pd.Series(dtype=float)
