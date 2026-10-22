@@ -288,7 +288,11 @@ def run_ember_scan(
                 "necessity":      tr.necessity,
             }
     except Exception as exc:
-        logger.debug("build_theme_board: %s", exc)
+        logger.warning("build_theme_board: %s — alla teman saknar cykel (DATA_GAP, högst BEVAKA)", exc)
+    gaps = sorted(k for k, v in theme_map.items() if v.get("cykel_label") in (None, "DATA_GAP"))
+    if gaps or not theme_map:
+        logger.warning("EMBER: temabrädan saknar cykel för %s — de temanas bolag får högst BEVAKA",
+                       ", ".join(gaps) or "alla teman")
 
     def _sector_etf(t: str) -> str:
         return sector_etf_for(t)

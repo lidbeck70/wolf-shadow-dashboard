@@ -323,12 +323,25 @@ def _compute_theme(spec: ThemeSpec) -> ThemeResult:
 
 # ── Main cached function ──────────────────────────────────────────────────────
 
-@_cache_12h
 def build_theme_board() -> list[ThemeResult]:
     """
     Build all theme results (_THEMES), sorted by blindspot_score descending.
-    Cached 12h.
+    Cached 12h — men bara en hel bräda: fallerade ett tema (Yahoo strulade) töms cachen så nästa anrop försöker
+    igen. Förr låg en halv bräda kvar i 12 timmar och gav EMBER "cykel okänd" (DATA_GAP) för temats alla bolag.
     """
+    results = _build_board_cached()
+    failed = [r.key for r in results if r.error]
+    if failed:
+        logger.warning("theme_board: %d/%d teman utan data (%s) — cachas inte, nästa anrop försöker igen.",
+                       len(failed), len(results), ", ".join(failed))
+        clear = getattr(_build_board_cached, "clear", None)
+        if clear is not None:
+            clear()
+    return results
+
+
+@_cache_12h
+def _build_board_cached() -> list[ThemeResult]:
     results = []
     for spec in _THEMES:
         try:
