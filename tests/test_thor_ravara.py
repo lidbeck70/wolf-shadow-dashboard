@@ -88,7 +88,8 @@ def engines(monkeypatch):
 def test_vocabularies_map_the_berserk_theme_to_every_engine():
     assert rv.rotation_key("koppar") == "koppar" and rv.rotation_key("naturgas") == "gas" and rv.rotation_key("zink_nickel") == "zink"
     assert rv.rotation_key("lax") is None
-    assert rv.blindspot_key("majs") == "agri" and rv.blindspot_key("uran") == "uran" and rv.blindspot_key("tank") is None
+    assert rv.blindspot_key("majs") == "majs" and rv.blindspot_key("uran") == "uran" and rv.blindspot_key("tank") == "tank"
+    assert rv.blindspot_key("agri_korg") == "agri" and rv.blindspot_key("finns-inte") is None
     assert rv.leverage_key("guld") == "guld" and rv.leverage_key("uran") is None
     assert rv.fiat_asset("olja") == "oil" and rv.fiat_asset("uran") is None
     assert rv.gold_pair("koppar")["ticker"] == "HG=F" and rv.gold_pair("guld") is None

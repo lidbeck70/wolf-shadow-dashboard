@@ -33,11 +33,12 @@ def test_source_registry_uses_the_register_and_registers_themes(monkeypatch):
     assert seen["strategy"] == "ember" and seen["max_members"] == eu.REGISTRY_MAX
     assert {"guld", "olja", "uran", "agri"} <= seen["themes"] and "litium" in seen["themes"]
     assert tickers[:len(eu.EMBER_ETF_UNIVERSE)] == eu.EMBER_ETF_UNIVERSE
-    assert tickers[len(eu.EMBER_ETF_UNIVERSE):] == ["GULD.ST", "LAC", "NTR.TO"]       # tank saknar komplex i EMBER
-    assert stats.registry_raw == 3 and not stats.registry_missing and stats.total_before_prefilter == len(tickers)
-    assert er.detect_theme("GULD.ST", auto=False) == "guld" and er.detect_theme("LAC", auto=False) == "sallsynta"
-    assert er.detect_theme("NTR.TO", auto=False) == "agri"                     # alias godsel → agri
-    assert er.register_themes({"X.ST": "tank", "": "guld"}) == 0 and "X.ST" not in er._THEME_OVERLAY
+    assert tickers[len(eu.EMBER_ETF_UNIVERSE):] == ["GULD.ST", "LAC", "NTR.TO", "FRO.OL"]   # fas 8: tank = FRAKT
+    assert stats.registry_raw == 4 and not stats.registry_missing and stats.total_before_prefilter == len(tickers)
+    assert er.detect_theme("GULD.ST", auto=False) == "guld" and er.detect_theme("LAC", auto=False) == "litium"
+    assert er.detect_theme("NTR.TO", auto=False) == "godsel"                   # BERSERKs vokabulär, inget alias
+    assert er.detect_complex("FRO.OL") == "frakt" and er.detect_complex("NTR.TO") == "agri"
+    assert er.register_themes({"X.ST": "finns-inte", "": "guld"}) == 0 and "X.ST" not in er._THEME_OVERLAY
     assert eu.SOURCE_REGISTRY in eu.ALL_SOURCES and eu.ALL_SOURCES[:3] == [eu.SOURCE_CURATED, eu.SOURCE_AUTO,
                                                                            eu.SOURCE_BOTH]
 
@@ -56,4 +57,4 @@ def test_registry_members_helper_and_scheduled_scan():
     assert eu.registry_members(loader=lambda name, fb: fb) is None
     src = open(os.path.join(ROOT, "scheduled_scan.py"), encoding="utf-8").read()
     assert "universe_source=SOURCE_REGISTRY" in src and 'universe_source="both"' not in src
-    assert eu.REGISTRY_THEME_ALIAS["litium"] == "sallsynta" and eu.REGISTRY_MAX >= 100
+    assert eu.REGISTRY_THEME_ALIAS == {} and eu.REGISTRY_MAX >= 100        # fas 8: EMBER har BERSERKs teman

@@ -42,7 +42,9 @@ SOURCE_REGISTRY = "Universum-registret"         # universe/registry.py: Norden +
 ALL_SOURCES    = [SOURCE_CURATED, SOURCE_AUTO, SOURCE_BOTH, SOURCE_REGISTRY]
 REGISTRY_MAX   = 400                            # tak för registrets bolag (förfiltret laddar ett års kurs per bolag)
 # Registrets teman (BERSERK-vokabulär) som EMBER saknar men har ett komplex för
-REGISTRY_THEME_ALIAS = {"litium": "sallsynta", "godsel": "agri", "majs": "agri", "soja": "agri", "socker": "agri"}
+# Registrets teman är BERSERKs — sedan fas 8 har EMBER samma temalista (ember.config.THEME_TO_COMPLEX), så
+# inget tema behöver översättas. Kvar som tom karta för läsbarhet och äldre anrop.
+REGISTRY_THEME_ALIAS: dict = {}
 
 
 # ── Börsdata branch/sector keyword filter ─────────────────────────────────────

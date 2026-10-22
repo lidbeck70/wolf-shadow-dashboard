@@ -23,8 +23,7 @@ from thor.ticker import Ticker
 from ui.tokens import AMBER, CYAN, DIM, GOLD, GREEN, GREY, RED, TEXT
 
 ROTATION_ALIAS = {"naturgas": "gas", "naturgas_eu": "gas", "zink_nickel": "zink"}
-BLINDSPOT_ALIAS = {"naturgas_eu": "naturgas", "majs": "agri", "soja": "agri", "socker": "agri", "agri_korg": "agri",
-                   "godsel": "agri"}
+BLINDSPOT_ALIAS = {"agri_korg": "agri"}      # fas 8: varje BERSERK-tema har en egen plats på brädan
 FIAT_ASSET = {"guld": "gold", "silver": "silver", "koppar": "copper", "olja": "oil"}
 EXPOSURE = {"guld": "gold_miner", "silver": "silver", "olja": "oil", "koppar": "copper", "uran": "uranium",
             "litium": "lithium", "naturgas": "gas", "naturgas_eu": "gas"}

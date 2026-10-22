@@ -163,59 +163,58 @@ EMBER_SECTOR_ETF: dict[str, str] = {
     "kaffe":     "DBA",     # ingen likvid kaffe-ETF kvar — jordbrukskorgen
     "kakao":     "DBA",     # ingen likvid kakao-ETF kvar — jordbrukskorgen
     "skog":      "WOOD",
+    # BERSERKs övriga teman (fas 8) — närmaste likvida sektor-ETF för relativ styrka
+    "naturgas_eu": "UNG",                                           # ingen TTF-fond: Henry Hub-fonden som proxy
+    "aluminium": "PICK", "zink_nickel": "PICK", "jarnmalm": "PICK", # gruvkorgen — ingen egen ETF
+    "stal":      "SLX",
+    "litium":    "LIT",
+    "majs":      "DBA", "soja": "DBA", "socker": "DBA",             # jordbrukskorgen
+    "godsel":    "MOO",                                             # agribusiness: Nutrien, CF, Mosaic …
+    "lax":       "XLP",                                             # Valhalls segment Dagligvaror — ingen laxfond
+    "tank":      "BWET", "torrbulk": "BDRY",
 }
 
 DEFAULT_SECTOR_ETF = "GLD"
 
-# Tema → råvarukomplex (ember/regime.py). EN mappning i stället för två
-# handskrivna tickerkartor som sa olika saker om 16 av 114 tickers (uran låg
-# under "agri", koppar under ädelmetaller). Uran är energi — det är ett
-# bränsle, och komplexets pelare (olja, gas) säger mer om uran än DBA och
-# SPY gör. Sällsynta jordartsmetaller är basmetaller i den här indelningen.
-THEME_TO_COMPLEX: dict[str, str] = {
-    "guld": "adelmetaller", "silver": "adelmetaller",
-    "koppar": "basmetaller", "sallsynta": "basmetaller",
-    "uran": "energi", "olja": "energi", "naturgas": "energi", "kol": "energi",
-    "agri": "agri",
-    "platina": "adelmetaller", "palladium": "adelmetaller",
-    "vete": "agri", "kaffe": "agri", "kakao": "agri",
-    # Skog är ett eget komplex: trävara, bostadsbyggande och skogsbolagen följer inte jordbrukskorgen (DBA).
-    "skog": "skog",
-}
+# Tema → råvarukomplex (ember/regime.py). Temalistan är BERSERKs (berserk/themes.py) — samma teman som
+# Valhall-kartan och universum-registret, så ett bolag med stål, lax eller torrbulk som tema får sitt komplex
+# och sin cykelfas i stället för "cykel okänd". EN mappning i stället för två handskrivna kartor.
+# EMBER:s egna avsteg ovanpå: skog är ett eget komplex (SKOG & MASSA — trävara och bostadsbyggande, inte
+# jordbrukskorgen) och "agri" är jordbrukskorgen DBA (EMBER:s samlingstema, BERSERKs "agri_korg").
+# Uran är energi — ett bränsle; komplexets pelare (olja, gas) säger mer om uran än DBA och SPY gör.
+from berserk import themes as _bth
 
-# ── Råvara i arket (confidence.commodities-nyckel) → komplex ─────────────────
-# Så ett bolag i Durrett-/Wolf Asymmetry-arket får sitt komplex utan att stå
-# i TICKER_THEME_MAP: VISC.ST med råvara copper → basmetaller.
-COMMODITY_TO_COMPLEX: dict[str, str] = {
-    "uranium": "energi", "oil_gas": "energi", "natural_gas": "energi", "coal": "energi",
-    "gold": "adelmetaller", "silver": "adelmetaller", "platinum": "adelmetaller",
-    "palladium": "adelmetaller", "diamonds": "adelmetaller",
-    "copper": "basmetaller", "lithium": "basmetaller", "rare_earth": "basmetaller",
-    "nickel": "basmetaller", "cobalt": "basmetaller", "graphite": "basmetaller", "tin": "basmetaller",
-    "zinc": "basmetaller", "iron_ore": "basmetaller", "aluminum": "basmetaller", "steel": "basmetaller",
-    "potash": "agri", "phosphate": "agri", "agri": "agri",
-    "wheat": "agri", "coffee": "agri", "cocoa": "agri", "timber": "skog",
-}
-# Råvara i arket → EMBER-tema (sektor-ETF och cykelfas följer temat). Basmetaller
-# utan egen ETF mäts mot COPX, sällsynta/batterimetaller mot REMX.
+THEME_TO_COMPLEX: dict[str, str] = {k: v[1] for k, v in _bth.THEMES.items()}
+THEME_TO_COMPLEX.update({"agri": "agri", "skog": "skog"})
+
+# Råvara i arket (confidence.commodities-nyckel) → EMBER-tema (sektor-ETF och cykelfas följer temat), i
+# BERSERKs vokabulär: nickel och zink → zink_nickel, batterimetallerna → litium, kali och fosfat → godsel.
+# Tenn har inget eget tema och mäts mot koppar.
 COMMODITY_TO_THEME: dict[str, str] = {
     "uranium": "uran", "oil_gas": "olja", "natural_gas": "naturgas", "coal": "kol",
     "gold": "guld", "silver": "silver", "platinum": "platina", "palladium": "palladium", "diamonds": "guld",
-    "copper": "koppar", "nickel": "koppar", "zinc": "koppar", "tin": "koppar", "iron_ore": "koppar",
-    "aluminum": "koppar", "steel": "koppar",
-    "lithium": "sallsynta", "rare_earth": "sallsynta", "cobalt": "sallsynta", "graphite": "sallsynta",
-    "potash": "agri", "phosphate": "agri", "agri": "agri",
+    "copper": "koppar", "tin": "koppar",
+    "nickel": "zink_nickel", "zinc": "zink_nickel", "iron_ore": "jarnmalm", "aluminum": "aluminium", "steel": "stal",
+    "lithium": "litium", "cobalt": "litium", "graphite": "litium", "rare_earth": "sallsynta",
+    "potash": "godsel", "phosphate": "godsel", "agri": "agri",
     "wheat": "vete", "coffee": "kaffe", "cocoa": "kakao", "timber": "skog",
+    "corn": "majs", "soybean": "soja", "sugar": "socker", "salmon": "lax", "tanker": "tank", "dry_bulk": "torrbulk",
 }
+# Råvara i arket → komplex, härledd ur temat — så ett bolag i Durrett-/Wolf Asymmetry-arket får sitt
+# komplex utan att stå i TICKER_THEME_MAP: VISC.ST med råvara copper → basmetaller.
+COMMODITY_TO_COMPLEX: dict[str, str] = {k: THEME_TO_COMPLEX[v] for k, v in COMMODITY_TO_THEME.items()}
 # Registrets sektortext (fri text i Holdings) → tema. Första träffen vinner.
 SECTOR_KEYWORD_THEME: tuple = (
     ("uran", "uran"), ("uranium", "uran"),
     ("silver", "silver"),
     ("platina", "platina"), ("platinum", "platina"), ("palladium", "palladium"),
     ("guld", "guld"), ("gold", "guld"), ("ädelmetall", "guld"), ("precious", "guld"),
-    ("koppar", "koppar"), ("copper", "koppar"), ("basmetall", "koppar"), ("nickel", "koppar"), ("zink", "koppar"),
-    ("litium", "sallsynta"), ("lithium", "sallsynta"), ("sällsynta", "sallsynta"), ("rare", "sallsynta"),
-    ("batteri", "sallsynta"),
+    ("koppar", "koppar"), ("copper", "koppar"), ("basmetall", "koppar"),
+    ("nickel", "zink_nickel"), ("zink", "zink_nickel"), ("zinc", "zink_nickel"),
+    ("stål", "stal"), ("steel", "stal"), ("aluminium", "aluminium"), ("aluminum", "aluminium"),
+    ("järnmalm", "jarnmalm"), ("iron ore", "jarnmalm"),
+    ("litium", "litium"), ("lithium", "litium"), ("batteri", "litium"), ("kobolt", "litium"), ("grafit", "litium"),
+    ("sällsynta", "sallsynta"), ("rare", "sallsynta"),
     ("naturgas", "naturgas"), ("gas", "naturgas"), ("lng", "naturgas"),
     ("olja", "olja"), ("oil", "olja"), ("energi", "olja"), ("energy", "olja"), ("offshore", "olja"),
     ("oljeservice", "olja"), ("petroleum", "olja"),
@@ -223,7 +222,12 @@ SECTOR_KEYWORD_THEME: tuple = (
     ("skog", "skog"), ("forest", "skog"), ("timber", "skog"), ("massa", "skog"), ("pulp", "skog"),
     ("kaffe", "kaffe"), ("coffee", "kaffe"), ("kakao", "kakao"), ("cocoa", "kakao"),
     ("vete", "vete"), ("wheat", "vete"), ("spannmål", "vete"), ("grain", "vete"),
-    ("agri", "agri"), ("jordbruk", "agri"), ("potash", "agri"), ("gödsel", "agri"), ("fertilizer", "agri"),
+    ("majs", "majs"), ("corn", "majs"), ("soja", "soja"), ("soy", "soja"), ("socker", "socker"), ("sugar", "socker"),
+    ("gödsel", "godsel"), ("fertilizer", "godsel"), ("potash", "godsel"), ("kali", "godsel"),
+    ("lax", "lax"), ("salmon", "lax"), ("sjömat", "lax"), ("seafood", "lax"), ("fiskodling", "lax"),
+    ("aquaculture", "lax"),
+    ("tanker", "tank"), ("tankrederi", "tank"), ("torrbulk", "torrbulk"), ("dry bulk", "torrbulk"),
+    ("agri", "agri"), ("jordbruk", "agri"),
 )
 # Yahoo-bransch (sector/industry/namn, engelska) → tema. Läses automatiskt för
 # tickers som inte finns i temakartan, arket eller registret. Första träffen vinner.
@@ -232,21 +236,27 @@ INDUSTRY_KEYWORD_THEME: tuple = (
     ("silver", "silver"),
     ("platinum", "platina"), ("palladium", "palladium"),
     ("gold", "guld"), ("precious", "guld"),
-    ("copper", "koppar"), ("industrial metals", "koppar"), ("nickel", "koppar"), ("zinc", "koppar"),
-    ("steel", "koppar"), ("aluminum", "koppar"), ("iron", "koppar"),
-    ("lithium", "sallsynta"), ("rare earth", "sallsynta"), ("cobalt", "sallsynta"), ("graphite", "sallsynta"),
+    ("copper", "koppar"), ("industrial metals", "koppar"),
+    ("nickel", "zink_nickel"), ("zinc", "zink_nickel"),
+    ("steel", "stal"), ("aluminum", "aluminium"), ("aluminium", "aluminium"), ("iron ore", "jarnmalm"),
+    ("lithium", "litium"), ("cobalt", "litium"), ("graphite", "litium"), ("rare earth", "sallsynta"),
     ("coal", "kol"),
     ("natural gas", "naturgas"), ("lng", "naturgas"),
+    ("tanker", "tank"), ("marine shipping", "torrbulk"),
     ("oil", "olja"), ("petroleum", "olja"), ("offshore", "olja"), ("drilling", "olja"), ("energy", "olja"),
     ("lumber", "skog"), ("forest", "skog"), ("timber", "skog"), ("paper & paper", "skog"), ("pulp", "skog"),
     ("coffee", "kaffe"), ("cocoa", "kakao"), ("chocolate", "kakao"), ("wheat", "vete"), ("grain", "vete"),
-    ("agricultural", "agri"), ("fertilizer", "agri"), ("potash", "agri"), ("farm", "agri"),
+    ("corn", "majs"), ("soybean", "soja"), ("sugar", "socker"),
+    ("fertilizer", "godsel"), ("potash", "godsel"),
+    ("salmon", "lax"), ("aquaculture", "lax"), ("seafood", "lax"),
+    ("agricultural", "agri"), ("farm", "agri"),
 )
 # Valt komplex utan råvara → temat som bär komplexet (för sektor-ETF och cykel).
-COMPLEX_DEFAULT_THEME: dict[str, str] = {"energi": "olja", "adelmetaller": "guld",
-                                         "basmetaller": "koppar", "agri": "agri", "skog": "skog"}
-COMPLEX_LABEL: dict[str, str] = {"energi": "ENERGI", "adelmetaller": "ÄDELMETALLER",
-                                 "basmetaller": "BASMETALLER", "agri": "AGRI & ÖVRIGT", "skog": "SKOG & MASSA"}
+COMPLEX_DEFAULT_THEME: dict[str, str] = {"energi": "olja", "adelmetaller": "guld", "basmetaller": "koppar",
+                                         "agri": "agri", "skog": "skog", "frakt": "torrbulk"}
+COMPLEX_LABEL: dict[str, str] = {"energi": "ENERGI", "adelmetaller": "ÄDELMETALLER", "basmetaller": "BASMETALLER",
+                                 "agri": "AGRI & ÖVRIGT", "skog": "SKOG & MASSA", "frakt": "FRAKT"}
+assert set(THEME_TO_COMPLEX.values()) <= set(COMPLEX_LABEL), "komplex utan etikett"
 EMBER_STORE = "ember"           # data/ember.json: {"complex_overrides": {TICKER: komplex}}
 
 # ── Ticker → theme key map ────────────────────────────────────────────────────
@@ -304,9 +314,9 @@ _TICKER_THEME_RAW: dict[str, str] = {
     # ── Kol ───────────────────────────────────────────────────────────────
     "BTU": "kol", "ARCH": "kol", "CEIX": "kol", "AMR": "kol",
     # ── Agri ──────────────────────────────────────────────────────────────
-    "DBA": "agri", "MOS": "agri", "NTR": "agri",
-    "CF": "agri", "UAN": "agri", "ADM": "agri",
-    "NTR.TO": "agri",
+    "DBA": "agri", "MOS": "godsel", "NTR": "godsel",                # BERSERKs vokabulär: gödsel, majs
+    "CF": "godsel", "UAN": "godsel", "ADM": "majs",
+    "NTR.TO": "godsel",
     # ── Sällsynta jordartsmetaller ─────────────────────────────────────────
     "REMX": "sallsynta", "MP": "sallsynta",
     "LYC.AX": "sallsynta", "ILU.AX": "sallsynta", "ARU.AX": "sallsynta",
@@ -343,3 +353,5 @@ _THEME_LABEL: dict[str, str] = {
     "kakao":     "Kakao",
     "skog":      "Skog",
 }
+for _k in THEME_TO_COMPLEX:                       # BERSERKs etiketter för teman utan egen EMBER-etikett
+    _THEME_LABEL.setdefault(_k, _bth.label(_k))

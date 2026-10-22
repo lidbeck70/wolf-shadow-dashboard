@@ -63,6 +63,31 @@ NECESSITY_SKOG       = 60
 NECESSITY_KAFFE      = 50
 # Cocoa: consumer staple, weather-driven supply, least necessary
 NECESSITY_KAKAO      = 45
+# ── BERSERKs övriga teman (fas 8): samma temalista som Valhall-kartan och EMBER ──
+# European gas (TTF): heating and industry — same necessity as Henry Hub
+NECESSITY_NATURGAS_EU = 80
+# Aluminium: transport, packaging, power lines — the electrification metal after copper
+NECESSITY_ALUMINIUM  = 80
+# Zinc & nickel: galvanising, stainless steel, batteries
+NECESSITY_ZINK_NICKEL = 80
+# Steel: construction and infrastructure — nothing is built without it
+NECESSITY_STAL       = 85
+# Iron ore: the steel input
+NECESSITY_JARNMALM   = 80
+# Lithium & battery: EVs and storage, but chemistries substitute each other
+NECESSITY_LITIUM     = 70
+# Corn, soy, sugar: Valhall-kartans värden (valhall/board.py THEME_NECESSITY) — samma siffra på båda ställen
+NECESSITY_MAJS       = 70
+NECESSITY_SOJA       = 70
+NECESSITY_SOCKER     = 70
+# Fertiliser: food security upstream — yields fall without it
+NECESSITY_GODSEL     = 85
+# Salmon: protein, but substitutable
+NECESSITY_LAX        = 50
+# Tankers: oil has to move — but the ships are a service, not the commodity
+NECESSITY_TANK       = 65
+# Dry bulk: iron ore, coal and grain have to move
+NECESSITY_TORRBULK   = 65
 
 # ── Cycle classification thresholds ──────────────────────────────────────────
 
@@ -116,6 +141,32 @@ _THEMES: list[ThemeSpec] = [
     ThemeSpec("kakao",      "Kakao",             ["CC=F"],         NECESSITY_KAKAO,
               proxy_flag=True, proxy_note="Terminskontrakt CC=F (närmaste månad, rullas) — "
                                           "volymen är kontraktsvolym"),
+    # ── BERSERKs övriga teman (fas 8) — samma nycklar och etiketter som berserk/themes.py ──
+    ThemeSpec("naturgas_eu", "Naturgas (TTF)",   ["TTF=F"],        NECESSITY_NATURGAS_EU,
+              proxy_flag=True, proxy_note="Terminskontrakt TTF=F (närmaste månad, rullas)"),
+    ThemeSpec("aluminium",  "Aluminium",         ["ALI=F", "PICK"], NECESSITY_ALUMINIUM,
+              proxy_flag=True, proxy_note="Terminskontrakt ALI=F (COMEX); reserv PICK (gruvkorgen)"),
+    ThemeSpec("zink_nickel", "Zink & nickel",    ["PICK"],         NECESSITY_ZINK_NICKEL,
+              proxy_flag=True, proxy_note="PICK (iShares Global Metals & Mining) — ingen zink-/nickeltermin "
+                                          "hos Yahoo; gruvbolagen, inte metallpriset"),
+    ThemeSpec("stal",       "Stål",              ["SLX", "HRC=F"], NECESSITY_STAL,
+              proxy_flag=True, proxy_note="SLX (VanEck Steel) — stålbolagen, inte stålpriset; reserv HRC=F"),
+    ThemeSpec("jarnmalm",   "Järnmalm",          ["TIO=F", "PICK"], NECESSITY_JARNMALM,
+              proxy_flag=True, proxy_note="Terminskontrakt TIO=F (62 % Fe); reserv PICK (gruvkorgen)"),
+    ThemeSpec("litium",     "Litium & batteri",  ["LIT"],          NECESSITY_LITIUM,
+              proxy_flag=True, proxy_note="LIT (Global X Lithium & Battery Tech) — bolagen, inte litiumpriset"),
+    ThemeSpec("majs",       "Majs",              ["CORN", "ZC=F"], NECESSITY_MAJS),
+    ThemeSpec("soja",       "Soja",              ["SOYB", "ZS=F"], NECESSITY_SOJA),
+    ThemeSpec("socker",     "Socker",            ["CANE", "SB=F"], NECESSITY_SOCKER),
+    ThemeSpec("godsel",     "Gödsel",            ["UFV=F", "MOO"], NECESSITY_GODSEL,
+              proxy_flag=True, proxy_note="Urea-terminen UFV=F; reserv MOO (VanEck Agribusiness)"),
+    ThemeSpec("lax",        "Lax",               ["MOWI.OL", "SALM.OL"], NECESSITY_LAX,
+              proxy_flag=True, proxy_note="Mowi/SalMar — laxbolagen; Fish Pool-priset finns inte hos Yahoo"),
+    ThemeSpec("tank",       "Tank & produkt",    ["BWET", "FRO"],  NECESSITY_TANK,
+              proxy_flag=True, proxy_note="BWET (Breakwave Tanker, sedan 2023) — kort historik; reserv Frontline"),
+    ThemeSpec("torrbulk",   "Torrbulk",          ["BDRY"],         NECESSITY_TORRBULK,
+              proxy_flag=True, proxy_note="BDRY (Breakwave Dry Bulk, sedan 2018) — fraktterminer, "
+                                          "inte Baltic Dry-index"),
 ]
 
 # Rubber-band ratio keys per theme (for cross-linking in the UI)

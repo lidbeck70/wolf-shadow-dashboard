@@ -75,7 +75,7 @@ class PillarResult:
 
 @dataclass
 class ComplexRegimeResult:
-    key:         str            # "energi" | "adelmetaller" | "basmetaller" | "agri" | "skog"
+    key:         str            # energi | adelmetaller | basmetaller | agri | skog | frakt (config.COMPLEX_LABEL)
     label:       str            # Swedish display label
     pillars:     list[PillarResult]
     green_count: int
@@ -116,15 +116,18 @@ TICKER_COMPLEX_MAP: dict[str, str] = {t: _T2C[k] for t, k in _TTM_SRC.items() if
 def detect_complex(ticker: str) -> Optional[str]:
     """Ticker → komplexnyckel, eller None när tickern är okänd.
 
-    Tre källor i ordning: EMBER:s temakarta, ditt eget val i regimfliken
-    (data/ember.json), och råvaran i arket (Durrett / Wolf Asymmetry) via
-    COMMODITY_TO_COMPLEX. Okänt är okänt — aldrig "energi" som default."""
+    Källorna i ordning: EMBER:s temakarta, universum-registrets tema, ditt eget val i regimfliken
+    (data/ember.json), råvaran i arket (Durrett / Wolf Asymmetry) via COMMODITY_TO_COMPLEX, sektortexten
+    i registret och sist Yahoos bransch. Okänt är okänt — aldrig "energi" som default."""
     t = str(ticker or "").strip().upper()
     if not t:
         return None
     hit = TICKER_COMPLEX_MAP.get(t)
     if hit:
         return hit
+    theme = _THEME_OVERLAY.get(t)                  # universum-registrets tema (samma ordning som detect_theme)
+    if theme in _T2C:
+        return _T2C[theme]
     hit = complex_overrides().get(t)
     if hit:
         return hit
@@ -735,6 +738,30 @@ def _sk_theme() -> PillarResult:
     return _theme_cycle("skog", "Skog")
 
 
+# ── FRAKT pillars ─────────────────────────────────────────────────────────────
+# Rederierna (tank, torrbulk) drivs av fraktraterna och Kinas efterfrågan — BDRY (torrbulkterminer) och
+# BWET (tankterminer) är de serier som finns; MCHI/FXI är torrbulkens efterfrågesida.
+
+def _fr_bdry_trend() -> PillarResult:
+    return _etf_trend("BDRY", "frakt")
+
+
+def _fr_bdry_rs() -> PillarResult:
+    return _p_rs_3m("BDRY", "SPY", "BDRY/SPY RELATIV STYRKA")
+
+
+def _fr_tank() -> PillarResult:
+    return _p_50w_ema("BWET", "TANK (BWET) vs 50V EMA")
+
+
+def _fr_china() -> PillarResult:
+    return _bm_china_demand()
+
+
+def _fr_theme() -> PillarResult:
+    return _theme_cycle("torrbulk", "Torrbulk")
+
+
 # ── Complex compute helpers ───────────────────────────────────────────────────
 
 def regime_counts(pillars: list) -> tuple[int, int, int, int]:
@@ -749,9 +776,8 @@ def regime_counts(pillars: list) -> tuple[int, int, int, int]:
 
 def _complex_verdict(pillars: list, key: str) -> tuple[str, str]:
     """Netto i stället för 'räkna gröna': gul och DATA_GAP är 0, inte nej."""
-    from ember.config import REGIME_PA_MIN, REGIME_SELEKTIV_MIN, REGIME_AV_RED_MIN
-    lbl = {"energi": "ENERGI", "adelmetaller": "ÄDELMETALLER",
-           "basmetaller": "BASMETALLER", "agri": "AGRI & ÖVRIGT", "skog": "SKOG & MASSA"}.get(key, key.upper())
+    from ember.config import COMPLEX_LABEL, REGIME_PA_MIN, REGIME_SELEKTIV_MIN, REGIME_AV_RED_MIN
+    lbl = COMPLEX_LABEL.get(key, key.upper())
     green, red, gap, net = regime_counts(pillars)
     tally = f"{green} gröna · {5 - green - red - gap} gula · {red} röda" + (f" · {gap} DATA_GAP" if gap else "")
     if red >= REGIME_AV_RED_MIN or net < REGIME_SELEKTIV_MIN:
@@ -816,14 +842,25 @@ def compute_skog_regime() -> ComplexRegimeResult:
                                net_score=net, red_count=red, gap_count=gap)
 
 
+@_cache_1h
+def compute_frakt_regime() -> ComplexRegimeResult:
+    pillars = [_fr_bdry_trend(), _fr_bdry_rs(), _fr_tank(), _fr_china(), _fr_theme()]
+    gc, red, gap, net = regime_counts(pillars)
+    v, a = _complex_verdict(pillars, "frakt")
+    return ComplexRegimeResult(key="frakt", label="FRAKT",
+                               pillars=pillars, green_count=gc, verdict=v, action_text=a,
+                               net_score=net, red_count=red, gap_count=gap)
+
+
 def compute_all_complex_regimes() -> dict[str, ComplexRegimeResult]:
-    """Compute all 5 complex regimes. Caches result in session_state."""
+    """Compute all 6 complex regimes (config.COMPLEX_LABEL). Caches result in session_state."""
     results: dict[str, ComplexRegimeResult] = {
         "energi":       compute_energi_regime(),
         "adelmetaller": compute_adelmetaller_regime(),
         "basmetaller":  compute_basmetaller_regime(),
         "agri":         compute_agri_regime(),
         "skog":         compute_skog_regime(),
+        "frakt":        compute_frakt_regime(),
     }
     try:
         import streamlit as st
@@ -855,7 +892,7 @@ _VERDICT_ICON   = {VERDICT_PA: "🟢",       VERDICT_SELEKTIV: "🟡",       VER
 # ── Streamlit UI helpers ──────────────────────────────────────────────────────
 
 _COMPLEX_ICON: dict[str, str] = {
-    "energi": "⚡", "adelmetaller": "🥇", "basmetaller": "🔧", "agri": "🌾", "skog": "🌲",
+    "energi": "⚡", "adelmetaller": "🥇", "basmetaller": "🔧", "agri": "🌾", "skog": "🌲", "frakt": "🚢",
 }
 
 
@@ -936,10 +973,9 @@ def _render_ticker_analysis(
         src = "ditt val i fliken" if str(ticker or "").upper() in complex_overrides() else "råvaran i arket"
         st.caption(f"Komplex {result.label} — ur {src}.")
 
-    complex_label = {
-        "energi": "⚡ ENERGI", "adelmetaller": "🥇 ÄDELMETALLER",
-        "basmetaller": "🔧 BASMETALLER", "agri": "🌾 AGRI & ÖVRIGT", "skog": "🌲 SKOG & MASSA",
-    }.get(complex_key, complex_key.upper())
+    from ember.config import COMPLEX_LABEL as _CL
+    complex_label = (f"{_COMPLEX_ICON[complex_key]} {_CL[complex_key]}" if complex_key in _CL
+                     else complex_key.upper())
 
     vbrd = _VERDICT_BORDER.get(result.verdict, DIM)
     vico = _VERDICT_ICON.get(result.verdict, "○")
@@ -1275,9 +1311,9 @@ def render_ember_regime_page() -> None:
         _render_ticker_analysis(search_ticker, all_regimes)
         st.markdown("---")
 
-    # 5 complex tabs
-    tab_e, tab_a, tab_b, tab_g, tab_s = st.tabs([
-        "⚡ ENERGI", "🥇 ÄDELMETALLER", "🔧 BASMETALLER", "🌾 AGRI & ÖVRIGT", "🌲 SKOG & MASSA",
+    # 6 complex tabs
+    tab_e, tab_a, tab_b, tab_g, tab_s, tab_f = st.tabs([
+        "⚡ ENERGI", "🥇 ÄDELMETALLER", "🔧 BASMETALLER", "🌾 AGRI & ÖVRIGT", "🌲 SKOG & MASSA", "🚢 FRAKT",
     ])
     with tab_e:
         _render_complex_tab(all_regimes["energi"])
@@ -1289,11 +1325,13 @@ def render_ember_regime_page() -> None:
         _render_complex_tab(all_regimes["agri"])
     with tab_s:
         _render_complex_tab(all_regimes["skog"])
+    with tab_f:
+        _render_complex_tab(all_regimes["frakt"])
 
     with st.expander("ℹ Hur per-komplex regimmodellen fungerar", expanded=False):
         st.markdown(
             f"<div style='color:{TEXT};font-size:0.83rem;line-height:1.65;'>"
-            f"<b style='color:{EMBER};'>5 komplex — varje med 5 pelare — "
+            f"<b style='color:{EMBER};'>6 komplex — varje med 5 pelare — "
             f"≥4 gröna = PÅ, 3 = SELEKTIV, ≤2 = AV</b><br/><br/>"
             f"<b style='color:{GREEN};'>⚡ ENERGI</b> — DXY 4V · XLE/SPY RS 3M · "
             f"CL=F 50V EMA · NG=F 50V EMA · Bredd XLE/XOP/OIH<br/>"
@@ -1304,7 +1342,9 @@ def render_ember_regime_page() -> None:
             f"<b style='color:{GREEN};'>🌾 AGRI & ÖVRIGT</b> — DBA 50V EMA+lutning · "
             f"DBA/SPY RS 3M · DXY 4V · Agri-tema cykel · DBA volym 3M<br/>"
             f"<b style='color:{GREEN};'>🌲 SKOG & MASSA</b> — WOOD 50V EMA+lutning · "
-            f"WOOD/SPY RS 3M · Trävara LBR=F 50V EMA · Bostadsbyggande XHB 50V EMA · Skog-tema cykel<br/><br/>"
+            f"WOOD/SPY RS 3M · Trävara LBR=F 50V EMA · Bostadsbyggande XHB 50V EMA · Skog-tema cykel<br/>"
+            f"<b style='color:{AMBER};'>🚢 FRAKT</b> — BDRY 50V EMA+lutning · BDRY/SPY RS 3M · "
+            f"Tank BWET 50V EMA · MCHI/FXI 3M (Kina) · Torrbulk-tema cykel<br/><br/>"
             f"Ticker-sökning identifierar automatiskt rätt komplex och visar "
             f"regimen + EMBER trend-gates."
             f"</div>",
