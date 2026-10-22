@@ -178,7 +178,9 @@ THEME_TO_COMPLEX: dict[str, str] = {
     "uran": "energi", "olja": "energi", "naturgas": "energi", "kol": "energi",
     "agri": "agri",
     "platina": "adelmetaller", "palladium": "adelmetaller",
-    "vete": "agri", "kaffe": "agri", "kakao": "agri", "skog": "agri",
+    "vete": "agri", "kaffe": "agri", "kakao": "agri",
+    # Skog är ett eget komplex: trävara, bostadsbyggande och skogsbolagen följer inte jordbrukskorgen (DBA).
+    "skog": "skog",
 }
 
 # ── Råvara i arket (confidence.commodities-nyckel) → komplex ─────────────────
@@ -192,7 +194,7 @@ COMMODITY_TO_COMPLEX: dict[str, str] = {
     "nickel": "basmetaller", "cobalt": "basmetaller", "graphite": "basmetaller", "tin": "basmetaller",
     "zinc": "basmetaller", "iron_ore": "basmetaller", "aluminum": "basmetaller", "steel": "basmetaller",
     "potash": "agri", "phosphate": "agri", "agri": "agri",
-    "wheat": "agri", "coffee": "agri", "cocoa": "agri", "timber": "agri",
+    "wheat": "agri", "coffee": "agri", "cocoa": "agri", "timber": "skog",
 }
 # Råvara i arket → EMBER-tema (sektor-ETF och cykelfas följer temat). Basmetaller
 # utan egen ETF mäts mot COPX, sällsynta/batterimetaller mot REMX.
@@ -242,9 +244,9 @@ INDUSTRY_KEYWORD_THEME: tuple = (
 )
 # Valt komplex utan råvara → temat som bär komplexet (för sektor-ETF och cykel).
 COMPLEX_DEFAULT_THEME: dict[str, str] = {"energi": "olja", "adelmetaller": "guld",
-                                         "basmetaller": "koppar", "agri": "agri"}
+                                         "basmetaller": "koppar", "agri": "agri", "skog": "skog"}
 COMPLEX_LABEL: dict[str, str] = {"energi": "ENERGI", "adelmetaller": "ÄDELMETALLER",
-                                 "basmetaller": "BASMETALLER", "agri": "AGRI & ÖVRIGT"}
+                                 "basmetaller": "BASMETALLER", "agri": "AGRI & ÖVRIGT", "skog": "SKOG & MASSA"}
 EMBER_STORE = "ember"           # data/ember.json: {"complex_overrides": {TICKER: komplex}}
 
 # ── Ticker → theme key map ────────────────────────────────────────────────────

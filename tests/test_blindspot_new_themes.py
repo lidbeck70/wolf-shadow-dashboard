@@ -48,7 +48,8 @@ def test_ember_knows_every_board_theme():
         assert ec.THEME_TO_COMPLEX.get(s.key) in ec.COMPLEX_LABEL, s.key
         assert s.key in ec._THEME_LABEL, s.key
     assert ec.THEME_TO_COMPLEX["platina"] == ec.THEME_TO_COMPLEX["palladium"] == "adelmetaller"
-    assert {ec.THEME_TO_COMPLEX[k] for k in ("vete", "kaffe", "kakao", "skog")} == {"agri"}
+    assert {ec.THEME_TO_COMPLEX[k] for k in ("vete", "kaffe", "kakao")} == {"agri"}
+    assert ec.THEME_TO_COMPLEX["skog"] == "skog"                                  # eget komplex: SKOG & MASSA
     assert ec.COMMODITY_TO_THEME["platinum"] == "platina" and ec.COMMODITY_TO_THEME["palladium"] == "palladium"
 
 

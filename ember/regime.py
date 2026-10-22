@@ -75,7 +75,7 @@ class PillarResult:
 
 @dataclass
 class ComplexRegimeResult:
-    key:         str            # "energi" | "adelmetaller" | "basmetaller" | "agri"
+    key:         str            # "energi" | "adelmetaller" | "basmetaller" | "agri" | "skog"
     label:       str            # Swedish display label
     pillars:     list[PillarResult]
     green_count: int
@@ -598,13 +598,14 @@ def _bm_yield_curve() -> PillarResult:
 
 # ── AGRI & ÖVRIGT pillars ────────────────────────────────────────────────────
 
-def _ag_dba_trend() -> PillarResult:
-    name = "DBA vs 50V EMA + LUTNING"
+def _etf_trend(ticker: str, word: str) -> PillarResult:
+    """ETF:en mot 50V EMA plus 20V EMA:s lutning (fyra veckor) — agri- och skogspelaren."""
+    name = f"{ticker} vs 50V EMA + LUTNING"
     try:
-        c = _close("DBA", "5y")
+        c = _close(ticker, "5y")
         if len(c) < 52:
             return PillarResult(name=name, status="DATA_GAP",
-                                value="DATA_GAP", detail="DBA ej tillgänglig")
+                                value="DATA_GAP", detail=f"{ticker} ej tillgänglig")
         cw = c.resample("W").last().dropna()
         if len(cw) < 52:
             return PillarResult(name=name, status="DATA_GAP",
@@ -619,17 +620,21 @@ def _ag_dba_trend() -> PillarResult:
         if above and slope_up:
             return PillarResult(name=name, status="GREEN",
                                 value=f"{price:.2f} (50V EMA {e50:.2f})",
-                                detail="DBA ovan 50V EMA och 20V EMA stiger → agri-upptrend ✓")
+                                detail=f"{ticker} ovan 50V EMA och 20V EMA stiger → {word}-upptrend ✓")
         if above:
             return PillarResult(name=name, status="AMBER",
                                 value=f"{price:.2f} (50V EMA {e50:.2f})",
-                                detail="DBA ovan 50V EMA men 20V EMA sjunker → avvakta")
+                                detail=f"{ticker} ovan 50V EMA men 20V EMA sjunker → avvakta")
         return PillarResult(name=name, status="RED",
                             value=f"{price:.2f} (50V EMA {e50:.2f})",
-                            detail="DBA under 50V EMA → agri-nedtrend ⛔")
+                            detail=f"{ticker} under 50V EMA → {word}-nedtrend ⛔")
     except Exception as exc:
         return PillarResult(name=name, status="DATA_GAP",
                             value="DATA_GAP", detail=str(exc))
+
+
+def _ag_dba_trend() -> PillarResult:
+    return _etf_trend("DBA", "agri")
 
 
 def _ag_dba_rs() -> PillarResult:
@@ -640,29 +645,34 @@ def _ag_dxy() -> PillarResult:
     return _pillar_dxy()
 
 
-def _ag_agri_theme() -> PillarResult:
-    name = "AGRI-TEMA CYKEL"
+def _theme_cycle(key: str, label: str) -> PillarResult:
+    """Temats cykelfas på Odins temabräda: TIDIG/MITTEN grön, SEN gul, TOPP röd."""
+    name = f"{label.upper()}-TEMA CYKEL"
     try:
         from blindspot.theme_board import build_theme_board
-        agri = next((t for t in build_theme_board() if t.key == "agri"), None)
-        if agri is None:
+        theme = next((t for t in build_theme_board() if t.key == key), None)
+        if theme is None:
             return PillarResult(name=name, status="DATA_GAP",
-                                value="DATA_GAP", detail="Agri-temat ej i Theme Board")
-        lbl = agri.cykel_label
+                                value="DATA_GAP", detail=f"{label}-temat ej i Theme Board")
+        lbl = theme.cykel_label
         if lbl == "DATA_GAP":
             return PillarResult(name=name, status="DATA_GAP",
-                                value=f"Cykel: {lbl}", detail="Agri-tema cykeldata ej tillgänglig")
+                                value=f"Cykel: {lbl}", detail=f"{label}-tema cykeldata ej tillgänglig")
         if lbl in ("TIDIG", "MITTEN"):
             return PillarResult(name=name, status="GREEN",
                                 value=f"Cykel: {lbl}",
-                                detail=f"Agri-tema: {lbl} — rätt cykelfas för entries ✓")
+                                detail=f"{label}-tema: {lbl} — rätt cykelfas för entries ✓")
         status = "AMBER" if lbl == "SEN" else "RED"
         return PillarResult(name=name, status=status,
                             value=f"Cykel: {lbl}",
-                            detail=f"Agri-tema: {lbl} — avancerad cykel, öka selektivitet")
+                            detail=f"{label}-tema: {lbl} — avancerad cykel, öka selektivitet")
     except Exception as exc:
         return PillarResult(name=name, status="DATA_GAP",
                             value="DATA_GAP", detail=str(exc))
+
+
+def _ag_agri_theme() -> PillarResult:
+    return _theme_cycle("agri", "Agri")
 
 
 def _ag_dba_volume() -> PillarResult:
@@ -701,6 +711,30 @@ def _ag_dba_volume() -> PillarResult:
                             value="DATA_GAP", detail=str(exc))
 
 
+# ── SKOG & MASSA pillars ─────────────────────────────────────────────────────
+# Skogsbolagen (SCA, Holmen, Stora Enso, UPM, West Fraser …) drivs av trävarupriset, bostadsbyggandet och
+# skogsaktierna själva — inte av jordbrukskorgen DBA som AGRI-komplexet mäter.
+
+def _sk_wood_trend() -> PillarResult:
+    return _etf_trend("WOOD", "skogs")
+
+
+def _sk_wood_rs() -> PillarResult:
+    return _p_rs_3m("WOOD", "SPY", "WOOD/SPY RELATIV STYRKA")
+
+
+def _sk_lumber() -> PillarResult:
+    return _p_50w_ema("LBR=F", "TRÄVARA (LBR=F) vs 50V EMA")
+
+
+def _sk_housing() -> PillarResult:
+    return _p_50w_ema("XHB", "BOSTADSBYGGANDE (XHB) vs 50V EMA")
+
+
+def _sk_theme() -> PillarResult:
+    return _theme_cycle("skog", "Skog")
+
+
 # ── Complex compute helpers ───────────────────────────────────────────────────
 
 def regime_counts(pillars: list) -> tuple[int, int, int, int]:
@@ -717,7 +751,7 @@ def _complex_verdict(pillars: list, key: str) -> tuple[str, str]:
     """Netto i stället för 'räkna gröna': gul och DATA_GAP är 0, inte nej."""
     from ember.config import REGIME_PA_MIN, REGIME_SELEKTIV_MIN, REGIME_AV_RED_MIN
     lbl = {"energi": "ENERGI", "adelmetaller": "ÄDELMETALLER",
-           "basmetaller": "BASMETALLER", "agri": "AGRI & ÖVRIGT"}.get(key, key.upper())
+           "basmetaller": "BASMETALLER", "agri": "AGRI & ÖVRIGT", "skog": "SKOG & MASSA"}.get(key, key.upper())
     green, red, gap, net = regime_counts(pillars)
     tally = f"{green} gröna · {5 - green - red - gap} gula · {red} röda" + (f" · {gap} DATA_GAP" if gap else "")
     if red >= REGIME_AV_RED_MIN or net < REGIME_SELEKTIV_MIN:
@@ -772,13 +806,24 @@ def compute_agri_regime() -> ComplexRegimeResult:
                                net_score=net, red_count=red, gap_count=gap)
 
 
+@_cache_1h
+def compute_skog_regime() -> ComplexRegimeResult:
+    pillars = [_sk_wood_trend(), _sk_wood_rs(), _sk_lumber(), _sk_housing(), _sk_theme()]
+    gc, red, gap, net = regime_counts(pillars)
+    v, a = _complex_verdict(pillars, "skog")
+    return ComplexRegimeResult(key="skog", label="SKOG & MASSA",
+                               pillars=pillars, green_count=gc, verdict=v, action_text=a,
+                               net_score=net, red_count=red, gap_count=gap)
+
+
 def compute_all_complex_regimes() -> dict[str, ComplexRegimeResult]:
-    """Compute all 4 complex regimes. Caches result in session_state."""
+    """Compute all 5 complex regimes. Caches result in session_state."""
     results: dict[str, ComplexRegimeResult] = {
         "energi":       compute_energi_regime(),
         "adelmetaller": compute_adelmetaller_regime(),
         "basmetaller":  compute_basmetaller_regime(),
         "agri":         compute_agri_regime(),
+        "skog":         compute_skog_regime(),
     }
     try:
         import streamlit as st
@@ -810,7 +855,7 @@ _VERDICT_ICON   = {VERDICT_PA: "🟢",       VERDICT_SELEKTIV: "🟡",       VER
 # ── Streamlit UI helpers ──────────────────────────────────────────────────────
 
 _COMPLEX_ICON: dict[str, str] = {
-    "energi": "⚡", "adelmetaller": "🥇", "basmetaller": "🔧", "agri": "🌾",
+    "energi": "⚡", "adelmetaller": "🥇", "basmetaller": "🔧", "agri": "🌾", "skog": "🌲",
 }
 
 
@@ -893,7 +938,7 @@ def _render_ticker_analysis(
 
     complex_label = {
         "energi": "⚡ ENERGI", "adelmetaller": "🥇 ÄDELMETALLER",
-        "basmetaller": "🔧 BASMETALLER", "agri": "🌾 AGRI & ÖVRIGT",
+        "basmetaller": "🔧 BASMETALLER", "agri": "🌾 AGRI & ÖVRIGT", "skog": "🌲 SKOG & MASSA",
     }.get(complex_key, complex_key.upper())
 
     vbrd = _VERDICT_BORDER.get(result.verdict, DIM)
@@ -1230,9 +1275,9 @@ def render_ember_regime_page() -> None:
         _render_ticker_analysis(search_ticker, all_regimes)
         st.markdown("---")
 
-    # 4 complex tabs
-    tab_e, tab_a, tab_b, tab_g = st.tabs([
-        "⚡ ENERGI", "🥇 ÄDELMETALLER", "🔧 BASMETALLER", "🌾 AGRI & ÖVRIGT",
+    # 5 complex tabs
+    tab_e, tab_a, tab_b, tab_g, tab_s = st.tabs([
+        "⚡ ENERGI", "🥇 ÄDELMETALLER", "🔧 BASMETALLER", "🌾 AGRI & ÖVRIGT", "🌲 SKOG & MASSA",
     ])
     with tab_e:
         _render_complex_tab(all_regimes["energi"])
@@ -1242,11 +1287,13 @@ def render_ember_regime_page() -> None:
         _render_complex_tab(all_regimes["basmetaller"])
     with tab_g:
         _render_complex_tab(all_regimes["agri"])
+    with tab_s:
+        _render_complex_tab(all_regimes["skog"])
 
     with st.expander("ℹ Hur per-komplex regimmodellen fungerar", expanded=False):
         st.markdown(
             f"<div style='color:{TEXT};font-size:0.83rem;line-height:1.65;'>"
-            f"<b style='color:{EMBER};'>4 komplex — varje med 5 pelare — "
+            f"<b style='color:{EMBER};'>5 komplex — varje med 5 pelare — "
             f"≥4 gröna = PÅ, 3 = SELEKTIV, ≤2 = AV</b><br/><br/>"
             f"<b style='color:{GREEN};'>⚡ ENERGI</b> — DXY 4V · XLE/SPY RS 3M · "
             f"CL=F 50V EMA · NG=F 50V EMA · Bredd XLE/XOP/OIH<br/>"
@@ -1255,7 +1302,9 @@ def render_ember_regime_page() -> None:
             f"<b style='color:{AMBER};'>🔧 BASMETALLER</b> — Copper/Gold 3M · COPX/SPY RS 3M · "
             f"HG=F 50V EMA · MCHI/FXI 3M (Kina) · T10Y2Y<br/>"
             f"<b style='color:{GREEN};'>🌾 AGRI & ÖVRIGT</b> — DBA 50V EMA+lutning · "
-            f"DBA/SPY RS 3M · DXY 4V · Agri-tema cykel · DBA volym 3M<br/><br/>"
+            f"DBA/SPY RS 3M · DXY 4V · Agri-tema cykel · DBA volym 3M<br/>"
+            f"<b style='color:{GREEN};'>🌲 SKOG & MASSA</b> — WOOD 50V EMA+lutning · "
+            f"WOOD/SPY RS 3M · Trävara LBR=F 50V EMA · Bostadsbyggande XHB 50V EMA · Skog-tema cykel<br/><br/>"
             f"Ticker-sökning identifierar automatiskt rätt komplex och visar "
             f"regimen + EMBER trend-gates."
             f"</div>",
