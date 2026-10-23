@@ -112,8 +112,10 @@ def test_deep_list_without_the_commodity_gate_is_ignored():
 def test_saved_payload_carries_mode_and_the_gate(monkeypatch, tmp_path):
     from contrarian_alpha import cache
     from contrarian_alpha.engine import PipelineConfig, PipelineResult
+    import gist_storage
     monkeypatch.setattr(cache, "_LOCAL_FALLBACK", str(tmp_path / ".ca_results.json"))
     monkeypatch.setattr(cache, "_get_github_token", lambda: "")
+    monkeypatch.setattr(gist_storage, "save_blob", lambda name, data: False)          # huvudgisten nås inte
     for mode, gate in (("deep_contrarian", 12), ("quality", None)):
         res = PipelineResult(results=[], universe_count=100, necessity_passed=0, hate_passed=0, bs_passed=0,
                              composite_ranked=0, run_duration_s=1.0, config=PipelineConfig(mode=mode), eliminated=[], timestamp="t",
@@ -129,7 +131,9 @@ def test_local_fallback_is_per_mode(monkeypatch, tmp_path):
     """Förut: Deep-läsningen föll tillbaka på den delade filen — med Quality-listan i."""
     from contrarian_alpha import cache
     monkeypatch.setattr(cache, "_LOCAL_FALLBACK", str(tmp_path / ".ca_results.json"))
+    import gist_storage
     monkeypatch.setattr(cache, "_GIST_API_URL", "http://127.0.0.1:9/none")          # Gisten nås inte
+    monkeypatch.setattr(gist_storage, "load_blob", lambda name, fb: fb)              # inte huvudgisten heller
     with open(tmp_path / ".ca_results_quality.json", "w") as f:
         json.dump({"timestamp": "t", "mode": "quality", "results": [{"ticker": "XANO-B.ST"}]}, f)
     assert cache.load_screener_results("deep_contrarian").get("results") == []

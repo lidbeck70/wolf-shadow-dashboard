@@ -136,7 +136,8 @@ def verdict_for(c: Optional[tc.Candidate], strategy: str) -> str:
     """Verdiktkortet ur dagens kandidatrad för vald strategi — eller ett ärligt 'inte i listan'."""
     if c is None:
         return verdict_card("INGEN SIGNAL", f"{reg.label(strategy)} har inte {'den här aktien'} i dagens lista.",
-                            "Analysen nedan gäller ändå — regimen per strategi kommer i fas 4.", GREY)
+                            "Analysen nedan gäller ändå. Är körningen nyare än listan? Tryck 📡 Uppdatera — "
+                            "Körningar per strategi visar när varje lista lästes.", GREY)
     col = CLASS_COLOR.get(c.status_class, GREY)
     sentence = f"{c.label}: {c.status}" + (f" · {c.score_text}" if c.score_text else "")
     run = (f"körd {c.asof}" if c.asof else "") + (f" på stängning {c.data_asof}" if c.data_asof else "")

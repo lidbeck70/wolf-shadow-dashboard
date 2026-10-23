@@ -111,8 +111,10 @@ def test_evaluate_routes_the_quality_leg():
 def test_signals_are_saved_with_the_quality_list(monkeypatch, tmp_path):
     from contrarian_alpha import cache
     from contrarian_alpha.engine import PipelineConfig, PipelineResult
+    import gist_storage
     monkeypatch.setattr(cache, "_LOCAL_FALLBACK", str(tmp_path / ".ca_results.json"))
     monkeypatch.setattr(cache, "_get_github_token", lambda: "")
+    monkeypatch.setattr(gist_storage, "save_blob", lambda name, data: False)
     res = PipelineResult(results=[], universe_count=10, necessity_passed=0, hate_passed=0, bs_passed=0,
                          composite_ranked=0, run_duration_s=1.0, config=PipelineConfig(mode="quality"),
                          eliminated=[], timestamp="t")
