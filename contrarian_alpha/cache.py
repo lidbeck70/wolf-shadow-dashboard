@@ -385,11 +385,26 @@ def save_screener_results(pipeline_result, mode: str = None, extra: dict = None)
     except Exception as e:
         logger.debug("Local CA results write failed: %s", e)
 
+    fname = f"contrarian_alpha_results_{mode}.json" if mode else _GIST_FILENAME
+
+    main_ok = False
+    try:                                   # huvudgisten (gist_storage) — panelen läser den med sin token
+        import gist_storage
+        main_ok = bool(gist_storage.save_blob(fname, payload))
+        if main_ok:
+            logger.info("CA results saved to main Gist (%d results)", len(payload["results"]))
+    except Exception as e:
+        logger.debug("CA main-gist save failed: %s", e)
+
     token = _get_github_token()
     if not token:
-        return False
-
-    fname = f"contrarian_alpha_results_{mode}.json" if mode else _GIST_FILENAME
+        return main_ok
+    try:
+        import gist_storage
+        if _GIST_ID == gist_storage.GIST_ID and main_ok:
+            return True                    # CA-gisten ÄR huvudgisten — redan skrivet
+    except Exception:
+        pass
     try:
         import requests
         headers = _auth_header(token)
@@ -407,22 +422,34 @@ def save_screener_results(pipeline_result, mode: str = None, extra: dict = None)
         logger.warning("Gist CA save failed: HTTP %d", r.status_code)
     except Exception as e:
         logger.warning("Gist CA save exception: %s", e)
-    return False
+    return main_ok
 
 
 def load_screener_results(mode: str = None) -> dict:
     """
     Load last-saved screener results.
-    Priority: Gist → local file → empty.
+    Priority: huvudgisten (gist_storage, med token) → CA-gisten (utan token) → local file → empty.
     Returns dict with keys: results (list[dict]), timestamp, universe_count.
+
+    Förut lästes bara CA-gisten utan token: på Streamlit Cloud delar panelen IP med andra appar, GitHubs
+    anonyma gräns (60 anrop/h) var ofta slut, och Thor fick en tom Deep Contrarian-lista medan larmet i
+    Discord (som läser från Actions) såg bolaget — "olika signaler". Samma fel och samma lösning som EMBER (#219).
     """
-    # Try Gist (no auth needed for public gist)
+    _fn = f"contrarian_alpha_results_{mode}.json" if mode else _GIST_FILENAME
+    try:
+        import gist_storage
+        data = gist_storage.load_blob(_fn, None)
+        if isinstance(data, dict) and data.get("results"):
+            return data
+    except Exception as e:
+        logger.debug("CA main-gist load failed: %s", e)
+
+    # CA-gisten (CA_GIST_ID) utan token — när den är en annan gist än huvudgisten
     try:
         import requests
         r = requests.get(_GIST_API_URL, timeout=10)
         if r.status_code == 200:
             gist = r.json()
-            _fn = f"contrarian_alpha_results_{mode}.json" if mode else _GIST_FILENAME
             from gist_storage import _gist_file_content        # hanterar truncated → raw_url
             content = _gist_file_content(gist.get("files", {}), _fn)
             if content:
