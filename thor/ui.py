@@ -309,9 +309,13 @@ def render_thor_page() -> None:
     if data.get("errors"):
         note("Kunde inte läsa " + ", ".join(f"{k} ({v})" for k, v in data["errors"].items())
              + " — de raderna saknas i listan tills filen är rättad eller körningen körd om.")
+    failed = live.blob_errors(data)
+    if failed:
+        note("Körningen fallerade för " + ", ".join(f"{reg.label(k)} ({err}, {gen})" for k, (err, gen) in failed.items())
+             + " — raderna saknas tills körningen lyckas igen (schemat eller ⚡ Skanna nu).")
     fresh = freshness_rows(rows, data)
-    old = [r["Strategi"] for r in fresh if r["Läge"] in ("GAMMAL", "SAKNAS")]
-    with st.expander("Körningar per strategi" + (f" · {len(old)} gamla/saknas" if old else " · alla färska"),
+    old = [r["Strategi"] for r in fresh if r["Läge"] in ("GAMMAL", "SAKNAS", "FEL")]
+    with st.expander("Körningar per strategi" + (f" · {len(old)} gamla/saknas/fel" if old else " · alla färska"),
                      expanded=False):
         st.dataframe(pd.DataFrame(fresh), hide_index=True, use_container_width=True)
         note("LIVE = körd med ⚡ Skanna nu i den här sessionen (📡 Uppdatera läser Gisten igen). GAMMAL = äldre än "
@@ -341,13 +345,21 @@ def _scan_now(st, data: dict, strategy: str) -> None:
         return
     stamp = (data.get("live") or {}).get(strategy)
     c1, c2 = st.columns([1, 3])
-    c2.caption(f"skannad live {stamp}" if stamp else "Skannar strategin nu med schemats förval — Gisten rörs inte.")
+    part = live.PARTIAL.get(strategy)
+    if stamp:
+        c2.caption(f"skannad live {stamp}" + (f" — bara {part}; arkets och kartans rader behåller sitt datum" if part else ""))
+    else:
+        c2.caption("Skannar strategin nu med schemats förval — Gisten rörs inte."
+                   + (f" Bara {part} skannas; övriga rader kommer från kartan/arken." if part else ""))
     if c1.button("⚡ Skanna nu", key=f"thor_scan_{strategy}"):
         with st.spinner(f"Skannar {reg.label(strategy)} …"):
             try:
                 new = rebuild(live.run(strategy, data))
-            except Exception as exc:
+            except live.LiveScanError as exc:
                 st.error(f"Skanningen fallerade: {exc}")
+                return
+            except Exception as exc:
+                st.error(f"Skanningen fallerade: {exc} — Gistens rader behålls.")
                 return
         st.session_state[_STATE] = new
         st.session_state.pop(_CACHE, None)
@@ -379,7 +391,12 @@ def _list(st, rows: list, board: Optional[dict] = None, data: Optional[dict] = N
                 f"{s['n']} KANDIDATER · {s['buy']} KÖP · {pick.upper()}{where}</div>", unsafe_allow_html=True)
     if not shown:
         from ui.components import empty_state
-        empty_state("Inga rader med de filtren. Kör skanningarna i GitHub Actions eller lätta på filtren.")
+        fails = {k: v for k, v in live.blob_errors(data).items() if pick == ALL or reg.label(k) == pick}
+        if fails:
+            empty_state("Körningen fallerade: " + "; ".join(f"{reg.label(k)} — {err} ({gen})" for k, (err, gen) in fails.items())
+                        + ". Kör den igen när felet är rättat.")
+        else:
+            empty_state("Inga rader med de filtren. Kör skanningarna i GitHub Actions eller lätta på filtren.")
         return
     n = int(st.session_state.get("thor_show") or PAGE)
     for c in shown[:n]:
