@@ -141,15 +141,12 @@ def _wolf(load, instruments, nordic_ids, to_yf, universe, getter, today) -> tupl
 
 
 def _ember_blob(load):
-    """EMBER:s senaste körning (huvudgisten, som Thor läser den) — None när den inte går att läsa."""
+    """EMBER:s senaste körning ur huvudgisten (ember_results.json, där ember.cache sparar den) via skanningens
+    egen load — None när den inte går att läsa."""
     try:
-        from ember.cache import load_ember_results
-        return load_ember_results() or None
+        return load("ember_results.json", None)
     except Exception:
-        try:
-            return load("ember_results.json", None)
-        except Exception:
-            return None
+        return None
 
 
 def _earnings_getter():

@@ -655,7 +655,7 @@ def group(rs: list, keys: tuple) -> list:
 def snapshot(res: dict, today) -> dict:
     """En rad per strategi för historiken (valhall_paper_history.json): så syns hur måtten utvecklas över tid."""
     keep = ("n", "closed", "closed_win", "avg_r", "payoff", "profit_factor", "avg_hold", "excess_30d", "unit_cagr", "unit_dd")
-    return {"date": str(pd.Timestamp(today).date()),
+    return {"date": str((pd.Timestamp(today) if today is not None else pd.Timestamp.today()).date()),
             "by_strategy": {r["strategy"]: {k: r.get(k) for k in keep} for r in (res or {}).get("by_strategy") or []}}
 
 
