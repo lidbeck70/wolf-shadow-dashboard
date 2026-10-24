@@ -12,6 +12,7 @@ from typing import Optional
 
 from thor import candidates as tc
 from thor import registry as reg
+from ui import vocab
 from ui.tokens import AMBER, BG_ALT, BORDER_FAINT, CYAN, DIM, EMBER, FONT_MONO, GOLD, GREEN, GREY, RED, TEXT, regime_color
 
 CLASS_COLOR = {tc.KOP: GREEN, tc.BEVAKA: AMBER, tc.TRAFF: CYAN, tc.HALL: GREY, tc.SPARRAD: RED, tc.SALJ: RED}
@@ -47,9 +48,19 @@ def chip(text, color: str = DIM, filled: bool = False, strike: bool = False) -> 
             f"font-size:0.66rem;font-weight:700;white-space:nowrap;line-height:1.5;{bg}{line}'>{_e(text)}</span>")
 
 
+def main_word(c: tc.Candidate) -> str:
+    """Ordlistans huvudord för radens läge (KÖP · BEVAKA · GRANSKA · NEJ · SÄLJ) — ur klassen, aldrig tolkat."""
+    w = VERDICT_WORD.get(c.status_class, c.status_class)
+    return vocab.main(w) or w
+
+
 def status_chip(c: tc.Candidate) -> str:
-    return chip(c.status, CLASS_COLOR.get(c.status_class, GREY), filled=c.status_class == tc.KOP,
-                strike=c.status_class == tc.SPARRAD)
+    """Huvudordet i klassens färg och strategins eget ord som chip bredvid när det skiljer sig: KÖP · GOLDEN TICKET."""
+    col = CLASS_COLOR.get(c.status_class, GREY)
+    word = main_word(c)
+    own = "" if vocab._norm(c.status) == vocab._norm(word) else c.status
+    return (chip(word, col, filled=c.status_class == tc.KOP, strike=c.status_class == tc.SPARRAD)
+            + (chip(own, DIM) if own else ""))
 
 
 def family_chip(strategy: str) -> str:
@@ -124,11 +135,14 @@ def candidate_card(c: tc.Candidate) -> str:
 
 # ── Analysblockets huvud ────────────────────────────────────────────────────
 def verdict_card(word: str, sentence: str, detail: str = "", color: str = DIM, label: str = "VAD SKA JAG GÖRA?") -> str:
-    """Verdiktet i ett ord, en mening och en dämpad rad — samma mönster som Alpha Regime."""
+    """Verdiktet i ett ord, en mening och en dämpad rad — samma mönster som Alpha Regime. Ordet visas som
+    ordlistans huvudord (ui/vocab) med källans ord som chip under när de skiljer sig."""
+    word, own = vocab.pair(word)
     return (f"<div style='border:2px solid {color}66;background:{color}0d;border-radius:10px;padding:14px 16px;margin:8px 0;'>"
             f"<div style='color:{DIM};font-size:0.66rem;letter-spacing:0.14em;'>{_e(label)}</div>"
             f"<div style='color:{color};font-size:2rem;font-weight:900;letter-spacing:0.04em;line-height:1.1;'>{_e(word)}</div>"
-            f"<div style='color:{TEXT};font-size:0.9rem;margin-top:6px;line-height:1.4;'>{_e(sentence)}</div>"
+            + (f"<div style='margin-top:4px;'>{chip(own, color)}</div>" if own else "")
+            + f"<div style='color:{TEXT};font-size:0.9rem;margin-top:6px;line-height:1.4;'>{_e(sentence)}</div>"
             + (f"<div style='color:{DIM};font-size:0.74rem;margin-top:4px;'>{_e(detail)}</div>" if detail else "") + "</div>")
 
 
