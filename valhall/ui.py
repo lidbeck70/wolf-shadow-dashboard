@@ -316,6 +316,13 @@ def render_map(board: dict) -> None:
     if tn:
         note(escape(tn) + " — bekräftad = råvara: VÄNDER och över SMA50 med positiv 63-dagarsavkastning; "
              "aktiesegment: GRÖN tio dagar efter RÖD.")
+    from valhall import turns as vt
+    plan_lines = vt.lines(board.get("turn_plan"))
+    if plan_lines:
+        st.markdown(f"<div style='color:{GOLD};font-size:0.72rem;letter-spacing:0.1em;margin-top:6px;'>VÄNDNING — KÖP I DAG "
+                    f"(köpfönster {(board.get('turn_plan') or {}).get('window_days', vt.WINDOW_DAYS)} dagar efter bekräftelsen)</div>"
+                    + "".join(f"<div style='font-size:0.74rem;line-height:1.6;color:{TEXT};'>• {escape(x)}</div>" for x in plan_lines),
+                    unsafe_allow_html=True)
     starts = board.get("cycle_starts") or []
     if starts and not tn:
         note("⚡ Cykelstart nu (BAISSE · VÄNDER): " + ", ".join(f"{escape(s['segment'])} ({s['where']})" for s in starts))
