@@ -194,8 +194,10 @@ def market_phase(ticker: str) -> tuple:
     if not name:
         return None, "Ingen ticker angiven."
     try:
-        from market_cycle.cache import cached_market_cycle_analysis
-        analysis = cached_market_cycle_analysis(name, "1y")
+        from market_cycle.cache import MarketCycleDataError, analysis_or_raise
+        analysis = analysis_or_raise(name, "1y")
+    except MarketCycleDataError as exc:
+        return None, f"Kursdata kunde inte hämtas — {exc}. Nätverksfel skyller inte på symbolen; försök igen om en stund."
     except Exception as exc:
         return None, f"Market Cycle Engine: {exc}"
     result = (analysis or {}).get("result") or {}

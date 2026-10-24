@@ -276,6 +276,10 @@ def _momentum(st, ident, strategy, data, ohlcv, cands) -> None:
         swing_data = swing.rules_data()
     except Exception:
         pass
+    if not screener:
+        note("wolf_screener.json kunde inte läsas (Gisten/nätet) — momentumlistan saknas i den här bedömningen; 📡 Uppdatera försöker igen.")
+    if not regime:
+        note("wolf_regime.json kunde inte läsas — regimljuset saknas i den här bedömningen.")
     v = sv.verdict(ident.yf, screener, regime, swing_data)
     col = {sv.BUY: GREEN, sv.HOLD: GREEN, sv.PARTIAL: AMBER, sv.WATCH: AMBER, sv.SELL: RED, sv.ABSTAIN: RED}.get(v["verdict"], GREY)
     reasons = v.get("reasons") or []
@@ -344,6 +348,14 @@ def _berserk(st, ident, strategy, data, ohlcv, cands) -> None:
          "råvarugrinden och marknadsgrinden. Temakortet är drivarens läge.")
 
 
+def _no_fundamentals(fund: dict) -> bool:
+    """Sant när hämtningen gav tomt: inga nyckeltal alls, bara N/A/None, eller källan 'none'."""
+    if not fund or fund.get("_data_source") == "none":
+        return True
+    vals = [v for k, v in fund.items() if not str(k).startswith("_")]
+    return not vals or all(v in (None, "", "N/A") for v in vals)
+
+
 def _alpha(st, ident, strategy, data, ohlcv, cands) -> None:
     from alpha_regime import ui as aui
     from alpha_regime.engine import run_regime_analysis
@@ -379,6 +391,13 @@ def _long_screener(st, ident, strategy, data, ohlcv, cands) -> None:
         fund_info = (fetch_fundamentals_batch_fast((ident.yf,)) or {}).get(ident.yf) or {}
     except Exception as exc:
         note(f"Fundamenta kunde inte hämtas ({exc}) — poängen räknas utan.")
+    if _no_fundamentals(fund_info):
+        note("Fundamenta saknas (Börsdata/Yahoo svarade inte) — kriterierna räknas som 0/6 tills nästa försök, "
+             "inte för att bolaget saknar nyckeltal.")
+        try:
+            fetch_fundamentals_batch_fast.clear()                 # cacha inte ett tomt svar i en timme
+        except Exception:
+            pass
     from valhall.paper import cycle_tag
     blob = data.get("board") or {}
     inner = blob.get("board") if isinstance(blob.get("board"), dict) else blob

@@ -13,14 +13,27 @@ from market_cycle.indicators import compute_indicators, download_ohlcv, _compute
 from market_cycle.engine import detect_market_cycle
 
 
+class MarketCycleDataError(RuntimeError):
+    """Kursdata kunde inte hämtas (nätverk eller okänd symbol) — inget att cacha."""
+
+
 @st.cache_data(ttl=3600, show_spinner=False, max_entries=100)
-def cached_market_cycle_analysis(ticker: str, period: str) -> dict:
-    """Return {indicators, result} for the current state of ticker."""
+def analysis_or_raise(ticker: str, period: str) -> dict:
+    """{indicators, result} — lyfter MarketCycleDataError när kursdata saknas, så att st.cache_data aldrig
+    sparar ett tomt svar i en timme (ett nätverksfel skyllde förut på symbolen tills cachen gick ut)."""
     indicators = compute_indicators(ticker, period)
     if not indicators:
-        return {}
+        raise MarketCycleDataError(f"ingen kursdata för {ticker} ({period}) — nätverksfel eller okänd symbol")
     result = detect_market_cycle(indicators)
     return {"indicators": indicators, "result": result}
+
+
+def cached_market_cycle_analysis(ticker: str, period: str) -> dict:
+    """Return {indicators, result} for the current state of ticker — {} when no data (not cached)."""
+    try:
+        return analysis_or_raise(ticker, period)
+    except MarketCycleDataError:
+        return {}
 
 
 @st.cache_data(ttl=3600, show_spinner=False, max_entries=100)
