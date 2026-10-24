@@ -326,6 +326,8 @@ def render_thor_page() -> None:
     if failed:
         note("Körningen fallerade för " + ", ".join(f"{reg.label(k)} ({err}, {gen})" for k, (err, gen) in failed.items())
              + " — raderna saknas tills körningen lyckas igen (schemat eller ⚡ Skanna nu).")
+    for line in tc.vn_market_notes(data.get("viking_nine")):
+        note(line)
     fresh = freshness_rows(rows, data)
     old = [r["Strategi"] for r in fresh if r["Läge"] in ("GAMMAL", "SAKNAS", "FEL")]
     with st.expander("Körningar per strategi" + (f" · {len(old)} gamla/saknas/fel" if old else " · alla färska"),

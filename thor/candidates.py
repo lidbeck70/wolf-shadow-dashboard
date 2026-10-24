@@ -659,3 +659,22 @@ def load_blobs(loader: Optional[Callable] = None, ca_loader: Optional[Callable] 
     except Exception:
         out["ember"] = None
     return out
+
+
+def vn_market_notes(blob) -> list:
+    """Viking Nine: en rad per marknad där marknadslagret (Trend, Signal, Breadth för OMXS30/SPY) stoppar allt —
+    högst 1 av 3 godkända betyder att ingen aktie där kan nå 7/9 (DEVELOPING) utan att resten är perfekt.
+    Läses ur viking_nine_scan.json (market_layer); tom lista när fältet saknas. Diagnostik, ingen regel."""
+    out = []
+    for key, m in ((blob or {}).get("markets") or {}).items():
+        layer = (m or {}).get("market_layer") or []
+        if not layer:
+            continue
+        ok = sum(1 for f in layer if f.get("status") == "PASS")
+        if ok <= 1:
+            bad = ", ".join(f"{f.get('label')} {f.get('status')}" for f in layer if f.get("status") != "PASS")
+            name = {"norden": "OMXS30", "usa": "SPY"}.get(key, key)
+            out.append(f"Viking Nine {key}: marknadslagret {name} {ok}/3 ({bad}) — inga bolag där når DEVELOPING "
+                       f"förrän marknaden vänder. Det är marknadsläget, inte ett fel.")
+    return out
+
