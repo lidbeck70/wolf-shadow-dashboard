@@ -62,6 +62,9 @@ COOLDOWN_DAYS = 14                 # ingen ny affär i samma aktie och strategi 
 NODATA_RUNS_MAX = 10               # position utan kursdata så många körningar i rad stängs (avnoterad)
 ORDER_TTL_DAYS = 7
 WOLF_TOP, WOLF_STALE_DAYS = 20, 4
+# K11 (beslut 12): Momentum-kontot följer playbooken — stopp −10 %, halva vid +20 % (stoppen till entry),
+# stängning under MA50 → sälj; och bara likvida aktier (≥ 1 Mkr/dag, swing.liquid) över 1 kr.
+MOMENTUM_STOP, MOMENTUM_HALF, MOMENTUM_MA, MOMENTUM_MIN_PRICE = 0.10, 0.20, 50, 1.0
 EVENTS_MAX, CLOSED_MAX = 1000, 3000
 VIKING_WINDOW = 300                # dagar som viking_exit får se (EMA10, ATR14, F&G)
 WOLF_WINDOW = 300                  # dagar som strategies/wolf.exit_fn får se (EMA10/50, Kijun 26, ATR14)
@@ -69,6 +72,7 @@ WOLF_EXIT = {"STOP_LOSS": "hård stopp (2,5 × ATR14)", "EMA50_EXIT": "tre stän
              "TRAIL_EXIT": "under Kijun och EMA10"}
 
 KOP_OPEN, KOPT, SALJ_OPEN, SALD, STOPPAD = "KÖP PÅ ÖPPNING", "KÖPT", "SÄLJ PÅ ÖPPNING", "SÅLD", "STOPPAD"
+DELVINST = "DELVINST"
 SPARRAD, UTGANGEN, ROD = "SPÄRRAD", "UTGÅNGEN", "RÖD (skuggexit)"
 
 
@@ -150,7 +154,8 @@ def wolf_live(wolf_blob: Optional[dict], wolf_map: dict, today) -> Optional[dict
 def signals(swing: dict, buys: dict, universe: dict, insider_blob: Optional[dict] = None,
             wolf: Optional[dict] = None, long_scan: Optional[dict] = None, arc_sigs: Optional[list] = None,
             complex_swing: Optional[dict] = None, turn_plan: Optional[dict] = None, ember_blob: Optional[dict] = None,
-            deep_blob: Optional[dict] = None, royalty_blob: Optional[dict] = None) -> list:
+            deep_blob: Optional[dict] = None, royalty_blob: Optional[dict] = None,
+            momentum_ok: Optional[set] = None) -> list:
     """Dagens köpsignaler per strategi. wolf = wolf_live(...) (momentumlistan), long_scan = long_screener.scan(...),
     arc_sigs = valhall.wolf.arc_signals(...) (Arc-Wolf, kontot wolf_arc), complex_swing = swing.complex_candidates
     (kontot komplex_viking), turn_plan = turns.plan (komplex_deep/komplex_long/komplex_etf), ember_blob =
@@ -178,6 +183,11 @@ def signals(swing: dict, buys: dict, universe: dict, insider_blob: Optional[dict
     for t, r in (wolf or {}).items():
         seg = (universe.get(t) or {}).get("segment")
         if seg and (r.get("rank") or 99) <= WOLF_TOP and r.get("setupA"):
+            px = r.get("price")
+            if px is not None and float(px) < MOMENTUM_MIN_PRICE:                # K11: inga pennyaktier
+                continue
+            if momentum_ok is not None and t not in momentum_ok:                 # K11: likviditet ≥ 1 Mkr/dag
+                continue
             out.append(_sig("wolf", t, r.get("name"), seg, None, True, f"rank {r.get('rank')} · setup A"))
     for key, e in ((buys or {}).get("segments") or {}).items():
         for p in e.get("picks") or []:
@@ -324,6 +334,8 @@ def step(state: Optional[dict], sigs: list, board: dict, ohlcv: Callable, market
             import viking_execution as vx
             a = vx.atr(df.iloc[:i + 1])
             stop = entry - vx.ATR_STOP_MULT * float(a.iloc[-1]) if len(a) and pd.notna(a.iloc[-1]) else None
+        elif o["strategy"] == "wolf":
+            stop = entry * (1 - MOMENTUM_STOP)
         elif o["strategy"] == "wolf_arc":
             from strategies.wolf import risk_fn
             d = risk_fn(df.iloc[:i + 1], 1.0)["stop_distance"]              # 2,5 × ATR14 på fyllningsdagen
@@ -471,6 +483,25 @@ def _manage(state: dict, p: dict, df: Optional[pd.DataFrame], market, wolf, boar
             if held >= INSIDER_DAYS:
                 _close(state, p, float(c[j]), "tidsstopp 18 månader", date, ev)
                 return
+        elif p["strategy"] == "wolf" and p.get("init_stop"):
+            stop = p["entry"] if p.get("half") else p["init_stop"]
+            if lo[j] <= stop:
+                _close(state, p, float(min(o[j], stop)), "stopp " + ("vid entry (efter halva)" if p.get("half") else "−10 %"),
+                       date, ev, STOPPAD)
+                return
+            if not p.get("half") and h[j] >= p["entry"] * (1 + MOMENTUM_HALF):
+                p["half"] = {"date": date, "price": round(float(max(o[j], p["entry"] * (1 + MOMENTUM_HALF))), 4)}
+                ev(DELVINST, p, f"halva såld @ {p['half']['price']:,.2f} (+20 %) — stoppen flyttad till entry")
+            if j >= MOMENTUM_MA:
+                ma = float(np.mean(c[j + 1 - MOMENTUM_MA:j + 1]))
+                if c[j] < ma:
+                    reason = f"stängning under MA{MOMENTUM_MA}"
+                    if j + 1 < len(df):
+                        _close(state, p, float(o[j + 1]), reason, _d(idx[j + 1]), ev)
+                    else:
+                        p["pending"] = {"date": date, "reason": reason}
+                        ev(SALJ_OPEN, p, f"{reason} — sälj på nästa öppning")
+                    return
         elif p["strategy"] == "ember":
             stop = p.get("init_stop")
             if stop and lo[j] <= stop:
@@ -500,6 +531,9 @@ def _manage(state: dict, p: dict, df: Optional[pd.DataFrame], market, wolf, boar
 
 
 def _close(state: dict, p: dict, px: float, reason: str, date: str, ev, kind: str = SALD) -> None:
+    if p.get("half"):                                               # Momentum: halva såldes vid +20 %
+        px = (float(p["half"]["price"]) + px) / 2
+        reason += " (snitt med halvan vid +20 %)"
     c = {**p, "exit_date": date, "exit": round(px, 4), "reason": reason, "bench_out": p.get("bench_last")}
     c.pop("pending", None)
     state["closed"].append(c)
