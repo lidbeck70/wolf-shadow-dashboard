@@ -27,7 +27,10 @@ _STATE = "valhall_data"
 STRATEGY_LABEL = {"viking": "Viking Nine", "insider": "Insider Norden", "wolf": "Momentum Swing", "wolf_arc": "Wolf",
                   "berserk": "BERSERK",
                   "quality": "Quality Contrarian", "rule": "Rick Rule", "durrett": "Durrett", "tiggre": "Tiggre",
-                  "long": "Long Screener", "long_ingen": "Long Screener (utan cykel)"}
+                  "long": "Long Screener", "long_ingen": "Long Screener (utan cykel)",
+                  "komplex_viking": "Viking Nine · komplex", "komplex_deep": "Deep Contrarian · vändning",
+                  "komplex_long": "Lång · vändning", "komplex_etf": "UCITS-ETF · vändning", "ember": "EMBER",
+                  "deep": "Deep Contrarian", "royalty": "Royalty"}
 
 
 def load(loader=None) -> dict:
@@ -182,8 +185,12 @@ def paper_table(rows: list, keys: tuple) -> pd.DataFrame:
     names = {"strategy": "Strategi", "segment": "Segment", "status_in": "Status vid köp", "cykel_in": "Cykel vid köp",
              "n": "Affärer", "open": "Öppna", "closed": "Stängda", "avg_ret": "Snitt %", "win": "Vinst %",
              "avg_r": "Snitt R", "sum_r": "Summa R", "avg_excess": "Mot riktmärke %", "avg_red_ret": "Sälj på RÖD %",
-             "red": "Blev RÖD"}
-    cols = list(keys) + ["n", "open", "closed", "avg_ret", "win", "avg_r", "avg_excess", "avg_red_ret"]
+             "red": "Blev RÖD", "complex": "Komplex", "phase_in": "Fas vid köp", "turn_in": "Vändning vid köp",
+             "confirmed_in": "Bekräftad", "closed_n": "Stängda/20", "closed_win": "Vinst % (stängda)",
+             "payoff": "Payoff", "profit_factor": "Profit factor", "avg_hold": "Hålltid d", "excess_30d": "Mot riktm./30 d %",
+             "unit_cagr": "Årstakt % (enhet)", "unit_dd": "Max DD % (enhet)"}
+    cols = list(keys) + ["n", "open", "closed_n", "closed_win", "avg_r", "payoff", "profit_factor", "avg_hold",
+                         "excess_30d", "unit_cagr", "unit_dd", "avg_ret", "avg_excess", "avg_red_ret"]
     out = []
     for r in rows or []:
         d = {names.get(c, c): r.get(c) for c in cols}
@@ -369,14 +376,18 @@ def render_paper(res: Optional[dict]) -> None:
         return
     note(f"Sedan {escape(str(res.get('since')))} · {res.get('positions')} öppna · {res.get('orders')} order. "
          "En enhet per signal (ingen kassa), öppna värderade på senaste stängning. Mot riktmärke = segmentets "
-         "index/SPDR/drivare under samma tid. Sälj på RÖD = skuggexit första dagen segmentet blev RÖD.")
+         "index/SPDR/drivare under samma tid. Sälj på RÖD = skuggexit första dagen segmentet blev RÖD. "
+         "Vinst %, payoff, profit factor och årstakt räknas bara på STÄNGDA affärer; årstakten är en enhetskurva "
+         "(1 % per affär), ingen portfölj. Färre än 20 stängda = ingen slutsats än.")
     st.markdown(f"<div style='color:{CYAN};font-size:0.72rem;letter-spacing:0.1em;'>PER STRATEGI</div>",
                 unsafe_allow_html=True)
     st.dataframe(paper_table(res["by_strategy"], ("strategy",)), hide_index=True, use_container_width=True)
-    view = st.radio("Dela upp på", ["Segment", "Status vid köp", "Cykel vid köp"], horizontal=True, key="valhall_paper_by")
-    key, rows = {"Segment": ("segment", "by_segment"), "Status vid köp": ("status_in", "by_status"),
-                 "Cykel vid köp": ("cykel_in", "by_cykel")}[view]
-    st.dataframe(paper_table(res.get(rows) or [], ("strategy", key)), hide_index=True, use_container_width=True)
+    view = st.radio("Dela upp på", ["Segment", "Komplex", "Status vid köp", "Cykel vid köp", "Fas vid köp", "Vändning vid köp"],
+                    horizontal=True, key="valhall_paper_by")
+    key, rows = {"Segment": (("segment",), "by_segment"), "Komplex": (("complex",), "by_complex"),
+                 "Status vid köp": (("status_in",), "by_status"), "Cykel vid köp": (("cykel_in",), "by_cykel"),
+                 "Fas vid köp": (("phase_in",), "by_phase"), "Vändning vid köp": (("turn_in", "confirmed_in"), "by_turn")}[view]
+    st.dataframe(paper_table(res.get(rows) or [], ("strategy",) + key), hide_index=True, use_container_width=True)
 
 
 def render_backtests(data: dict) -> None:

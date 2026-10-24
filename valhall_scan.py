@@ -39,6 +39,7 @@ log = logging.getLogger("valhall_scan")
 
 BLOB = "valhall_board.json"
 PAPER_BLOB = "valhall_paper.json"
+PAPER_HISTORY_BLOB = "valhall_paper_history.json"   # en ögonblicksbild per dag och strategi (K7)
 PAPER_PERIOD = "5y"
 
 
@@ -139,6 +140,15 @@ def _wolf(load, instruments, nordic_ids, to_yf, universe, getter, today) -> tupl
     return wolf, arc, entries
 
 
+def _ember_blob(load):
+    """EMBER:s senaste körning ur huvudgisten (ember_results.json, där ember.cache sparar den) via skanningens
+    egen load — None när den inte går att läsa."""
+    try:
+        return load("ember_results.json", None)
+    except Exception:
+        return None
+
+
 def _earnings_getter():
     """Rapportdatum ur Börsdata (samma som Viking Nine-skanningen) — None när modulen saknas."""
     try:
@@ -167,17 +177,25 @@ def viking_exit_ctx(getter, today=None) -> dict:
         import viking_screen as vs
         return vs._ob_analysis(df)
 
-    return {"nine": nine, "ob": ob, "earnings": _earnings_getter()}
+    def driver(profile_key):
+        import complex_nine as cn
+        import complex_profiles as cp
+        p = cp.get(profile_key)
+        return cn.driver_exit(p, getter, today) if p else None
+
+    return {"nine": nine, "ob": ob, "earnings": _earnings_getter(), "driver": driver}
 
 
 def _paper(state, berserk_state, board, sw, buys, universe, insider_blob, getter, nordic_market, today,
-           wolf=None, long_scan=None, arc_sigs=None) -> tuple:
+           wolf=None, long_scan=None, arc_sigs=None, complex_swing=None, turn_plan=None, ember_blob=None,
+           deep_blob=None, royalty_blob=None, turns=None) -> tuple:
     """Papperskontona ett steg fram: dagens signaler blir order, gårdagens fylls, positionerna förvaltas."""
     import pandas as pd
 
     from valhall import paper as vpa
     today = pd.Timestamp(today) if today is not None else pd.Timestamp.today().normalize()
-    sigs = vpa.signals(sw, buys, universe, insider_blob, wolf, long_scan, arc_sigs)
+    sigs = vpa.signals(sw, buys, universe, insider_blob, wolf, long_scan, arc_sigs, complex_swing=complex_swing,
+                       turn_plan=turn_plan, ember_blob=ember_blob, deep_blob=deep_blob, royalty_blob=royalty_blob)
     market = None
     if nordic_market is not None and len(nordic_market):
         m = pd.Series(nordic_market).astype(float).dropna()
@@ -192,7 +210,7 @@ def _paper(state, berserk_state, board, sw, buys, universe, insider_blob, getter
                              berserk_state=berserk_state, universe=universe,
                              long_signals=(long_scan or {}).get("signals") if long_scan else None,
                              long_ingen_signals=(long_scan or {}).get("signals_ingen") if long_scan else None,
-                             exit_ctx=viking_exit_ctx(getter, today))
+                             exit_ctx=viking_exit_ctx(getter, today), turns=turns)
     log.info("Papper: %d signaler · %d händelser", len(sigs), len(events))
     return state, events
 
@@ -305,6 +323,7 @@ def run(api=None, data_getter=None, getter=None, load=None, save=None, today=Non
         log.exception("Händelsemotorn fallerade: %s", exc)
         payload["turn_plan"] = None
     paper_state, berserk_state = load(PAPER_BLOB, None), load("berserk_paper.json", None)
+    history = None
     prev_paper = (load(BLOB, None) or {}).get("paper") or {}
     if paper_state is None and prev_paper.get("since"):
         # Kontot fanns men gick inte att läsa — starta inte om det och skriv inte över.
@@ -313,9 +332,14 @@ def run(api=None, data_getter=None, getter=None, load=None, save=None, today=Non
         payload["paper"], paper_state = prev_paper, None
     else:
         try:
+            deep_blob = next((b for b in src.get("ca") or [] if (b or {}).get("mode") == "deep_contrarian"), None)
             paper_state, events = _paper(paper_state, berserk_state, board, sw, buys, universe, insider_blob,
-                                         getter, nordic_market, today, wolf, long_scan, arc_sigs)
+                                         getter, nordic_market, today, wolf, long_scan, arc_sigs,
+                                         complex_swing=complex_swing, turn_plan=payload.get("turn_plan"),
+                                         ember_blob=_ember_blob(load), deep_blob=deep_blob,
+                                         royalty_blob=load("royalty_scan.json", None), turns=payload["turns"])
             payload["paper"] = vpa.results(paper_state, berserk_state)
+            history = vpa.append_history(load(PAPER_HISTORY_BLOB, None), vpa.snapshot(payload["paper"], today))
             for e in events:
                 log.info("Papper: %s %s %s — %s", e["kind"], e["strategy"], e["ticker"], e["text"])
         except Exception as exc:                                  # kartan sparas även om papperet fallerar
@@ -328,6 +352,8 @@ def run(api=None, data_getter=None, getter=None, load=None, save=None, today=Non
             log.info("%s", line)
         return {"payload": payload, "saved": False}
     saved = (paper_state is None or bool(save(PAPER_BLOB, paper_state))) & bool(save(BLOB, payload))
+    if history is not None and not save(PAPER_HISTORY_BLOB, history):
+        log.warning("Kunde inte spara %s — historiken fortsätter nästa körning.", PAPER_HISTORY_BLOB)
     if not saved:
         log.error("Kunde inte spara %s — kontrollera GITHUB_TOKEN (gist-scope).", BLOB)
     return {"payload": payload, "saved": saved}

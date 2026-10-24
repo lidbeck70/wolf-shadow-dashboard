@@ -48,7 +48,13 @@ SWING, LONG = "swing", "lång"
 STRATEGIES = {"viking": ("Viking Nine", SWING), "insider": ("Insider Norden", SWING),
               "wolf": ("Momentum Swing", SWING), "wolf_arc": ("Wolf", SWING), "berserk": ("BERSERK", SWING), "quality": ("Quality Contrarian", LONG), "rule": ("Rick Rule", LONG),
               "durrett": ("Durrett", LONG), "tiggre": ("Tiggre", LONG), "long": ("Long Screener", LONG),
-              "long_ingen": ("Long Screener (utan cykel)", LONG)}
+              "long_ingen": ("Long Screener (utan cykel)", LONG),
+              # K7 (analysen 2026-10-24 §7.1): komplexstrategierna och kontona som saknades
+              "komplex_viking": ("Viking Nine · komplex", SWING), "komplex_deep": ("Deep Contrarian · vändning", LONG),
+              "komplex_long": ("Lång · vändning", LONG), "komplex_etf": ("UCITS-ETF · vändning", LONG),
+              "ember": ("EMBER", SWING), "deep": ("Deep Contrarian", LONG), "royalty": ("Royalty", LONG)}
+EMBER_DAYS = 60                    # EMBER: tidsstopp (beslut 11 — EMBER har ingen egen exitmotor; stoppen ur setup-kortet)
+N_DEEP_DAILY = 2                   # kontot deep (kontrollgrupp): två bästa per segment varje dag, som quality
 LONG_SELL = ("SELL", "STRONG SELL")      # cagr_scoring: EMA200-brott, röd regim eller poäng under 35 %
 LONG_DAYS = 3 * 365                # horisont 0,5–3 år
 INSIDER_DAYS = 548                 # insiderns tidsstopp: 18 månader
@@ -99,10 +105,12 @@ def _gov(x: dict) -> str:
 
 
 # ── Signalerna ur dagens körning ────────────────────────────────────────────
-def _sig(strategy, ticker, name, segment, theme=None, nordic=None, why="", stop=None) -> dict:
+def _sig(strategy, ticker, name, segment, theme=None, nordic=None, why="", stop=None, complex=None,
+         profile=None) -> dict:
     nordic = buv.region_of(ticker or "") == "Norden" if nordic is None else bool(nordic)
+    from valhall import complexes as vcx
     return {"strategy": strategy, "ticker": ticker, "name": name or "", "segment": segment, "theme": theme,
-            "nordic": nordic, "why": why, "stop": stop}
+            "nordic": nordic, "why": why, "stop": stop, "complex": complex or vcx.complex_of(theme), "profile": profile}
 
 
 def buy_ok(p: dict) -> bool:
@@ -140,10 +148,14 @@ def wolf_live(wolf_blob: Optional[dict], wolf_map: dict, today) -> Optional[dict
 
 
 def signals(swing: dict, buys: dict, universe: dict, insider_blob: Optional[dict] = None,
-            wolf: Optional[dict] = None, long_scan: Optional[dict] = None, arc_sigs: Optional[list] = None) -> list:
+            wolf: Optional[dict] = None, long_scan: Optional[dict] = None, arc_sigs: Optional[list] = None,
+            complex_swing: Optional[dict] = None, turn_plan: Optional[dict] = None, ember_blob: Optional[dict] = None,
+            deep_blob: Optional[dict] = None, royalty_blob: Optional[dict] = None) -> list:
     """Dagens köpsignaler per strategi. wolf = wolf_live(...) (momentumlistan), long_scan = long_screener.scan(...),
-    arc_sigs = valhall.wolf.arc_signals(...) (Arc-Wolf, kontot wolf_arc)."""
-    out = list(arc_sigs or [])
+    arc_sigs = valhall.wolf.arc_signals(...) (Arc-Wolf, kontot wolf_arc), complex_swing = swing.complex_candidates
+    (kontot komplex_viking), turn_plan = turns.plan (komplex_deep/komplex_long/komplex_etf), ember_blob =
+    ember_results.json (kontot ember), deep_blob = CA deep_contrarian (kontot deep), royalty_blob = royalty_scan.json."""
+    out = list(arc_sigs or []) + complex_signals(complex_swing, turn_plan, ember_blob, deep_blob, royalty_blob, universe)
     for key, e in ((long_scan or {}).get("segments") or {}).items():
         for strat, field in (("long", "picks"), ("long_ingen", "picks_ingen")):
             for p in e.get(field) or []:
@@ -190,6 +202,54 @@ def signals(swing: dict, buys: dict, universe: dict, insider_blob: Optional[dict
     return uniq
 
 
+def complex_signals(complex_swing: Optional[dict], turn_plan: Optional[dict], ember_blob: Optional[dict],
+                    deep_blob: Optional[dict], royalty_blob: Optional[dict], universe: dict) -> list:
+    """K7: signalerna till de nya kontona — allt dokumenteras i papper (analysen §7.1)."""
+    from valhall import complexes as vcx
+    out = []
+    for key, e in ((complex_swing or {}).get("complexes") or {}).items():          # Viking Nine · komplex
+        for p in e.get("picks") or []:
+            if p.get("category") == "GOLDEN TICKET":
+                out.append(_sig("komplex_viking", p["ticker"], p.get("name"), p.get("segment"), None, True,
+                                f"{p.get('ovtlyr_nine')} · {e.get('strategy')}", complex=key, profile=key))
+    for w in (turn_plan or {}).get("window") or []:                               # 2 deep + 2 lång + ETF vid vändning
+        cx = w.get("key") if w.get("level") == "komplex" else vcx.complex_of(w.get("key")) if w.get("level") == "tema" else None
+        seg = w.get("key") if w.get("level") == "segment" else None
+        head = f"vändning {w.get('label') or w.get('key')} dag {w.get('days') or '?'}"
+        for p in w.get("deep") or []:
+            out.append(_sig("komplex_deep", p["ticker"], p.get("name"), p.get("segment") or seg, p.get("theme"), None,
+                            f"{head} · composite {p.get('score')}", complex=cx))
+        for p in w.get("long") or []:
+            why = f"{head} · {p.get('signal') or p.get('verdict') or ''} ({p.get('source') or 'lång'})"
+            out.append(_sig("komplex_long", p["ticker"], p.get("name"), p.get("segment") or seg, p.get("theme"), None, why,
+                            complex=cx))
+        e = w.get("etf") or {}
+        if e.get("ticker"):
+            out.append(_sig("komplex_etf", e["ticker"], e.get("name"), seg, None, False,
+                            f"{head} · {e.get('exposure')} · poäng {e.get('score')}"
+                            + ("" if e.get("verified") else " · linjen inte verifierad hos Nordnet"), complex=cx))
+    for r in (ember_blob or {}).get("eligible") or []:                            # EMBER: köplägen med kortets stopp
+        t = r.get("ticker")
+        if not t:
+            continue
+        theme = r.get("theme_key") or None
+        seg = (universe.get(t) or {}).get("segment") or sgm.segment_of_theme(theme)
+        out.append(_sig("ember", t, (universe.get(t) or {}).get("name"), seg, theme, None,
+                        f"KÖPLÄGE {r.get('setup_score')} · {r.get('typ') or ''}".strip(), stop=r.get("stop")))
+    from valhall import picks as vp
+    deep_rows = sorted(vp._ca_rows([deep_blob] if deep_blob else []), key=lambda r: -(r.get("score") or 0))
+    for sgm_ in sgm.SEGMENTS:                                                     # deep (kontroll): 2 bästa/segment, varje dag
+        mine = vp._one_per_company([r for r in deep_rows if r.get("segment") == sgm_.key])[:N_DEEP_DAILY]
+        for r in mine:
+            out.append(_sig("deep", r["ticker"], r.get("name"), sgm_.key, r.get("theme"), None,
+                            f"composite {r.get('score')} · rank {r.get('rank')}"))
+    for r in (royalty_blob or {}).get("rows") or []:                              # Royalty: BUY CANDIDATE
+        if str(r.get("verdict") or "").upper() == "BUY CANDIDATE" and r.get("ticker"):
+            out.append(_sig("royalty", r["ticker"], r.get("name"), None, None, False,
+                            f"composite {r.get('composite') or r.get('composite_score') or ''}"))
+    return out
+
+
 # ── Steget ──────────────────────────────────────────────────────────────────
 def _clean(df) -> Optional[pd.DataFrame]:
     if df is None or len(df) == 0 or not {"Open", "High", "Low", "Close"} <= set(df.columns):
@@ -209,13 +269,15 @@ def _after(df: pd.DataFrame, date: str) -> int:
 def step(state: Optional[dict], sigs: list, board: dict, ohlcv: Callable, market: Optional[pd.DataFrame] = None,
          today=None, wolf: Optional[dict] = None, berserk_state: Optional[dict] = None,
          universe: Optional[dict] = None, long_signals: Optional[dict] = None,
-         long_ingen_signals: Optional[dict] = None, exit_ctx: Optional[dict] = None) -> tuple:
+         long_ingen_signals: Optional[dict] = None, exit_ctx: Optional[dict] = None,
+         turns: Optional[list] = None) -> tuple:
     """(nytt tillstånd, nya händelser). ohlcv(ticker) → dagsdata, market = OMXS30 (Viking Nines marknadsexit),
     wolf = wolf_live(...) (None = listan saknas → inga Wolf-sälj i dag), berserk_state = BERSERK:s konto,
     long_signals = {ticker: Long Screener-signal} (None = skanningen saknas → inga sälj i dag),
     long_ingen_signals = samma utan cykel (kontot "Long Screener (utan cykel)"),
-    exit_ctx = {nine(ticker, df), ob(df), earnings(ticker)} — ger Viking-exiten hela playbooken (sektor/bredd,
-    aktiens signal, bearish block, rapport) på dagens stapel; utan den utlöser bara marknad, stopp, trail, gap och F&G."""
+    exit_ctx = {nine(ticker, df), ob(df), earnings(ticker), driver(profil)} — ger Viking-exiten hela playbooken
+    (sektor/bredd, aktiens signal, bearish block, rapport) på dagens stapel och komplexvarianten drivarexiten;
+    turns = kartans vändningar (board.turns) — ordern märks med rutans vändning (kind, dag, bekräftad)."""
     today = _d(today or pd.Timestamp.today())
     state = dict(state) if state else new_state(today)
     for k in ("orders", "positions", "closed", "events"):
@@ -258,7 +320,7 @@ def step(state: Optional[dict], sigs: list, board: dict, ohlcv: Callable, market
             continue
         entry = float(df["Open"].iloc[i])
         stop = o.get("stop")
-        if o["strategy"] == "viking":
+        if o["strategy"] in ("viking", "komplex_viking"):
             import viking_execution as vx
             a = vx.atr(df.iloc[:i + 1])
             stop = entry - vx.ATR_STOP_MULT * float(a.iloc[-1]) if len(a) and pd.notna(a.iloc[-1]) else None
@@ -306,7 +368,8 @@ def step(state: Optional[dict], sigs: list, board: dict, ohlcv: Callable, market
         k = (s["strategy"], s["ticker"])
         if k in busy or k in recent or _company(s) in busy_co or _company(s) in recent_co:
             continue
-        o = {**s, "signal_date": today, "cycle": cycle_tag(board, s["segment"], s.get("theme"))}
+        o = {**s, "signal_date": today, "cycle": cycle_tag(board, s["segment"], s.get("theme")),
+             "turn": turn_tag(turns, s.get("segment"), s.get("theme"), s.get("complex"))}
         state["orders"].append(o)
         busy.add(k)
         busy_co.add(_company(o))
@@ -353,10 +416,20 @@ def _manage(state: dict, p: dict, df: Optional[pd.DataFrame], market, wolf, boar
         date = _d(idx[j])
         p["checked"], p["last_close"], p["last_date"] = date, float(c[j]), date
         held = (pd.Timestamp(date) - pd.Timestamp(p["entry_date"])).days
-        if p["strategy"] == "viking":
+        if p["strategy"] in ("viking", "komplex_viking"):
             import viking_exit as vex
             mkt = market.loc[:idx[j]] if market is not None else None
             window = df.iloc[max(0, j + 1 - VIKING_WINDOW):j + 1]
+            if p["strategy"] == "komplex_viking" and j == len(df) - 1 and (exit_ctx or {}).get("driver"):
+                try:                                                   # drivaren under EMA50 (BERSERK S2) → sälj
+                    drv = exit_ctx["driver"](p.get("profile"))
+                except Exception:
+                    drv = None
+                if drv and drv.get("triggered"):
+                    reason = f"drivarexit: {drv.get('detail')}"
+                    p["pending"] = {"date": date, "reason": reason}
+                    ev(SALJ_OPEN, p, f"{reason} — sälj på nästa öppning")
+                    return
             # hela playbooken bara på dagens stapel (Nine kostar nätanrop); ikappdagar får den smala exiten
             nine, ob, ed = _exit_inputs(exit_ctx, p["ticker"], window) if j == len(df) - 1 else (None, None, None)
             dec = vex.evaluate_exit(p["ticker"], window, p["entry"], p["entry_date"], nine=nine, ob_analysis=ob,
@@ -397,6 +470,14 @@ def _manage(state: dict, p: dict, df: Optional[pd.DataFrame], market, wolf, boar
                 return
             if held >= INSIDER_DAYS:
                 _close(state, p, float(c[j]), "tidsstopp 18 månader", date, ev)
+                return
+        elif p["strategy"] == "ember":
+            stop = p.get("init_stop")
+            if stop and lo[j] <= stop:
+                _close(state, p, float(min(o[j], stop)), "stopp (EMBER:s setup-kort)", date, ev, STOPPAD)
+                return
+            if held >= EMBER_DAYS:
+                _close(state, p, float(c[j]), f"tidsstopp {EMBER_DAYS} dagar", date, ev)
                 return
         elif kind == LONG and held >= LONG_DAYS:
             _close(state, p, float(c[j]), "tidsstopp 3 år", date, ev)
@@ -450,6 +531,20 @@ def _tag_berserk(state: dict, bstate: Optional[dict], board: dict, universe: dic
 
 
 # ── Resultaten ──────────────────────────────────────────────────────────────
+def turn_tag(turns: Optional[list], segment: Optional[str], theme: Optional[str] = None,
+             complex_key: Optional[str] = None) -> dict:
+    """Rutans vändning på signaldagen ur board.turns: temat först, sedan komplexet, sedan segmentet (Norden).
+    {kind, since, days, confirmed, confirmed_since, level} — tomt när ingen pågår."""
+    ts = [t for t in turns or [] if isinstance(t, dict) and t.get("kind")]
+    for level, key in (("tema", theme), ("komplex", complex_key), ("segment", segment)):
+        if not key:
+            continue
+        for t in ts:
+            if t.get("level") == level and t.get("key") == key and (level != "segment" or t.get("where") == "Norden"):
+                return {k: t.get(k) for k in ("kind", "since", "days", "confirmed", "confirmed_since")} | {"level": level}
+    return {}
+
+
 def _row(x: dict, is_open: bool, strategy: Optional[str] = None, cyc: Optional[dict] = None,
          bench_out=None) -> dict:
     strategy = strategy or x["strategy"]
@@ -464,10 +559,23 @@ def _row(x: dict, is_open: bool, strategy: Optional[str] = None, cyc: Optional[d
     excess = ret - (bench_now / bench_in - 1) * 100 if ret is not None and bench_in and bench_now else None
     red = x.get("red")
     red_ret = (red["price"] / entry - 1) * 100 if red and entry else ret
+    turn = x.get("turn") or {}
     return {"strategy": strategy, "segment": x.get("segment"), "theme": x.get("theme"), "open": is_open,
+            "complex": x.get("complex") or "—",
             "status_in": (cyc or {}).get(f"{g}_status") or "OKÄND", "cykel_in": (cyc or {}).get(f"{g}_cykel") or "OKÄND",
-            "phase_in": (cyc or {}).get(f"{g}_phase") or "OKÄND", "ret_pct": ret, "r": r, "red_ret_pct": red_ret,
-            "excess_pct": excess, "red": bool(red)}
+            "phase_in": (cyc or {}).get(f"{g}_phase") or "OKÄND",
+            "turn_in": turn.get("kind") or "ingen", "confirmed_in": bool(turn.get("confirmed")),
+            "days_since_turn": turn.get("days"), "ret_pct": ret, "r": r, "red_ret_pct": red_ret,
+            "excess_pct": excess, "red": bool(red), "entry_date": x.get("entry_date"),
+            "exit_date": None if is_open else x.get("exit_date"), "held_days": _held(x, is_open)}
+
+
+def _held(x: dict, is_open: bool) -> Optional[int]:
+    end = x.get("last_date") if is_open else x.get("exit_date")
+    try:
+        return int((pd.Timestamp(end) - pd.Timestamp(x.get("entry_date"))).days)
+    except Exception:
+        return None
 
 
 def rows(state: dict, berserk_state: Optional[dict] = None) -> list:
@@ -488,8 +596,46 @@ def _mean(v: list, nd: int = 2):
     return round(float(np.mean(v)), nd) if v else None
 
 
+MIN_CLOSED = 20                    # journalens gräns (journal_stats) — färre stängda affärer = ingen slutsats
+UNIT_PCT = 1.0                     # enhetskurvan: varje stängd affär väger 1 % av ett nominellt kapital
+
+
+def closed_stats(g: list) -> dict:
+    """Mått på STÄNGDA affärer (öppna är mark-to-market och visas separat): vinstandel, payoff, profit factor,
+    hålltid, överavkastning per 30 dagar, enhetskurvans årstakt och max drawdown, och om n räcker för slutsats."""
+    c = [r for r in g if not r["open"] and r["ret_pct"] is not None]
+    rets = [r["ret_pct"] for r in c]
+    wins, losses = [x for x in rets if x > 0], [x for x in rets if x <= 0]
+    held = [r["held_days"] for r in c if r.get("held_days") is not None]
+    ex30 = [r["excess_pct"] / max(r["held_days"], 1) * 30 for r in c
+            if r.get("excess_pct") is not None and r.get("held_days") is not None]
+    out = {"closed_win": round(len(wins) / len(rets) * 100, 1) if rets else None,
+           "closed_avg_ret": _mean(rets), "payoff": round(np.mean(wins) / abs(np.mean(losses)), 2) if wins and losses and np.mean(losses) else None,
+           "profit_factor": round(sum(wins) / abs(sum(losses)), 2) if wins and losses and sum(losses) else None,
+           "avg_hold": _mean(held, 1), "excess_30d": _mean(ex30), "enough": len(c) >= MIN_CLOSED,
+           "closed_n": f"{len(c)}/{MIN_CLOSED}"}
+    out.update(unit_curve(c))
+    return out
+
+
+def unit_curve(closed: list) -> dict:
+    """Enhetskurvan: 100 + summan av UNIT_PCT × avkastningen per stängd affär i exitordning → årstakt (CAGR) och
+    max drawdown. Ingen kassa och ingen platsbrist — en jämförelse mellan strategier, inte en portfölj."""
+    xs = sorted((r for r in closed if r.get("exit_date") and r.get("entry_date")), key=lambda r: r["exit_date"])
+    if not xs:
+        return {"unit_cagr": None, "unit_dd": None}
+    eq, peak, dd = 100.0, 100.0, 0.0
+    for r in xs:
+        eq += UNIT_PCT * r["ret_pct"]
+        peak = max(peak, eq)
+        dd = min(dd, (eq / peak - 1) * 100)
+    years = (pd.Timestamp(xs[-1]["exit_date"]) - pd.Timestamp(min(r["entry_date"] for r in xs))).days / 365.25
+    cagr = ((eq / 100.0) ** (1 / years) - 1) * 100 if years >= 0.25 and eq > 0 else None
+    return {"unit_cagr": round(cagr, 2) if cagr is not None else None, "unit_dd": round(dd, 2)}
+
+
 def group(rs: list, keys: tuple) -> list:
-    """[{nycklar…, n, open, closed, avg_ret, win, avg_r, sum_r, avg_red_ret, avg_excess}] per grupp."""
+    """[{nycklar…, n, open, closed, avg_ret, win, avg_r, sum_r, avg_red_ret, avg_excess, + closed_stats}] per grupp."""
     groups: dict = {}
     for r in rs:
         groups.setdefault(tuple(r[k] for k in keys), []).append(r)
@@ -502,8 +648,21 @@ def group(rs: list, keys: tuple) -> list:
                     "win": round(sum(1 for x in rets if x > 0) / len(rets) * 100, 1) if rets else None,
                     "avg_r": _mean(closed_r, 3), "sum_r": round(float(np.sum(closed_r)), 2) if closed_r else 0.0,
                     "avg_red_ret": _mean([r["red_ret_pct"] for r in g]), "red": sum(1 for r in g if r["red"]),
-                    "avg_excess": _mean([r["excess_pct"] for r in g])})
+                    "avg_excess": _mean([r["excess_pct"] for r in g]), **closed_stats(g)})
     return out
+
+
+def snapshot(res: dict, today) -> dict:
+    """En rad per strategi för historiken (valhall_paper_history.json): så syns hur måtten utvecklas över tid."""
+    keep = ("n", "closed", "closed_win", "avg_r", "payoff", "profit_factor", "avg_hold", "excess_30d", "unit_cagr", "unit_dd")
+    return {"date": str((pd.Timestamp(today) if today is not None else pd.Timestamp.today()).date()),
+            "by_strategy": {r["strategy"]: {k: r.get(k) for k in keep} for r in (res or {}).get("by_strategy") or []}}
+
+
+def append_history(history: Optional[list], snap: dict, max_rows: int = 800) -> list:
+    """Dagens ögonblicksbild läggs till (samma datum ersätts) — äldst först, högst max_rows."""
+    rows = [h for h in (history or []) if isinstance(h, dict) and h.get("date") != snap["date"]]
+    return (rows + [snap])[-max_rows:]
 
 
 def results(state: dict, berserk_state: Optional[dict] = None) -> dict:
@@ -513,7 +672,9 @@ def results(state: dict, berserk_state: Optional[dict] = None) -> dict:
             "orders": len((state or {}).get("orders") or []), "positions": len((state or {}).get("positions") or []),
             "closed_dropped": int((state or {}).get("closed_dropped") or 0),      # stängda affärer utanför CLOSED_MAX
             "by_strategy": group(rs, ("strategy",)), "by_segment": group(rs, ("strategy", "segment")),
-            "by_status": group(rs, ("strategy", "status_in")), "by_cykel": group(rs, ("strategy", "cykel_in"))}
+            "by_status": group(rs, ("strategy", "status_in")), "by_cykel": group(rs, ("strategy", "cykel_in")),
+            "by_complex": group(rs, ("strategy", "complex")), "by_phase": group(rs, ("strategy", "phase_in")),
+            "by_turn": group(rs, ("strategy", "turn_in", "confirmed_in"))}
 
 
 def summary_lines(res: dict) -> list:
