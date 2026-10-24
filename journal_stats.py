@@ -209,3 +209,41 @@ def summary(trades: list) -> dict:
         "setups": setup_breakdown(trades),
         "exits": exit_breakdown(trades),
     }
+
+
+# ── Årstakten (beslut 3 i designförslaget) ───────────────────────────────────
+START_CAPITAL = 75_000          # = trade_journal.STARTING_CAPITAL (journalens nämnare)
+
+
+def realized_cagr(trades: list, capital: Optional[float] = None, until=None) -> Optional[float]:
+    """Realiserad årstakt i procent: startkapitalet plus summan av stängda affärers resultat, från första köpet
+    TILL I DAG (inte till senaste sälj — en paus i handeln sänker årstakten, som den gör i verkligheten).
+    None under en tiondels år eller utan stängda affärer med datum."""
+    from datetime import date, datetime
+    cap = _num(capital) or START_CAPITAL
+    closed = [t for t in _closed(trades) if t.get("entry_date") and _num(t.get("pnl_amount")) is not None]
+    starts = [d for d in (_parse(t.get("entry_date")) for t in closed) if d is not None]
+    if not starts or cap <= 0:
+        return None
+    end = _parse(until) if until is not None else date.today()
+    years = (end - min(starts)).days / 365.0
+    if years < 0.1:
+        return None
+    ending = cap + sum(_num(t.get("pnl_amount")) for t in closed)
+    if ending <= 0:
+        return -100.0
+    return round(((ending / cap) ** (1.0 / years) - 1) * 100, 1)
+
+
+def _parse(value):
+    from datetime import date, datetime
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    try:
+        return datetime.fromisoformat(str(value)[:10]).date()
+    except ValueError:
+        return None

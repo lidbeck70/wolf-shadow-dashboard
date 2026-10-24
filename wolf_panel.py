@@ -556,6 +556,9 @@ def main():
             st.markdown("---")
             if sub == "📓 Trade Journal":
                 _page(JOURNAL_AVAILABLE, render_trade_journal_page, "Trade Journal", "trade_journal")
+            elif sub == "🎯 Mot målet":
+                from portfolio.mot_malet import render_mot_malet_page
+                _page(True, render_mot_malet_page, "Mot målet", "portfolio/mot_malet")
             elif sub == "Holdings":
                 _page(HOLDINGS_AVAILABLE, render_holdings_page, "Holdings", "holdings")
             elif sub == "Swing":
