@@ -130,23 +130,8 @@ def _inject_css() -> None:
     st.markdown(
         f"""
         <style>
-        /* ── Wolf Panel Heatmap – Nordic Gold CSS ── */
-        html, body, .stApp {{
-            background-color: {BG};
-            color: {TEXT};
-            font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
-        }}
-
-        h1, h2, h3, h4 {{
-            color: {CYAN};
-            letter-spacing: 0.05em;
-            text-transform: uppercase;
-        }}
-
-        [data-testid="stSidebar"] {{
-            background-color: {BG2};
-            border-right: 1px solid rgba(0,229,255,0.2);
-        }}
+        /* ── Värmekartan: bara sidans egna klasser (designförslaget PR 12) — html/body/.stApp, rubriker och
+           sidofältet är panelens tema och skrivs inte över härifrån. ── */
 
         /* KPI cards */
         .kpi-card {{
@@ -957,7 +942,7 @@ def render_heatmap_page() -> None:
         )
     with ctrl6:
         st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
-        refresh_clicked = st.button("⟳  REFRESH DATA", use_container_width=True, key="heatmap_refresh")
+        refresh_clicked = st.button("📡 Uppdatera", use_container_width=True, key="heatmap_refresh")
 
     if refresh_clicked:
         _fetch_heatmap_data.clear()        # bara heatmapens cache, inte hela appens

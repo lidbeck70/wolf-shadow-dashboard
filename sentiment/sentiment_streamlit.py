@@ -414,15 +414,7 @@ def render_sentiment_page() -> None:
     # Page-level CSS injection for consistent cyberpunk feel
     st.markdown(f"""
 <style>
-    /* Streamlit container overrides */
-    .block-container {{
-        background: {BG};
-        padding-top: 1.5rem;
-        padding-bottom: 3rem;
-    }}
-    section[data-testid="stSidebar"] {{
-        background: {BG2};
-    }}
+    /* Inga globala överstyrningar av sidans behållare (designförslaget PR 12) — panelens tema gäller. */
     /* Remove default Streamlit expander/metric border highlights */
     .stMetric label {{
         color: {DIM} !important;
@@ -458,7 +450,7 @@ def render_sentiment_page() -> None:
         text-transform:uppercase;
         margin:0;
         text-shadow:0 0 18px rgba(0,229,255,0.5);
-    ">SENTIMENT &amp; FLOW</h1>
+    ">SENTIMENT</h1>
     <p style="color:{DIM};font-size:0.78rem;margin:4px 0 0 0;letter-spacing:0.1em;">
         Syntetiskt Fear &amp; Greed-index · via yfinance
     </p>

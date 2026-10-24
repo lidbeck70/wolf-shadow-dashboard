@@ -1266,7 +1266,7 @@ def render_ember_regime_page() -> None:
         f"<div style='text-align:center;padding:14px 0 10px 0;'>"
         f"<h2 style='color:{EMBER};letter-spacing:0.12em;margin:0;'>🔥 EMBER</h2>"
         f"<p style='color:{DIM};font-size:0.75rem;letter-spacing:0.08em;margin:4px 0 0;'>"
-        f"Per-komplex miljögauge · Energi · Ädelmetaller · Basmetaller · Agri · Cachad 1h"
+        f"Per-komplex miljögauge · Energi · Ädelmetaller · Basmetaller · Agri · Skog · Frakt · Cachad 1h"
         f"</p></div>",
         unsafe_allow_html=True,
     )
@@ -1286,9 +1286,9 @@ def render_ember_regime_page() -> None:
 
     col_r, _ = st.columns([1, 3])
     with col_r:
-        if st.button("↺ Tvinga uppdatering", key="ember_regime_refresh"):
-            for fn in (compute_energi_regime, compute_adelmetaller_regime,
-                       compute_basmetaller_regime, compute_agri_regime):
+        if st.button("📡 Uppdatera", key="ember_regime_refresh"):
+            for fn in (compute_energi_regime, compute_adelmetaller_regime, compute_basmetaller_regime,
+                       compute_agri_regime, compute_skog_regime, compute_frakt_regime):      # alla sex komplex
                 if hasattr(fn, "clear"):
                     fn.clear()
             st.rerun()
@@ -1329,10 +1329,13 @@ def render_ember_regime_page() -> None:
         _render_complex_tab(all_regimes["frakt"])
 
     with st.expander("ℹ Hur per-komplex regimmodellen fungerar", expanded=False):
+        import ember.config as cfg
         st.markdown(
             f"<div style='color:{TEXT};font-size:0.83rem;line-height:1.65;'>"
             f"<b style='color:{EMBER};'>6 komplex — varje med 5 pelare — "
-            f"≥4 gröna = PÅ, 3 = SELEKTIV, ≤2 = AV</b><br/><br/>"
+            f"grön +1 · gul 0 · röd −1 — netto ≥ {cfg.REGIME_PA_MIN} = PÅ, "
+            f"{cfg.REGIME_SELEKTIV_MIN}–{cfg.REGIME_PA_MIN - 1} = SELEKTIV, under = AV; "
+            f"{cfg.REGIME_AV_RED_MIN} röda = AV oavsett</b><br/><br/>"
             f"<b style='color:{GREEN};'>⚡ ENERGI</b> — DXY 4V · XLE/SPY RS 3M · "
             f"CL=F 50V EMA · NG=F 50V EMA · Bredd XLE/XOP/OIH<br/>"
             f"<b style='color:{GOLD};'>🥇 ÄDELMETALLER</b> — DXY 4V · GDX/SPY RS 3M · "

@@ -64,6 +64,11 @@ from ui import nav
 from ui.theme import inject_css, render_header, render_footer
 from auth import render_login_gate
 from tabs.home import tab_home
+# ── LEGACY (designförslaget PR 12, beslut 11) ───────────────────────────────
+# Importeras men ritas inte i något flikträd — Thor, Läget och Motorsidorna gör jobbet: tabs.screener
+# (tab_screener, render_viking_screener), tabs.strategy_overview (STRATEGIES), contrarian_alpha.ui, cagr,
+# ember.ui, berserk.screen_ui (skannersidan), ovtlyr.ui.viking_screens (render_viking_nine_page),
+# tech_analysis och wolf_screener_ui. Inget raderas förrän ägaren säger till (rekommendation: om tre månader).
 from tabs.screener import tab_screener, render_viking_screener
 from tabs.backtest import tab_backtest_consolidated
 from tabs.regime import tab_regime
@@ -491,7 +496,7 @@ def _tab_review() -> None:
     elif sub == "Tiggre":
         _page(TIGGRE_AVAILABLE, render_tiggre_page, "Tiggre", "tiggre")
     elif sub == "Insider":
-        _page(INSIDER_AVAILABLE, render_insider_page, "Insiderbevakaren", "insider")
+        _page(INSIDER_AVAILABLE, render_insider_page, "Insider", "insider")
     elif sub == "🧭 Durrett":
         _page(DURRETT_AVAILABLE, render_durrett_page, "Durrett", "engines/durrett/ui")
     elif sub == "🐺 Wolf Asymmetry":
@@ -500,7 +505,7 @@ def _tab_review() -> None:
         _page(COMMODITY_LEVERAGE_AVAILABLE, render_commodity_leverage_page, "Råvaruhävstång",
               "commodity_leverage/ui")
     elif sub == "🎯 Scorecard":
-        _page(SCORECARD_AVAILABLE, render_scorecard_page, "Master Scorecard", "scorecard")
+        _page(SCORECARD_AVAILABLE, render_scorecard_page, "Scorecard", "scorecard")
 
 
 def _tab_portfolio() -> None:

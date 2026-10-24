@@ -3,7 +3,7 @@ wolf_regime_ui.py — Swing-marknadsregim (Streamlit-port av RegimeTab).
 
 Läser wolf_regime.json (genererad av wolf_data.py) via Gist/lokal fallback och
 visar trafikljus + regelverk, index vs MA200, marknadsbredd (dör före index),
-antal kvalande bolag och 26-veckors historik.
+antal kvalande bolag och historiken (en punkt per handelsdag, högst 60 ≈ tre månader).
 """
 
 from __future__ import annotations
@@ -59,7 +59,7 @@ def render_wolf_regime_page() -> None:
             st.markdown(f"<h1 style='color:{TEXT};margin:0;'>Regim</h1>",
                         unsafe_allow_html=True)
         with c_btn:
-            if st.button("🔄 Uppdatera data", key="wolf_reg_refresh"):
+            if st.button("📡 Uppdatera", key="wolf_reg_refresh"):
                 _get_data(force=True)
                 st.rerun()
 
@@ -201,5 +201,5 @@ def _history(hist: list) -> None:
             f"border-radius:0 0 3px 3px;'></div></div>")
     st.markdown(f"<div style='display:flex;gap:3px;flex-wrap:wrap;'>{cells}</div>",
                 unsafe_allow_html=True)
-    st.caption("Stapelfärg = regim den veckan · fyllnad = bredd. "
+    st.caption("Stapelfärg = regim den dagen · fyllnad = bredd. "
                "GRÖN med fallande fyllnad är hur toppar ser ut.")

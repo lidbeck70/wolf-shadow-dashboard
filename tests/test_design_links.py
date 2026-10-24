@@ -121,3 +121,14 @@ def test_thor_link_applies_once():
 def test_workflows_pass_panel_url():
     for f in ("scheduled-scan.yml", "wolf-data.yml", "berserk-scan.yml"):
         assert "PANEL_URL: ${{ secrets.PANEL_URL }}" in (ROOT / ".github" / "workflows" / f).read_text()
+
+
+def test_kind_target_table_matches_the_alert_calls():
+    for c in _alert_calls():
+        kind = c.args[0].value if c.args and isinstance(c.args[0], ast.Constant) else None
+        target = next((k.value.value for k in c.keywords if k.arg == "target" and isinstance(k.value, ast.Constant)), None)
+        if kind and target:
+            key = "fiat" if str(kind).startswith("fiat_") else kind
+            assert ar.KIND_TARGET[key][1] == target, kind
+    for _head, target in ar.KIND_TARGET.values():
+        assert target in nav.TARGETS

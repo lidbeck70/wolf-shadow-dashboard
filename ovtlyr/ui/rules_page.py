@@ -1251,6 +1251,28 @@ def _page_panel_guide() -> None:
     st.markdown(html + "</table>", unsafe_allow_html=True)
     st.caption("Lägg `?p=…` efter panelens adress. Adressfältet följer fliken, "
                "så URL:en går alltid att kopiera som direktlänk.")
+    _alert_guide(_nav)
+
+
+def _alert_guide(_nav) -> None:
+    """Vart varje Discord-larm leder (alert_rules.KIND_TARGET) — samma mål som länken i larmet."""
+    import alert_rules as _ar
+    rows = [(head, target) for head, target in _ar.KIND_TARGET.values()]
+    rows += [(f"Håven {k}", t) for k, t in _ar.SCREEN_TARGET.items()]
+    rows += [(f"Arkets händelse ({k})", t) for k, t in _ar.SHEET_TARGET.items()]
+    rows += [("🪓 BERSERK-papper", "paper")]
+
+    def _where(target):
+        segs = _nav.TARGETS.get(target) or ("home",)
+        names = [_nav.TOP_LABEL[segs[0]].split(" ", 1)[-1]] + list(segs[1:])
+        return " → ".join(names)
+    html = (f"<div style='color:{_CYAN};font-size:0.72rem;letter-spacing:0.1em;margin:18px 0 6px;'>"
+            f"VART LARMEN LEDER</div><table style='width:100%;border-collapse:collapse;'>")
+    for head, target in rows:
+        html += (f"<tr style='border-bottom:1px solid rgba(138,133,120,0.2);'>"
+                 f"<td style='color:{_TEXT};font-size:0.76rem;padding:4px 8px;'>{_esc(head)}</td>"
+                 f"<td style='color:{_DIM};font-size:0.72rem;padding:4px 8px;'>{_esc(_where(target))}</td></tr>")
+    st.markdown(html + "</table>", unsafe_allow_html=True)
 
 
 def _routine_card(row) -> str:

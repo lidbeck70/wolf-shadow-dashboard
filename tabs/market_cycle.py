@@ -297,7 +297,6 @@ def _render_indicator_summary(indicators: dict) -> None:
 # ── Main entry point ──────────────────────────────────────────────────────────
 
 def render_market_cycle_page() -> None:
-    inject_css()
     section_title("Market Cycle Engine", "🔄")
 
     st.markdown(
