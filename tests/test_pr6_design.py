@@ -44,7 +44,7 @@ def test_nav_tree_is_consistent():
     keys = [k for k, _l in nav.TOP]
     assert "screening" not in keys and "regime" not in keys and "intel" not in keys     # fas 8
     assert nav.TOP_LABEL["odin"] == "👁 ODIN" and nav.TOP_LABEL["review"] == "📒 ARKEN"
-    assert "ODIN → Råvaror → 🌍 EMBER Regime" in nav.paths()
+    assert "ODIN → Råvaror → 🔥 EMBER" in nav.paths()
 
 
 def test_panel_renders_its_radios_from_the_tree():

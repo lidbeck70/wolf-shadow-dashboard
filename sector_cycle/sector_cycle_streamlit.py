@@ -599,7 +599,7 @@ def render_sector_cycle_page() -> None:
         <h2 style="font-family:monospace;color:{CYAN};letter-spacing:0.15em;
                    text-transform:uppercase;border-bottom:1px solid {DIM};
                    padding-bottom:8px;margin-bottom:4px;">
-            ◈ Sector &amp; Global Regime
+            ◈ Sektorflöde
         </h2>
         <p style="font-family:monospace;font-size:0.72rem;color:{DIM};margin-bottom:0;">
             EMA-50 / EMA-200 trend classification · yfinance · 1-year lookback · cache 60 min

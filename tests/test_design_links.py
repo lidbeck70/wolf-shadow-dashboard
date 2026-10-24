@@ -85,7 +85,7 @@ def test_wolf_alert_opens_thor_with_strategy():
 
 def test_swing_exit_opens_holdings():
     a = ar._alert("swing_exit", "t", "b", target="holdings", ticker="X")
-    assert nav.target_slug(a["target"]) == "portfolio/holdings"
+    assert nav.target_slug(a["target"]) == "portfolio/positioner"
 
 
 class _St:

@@ -53,7 +53,7 @@ BRIDGE = {"viking_nine": ("more/motorsidor/viking-nine-regime", "Viking Nine Reg
           "wolf": ("more/motorsidor/wolf-regime", "Wolf Regime", "reg_ticker"),
           "momentum": ("odin/laget", "Läget (Swing Regime)", "swreg_ticker"),
           "berserk": ("odin/ravaror/berserk-regime", "BERSERK Regime", None),
-          "ember": ("odin/ravaror/ember-regime", "EMBER Regime", "ember_regime_ticker_search"),
+          "ember": ("odin/ravaror/ember", "🔥 EMBER", "ember_regime_ticker_search"),
           "alpha_quality": ("more/motorsidor/quality-contrarian", "Alpha Regime", "ar_ticker"),
           "alpha_contrarian": ("more/motorsidor/quality-contrarian", "Alpha Regime", "ar_ticker"),
           "long_screener": ("more/motorsidor/long-trend", "Long Trend", "long_regime_ticker_input"),
@@ -527,7 +527,7 @@ def _storlek(st, ident, strategy: str, c) -> None:
     with st.expander("📝 Logga köp", expanded=False):
         default = sz["risk_shares"] if sz["risk_shares"] is not None else (sz["cap_shares"] or 0)
         shares = st.number_input("Antal aktier", min_value=0, value=int(default), step=1, key="thor_buy_shares")
-        note("Riskstorleken och taket står ovan — du väljer antalet. Positionen hamnar i PORTFÖLJ → Holdings med "
+        note("Riskstorleken och taket står ovan — du väljer antalet. Positionen hamnar i PORTFÖLJ → Positioner med "
              "stopp och mål; journalraden skrivs när du stänger den.")
         if st.button("Logga köp", key="thor_log_buy", disabled=not shares):
             import positions

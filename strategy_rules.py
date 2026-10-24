@@ -108,7 +108,7 @@ MOMENTUM = Playbook(
     level=LEVEL_BEGINNER,
     horizon="Swing — veckor till månader",
     universe="Svenska bolag som klarat Börsdata-screenerns kvalitetsfilter",
-    where="PORTFÖLJ → Swing · Swing Screener  ·  ODIN → Läget",
+    where="PORTFÖLJ → Veckorutin · Swing Screener  ·  ODIN → Läget",
     idea=(
         "Den enklaste strategin i panelen och den bästa att börja med. Du gör tre "
         "saker: (1) kollar om marknaden överhuvudtaget tillåter köp, (2) tar de "
@@ -143,11 +143,11 @@ MOMENTUM = Playbook(
         ("Max 1–2 nya köp per vecka",
          "Skyddar mot att du fyller portföljen på en enda vecka och därmed satsar "
          "allt på ett enda marknadsläge.",
-         "PORTFÖLJ → Swing: veckochecklistan punkt 4 påminner dig. Räkna dina köp "
+         "PORTFÖLJ → Veckorutin: veckochecklistan punkt 4 påminner dig. Räkna dina köp "
          "i journalen innan du lägger nästa order."),
         ("Max 8 positioner — mål 6–8",
          "Färre positioner = du hinner följa dem. Fler = du tappar överblick.",
-         "PORTFÖLJ → Swing: Positioner visar 'x/6–8'. Panelen vägrar lägga till "
+         "PORTFÖLJ → Veckorutin: Positioner visar 'x/6–8'. Panelen vägrar lägga till "
          "en nionde position.", True),
         ("Positionsstorlek 12–20 % — halv vid GUL regim",
          "GUL regim (index över MA200 men bredden < 45 % eller marginalen < 2 %) "
@@ -158,11 +158,11 @@ MOMENTUM = Playbook(
     exit=_rules([
         ("Säljregel 1 — stängning under MA50",
          "Bolaget har tappat sin trend. Sälj hela positionen.",
-         "PORTFÖLJ → Swing: kryssa 'Stängt under MA50' på positionskortet — kortet "
+         "PORTFÖLJ → Veckorutin: kryssa 'Stängt under MA50' på positionskortet — kortet "
          "blir rött med 'SÄLJ — regel utlöst'.", True),
         ("Säljregel 2 — stop på −10 %",
          "Hård stop från entry. Räknas automatiskt, ingen tolkning.",
-         "PORTFÖLJ → Swing: 'Stop (−10 %)' på varje positionskort. Kursen når stop "
+         "PORTFÖLJ → Veckorutin: 'Stop (−10 %)' på varje positionskort. Kursen når stop "
          "→ kortet blir rött automatiskt. Lägg alltid stopen hos mäklaren också.", True),
         ("Säljregel 3 — ur topp 40 på rankingen",
          "Momentum har lämnat bolaget även om priset inte fallit än. Den regel som "
@@ -171,7 +171,7 @@ MOMENTUM = Playbook(
          "Kryssa då 'Ur topp 40' på positionskortet i Swing-fliken.", True),
         ("Vid +20 % — sälj halva, flytta stop till entry",
          "Du säkrar vinst och gör resten riskfri. Resten får löpa utan vinstmål.",
-         "PORTFÖLJ → Swing: en gul '+20 % — sälj halva'-flagga dyker upp på kortet. "
+         "PORTFÖLJ → Veckorutin: en gul '+20 % — sälj halva'-flagga dyker upp på kortet. "
          "Kryssa 'Halva såld' när du gjort det."),
         ("Röd regim — inga nya köp, hantera bara exits",
          "Befintliga innehav säljs enligt regel 1–3 som vanligt. Du slutar bara köpa.",
@@ -184,9 +184,9 @@ MOMENTUM = Playbook(
         "gul = halv storlek, röd = inga köp.",
         "THOR → Momentum Swing: vad ska jag köpa? Titta på topp 20 och leta "
         "A/B-flaggor. Klicka '→ Bevakning' på kandidaterna.",
-        "PORTFÖLJ → Swing: gå igenom ALLA befintliga positioner mot säljregel 1–3 "
+        "PORTFÖLJ → Veckorutin: gå igenom ALLA befintliga positioner mot säljregel 1–3 "
         "innan du köper något nytt.",
-        "PORTFÖLJ → Swing: välj setup (A/B) på bevakningen, sätt entry-kurs och "
+        "PORTFÖLJ → Veckorutin: välj setup (A/B) på bevakningen, sätt entry-kurs och "
         "klicka KÖP. Max 1–2 st.",
         "Lägg stopen hos mäklaren direkt, och logga affären i journalen. "
         "Bocka av veckochecklistan.",
@@ -361,7 +361,7 @@ ALPHA = Playbook(
          "MER → Motorsidor → Quality & Contrarian: Gate #3 visar 'Golden Cross' eller 'Death Cross'. MER → Motorsidor → Viking Regime: Gul (EMA 50) ovanför magenta (EMA 200)."),
         ("Sektorn måste vara grön",
          "Ingen exponering i svaga sektorer.",
-         "MER → Motorsidor → Quality & Contrarian: Gate #4 visar sektorstatus (0-3). ODIN → Marknad → Flow Divergence: Sektorhjulet visar grön/gul/röd per sektor."),
+         "MER → Motorsidor → Quality & Contrarian: Gate #4 visar sektorstatus (0-3). ODIN → Marknad → Sektorflöde: Sektorhjulet visar grön/gul/röd per sektor."),
         ("Fear & Greed under 60 vid köp",
          "Undvik eufori och toppjakt.",
          "MER → Motorsidor → Quality & Contrarian: Gate #5 visar F&G-score + OK/EJ OK. ODIN → Makro → Sentiment: Stor F&G-gauge. Under 60 = OK. Över 60 = vänta med köp."),
@@ -378,7 +378,7 @@ ALPHA = Playbook(
          "MER → Motorsidor → Quality & Contrarian: Gate #6 visar dagar under EMA200. Gate #7 visar regime-färg. Orange = reducera halvt. Röd = sälj allt.", True),
         ("Sälj vid sektor + breadth crossover",
          "Sektor OCH marknadsbreadd vänder ner = sälj sektorpositioner.",
-         "ODIN → Marknad → Flow Divergence: Sektorhjulet: om sektor byter från grön till röd. MER → Motorsidor → Viking Regime: VIKING NINE sektorpoäng under 30."),
+         "ODIN → Marknad → Sektorflöde: Sektorhjulet: om sektor byter från grön till röd. MER → Motorsidor → Viking Regime: VIKING NINE sektorpoäng under 30."),
         ("Analysera alltid historiska nedgångar",
          "Avgör om fallet är brus eller strukturellt.",
          "MER → Motorsidor → Viking Regime: Drawdowns sub-tab klassificerar nedgångar. MER → Egen backtest: Alpha mode: historisk prestation med drawdown-analys."),
@@ -446,7 +446,7 @@ VIKING = Playbook(
         ("Market Breadth: Bull List bullish crossover", "Måste matcha market trend.",
          "MER → Motorsidor → Viking Regime: Bull List % gauge (Advanced Analysis). Under 25 + vänder upp = bästa entry. Över 75 + vänder ner = stopp."),
         ("Sector Breadth: Stigande", "Bullish 10EMA-kors krävs.",
-         "ODIN → Marknad → Flow Divergence: Sektorhjulet: sektorn måste vara grön. Trend Distribution: sektorn i 'Uptrend'."),
+         "ODIN → Marknad → Sektorflöde: Sektorhjulet: sektorn måste vara grön. Trend Distribution: sektorn i 'Uptrend'."),
         ("Sector Fear & Greed: Stigande", "Sektorsentiment måste förbättras.",
          "ODIN → Makro → Sentiment: F&G-gauge stigande. MER → Motorsidor → Viking Regime: Sentiment-kort: score stigande (jämför med förra veckan)."),
         ("Stock Signal: Köp", "Viking signal måste visa Buy.",
@@ -474,7 +474,7 @@ VIKING = Playbook(
         ("Stängning under gårdagens lägsta", "Efter att du redan rullat (moved SL) = exit.",
          "MER → Motorsidor → Viking Regime: Grafen: jämför dagens stängning med gårdagens lägsta. Stänger under = exit."),
         ("Sektor + Market breadth crossover", "Sälj alla trades i den sektorn.",
-         "ODIN → Marknad → Flow Divergence: Om sektorn byter från grön till röd, OCH Bull List % vänder ner = sälj alla positioner i sektorn."),
+         "ODIN → Marknad → Sektorflöde: Om sektorn byter från grön till röd, OCH Bull List % vänder ner = sälj alla positioner i sektorn."),
         ("Stock Sell signal", "Viking signal flippar till Sell.",
          "MER → Motorsidor → Viking Regime: Long-term signal badge byter till 'SELL' (röd) eller 'REDUCE' (magenta)."),
         ("Fear & Greed target hit", "Beror på var du köpte: 0-50 = exit vid 63. 50-75 = 10p spread. 75+ = 5p spread.",
@@ -566,12 +566,12 @@ QUALITY = Playbook(
          "badge på detaljkortet."),
         ("Max 10 % per aktie",
          "Ingen enskild position får dominera portföljen.",
-         "PORTFÖLJ → Holdings: Quality-sektionen visar '⚠ >10% position' när en "
+         "PORTFÖLJ → Positioner: Quality-sektionen visar '⚠ >10% position' när en "
          "position vuxit förbi taket.", True),
         ("Max 20–25 % per sektor",
          "Riskkontroll på portföljnivå — flera kvalitetsbolag i samma sektor är "
          "fortfarande en enda vadslagning.",
-         "PORTFÖLJ → Holdings: sektorexponering + korrelationsmatris.", True),
+         "PORTFÖLJ → Positioner: sektorexponering + korrelationsmatris.", True),
     ]),
     exit=_rules([
         ("Trenden bryts — kurs under EMA200",
@@ -596,7 +596,7 @@ QUALITY = Playbook(
         "Larm: 💎 Quality-köpsignal (SCHEMALAGDA) säger till när ett av de 25 högst "
         "rankade i listan NYTT får alla fyra gröna.",
         "Räkna positionen: max 10 % av portföljen, kolla sektorexponeringen först.",
-        "PORTFÖLJ → Holdings: lägg in innehavet så regim- och signalbevakning körs.",
+        "PORTFÖLJ → Positioner: lägg in innehavet så regim- och signalbevakning körs.",
         "Kvartalsvis: gå igenom innehaven mot de fyra exit-reglerna.",
     ),
     cheatsheet=(
@@ -664,7 +664,7 @@ DEEP_CONTRARIAN = Playbook(
          "MER → Motorsidor → Quality & Contrarian (Deep Contrarian): stage ACCUMULATE 3/3."),
         ("Bygg ALLTID i tre lika delar",
          "Aldrig allt på en gång. Det är så du får ner snittkursen när det faller mer.",
-         "PORTFÖLJ → Holdings: Deep Contrarian-innehav har fältet "
+         "PORTFÖLJ → Positioner: Deep Contrarian-innehav har fältet "
          "'Tranches deployed' (0/3–3/3) som visar var du är.", True),
         ("Bekräftelse: gummisnodde ≥ 90:e percentilen",
          "T.ex. Gold/Silver-ratio historiskt sträckt = råvaran max-billig vs motvikten.",
@@ -675,7 +675,7 @@ DEEP_CONTRARIAN = Playbook(
          "ODIN → Makro → Sentiment: sentiment-score."),
         ("Max ~25 % per råvarukategori",
          "T.ex. max 25 % i guldgruvbolag totalt — de rör sig som en enda position.",
-         "PORTFÖLJ → Holdings: Deep Contrarian-sektionen varnar '⚠ Sektor >25%'.", True),
+         "PORTFÖLJ → Positioner: Deep Contrarian-sektionen varnar '⚠ Sektor >25%'.", True),
     ]),
     exit=_rules([
         ("DISTRIBUTE 1/3 — fas THRILL",
@@ -760,7 +760,7 @@ EMBER_PB = Playbook(
     level=LEVEL_ADVANCED,
     horizon="Swing — dagar till veckor",
     universe="Börsdata råvarufilter + GDX/GDXJ/SIL/COPX/URA/XLE-konstituenter",
-    where="THOR → EMBER  ·  ODIN → Råvaror → 🌍 EMBER Regime",
+    where="THOR → EMBER  ·  ODIN → Råvaror → 🔥 EMBER",
     idea=(
         "Ember tar Deep Contrarians cykeltänk och lägger teknisk precision ovanpå: "
         "makro/cykelfilter avgör OM du får handla, tre hårda grindar (50V EMA, inte sen "
@@ -785,7 +785,7 @@ EMBER_PB = Playbook(
          f"netto ≥ {_EMBER_REG_PA} = PÅ (full storlek), 0–{_EMBER_REG_PA - 1} = SELEKTIV (halverad, endast "
          f"topp-1 och topp-2), under 0 eller ≥ {_EMBER_REG_RED} röda = AV (inga nya trades "
          "enligt regeln, korten visas ändå). Gul straffas inte längre som röd.",
-         "ODIN → Råvaror → 🌍 EMBER Regime: ett verdikt per komplex. Screenern "
+         "ODIN → Råvaror → 🔥 EMBER: ett verdikt per komplex. Screenern "
          "grindar varje setup mot sitt eget komplex — ett guldcase mot ÄDELMETALLER, "
          "inte mot ENERGI.", True),
         (f"Hård grind: pris över 50-veckors EMA och inte sen cykel (10å-percentil ≤ {_EMBER_LATE:.0f})",
@@ -818,10 +818,10 @@ EMBER_PB = Playbook(
         ("Komplexets regim slår om till AV",
          "Inga nya entries i det komplexet; befintliga hanteras enligt stop och "
          "invalidering. Övriga komplex påverkas inte.",
-         "ODIN → Råvaror → 🌍 EMBER Regime: verdikt per komplex."),
+         "ODIN → Råvaror → 🔥 EMBER: verdikt per komplex."),
     ]),
     workflow=(
-        "ODIN → Råvaror → 🌍 EMBER Regime: vilket verdikt har komplexet du är "
+        "ODIN → Råvaror → 🔥 EMBER: vilket verdikt har komplexet du är "
         "intresserad av? AV = läs bara, handla inte.",
         "THOR → EMBER: gå igenom topp-korten uppifrån.",
         "Kontrollera T1–T4 (alla PASS) och att inga F1–F4-flaggor är aktiva.",
@@ -1004,7 +1004,7 @@ VIKING_NINE = Playbook(
         "volym, rätt pris eller rapportdatum. NO TRADE = Nine ≤ 6/9, marknadens signal SELL, rapport nära eller "
         "dagsgränsen nådd.",
         f"Riskmotorn ger antal aktier: {_sv(_VN_RISK)} % risk, {_sv(_VN_ATR)} × ATR14, högst {_sv(_VN_POS)} % av kapitalet.",
-        "Lägg stoppen hos mäklaren direkt och logga affären i PORTFÖLJ → 📓 Trade Journal.",
+        "Lägg stoppen hos mäklaren direkt och logga affären i PORTFÖLJ → Journal.",
         f"Varje dag: exitmotorn på {_VNR} — marknaden under EMA20 stänger allt, oavsett aktie.",
         "Thor: samma motor i fliken Regim, backtestet i fliken Backtest (signal på stängning, entry nästa öppning, "
         "stopp intradag).",
@@ -1151,7 +1151,7 @@ BERSERK_PB = Playbook(
         (f"Max {_BK_PORT.max_daily_losses} förlustaffärer per dag och rapportspärren sköter du själv",
          "Portföljregeln finns i portfolio_config; rapportdatum finns inte i backtestet (historiska datum saknas) — "
          "kontrollera dem i Börsdata innan entry.",
-         "PORTFÖLJ → 📓 Trade Journal: räkna dagens förluster. Rapportdatum ur Börsdata."),
+         "PORTFÖLJ → Journal: räkna dagens förluster. Rapportdatum ur Börsdata."),
     ]),
     mindset=_rules([
         ("Råvaran bestämmer — aktien är bara hävstången",
@@ -1168,7 +1168,7 @@ BERSERK_PB = Playbook(
         f"Storlek = risk ÷ stoppavstånd ({_sv(_BK_RISK[_BK_S1])} % för S1/S2), högst {_sv(_BK_POSPCT)} % av boken, "
         f"högst 2 per tema och 4 per komplex, värme under {_sv(_BK_HEAT)} %.",
         "Entry nästa öppning om gapet är under 1 × ATR. Lägg stoppen hos mäklaren direkt.",
-        "Följ exitplanen per setup varje dag — trail, tesen bruten, tidsstopp. Logga i PORTFÖLJ → 📓 Trade Journal.",
+        "Följ exitplanen per setup varje dag — trail, tesen bruten, tidsstopp. Logga i PORTFÖLJ → Journal.",
     ),
     cheatsheet=(
         ("Setups", f"{_BK_S1} (råvara stark, aktie efter) · {_BK_S2} (råvara vänder, aktie hatad) · S3 {'på' if _BK_S3_LIVE else 'av'}"),

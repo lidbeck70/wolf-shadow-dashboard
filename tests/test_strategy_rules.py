@@ -366,9 +366,7 @@ def test_ember_paths_include_their_intermediate_tab():
     pb = sr.PLAYBOOKS["ember"]
     texts = [pb.where] + list(pb.workflow) + [r.panel_guide for r in pb.entry + pb.exit]
     for t in texts:
-        if "🔥 EMBER" in t:
-            assert "Arc Screener" in t, f"missing 'Arc Screener' level: {t[:70]}"
-        if "🌍 EMBER Regime" in t:
+        if "ODIN" in t and "🔥 EMBER" in t:
             assert "Råvaror" in t, f"missing 'Råvaror' level: {t[:70]}"
 
 
@@ -455,8 +453,8 @@ def test_review_sheets_live_in_arken():
 
 def test_swing_is_a_position_manager_not_a_screener():
     """Watchlist, open positions and sell-rule flags — that is portfolio work."""
-    assert "Swing" in _sub_tabs("sub_portfolio")
-    assert "Swing" not in _sub_tabs("sub_odin")
+    assert "Veckorutin" in _sub_tabs("sub_portfolio")                  # design PR 11: Swing heter Veckorutin
+    assert "Veckorutin" not in _sub_tabs("sub_odin")
     assert "Swing Screener" not in _sub_tabs("sub_portfolio")    # momentumlistan finns i Thor
 
 

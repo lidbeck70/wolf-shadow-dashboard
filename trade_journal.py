@@ -664,7 +664,7 @@ def render_trade_journal_page():
                 df["entry_date"] = pd.to_datetime(df["entry_date"], errors="coerce")
 
         st.markdown(
-            f'<h2 style="color:{_GOLD}; margin-bottom:0;">Trade Journal</h2>'
+            f'<h2 style="color:{_GOLD}; margin-bottom:0;">Journal</h2>'
             f'<p style="color:{_TEXT_DIM}; margin-top:2px;">Closed-trade analytics & P&L tracking</p>',
             unsafe_allow_html=True,
         )

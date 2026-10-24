@@ -444,9 +444,9 @@ def _tab_odin() -> None:
         sub = _sub("odin/Marknad")
         st.markdown("---")
         _background_note()
-        if sub == "Flow Divergence":
+        if sub == "Sektorflöde":
             _page(SECTOR_CYCLE_AVAILABLE, render_sector_cycle_page, "Sector & Global Regime", "sector_cycle")
-        elif sub == "Heatmap":
+        elif sub == "Värmekarta":
             _page(HEATMAP_AVAILABLE, render_heatmap_page, "Heatmap", "heatmap")
     elif group == "Makro":
         sub = _sub("odin/Makro")
@@ -463,7 +463,7 @@ def _tab_odin() -> None:
         st.markdown("---")
         if sub == "Odin's Blindspot":
             _page(BLINDSPOT_AVAILABLE, render_blindspot_page, "Odin's Blindspot Index", "blindspot")
-        elif sub == "🌍 EMBER Regime":
+        elif sub == "🔥 EMBER":
             _page(EMBER_AVAILABLE, render_ember_regime_page, "EMBER Regime", "ember")
         elif sub == "🪓 BERSERK Regime":
             _page(BERSERK_AVAILABLE, render_berserk_regime_page, "BERSERK Regime", "berserk")
@@ -506,7 +506,7 @@ def _tab_review() -> None:
 def _tab_portfolio() -> None:
     sub = _sub("portfolio")
     st.markdown("---")
-    if sub == "📓 Trade Journal":
+    if sub == "Journal":
         _page(JOURNAL_AVAILABLE, render_trade_journal_page, "Trade Journal", "trade_journal")
     elif sub == "🎯 Mot målet":
         from portfolio.mot_malet import render_mot_malet_page
@@ -514,9 +514,9 @@ def _tab_portfolio() -> None:
     elif sub == "📊 Papperskonton":
         from valhall.paper_ui import render_paper_page
         _page(True, render_paper_page, "Papperskonton", "valhall/paper_ui")
-    elif sub == "Holdings":
+    elif sub == "Positioner":
         _page(HOLDINGS_AVAILABLE, render_holdings_page, "Holdings", "holdings")
-    elif sub == "Swing":
+    elif sub == "Veckorutin":
         _page(SWING_AVAILABLE, render_swing_page, "Swing", "swing")
     elif sub == "Allokering":
         _page(ALLOCATOR_AVAILABLE, render_allocator_page, "Portföljallokeraren", "allocator")

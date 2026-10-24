@@ -88,14 +88,14 @@ ROUTINES: tuple[Routine, ...] = (
                  "THOR → Momentum Swing"),
             Step("Uppdatera bevakningslistan: skicka nya kandidater dit, "
                  "rensa dem som tappat setupen.",
-                 "PORTFÖLJ → Swing"),
+                 "PORTFÖLJ → Veckorutin"),
             Step("Gå igenom öppna positioner mot säljreglerna: stängning under "
                  "MA50, −10 % stop, ur topp 40, +20 % = sälj halva.",
-                 "PORTFÖLJ → Swing"),
+                 "PORTFÖLJ → Veckorutin"),
             Step("Skanna veckans insynsköp — kluster, inte enstaka köp.",
                  ""),
             Step("Logga veckans affärer om något inte redan är loggat.",
-                 "PORTFÖLJ → Trade Journal"),
+                 "PORTFÖLJ → Journal"),
         ),
         note="Veckans enda fasta möte med marknaden. Klarar du bara en rutin "
              "är det den här.",

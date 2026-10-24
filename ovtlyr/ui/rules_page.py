@@ -148,7 +148,7 @@ def _guide_quality() -> None:
                 _ul([
                     "<b>Hitta kandidater:</b> THOR → Quality Contrarian (sortera på kvalitetspoäng).",
                     "<b>Bekräfta köpläge:</b> MER → Motorsidor → Quality & Contrarian (Quality-läge) → tryck ANALYSERA.",
-                    "<b>Kontrollera portföljrisk:</b> PORTFÖLJ → Holdings (korrelation + sektorexponering).",
+                    "<b>Kontrollera portföljrisk:</b> PORTFÖLJ → Positioner (korrelation + sektorexponering).",
                     "<b>Bevaka regimskifte:</b> MER → Motorsidor → Wolf Regime (trendfilter) eller Viking Regime (EMA-alignment).",
                 ], _CYAN),
                 _CYAN),
@@ -406,7 +406,7 @@ def _guide_viking() -> None:
                     "<b>Alla 10 entry-regler:</b> MER → Motorsidor → Viking Regime (OVTLYR Nine-kortet: Market · Sector · Stock).",
                     "<b>Screena momentum:</b> THOR → Viking.",
                     "<b>Marknadsbreadd:</b> MER → Motorsidor → Viking Regime → Bull List % gauge.",
-                    "<b>Sektor:</b> ODIN → Marknad → Heatmap / Flow Divergence.",
+                    "<b>Sektor:</b> ODIN → Marknad → Värmekarta / Flow Divergence.",
                     "<b>F&amp;G per aktie:</b> MER → Motorsidor → Viking Regime → Oscillator Direction.",
                 ], _CYAN),
                 _CYAN),
@@ -492,7 +492,7 @@ def _guide_ember() -> None:
                 + _ul([
                     "<b>1. ODIN → Råvaror → Odin's Blindspot → Tema-tavlan:</b> "
                     "vilka råvarukategorier är TIDIG/MITTEN i cykeln just nu?",
-                    "<b>2. ODIN → Råvaror → 🌍 EMBER Regime:</b> "
+                    "<b>2. ODIN → Råvaror → 🔥 EMBER:</b> "
                     "är makromiljön rätt? (PÅ / SELEKTIV / AV) — "
                     "handla aldrig mot regimen.",
                     "<b>3. THOR → EMBER → ⚡ Skanna nu:</b> "
@@ -501,7 +501,7 @@ def _guide_ember() -> None:
                     "<b>4. Discipline (i setup-kortet):</b> "
                     "fyll i 'Ogiltigförklaras om' och 'Trolig trigger' "
                     "<em>innan</em> du öppnar positionen.",
-                    "<b>5. PORTFÖLJ → Trade Journal:</b> "
+                    "<b>5. PORTFÖLJ → Journal:</b> "
                     "logga trade med entry, stop, target och exit-orsak.",
                 ], _CYAN),
                 _CYAN),
@@ -1102,7 +1102,7 @@ _PANEL_GUIDE: list[tuple] = [
     ("MER → Motorsidor → Long Trend", "Alpha #2, #6, #9",
      "Tio grindar för en långsiktig position: EMA200, sektor, F&G, "
      "positionsstorlek på EMA200-stoppen."),
-    ("ODIN → Marknad → Flow Divergence", "Alpha #4 · Viking sektor",
+    ("ODIN → Marknad → Sektorflöde", "Alpha #4 · Viking sektor",
      "Global sektorsbredd och makrocykel — sektorhjulet grön/gul/röd."),
     ("ODIN → Läget", "Alla — Marknadsrisken (slå på den på Läget), riskspärr, ingen kristallkula",
      "Nio varningar för SPY och OMXS30 (Börsdata) — trend, bredd, VIX, kredit, räntekurva, rotation, eufori → "
@@ -1113,7 +1113,7 @@ _PANEL_GUIDE: list[tuple] = [
     ("MER → Motorsidor → Market Cycle", "Quality · Deep Contrarian",
      "Marknadsfas (CAPITULATION → EUPHORIA). Styr både Quality-cykelgaten och "
      "Deep Contrarians ackumulerings-/distributionssteg."),
-    ("ODIN → Råvaror → 🌍 EMBER Regime", "Ember: makro/cykelfilter",
+    ("ODIN → Råvaror → 🔥 EMBER", "Ember: makro/cykelfilter",
      "Regimbadge per råvarukomplex som avgör om Ember-entries överhuvudtaget "
      "är tillåtna. DATA_GAP blir aldrig GRÖN."),
     ("ODIN → Råvaror → Råvarurotation", "Rule · Sprott · Durrett · Tiggre — var kapitalet ska",
@@ -1180,19 +1180,19 @@ _PANEL_GUIDE: list[tuple] = [
     ("ODIN → Makro → Sentiment", "Deep Contrarian: sentiment-overlay",
      "Retail sentiment 0-100. Under 30 = extrem rädsla (köpstöd). Över 70 = "
      "extrem girighet (säljstöd)."),
-    ("ODIN → Marknad → Heatmap", "Alla — överblick",
+    ("ODIN → Marknad → Värmekarta", "Alla — överblick",
      "Visuell marknadsvy per sektor och region."),
-    ("PORTFÖLJ → Swing", "Momentum: alla regler",
+    ("PORTFÖLJ → Veckorutin", "Momentum: alla regler",
      "Veckochecklistan, bevakningslistan och positionerna med automatiska "
      "säljregel-flaggor (MA50 / stop −10 % / ur topp 40). Köpknappar låses av "
      "marknadsfiltret."),
-    ("PORTFÖLJ → Holdings", "Alpha #8-9 · Quality · Deep Contrarian",
+    ("PORTFÖLJ → Positioner", "Alpha #8-9 · Quality · Deep Contrarian",
      "Tre portföljer med live-signaler. Positionsstorlek >10 %-varning, "
      "sektorexponering >25 %, tranches 0/3–3/3, korrelationsmatris."),
     ("PORTFÖLJ → Allokering", "Alla — ramar och tak",
      "Fördelningsmodellen, råvarutaket 55 %, positionstak per strategi, "
      "kassaregeln och strömbrytaren."),
-    ("PORTFÖLJ → 📓 Trade Journal", "Alla — disciplin",
+    ("PORTFÖLJ → Journal", "Alla — disciplin",
      "Logga varje affär: entry, exit, R, exit-anledning och om du följde planen. "
      "Utan journal går strategin inte att utvärdera."),
     ("MER → Egen backtest", "Wolf · Alpha · Viking · ⚔️ Viking Nine · 📈 Momentum Swing",
@@ -1373,7 +1373,7 @@ def _page_routines() -> None:
     st.markdown(_ul(list(routines.JOURNAL_RULES), _TEXT), unsafe_allow_html=True)
     st.markdown(
         f"<div style='color:{_DIM};font-size:0.72rem;margin:8px 0 4px;'>"
-        f"📍 PORTFÖLJ → Trade Journal &nbsp;·&nbsp; MER → Egen backtest</div>",
+        f"📍 PORTFÖLJ → Journal &nbsp;·&nbsp; MER → Egen backtest</div>",
         unsafe_allow_html=True)
 
     with st.expander("🔬 Backtestern — innan du litar på siffrorna", expanded=False):

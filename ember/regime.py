@@ -1264,7 +1264,7 @@ def render_ember_regime_page() -> None:
 
     st.markdown(
         f"<div style='text-align:center;padding:14px 0 10px 0;'>"
-        f"<h2 style='color:{EMBER};letter-spacing:0.12em;margin:0;'>🌍 EMBER REGIME</h2>"
+        f"<h2 style='color:{EMBER};letter-spacing:0.12em;margin:0;'>🔥 EMBER</h2>"
         f"<p style='color:{DIM};font-size:0.75rem;letter-spacing:0.08em;margin:4px 0 0;'>"
         f"Per-komplex miljögauge · Energi · Ädelmetaller · Basmetaller · Agri · Cachad 1h"
         f"</p></div>",
