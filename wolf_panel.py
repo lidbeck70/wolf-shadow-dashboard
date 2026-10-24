@@ -391,20 +391,39 @@ def _apply_deep_link() -> None:
     dra användaren tillbaka till länken när hen klickat vidare."""
     target = st.session_state.pop("nav_goto", None) or st.query_params.get("p") or ""
     if not target or target == st.session_state.get("_nav_applied"):
+        # Streamlit släpper toppflikens värde ur sessionen efter två körningar när det sattes av en länk och inte
+        # av ett klick — återställ det ur senaste sökvägen, annars hoppar panelen till I DAG (granskning 2, D1).
+        applied = st.session_state.get("_nav_applied")
+        if applied and nav.TABS_KEY not in st.session_state:
+            segs = nav.resolve(applied)
+            if segs:
+                st.session_state[nav.TABS_KEY] = nav.tab_label(segs[0])
         return
     st.session_state["_nav_applied"] = target
     segs = nav.resolve(target)
     if segs:
         nav.seed(st.session_state, segs)
+        inner = nav.inner_seed(target)                     # gamla Guldkvoter/Retail-länkar öppnar sin inre flik
+        if inner:
+            st.session_state[inner[0]] = inner[1]
+    if str(st.query_params.get("risk") or "") == "1":      # Marknadsrisk-larmets länk visar risken på Läget
+        st.session_state["laget_risk"] = True
 
 
 def _sync_url() -> None:
     """Adressfältet följer fliken, så URL:en alltid går att kopiera som
     djuplänk. Ingen omritning — bara URL:en byts."""
-    slug = nav.slug(nav.current(st.session_state))
+    segs = nav.current(st.session_state)
+    slug = nav.slug(segs)
     st.session_state["_nav_applied"] = slug
     if st.query_params.get("p") != slug:
         st.query_params["p"] = slug
+    if segs[0] != "thor":                                   # aktien i en länk hör bara till Thor (D5)
+        for k in ("t", "s"):
+            if k in st.query_params:
+                del st.query_params[k]
+    if segs[:2] != ["odin", "Läget"] and "risk" in st.query_params:
+        del st.query_params["risk"]
 
 
 def _page(available: bool, render, name: str, module: str, rules_key: str = "") -> None:

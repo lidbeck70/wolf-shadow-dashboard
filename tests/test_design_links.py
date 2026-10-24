@@ -19,7 +19,7 @@ def test_unknown_target_goes_home():
 
 
 def test_target_link_with_and_without_base():
-    assert nav.target_link("market_risk") == "?p=odin/laget"
+    assert nav.target_link("market_risk") == "?p=odin/laget&risk=1"
     url = nav.target_link("thor", "https://panel.example/", ticker="VOLV-B.ST", strategy="viking_nine")
     assert url == "https://panel.example/?p=thor&t=VOLV-B.ST&s=viking_nine"
 

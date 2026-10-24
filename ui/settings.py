@@ -88,12 +88,12 @@ def render_settings_page() -> None:
          "Sidornas egna fält finns kvar för tillfälliga räkningar. Gamla Viking läser det aldrig.")
 
     st.markdown("#### Reglerna (låsta)")
-    st.dataframe(pd.DataFrame(rules_rows()), hide_index=True, use_container_width=True)
+    st.dataframe(pd.DataFrame(rules_rows()), hide_index=True, width="stretch")
     note("Ur strategy_rules.py och allokeraren — den enda sanningen. Ändras bara där, med ditt beslut.")
 
     st.markdown("#### Benchmark och standardbolag")
     st.dataframe(pd.DataFrame([{"Sida": a, "Benchmark": b, "Standardbolag": c} for a, b, c in BENCHMARKS]),
-                 hide_index=True, use_container_width=True)
+                 hide_index=True, width="stretch")
     note("Ändras inte härifrån: benchmark är indata till grindarna för relativ styrka.")
 
     st.markdown("#### Länkadress i larmen")

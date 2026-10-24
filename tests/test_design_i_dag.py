@@ -50,7 +50,10 @@ def test_holdings_lines_from_saved_verdicts():
                                     "AAA.ST": {"verdict": "HOLD", "reason": ""},
                                     "BBB.ST": {"verdict": "PARTIAL", "reason": "+20 %"}}}}
     assert ht.holdings_lines(state) == [("EKTA-B.ST", "SÄLJ", "stängning under MA50"), ("BBB.ST", "MINSKA", "+20 %")]
-    assert ht.all_hold_line({"swing": {"verdicts": {"A": {}, "B": {}}}}, 2) == "Alla 2 Momentum-positioner: HÅLL"
+    assert ht.all_hold_line({"swing": {"verdicts": {"A": {"verdict": "HÅLL"}, "B": {"verdict": "HÅLL"}}}}, 2) \
+        == "Alla 2 Momentum-positioner: HÅLL"
+    assert ht.all_hold_line({"swing": {"verdicts": {"A": {"verdict": "HÅLL"}, "B": {"verdict": "OKÄNT LÄGE"}}}}, 2) \
+        == "1 av 2 Momentum-positioner: HÅLL · 1 saknar läge"
 
 
 def test_load_never_fails_and_reads_only_saved_data():

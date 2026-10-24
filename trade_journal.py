@@ -688,11 +688,11 @@ def render_trade_journal_page():
         with c8:
             _cagr = kpis.get("cagr")
             if _cagr is None:
-                _cagr_str, _cagr_color = "—", _TEXT_DIM
+                _cagr_str, _cagr_col = "—", _TEXT_DIM
             else:
                 _cagr_str = f"{_cagr:+.1f}%"
-                _cagr_color = _cagr_color(_cagr)
-            _kpi_card("CAGR (årstakt)", _cagr_str, _cagr_color, caption="Golv 20 % · mål 35 % · till i dag")
+                _cagr_col = _cagr_color(_cagr)
+            _kpi_card("CAGR (årstakt)", _cagr_str, _cagr_col, caption="Golv 20 % · mål 35 % · till i dag")
 
         st.markdown("<br/>", unsafe_allow_html=True)
 

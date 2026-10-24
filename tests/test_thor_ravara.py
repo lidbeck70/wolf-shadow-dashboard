@@ -135,7 +135,7 @@ def test_tab_renders_every_block_for_a_copper_stock(engines):
                  ">AGERA<", "13/15", "TIDIG", "61/100", "plats 1 av 2", "HIGHT POTENTIELL BLINDSPOT",
                  "Hävstång mot råvaran", "RESULTATHÄVSTÅNG", "KURSBETA", "FIAT ENVIRONMENT USD", "Neutral (55/100)",
                  "Koppar nominellt", "I 2010 års dollar", "Mätt i guld", "Guld/koppar", "Copper / Gold", "P8",
-                 "rubber band stretched", "Samma motorer som Odins visdom"):
+                 "rubber band stretched", "Samma motorer som ODIN"):
         assert part in text, part
     assert "Kartboken: Koppar" in [e.label for e in at.expander] and len(at.get("plotly_chart")) == 1   # realprisgrafen
     assert "median 79" not in text                                                                      # guld/silver: inte för koppar

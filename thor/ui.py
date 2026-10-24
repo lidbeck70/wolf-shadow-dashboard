@@ -64,7 +64,9 @@ ASYMMETRY = ("review/wolf-asymmetry", "Wolf Asymmetry", "asym_quick_ticker")
 BACKTEST = ("more/egen-backtest", "Backtest", None)
 VALHALL_BT = ("portfolio/mot-malet", "Valhalls backtester", None)
 SHEET_LINK = {"rule": "review/rick-rule", "royalty": "review/royalty-c", "sprott": "review/poangmodell",
-              "durrett": "review/poangmodell", "tiggre": "review/tiggre", "insider": "review/insider"}
+              "durrett": "review/durrett", "tiggre": "review/tiggre", "insider": "review/insider"}
+# Extra fält som bryggan sätter på målsidan (granskning 2, D10/D11): Alpha-sidans läge och Copilotens strategi.
+BRIDGE_EXTRA = {"alpha_quality": {"ar_mode": "quality"}, "alpha_contrarian": {"ar_mode": "contrarian"}}
 
 
 # ── Data ────────────────────────────────────────────────────────────────────
@@ -286,11 +288,13 @@ def _more() -> None:
     st.session_state["thor_show"] = int(st.session_state.get("thor_show") or PAGE) + PAGE
 
 
-def _jump(path: str, key: Optional[str], ticker: str) -> None:
-    """Bryggan: förifyll den gamla sidans fält och be panelen öppna fliken (Home-kortens nav_goto)."""
+def _jump(path: str, key: Optional[str], ticker: str, extra: Optional[dict] = None) -> None:
+    """Bryggan: förifyll den gamla sidans fält (och extra fält som läge/strategi) och be panelen öppna fliken."""
     import streamlit as st
     if key:
         st.session_state[key] = ticker
+    for k, v in (extra or {}).items():
+        st.session_state[k] = v
     st.session_state["nav_goto"] = path
 
 
@@ -539,7 +543,8 @@ def _storlek(st, ident, strategy: str, c) -> None:
         return
     with st.expander("📝 Logga köp", expanded=False):
         default = sz["risk_shares"] if sz["risk_shares"] is not None else (sz["cap_shares"] or 0)
-        shares = st.number_input("Antal aktier", min_value=0, value=int(default), step=1, key="thor_buy_shares")
+        shares = st.number_input("Antal aktier", min_value=0, value=int(default), step=1,
+                                 key=f"thor_buy_shares_{strategy}_{ident.yf}")   # nytt fält per aktie och strategi (D2)
         note("Riskstorleken och taket står ovan — du väljer antalet. Positionen hamnar i PORTFÖLJ → Positioner med "
              "stopp och mål; journalraden skrivs när du stänger den.")
         if st.button("Logga köp", key="thor_log_buy", disabled=not shares):
@@ -548,9 +553,9 @@ def _storlek(st, ident, strategy: str, c) -> None:
             (st.success if ok else st.warning)(msg)
 
 
-def _bridge(st, label: str, target: tuple, ticker: str, key: str) -> None:
+def _bridge(st, label: str, target: tuple, ticker: str, key: str, extra: Optional[dict] = None) -> None:
     path, name, widget = target
-    st.button(f"{label} {name} →", key=key, on_click=_jump, args=(path, widget, ticker))
+    st.button(f"{label} {name} →", key=key, on_click=_jump, args=(path, widget, ticker, extra))
 
 
 # ── Sidoflikarna ────────────────────────────────────────────────────────────
@@ -564,12 +569,15 @@ def _tab_regim(st, data, ident, strategy, sheets, cands) -> None:
     else:
         from thor import regim
         regim.render(st, ident, strategy, data, _prices, cands)
-    target = BRIDGE.get((s.regime if s else "") or "", BRIDGE["sheet"])
+    regime_key = (s.regime if s else "") or ""
+    target = BRIDGE.get(regime_key, BRIDGE["sheet"])
     b1, b2 = st.columns(2)
     with b1:
-        _bridge(st, "Öppna i", target, ident.yf, "thor_bridge_regim")
+        _bridge(st, "Öppna i", target, ident.yf, "thor_bridge_regim", BRIDGE_EXTRA.get(regime_key))
     with b2:
-        _bridge(st, "Öppna i", COPILOT, ident.yf, "thor_bridge_copilot")
+        import strategy_rules as _sr
+        pb = s.playbook if s and s.playbook in _sr.PLAYBOOKS else None
+        _bridge(st, "Öppna i", COPILOT, ident.yf, "thor_bridge_copilot", {"copilot_strategy": pb} if pb else None)
 
 
 def _tab_teknik(st, data, ident, strategy, sheets, cands) -> None:
@@ -609,7 +617,7 @@ def _tab_backtest(st, data, ident, strategy, sheets, cands) -> None:
     """Strategin på aktien med en knapp (thor.backtest); utan per-aktie-motor: Valhalls backtester och gamla sidan."""
     from thor import backtest
     if not backtest.render(st, ident, strategy, _prices):
-        _bridge(st, "Öppna", VALHALL_BT, ident.yf, "thor_bridge_valhall_bt")
+        _bridge(st, "Öppna", VALHALL_BT, ident.yf, "thor_bridge_valhall_bt", {"goal_backtests": True})
     _bridge(st, "Öppna", BACKTEST, ident.yf, "thor_bridge_backtest")
 
 

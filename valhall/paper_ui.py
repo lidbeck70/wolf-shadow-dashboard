@@ -102,12 +102,13 @@ def render_paper_page(loader: Optional[Callable] = None) -> None:
         with st.spinner("Läser papperskontona ur Gisten …"):
             st.session_state[_STATE] = load(loader)
     data = st.session_state[_STATE]
-    state = data.get("state") or {}
+    state = data.get("state") if isinstance(data.get("state"), dict) else {}
     c2.markdown(f"<div style='color:{DIM};font-size:0.78rem;padding-top:8px;'>Senaste körning "
                 f"{state.get('last_run') or '—'} · hämtad {data.get('loaded')}</div>", unsafe_allow_html=True)
     t1, t2, t3, t4 = st.tabs(["Sammanställning", "Utveckling", "Affärer", "BERSERK-kontot"])
     with t1:
-        render_paper(((data.get("board") or {}).get("paper")))
+        board = data.get("board") if isinstance(data.get("board"), dict) else {}
+        render_paper(board.get("paper"))
     with t2:
         metric = st.radio("Mått", ["Snitt R", "Årstakt % (enhet)", "Payoff", "Vinst % (stängda)"], horizontal=True,
                           key="paper_metric")
@@ -121,14 +122,14 @@ def render_paper_page(loader: Optional[Callable] = None) -> None:
         st.markdown(f"<div style='color:{CYAN};font-size:0.72rem;letter-spacing:0.1em;'>ÖPPNA POSITIONER OCH ORDER</div>",
                     unsafe_allow_html=True)
         pos = positions_table(state)
-        st.dataframe(pos, hide_index=True, use_container_width=True) if len(pos) else note("Inga öppna positioner.")
+        st.dataframe(pos, hide_index=True, width="stretch") if len(pos) else note("Inga öppna positioner.")
         st.markdown(f"<div style='color:{CYAN};font-size:0.72rem;letter-spacing:0.1em;'>STÄNGDA AFFÄRER</div>",
                     unsafe_allow_html=True)
         cl = closed_table(state)
-        st.dataframe(cl, hide_index=True, use_container_width=True) if len(cl) else note("Inga stängda affärer än.")
+        st.dataframe(cl, hide_index=True, width="stretch") if len(cl) else note("Inga stängda affärer än.")
         with st.expander("Händelser (senaste 100)"):
             ev = events_table(state)
-            st.dataframe(ev, hide_index=True, use_container_width=True) if len(ev) else note("Inga händelser.")
+            st.dataframe(ev, hide_index=True, width="stretch") if len(ev) else note("Inga händelser.")
     with t4:
         try:
             from berserk.screen_ui import render_paper_tab

@@ -370,7 +370,7 @@ def render_map(board: dict) -> None:
 def render_paper(res: Optional[dict]) -> None:
     import streamlit as st
     from ui.components import note
-    if not res or not res.get("by_strategy"):
+    if not isinstance(res, dict) or not isinstance(res.get("by_strategy"), list) or not res.get("by_strategy"):
         note("Papperskontona har inga affärer ännu. De stegas fram av Valhall Scan varje vardag — köp fylls på "
              "nästa öppning, så de första affärerna syns dagen efter första körningen.")
         return

@@ -43,7 +43,8 @@ def swing_light(regime: Optional[dict]) -> tuple:
 
 def risk_light(blob: Optional[dict]) -> tuple:
     """('SPY LÅG · OMXS30 FÖRHÖJD', datum) ur den sparade nivån, en marknad i taget."""
-    levels = (blob or {}).get("levels") or {}
+    levels = (blob.get("levels") if isinstance(blob, dict) else None) or {}
+    levels = levels if isinstance(levels, dict) else {}
     parts = [f"{(v or {}).get('label') or m} {(v or {}).get('level')}" for m, v in levels.items()
              if isinstance(v, dict) and v.get("level")]
     if not parts:
@@ -53,7 +54,8 @@ def risk_light(blob: Optional[dict]) -> tuple:
 
 def risk_worst(blob: Optional[dict]) -> str:
     order = {"LÅG": 0, "FÖRHÖJD": 1, "HÖG": 2}
-    lv = [v.get("level") for v in ((blob or {}).get("levels") or {}).values() if isinstance(v, dict)]
+    levels = (blob.get("levels") if isinstance(blob, dict) else None) or {}
+    lv = [v.get("level") for v in (levels.values() if isinstance(levels, dict) else []) if isinstance(v, dict)]
     lv = [x for x in lv if x in order]
     return max(lv, key=order.get) if lv else SAKNAS
 
@@ -61,8 +63,10 @@ def risk_worst(blob: Optional[dict]) -> str:
 def nordic_light(board: Optional[dict]) -> tuple:
     """('5/9 GRÖN', ...) — antal nordiska segment som är GRÖNA av dem som har ett läge."""
     from thor import candidates as tc
-    segs = tc.board_segments(board) or [r for r in (board or {}).get("segments") or [] if isinstance(r, dict)]
-    st = [((r or {}).get("nordic") or {}).get("status") for r in segs]
+    raw = board.get("segments") if isinstance(board, dict) else None
+    segs = tc.board_segments(board) or [r for r in (raw if isinstance(raw, list) else []) if isinstance(r, dict)]
+    st = [((r.get("nordic") if isinstance(r.get("nordic"), dict) else None) or {}).get("status")
+          for r in segs if isinstance(r, dict)]
     st = [s for s in st if s in ("GRÖN", "GUL", "RÖD")]
     if not st:
         return SAKNAS, "valhall_board.json saknas"
