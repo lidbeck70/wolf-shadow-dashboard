@@ -89,7 +89,8 @@ def load_ember_results() -> dict:
     """Load last-saved EMBER results. Priority: EMBER-gisten -> huvudgisten -> local -> empty.
     Huvudgisten (gist_storage.load_blob) läses utan token och utan EMBER_GIST_ID — panelen på Streamlit hade
     annars ingen väg till de schemalagda resultaten och Thor såg aldrig EMBER:s köp."""
-    if _GIST_API_URL:
+    found = []                         # båda gistarna läses och den NYASTE vinner (granskning 2, F18) — en misslyckad
+    if _GIST_API_URL:                  # skrivning till EMBER-gisten fick förut visa ett äldre resultat
         try:
             import requests
             r = requests.get(_GIST_API_URL, timeout=10)
@@ -99,16 +100,18 @@ def load_ember_results() -> dict:
                 if content:
                     data = json.loads(content)
                     if data.get("eligible") is not None:
-                        return data
+                        found.append(data)
         except Exception as e:
             logger.debug("EMBER Gist load failed: %s", e)
     try:
         from gist_storage import load_blob
         data = load_blob(_GIST_FILENAME, None)
         if isinstance(data, dict) and data.get("eligible") is not None:
-            return data
+            found.append(data)
     except Exception as e:
         logger.debug("EMBER main-gist load failed: %s", e)
+    if found:
+        return max(found, key=lambda d: str(d.get("timestamp") or ""))
     try:
         if os.path.exists(_LOCAL_FALLBACK):
             with open(_LOCAL_FALLBACK, encoding="utf-8") as f:

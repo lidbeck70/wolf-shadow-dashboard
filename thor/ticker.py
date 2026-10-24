@@ -175,14 +175,17 @@ def market_for(ticker) -> str:
     return NORDIC_MARKET if yf_form(ticker).endswith(NORDIC_SUFFIX) else US_MARKET
 
 
-def identify(raw, api=None, sheets: Optional[dict] = None, table: Optional[dict] = None) -> Ticker:
+def identify(raw, api=None, sheets: Optional[dict] = None, table: Optional[dict] = None,
+             keep_bare: bool = False) -> Ticker:
     """Allt om tickern i ett objekt. api = Börsdata-klient (valfri), sheets = arken (valfria),
-    table = markets-tabellen (ger suffix åt Börsdata-former som 'ERIC B')."""
+    table = markets-tabellen (ger suffix åt Börsdata-former som 'ERIC B'). keep_bare = tickern utan suffix är en
+    amerikansk rad i listan: slå inte upp den mot Börsdatas nordiska lista ('TEL' är TE Connectivity, inte
+    Telenor — granskning 2, F9)."""
     from berserk import themes as bth
     from berserk import universe as buv
     from valhall import segments as sgm
     t = yf_form(raw)
-    inst = lookup(api, t) if api is not None else None
+    inst = lookup(api, t) if api is not None and not keep_bare else None
     if inst and "." not in t and inst.get("marketId") is not None and table is not None:
         import markets
         t = markets.to_yf(inst.get("ticker") or t, inst.get("marketId"), table)

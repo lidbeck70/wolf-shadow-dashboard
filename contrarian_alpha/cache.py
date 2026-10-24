@@ -439,7 +439,9 @@ def load_screener_results(mode: str = None) -> dict:
     try:
         import gist_storage
         data = gist_storage.load_blob(_fn, None)
-        if isinstance(data, dict) and data.get("results"):
+        # En giltig körning med 0 träffar är svaret — inte "saknas" (då föll den förut tillbaka på en gammal
+        # lokal lista med gamla kandidater; granskning 2, F17).
+        if isinstance(data, dict) and (data.get("results") or data.get("timestamp")):
             return data
     except Exception as e:
         logger.debug("CA main-gist load failed: %s", e)
@@ -454,7 +456,7 @@ def load_screener_results(mode: str = None) -> dict:
             content = _gist_file_content(gist.get("files", {}), _fn)
             if content:
                 data = json.loads(content)
-                if data.get("results"):
+                if data.get("results") or data.get("timestamp"):
                     return data
     except Exception as e:
         logger.debug("Gist CA load failed: %s", e)
