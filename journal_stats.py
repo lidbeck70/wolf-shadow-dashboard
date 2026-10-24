@@ -237,7 +237,7 @@ def realized_cagr(trades: list, capital: Optional[float] = None, until=None) -> 
 
 def _parse(value):
     from datetime import date, datetime
-    if value is None or value == "":
+    if value is None or value == "" or value != value:          # None, tomt, NaN/NaT
         return None
     if isinstance(value, datetime):
         return value.date()

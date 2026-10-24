@@ -64,8 +64,11 @@ def strategy_rows(paper: Optional[dict], trades: Optional[list]) -> list:
 
 
 def plan_followed(trades: Optional[list]) -> Optional[float]:
-    """Andelen journalaffärer med followed_plan = ja, av dem där fältet är ifyllt. None utan ifyllda."""
-    vals = [t.get("followed_plan") for t in trades or [] if isinstance(t, dict) and t.get("followed_plan") is not None]
+    """Andelen journalaffärer med followed_plan = ja, av dem där fältet är ifyllt. None utan ifyllda.
+    Journalen och Copiloten sparar "Ja"/"Nej"; True/False läses också."""
+    m = {"JA": True, "NEJ": False, True: True, False: False}
+    vals = [m.get(str(t.get("followed_plan")).upper() if isinstance(t.get("followed_plan"), str) else t.get("followed_plan"))
+            for t in trades or [] if isinstance(t, dict)]
     vals = [v for v in vals if isinstance(v, bool)]
     return round(sum(vals) / len(vals) * 100, 1) if vals else None
 
