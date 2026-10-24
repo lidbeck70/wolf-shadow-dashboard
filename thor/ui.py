@@ -287,11 +287,15 @@ def _jump(path: str, key: Optional[str], ticker: str) -> None:
 
 
 def _apply_links(st) -> None:
-    """?t=BOL.ST i adressfältet öppnar aktien — en gång per värde."""
+    """?t=BOL.ST i adressfältet öppnar aktien och ?s=wolf väljer strategin (larmlänkarna) — en gång per värde."""
     t = str(st.query_params.get("t") or "").strip()
-    if t and st.session_state.get("_thor_t") != t:
-        st.session_state["_thor_t"] = t
+    s = str(st.query_params.get("s") or "").strip()
+    if t and st.session_state.get("_thor_t") != (t, s):
+        st.session_state["_thor_t"] = (t, s)
         st.session_state["thor_ticker"] = t
+        if reg.get(s):
+            st.session_state["thor_strategy"] = reg.label(s)
+            st.session_state["_thor_strategy_set"] = True
     if "thor_show" not in st.session_state:
         st.session_state["thor_show"] = PAGE
 

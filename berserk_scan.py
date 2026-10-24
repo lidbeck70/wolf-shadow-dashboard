@@ -26,6 +26,7 @@ Flaggor: --dry-run (räkna och skriv ut larmen, spara och skicka inget).
 from __future__ import annotations
 
 import argparse
+import os
 import logging
 import sys
 from datetime import datetime, timezone
@@ -119,6 +120,10 @@ def run(getter=None, nordic_provider=None, load=None, save=None, send=None, toda
         return {"scan": payload, "paper": None, "events": [], "messages": [], "saved": saved, "sent": 0}
     state, events = paper.step(state, res["rows"], keep, today, cfg=bt.live_config(), pc=bt.live_portfolio())
     msgs = paper.messages(events, state)
+    base = os.environ.get("PANEL_URL", "").strip()
+    if msgs and base:                                   # länken till 📊 Papperskonton (BERSERK-kontot)
+        from ui.nav import target_link
+        msgs[-1] += f"\n→ {target_link('paper', base)}"
     payload = scan_payload(res, state)
     log.info("%d tickers · %d KÖP · %d BEVAKA · %d händelser · papper %.2f", payload["tickers"],
              payload["counts"]["KÖP"], payload["counts"]["BEVAKA"], len(events), paper.equity(state))
