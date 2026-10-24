@@ -31,6 +31,27 @@ import swing_verdict as sv
 EARLY = "TIDIG"
 
 
+# Vart varje larm leder (Flikguiden ritar tabellen; testet låser att anropen följer den). Nyckel = larmets kind
+# (screen_*/sheet_* täcks av SCREEN_TARGET/SHEET_TARGET nedan), värde = (rubrik, målnyckel i ui/nav.TARGETS).
+KIND_TARGET = {
+    "cycle_turn": ("⚡ VÄNDNING", "turn"),
+    "swing_regime": ("Swing-läget skiftade", "swing_regime"),
+    "swing_setup": ("Ny swing-kandidat", "thor"),
+    "swing_exit": ("Säljsignal på innehav", "holdings"),
+    "market_risk_high": ("🌩️ Marknadsrisk HÖG", "market_risk"),
+    "market_risk_clear": ("✅ Marknadsrisk ner", "market_risk"),
+    "wolf_score": ("🐺 Wolf", "thor"),
+    "viking_nine": ("🛡 Viking (Execution-filtret)", "thor"),
+    "ember_eligible": ("🔥 EMBER", "thor"),
+    "contrarian_deep": ("🎯 Deep Contrarian", "thor"),
+    "quality_buy": ("💎 Quality", "thor"),
+    "insider_cluster": ("👥 Insiderkluster", "insider"),
+    "insider_buy": ("👥 Insider KÖP-läge", "thor"),
+    "blindspot_early": ("Blindspot TIDIG", "rotation"),
+    "fiat": ("🐺 Fiat Debasement", "fiat"),
+}
+
+
 def _alert(kind: str, title: str, body: str, target: str = "", ticker: str = "", strategy: str = "") -> dict:
     """Ett larm. target = målnyckeln i ui/nav.TARGETS dit länken leder, ticker/strategy fyller i Thor."""
     a = {"kind": kind, "title": title, "body": body}

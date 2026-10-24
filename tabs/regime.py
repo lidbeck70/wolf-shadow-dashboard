@@ -31,7 +31,7 @@ def tab_regime():
         watch_sector = etf_from_display(watch_sector_display)
     with ctrl3:
         st.markdown("<br>", unsafe_allow_html=True)
-        refresh_btn = st.button("🔄 REFRESH REGIME", key="reg_refresh", width='stretch')
+        refresh_btn = st.button("📡 Uppdatera", key="reg_refresh", width='stretch')
 
     _BENCHMARK_OPTIONS = {
         "SPY — S&P 500": "SPY",

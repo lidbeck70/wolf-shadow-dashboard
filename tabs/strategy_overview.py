@@ -374,7 +374,6 @@ def _render_manual_card(pb, badge: str = "Manuell exekvering") -> None:
 
 
 def tab_strategy_overview() -> None:
-    inject_css()
     section_title("Strategy Overview")
 
     st.markdown(

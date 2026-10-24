@@ -652,7 +652,7 @@ def render_sector_cycle_page() -> None:
 
     with ctrl_col3:
         st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
-        if st.button("↺ Refresh Data", key="sector_cycle_refresh"):
+        if st.button("📡 Uppdatera", key="sector_cycle_refresh"):
             compute_sector_summary.clear()
             st.rerun()
 

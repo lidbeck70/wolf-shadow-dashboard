@@ -626,7 +626,6 @@ def _render_channel_status() -> None:
 # ── Main entry point ─────────────────────────────────────────────────────────
 
 def tab_alerts() -> None:
-    inject_css()
     section_title("Alert Center")
 
     st.markdown(

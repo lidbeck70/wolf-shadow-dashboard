@@ -106,7 +106,7 @@ def render_retail_sentiment_page() -> None:
     """Main retail sentiment dashboard — full engine-powered version."""
     st.markdown(
         f"<h2 style='color:{GOLD};text-align:center;letter-spacing:0.15em;'>"
-        f"RETAIL SENTIMENT ENGINE</h2>"
+        f"RETAIL</h2>"
         f"<p style='color:{DIM};text-align:center;font-size:0.8rem;'>"
         f"Multi-Source Confidence-Weighted Scoring</p>",
         unsafe_allow_html=True,

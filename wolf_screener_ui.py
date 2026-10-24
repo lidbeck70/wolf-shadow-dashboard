@@ -52,7 +52,7 @@ def render_wolf_screener_page() -> None:
                 unsafe_allow_html=True,
             )
         with c_btn:
-            if st.button("🔄 Uppdatera data", key="wolf_scr_refresh"):
+            if st.button("📡 Uppdatera", key="wolf_scr_refresh"):
                 _get_data(force=True)
                 st.rerun()
 

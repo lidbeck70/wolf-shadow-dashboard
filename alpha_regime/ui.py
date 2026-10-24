@@ -1244,7 +1244,7 @@ def render_alpha_regime() -> None:
     """Main entry point — renders the full Alpha Regime tab."""
     st.markdown(
         "<h2 style='color:#00E5FF;letter-spacing:0.05em;margin-bottom:4px;'>"
-        "ALPHA REGIME</h2>"
+        "QUALITY &amp; CONTRARIAN</h2>"
         "<div style='color:#607080;font-size:0.85rem;margin-bottom:16px;'>"
         "Dual-mode market confirmation system · Quality (Buffett/KAP) · "
         "Deep Contrarian (Rule/Sprott)</div>",
@@ -1276,8 +1276,8 @@ def render_alpha_regime() -> None:
                      "Tryck sedan ▶ ANALYSE.",
             )
         else:
-            st.caption("Ingen sparad Deep Contrarian-körning hittades — kör screenern under "
-                       "Screening → Contrarian Alpha så dyker listan upp här.")
+            st.caption("Ingen sparad Deep Contrarian-körning hittades — den körs i schemat. Öppna THOR och "
+                       "välj strategin Deep Contrarian (⚡ Skanna nu där den finns), så dyker listan upp här.")
 
     # ── Controls ─────────────────────────────────────────────────────────────
     ctrl1, ctrl2, ctrl3, ctrl4 = st.columns([1, 1, 1.5, 0.8])

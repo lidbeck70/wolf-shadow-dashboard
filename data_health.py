@@ -192,7 +192,7 @@ def render_data_health() -> None:
             unsafe_allow_html=True,
         )
 
-    if st.button("Uppdatera status", key="dh_refresh"):
+    if st.button("📡 Uppdatera", key="dh_refresh"):
         _cached_probes.clear()
         st.rerun()
 
