@@ -39,6 +39,31 @@ _RED     = "#c44545"
 _TEXT    = "#e8e4dc"
 _TEXT_DIM = "#8a8578"
 
+def _cagr_color(cagr):
+    """Färgen mot ägarens mål (beslut 2): grönt från 35 %, cyan från golvet 20 %, guld under, ember under noll."""
+    from portfolio.mot_malet import GOAL_FLOOR, GOAL_TARGET
+    if cagr is None:
+        return _TEXT_DIM
+    return _GREEN if cagr >= GOAL_TARGET else (_CYAN if cagr >= GOAL_FLOOR else (_EMBER if cagr < 0 else _GOLD))
+
+
+def _start_capital() -> float:
+    """Journalens startkapital: kapitalet ur ⚙️ Inställningar (beslut 5), annars STARTING_CAPITAL."""
+    try:
+        from ui import settings as _us
+        return _us.capital() or STARTING_CAPITAL
+    except Exception:
+        return STARTING_CAPITAL
+
+
+def _cagr_of(df: pd.DataFrame):
+    """Realiserad årstakt till i dag (beslut 3) — journal_stats.realized_cagr på journalens rader."""
+    try:
+        return js.realized_cagr(df.to_dict("records"), _start_capital())
+    except Exception:
+        return None
+
+
 # Starting capital assumption: the realized swing-trading portfolio size.
 # CAGR uses this as the denominator even when only a fraction is deployed at once,
 # because pnl_amount is position-level — not portfolio-level — P&L.
@@ -177,23 +202,8 @@ def _compute_kpis(df: pd.DataFrame) -> dict:
                 break
         streak_label = f"{streak_count}W" if streak_type else f"{streak_count}L"
 
-        # Portfolio realized CAGR
-        cagr = None
-        try:
-            if ("entry_date" in df.columns and "exit_date" in df.columns
-                    and "pnl_amount" in df.columns and STARTING_CAPITAL > 0):
-                kdf = df.dropna(subset=["entry_date", "exit_date", "pnl_amount"])
-                if not kdf.empty:
-                    first_entry = pd.to_datetime(kdf["entry_date"]).min()
-                    last_exit   = pd.to_datetime(kdf["exit_date"]).max()
-                    years = (last_exit - first_entry).days / 365.0
-                    if years >= 0.1:
-                        ending = STARTING_CAPITAL + float(kdf["pnl_amount"].sum())
-                        cagr = round(
-                            ((ending / STARTING_CAPITAL) ** (1.0 / years) - 1) * 100, 1
-                        )
-        except Exception:
-            pass
+        # Realiserad årstakt — till i dag, på startkapitalet (beslut 3 och 5)
+        cagr = _cagr_of(df)
 
         return {
             "total": total,
@@ -242,23 +252,8 @@ def _strategy_stats(df: pd.DataFrame, strategy: str) -> dict:
             return _empty
         wins = sub[sub["pnl_pct"] > 0] if "pnl_pct" in sub.columns else pd.DataFrame()
 
-        # CAGR for this strategy (same STARTING_CAPITAL base as portfolio CAGR)
-        cagr = None
-        try:
-            if ("entry_date" in sub.columns and "exit_date" in sub.columns
-                    and "pnl_amount" in sub.columns and STARTING_CAPITAL > 0):
-                skdf = sub.dropna(subset=["entry_date", "exit_date", "pnl_amount"])
-                if not skdf.empty:
-                    first_entry = pd.to_datetime(skdf["entry_date"]).min()
-                    last_exit   = pd.to_datetime(skdf["exit_date"]).max()
-                    years = (last_exit - first_entry).days / 365.0
-                    if years >= 0.1:
-                        ending = STARTING_CAPITAL + float(skdf["pnl_amount"].sum())
-                        cagr = round(
-                            ((ending / STARTING_CAPITAL) ** (1.0 / years) - 1) * 100, 1
-                        )
-        except Exception:
-            pass
+        # Strategins årstakt — samma bas och samma formel som portföljens (beslut 3 och 5)
+        cagr = _cagr_of(sub)
 
         return {
             "trades": len(sub),
@@ -387,7 +382,7 @@ def _strategy_card(name: str, stats: dict):
         cagr_html = '<span style="color:{_TEXT_DIM}">—</span>'
         cagr_color = _TEXT_DIM
     else:
-        cagr_color = _GREEN if cagr >= 35 else (_CYAN if cagr >= 15 else (_EMBER if cagr < 0 else _GOLD))
+        cagr_color = _cagr_color(cagr)
         cagr_html = f'<b style="color:{cagr_color}">{cagr:+.1f}%</b>'
     st.markdown(
         f"""<div style="background:{_BG_CARD}; border:1px solid {_GOLD_DIM};
@@ -696,12 +691,8 @@ def render_trade_journal_page():
                 _cagr_str, _cagr_color = "—", _TEXT_DIM
             else:
                 _cagr_str = f"{_cagr:+.1f}%"
-                _cagr_color = (
-                    _GREEN if _cagr >= 35 else
-                    _CYAN  if _cagr >= 15 else
-                    _EMBER if _cagr < 0  else _GOLD
-                )
-            _kpi_card("CAGR (årstakt)", _cagr_str, _cagr_color, caption="Mål: 35–45%")
+                _cagr_color = _cagr_color(_cagr)
+            _kpi_card("CAGR (årstakt)", _cagr_str, _cagr_color, caption="Golv 20 % · mål 35 % · till i dag")
 
         st.markdown("<br/>", unsafe_allow_html=True)
 
@@ -936,6 +927,10 @@ def render_trade_journal_page():
                     "Trolig trigger",
                     placeholder="t.ex. Q2-rapport, Fed-beslut, branschrotation",
                 )
+            followed_plan = st.selectbox(
+                "Följde affären planen?", ["", "Ja", "Nej"],
+                format_func=lambda x: x or "— ej angivet —",
+                help="Frivilligt (beslut 4). Mot målet visar andelen affärer enligt plan.")
 
             submitted = st.form_submit_button(
                 "Log Trade",
@@ -971,10 +966,11 @@ def render_trade_journal_page():
                             "pnl_amount": round(pnl_amount, 2),
                             # R ur stoppen när den finns; annars det inmatade
                             # värdet, så gamla affärer och import fungerar som förr.
-                            "r_multiple": round(
-                                js.r_multiple(entry_price, stop_loss,
-                                              exit_price=exit_price)
-                                or r_multiple, 2),
+                            # Utan stopp och utan inmatat R blir R tomt, inte 0R (beslut 3) —
+                            # annars drar affärer utan stopp ned snitt-R.
+                            "r_multiple": (lambda _r: round(_r, 2) if _r is not None else None)(
+                                js.r_multiple(entry_price, stop_loss, exit_price=exit_price)
+                                or (r_multiple if r_multiple else None)),
                             "stop_loss": round(stop_loss, 2) if stop_loss > 0 else None,
                             "setup": setup or None,
                             "sell_rule": sell_rule or None,
@@ -986,6 +982,7 @@ def render_trade_journal_page():
                             "invalidation_text":  invalidation_text.strip(),
                             "invalidation_price": round(invalidation_price, 2) if invalidation_price > 0 else None,
                             "probable_catalyst":  probable_catalyst.strip(),
+                            "followed_plan":      followed_plan or None,
                         }
 
                         trades = load_journal()
