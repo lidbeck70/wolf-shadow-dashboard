@@ -36,9 +36,10 @@ TOP_LABEL = dict(TOP)
 # papperskontona i PORTFÖLJ och backtesterna under Mot målet. Nycklarna i koden är oförändrade (beslut 8).
 SUBS: dict = {
     "odin": ["Läget", "Kartan", "Råvaror", "Makro", "Marknad"],
-    "odin/Råvaror": ["Odin's Blindspot", "🌍 EMBER Regime", "🪓 BERSERK Regime", "Råvarurotation",
-                     "🥇🥈 Guld/Silver", "🥇 Guldkvoter"],
-    "odin/Makro": ["🐺 Fiat Debasement", "Sentiment", "Retail Pulse"],
+    # Design PR 10: Guld/Silver och Guldkvoter är en sida (🥇 Guld) med två inre flikar; Sentiment och Retail Pulse
+    # likaså. Marknad är bakgrund och märks så på sidorna.
+    "odin/Råvaror": ["Odin's Blindspot", "🌍 EMBER Regime", "🪓 BERSERK Regime", "Råvarurotation", "🥇 Guld"],
+    "odin/Makro": ["🐺 Fiat Debasement", "Sentiment"],
     "odin/Marknad": ["Flow Divergence", "Heatmap"],
     # Beslutsunderlaget efter screeningen — köpgrinden först. Durrett har sitt ark (data/confidence.json);
     # Wolf Asymmetry har sitt eget med Confidence inbyggt.
@@ -121,7 +122,7 @@ LEGACY_PATHS: dict = {
     "regime": "odin",
     "intel/odins-blindspot": "odin/ravaror/odins-blindspot",
     "intel/sentiment": "odin/makro/sentiment",
-    "intel/retail-pulse": "odin/makro/retail-pulse",
+    "intel/retail-pulse": "odin/makro/sentiment",
     "intel/heatmap": "odin/marknad/heatmap",
     "intel/teknisk-analys": "thor",
     "intel": "odin",
@@ -139,7 +140,10 @@ LEGACY_PATHS: dict = {
     "odin/marknad/market-cycle": "more/motorsidor/market-cycle",
     "odin/marknad/arc-regime": "more/motorsidor",
     "odin/marknad/alpha-regime": "more/motorsidor",
-    "odin/marknad/retail-pulse": "odin/makro/retail-pulse",
+    "odin/marknad/retail-pulse": "odin/makro/sentiment",
+    "odin/makro/retail-pulse": "odin/makro/sentiment",
+    "odin/ravaror/guld-silver": "odin/ravaror/guld",
+    "odin/ravaror/guldkvoter": "odin/ravaror/guld",
     "alerts": "more/larm",
     "rules/regler-guider": "more/regler-guider",
     "rules/installningar": "more/installningar",

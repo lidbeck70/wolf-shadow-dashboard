@@ -1,5 +1,5 @@
 """
-gold_ratios/ui.py — ODIN → Råvaror → 🥇 Guldkvoter.
+gold_ratios/ui.py — ODIN → Råvaror → 🥇 Guld.
 
 Samma upplägg som Guld/Silver, för fler par: översikt över alla kvoter,
 sedan för valt par dagens läge, historiken, revalveringen och matrisen.
