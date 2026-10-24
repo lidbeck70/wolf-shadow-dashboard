@@ -83,19 +83,19 @@ ROUTINES: tuple[Routine, ...] = (
         steps=(
             Step("Kolla marknadsfiltret först — rött ljus låser alla köp, "
                  "då är söndagen kort.",
-                 "ODINS VISDOM → Marknad → Swing Regime"),
+                 "ODIN → Läget"),
             Step("Kör momentum-screenern och gå igenom topp 40.",
                  "THOR → Momentum Swing"),
             Step("Uppdatera bevakningslistan: skicka nya kandidater dit, "
                  "rensa dem som tappat setupen.",
-                 "PORTFOLIO → Swing"),
+                 "PORTFÖLJ → Swing"),
             Step("Gå igenom öppna positioner mot säljreglerna: stängning under "
                  "MA50, −10 % stop, ur topp 40, +20 % = sälj halva.",
-                 "PORTFOLIO → Swing"),
+                 "PORTFÖLJ → Swing"),
             Step("Skanna veckans insynsköp — kluster, inte enstaka köp.",
                  ""),
             Step("Logga veckans affärer om något inte redan är loggat.",
-                 "PORTFOLIO → Trade Journal"),
+                 "PORTFÖLJ → Trade Journal"),
         ),
         note="Veckans enda fasta möte med marknaden. Klarar du bara en rutin "
              "är det den här.",
@@ -111,10 +111,10 @@ ROUTINES: tuple[Routine, ...] = (
         steps=(
             Step("Triple Signal per råvara: hat räknas ur checklistan, "
                  "fundamenta och katalysator bedöms 1–5, case intakt Ja/Nej.",
-                 "ODINS VISDOM → Råvaror → Råvarurotation"),
+                 "ODIN → Råvaror → Råvarurotation"),
             Step("Läs av vilka som hamnar på AGERA — kapitalet går till de 2–3 "
                  "mest hatade med intakta case.",
-                 "ODINS VISDOM → Råvaror → Råvarurotation"),
+                 "ODIN → Råvaror → Råvarurotation"),
             Step("Kör screenern för de råvarorna och poängsätt kandidaterna.",
                  ""),
             Step("Kör AQS, DS och CSM på de seriösa kandidaterna — i den "
@@ -122,7 +122,7 @@ ROUTINES: tuple[Routine, ...] = (
                  "ARKEN → 🎯 Scorecard"),
             Step("Guld och royaltybenet ligger kvar oavsett betyg — de "
                  "roterar inte.",
-                 "ODINS VISDOM → Råvaror → Råvarurotation"),
+                 "ODIN → Råvaror → Råvarurotation"),
         ),
         note="Inget på AGERA är ett giltigt utfall. Då är rutinen klar på "
              "20 minuter och du gör ingenting.",
@@ -137,7 +137,7 @@ ROUTINES: tuple[Routine, ...] = (
         color=CYAN,
         steps=(
             Step("Kvartalsritualen — de fyra stegen nedan.",
-                 "PORTFOLIO → Allokering"),
+                 "PORTFÖLJ → Allokering"),
             Step("Rapportuppdatering: kassa och burn rate ur kvartalsrapporten.",
                  ""),
             Step("Rapportuppdatering: produktion och AISC ur "
@@ -162,14 +162,14 @@ ROUTINES: tuple[Routine, ...] = (
         steps=(
             Step("Uppdatera prisriktmärkena för varje råvara — "
                  "incitamentspriser flyttar sig.",
-                 "ODINS VISDOM → Råvaror → Råvarurotation"),
+                 "ODIN → Råvaror → Råvarurotation"),
             Step("Läs årets Fraser-ranking och stryk jurisdiktioner som "
                  "tappat.",
                  ""),
             Step("Se över skattesetupen inför nästa år.",
                  ""),
             Step("Kör om backtestet på swing-reglerna med ett år mer data.",
-                 "PORTFOLIO → Backtest"),
+                 "MER → Egen backtest"),
         ),
     ),
     Routine(
@@ -182,9 +182,9 @@ ROUTINES: tuple[Routine, ...] = (
         color=DIM,
         steps=(
             Step("Läs av vilket ben som ligger längst under sin målprocent.",
-                 "PORTFOLIO → Allokering"),
+                 "PORTFÖLJ → Allokering"),
             Step("Pengarna dit — inte till det som gått bäst senast.",
-                 "PORTFOLIO → Allokering"),
+                 "PORTFÖLJ → Allokering"),
         ),
         note="Den enda rutinen utan datum. Den utlöses av lön, utdelning "
              "eller en försäljning — inte av kalendern.",

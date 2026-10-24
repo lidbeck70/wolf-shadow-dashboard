@@ -8,7 +8,7 @@ Per-aktie-motorer finns för fyra strategier — samma motorer som skannrarna oc
   Momentum Swing  swing_backtest på en en-aktiepanel: portföljreglerna (ranking, regim, −10 % stopp, halva vid
                   +20 %), men rankingen jämför bara aktien med sig själv — läs med förbehållen.
   Wolf            wolf_shadow_backtest.Backtester (Pine-speglingen: Core/Trim, fyra regimlager, delexits) med en
-                  kopierad config — inte PORTFOLIO → Backtest-sidan, som skriver i delad config och larmar.
+                  kopierad config — inte MER → Egen backtest-sidan, som skriver i delad config och larmar.
 Resultatet normaliseras (Result): nyckeltal, affärslista och kursgraf med entry/exit-markörer och stoppen,
 märkt med fyllnadsregeln. Strategier utan per-aktie-motor (Long Screener, Alpha, EMBER, arken) säger det
 rakt ut och pekar på Valhalls aggregerade backtester. Inga regler ändras.

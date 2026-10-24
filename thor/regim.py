@@ -253,7 +253,7 @@ def _wolf(st, ident, strategy, data, ohlcv, cands) -> None:
                                    ("Trail", f"Kijun {p['kijun']:.2f}", AMBER, f"EMA10 {p['ema10']:.2f}")]), unsafe_allow_html=True)
     if risk_text:
         note(risk_text)
-    note("Samma formler som ODINS VISDOM → Marknad → Arc Regime → Wolf Regime (wolf_regime_score.py). Entry kräver EMA-stack, trend "
+    note("Samma formler som MER → Motorsidor → Wolf Regime (wolf_regime_score.py). Entry kräver EMA-stack, trend "
          "och RSI 45–70; grindarna 8–11 bedömer du själv.")
 
 
@@ -570,4 +570,4 @@ def render_rules(st, strategy: str) -> None:
                             for p in pb.pitfalls), unsafe_allow_html=True)
     if pb.support_note or pb.note:
         note(" ".join(x for x in (pb.support_note, pb.note) if x))
-    note(f"Källa: {pb.source}. Reglerna ändras inte här — de bor i strategy_rules.py och visas i RULES → Regler & Guider.")
+    note(f"Källa: {pb.source}. Reglerna ändras inte här — de bor i strategy_rules.py och visas i MER → Regler & Guider.")

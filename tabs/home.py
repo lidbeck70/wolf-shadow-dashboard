@@ -22,7 +22,7 @@ from ui.theme import section_title
 from ui.tokens import ACCENT, AMBER as AMBER_C, DIM, EMBER, GOLD as GOLD_C, GREEN, GREY, PURPLE, TEXT, regime_color
 
 _ZONE_COLOR = {"odin": PURPLE, "thor": ACCENT, "review": "#c9a84c",
-               "valhall": EMBER, "portfolio": GREEN}
+               "valhall": EMBER, "portfolio": GREEN, "more": GREY}
 _WEEKDAYS = ("måndag", "tisdag", "onsdag", "torsdag", "fredag", "lördag", "söndag")
 _MONTHS = ("januari", "februari", "mars", "april", "maj", "juni", "juli",
            "augusti", "september", "oktober", "november", "december")
@@ -286,4 +286,4 @@ def tab_home() -> None:
         _render_zones()
         st.caption("Adressfältet följer fliken — kopiera URL:en (t.ex. `?p=odin/marknad/"
                    "swing-regime`) för en direktlänk. Alla länkar står i "
-                   "RULES → Regler & Guider → 🗺 FLIKGUIDE.")
+                   "MER → Regler & Guider → 🗺 FLIKGUIDE.")

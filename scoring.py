@@ -390,7 +390,7 @@ def _rows(data: dict, key: str) -> None:
     rows = ranked(data.get(key, []), key)
     if not rows:
         st.caption("Inga kandidater ännu. Screenern körs i Börsdata — filtret "
-                   "står i RULES → 📚 SNABBREFERENS.")
+                   "står i MER → Regler & Guider → 📚 SNABBREFERENS.")
         return
 
     for r in rows:

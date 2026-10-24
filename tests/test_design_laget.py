@@ -43,8 +43,8 @@ def test_row_has_four_lights_in_order_and_no_verdict():
 
 
 def test_laget_is_first_under_marknad_and_swing_alert_lands_there():
-    assert nav.options("odin/Marknad")[0] == "Läget"
-    assert nav.target_slug("swing_regime") == "odin/marknad/laget"
+    assert nav.options("odin")[0] == "Läget"
+    assert nav.target_slug("swing_regime") == "odin/laget" and nav.resolve("odin/marknad/swing-regime") == ["odin", "Läget"]
 
 
 def test_alert_scan_saves_the_risk_level():

@@ -29,7 +29,7 @@ def test_rules_table_covers_every_playbook_and_reads_the_rules():
 
 
 def test_settings_page_is_in_the_tree():
-    assert nav.resolve(nav.target_slug("settings")) == ["rules", "⚙️ Inställningar"]
+    assert nav.resolve(nav.target_slug("settings")) == ["more", "⚙️ Inställningar"]
 
 
 def test_old_viking_never_reads_settings():

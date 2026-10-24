@@ -50,11 +50,13 @@ FAS4C = {"portfolios": [{"variant": "gron", "period": "alla", "cagr": 12.3, "dd"
 
 
 def test_nav_has_valhall_top_tab_after_home():
-    assert [k for k, _l in nav.TOP][:2] == ["home", "valhall"]
-    assert nav.options("valhall") == ["Kartan", "Papperskonton", "Backtester"]
-    assert nav.STATE_KEY["valhall"] == "sub_valhall" and nav.resolve("valhall/papperskonton") == ["valhall", "Papperskonton"]
+    # Design PR 9 (beslut 1): VALHALL-fliken är borta — Kartan i ODIN, papperet i PORTFÖLJ, backtesterna i Mot målet
+    assert "valhall" not in nav.TOP_LABEL and "Kartan" in nav.options("odin")
+    assert nav.resolve("valhall/kartan") == ["odin", "Kartan"]
+    assert nav.resolve("valhall/papperskonton") == ["portfolio", "📊 Papperskonton"]
+    assert nav.resolve("valhall/backtester") == ["portfolio", "🎯 Mot målet"]
     src = open(os.path.join(ROOT, "wolf_panel.py"), encoding="utf-8").read()
-    assert 'tabs["valhall"]' in src and "render_valhall_page(sub)" in src and '_sub("valhall")' in src
+    assert 'render_valhall_page("Kartan")' in src
 
 
 def test_segment_card_shows_status_picks_and_gate():

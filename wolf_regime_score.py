@@ -1,7 +1,7 @@
 """
 wolf_regime_score.py — Wolfs regimpoäng 0–125 och entry-checklistan, utbrutna ur tabs/regime.py.
 
-Samma formler och trösklar som ODINS VISDOM → Marknad → Arc Regime → Wolf Regime visar: fyra lager (Market 30 · Sector 30 ·
+Samma formler och trösklar som MER → Motorsidor → Wolf Regime visar: fyra lager (Market 30 · Sector 30 ·
 Stock 50 · Ichimoku 15), etiketten BULL REGIME ≥ 85 / MODERATE BULL ≥ 65 / NEUTRAL ≥ 45 / BEAR, entry-
 checklistan (trend, volatilitet, momentum, candlestick, order blocks), de elva swinggrindarna och SL/TP-
 kalkylatorn. Koden flyttades hit oförändrad (tests/test_wolf_regime_score.py låser talen mot en kopia av

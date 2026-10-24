@@ -29,7 +29,7 @@ def _rows():
 
 # ── Navigationen ─────────────────────────────────────────────────────────────
 def test_nav_has_thor_after_valhall_without_sub_tabs():
-    assert [k for k, _l in nav.TOP][:3] == ["home", "valhall", "thor"] and nav.TOP_LABEL["thor"] == "🔨 THOR"
+    assert [k for k, _l in nav.TOP][:3] == ["home", "odin", "thor"] and nav.TOP_LABEL["thor"] == "🔨 THOR"
     assert nav.options("thor") == [] and nav.resolve("thor") == ["thor"] and nav.slug(["thor"]) == "thor"
     src = open(os.path.join(ROOT, "wolf_panel.py"), encoding="utf-8").read()
     assert 'tabs["thor"]' in src and "render_thor_page()" in src

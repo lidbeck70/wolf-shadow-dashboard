@@ -658,7 +658,7 @@ INSIDER = Playbook(
         ("Max 1–2 nya per månad, 6–10 innehav",
          "Detta är inte swing — edgen realiseras via rapporter, uppköp och "
          "omvärdering över 6–18 månader.",
-         "PORTFOLIO → Allokering: Insider-ramen 10–30 % (mål 20 %), positionstak "
+         "PORTFÖLJ → Allokering: Insider-ramen 10–30 % (mål 20 %), positionstak "
          "4 % per bolag."),
     ]),
     exit=_rules([
@@ -724,7 +724,7 @@ INSIDER = Playbook(
                  "kvalitetsgrinden, den tekniska triggern, statusflödet, "
                  "vs-kluster och stoppen. Själva insynsflödet läses fortfarande "
                  "manuellt i Börsdatas Insynshandel — panelen hämtar inga "
-                 "transaktioner. PORTFOLIO → Allokering håller Insider-ramen "
+                 "transaktioner. PORTFÖLJ → Allokering håller Insider-ramen "
                  "(mål 20 %) och positionstaket 4 %.",
     source=_SRC,
 )

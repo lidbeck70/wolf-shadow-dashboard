@@ -56,4 +56,4 @@ def test_today_line():
 
 def test_goal_page_in_tree():
     assert nav.resolve(nav.target_slug("goal")) == ["portfolio", "🎯 Mot målet"]
-    assert nav.resolve(nav.target_slug("backtests")) == ["valhall", "Backtester"]
+    assert nav.resolve(nav.target_slug("backtests")) == ["portfolio", "🎯 Mot målet"]

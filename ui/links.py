@@ -15,6 +15,8 @@ def go(target: str, ticker: str = "", strategy: str = "", state=None) -> None:
         import streamlit as st
         state = st.session_state
     state["nav_goto"] = nav.target_slug(target)
+    if target == "market_risk":                       # Läget visar Marknadsrisken på begäran — slå på den
+        state["laget_risk"] = True
     if target == "thor" and ticker:
         state["thor_ticker"] = ticker
         from thor import registry as reg

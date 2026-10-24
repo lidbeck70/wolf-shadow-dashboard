@@ -37,7 +37,7 @@ def test_tables_and_history():
 
 
 def test_navigation_and_registry():
-    assert "📊 Papperskonton" in nav.SUBS["review"]
+    assert "📊 Papperskonton" in nav.SUBS["portfolio"]                           # design PR 9: PORTFÖLJ
     for k in ("ember", "deep", "royalty"):
         assert reg.get(k).paper == k
 
