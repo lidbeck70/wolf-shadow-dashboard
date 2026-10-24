@@ -53,10 +53,53 @@ def status_chip(label: str, st: Optional[dict]) -> str:
     s = _status(st)
     col = regime_color(s) if s in ("GRÖN", "GUL", "RÖD") else GREY
     extra = " · ".join(x for x in ((st or {}).get("phase"), (st or {}).get("cykel")) if x and x != s)
-    start = " ⚡ CYKELSTART" if (st or {}).get("cycle_start") else ""
+    start = turn_text((st or {}).get("turn")) or (" ⚡ CYKELSTART" if (st or {}).get("cycle_start") else "")
     return (f"<span style='border:1px solid {col};border-radius:3px;padding:0 5px;color:{col};font-size:0.68rem;"
             f"font-weight:700;white-space:nowrap;'>{escape(label)} {s}</span>"
             + (f"<span style='color:{DIM};font-size:0.66rem;'> {escape(extra)}{start}</span>" if extra or start else ""))
+
+
+def turn_text(turn: Optional[dict]) -> str:
+    """' ⚡ VÄNDER dag 7 ✓' ur cycle.turn_state — tomt när ingen vändning pågår. ✓ = bekräftad."""
+    t = turn or {}
+    if not t.get("kind"):
+        return ""
+    return f" ⚡ {t['kind']} dag {t.get('days') or '?'}" + (" ✓" if t.get("confirmed") else "")
+
+
+def complex_card(c: dict) -> str:
+    """Komplexrutan: komplexdrivarens status, vändningen, och hur många teman som vänder/är starka."""
+    st = c.get("state") or {}
+    col = regime_color(_status(st)) if _status(st) in ("GRÖN", "GUL", "RÖD") else GREY
+    chips = ""
+    for t in c.get("themes") or []:
+        ts = _status(t.get("state"))
+        tcol = regime_color(ts) if ts in ("GRÖN", "GUL", "RÖD") else GREY
+        chips += (f"<span style='border:1px solid {tcol};border-radius:3px;padding:0 4px;margin:1px 2px 1px 0;"
+                  f"font-size:0.62rem;color:{TEXT};display:inline-block;'>{escape(t.get('label') or t.get('theme') or '')}"
+                  f"{escape(turn_text((t.get('state') or {}).get('turn')))}</span>")
+    return (f"<div style='border:1px solid {col};border-left:4px solid {col};border-radius:4px;padding:6px 8px;"
+            f"min-width:0;'><div style='display:flex;justify-content:space-between;gap:6px;flex-wrap:wrap;'>"
+            f"<b style='color:{TEXT};font-size:0.84rem;'>{escape(c.get('label') or c.get('key') or '')}</b>"
+            f"<span>{status_chip('', st)}</span></div>"
+            f"<div style='color:{DIM};font-size:0.62rem;'>{escape(c.get('driver') or 'ingen drivare')} · "
+            f"{c.get('themes_turning') or 0}/{c.get('n_themes') or 0} teman vänder eller är starka</div>"
+            f"<div style='margin-top:3px;'>{chips}</div></div>")
+
+
+def turn_notice(turns: list) -> str:
+    """'VÄNDNING — bekräftad: … · på väg: …' ur board["turns"]; tom sträng utan vändningar."""
+    ts = [t for t in turns or [] if isinstance(t, dict) and t.get("kind")]
+    if not ts:
+        return ""
+
+    def one(t):
+        where = {"komplex": "komplex", "tema": "tema"}.get(t.get("level"), t.get("where") or "segment")
+        return f"{t.get('label') or t.get('key')} ({where}, {t.get('kind')} dag {t.get('days') or '?'})"
+    conf = [one(t) for t in ts if t.get("confirmed")]
+    soon = [one(t) for t in ts if not t.get("confirmed")]
+    parts = [p for p in (("bekräftad: " + ", ".join(conf)) if conf else "", ("på väg: " + ", ".join(soon)) if soon else "") if p]
+    return "⚡ VÄNDNING — " + " · ".join(parts)
 
 
 def pick_chips(picks: list, color: str = CYAN, blocked: bool = False) -> str:
@@ -261,8 +304,12 @@ def render_map(board: dict) -> None:
         note("Kartan har inte körts ännu. Den byggs av arbetsflödet Valhall Scan vardagar efter nordisk stängning "
              "(16:47 UTC) — kör det manuellt i GitHub Actions för att fylla sidan direkt.")
         return
+    tn = turn_notice(board.get("turns") or [])
+    if tn:
+        note(escape(tn) + " — bekräftad = råvara: VÄNDER och över SMA50 med positiv 63-dagarsavkastning; "
+             "aktiesegment: GRÖN tio dagar efter RÖD.")
     starts = board.get("cycle_starts") or []
-    if starts:
+    if starts and not tn:
         note("⚡ Cykelstart nu (BAISSE · VÄNDER): " + ", ".join(f"{escape(s['segment'])} ({s['where']})" for s in starts))
     sw, buys, long, niche = (board.get("swing") or {}), (board.get("buys") or {}), (board.get("long") or {}), \
         (board.get("niche") or {})
@@ -274,6 +321,12 @@ def render_map(board: dict) -> None:
                     segment_card(r, (sw.get("segments") or {}).get(r["key"]), (buys.get("segments") or {}).get(r["key"]),
                                  (long.get("segments") or {}).get(r["key"]), niche.get(r["key"]), wolf.get(r["key"]))
                     for r in segs) + "</div>", unsafe_allow_html=True)
+    cxs = ((board or {}).get("board") or {}).get("complexes") or []
+    if cxs:
+        st.markdown(f"<div style='color:{GOLD};font-size:0.72rem;letter-spacing:0.1em;margin-top:12px;'>"
+                    f"RÅVARUKOMPLEX — komplexdrivaren är en likaviktad korg av temadrivarna</div>", unsafe_allow_html=True)
+        st.markdown("<div style='display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px;"
+                    "margin-top:4px;'>" + "".join(complex_card(c) for c in cxs) + "</div>", unsafe_allow_html=True)
     for r in segs:
         if not r.get("themes"):
             continue

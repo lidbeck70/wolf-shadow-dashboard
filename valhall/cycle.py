@@ -52,13 +52,16 @@ def _clean(s: Optional[pd.Series]) -> Optional[pd.Series]:
     return s if len(s) else None
 
 
-def phase_series(close: pd.Series) -> pd.Series:
-    """BERSERK-fasen per dag (samma ordning som berserk.live.phase_of). DATA SAKNAS före SMA200."""
-    f = bsg.driver_frame(close)
+def _phase_of_frame(f: pd.DataFrame) -> pd.Series:
     ready = f["sma200"].notna()
     out = np.select([f["bear"] & f["turn"], f["bear"], f["strong"] & f["uptrend"], f["uptrend"]],
                     [VANDER, BAISSE, STARK, UPPTREND], default=SVAG)
     return pd.Series(np.where(ready, out, NODATA), index=f.index)
+
+
+def phase_series(close: pd.Series) -> pd.Series:
+    """BERSERK-fasen per dag (samma ordning som berserk.live.phase_of). DATA SAKNAS före SMA200."""
+    return _phase_of_frame(bsg.driver_frame(close))
 
 
 def weekly_slope(close: pd.Series) -> pd.Series:
@@ -128,7 +131,11 @@ def cycle_frame(close: pd.Series, volume: Optional[pd.Series] = None, spy: Optio
         return pd.DataFrame()
     out = pd.DataFrame(index=c.index)
     out["close"] = c
-    out["phase"] = phase_series(c)
+    f = bsg.driver_frame(c)
+    out["phase"] = _phase_of_frame(f)
+    # Bekräftad vändning (råvaror): baissefönstret lever och drivaren har vänt (EMA50/EMA20) OCH är stark
+    # (över SMA50 med positiv 63-dagarsavkastning) — vändningen har hållit genom SMA50. Analysen 2026-10-24, beslut 3.
+    out["confirmed"] = (f["bear"] & f["turn"] & f["strong"] & f["sma200"].notna()).astype(bool)
     base = bsg.align(_clean(cykel_base), c.index) if cykel_base is not None else None
     level = (c / base).dropna() if base is not None else c
     out["pct10"] = level.rolling(PCT_WINDOW, min_periods=PCT_MIN).rank(pct=True).reindex(c.index) * 100
@@ -143,10 +150,51 @@ def cycle_frame(close: pd.Series, volume: Optional[pd.Series] = None, spy: Optio
     return out
 
 
-def state(frame: pd.DataFrame) -> dict:
-    """Dagens läge ur cycle_frame (sista raden) — tomt läge när serien saknas."""
+TURN_CONFIRM_DAYS = 10             # aktiesegment: GRÖN så många handelsdagar i rad efter RÖD = bekräftad vändning
+RAVARA, SEGMENT = "ravara", "segment"
+NO_TURN = {"kind": None, "since": None, "days": None, "confirmed": False, "confirmed_since": None}
+
+
+def _runs(s: pd.Series) -> pd.Series:
+    return s.ne(s.shift()).cumsum()
+
+
+def turn_state(frame: Optional[pd.DataFrame], kind: str = RAVARA) -> dict:
+    """Vändningen som händelse: {kind, since, days, confirmed, confirmed_since}.
+    råvara:  kind "VÄNDER" medan fasen är BAISSE · VÄNDER; since = första dagen i den pågående VÄNDER-perioden;
+             confirmed = dagens stapel är bekräftad (bear ∧ turn ∧ strong); confirmed_since = första bekräftade dagen.
+    segment: kind "RÖD→GRÖN" medan status är GRÖN och perioden före var RÖD; confirmed efter TURN_CONFIRM_DAYS dagar.
+    Tomt läge (NO_TURN) när ingen vändning pågår."""
     if frame is None or frame.empty:
-        return {"status": NODATA, "phase": NODATA, "cykel": NODATA, "date": None}
+        return dict(NO_TURN)
+    if kind == SEGMENT:
+        st = frame["status"]
+        runs = _runs(st)
+        cur = st[runs == runs.iloc[-1]]
+        prev = st[runs == runs.iloc[-1] - 1]
+        if cur.iloc[-1] != GRON or len(prev) == 0 or prev.iloc[-1] != ROD:
+            return dict(NO_TURN)
+        days = int(len(cur))
+        ok = days >= TURN_CONFIRM_DAYS
+        return {"kind": "RÖD→GRÖN", "since": str(cur.index[0].date()), "days": days, "confirmed": ok,
+                "confirmed_since": str(cur.index[TURN_CONFIRM_DAYS - 1].date()) if ok else None}
+    ph = frame["phase"]
+    runs = _runs(ph)
+    cur = ph[runs == runs.iloc[-1]]
+    if cur.iloc[-1] != VANDER:
+        return dict(NO_TURN)
+    conf = frame["confirmed"][runs == runs.iloc[-1]].astype(bool) if "confirmed" in frame else pd.Series(dtype=bool)
+    first = conf[conf].index[0] if len(conf) and conf.any() else None
+    return {"kind": "VÄNDER", "since": str(cur.index[0].date()), "days": int(len(cur)),
+            "confirmed": bool(conf.iloc[-1]) if len(conf) else False,
+            "confirmed_since": str(first.date()) if first is not None else None}
+
+
+def state(frame: pd.DataFrame, kind: str = RAVARA) -> dict:
+    """Dagens läge ur cycle_frame (sista raden) — tomt läge när serien saknas. kind styr vändningsbegreppet
+    (råvara: fasen VÄNDER + bekräftelse; segment: RÖD → GRÖN som hållit)."""
+    if frame is None or frame.empty:
+        return {"status": NODATA, "phase": NODATA, "cykel": NODATA, "date": None, "turn": dict(NO_TURN)}
     last = frame.iloc[-1]
 
     def num(v, nd=1):
@@ -161,6 +209,6 @@ def state(frame: pd.DataFrame) -> dict:
     return {"date": str(frame.index[-1].date()), "close": num(last["close"], 4), "phase": last["phase"],
             "cykel": last["cykel"], "status": last["status"], "status_since": since,
             "relative": bool(last.get("relative", False)),
-            "cycle_start": bool(last["cycle_start"]), "pct10": num(last["pct10"]),
+            "cycle_start": bool(last["cycle_start"]), "turn": turn_state(frame, kind), "pct10": num(last["pct10"]),
             "slope200w": num(last["slope200w"], 2), "hat": num(last["hat"]), "blindspot": num(last["blindspot"]),
             "from_high5": num(last["from_high5"]), "rs_spy": num(last["rs_spy"]), "vol_chg": num(last["vol_chg"])}

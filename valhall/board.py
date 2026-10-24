@@ -63,14 +63,15 @@ def build(getter: Optional[Callable] = None, nordic: Optional[dict] = None,
     nordic_all = ((nordic or {}).get(ni.ALL) or {}).get("index")
     baskets = baskets if baskets is not None else {}
     rows = []
+    series: dict = {}                                     # temats serie (drivare eller producentkorg) → komplexkorgen
     for s in sgm.SEGMENTS:
         close, vol = _ohlcv(getter, s.spdr)
-        g = cycle.state(cycle.cycle_frame(close, vol, spy, s.necessity, cykel_base=spy)) \
+        g = cycle.state(cycle.cycle_frame(close, vol, spy, s.necessity, cykel_base=spy), cycle.SEGMENT) \
             if close is not None else cycle.state(None)
         n_info = (nordic or {}).get(s.key) or {}
         n_idx = n_info.get("index")
         n_state = cycle.state(cycle.cycle_frame(n_idx, None, nordic_market if nordic_market is not None
-                                                else nordic_all, s.necessity, cykel_base=nordic_all)) \
+                                                else nordic_all, s.necessity, cykel_base=nordic_all), cycle.SEGMENT) \
             if n_idx is not None else None
         themes = []
         for t in s.themes:
@@ -79,6 +80,8 @@ def build(getter: Optional[Callable] = None, nordic: Optional[dict] = None,
                 d = baskets.get(t) if t in baskets else producer_basket(t, getter)
                 sym = "producentkorg" if d is not None else None
             nec = THEME_NECESSITY.get(t, s.necessity)
+            if d is not None:
+                series[t] = (sym, d)
             themes.append({"theme": t, "label": bth.label(t), "driver": sym, "necessity": nec,
                            "state": cycle.state(cycle.cycle_frame(d, None, spy, nec)) if d is not None
                            else cycle.state(None)})
@@ -86,7 +89,27 @@ def build(getter: Optional[Callable] = None, nordic: Optional[dict] = None,
                      "necessity": s.necessity, "niche": s.niche, "global": g, "nordic": n_state,
                      "nordic_members": n_info.get("members"), "nordic_with_data": n_info.get("with_data"),
                      "themes": themes})
-    return {"segments": rows, "when": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")}
+    return {"segments": rows, "complexes": complex_rows(rows, series, spy),
+            "when": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")}
+
+
+def complex_rows(rows: list, series: dict, spy: Optional[pd.Series]) -> list:
+    """En rad per råvarukomplex: komplexdrivaren (likaviktad korg av temadrivarna) genom cykelmotorn, temana
+    under komplexet och hur många av dem som vänder/är starka. Analysen 2026-10-24 §5.1 (beslut 1–2)."""
+    from valhall import complexes as vcx
+    by_cx = vcx.complex_themes(rows)
+    out = []
+    for key, label in vcx.COMPLEXES:
+        syms, basket = vcx.basket(key, series)
+        st = cycle.state(cycle.cycle_frame(basket, None, spy, vcx.NECESSITY[key])) if basket is not None \
+            else cycle.state(None)
+        ths = by_cx.get(key) or []
+        turning = sum(1 for t in ths if (t.get("state") or {}).get("phase") in (cycle.VANDER, cycle.STARK))
+        out.append({"key": key, "label": label, "driver": ("korg: " + ", ".join(syms)) if syms else None,
+                    "necessity": vcx.NECESSITY[key], "state": st,
+                    "themes": [{"theme": t["theme"], "label": t.get("label"), "state": t.get("state")} for t in ths],
+                    "themes_turning": turning, "n_themes": len(ths)})
+    return out
 
 
 def producer_basket(theme: str, getter: Callable, period: str = PERIOD) -> Optional[pd.Series]:
@@ -101,8 +124,32 @@ def producer_basket(theme: str, getter: Callable, period: str = PERIOD) -> Optio
     return ni.equal_weight_index(closes, min_members=2)
 
 
+def turns(board: dict) -> list:
+    """Vändningar som pågår i dag, en post per ruta: segment (Norden/globalt: RÖD → GRÖN), tema och komplex
+    (VÄNDER). Fälten kind/since/days/confirmed/confirmed_since ur cycle.turn_state — "VÄNDNING — köp i dag" i
+    kartan, Thors chip och händelsemotorn läser den här listan."""
+    out = []
+
+    def add(st, **meta):
+        t = (st or {}).get("turn") or {}
+        if t.get("kind"):
+            out.append({**meta, **{k: t.get(k) for k in ("kind", "since", "days", "confirmed", "confirmed_since")},
+                        "status": (st or {}).get("status"), "phase": (st or {}).get("phase"),
+                        "cykel": (st or {}).get("cykel")})
+    for r in board.get("segments") or []:
+        add(r.get("global"), level="segment", key=r["key"], label=r["label"], where="global")
+        add(r.get("nordic"), level="segment", key=r["key"], label=r["label"], where="Norden")
+        for t in r.get("themes") or []:
+            add(t.get("state"), level="tema", key=t["theme"], label=t.get("label"), segment=r["key"], where="tema")
+    for c in board.get("complexes") or []:
+        add(c.get("state"), level="komplex", key=c["key"], label=c["label"], where="komplex",
+            themes_turning=c.get("themes_turning"), n_themes=c.get("n_themes"))
+    out.sort(key=lambda x: (not x["confirmed"], x.get("days") or 0))
+    return out
+
+
 def cycle_starts(board: dict) -> list:
-    """Segment och teman där en cykel startar nu (BAISSE · VÄNDER) — det contrarian-strategin letar efter."""
+    """Segment, teman och komplex där en cykel startar nu (BAISSE · VÄNDER) — det contrarian-strategin letar efter."""
     out = []
     for r in board.get("segments") or []:
         for where, st in (("global", r["global"]), ("Norden", r.get("nordic"))):
@@ -112,4 +159,8 @@ def cycle_starts(board: dict) -> list:
             if t["state"].get("cycle_start"):
                 out.append({"segment": f"{r['label']} · {t['label']}", "key": r["key"], "theme": t["theme"],
                             "where": "tema", "since": t["state"].get("status_since")})
+    for c in board.get("complexes") or []:
+        if (c.get("state") or {}).get("cycle_start"):
+            out.append({"segment": c["label"], "key": c["key"], "complex": c["key"], "where": "komplex",
+                        "since": c["state"].get("status_since")})
     return out

@@ -16,7 +16,7 @@ from typing import Callable, Optional
 from thor import cards
 from thor import dossier as td
 from thor.ticker import Ticker
-from ui.tokens import AMBER, CYAN, DIM, TEXT, regime_color
+from ui.tokens import AMBER, CYAN, DIM, GREEN, TEXT, regime_color
 
 PERIOD = "1y"
 
@@ -25,6 +25,29 @@ def _engine() -> tuple:
     """(analys, historik) ur Market Cycle Engine — båda cachade en timme i Streamlit."""
     from market_cycle.cache import cached_market_cycle_analysis, cached_market_cycle_history
     return cached_market_cycle_analysis, cached_market_cycle_history
+
+
+def turn_for(board_blob: Optional[dict], segment: Optional[str], theme: Optional[str] = None,
+             complex_key: Optional[str] = None) -> Optional[dict]:
+    """Pågående vändning för aktien ur kartans turns-lista: temat först, sedan komplexet, sedan segmentets
+    nordiska vy — None när ingen pågår. (Analysen 2026-10-24: "dag n efter vändningen" som etikett, ingen spärr.)"""
+    ts = [t for t in (board_blob or {}).get("turns") or [] if isinstance(t, dict) and t.get("kind")]
+    for level, key in (("tema", theme), ("komplex", complex_key), ("segment", segment)):
+        if not key:
+            continue
+        for t in ts:
+            if t.get("level") == level and t.get("key") == key and (level != "segment" or t.get("where") == "Norden"):
+                return t
+    return None
+
+
+def turn_chip_text(t: Optional[dict]) -> str:
+    """'⚡ VÄNDER dag 7 · bekräftad (Guld)' för Thors chip."""
+    if not t:
+        return ""
+    who = t.get("label") or t.get("key") or ""
+    return (f"⚡ {t.get('kind')} dag {t.get('days') or '?'}" + (" · bekräftad" if t.get("confirmed") else " · på väg")
+            + (f" ({who})" if who else ""))
 
 
 def cycle_start(board_blob: Optional[dict], segment: Optional[str]) -> Optional[str]:
@@ -68,8 +91,11 @@ def render(st, data: dict, ident: Ticker, strategy: str, phase_fn: Optional[Call
     if seg.get("status"):
         parts = (f"Valhall {seg.get('view')}", seg.get("status"), seg.get("phase"), seg.get("cykel"))
         chips.append(cards.chip(" · ".join(x for x in parts if x), regime_color(seg.get("status"))))
+    turn = turn_for(board, ident.segment, ident.theme, getattr(ident, "complex", None))
     start = cycle_start(board, ident.segment)
-    if start:
+    if turn:
+        chips.append(cards.chip(turn_chip_text(turn), GREEN if turn.get("confirmed") else AMBER, filled=True))
+    elif start:
         chips.append(cards.chip(f"⚡ Cykelstart ({start})", AMBER, filled=True))
     if chips:
         st.markdown("<div style='display:flex;flex-wrap:wrap;gap:4px;margin:4px 0;'>" + "".join(chips) + "</div>",
