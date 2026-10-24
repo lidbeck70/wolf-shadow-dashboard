@@ -54,7 +54,7 @@ SUBS: dict = {
     "review": ["Rick Rule", "Royalty C", "Poängmodell", "Tiggre", "Insider",
                "🧭 Durrett", "🐺 Wolf Asymmetry", "🚀 Råvaruhävstång", "🎯 Scorecard", "📊 Papperskonton"],
     "portfolio": ["📓 Trade Journal", "Holdings", "Swing", "Allokering", "Backtest"],
-    "rules": ["Regler & Guider", "Position Sizing", "Data Health"],
+    "rules": ["Regler & Guider", "⚙️ Inställningar", "Position Sizing", "Data Health"],
     "rules/Regler & Guider": ["🚀 KOM IGÅNG", "📋 HANDELSREGLER", "⚡ FUSKLAPP",
                               "🗺 FLIKGUIDE", "📖 STRATEGIGUIDER", "🗓 ÅRSHJULET",
                               "📚 SNABBREFERENS"],
@@ -157,6 +157,7 @@ TARGETS: dict = {
     "holdings": ("portfolio", "Holdings"),
     "journal": ("portfolio", "📓 Trade Journal"),
     "alerts": ("alerts",),
+    "settings": ("rules", "⚙️ Inställningar"),
 }
 
 
