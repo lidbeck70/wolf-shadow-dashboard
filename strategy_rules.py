@@ -488,7 +488,7 @@ VIKING = Playbook(
         ("Det finns INGA VINSTMÅL", "Låt exit-signalerna göra sitt jobb.",
          "Sätt aldrig en TP-order baserat på känsla. Använd trailing stop (EMA 10) eller exit-signal."),
         ("Jag har bara en plan att ta mig ur", "Planen ÄR din edge. Exekveringen är allt.",
-         "RULES-fliken (denna sida) = din plan. Läs igenom före varje handelsdag. Inga avvikelser."),
+         "MER → Regler & Guider (denna sida) = din plan. Läs igenom före varje handelsdag. Inga avvikelser."),
     ]),
     workflow=(
         "MER → Motorsidor → Viking Regime: välj SPY. Är market trend bullish och signalen BUY?",
@@ -531,7 +531,7 @@ QUALITY = Playbook(
     level=LEVEL_MEDIUM,
     horizon="Position — 0,5–3 år",
     universe="Nordiska + amerikanska kvalitetsbolag",
-    where="THOR → Quality Contrarian  ·  MER → Motorsidor → Quality",
+    where="THOR → Quality Contrarian  ·  MER → Motorsidor → Quality & Contrarian",
     idea=(
         "Inspirerad av Warren Buffett och Kvalitetsaktiepodden: hitta välskötta bolag "
         "med stark ekonomi, köp dem till rimliga priser när marknadsläget är gynnsamt "
@@ -890,7 +890,7 @@ VIKING_NINE = Playbook(
     level=LEVEL_ADVANCED,
     horizon="Swing — dagar till veckor",
     universe="Nordiska aktier (Börsdata) mot OMXS30 och svensk Large Cap-bredd · amerikanska mot SPY och SPDR-bredden",
-    where=f"{_VNS}  ·  {_VNR}  ·  Thor (Regim, Backtest)  ·  VALHALL (Kartan, Papperskonton)",
+    where=f"{_VNS}  ·  {_VNR}  ·  Thor (Regim, Backtest)  ·  ODIN → Kartan  ·  PORTFÖLJ → 📊 Papperskonton",
     idea=(
         "Panelens egen version av OVTLYR Golden Ticket, räknad på riktiga priser (WOLF APPROXIMATION — aldrig "
         "OVTLYR:s egen data). Nio faktorer i tre lager måste alla vara gröna: marknaden (trend, signal, bredd), "
@@ -1073,7 +1073,7 @@ BERSERK_PB = Playbook(
     level=LEVEL_ADVANCED,
     horizon="Swing — dagar till veckor",
     universe="berserk.universe: nordiska råvaruproducenter (kärnan) samt USA, Kanada, London och råvaru-ETF:er (satelliter)",
-    where=f"{_BKS}  ·  {_BKR}  ·  Thor (Regim, Råvara, Backtest)  ·  VALHALL (Kartan, Papperskonton)",
+    where=f"{_BKS}  ·  {_BKR}  ·  Thor (Regim, Råvara, Backtest)  ·  ODIN → Kartan  ·  PORTFÖLJ → 📊 Papperskonton",
     idea=(
         "Varje råvaruaktie mäts mot sin egen råvara — drivaren (koppar mot HG=F, guld mot GC=F, uran mot URA …). "
         f"{_BK_S1}: råvaran är stark men aktien har halkat efter och vänder nu upp. {_BK_S2}: råvaran har varit i "
@@ -1125,7 +1125,7 @@ BERSERK_PB = Playbook(
          f"{_BKS}: skälen 'omsättning under' och 'datavakt' på raden."),
         (f"Entry nästa öppning — men inte om öppningen gappar mer än {_sv(_BK_GAP)} × ATR över signalstängningen",
          "Gapregeln ur portföljvarianterna: ett stort gap äter risken innan affären börjat. Då hoppas signalen över.",
-         f"{_BKS}: planen för nästa öppning på raden; VALHALL (Papperskonton) fyller på samma regel."),
+         f"{_BKS}: planen för nästa öppning på raden; PORTFÖLJ → 📊 Papperskonton fyller på samma regel."),
         ("KÖP kräver setup i dag och alla grindar öppna — annars BEVAKA",
          "Setup utan grindar = BEVAKA med skälet utskrivet. Nästan-setup (watch_reason) = BEVAKA. Inget av det = tom rad.",
          f"{_BKS}: statuskolumnen KÖP / BEVAKA med skälen; Thor-listan översätter rakt av.", True),
@@ -1134,7 +1134,7 @@ BERSERK_PB = Playbook(
         (f"{_BK_S1} — stopp {_sv(_BK_STOP[_BK_S1])} × ATR14; +1 ATR flyttar stoppen till entry − 0,25 ATR; "
          "+2 ATR ger trail på stängning under EMA20",
          "ATR på signaldagen. Stängningsreglerna ger exit nästa öppning; stoppen ligger intradag.",
-         f"{_BKR}: exitplanen per setup; VALHALL (Papperskonton): samma simulate_exit.", True),
+         f"{_BKR}: exitplanen per setup; PORTFÖLJ → 📊 Papperskonton: samma simulate_exit.", True),
         (f"{_BK_S1} — tesen bruten när råvaran stänger under SMA50; tidsstopp 15 dagar utan stängning ≥ +0,5 ATR",
          "Divergensen ska stängas av att aktien kommer ikapp — gör den inte det inom 15 dagar är caset fel.",
          f"{_BKR}: drivarens SMA50 på temakortet."),
@@ -1147,7 +1147,7 @@ BERSERK_PB = Playbook(
          f"{_BKS}: bara när S3 är på i live_config."),
         ("Stoppar intradag — low under stoppen ger exit på stoppen, gap under ger öppningen",
          "Samma fyllnadsregel i backtestet och papperskontot. Lägg stoppen hos mäklaren.",
-         "VALHALL (Papperskonton): kontot wolf_arc/berserk visar fyllnaderna; Thor fliken Backtest märker regeln."),
+         "PORTFÖLJ → 📊 Papperskonton: kontot wolf_arc/berserk visar fyllnaderna; Thor fliken Backtest märker regeln."),
         (f"Max {_BK_PORT.max_daily_losses} förlustaffärer per dag och rapportspärren sköter du själv",
          "Portföljregeln finns i portfolio_config; rapportdatum finns inte i backtestet (historiska datum saknas) — "
          "kontrollera dem i Börsdata innan entry.",
@@ -1159,7 +1159,7 @@ BERSERK_PB = Playbook(
          f"{_BKR}: temakortet före aktieraden."),
         ("S2 är det stora läget och det sällsynta — vänta på det",
          "Cykelvändningar i hatade råvaror kommer få gånger per decennium. S1 fyller tiden däremellan, S3 är av.",
-         f"{_BKS}: sortera på setup; VALHALL (Kartan): ⚡ cykelstart på temat."),
+         f"{_BKS}: sortera på setup; ODIN → Kartan: ⚡ cykelstart på temat."),
     ]),
     workflow=(
         f"{_BKR}: vilka teman är i BAISSE · VÄNDER eller STARK? Vilka marknadsgrindar är öppna? DBC över SMA200?",

@@ -10,7 +10,7 @@ Fyra block, alla för just det här temat (ett uppslag: thor.ticker.theme):
   KVOTER         guld/silver, guld/råvaran (gold_ratios) och gummibanden (alpha_regime.commodity_ratios)
 Temat heter som i BERSERK (koppar, guld, uran …); varje motor har sitt eget ordförråd och mappas här. Ett block
 som inte finns för temat säger det; ett block vars motor fallerar blir en notering, aldrig ett fel på sidan.
-Inga regler ändras — allt är samma tal som på Odins visdom-sidorna.
+Inga regler ändras — allt är samma tal som på ODIN-sidorna.
 """
 
 from __future__ import annotations
@@ -140,7 +140,7 @@ def render(st, ident: Ticker, data: dict, rotation_data: Optional[dict] = None, 
     _block("Debasement", lambda: _debasement(st, theme, note), note)
     _section(st, "Kvoter")
     _block("Kvoterna", lambda: _ratios(st, theme, note), note)
-    note("Samma motorer som Odins visdom: BERSERK Regime, Valhall-kartan, Råvarurotationen (Triple Signal), Odins "
+    note("Samma motorer som ODIN: BERSERK Regime, Valhall-kartan, Råvarurotationen (Triple Signal), Odins "
          "blindspot, Råvaruhävstång, Fiat Debasement, Guld/Silver, Guldkvoter och Alpha Regimes gummiband — för just "
          "den här råvaran. Grått chip = motorn täcker inte temat.")
 
@@ -176,7 +176,7 @@ def _rotation(st, theme: str, rotation_data, note) -> None:
     state = rotation_state(theme, rotation_data)
     if state is None:
         st.markdown(cards.verdict_card("INTE BETYGSATT", f"{name} saknar månadens Triple Signal-betyg.",
-                                       "Sätt betyget i Odins visdom → Råvarurotation — obetygsatt är inte godkänt.",
+                                       "Sätt betyget i ODIN → Råvaror → Råvarurotation — obetygsatt är inte godkänt.",
                                        GREY, label="ROTATIONEN · TRIPLE SIGNAL"), unsafe_allow_html=True)
     else:
         col = GREEN if state["status"] == rotation.AGERA else AMBER if state["status"] == rotation.BEVAKA else GREY

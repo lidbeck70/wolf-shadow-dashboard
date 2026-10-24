@@ -17,6 +17,8 @@ def go(target: str, ticker: str = "", strategy: str = "", state=None) -> None:
     state["nav_goto"] = nav.target_slug(target)
     if target == "market_risk":                       # Läget visar Marknadsrisken på begäran — slå på den
         state["laget_risk"] = True
+    if target == "backtests":                         # Mot målet visar backtesterna på begäran
+        state["goal_backtests"] = True
     if target == "thor" and ticker:
         state["thor_ticker"] = ticker
         from thor import registry as reg

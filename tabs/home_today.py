@@ -33,7 +33,8 @@ def _bdays(since, today) -> Optional[int]:
 
 def turn_cards(board: Optional[dict], today=None) -> list:
     """Rutorna i köpfönstret: [{label, where, kind, day, of, deep, long, etf}] — dag räknas från bekräftelsen."""
-    plan = (board or {}).get("turn_plan") or {}
+    plan = (board.get("turn_plan") if isinstance(board, dict) else None) or {}
+    plan = plan if isinstance(plan, dict) else {}
     of = int(plan.get("window_days") or 5)
     today = today if today is not None else pd.Timestamp.today().normalize()
     out = []
@@ -53,7 +54,8 @@ def turn_cards(board: Optional[dict], today=None) -> list:
 
 def on_the_way(board: Optional[dict]) -> int:
     """Vändningar som pågår men inte är bekräftade än."""
-    return sum(1 for t in (board or {}).get("turns") or [] if isinstance(t, dict) and not t.get("confirmed"))
+    turns = board.get("turns") if isinstance(board, dict) else None
+    return sum(1 for t in (turns if isinstance(turns, list) else []) if isinstance(t, dict) and not t.get("confirmed"))
 
 
 def turn_headline(card: dict) -> str:
@@ -92,15 +94,20 @@ def size_line(c, capital: float) -> str:
     return sk.row_text(c.ticker, reg.label(c.strategy), sz) if sz else f"{c.ticker} · {reg.label(c.strategy)} · nivåer saknas"
 
 
-SELL_WORDS = {"SELL": "SÄLJ", "SÄLJ": "SÄLJ", "PARTIAL": "MINSKA", "REDUCE": "MINSKA", "WATCH": "VAKSAM"}
+# swing_verdict sparar sina egna strängar (SÄLJ, 'DELVINST — sälj halva', BEVAKA) — nyckla på dem (granskning 2, D3)
+SELL_WORDS = {"SÄLJ": "SÄLJ", "SELL": "SÄLJ", "DELVINST — SÄLJ HALVA": "MINSKA", "DELVINST": "MINSKA",
+              "PARTIAL": "MINSKA", "REDUCE": "MINSKA", "BEVAKA": "VAKSAM", "WATCH": "VAKSAM"}
 
 
 def holdings_lines(alert_state: Optional[dict], n_open: Optional[int] = None) -> list:
     """[(ticker, ord, skäl)] för innehav med SÄLJ/MINSKA/VAKSAM ur larmtillståndets swing-verdikt."""
-    verdicts = (((alert_state or {}).get("swing") or {}).get("verdicts")) or {}
+    swing = (alert_state or {}).get("swing") if isinstance(alert_state, dict) else None
+    verdicts = (swing or {}).get("verdicts") if isinstance(swing, dict) else None
+    verdicts = verdicts if isinstance(verdicts, dict) else {}          # trasig form ger ingen rad, aldrig ett fel
     out = []
     for t, v in sorted(verdicts.items()):
-        w = SELL_WORDS.get(str((v or {}).get("verdict") or "").upper())
+        v = v if isinstance(v, dict) else {}
+        w = SELL_WORDS.get(str(v.get("verdict") or "").upper())
         if w:
             out.append((t, w, str((v or {}).get("reason") or "")))
     order = {"SÄLJ": 0, "MINSKA": 1, "VAKSAM": 2}
@@ -112,9 +119,16 @@ def all_hold_line(alert_state: Optional[dict], n_open: Optional[int] = None) -> 
     säg 'saknas' när tillståndet inte gick att läsa i stället för att påstå HÅLL."""
     if not isinstance(alert_state, dict):
         return "Säljläget saknas — larmtillståndet gick inte att läsa"
-    n = len((((alert_state or {}).get("swing") or {}).get("verdicts")) or {})
+    swing = alert_state.get("swing")
+    v = (swing.get("verdicts") if isinstance(swing, dict) else None) or {}
+    v = v if isinstance(v, dict) else {}
+    n = len(v)
+    hold = sum(1 for x in v.values() if str((x or {}).get("verdict") or "").upper() in ("HÅLL", "HOLD"))
+    unknown = n - hold
     other = f" · övriga {n_open - n} positioner bedöms på sina egna sidor" if n_open and n_open > n else ""
-    return (f"Alla {n} Momentum-positioner: HÅLL" if n else "Inga Momentum-positioner bedöms") + other
+    head = f"Alla {n} Momentum-positioner: HÅLL" if n and not unknown else \
+        (f"{hold} av {n} Momentum-positioner: HÅLL · {unknown} saknar läge" if n else "Inga Momentum-positioner bedöms")
+    return head + other
 
 
 RELOAD_MIN = 30

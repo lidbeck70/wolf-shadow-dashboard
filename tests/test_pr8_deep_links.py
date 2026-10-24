@@ -67,7 +67,7 @@ def test_old_links_land_in_the_new_tree():
     assert nav.resolve("alerts") == ["more", "Larm"] and nav.resolve("copilot") == ["more", "Copilot"]
     assert nav.resolve("rules/regler-guider/fusklapp") == ["more", "Regler & Guider", "⚡ FUSKLAPP"]
     assert nav.resolve("rules/position-sizing") == ["more", "⚙️ Inställningar"]
-    assert nav.resolve("strategies") == ["more", "Regler & Guider"]
+    assert nav.resolve("strategies") == ["more", "Regler & Guider", "📖 STRATEGIGUIDER"]
     assert nav.resolve("portfolio/backtest") == ["more", "Egen backtest"]
     assert nav.resolve("regime/ravaror/ember-regime") == ["odin", "Råvaror", "🔥 EMBER"]
     assert nav.resolve("regime/makro/fiat-debasement") == ["odin", "Makro", "🐺 Fiat Debasement"]

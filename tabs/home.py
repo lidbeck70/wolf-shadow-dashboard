@@ -293,6 +293,6 @@ def tab_home() -> None:
     _render_due()
     with st.expander("🗺 Flikguiden — var allt ligger", expanded=False):
         _render_zones()
-        st.caption("Adressfältet följer fliken — kopiera URL:en (t.ex. `?p=odin/marknad/"
-                   "swing-regime`) för en direktlänk. Alla länkar står i "
+        st.caption("Adressfältet följer fliken — kopiera URL:en (t.ex. `?p=odin/laget`) för en direktlänk. "
+                   "Alla länkar står i "
                    "MER → Regler & Guider → 🗺 FLIKGUIDE.")

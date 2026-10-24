@@ -157,7 +157,7 @@ LEGACY_PATHS: dict = {
     "rules/position-sizing": "more/installningar",
     "rules/data-health": "more/installningar",
     "rules": "more/regler-guider",
-    "strategies": "more/regler-guider",
+    "strategies": "more/regler-guider/strategiguider",
     "copilot": "more/copilot",
     "portfolio/backtest": "more/egen-backtest",
 }
@@ -192,6 +192,30 @@ TARGETS: dict = {
 }
 
 
+# Gamla länkar till sidor som nu är en inre flik: slug → (widgetnyckel för st.tabs, flikens etikett).
+INNER_SEEDS: dict = {
+    "odin/ravaror/guldkvoter": ("odin_gold_tabs", "🥇 Guldkvoter"),
+    "odin/makro/retail-pulse": ("odin_sentiment_tabs", "Retail"),
+    "odin/marknad/retail-pulse": ("odin_sentiment_tabs", "Retail"),
+    "intel/retail-pulse": ("odin_sentiment_tabs", "Retail"),
+}
+
+
+def inner_seed(link: str):
+    """(nyckel, etikett) för den inre flik en gammal länk pekade på, längs hela kedjan av gamla sökvägar; annars None."""
+    s = "/".join(p for p in str(link or "").lower().split("/") if p)
+    for _ in range(6):
+        if s in INNER_SEEDS:
+            return INNER_SEEDS[s]
+        hit = next((old for old in sorted(LEGACY_PATHS, key=len, reverse=True)
+                    if s == old or s.startswith(old + "/")), None)
+        if hit is None:
+            return None
+        new = LEGACY_PATHS[hit]
+        s = new if new == "thor" else new + s[len(hit):]
+    return None
+
+
 def target_slug(target: str) -> str:
     """Målets sökväg som slug ('market_risk' → 'odin/marknad/marknadsrisk'); okänt mål → Home."""
     return slug(TARGETS.get(target) or TARGETS["home"])
@@ -202,10 +226,12 @@ def target_link(target: str, base: str = "", ticker: str = "", strategy: str = "
     t = aktien som öppnas, s = Thors strategi (thor.registry-nyckel)."""
     from urllib.parse import quote
     q = "?p=" + target_slug(target)
-    if ticker:
+    if target == "thor" and ticker:                  # bara Thor läser aktien ur länken (granskning 2, D5)
         q += "&t=" + quote(str(ticker).strip(), safe=".-_")
-    if strategy:
+    if target == "thor" and strategy:
         q += "&s=" + quote(str(strategy).strip(), safe="_")
+    if target == "market_risk":                      # Läget slår på Marknadsrisken (D6)
+        q += "&risk=1"
     base = str(base or "").strip().rstrip("/")
     return f"{base}/{q}" if base else q
 

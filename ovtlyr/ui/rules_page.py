@@ -406,7 +406,7 @@ def _guide_viking() -> None:
                     "<b>Alla 10 entry-regler:</b> MER → Motorsidor → Viking Regime (OVTLYR Nine-kortet: Market · Sector · Stock).",
                     "<b>Screena momentum:</b> THOR → Viking.",
                     "<b>Marknadsbreadd:</b> MER → Motorsidor → Viking Regime → Bull List % gauge.",
-                    "<b>Sektor:</b> ODIN → Marknad → Värmekarta / Flow Divergence.",
+                    "<b>Sektor:</b> ODIN → Marknad → Värmekarta / Sektorflöde.",
                     "<b>F&amp;G per aktie:</b> MER → Motorsidor → Viking Regime → Oscillator Direction.",
                 ], _CYAN),
                 _CYAN),
@@ -1064,8 +1064,9 @@ _PANEL_GUIDE: list[tuple] = [
      "segmentets strategi, Wolf och Momentum, kvalitetsköp (grind ej RÖD), hävstång och Long Screener per ruta."),
     ("PORTFÖLJ → 📊 Papperskonton", "Alla strategier: utvärdering",
      "Varje strategi på papper, märkt med segment och cykelläge vid köp — vilken strategi fungerar var."),
-    ("PORTFÖLJ → 🎯 Mot målet", "Besluten",
-     "Varför Valhall gör som det gör: swing per segment, kvalitet ej RÖD, råvaror contrarian, Long Screener gron."),
+    ("PORTFÖLJ → 🎯 Mot målet", "Målet 20/35 % — journalen och papperet per strategi",
+     "Årstakten till i dag mot golv och mål, papperskontona bredvid journalen, plan följd, och Valhalls "
+     "backtester (swing per segment, kvalitet ej RÖD, råvaror contrarian, Long Screener) på begäran."),
     ("THOR", "Alla strategier: screening → analys → köp (ersätter SCREENING och Teknisk analys)",
      "Alla strategiers kandidater i ett flöde (rullgardin per strategi, segment, filter, tickersök). Välj en "
      "strategi och tryck ⚡ Skanna nu för en färsk skanning med schemats förval (de tunga — Quality, Deep "
@@ -1136,7 +1137,7 @@ _PANEL_GUIDE: list[tuple] = [
      "real BNP-tillväxt), statsskuld/BNP och valutans köpkraft i guld. Purchasing Power Index från valt "
      "år, 'What happened to 100 units?', fiat mot guld/silver, reala tillgångar, guld/silver-kvoten, "
      "Wolf Debasement Index (modell, vikter går att ändra), scenarier och reala råvarupriser. Larm under "
-     "ALERTS; FIAT ENVIRONMENT (Low/Neutral/Elevated) på gruvsidorna. Varje siffra har källa och datum; "
+     "MER → Larm; FIAT ENVIRONMENT (Low/Neutral/Elevated) på gruvsidorna. Varje siffra har källa och datum; "
      "saknad data = DATA UNAVAILABLE. Inflation ≠ M2-tillväxt — sidan säger aldrig köp eller sälj."),
     ("ARKEN → Rick Rule", "Rule: granskningen",
      "Guidens 'Producenter A': marginal mot kostnadskurvan, de tre "

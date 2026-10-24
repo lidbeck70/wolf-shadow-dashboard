@@ -37,7 +37,8 @@ def strategy_rows(paper: Optional[dict], trades: Optional[list]) -> list:
     """En rad per Thor-strategi med papperets och journalens mått sida vid sida. Strategier utan någon affär hoppas."""
     import journal_stats as js
     from thor import registry as reg
-    by_paper = {g.get("strategy"): g for g in (paper or {}).get("by_strategy") or [] if isinstance(g, dict)}
+    groups = paper.get("by_strategy") if isinstance(paper, dict) else None
+    by_paper = {g.get("strategy"): g for g in (groups if isinstance(groups, list) else []) if isinstance(g, dict)}
     rows = []
     for key, s in reg.STRATEGIES.items():
         p = by_paper.get(s.paper) if s.paper else None
@@ -76,7 +77,8 @@ def plan_followed(trades: Optional[list]) -> Optional[float]:
 def today_line(cagr: Optional[float], paper: Optional[dict], trades: Optional[list]) -> str:
     """Startsidans rad: 'Papper +24 % · journalen: för få affärer (4/20)'."""
     import journal_stats as js
-    best = [g.get("unit_cagr") for g in (paper or {}).get("by_strategy") or []
+    groups = paper.get("by_strategy") if isinstance(paper, dict) else None
+    best = [g.get("unit_cagr") for g in (groups if isinstance(groups, list) else [])
             if isinstance(g, dict) and g.get("unit_cagr") is not None and int(g.get("closed") or 0) >= MIN_CLOSED]
     pap = f"Papper bästa {max(best):+.0f} %" if best else "Papper: för få stängda affärer"
     n = len(js._closed(trades or []))
@@ -136,7 +138,7 @@ def render_mot_malet_page() -> None:
     st.markdown("#### Per strategi — papper och journal")
     rows = strategy_rows(d.get("paper"), trades)
     if rows:
-        st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
     else:
         note("Inga affärer än — varken på papper eller i journalen.")
     st.button("📊 Papperskonton →", key="goal_paper", on_click=go, args=("paper",), width="stretch")
