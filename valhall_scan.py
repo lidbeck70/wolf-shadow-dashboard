@@ -254,11 +254,14 @@ def run(api=None, data_getter=None, getter=None, load=None, save=None, today=Non
     sw = swing.candidates(board, universe, keep, scan_fn=scan_fn, getter=getter, today=today,
                           berserk_blob=berserk_blob, **scan_kwargs(scan_fn))
     nich = swing.niche(universe, berserk_blob, insider_blob)
-    complex_swing = None
-    try:                                                      # Viking Nine per komplex (K4) — kartan sparas även om den fallerar
+    complex_swing, cmap = None, {}
+    try:                                                      # bolag → komplex ur registret (K1)
         from universe import registry as ur
         from valhall import complexes as vcx
         cmap = vcx.member_complexes(ur.load(None, load))
+    except Exception as exc:
+        log.warning("Registret gick inte att läsa för komplexkartan (%s) — komplexen får inga bolag i dag.", exc)
+    try:                                                      # Viking Nine per komplex (K4) — kartan sparas även om den fallerar
         complex_swing = swing.complex_candidates(board, universe, keep, cmap, getter=getter, today=today,
                                                  scan_fn=complex_scan_fn, **scan_kwargs(scan_fn))
         parts = [f"{k} {v['universe']} bolag/{len(v['picks'])} val" for k, v in complex_swing["complexes"].items()]
@@ -288,6 +291,19 @@ def run(api=None, data_getter=None, getter=None, load=None, save=None, today=Non
     except Exception as exc:                                      # kartan sparas även om screenern fallerar
         log.exception("Long Screener fallerade: %s", exc)
         long_scan, payload["long"] = None, None
+    try:                                                          # händelsemotorn (K5): 2 deep + 2 lång + ETF i köpfönstret
+        from valhall import etf as vetf
+        from valhall import turns as vt
+        deep_blob = next((b for b in src.get("ca") or [] if (b or {}).get("mode") == "deep_contrarian"), None)
+        spy_df = getter("SPY", "15y")
+        spy_close = spy_df["Close"] if spy_df is not None and len(spy_df) else None
+        payload["turn_plan"] = vt.plan(payload["turns"], universe, cmap, deep_blob=deep_blob, long_scan=long_scan,
+                                       buys=buys, etf_pick=lambda k: vetf.pick(k, getter, spy_close, today), today=today)
+        for line in vt.lines(payload["turn_plan"]):
+            log.info("Vändning: %s", line)
+    except Exception as exc:
+        log.exception("Händelsemotorn fallerade: %s", exc)
+        payload["turn_plan"] = None
     paper_state, berserk_state = load(PAPER_BLOB, None), load("berserk_paper.json", None)
     prev_paper = (load(BLOB, None) or {}).get("paper") or {}
     if paper_state is None and prev_paper.get("since"):
