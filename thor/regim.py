@@ -39,6 +39,19 @@ def _section(st, title: str) -> None:
                 f"margin:12px 0 6px;'>{title}</div>", unsafe_allow_html=True)
 
 
+def _closed(df, sym: str):
+    """Bara stängda staplar, som skannrarna räknar (ovtlyr_nine.closed_only) — Yahoos halvdagsstapel under
+    börsens öppettid ger annars ett annat svar i Thor än i listan (granskning 2)."""
+    df = _frame(df)
+    if df is None:
+        return None
+    try:
+        import ovtlyr_nine as on
+        return on.closed_only(df, sym)
+    except Exception:
+        return df
+
+
 def _frame(df):
     """Dagsdata utan tidszon, eller None."""
     if df is None or len(df) == 0:
@@ -190,7 +203,8 @@ def _wolf(st, ident, strategy, data, ohlcv, cands) -> None:
     from ui.charts import build_gauge
     from ui.components import note
     sector = ident.sector_etf or "SPY"
-    spy, sec, stk = _frame(ohlcv("SPY", "1y")), _frame(ohlcv(sector, "1y")), _frame(ohlcv(ident.yf, "1y"))
+    spy, sec, stk = _closed(ohlcv("SPY", "1y"), "SPY"), _closed(ohlcv(sector, "1y"), sector), \
+        _closed(ohlcv(ident.yf, "1y"), ident.yf)
     if stk is None or len(stk) < 60:
         note(f"DATA UNAVAILABLE — Wolf kräver 60 dagars kurshistorik för {ident.yf}.")
         return
@@ -259,8 +273,45 @@ def _wolf(st, ident, strategy, data, ohlcv, cands) -> None:
                                    ("Trail", f"Kijun {p['kijun']:.2f}", AMBER, f"EMA10 {p['ema10']:.2f}")]), unsafe_allow_html=True)
     if risk_text:
         note(risk_text)
-    note("Samma formler som MER → Motorsidor → Wolf Regime (wolf_regime_score.py). Entry kräver EMA-stack, trend "
-         "och RSI 45–70; grindarna 8–11 bedömer du själv.")
+    note("Poängen, pillen och kalkylatorn ovan är Wolf Regime-sidans formler (wolf_regime_score.py) — inte listans "
+         "125-poängsskala (wolf_shadow_screener) och inte strategins köpregel.")
+    _wolf_rule_row(st, ident, ohlcv, cands)
+
+
+def wolf_rule(df) -> Optional[dict]:
+    """Strategins egen köpregel (strategies/wolf.py entry_fn) — den som listan och papperskontot använder:
+    EMA10 > 21 > 50 > 200, kurs > EMA50, RSI 45–70, ADX ≥ 19; stopp = entry − 2,5 × ATR, TP1 2,6R."""
+    from strategies.wolf import entry_fn
+    if df is None or len(df) < 210:
+        return None
+    e = entry_fn(df)
+    gates = e.get("gates") or []
+    return {"signal": e.get("signal"), "entry": e.get("entry_price"), "stop": e.get("stop_loss"),
+            "tp1": e.get("tp1_price"), "passed": sum(1 for g in gates if g.get("passed")), "total": len(gates)}
+
+
+def _wolf_rule_row(st, ident, ohlcv, cands) -> None:
+    """Listans siffror bredvid sidans (granskning 2, W1/W2): strategins köpregel på 2 års data och listans poäng."""
+    from ui.components import note
+    _section(st, "STRATEGINS KÖPREGEL — SAMMA SOM LISTAN OCH PAPPERET")
+    try:
+        r = wolf_rule(_closed(ohlcv(ident.yf, "2y"), ident.yf))
+    except Exception as exc:
+        r, err = None, str(exc)
+    else:
+        err = "kräver 210 dagars historik"
+    c = next((x for x in cands or [] if x.strategy == "wolf"), None)
+    listed = f" · listan: {c.score_text}" if c is not None and c.score_text else ""
+    if not r:
+        note(f"Köpregeln gick inte att räkna ({err}){listed}.")
+        return
+    buy = r["signal"] == "BUY"
+    items = [("Köpregel", "ENTRY" if buy else "INGEN ENTRY", GREEN if buy else RED, f"{r['passed']}/{r['total']} grindar")]
+    if buy:
+        items += [("Stopp", f"{r['stop']:.2f}", RED, "entry − 2,5 × ATR"), ("TP1", f"{r['tp1']:.2f}", GREEN, "2,6R")]
+    st.markdown(cards.kpi_row(items), unsafe_allow_html=True)
+    if listed:
+        note(f"Listans regimpoäng{listed} räknas med en annan motor (4 lager, 125 poäng) än REGIME SCORE ovan.")
 
 
 def _momentum(st, ident, strategy, data, ohlcv, cands) -> None:
@@ -311,7 +362,7 @@ def _berserk(st, ident, strategy, data, ohlcv, cands) -> None:
     from berserk import universe as uv
     from berserk.regime_ui import theme_card
     from ui.components import note
-    theme = ident.theme or uv.theme_of(ident.yf) or None
+    theme = uv.theme_of(ident.yf) or ident.theme or None       # skannerns tema först — samma drivare som listan (B1)
     if not theme:
         note(f"{ident.yf} har inget råvarutema — BERSERK kräver en drivare (råvaran). Inte i BERSERK-universumet.")
         return
@@ -319,7 +370,7 @@ def _berserk(st, ident, strategy, data, ohlcv, cands) -> None:
     rows = [r for r in live.theme_states(drivers) if r["theme"] == theme]
     if rows:
         st.markdown(theme_card(rows[0]), unsafe_allow_html=True)
-    stock = _frame(ohlcv(ident.yf, live.STOCK_PERIOD))
+    stock = _closed(ohlcv(ident.yf, live.STOCK_PERIOD), ident.yf)
     region = uv.region_of(ident.yf)
     try:
         markets = live.load_markets([region], getter=ohlcv)
@@ -335,7 +386,8 @@ def _berserk(st, ident, strategy, data, ohlcv, cands) -> None:
     mkt = markets.get(uv.REGION_INDEX.get(region, "SPY"))      # aldrig `or` på en Series: sanningsvärdet är tvetydigt
     if mkt is None:
         mkt = markets.get("SPY")
-    row = live.evaluate(ident.yf, stock, drv, mkt, cfg=cfg, driver_symbol=sym, commodity=commodity)
+    row = live.evaluate(ident.yf, stock, drv, mkt, capital=_capital_default(), cfg=cfg, driver_symbol=sym,
+                        commodity=commodity)                       # ditt kapital, inte alltid 100 000
     if row.get("error"):
         note(f"{ident.yf}: {row['error']}")
         return
@@ -362,6 +414,28 @@ def _no_fundamentals(fund: dict) -> bool:
     return not vals or all(v in (None, "", "N/A") for v in vals)
 
 
+def kap_badge_for(data: dict, yf: str) -> bool:
+    """Om Quality-listan märkte bolaget ★ KAP SCREENED — samma flagga som skannern gav Alpha-motorn
+    (alpha_regime.quality_scan), så att Thors verdikt inte skiljer sig från listans (granskning 2, A1)."""
+    try:
+        from alpha_regime.screener_link import to_yf_ticker
+    except Exception:
+        return False
+    def same(raw) -> bool:
+        t = to_yf_ticker(str(raw or "")).upper()             # 'INVE B' → 'INVE-B' (Börsdata-form utan suffix)
+        return t == yf.upper() or ("." not in t and t == yf.upper().split(".")[0])
+
+    ca = (data or {}).get("ca_quality") or {}
+    for r in ca.get("results") or []:
+        if isinstance(r, dict) and r.get("kap_badge") and same(r.get("ticker")):
+            return True
+    for raw, sig in (ca.get("quality_signals") or {}).items():      # skanningens grindar bär märkningen också
+        gate = (((sig or {}).get("gates") or {}).get("Kvalitet") or {}) if isinstance(sig, dict) else {}
+        if gate.get("label") == "KAP SCREENED" and same(raw):
+            return True
+    return False
+
+
 def _alpha(st, ident, strategy, data, ohlcv, cands) -> None:
     from alpha_regime import ui as aui
     from alpha_regime.engine import run_regime_analysis
@@ -369,9 +443,10 @@ def _alpha(st, ident, strategy, data, ohlcv, cands) -> None:
     key = f"thor_ar_{ident.yf}_{mode}"
     rerun = st.button("↺ Analysera igen", key="thor_ar_rerun")
     r = st.session_state.get(key)
-    if r is None or rerun:
+    if r is None or rerun or getattr(r, "error", None):         # ett fel körs om automatiskt, cachas inte
         with st.spinner(f"Alpha Regime analyserar {ident.yf} mot {ident.home_index} …"):
-            r = run_regime_analysis(ticker=ident.yf, mode=mode, market_ticker=ident.home_index)
+            r = run_regime_analysis(ticker=ident.yf, mode=mode, market_ticker=ident.home_index,
+                                    kap_badge=kap_badge_for(data, ident.yf) if mode == "quality" else False)
             st.session_state[key] = r
     if mode == "quality":
         aui._render_quality_mode(r)
@@ -419,10 +494,17 @@ def _long_screener(st, ident, strategy, data, ohlcv, cands) -> None:
         d = ohlcv(sym, "2y")
         return d["Close"] if d is not None and len(d) else None
 
-    try:
-        market = ls.market_regime(ls.index_series(ident.home_index, _close))
-    except Exception:
-        pass
+    # Hemmamarknadens läge: skannerns sparade värde först (samma som listraden), annars räknat här — med
+    # Börsdata, så att Oslos OBX inte blir DATA SAKNAS när Yahoo saknar historik (granskning 2, L1).
+    saved = (((blob.get("long") or {}) if isinstance(blob, dict) else {}).get("markets") or {}).get(ident.home_index)
+    if saved and saved != vcy.NODATA:
+        market = saved
+    else:
+        try:
+            from thor.ui import _api
+            market = ls.market_regime(ls.index_series(ident.home_index, _close, _api()))
+        except Exception:
+            pass
     cyc = ls.cycle_score(status, market, "gron")
     fund = score_fundamentals(fund_info or {}, None)
     tech = score_technical(pd.DataFrame({"Close": df["Close"].astype(float).tail(ls.TECH_BARS)}))
