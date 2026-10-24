@@ -238,7 +238,7 @@ def _guide_contrarian() -> None:
                     "om råvaruratios är historiskt sträckta (≥ 90:e percentilen).",
                     "<b>Hitta kandidater:</b> THOR → Deep Contrarian "
                     "(bara råvarubolag · Hat Score + Necessity).",
-                    "<b>Sentiment:</b> ODIN → Makro → Retail Pulse.",
+                    "<b>Sentiment:</b> ODIN → Makro → Sentiment.",
                 ], _CYAN),
                 _CYAN),
             unsafe_allow_html=True,
@@ -1119,12 +1119,12 @@ _PANEL_GUIDE: list[tuple] = [
     ("ODIN → Råvaror → Råvarurotation", "Rule · Sprott · Durrett · Tiggre — var kapitalet ska",
      "Hat-betyg per råvara en gång i månaden; AGERA-råvarorna styr vilka "
      "screeners som är värda att köra."),
-    ("ODIN → Råvaror → 🥇🥈 Guld/Silver", "Durrett: silvervarianten (kvot > 85)",
+    ("ODIN → Råvaror → 🥇 Guld", "Durrett: silvervarianten (kvot > 85)",
      "Kvoten nu och i historiken (1–20 år, percentiler), guidens zoner 85/50, "
      "geologisk referens ~19 (inte fair value), produktions- och ovanjordskvot med "
      "källa, silverpris per kvot och matrisen guldpris × kvot. Silverbolag kan "
      "köras genom Snabbkollens motor per kvotscenario."),
-    ("ODIN → Råvaror → 🥇 Guldkvoter", "Rule · Sprott · Durrett — råvaror och index mätta i guld",
+    ("ODIN → Råvaror → 🥇 Guld", "Rule · Sprott · Durrett — råvaror och index mätta i guld",
      "Platina, palladium, koppar, olja (WTI/Brent), naturgas, vete, kaffe och kakao "
      "som guld ÷ råvara, Dow och S&P 500 som index ÷ guld. Översikt över alla kvoter "
      "mot egen historik, sedan per par: historik (1–20 år, percentiler), pris per "
@@ -1177,7 +1177,7 @@ _PANEL_GUIDE: list[tuple] = [
      "Contrarian sektorintelligens — vilka teman är mest hatade just nu."),
     ("ODIN → Makro → Sentiment", "Alpha #5 · Viking #5, #9",
      "Fear & Greed gauge 0-100. Under 60 = OK att köpa. Över 60 = vänta."),
-    ("ODIN → Makro → Retail Pulse", "Deep Contrarian: sentiment-overlay",
+    ("ODIN → Makro → Sentiment", "Deep Contrarian: sentiment-overlay",
      "Retail sentiment 0-100. Under 30 = extrem rädsla (köpstöd). Över 70 = "
      "extrem girighet (säljstöd)."),
     ("ODIN → Marknad → Heatmap", "Alla — överblick",

@@ -414,6 +414,21 @@ def _page(available: bool, render, name: str, module: str, rules_key: str = "") 
             pass
 
 
+def _inner(labels: list, key: str) -> str:
+    """Inre flikar på en sida (designförslaget PR 10) — bara den öppna ritas, som toppflikarna."""
+    tabs = st.tabs(labels, on_change="rerun", key=key)
+    for label, tab in zip(labels, tabs):
+        if getattr(tab, "open", None):
+            return label
+    return labels[0]
+
+
+def _background_note() -> None:
+    st.markdown("<div style='color:#8a8578;font-size:0.76rem;border-left:2px solid #8a8578;padding-left:8px;"
+                "margin:4px 0 10px;'>Bakgrund — styr inga beslut. Läget och strategierna avgör.</div>",
+                unsafe_allow_html=True)
+
+
 def _tab_odin() -> None:
     group = _sub("odin")
     st.markdown("---")
@@ -428,6 +443,7 @@ def _tab_odin() -> None:
     elif group == "Marknad":
         sub = _sub("odin/Marknad")
         st.markdown("---")
+        _background_note()
         if sub == "Flow Divergence":
             _page(SECTOR_CYCLE_AVAILABLE, render_sector_cycle_page, "Sector & Global Regime", "sector_cycle")
         elif sub == "Heatmap":
@@ -438,9 +454,10 @@ def _tab_odin() -> None:
         if sub == "🐺 Fiat Debasement":
             _page(FIAT_AVAILABLE, render_fiat_debasement_page, "Fiat Debasement", "fiat_debasement")
         elif sub == "Sentiment":
-            _page(SENTIMENT_AVAILABLE, render_sentiment_page, "Sentiment & Flow", "sentiment")
-        elif sub == "Retail Pulse":
-            _page(RETAIL_SENTIMENT_AVAILABLE, render_retail_sentiment_page, "Retail Sentiment", "retail_sentiment")
+            if _inner(["Fear & Greed", "Retail"], "odin_sentiment_tabs") == "Retail":
+                _page(RETAIL_SENTIMENT_AVAILABLE, render_retail_sentiment_page, "Retail Sentiment", "retail_sentiment")
+            else:
+                _page(SENTIMENT_AVAILABLE, render_sentiment_page, "Sentiment & Flow", "sentiment")
     else:
         sub = _sub("odin/Råvaror")
         st.markdown("---")
@@ -452,10 +469,11 @@ def _tab_odin() -> None:
             _page(BERSERK_AVAILABLE, render_berserk_regime_page, "BERSERK Regime", "berserk")
         elif sub == "Råvarurotation":
             _page(ROTATION_AVAILABLE, render_rotation_page, "Råvarurotationen", "rotation")
-        elif sub == "🥇🥈 Guld/Silver":
-            _page(GOLD_SILVER_AVAILABLE, render_gold_silver_page, "Guld/Silver", "gold_silver")
-        elif sub == "🥇 Guldkvoter":
-            _page(GOLD_RATIOS_AVAILABLE, render_gold_ratios_page, "Guldkvoter", "gold_ratios")
+        elif sub == "🥇 Guld":
+            if _inner(["🥇🥈 Guld/Silver", "🥇 Guldkvoter"], "odin_gold_tabs") == "🥇 Guldkvoter":
+                _page(GOLD_RATIOS_AVAILABLE, render_gold_ratios_page, "Guldkvoter", "gold_ratios")
+            else:
+                _page(GOLD_SILVER_AVAILABLE, render_gold_silver_page, "Guld/Silver", "gold_silver")
 
 
 def _tab_review() -> None:

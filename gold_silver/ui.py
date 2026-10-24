@@ -1,5 +1,5 @@
 """
-gold_silver/ui.py — ODIN → Råvaror → 🥇🥈 Guld/Silver.
+gold_silver/ui.py — ODIN → Råvaror → 🥇 Guld.
 
 Överst dagens läge, sedan historiken, revalveringsmotorn, matrisen
 guldpris × kvot och de tre referenskvoterna (geologisk, produktion,

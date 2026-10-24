@@ -460,7 +460,7 @@ def render_sentiment_page() -> None:
         text-shadow:0 0 18px rgba(0,229,255,0.5);
     ">SENTIMENT &amp; FLOW</h1>
     <p style="color:{DIM};font-size:0.78rem;margin:4px 0 0 0;letter-spacing:0.1em;">
-        Synthetic Fear &amp; Greed · Retail Flow (placeholder) · Real-time via yfinance
+        Syntetiskt Fear &amp; Greed-index · via yfinance
     </p>
 </div>
 """, unsafe_allow_html=True)
@@ -495,10 +495,8 @@ def render_sentiment_page() -> None:
 
     st.markdown("<hr style='border:1px solid rgba(138,133,120,0.4);margin:6px 0 6px 0;'>", unsafe_allow_html=True)
 
-    # -----------------------------------------------------------------------
-    # Section 4: Retail Flow (placeholder)
-    # -----------------------------------------------------------------------
-    _render_retail_flow()
+    # Section 4 (Retail Flow) var en platshållare utan data — borttagen ur sidan (designförslaget PR 10).
+    # Retail-sentimentet finns i fliken Retail bredvid.
 
     # Footer timestamp
     st.markdown(
