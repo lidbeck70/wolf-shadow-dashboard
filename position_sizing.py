@@ -18,6 +18,7 @@ from typing import Optional
 # Named constants (tunable)
 DEFAULT_TRADING_ACCOUNT = 75_000.0   # SEK
 DEFAULT_ASK_ACCOUNT     = 37_000.0   # SEK
+
 DEFAULT_RISK_PCT        = 2.0        # % of account per swing trade
 DEFAULT_ATR_MULT        = 2.5        # stop = entry - mult * ATR
 QUALITY_MAX_POS_PCT     = 10.0       # max single position (Quality)
@@ -44,6 +45,15 @@ class TradingResult:
     target1: float = 0.0
     target2: float = 0.0
     warnings: list = field(default_factory=list)
+
+
+def _trading_default() -> float:
+    """Tradingkontots standardvärde: kapitalet ur ⚙️ Inställningar (beslut 5), annars 75 000. ASK-kontot har eget."""
+    try:
+        from ui import settings as us
+        return us.capital_or(DEFAULT_TRADING_ACCOUNT)
+    except Exception:
+        return DEFAULT_TRADING_ACCOUNT
 
 
 def calc_trading(account: float, risk_pct: float, entry: float,
@@ -211,7 +221,7 @@ def _render_trading_ui() -> None:
     c1, c2, c3 = st.columns(3)
     with c1:
         account = st.number_input("Kontovarde (kr)", min_value=0.0,
-                                  value=DEFAULT_TRADING_ACCOUNT, step=1000.0, key="ps_t_acc")
+                                  value=_trading_default(), step=1000.0, key="ps_t_acc")
         risk_pct = st.number_input("Risk per trade (%)", min_value=0.1, max_value=10.0,
                                    value=DEFAULT_RISK_PCT, step=0.5, key="ps_t_risk")
     with c2:

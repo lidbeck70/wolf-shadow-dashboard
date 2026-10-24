@@ -28,6 +28,12 @@ from ui.tokens import AMBER, CYAN, DIM, GOLD, GREEN, GREY, RED, TEXT
 TA_PERIODS = {"6 mån": "6mo", "1 år": "1y", "2 år": "2y"}
 
 
+def _capital_default() -> float:
+    """Kapitalfältets standardvärde: ditt kapital ur ⚙️ Inställningar (beslut 5), annars 100 000 som förut."""
+    from ui import settings as us
+    return us.capital_or(100000.0)
+
+
 def _section(st, title: str) -> None:
     st.markdown(f"<div style='color:{CYAN};font-size:0.72rem;text-transform:uppercase;letter-spacing:0.1em;"
                 f"margin:12px 0 6px;'>{title}</div>", unsafe_allow_html=True)
@@ -143,7 +149,7 @@ def _viking_nine(st, ident, strategy, data, ohlcv, cands) -> None:
     head = st.container()                  # beslutsraden, 9-rutan och Execution-raden fylls i efter uträkningen
     with st.expander("Kapital och positionstak", expanded=False):
         k1, k2 = st.columns(2)
-        capital = k1.number_input("Kapital (SEK)", min_value=0.0, value=100000.0, step=10000.0, key="thor_capital")
+        capital = k1.number_input("Kapital (SEK)", min_value=0.0, value=_capital_default(), step=10000.0, key="thor_capital")
         max_pos = k2.number_input("Max position (% av kapitalet)", min_value=5.0, max_value=100.0,
                                   value=float(vx.MAX_POSITION_PCT), step=5.0, key="thor_max_pos")
     dfc = on.closed_only(df, ident.yf)                 # Nine och order blocks på stängda staplar (playbooken)
@@ -233,7 +239,7 @@ def _wolf(st, ident, strategy, data, ohlcv, cands) -> None:
     st.markdown(cards.gate_chips(gs, wrs.gate_summary(gs)), unsafe_allow_html=True)
     _section(st, "SL / TP KALKYLATOR — WOLF")
     k1, k2 = st.columns(2)
-    capital = k1.number_input("Kapital (SEK)", min_value=0.0, value=100000.0, step=10000.0, key="thor_capital")
+    capital = k1.number_input("Kapital (SEK)", min_value=0.0, value=_capital_default(), step=10000.0, key="thor_capital")
     risk_pct = k2.number_input("Risk %", value=float(wrs.RISK_PCT), min_value=0.5, max_value=10.0, step=0.5, key="thor_wolf_risk",
                                help=f"Wolf riskerar {wrs.RISK_PCT:g} % per affär (strategies/wolf.py: risk_pct).")
     factor, risk_text = 1.0, ""

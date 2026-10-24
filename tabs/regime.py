@@ -438,8 +438,9 @@ def tab_regime():
 
             _sltp_c1, _sltp_c2 = st.columns(2)
             with _sltp_c1:
+                from ui.settings import capital_or as _capital_or        # beslut 5: ditt kapital som standard
                 _cap_wolf = st.number_input(
-                    "Kapital (SEK)", value=100000, step=10000,
+                    "Kapital (SEK)", value=int(_capital_or(100000)), step=10000,
                     key="sltp_cap_wolf_inline",
                 )
             with _sltp_c2:
