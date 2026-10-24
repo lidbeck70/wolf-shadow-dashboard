@@ -508,6 +508,9 @@ def main():
                     elif inner == "Long Trend":
                         _page(LONG_REGIME_AVAILABLE, render_long_regime_monitor, "Long Trend Monitor",
                               "long_regime_monitor")
+                elif sub == "Läget":
+                    from odin.laget import render_laget_page
+                    _page(True, render_laget_page, "Läget", "odin/laget")
                 elif sub == "Swing Regime":
                     _page(WOLF_REGIME_AVAILABLE, render_wolf_regime_page, "Swing Regime", "wolf_regime_ui")
                 elif sub == "Flow Divergence":

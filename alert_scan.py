@@ -222,6 +222,9 @@ def main() -> int:
         _levels = {m: _mg.current(m) for m in _mr.MARKETS}
         if any(v for v in _levels.values()):
             market_risk_data = _levels
+            if not args.dry_run:                        # ODIN → Läget och startsidan läser nivån utan att räkna live
+                save_blob("market_risk.json", {"generated": time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime()),
+                                               "levels": _levels})
     except Exception:
         log.warning("Marknadsrisken kunde inte räknas — benet står stilla.")
 
