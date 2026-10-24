@@ -492,6 +492,7 @@ def _analysis(st, data: dict, rows: list, ticker: str) -> None:
     strategy = next((s.key for s in reg.STRATEGIES.values() if s.label == picked), "viking_nine")
     c = next((x for x in cands if x.strategy == strategy), None)
     st.markdown(cards.verdict_for(c, strategy), unsafe_allow_html=True)
+    _storlek(st, ident, strategy, c)
     labels = [x for x in TABS if x != "Råvara" or ident.is_commodity]
     tabs = st.tabs(labels, on_change="rerun", key="thor_tabs")
     render = {"Regim": _tab_regim, "Teknik": _tab_teknik, "Cykel": _tab_cykel, "Råvara": _tab_ravara,
@@ -501,6 +502,37 @@ def _analysis(st, data: dict, rows: list, ticker: str) -> None:
             continue
         with tab:
             render[lbl](st, data, ident, strategy, sheets, cands)
+
+
+def _storlek(st, ident, strategy: str, c) -> None:
+    """Storlek-raden (thor/storlek.py): riskstorlek och allokerarens tak sida vid sida, och 'Logga köp' som lägger
+    positionen i registret. Arkstrategierna går via 🎯 Scorecard (köpgrinden)."""
+    from thor import storlek as sk
+    from ui import settings as us
+    from ui.components import note
+    from ui.links import go
+    if c is None or not c.entry or not c.stop:
+        return
+    capital = us.capital() or 100000.0
+    sz = sk.size(c.entry, c.stop, capital, sk.risk_pct(strategy), sk.cap_pct(strategy))
+    if not sz:
+        return
+    st.markdown(f"<div style='border-left:3px solid {CYAN};padding:6px 12px;margin:6px 0;font-size:0.82rem;'>"
+                f"<b>STORLEK</b> · {sk.row_text(ident.yf, reg.label(strategy), sz)}</div>", unsafe_allow_html=True)
+    if not us.capital():
+        note("Kapital 100 000 kr (standard) — fyll i ditt eget under RULES → ⚙️ Inställningar.")
+    if strategy in sk.SHEET_STRATEGIES:
+        st.button("Köpgrinden: öppna 🎯 Scorecard →", key="thor_to_scorecard", on_click=go, args=("scorecard",))
+        return
+    with st.expander("📝 Logga köp", expanded=False):
+        default = sz["risk_shares"] if sz["risk_shares"] is not None else (sz["cap_shares"] or 0)
+        shares = st.number_input("Antal aktier", min_value=0, value=int(default), step=1, key="thor_buy_shares")
+        note("Riskstorleken och taket står ovan — du väljer antalet. Positionen hamnar i PORTFOLIO → Holdings med "
+             "stopp och mål; journalraden skrivs när du stänger den.")
+        if st.button("Logga köp", key="thor_log_buy", disabled=not shares):
+            import positions
+            ok, msg = positions.add(**sk.position_args(ident.yf, ident.name or "", strategy, sz, shares))
+            (st.success if ok else st.warning)(msg)
 
 
 def _bridge(st, label: str, target: tuple, ticker: str, key: str) -> None:
