@@ -111,6 +111,22 @@ def registry_ins_ids():
     return {m.ins_id for m in members if m.ins_id is not None}
 
 
+def _market_id(r):
+    try:
+        return int(r["marketId"]) if "marketId" in r and r["marketId"] == r["marketId"] else None
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _yf(r):
+    """Yahoo-formen ur Börsdatas ticker + marknads-id (NHY/Oslo → NHY.OL) så att Thor slipper gissa '.ST'."""
+    try:
+        from markets import to_yf
+        return to_yf(str(r["ticker"]), _market_id(r))
+    except Exception:
+        return None
+
+
 def build_universe():
     ins = pd.DataFrame(_get("/instruments")["instruments"])
     # Börsdatas fält heter instrumentType (0 = aktie); det gamla filtret på
@@ -137,7 +153,8 @@ def build_universe():
     else:
         print(f"VARNING: ingen universe.csv — kör alla {len(ins)} (långsamt). "
               "Exportera swing-screenern från Börsdata för bäst resultat.")
-    return ins[["insId", "name", "ticker"]].reset_index(drop=True)
+    cols = ["insId", "name", "ticker"] + (["marketId"] if "marketId" in ins.columns else [])
+    return ins[cols].reset_index(drop=True)
 
 
 def find_index_id():
@@ -262,7 +279,7 @@ def main():
                    abs(m["px"] / m["ma50"] - 1) <= CONFIG["NEAR_MA_PCT"])
         near_high = m["px"] >= m["hi52"] * (1 - CONFIG["NEAR_HIGH_PCT"])
         rows.append(dict(
-            ticker=r["ticker"], name=r["name"],
+            ticker=r["ticker"], name=r["name"], market=_market_id(r), yf=_yf(r),
             price=round(m["px"], 2), mom3=round(m["r3"], 4), mom6=round(m["r6"], 4),
             score=round(0.5 * m["r3"] + 0.5 * m["r6"], 4),
             rsi=round(m["rsi"], 1),

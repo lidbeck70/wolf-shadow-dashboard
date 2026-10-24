@@ -34,6 +34,7 @@ KOP, BEVAKA, TRAFF, HALL, SPARRAD, SALJ = "KÖP", "BEVAKA", "TRÄFF", "HÅLL", "
 CLASS_ORDER = {KOP: 0, BEVAKA: 1, TRAFF: 2, HALL: 3, SPARRAD: 4, SALJ: 5}
 NORDIC_SUFFIX = (".ST", ".OL", ".CO", ".HE", ".IC")
 STALE_DAYS = 4                                 # en körning äldre än så visas, men märks gammal
+UNREADABLE = "_unreadable"          # sätts av load_blobs när ingen enda blob gick att läsa (nät/token), inte "ingen körning"
 BLOBS = {"board": "valhall_board.json", "berserk": "berserk_scan.json", "arc": "arc_screeners.json",
          "momentum": "wolf_screener.json", "insider": "insider_scan.json", "screens": "screens.json",
          "royalty": "royalty_scan.json", "viking_nine": "viking_nine_scan.json"}
@@ -85,12 +86,17 @@ def yf(ticker) -> str:
     return str(ticker or "").strip().upper().replace(" ", "-")
 
 
-def momentum_yf(ticker, mapping: Optional[dict] = None) -> str:
-    """Momentumlistan skriver Börsdatas Stockholmsform ('ERIC B'): mappning om den finns, annars '.ST'."""
+def momentum_yf(ticker, mapping: Optional[dict] = None, yf_hint: Optional[str] = None) -> tuple:
+    """Momentumlistan skriver Börsdatas form ('ERIC B', 'NHY'). (Yahoo-ticker, gissad?): radens egen yf-form
+    (wolf_data skriver den ur marknads-id) först, sedan registrets karta, sist '.ST' — då är den en gissning."""
     t = str(ticker or "").strip().upper()
+    if yf_hint and "." in str(yf_hint):
+        return str(yf_hint).strip().upper(), False
     if mapping and t in mapping:
-        return mapping[t]
-    return t if "." in t else t.replace(" ", "-") + ".ST"
+        return mapping[t], False
+    if "." in t:
+        return t, False
+    return t.replace(" ", "-") + ".ST", True
 
 
 def is_nordic(ticker) -> bool:
@@ -121,14 +127,25 @@ def _ticker_of(x) -> str:
 def segment_context(board: Optional[dict]) -> dict:
     """{segments: {key: {status, cykel, phase}}, themes: {tema: {status, cykel, phase, segment}}} ur kartan."""
     out: dict = {"segments": {}, "themes": {}}
-    for r in ((board or {}).get("board") or {}).get("segments") or []:
-        n = r.get("nordic") or {}
-        out["segments"][r["key"]] = {"status": n.get("status"), "cykel": n.get("cykel"), "phase": n.get("phase")}
-        for t in r.get("themes") or []:
-            s = t.get("state") or {}
+    for r in board_segments(board):
+        n = r.get("nordic") if isinstance(r.get("nordic"), dict) else {}
+        g = r.get("global") if isinstance(r.get("global"), dict) else {}
+        out["segments"][r["key"]] = {"status": n.get("status"), "cykel": n.get("cykel"), "phase": n.get("phase"),
+                                     "global_status": g.get("status")}
+        for t in r.get("themes") if isinstance(r.get("themes"), list) else []:
+            if not isinstance(t, dict) or not t.get("theme"):
+                continue
+            s = t.get("state") if isinstance(t.get("state"), dict) else {}
             out["themes"][t["theme"]] = {"status": s.get("status"), "cykel": s.get("cykel"), "phase": s.get("phase"),
                                          "segment": r["key"]}
     return out
+
+
+def board_segments(board: Optional[dict]) -> list:
+    """Kartans segmentrader som en lista av dict med nyckel — allt annat (trasig blob) ger tom lista, aldrig ett fel."""
+    inner = (board or {}).get("board") if isinstance(board, dict) else None
+    segs = inner.get("segments") if isinstance(inner, dict) else None
+    return [r for r in segs if isinstance(r, dict) and r.get("key")] if isinstance(segs, list) else []
 
 
 def segment_map_from_register(universe) -> dict:
@@ -280,7 +297,7 @@ def from_berserk(blob: Optional[dict], ctx: dict) -> list:
         theme = r.get("theme") or None
         why = r.get("why") or []
         out.append(_tag(Candidate(
-            yf(r.get("ticker")), _norm_name(r, str(r.get("label") or "")), "berserk", f"{st} · {r.get('setup') or '—'}",
+            yf(r.get("ticker")), _norm_name(r, (ctx.get("names") or {}).get(yf(r.get("ticker")), "")), "berserk", f"{st} · {r.get('setup') or '—'}",
             KOP if st == "KÖP" else BEVAKA, score=float(score), score_text=f"{r.get('setup') or '—'} · {r.get('complex') or ''}".strip(" ·"),
             segment=_segment_of_theme(theme), theme=theme, entry=_f(r.get("close")), stop=_f(r.get("stop")),
             nordic=(r.get("region") == "Norden") or is_nordic(r.get("ticker")), asof=asof,
@@ -337,9 +354,12 @@ def from_arc(blob: Optional[dict], board: Optional[dict], ctx: dict) -> list:
     return out
 
 
-def from_momentum(blob: Optional[dict], ctx: dict, mapping: Optional[dict] = None) -> list:
-    """Momentum Swing: rad 1–20 med setup A → KÖP, rad 1–20 utan → BEVAKA, 21–40 → HÅLL. Stoppen −10 %."""
+def from_momentum(blob: Optional[dict], ctx: dict, mapping: Optional[dict] = None, regime: Optional[dict] = None) -> list:
+    """Momentum Swing: rad 1–20 med setup A → KÖP, rad 1–20 utan → BEVAKA, 21–40 → HÅLL. Stoppen −10 %.
+    Regimljuset (wolf_regime.json) är strategins egen regel: RÖD låser köpen (SPÄRRAD), GUL = halv storlek,
+    saknat ljus = BEVAKA — samma som swing_verdict och strategy_rules (Momentum Swing)."""
     out, asof = [], _day((blob or {}).get("generated"))
+    light = str((regime or {}).get("regime") or "").upper() if isinstance(regime, dict) else ""
     for r in (blob or {}).get("top") or []:
         rank = r.get("rank")
         if rank is None:
@@ -347,13 +367,22 @@ def from_momentum(blob: Optional[dict], ctx: dict, mapping: Optional[dict] = Non
         rank = int(rank)
         setup = bool(r.get("setupA"))
         cls = KOP if rank <= 20 and setup else BEVAKA if rank <= 20 else HALL
+        status = f"rad {rank}" + (" · setup A" if setup else "")
+        why = "Swing Screener (stopp −10 %, halva vid +20 %)"
+        if cls == KOP and light == "RÖD":
+            cls, status, why = SPARRAD, status + " · RÖD regim", "Swing Regime RÖD — inga nya swingköp (strategins regel)"
+        elif cls == KOP and light == "GUL":
+            status, why = status + " · GUL regim", why + " · GUL regim: halv storlek"
+        elif cls == KOP and not light:
+            cls, why = BEVAKA, why + " · regimljuset saknas (kör wolf_data) — inget köp utan ljus"
         price = _f(r.get("price"))
-        t = momentum_yf(r.get("ticker"), mapping)
+        t, guessed = momentum_yf(r.get("ticker"), mapping, r.get("yf"))
+        if guessed:
+            why += " · tickern antagen .ST (registret saknas)"
         out.append(_tag(Candidate(
-            t, _norm_name(r), "momentum", f"rad {rank}" + (" · setup A" if setup else ""), cls,
+            t, _norm_name(r), "momentum", status, cls,
             score=max(0.0, 100.0 - (rank - 1) * 2.5), score_text=f"rad {rank}/40", entry=price,
-            stop=None if price is None else round(price * 0.9, 2), nordic=True, asof=asof,
-            why="Swing Screener (stopp −10 %, halva vid +20 %)"), ctx))
+            stop=None if price is None else round(price * 0.9, 2), nordic=True, asof=asof, why=why), ctx))
     return out
 
 
@@ -493,10 +522,24 @@ def sort_key(c: Candidate) -> tuple:
             reg.ORDER.index(c.strategy) if c.strategy in reg.ORDER else 99, c.ticker)
 
 
+def _freshest_viking_nine(rows: list) -> list:
+    """Viking Nine-rader kommer ur två källor (kartans swing-val och skanningen); per ticker vinner den som
+    räknats på den senaste stängningen — en äldre GOLDEN TICKET får inte dölja dagens READY eller avsaknad."""
+    best: dict = {}
+    for c in rows:
+        if c.strategy != "viking_nine":
+            continue
+        k = c.ticker
+        stamp = (c.data_asof or c.asof or "", c.asof or "")
+        if k not in best or stamp > (best[k].data_asof or best[k].asof or "", best[k].asof or ""):
+            best[k] = c
+    return [c for c in rows if c.strategy != "viking_nine" or best.get(c.ticker) is c]
+
+
 def dedupe(rows: list) -> list:
-    """En rad per strategi och ticker — den bästa (efter sort_key) vinner."""
+    """En rad per strategi och ticker — den bästa (efter sort_key) vinner; Viking Nine: den färskaste."""
     seen, out = set(), []
-    for c in sorted(rows, key=sort_key):
+    for c in sorted(_freshest_viking_nine(rows), key=sort_key):
         k = (c.strategy, c.ticker)
         if c.ticker and k not in seen:
             seen.add(k)
@@ -525,7 +568,7 @@ def _collect(errors: Optional[dict], name: str, fn, *args) -> list:
 
 
 def build(blobs: dict, today=None, momentum_map: Optional[dict] = None, errors: Optional[dict] = None,
-          segment_map: Optional[dict] = None) -> list:
+          segment_map: Optional[dict] = None, names: Optional[dict] = None) -> list:
     """Hela listan ur de lästa filerna (load_blobs-nycklar), sorterad och utan dubbletter. Källor som inte går
     att läsa hoppas över och skrivs i errors ({källa: fel}) så att sidan kan säga vad som saknas.
     segment_map = {ticker: segment} ur registret (segment_map_from_register) för rader utan eget segment."""
@@ -538,9 +581,13 @@ def build(blobs: dict, today=None, momentum_map: Optional[dict] = None, errors: 
             errors["board"] = f"{type(exc).__name__}: {exc}"
         ctx = {"segments": {}, "themes": {}}
     ctx["segment_of"] = {str(k).upper(): v for k, v in (segment_map or {}).items() if v}
+    ctx["names"] = {str(k).upper(): v for k, v in (names or {}).items() if v}
+    if b.get(UNREADABLE) and errors is not None:
+        errors["gist"] = "Gisten gick inte att läsa (nätverk eller token) — inga körningar kunde hämtas; tryck 📡 Uppdatera"
     sources = (("viking_nine", from_viking_nine, (board, ctx, b.get("viking_nine"))), ("long", from_long, (board, ctx)),
                ("themes", from_themes, (board, ctx)), ("berserk", from_berserk, (b.get("berserk"), ctx)),
-               ("arc", from_arc, (b.get("arc"), board, ctx)), ("momentum", from_momentum, (b.get("momentum"), ctx, momentum_map)),
+               ("arc", from_arc, (b.get("arc"), board, ctx)),
+               ("momentum", from_momentum, (b.get("momentum"), ctx, momentum_map, b.get("regime"))),
                ("ember", from_ember, (b.get("ember"), ctx)), ("quality", from_contrarian, (b.get("ca_quality"), ctx, "quality")),
                ("deep", from_contrarian, (b.get("ca_deep"), ctx, "deep")), ("insider", from_insider, (b.get("insider"), ctx)),
                ("screens", from_screens, (b.get("screens"), ctx)), ("royalty", from_royalty, (b.get("royalty"), ctx)))
@@ -597,6 +644,7 @@ def load_blobs(loader: Optional[Callable] = None, ca_loader: Optional[Callable] 
             out[key] = loader(name, None)
         except Exception:
             out[key] = None
+    out[UNREADABLE] = all(out.get(k) is None for k in BLOBS)
     for key, mode in (("ca_quality", "quality"), ("ca_deep", "deep_contrarian")):
         try:
             if ca_loader is None:
