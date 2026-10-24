@@ -322,7 +322,9 @@ def _berserk(st, ident, strategy, data, ohlcv, cands) -> None:
     except Exception:
         commodity = None
     sym, drv = drivers.get(theme, (None, None))
-    mkt = markets.get(uv.REGION_INDEX.get(region, "SPY")) or markets.get("SPY")
+    mkt = markets.get(uv.REGION_INDEX.get(region, "SPY"))      # aldrig `or` på en Series: sanningsvärdet är tvetydigt
+    if mkt is None:
+        mkt = markets.get("SPY")
     row = live.evaluate(ident.yf, stock, drv, mkt, cfg=cfg, driver_symbol=sym, commodity=commodity)
     if row.get("error"):
         note(f"{ident.yf}: {row['error']}")
@@ -377,8 +379,15 @@ def _long_screener(st, ident, strategy, data, ohlcv, cands) -> None:
         fund_info = (fetch_fundamentals_batch_fast((ident.yf,)) or {}).get(ident.yf) or {}
     except Exception as exc:
         note(f"Fundamenta kunde inte hämtas ({exc}) — poängen räknas utan.")
-    segs = ((data.get("board") or {}).get("board") or {}).get("segments") or []
-    status = next(((r.get("nordic") or {}).get("status", vcy.NODATA) for r in segs if r.get("key") == ident.segment), vcy.NODATA)
+    from valhall.paper import cycle_tag
+    blob = data.get("board") or {}
+    inner = blob.get("board") if isinstance(blob.get("board"), dict) else blob
+    tag = cycle_tag(inner, ident.segment, ident.theme) if inner else {}
+    # Nordiska bolag bedöms som i Valhalls Long Screener-rad (sektorns nordiska status); utländska på temat om det
+    # finns på kartan, annars globalt (SPDR) — inte på Nordens sektorstatus som förut (NEM ≠ nordiskt Material).
+    g = "n" if ident.nordic else ("t" if ident.theme and tag.get("t_status") not in (None, vcy.NODATA) else "g")
+    status = tag.get(f"{g}_status") or vcy.NODATA
+    view = {"n": "sektorn", "t": "temat", "g": "globalt"}[g]
     market = vcy.NODATA
 
     def _close(sym):
@@ -397,7 +406,7 @@ def _long_screener(st, ident, strategy, data, ohlcv, cands) -> None:
     col = SIGNAL_COLORS.get(sig, GREY)
     pct = total["score_pct"] * 100
     st.markdown(cards.verdict_card(sig, f"{pct:.0f} % · {total['total_score']}/{total['max_score']} poäng",
-                                   f"fundamenta {total['fund_score']}/{total['fund_max']} · cykel {cyc}/3 (Valhall gron: sektorn "
+                                   f"fundamenta {total['fund_score']}/{total['fund_max']} · cykel {cyc}/3 (Valhall gron: {view} "
                                    f"{status}, marknaden {market}) · teknik {total['tech_score']}/7", col,
                                    label="LONG SCREENER"), unsafe_allow_html=True)
     gates = {g.get("rule", "?"): ("PASS" if g.get("pass") else "FAIL", g.get("reason", "")) for g in
