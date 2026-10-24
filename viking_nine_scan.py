@@ -162,10 +162,13 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     import arc_scan
     try:
-        from ovtlyr.ui.viking_screens import _earnings
+        from ovtlyr.ui.viking_screens import _earnings, _risk_for
     except Exception:                                             # pragma: no cover
-        _earnings = None
-    run(usa_api=arc_scan.borsdata_for_usa(), dry_run=args.dry_run, earnings_getter=_earnings, held={})
+        _earnings = _risk_for = None
+    # Marknadsriskspärren (FÖRHÖJD/HÖG = inga nya entries) gäller listan också, som i Thors Regim-flik
+    # (granskning 2, V1) — annars stod GOLDEN TICKET i listan och NO TRADE när aktien öppnades.
+    run(usa_api=arc_scan.borsdata_for_usa(), dry_run=args.dry_run, earnings_getter=_earnings, held={},
+        risk_getter=_risk_for)
     try:
         import market_prices
         log.info("Viking Nine: %s.", market_prices.stats_text())

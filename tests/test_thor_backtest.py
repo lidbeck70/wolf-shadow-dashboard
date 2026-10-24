@@ -54,8 +54,9 @@ def test_viking_nine_runs_in_fast_mode_against_spy(engines):
     _check(r, "viking_nine", tb.FILL_NEXT_OPEN)
     assert any(m[0] == "Signaler" and "marknad SPY" in m[3] for m in r.metrics)
     assert any("Snabbläge" in w for w in r.warnings) and r.notes
-    rn = tb.run("viking", td.identify("BOL.ST"), 3, _prices, today=TODAY)           # nordisk utan Börsdata
+    rn = tb.run("viking_nine", td.identify("BOL.ST"), 3, _prices, today=TODAY)      # nordisk utan Börsdata
     assert rn.error == "" and any("OMXS30" in w and "SPY" in w for w in rn.warnings)
+    assert tb.run("viking", td.identify("BOL.ST"), 3, _prices, today=TODAY).error   # Viking ≠ Viking Nine (granskning 2)
 
 
 def test_berserk_runs_the_scanner_rules_on_the_theme(engines):

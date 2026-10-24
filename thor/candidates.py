@@ -331,7 +331,8 @@ def from_arc(blob: Optional[dict], board: Optional[dict], ctx: dict) -> list:
             out.append(_tag(Candidate(
                 t, _norm_name(r), "wolf", f"ENTRY · {band}" if entry else band, cls, score=round(sc / 1.25, 1),
                 score_text=f"{sc:.0f}/125" + (f" · grindar {p['gates']}" if p.get("gates") else ""),
-                segment=p.get("segment"), stop=_f(p.get("stop")) if entry else None,
+                segment=p.get("segment"), entry=_f(p.get("price")) if entry else None,
+                stop=_f(p.get("stop")) if entry else None,
                 target=_f(p.get("tp1")) if entry else None, nordic=is_nordic(t), asof=asof,
                 why="strategins köpregel uppfylld" if entry else "regimpoängen — ingen entry ännu"), ctx))
     for part in ("viking", "viking_usa"):

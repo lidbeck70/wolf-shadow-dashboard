@@ -162,8 +162,18 @@ def scan_kwargs(scan_fn=None) -> dict:
     """Extra argument till Viking Nine-skanningen i Valhall: rapportdatum, så att Execution-kontrollen
     'Earnings' inte blir DATA UNAVAILABLE → WAIT → READY — utan den kunde papperskontot viking aldrig få en
     GOLDEN TICKET. Bara för den riktiga skannern (ett fejkat scan_fn i tester tar inte emot argumentet)."""
-    eg = _earnings_getter() if scan_fn is None else None
-    return {"earnings_getter": eg} if eg else {}
+    if scan_fn is not None:
+        return {}
+    out = {}
+    eg = _earnings_getter()
+    if eg:
+        out["earnings_getter"] = eg
+    try:                                   # marknadsriskspärren som i Thors Regim-flik (granskning 2, V1)
+        from ovtlyr.ui.viking_screens import _risk_for
+        out["risk_getter"] = _risk_for
+    except Exception:
+        pass
+    return out
 
 
 def viking_exit_ctx(getter, today=None) -> dict:

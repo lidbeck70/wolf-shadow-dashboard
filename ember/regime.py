@@ -862,6 +862,16 @@ def compute_all_complex_regimes() -> dict[str, ComplexRegimeResult]:
         "skog":         compute_skog_regime(),
         "frakt":        compute_frakt_regime(),
     }
+    # Ett komplex som mest består av datahål cachas inte en timme — nästa visning försöker igen (granskning 2, E1)
+    fns = {"energi": compute_energi_regime, "adelmetaller": compute_adelmetaller_regime,
+           "basmetaller": compute_basmetaller_regime, "agri": compute_agri_regime, "skog": compute_skog_regime,
+           "frakt": compute_frakt_regime}
+    for k, r in results.items():
+        if getattr(r, "gap_count", 0) >= 3 and hasattr(fns[k], "clear"):
+            try:
+                fns[k].clear()
+            except Exception:
+                pass
     try:
         import streamlit as st
         st.session_state["ember_complex_regimes"] = results

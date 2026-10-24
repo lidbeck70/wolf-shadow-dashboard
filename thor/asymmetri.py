@@ -368,7 +368,12 @@ def cached(st, ticker: str, api=None, fetch_fn: Optional[Callable] = None, force
         from asymmetry import quick_data
         fetch_fn = quick_data.fetch
     data = fetch_fn(ticker, api=api)
-    cache[ticker] = (time.time(), data)
+    empty = isinstance(data, dict) and "source" in data and not data.get("source") \
+        and not any(data.get(k) for k in ("prices", "price", "close", "last"))
+    if empty:                                         # ett tomt svar (källorna nere) cachas inte (granskning 2, Q1)
+        cache.pop(ticker, None)
+    else:
+        cache[ticker] = (time.time(), data)
     return data
 
 

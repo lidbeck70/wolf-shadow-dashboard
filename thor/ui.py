@@ -474,9 +474,20 @@ def _dossier(st, ticker: str, stores: dict) -> dict:
                 fill_from_universe(ident, universe_member(st, ident.yf))   # registret som reserv för okända tickers
             except Exception:
                 pass
-        snap, err = td.snapshot(_ohlcv(ident.yf), ident.yf)
+        df = _ohlcv(ident.yf)
+        try:                                                  # stängda staplar som skannrarna (granskning 2, F16)
+            import ovtlyr_nine as on
+            df = on.closed_only(df, ident.yf) if df is not None and len(df) else df
+        except Exception:
+            pass
+        snap, err = td.snapshot(df, ident.yf)
     out = {"ident": ident, "snapshot": snap, "snapshot_error": err}
-    cache[ticker] = (time.time(), out)
+    # Ett misslyckat uppslag (ingen kurs, eller Börsdata svarade inte) cachas inte — nästa tryck försöker igen (C1)
+    failed = snap is None or (_api() is not None and getattr(ident, "ins_id", None) is None and ident.nordic)
+    if failed:
+        cache.pop(ticker, None)
+    else:
+        cache[ticker] = (time.time(), out)
     return out
 
 

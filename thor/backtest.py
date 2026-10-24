@@ -247,7 +247,8 @@ def run_wolf(ident: Ticker, years: int, prices: Callable, today=None) -> Result:
     return out
 
 
-ENGINES = {"viking_nine": run_viking, "viking": run_viking, "berserk": run_berserk, "momentum": run_momentum, "wolf": run_wolf}
+# "viking" (OVTLYR-Viking) har ingen egen per-aktie-motor här — Viking Nine är en annan strategi (granskning 2)
+ENGINES = {"viking_nine": run_viking, "berserk": run_berserk, "momentum": run_momentum, "wolf": run_wolf}
 
 
 def run(strategy: str, ident: Ticker, years: int, prices: Callable, today=None) -> Result:

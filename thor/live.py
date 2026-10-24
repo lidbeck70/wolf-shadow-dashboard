@@ -44,10 +44,11 @@ def _viking_nine(data: dict) -> dict:
     if have and members.get("norden"):
         members["norden"] = {t: v for t, v in members["norden"].items() if t in have} or members["norden"]
     try:
-        from ovtlyr.ui.viking_screens import _earnings
+        from ovtlyr.ui.viking_screens import _earnings, _risk_for
     except Exception:                                             # pragma: no cover
-        _earnings = None
-    fresh = vns.run(members=members, dry_run=True, earnings_getter=_earnings, held={})["payload"]
+        _earnings = _risk_for = None
+    fresh = vns.run(members=members, dry_run=True, earnings_getter=_earnings, held={},
+                    risk_getter=_risk_for)["payload"]                 # marknadsriskspärren som i Regim-fliken
     usa = ((old.get("markets") or {}).get("usa")) or {"funnel": {}, "rows": []}
     fresh["markets"]["usa"] = usa
     fresh["rows"] = list(fresh["markets"]["norden"]["rows"]) + list(usa.get("rows") or [])

@@ -92,7 +92,8 @@ def arc_picks(arc: Optional[dict], entries: dict, universe: dict, segment: str, 
         buy = e.get("signal") == "BUY"
         score = float(r["score"])
         out.append({"ticker": t, "name": _name(r, t, universe), "segment": segment, "strategy": WOLF,
-                    "score": score, "entry": buy, "stop": e.get("stop") if buy else None,
+                    "score": score, "entry": buy, "price": e.get("entry") if buy else None,
+                    "stop": e.get("stop") if buy else None,
                     "tp1": e.get("tp1") if buy else None, "tp2": e.get("tp2") if buy else None,
                     "gates": f"{e['gates']}/{e['gates_n']}" if e else None,
                     "tag": f"ENTRY · {score:.0f}" if buy else f"{score:.0f}"})
