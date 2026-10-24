@@ -38,14 +38,15 @@ SUBS: dict = {
     "odin": ["Läget", "Kartan", "Råvaror", "Makro", "Marknad"],
     # Design PR 10: Guld/Silver och Guldkvoter är en sida (🥇 Guld) med två inre flikar; Sentiment och Retail Pulse
     # likaså. Marknad är bakgrund och märks så på sidorna.
-    "odin/Råvaror": ["Odin's Blindspot", "🌍 EMBER Regime", "🪓 BERSERK Regime", "Råvarurotation", "🥇 Guld"],
+    "odin/Råvaror": ["Odin's Blindspot", "🔥 EMBER", "🪓 BERSERK Regime", "Råvarurotation", "🥇 Guld"],
     "odin/Makro": ["🐺 Fiat Debasement", "Sentiment"],
-    "odin/Marknad": ["Flow Divergence", "Heatmap"],
+    "odin/Marknad": ["Sektorflöde", "Värmekarta"],
     # Beslutsunderlaget efter screeningen — köpgrinden först. Durrett har sitt ark (data/confidence.json);
     # Wolf Asymmetry har sitt eget med Confidence inbyggt.
     "review": ["🎯 Scorecard", "Rick Rule", "Royalty C", "Poängmodell", "Tiggre", "Insider",
                "🧭 Durrett", "🐺 Wolf Asymmetry", "🚀 Råvaruhävstång"],
-    "portfolio": ["Holdings", "🎯 Mot målet", "📊 Papperskonton", "📓 Trade Journal", "Swing", "Allokering"],
+    # Design PR 11: fliken heter som sidan och som larmet — Positioner, Journal, Veckorutin.
+    "portfolio": ["Positioner", "🎯 Mot målet", "📊 Papperskonton", "Journal", "Veckorutin", "Allokering"],
     # Motorsidorna: Thors flikar gör samma jobb och bryggorna leder hit. Gamla Vikings kod rörs inte.
     "more": ["Larm", "⚙️ Inställningar", "Regler & Guider", "Copilot", "Motorsidor", "Egen backtest"],
     "more/Motorsidor": ["Wolf Regime", "Viking Regime", "⚔️ Viking Nine Regime", "Quality & Contrarian",
@@ -60,7 +61,7 @@ HOME_ZONES: tuple = (
     ("odin", "ODIN — VAR KAPITALET SKA", [
         ("Läget", "Allokering · Swing · Marknadsrisk · Norden — fyra ljus, och Swing-läget"),
         ("Kartan", "Valhalls cykelkarta per sektor, råvarukomplex och tema med vändningarna"),
-        ("Råvaror", "Odin's Blindspot · EMBER · BERSERK · Råvarurotation · Guld"),
+        ("Råvaror", "Odin's Blindspot · 🔥 EMBER · BERSERK · Råvarurotation · Guld"),
         ("Makro", "🐺 Fiat Debasement och Sentiment"),
         ("Marknad", "Sektorflöde och värmekarta — bakgrund"),
     ]),
@@ -75,10 +76,10 @@ HOME_ZONES: tuple = (
         ("🐺 Wolf Asymmetry", "Hävstång, margin of safety, confidence, stressmatris"),
     ]),
     ("portfolio", "PORTFÖLJ — POSITIONER OCH MÅLET", [
-        ("Holdings", "Positionerna och säljreglerna"),
+        ("Positioner", "Positionerna och säljreglerna"),
         ("🎯 Mot målet", "Årstakten mot 20/35 %, per strategi, och vad reglerna gett historiskt"),
         ("📊 Papperskonton", "Varje strategi på papper"),
-        ("📓 Trade Journal", "Stängda affärer och R"),
+        ("Journal", "Stängda affärer och R"),
         ("Allokering", "Ramar, tak och strömbrytaren"),
     ]),
     ("more", "MER — LARM, INSTÄLLNINGAR OCH REGLER", [
@@ -144,6 +145,12 @@ LEGACY_PATHS: dict = {
     "odin/makro/retail-pulse": "odin/makro/sentiment",
     "odin/ravaror/guld-silver": "odin/ravaror/guld",
     "odin/ravaror/guldkvoter": "odin/ravaror/guld",
+    "odin/ravaror/ember-regime": "odin/ravaror/ember",
+    "odin/marknad/flow-divergence": "odin/marknad/sektorflode",
+    "odin/marknad/heatmap": "odin/marknad/varmekarta",
+    "portfolio/holdings": "portfolio/positioner",
+    "portfolio/trade-journal": "portfolio/journal",
+    "portfolio/swing": "portfolio/veckorutin",
     "alerts": "more/larm",
     "rules/regler-guider": "more/regler-guider",
     "rules/installningar": "more/installningar",
@@ -176,8 +183,8 @@ TARGETS: dict = {
     "tiggre": ("review", "Tiggre"),
     "durrett": ("review", "🧭 Durrett"),
     "scorecard": ("review", "🎯 Scorecard"),
-    "holdings": ("portfolio", "Holdings"),
-    "journal": ("portfolio", "📓 Trade Journal"),
+    "holdings": ("portfolio", "Positioner"),
+    "journal": ("portfolio", "Journal"),
     "alerts": ("more", "Larm"),
     "settings": ("more", "⚙️ Inställningar"),
     "goal": ("portfolio", "🎯 Mot målet"),

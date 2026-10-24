@@ -739,7 +739,7 @@ def _render_journal_log(ticker: str, strategy_key: str,
             log_note   = st.text_input("Anteckning (valfri)")
             log_open   = st.checkbox(
                 "Köpt — lägg in som öppen position i Holdings", value=True,
-                help="Registret (PORTFÖLJ → Holdings) är panelens enda "
+                help="Registret (PORTFÖLJ → Positioner) är panelens enda "
                      "positionslista: allokeraren, larmen och journalen läser "
                      "därifrån. Avmarkera om det bara är en kandidat.")
 

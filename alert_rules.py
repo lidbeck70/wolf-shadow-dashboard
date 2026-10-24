@@ -312,7 +312,7 @@ def viking_alerts(viking_data: Optional[dict], prev: Optional[dict],
         extra = f" · signal {d['signal']}" if d["signal"] else ""
         alerts.append(_alert(
             "viking_nine",
-            f"⚔️ Viking: {ticker} på {d['v9']}/9",
+            f"🛡 Viking: {ticker} på {d['v9']}/9",
             f"{d['name'] or ticker} nådde Viking Execution-filtret {d['v9']}/9 och "
             f"klarar den absoluta grinden (pris > EMA200, ADX ≥ 20){extra}. "
             f"Detaljer i THOR med strategin Viking.", target="thor", ticker=ticker, strategy="viking"))

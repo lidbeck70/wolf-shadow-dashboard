@@ -208,7 +208,7 @@ def render_swing_page() -> None:
             f"<div style='display:flex;justify-content:space-between;"
             f"align-items:baseline;flex-wrap:wrap;gap:8px;'>"
             f"<h1 style='color:{TEXT};margin:0;letter-spacing:0.06em;'>"
-            f"Swing <span style='color:{GREEN};'>· momentum</span></h1>"
+            f"Veckorutin <span style='color:{GREEN};'>· Momentum Swing</span></h1>"
             f"<span style='color:{DIM};font-size:0.85rem;'>{_iso_week()} · {_today()}</span>"
             f"</div>",
             unsafe_allow_html=True,

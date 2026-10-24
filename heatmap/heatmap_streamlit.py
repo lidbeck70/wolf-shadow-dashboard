@@ -886,7 +886,7 @@ def _render_header() -> None:
             <h1 style='margin:0;font-size:2rem;letter-spacing:0.12em;
                        background:linear-gradient(90deg,{CYAN},{MAGENTA});
                        -webkit-background-clip:text;-webkit-text-fill-color:transparent;'>
-                PERFORMANCE HEATMAP
+                VÄRMEKARTA
             </h1>
             <div style='color:{DIM};font-size:0.7rem;letter-spacing:0.15em;margin-top:4px;'>
                 NORDIC STOCKS &amp; UCITS ETFs — REAL-TIME PRICE PERFORMANCE

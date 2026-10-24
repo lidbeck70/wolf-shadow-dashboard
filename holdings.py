@@ -766,9 +766,9 @@ def _render_summary_header() -> None:
     with title_col:
         st.markdown(
             f"<h1 style='color:{STRATEGY_COLORS['Quality']};letter-spacing:0.12em;"
-            f"margin:0 0 2px 0;'>HOLDINGS</h1>"
+            f"margin:0 0 2px 0;'>POSITIONER</h1>"
             f"<p style='color:{DIM};font-size:0.7rem;letter-spacing:0.08em;margin:0;'>"
-            f"Multi-strategy portfolio · Live signals · Alpha Regime integration</p>",
+            f"Alla strategiers positioner · säljreglerna · signalerna</p>",
             unsafe_allow_html=True,
         )
     with cash_col:

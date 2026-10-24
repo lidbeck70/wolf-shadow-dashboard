@@ -69,12 +69,12 @@ def test_old_links_land_in_the_new_tree():
     assert nav.resolve("rules/position-sizing") == ["more", "⚙️ Inställningar"]
     assert nav.resolve("strategies") == ["more", "Regler & Guider"]
     assert nav.resolve("portfolio/backtest") == ["more", "Egen backtest"]
-    assert nav.resolve("regime/ravaror/ember-regime") == ["odin", "Råvaror", "🌍 EMBER Regime"]
+    assert nav.resolve("regime/ravaror/ember-regime") == ["odin", "Råvaror", "🔥 EMBER"]
     assert nav.resolve("regime/makro/fiat-debasement") == ["odin", "Makro", "🐺 Fiat Debasement"]
     assert nav.resolve("regime/marknad/finns-inte") == ["odin", "Marknad"] and nav.resolve("regime") == ["odin"]
     assert nav.resolve("intel/odins-blindspot") == ["odin", "Råvaror", "Odin's Blindspot"]
     assert nav.resolve("intelligence/sentiment") == ["odin", "Makro", "Sentiment"]
-    assert nav.resolve("intel/heatmap") == ["odin", "Marknad", "Heatmap"]
+    assert nav.resolve("intel/heatmap") == ["odin", "Marknad", "Värmekarta"]
     assert nav.resolve("intel/teknisk-analys") == ["thor"]
     assert nav.resolve("screening/arc-screener/ember") == ["thor"] and nav.resolve("screening") == ["thor"]
     assert nav.resolve("granskning/insider") == ["review", "Insider"]
@@ -171,8 +171,8 @@ def test_query_param_opens_the_tab_and_the_url_follows_the_user():
     at.session_state["nav_goto"] = "portfolio/holdings"
     at.run()
     assert at.session_state[nav.TABS_KEY] == nav.tab_label("portfolio")
-    assert at.radio(key="sub_portfolio").value == "Holdings"
-    assert _p(at) == "portfolio/holdings"
+    assert at.radio(key="sub_portfolio").value == "Positioner"
+    assert _p(at) == "portfolio/positioner"
 
 
 def test_unknown_link_leaves_the_panel_on_home():
