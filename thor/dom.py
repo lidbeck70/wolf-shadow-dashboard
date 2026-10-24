@@ -224,7 +224,8 @@ def _cycle_checks(strategy: str, ctx: dict) -> tuple:
             status = {"TIDIG": PASS, "MITTEN": PASS, "SEN": MANUAL, "TOPP": FAIL}.get(cyk, MANUAL)
             why = {"TIDIG": "tidig cykel, contrarian-läge", "MITTEN": "mitt i cykeln",
                    "SEN": "sen cykel — ingen ny position utan starkt case",
-                   "TOPP": "cykeltopp — Rick Rule köper inte här"}.get(cyk, "cykelläget saknas")
+                   "TOPP": "cykeltopp — " + (f"{reg.label(strategy)} köper inte här" if strategy in COMMODITY_STRATEGIES
+                                             else "ingen ny position")}.get(cyk, "cykelläget saknas")
         else:
             status = PASS if stt == "GRÖN" else MANUAL
             why = "" if stt == "GRÖN" else "segmentet är inte GRÖN: arkets egen regel avgör"

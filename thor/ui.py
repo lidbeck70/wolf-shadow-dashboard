@@ -440,6 +440,10 @@ def _analysis(st, data: dict, rows: list, ticker: str) -> None:
     d = _dossier(st, ticker, stores)
     ident = d["ident"]
     cands = td.candidates_for(rows, ident.yf)
+    if "." not in ident.yf and cands and "." in cands[0].ticker:      # 'ERIC B' utan Börsdata → listan vet att det är ERIC-B.ST
+        d = _dossier(st, cands[0].ticker, stores)
+        ident = d["ident"]
+        cands = td.candidates_for(rows, ident.yf)
     if not st.session_state.get("_thor_strategy_set") and st.session_state.get("_thor_last") != ident.yf:
         st.session_state["thor_strategy"] = reg.label(td.default_strategy(ident, cands))
     st.session_state["_thor_last"] = ident.yf
