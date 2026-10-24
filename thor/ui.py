@@ -461,14 +461,16 @@ def _universe_box(st, index: Optional[dict]) -> None:
          "Börsdata (nordiskt + globalt) och panelens egna listor; skannrarna läser det i egna steg.")
 
 
-def _dossier(st, ticker: str, stores: dict) -> dict:
+def _dossier(st, ticker: str, stores: dict, rows: Optional[list] = None) -> dict:
     """Identiteten och ögonblicksbilden, cachade en timme per aktie (arken läses varje gång — de ändras)."""
     cache = st.session_state.setdefault(_CACHE, {})
     hit = cache.get(ticker)
     if hit and time.time() - hit[0] < CACHE_TTL_S:
         return hit[1]
     with st.spinner(f"Hämtar {ticker} …"):
-        ident = td.identify(ticker, _api(), stores, _table())
+        bare = str(ticker or "").strip().upper()
+        keep_bare = "." not in bare and " " not in bare and any(str(c.ticker).upper() == bare for c in rows or [])
+        ident = td.identify(ticker, _api(), stores, _table(), keep_bare=keep_bare)
         if not ident.name or not ident.theme:
             try:
                 fill_from_universe(ident, universe_member(st, ident.yf))   # registret som reserv för okända tickers
@@ -495,11 +497,11 @@ def _analysis(st, data: dict, rows: list, ticker: str) -> None:
     from ui.components import note
     st.button("◀ Tillbaka till listan", key="thor_back", on_click=_close)
     stores = _stores()
-    d = _dossier(st, ticker, stores)
+    d = _dossier(st, ticker, stores, rows)
     ident = d["ident"]
     cands = td.candidates_for(rows, ident.yf)
     if "." not in ident.yf and cands and "." in cands[0].ticker:      # 'ERIC B' utan Börsdata → listan vet att det är ERIC-B.ST
-        d = _dossier(st, cands[0].ticker, stores)
+        d = _dossier(st, cands[0].ticker, stores, rows)
         ident = d["ident"]
         cands = td.candidates_for(rows, ident.yf)
     if not st.session_state.get("_thor_strategy_set") and st.session_state.get("_thor_last") != ident.yf:
