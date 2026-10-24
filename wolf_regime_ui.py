@@ -47,7 +47,7 @@ def _num(n, default=None):
 def _get_data(force: bool = False):
     if force:
         st.session_state.pop(_CACHE, None)
-    if _CACHE not in st.session_state:
+    if st.session_state.get(_CACHE) is None:                 # None = gick inte att läsa: försök igen nästa gång
         st.session_state[_CACHE] = _load_wolf(_FILE) if _load_wolf else None
     return st.session_state[_CACHE]
 

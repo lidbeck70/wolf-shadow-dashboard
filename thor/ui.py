@@ -46,13 +46,14 @@ MARKET_LABELS = {m.label: m.key for m in ur.MARKETS}
 _UNIVERSE = "thor_universe"
 
 # Bryggorna till sidorna i Odins visdom och Arken: regimlayout → (djuplänk, sidans namn, widget att förifylla).
-# Wolf Regime och Viking Regime sätter egna startvärden i sina fält — där navigerar vi bara.
+# Ett värde satt i session_state före widgeten vinner över value= — så fälten förifylls även där sidan har ett
+# eget startvärde (Wolf Regime XOM, Viking Regime, EMBER Regime). BERSERK Regime har inget tickerfält.
 BRIDGE = {"viking_nine": ("odin/marknad/arc-regime/viking-nine-regime", "Viking Nine Regime", "vnr_ticker"),
-          "viking": ("odin/marknad/arc-regime/viking-regime", "Viking Regime", None),
-          "wolf": ("odin/marknad/arc-regime/wolf-regime", "Wolf Regime", None),
+          "viking": ("odin/marknad/arc-regime/viking-regime", "Viking Regime", "ovtlyr_ticker"),
+          "wolf": ("odin/marknad/arc-regime/wolf-regime", "Wolf Regime", "reg_ticker"),
           "momentum": ("odin/marknad/swing-regime", "Swing Regime", "swreg_ticker"),
           "berserk": ("odin/ravaror/berserk-regime", "BERSERK Regime", None),
-          "ember": ("odin/ravaror/ember-regime", "EMBER Regime", None),
+          "ember": ("odin/ravaror/ember-regime", "EMBER Regime", "ember_regime_ticker_search"),
           "alpha_quality": ("odin/marknad/alpha-regime/quality-contrarian", "Alpha Regime", "ar_ticker"),
           "alpha_contrarian": ("odin/marknad/alpha-regime/quality-contrarian", "Alpha Regime", "ar_ticker"),
           "long_screener": ("odin/marknad/alpha-regime/long-trend", "Long Trend", "long_regime_ticker_input"),
@@ -301,6 +302,8 @@ def render_thor_page() -> None:
         with st.spinner("Läser körningarna ur Gisten …"):
             st.session_state[_STATE] = rebuild(load())
             st.session_state.pop(_CACHE, None)
+            for k in ("_wolf_screener_cache", "_wolf_regime_cache"):       # sidornas sessionscacher läses om också
+                st.session_state.pop(k, None)
     data = st.session_state[_STATE]
     rows = data.get("rows") or []
     c2.markdown(f"<div style='color:{DIM};font-size:0.78rem;padding-top:8px;'>hämtad {data.get('loaded')} · "
