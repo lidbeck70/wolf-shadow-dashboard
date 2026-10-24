@@ -67,9 +67,13 @@ def turn_text(turn: Optional[dict]) -> str:
     return f" ⚡ {t['kind']} dag {t.get('days') or '?'}" + (" ✓" if t.get("confirmed") else "")
 
 
-def complex_card(c: dict) -> str:
-    """Komplexrutan: komplexdrivarens status, vändningen, och hur många teman som vänder/är starka."""
+def complex_card(c: dict, swing_c: Optional[dict] = None) -> str:
+    """Komplexrutan: komplexdrivarens status, vändningen, hur många teman som vänder/är starka, och Viking Nine
+    per komplex (profilen) med drivargrinden."""
     st = c.get("state") or {}
+    sw = swing_c or {}
+    drv = sw.get("driver") or {}
+    drv_txt = f" · drivare {escape(str(drv.get('detail')))}" if drv.get("detail") else ""
     col = regime_color(_status(st)) if _status(st) in ("GRÖN", "GUL", "RÖD") else GREY
     chips = ""
     for t in c.get("themes") or []:
@@ -84,7 +88,11 @@ def complex_card(c: dict) -> str:
             f"<span>{status_chip('', st)}</span></div>"
             f"<div style='color:{DIM};font-size:0.62rem;'>{escape(c.get('driver') or 'ingen drivare')} · "
             f"{c.get('themes_turning') or 0}/{c.get('n_themes') or 0} teman vänder eller är starka</div>"
-            f"<div style='margin-top:3px;'>{chips}</div></div>")
+            f"<div style='margin-top:3px;'>{chips}</div>"
+            + (_line(f"Swing ({escape(sw.get('strategy') or 'Viking Nine · komplex')})",
+                     pick_chips(sw.get("picks") or []) + f"<span style='color:{DIM};font-size:0.62rem;'>"
+                     f" {sw.get('universe') or 0} bolag{drv_txt}</span>") if sw else "")
+            + "</div>")
 
 
 def turn_notice(turns: list) -> str:
@@ -322,11 +330,13 @@ def render_map(board: dict) -> None:
                                  (long.get("segments") or {}).get(r["key"]), niche.get(r["key"]), wolf.get(r["key"]))
                     for r in segs) + "</div>", unsafe_allow_html=True)
     cxs = ((board or {}).get("board") or {}).get("complexes") or []
+    csw = ((board or {}).get("complex_swing") or {}).get("complexes") or {}
     if cxs:
         st.markdown(f"<div style='color:{GOLD};font-size:0.72rem;letter-spacing:0.1em;margin-top:12px;'>"
                     f"RÅVARUKOMPLEX — komplexdrivaren är en likaviktad korg av temadrivarna</div>", unsafe_allow_html=True)
         st.markdown("<div style='display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px;"
-                    "margin-top:4px;'>" + "".join(complex_card(c) for c in cxs) + "</div>", unsafe_allow_html=True)
+                    "margin-top:4px;'>" + "".join(complex_card(c, csw.get(c["key"])) for c in cxs) + "</div>",
+                    unsafe_allow_html=True)
     for r in segs:
         if not r.get("themes"):
             continue

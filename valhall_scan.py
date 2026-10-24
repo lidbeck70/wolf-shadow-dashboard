@@ -215,7 +215,8 @@ def instruments_for(api, load) -> tuple:
 
 
 def run(api=None, data_getter=None, getter=None, load=None, save=None, today=None, dry_run=False,
-        scan_fn=None, nordic_market=None, sources=None, analyze=None, long_fundamentals=None) -> dict:
+        scan_fn=None, nordic_market=None, sources=None, analyze=None, long_fundamentals=None,
+        complex_scan_fn=None) -> dict:
     from valhall import board as vb
     from valhall import nordic_index as ni
     from valhall import paper as vpa
@@ -253,6 +254,17 @@ def run(api=None, data_getter=None, getter=None, load=None, save=None, today=Non
     sw = swing.candidates(board, universe, keep, scan_fn=scan_fn, getter=getter, today=today,
                           berserk_blob=berserk_blob, **scan_kwargs(scan_fn))
     nich = swing.niche(universe, berserk_blob, insider_blob)
+    complex_swing = None
+    try:                                                      # Viking Nine per komplex (K4) — kartan sparas även om den fallerar
+        from universe import registry as ur
+        from valhall import complexes as vcx
+        cmap = vcx.member_complexes(ur.load(None, load))
+        complex_swing = swing.complex_candidates(board, universe, keep, cmap, getter=getter, today=today,
+                                                 scan_fn=complex_scan_fn, **scan_kwargs(scan_fn))
+        parts = [f"{k} {v['universe']} bolag/{len(v['picks'])} val" for k, v in complex_swing["complexes"].items()]
+        log.info("Komplex-swing: %s", " · ".join(parts))
+    except Exception as exc:
+        log.exception("Viking Nine per komplex fallerade: %s", exc)
     import pandas as pd
 
     from valhall import wolf as vwolf
@@ -265,7 +277,7 @@ def run(api=None, data_getter=None, getter=None, load=None, save=None, today=Non
     payload = {"generated": datetime.now(tz=timezone.utc).isoformat(), "universe_source": universe_source,
                "board": _json_safe(board),
                "cycle_starts": vb.cycle_starts(board), "turns": vb.turns(board), "swing": sw, "niche": nich,
-               "buys": buys,
+               "complex_swing": complex_swing, "buys": buys,
                "wolf": vwolf.by_segment(arc, entries, wolf, universe),
                "sources": {"ca_runs": len(src.get("ca") or []), "screens": bool(src.get("screens")),
                            "sheets": sorted(k for k, v in (src.get("sheets") or {}).items() if v)},
