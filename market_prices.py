@@ -92,18 +92,28 @@ def _bd_api():
         return None
 
 
+_IDS_RETRY_S = 600
+_IDS_FAILED_AT = 0.0
+
+
 def _ids() -> dict:
-    global _IDS_READY
-    if not _IDS_READY:
-        _IDS_READY = True
+    """Registrets Börsdata-id. En misslyckad läsning provas igen efter tio minuter — förut frös den till omstart
+    (granskning 2, F11)."""
+    global _IDS_READY, _IDS_FAILED_AT
+    import time
+    if not _IDS_READY and time.time() - _IDS_FAILED_AT >= _IDS_RETRY_S:
         try:
             from universe import registry as ur
             u = ur.load(None)
-            if u is not None:
-                _IDS.update({str(t).upper(): int(m.ins_id) for t, m in u.members.items() if m.ins_id})
-                log.info("market_prices: registret ger Börsdata-id för %d bolag.", len(_IDS))
+            if u is None:
+                raise RuntimeError("registret tomt")
+            _IDS.update({str(t).upper(): int(m.ins_id) for t, m in u.members.items() if m.ins_id})
+            _IDS_READY = True
+            log.info("market_prices: registret ger Börsdata-id för %d bolag.", len(_IDS))
         except Exception as exc:
-            log.warning("market_prices: registret kunde inte läsas (%s) — Börsdata-id bara via tickern.", exc)
+            _IDS_FAILED_AT = time.time()
+            log.warning("market_prices: registret kunde inte läsas (%s) — Börsdata-id bara via tickern, nytt "
+                        "försök om %d min.", exc, _IDS_RETRY_S // 60)
     return _IDS
 
 

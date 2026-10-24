@@ -136,7 +136,17 @@ def main() -> int:
 
     import alert_rules
     from alerts.engine import send_alert
-    from gist_storage import load_blob, load_wolf_json, save_blob
+    from gist_storage import load_blob, load_wolf_json, read_blob, save_blob
+
+    # Tillståndet först: en läsning som FALLERAR är inte en första körning. Förut blev ett nätverksfel en ny
+    # baslinje — inga larm skickades och nästa körning såg dem som redan sedda (granskning 2, F2).
+    state_status, prev_state = read_blob(STATE_FILE)
+    if state_status == "unreadable":
+        log.error("%s gick inte att läsa (%s) — inga larm skickas och inget sparas; nästa körning försöker igen.",
+                  STATE_FILE, prev_state)
+        return 1
+    if state_status == "missing":
+        prev_state = None
 
     settings = _repo_file(SETTINGS_PATH, {})
     regime_data = load_wolf_json("wolf_regime.json") or {}
@@ -150,7 +160,6 @@ def main() -> int:
     swing_data["positions"] = held + [p for p in swing_data.get("positions") or []
                                       if isinstance(p, dict) and p.get("id") not in have]
     themes = _themes(args.no_blindspot)
-    prev_state = load_blob(STATE_FILE, None)
 
     # EMBER: gist-läsningen är oautentiserad och billig. timestamp None
     # betyder oläsbar/aldrig sparad — ember_alerts behåller då baslinjen.
@@ -270,10 +279,14 @@ def main() -> int:
         # Larmloggen i Gisten (ALERTS och startsidan läser den) — även larm som ingen kanal tog emot, märkta.
         from alerts import history
         stamp = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime())
-        rows = history.append(load_blob(history.BLOB, None), alerts, stamp,
-                              {a["title"]: a["title"] not in failed for a in alerts})
-        if not save_blob(history.BLOB, rows):
-            log.warning("Larmloggen kunde inte sparas till Gisten.")
+        log_status, old_log = read_blob(history.BLOB)
+        if log_status == "unreadable":            # skriv inte över de 50 gamla raderna med bara de nya (F12)
+            log.warning("Larmloggen gick inte att läsa (%s) — den uppdateras nästa körning.", old_log)
+        else:
+            rows = history.append(old_log if log_status == "ok" else None, alerts, stamp,
+                                  {a["title"]: a["title"] not in failed for a in alerts})
+            if not save_blob(history.BLOB, rows):
+                log.warning("Larmloggen kunde inte sparas till Gisten.")
 
     if alerts and not delivered:
         # Ingen kanal tog emot något av larmen — spara INTE tillståndet, så

@@ -141,10 +141,13 @@ def blob_errors(data: dict) -> dict:
     """{strategi: (feltext, generated)} för strategier vars Gist-blob bär ett fel och inga rader — en körning som
     kördes men fallerade (nät, licens, nyckel) ska inte se ut som 'ingen körning'."""
     out = {}
+    bad = set((data or {}).get("unreadable") or [])
     for strategy, (key, part) in BLOB_OF.items():
         n, err, gen = _health(key, (data or {}).get(key), part)
         if err and not n:
             out[strategy] = (str(err), str(gen or "")[:16])
+        elif key in bad and not n:                        # filen finns men gick inte att läsa (nät, trunkerad)
+            out[strategy] = ("Gist-filen gick inte att läsa", "")
     return out
 
 
