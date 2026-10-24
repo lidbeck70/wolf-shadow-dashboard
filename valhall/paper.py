@@ -53,6 +53,7 @@ LONG_SELL = ("SELL", "STRONG SELL")      # cagr_scoring: EMA200-brott, röd regi
 LONG_DAYS = 3 * 365                # horisont 0,5–3 år
 INSIDER_DAYS = 548                 # insiderns tidsstopp: 18 månader
 COOLDOWN_DAYS = 14                 # ingen ny affär i samma aktie och strategi två veckor efter en stängning
+NODATA_RUNS_MAX = 10               # position utan kursdata så många körningar i rad stängs (avnoterad)
 ORDER_TTL_DAYS = 7
 WOLF_TOP, WOLF_STALE_DAYS = 20, 4
 EVENTS_MAX, CLOSED_MAX = 1000, 3000
@@ -208,11 +209,13 @@ def _after(df: pd.DataFrame, date: str) -> int:
 def step(state: Optional[dict], sigs: list, board: dict, ohlcv: Callable, market: Optional[pd.DataFrame] = None,
          today=None, wolf: Optional[dict] = None, berserk_state: Optional[dict] = None,
          universe: Optional[dict] = None, long_signals: Optional[dict] = None,
-         long_ingen_signals: Optional[dict] = None) -> tuple:
+         long_ingen_signals: Optional[dict] = None, exit_ctx: Optional[dict] = None) -> tuple:
     """(nytt tillstånd, nya händelser). ohlcv(ticker) → dagsdata, market = OMXS30 (Viking Nines marknadsexit),
     wolf = wolf_live(...) (None = listan saknas → inga Wolf-sälj i dag), berserk_state = BERSERK:s konto,
     long_signals = {ticker: Long Screener-signal} (None = skanningen saknas → inga sälj i dag),
-    long_ingen_signals = samma utan cykel (kontot "Long Screener (utan cykel)")."""
+    long_ingen_signals = samma utan cykel (kontot "Long Screener (utan cykel)"),
+    exit_ctx = {nine(ticker, df), ob(df), earnings(ticker)} — ger Viking-exiten hela playbooken (sektor/bredd,
+    aktiens signal, bearish block, rapport) på dagens stapel; utan den utlöser bara marknad, stopp, trail, gap och F&G."""
     today = _d(today or pd.Timestamp.today())
     state = dict(state) if state else new_state(today)
     for k in ("orders", "positions", "closed", "events"):
@@ -277,10 +280,20 @@ def step(state: Optional[dict], sigs: list, board: dict, ohlcv: Callable, market
         ev(KOPT, p, f"fylld {p['entry_date']} @ {entry:,.2f}" + (f" · stopp {stop:,.2f}" if stop else ""))
     state["orders"] = keep
 
-    # 2. Förvaltning
+    # 2. Förvaltning — en position utan kursdata NODATA_RUNS_MAX körningar i rad (avnoterad, bytt ticker)
+    # stängs på senast kända kurs i stället för att ligga öppen för evigt
     for p in list(state["positions"]):
-        _manage(state, p, data(p["ticker"]), market, wolf, board, today, ev,
-                long_ingen_signals if p["strategy"] == "long_ingen" else long_signals)
+        df = data(p["ticker"])
+        if df is None:
+            p["nodata_runs"] = int(p.get("nodata_runs") or 0) + 1
+            if p["nodata_runs"] >= NODATA_RUNS_MAX:
+                _close(state, p, float(p.get("last_close") or p["entry"]),
+                       f"ingen kursdata på {p['nodata_runs']} körningar — avnoterad eller bytt ticker; stängd på senast kända kurs",
+                       today, ev)
+            continue
+        p["nodata_runs"] = 0
+        _manage(state, p, df, market, wolf, board, today, ev,
+                long_ingen_signals if p["strategy"] == "long_ingen" else long_signals, exit_ctx=exit_ctx)
 
     # 3. Dagens signaler blir order
     busy = {(x["strategy"], x["ticker"]) for x in state["positions"] + state["orders"]}
@@ -304,13 +317,26 @@ def step(state: Optional[dict], sigs: list, board: dict, ohlcv: Callable, market
     _tag_berserk(state, berserk_state, board, universe or {}, today)
 
     state["events"] = (state["events"] + events)[-EVENTS_MAX:]
+    state["closed_dropped"] = int(state.get("closed_dropped") or 0) + max(0, len(state["closed"]) - CLOSED_MAX)
     state["closed"] = state["closed"][-CLOSED_MAX:]
     state["last_run"] = today
     return state, events
 
 
+def _exit_inputs(exit_ctx: Optional[dict], ticker: str, window: pd.DataFrame) -> tuple:
+    """(nine, ob_analysis, earnings_date) för Viking-exiten ur exit_ctx — None för det som inte går att räkna."""
+    out = []
+    for key, args in (("nine", (ticker, window)), ("ob", (window,)), ("earnings", (ticker,))):
+        fn = (exit_ctx or {}).get(key)
+        try:
+            out.append(fn(*args) if fn else None)
+        except Exception:
+            out.append(None)
+    return tuple(out)
+
+
 def _manage(state: dict, p: dict, df: Optional[pd.DataFrame], market, wolf, board, today, ev,
-            long_signals: Optional[dict] = None) -> None:
+            long_signals: Optional[dict] = None, exit_ctx: Optional[dict] = None) -> None:
     if df is None:
         return
     o, h, lo, c = (df[k].astype(float).values for k in ("Open", "High", "Low", "Close"))
@@ -330,8 +356,11 @@ def _manage(state: dict, p: dict, df: Optional[pd.DataFrame], market, wolf, boar
         if p["strategy"] == "viking":
             import viking_exit as vex
             mkt = market.loc[:idx[j]] if market is not None else None
-            dec = vex.evaluate_exit(p["ticker"], df.iloc[max(0, j + 1 - VIKING_WINDOW):j + 1], p["entry"],
-                                    p["entry_date"], spy_df=mkt, today=idx[j])
+            window = df.iloc[max(0, j + 1 - VIKING_WINDOW):j + 1]
+            # hela playbooken bara på dagens stapel (Nine kostar nätanrop); ikappdagar får den smala exiten
+            nine, ob, ed = _exit_inputs(exit_ctx, p["ticker"], window) if j == len(df) - 1 else (None, None, None)
+            dec = vex.evaluate_exit(p["ticker"], window, p["entry"], p["entry_date"], nine=nine, ob_analysis=ob,
+                                    spy_df=mkt, earnings_date=ed, today=idx[j])
             if dec.status != vex.HOLD:
                 reason = (dec.reasons or [dec.status])[0][:160]
                 if j + 1 < len(df):
@@ -482,6 +511,7 @@ def results(state: dict, berserk_state: Optional[dict] = None) -> dict:
     rs = rows(state or new_state(), berserk_state)
     return {"since": (state or {}).get("start"), "last_run": (state or {}).get("last_run"),
             "orders": len((state or {}).get("orders") or []), "positions": len((state or {}).get("positions") or []),
+            "closed_dropped": int((state or {}).get("closed_dropped") or 0),      # stängda affärer utanför CLOSED_MAX
             "by_strategy": group(rs, ("strategy",)), "by_segment": group(rs, ("strategy", "segment")),
             "by_status": group(rs, ("strategy", "status_in")), "by_cykel": group(rs, ("strategy", "cykel_in"))}
 

@@ -107,9 +107,9 @@ def cycle_starts(board: dict) -> list:
     for r in board.get("segments") or []:
         for where, st in (("global", r["global"]), ("Norden", r.get("nordic"))):
             if st and st.get("cycle_start"):
-                out.append({"segment": r["label"], "where": where, "since": st.get("status_since")})
+                out.append({"segment": r["label"], "key": r["key"], "where": where, "since": st.get("status_since")})
         for t in r["themes"]:
             if t["state"].get("cycle_start"):
-                out.append({"segment": f"{r['label']} · {t['label']}", "where": "tema",
-                            "since": t["state"].get("status_since")})
+                out.append({"segment": f"{r['label']} · {t['label']}", "key": r["key"], "theme": t["theme"],
+                            "where": "tema", "since": t["state"].get("status_since")})
     return out

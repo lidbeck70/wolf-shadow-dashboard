@@ -32,7 +32,7 @@ def cycle_start(board_blob: Optional[dict], segment: Optional[str]) -> Optional[
     if not segment:
         return None
     for s in (board_blob or {}).get("cycle_starts") or []:
-        if isinstance(s, dict) and s.get("segment") == segment:
+        if isinstance(s, dict) and (s.get("key") == segment or s.get("segment") == segment):   # nyckel; etikett i äldre kartor
             return str(s.get("where") or "ja")
     return None
 

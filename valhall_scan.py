@@ -139,6 +139,37 @@ def _wolf(load, instruments, nordic_ids, to_yf, universe, getter, today) -> tupl
     return wolf, arc, entries
 
 
+def _earnings_getter():
+    """Rapportdatum ur Börsdata (samma som Viking Nine-skanningen) — None när modulen saknas."""
+    try:
+        from ovtlyr.ui.viking_screens import _earnings
+        return _earnings
+    except Exception:                                             # pragma: no cover
+        return None
+
+
+def scan_kwargs(scan_fn=None) -> dict:
+    """Extra argument till Viking Nine-skanningen i Valhall: rapportdatum, så att Execution-kontrollen
+    'Earnings' inte blir DATA UNAVAILABLE → WAIT → READY — utan den kunde papperskontot viking aldrig få en
+    GOLDEN TICKET. Bara för den riktiga skannern (ett fejkat scan_fn i tester tar inte emot argumentet)."""
+    eg = _earnings_getter() if scan_fn is None else None
+    return {"earnings_getter": eg} if eg else {}
+
+
+def viking_exit_ctx(getter, today=None) -> dict:
+    """exit_ctx till papperets Viking-exit: Nine på dagens stapel (sektor/bredd/aktiens signal), order blocks
+    och rapportdatum — så att exiten följer hela playbooken, inte bara marknad/stopp/trail/gap/F&G."""
+    def nine(ticker, df):
+        import ovtlyr_nine as on
+        return on.evaluate(ticker, stock_df=df, getter=getter, today=today)
+
+    def ob(df):
+        import viking_screen as vs
+        return vs._ob_analysis(df)
+
+    return {"nine": nine, "ob": ob, "earnings": _earnings_getter()}
+
+
 def _paper(state, berserk_state, board, sw, buys, universe, insider_blob, getter, nordic_market, today,
            wolf=None, long_scan=None, arc_sigs=None) -> tuple:
     """Papperskontona ett steg fram: dagens signaler blir order, gårdagens fylls, positionerna förvaltas."""
@@ -160,7 +191,8 @@ def _paper(state, berserk_state, board, sw, buys, universe, insider_blob, getter
     state, events = vpa.step(state, sigs, board, ohlcv, market=market, today=today, wolf=wolf,
                              berserk_state=berserk_state, universe=universe,
                              long_signals=(long_scan or {}).get("signals") if long_scan else None,
-                             long_ingen_signals=(long_scan or {}).get("signals_ingen") if long_scan else None)
+                             long_ingen_signals=(long_scan or {}).get("signals_ingen") if long_scan else None,
+                             exit_ctx=viking_exit_ctx(getter, today))
     log.info("Papper: %d signaler · %d händelser", len(sigs), len(events))
     return state, events
 
@@ -219,7 +251,7 @@ def run(api=None, data_getter=None, getter=None, load=None, save=None, today=Non
     board = vb.build(getter=getter, nordic=indices, nordic_market=nordic_market, today=today)
     berserk_blob, insider_blob = load("berserk_scan.json", None), load("insider_scan.json", None)
     sw = swing.candidates(board, universe, keep, scan_fn=scan_fn, getter=getter, today=today,
-                          berserk_blob=berserk_blob)
+                          berserk_blob=berserk_blob, **scan_kwargs(scan_fn))
     nich = swing.niche(universe, berserk_blob, insider_blob)
     import pandas as pd
 
