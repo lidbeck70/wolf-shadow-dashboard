@@ -38,6 +38,12 @@ def capital(state=None) -> Optional[float]:
         return None
 
 
+def capital_or(default: float) -> float:
+    """Standardvärdet för ett kapitalfält (beslut 5): ditt kapital ur Inställningar, annars sidans eget värde.
+    Fältet finns kvar på sidan för tillfälliga räkningar. Gamla Viking anropar aldrig den här."""
+    return float(capital() or default)
+
+
 def rules_rows() -> list:
     """Den låsta regeltabellen: risk per affär, positionsstorlek, max positioner och stopp per strategi ur
     strategy_rules.PLAYBOOKS, plus allokerarens hårda tak (% av hela portföljen)."""
