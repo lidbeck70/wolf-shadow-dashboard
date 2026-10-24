@@ -31,13 +31,32 @@ import swing_verdict as sv
 EARLY = "TIDIG"
 
 
-def _alert(kind: str, title: str, body: str) -> dict:
-    return {"kind": kind, "title": title, "body": body}
+def _alert(kind: str, title: str, body: str, target: str = "", ticker: str = "", strategy: str = "") -> dict:
+    """Ett larm. target = målnyckeln i ui/nav.TARGETS dit länken leder, ticker/strategy fyller i Thor."""
+    a = {"kind": kind, "title": title, "body": body}
+    if target:
+        a["target"] = target
+        if ticker:
+            a["ticker"] = ticker
+        if strategy:
+            a["strategy"] = strategy
+    return a
 
 
-def format_alert(alert: dict) -> str:
-    """Larmet som text — Discord och mejl får samma innehåll."""
-    return f"🐺 {alert['title']}\n{alert['body']}"
+def link_of(alert: dict, base: str = "") -> str:
+    """Länken till larmets vy, eller '' utan panelens adress (PANEL_URL) eller utan mål."""
+    if not base or not alert.get("target"):
+        return ""
+    from ui.nav import target_link
+    return target_link(alert["target"], base, alert.get("ticker") or "", alert.get("strategy") or "")
+
+
+def format_alert(alert: dict, base: str = "") -> str:
+    """Larmet som text — Discord och mejl får samma innehåll. Med panelens adress (base) en sista rad med länken
+    till rätt vy; utan adress är texten som förut."""
+    text = f"🐺 {alert['title']}\n{alert['body']}"
+    link = link_of(alert, base)
+    return f"{text}\n→ {link}" if link else text
 
 
 # ── Swing ────────────────────────────────────────────────────────────────────
@@ -91,7 +110,7 @@ def swing_alerts(regime_data: dict, screener_data: dict, swing_data: dict,
         alerts.append(_alert(
             "swing_regime",
             f"Swing-regimen skiftade: {prev_light} → {light}",
-            body))
+            body, target="swing_regime"))
 
     prev_buyable = set((prev or {}).get("buyable", {}) or {})
     for ticker, desc in buyable.items():
@@ -99,8 +118,9 @@ def swing_alerts(regime_data: dict, screener_data: dict, swing_data: dict,
             alerts.append(_alert(
                 "swing_setup",
                 f"Ny swing-kandidat: {ticker}",
-                f"{desc} · regim {light or 'okänd'}. Kör Copiloten på den "
-                f"innan du agerar — R:R och veckotak prövas där."))
+                f"{desc} · regim {light or 'okänd'}. Öppna den i THOR (Momentum Swing) "
+                f"innan du agerar — Copiloten prövar R:R och veckotak.",
+                target="thor", ticker=ticker, strategy="momentum"))
 
     prev_verdicts = (prev or {}).get("verdicts", {}) or {}
     for ticker, now in verdicts.items():
@@ -109,7 +129,7 @@ def swing_alerts(regime_data: dict, screener_data: dict, swing_data: dict,
             alerts.append(_alert(
                 "swing_exit",
                 f"Säljsignal på innehav: {ticker} — {now['verdict']}",
-                now["reason"]))
+                now["reason"], target="holdings", ticker=ticker))
     return alerts, state
 
 
@@ -154,7 +174,7 @@ def blindspot_alerts(themes: list, prev: Optional[dict]) -> tuple:
                 f"hat {hat if hat is not None else '–'}. "
                 f"Från {before}. Nästa steg: rotationsflikens Triple "
                 f"Signal-betyg — hat räcker inte, case och katalysator ska "
-                f"med."))
+                f"med.", target="rotation"))
     return alerts, {"themes": labels}
 
 
@@ -206,7 +226,8 @@ def ember_alerts(ember_data: Optional[dict], prev: Optional[dict]) -> tuple:
             f"Entry {_n(d['entry'])} · stopp {_n(d['stop'])} · mål "
             f"{_n(d['t1'])} · R:R {_n(d['rr'])}"
             f"{' · cykel ' + d['cykel'] if d['cykel'] else ''}. "
-            f"Setupen i sin helhet finns i EMBER-fliken."))
+            f"Hela setupen finns i THOR med strategin EMBER.",
+            target="thor", ticker=ticker, strategy="ember"))
     return alerts, state
 
 
@@ -253,7 +274,7 @@ def wolf_alerts(wolf_data: Optional[dict], prev: Optional[dict],
             f"🐺 Wolf-screenern: {ticker} nådde {d['score']:g}/125",
             f"{d['name'] or ticker} klev över larmribban {min_score:g} i "
             f"4-lagersscoren (Market · Sector · Stock · Ichimoku). "
-            f"Detaljer i THOR → Wolf."))
+            f"Detaljer i THOR med strategin Wolf.", target="thor", ticker=ticker, strategy="wolf"))
     return alerts, state
 
 
@@ -294,7 +315,7 @@ def viking_alerts(viking_data: Optional[dict], prev: Optional[dict],
             f"⚔️ Viking: {ticker} på {d['v9']}/9",
             f"{d['name'] or ticker} nådde Viking Execution-filtret {d['v9']}/9 och "
             f"klarar den absoluta grinden (pris > EMA200, ADX ≥ 20){extra}. "
-            f"Detaljer i THOR → Viking."))
+            f"Detaljer i THOR med strategin Viking.", target="thor", ticker=ticker, strategy="viking"))
     return alerts, state
 
 
@@ -352,7 +373,7 @@ def contrarian_alerts(ca_data: Optional[dict], prev: Optional[dict]) -> tuple:
             f"{d['name'] or ticker}{sector} · composite {_n(d['score'], 1)} · "
             f"necessity {_n(d['necessity'])} · hat {_n(d['hat'])}. Hatat men "
             f"behövt, alla grindar passerade — kör Rick Rule-granskningen "
-            f"innan du agerar."))
+            f"innan du agerar.", target="thor", ticker=ticker, strategy="deep"))
     return alerts, state
 
 
@@ -403,8 +424,8 @@ def quality_alerts(q_data: Optional[dict], prev: Optional[dict]) -> tuple:
             f"💎 Quality: {ticker} köpsignal ({d['passed']}/{d['total']})",
             f"{d['name'] or ticker}{sector}{rank}. {gates}. Cykel {d['phase'] or '?'} "
             f"mot {d['benchmark'] or '?'}. Alla fyra gates gröna = köp enligt Quality — "
-            f"kontrollera i ODINS VISDOM → Marknad → Alpha Regime → Quality & Contrarian, max 10 % per "
-            f"aktie och 20–25 % per sektor."))
+            f"kontrollera i THOR med strategin Quality Contrarian, max 10 % per "
+            f"aktie och 20–25 % per sektor.", target="thor", ticker=ticker, strategy="quality"))
     return alerts, state
 
 
@@ -472,21 +493,30 @@ def insider_alerts(insider_data: Optional[dict], prev: Optional[dict],
             "insider_cluster",
             f"👥 Insiderkluster: {ticker} {d['score']}/10 p — {d['status']}",
             _body(d) + " Öppna ARKEN → Insider → Automatisk skanning och "
-                       "lägg in klustret i arket."))
+                       "lägg in klustret i arket.", target="insider", ticker=ticker))
     for ticker, d in buy.items():
         if ticker in prev_b:
             continue
         alerts.append(_alert(
             "insider_buy",
             f"👥 Insider KÖP-läge: {ticker} ({d['score']}/10 p)",
-            _body(d) + " Grinden OK och teknisk trigger på plats — logga i journalen "
-                       "och lägg stoppen som order."))
+            _body(d) + " Grinden OK och teknisk trigger på plats — öppna i THOR (Insider Norden), "
+                       "logga i journalen och lägg stoppen som order.",
+            target="thor", ticker=ticker, strategy="insider"))
     return alerts, state
 
 
 # ── Håvarna (screens_scan.py) ────────────────────────────────────────────────
 _SCREEN_ICON = {"rule": "🪨", "sprott": "🔭", "durrett": "🥇", "tiggre": "🎯",
                 "royalty": "👑"}
+# Håven och arkets händelser → arket i panelen (ui/nav.TARGETS)
+SCREEN_TARGET = {"rule": "rule", "sprott": "scoring", "durrett": "durrett", "tiggre": "tiggre", "royalty": "royalty"}
+SHEET_TARGET = {"insider": "insider", "tiggre": "tiggre", "royalty": "royalty", "rule": "rule", "durrett": "durrett"}
+
+
+def sheet_target(kind: str) -> str:
+    """'tiggre_free_ride' → 'tiggre', 'durrett_engine_buy_rule' → 'durrett'."""
+    return SHEET_TARGET.get(str(kind or "").split("_")[0], "")
 
 
 def screen_alerts(screens_data: Optional[dict], prev: Optional[dict]) -> tuple:
@@ -538,7 +568,7 @@ def screen_alerts(screens_data: Optional[dict], prev: Optional[dict]) -> tuple:
             f"{'a' if len(new) > 1 else 'tt'} bolag",
             f"{' · '.join(parts)}{more}. Kvalar in på håvens kriterier — "
             f"öppna ARKEN → {s.get('sheet') or label} → Håven och lägg in "
-            f"den du vill granska."))
+            f"den du vill granska.", target=SCREEN_TARGET.get(key, "")))
     return alerts, state
 
 
@@ -560,12 +590,14 @@ def sheet_alerts(sheets_data: Optional[dict], prev: Optional[dict]) -> tuple:
         if isinstance(e, dict) and e.get("key"):
             cur[str(e["key"])] = {"title": str(e.get("title") or ""),
                                   "body": str(e.get("body") or ""),
-                                  "kind": str(e.get("kind") or "")}
+                                  "kind": str(e.get("kind") or ""),
+                                  "ticker": str(e.get("ticker") or "")}
     state = {"events": cur}
     if prev is None:
         return [], state
     seen = set((prev or {}).get("events", {}) or {})
-    return [_alert(f"sheet_{d['kind']}", d["title"], d["body"])
+    return [_alert(f"sheet_{d['kind']}", d["title"], d["body"], target=sheet_target(d["kind"]),
+                   ticker=d.get("ticker") or "")
             for k, d in cur.items() if k not in seen], state
 
 
@@ -599,12 +631,12 @@ def market_risk_alerts(levels: Optional[dict], prev: Optional[dict]) -> tuple:
                 f"{r.get('points')} av {r.get('possible')} varningar lyser: {act} ({r.get('date')}). "
                 f"Viking Nine tar inga nya entries på marknaden och Wolf halverar positionerna. Historiskt har "
                 f"−10 % inom tre månader följt betydligt oftare än normalt i HÖG — träffbilden finns i "
-                f"ODINS VISDOM → Marknad → 🌩️ Marknadsrisk."))
+                f"ODINS VISDOM → Marknad → 🌩️ Marknadsrisk.", target="market_risk"))
         elif old == "HÖG" and new != "HÖG":
             alerts.append(_alert(
                 "market_risk_clear", f"✅ Marknadsrisk {r.get('label', m)} ner till {new}",
                 f"{r.get('points')} av {r.get('possible')} varningar lyser nu ({act}). Spärren släpper: "
-                f"Viking Nine kan ta entries igen och Wolf får full storlek."))
+                f"Viking Nine kan ta entries igen och Wolf får full storlek.", target="market_risk"))
     return alerts, state
 
 
@@ -643,7 +675,7 @@ def fiat_alerts(fiat_data: Optional[dict], prev: Optional[dict], rules=None) -> 
                 "fiat_" + key, f"🐺 Fiat Debasement — {who}{label}",
                 f"Enligt valda indikatorer är {metric.replace('_', ' ')} {value:+.1f} "
                 f"(gräns {op} {limit:g}){f', {date}' if date else ''}. Bakgrundsinformation ur "
-                f"ODINS VISDOM → Makro → 🐺 Fiat Debasement — ingen köp- eller säljsignal."))
+                f"ODINS VISDOM → Makro → 🐺 Fiat Debasement — ingen köp- eller säljsignal.", target="fiat"))
     return alerts, {"on": now}
 
 
@@ -678,7 +710,7 @@ def turn_alerts(board_data: Optional[dict], prev: Optional[dict]) -> tuple:
             "cycle_turn",
             f"⚡ VÄNDNING: {w.get('label') or w.get('key')} — {w.get('kind')} bekräftad",
             ("; ".join(parts) or "Inga kandidater i rutan i dag") + ". Papperet köper på nästa öppning; riktiga order "
-            "läggs manuellt. Se Valhall → Kartan och ARKEN → 📊 Papperskonton."))
+            "läggs manuellt. Se Valhall → Kartan och ARKEN → 📊 Papperskonton.", target="turn"))
     return alerts, state
 
 

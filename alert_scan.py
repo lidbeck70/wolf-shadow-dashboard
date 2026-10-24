@@ -28,6 +28,7 @@ Env:
   ALERT_BRANCH   gren för data/-filerna (default panel-data)
   EMBER_GIST_ID     EMBER-resultatens gist (för ember-benet)
   DISCORD_WEBHOOK_URL, SMTP_*, EMAIL_TO   kanalerna (se alerts/channels/)
+  PANEL_URL         panelens adress (valfri) — larmen får en länk till rätt vy
 
 Flaggor:
   --dry-run       räkna och skriv ut, skicka inget, spara inget tillstånd
@@ -253,7 +254,10 @@ def main() -> int:
                          "först vid nästa inträde.", name)
 
     log.info("%d larm att skicka.", len(alerts))
-    delivered, failed = deliver(alerts, send_alert, alert_rules.format_alert, dry_run=args.dry_run)
+    # PANEL_URL (hemlighet i GitHub) = panelens adress: varje larm får en länk till rätt vy. Utan den samma text som förut.
+    base = os.environ.get("PANEL_URL", "").strip()
+    delivered, failed = deliver(alerts, send_alert, lambda a: alert_rules.format_alert(a, base),
+                                dry_run=args.dry_run)
 
     if args.dry_run:
         log.info("[DRY-RUN] tillståndet sparas inte.")

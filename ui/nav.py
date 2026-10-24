@@ -135,6 +135,49 @@ LEGACY_PATHS: dict = {
 }
 
 
+# Målnycklar (designförslaget PR 1): larmen, Home och bryggorna pekar på ett MÅL, inte på en sökväg. Flyttar en
+# sida ändras bara raden här — länkarna i Discord och knapparna i panelen leder rätt före och efter flytten.
+TARGETS: dict = {
+    "home": ("home",),
+    "thor": ("thor",),
+    "turn": ("valhall", "Kartan"),
+    "valhall_map": ("valhall", "Kartan"),
+    "swing_regime": ("odin", "Marknad", "Swing Regime"),
+    "market_risk": ("odin", "Marknad", "🌩️ Marknadsrisk"),
+    "rotation": ("odin", "Råvaror", "Råvarurotation"),
+    "fiat": ("odin", "Makro", "🐺 Fiat Debasement"),
+    "paper": ("review", "📊 Papperskonton"),
+    "insider": ("review", "Insider"),
+    "rule": ("review", "Rick Rule"),
+    "royalty": ("review", "Royalty C"),
+    "scoring": ("review", "Poängmodell"),
+    "tiggre": ("review", "Tiggre"),
+    "durrett": ("review", "🧭 Durrett"),
+    "scorecard": ("review", "🎯 Scorecard"),
+    "holdings": ("portfolio", "Holdings"),
+    "journal": ("portfolio", "📓 Trade Journal"),
+    "alerts": ("alerts",),
+}
+
+
+def target_slug(target: str) -> str:
+    """Målets sökväg som slug ('market_risk' → 'odin/marknad/marknadsrisk'); okänt mål → Home."""
+    return slug(TARGETS.get(target) or TARGETS["home"])
+
+
+def target_link(target: str, base: str = "", ticker: str = "", strategy: str = "") -> str:
+    """Hela länken till ett mål: '<base>/?p=thor&t=BOL.ST&s=wolf'. Utan base bara '?p=…' (panelens egna knappar).
+    t = aktien som öppnas, s = Thors strategi (thor.registry-nyckel)."""
+    from urllib.parse import quote
+    q = "?p=" + target_slug(target)
+    if ticker:
+        q += "&t=" + quote(str(ticker).strip(), safe=".-_")
+    if strategy:
+        q += "&s=" + quote(str(strategy).strip(), safe="_")
+    base = str(base or "").strip().rstrip("/")
+    return f"{base}/{q}" if base else q
+
+
 def _legacy(link: str) -> str:
     """'regime/marknad/swing-regime' → 'odin/marknad/swing-regime', 'screening/…' → 'thor'."""
     s = "/".join(p for p in str(link or "").lower().split("/") if p)

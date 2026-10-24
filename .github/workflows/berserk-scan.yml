@@ -54,4 +54,5 @@ jobs:
           BORSDATA_API_KEY: ${{ secrets.BORSDATA_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          PANEL_URL: ${{ secrets.PANEL_URL }}
         run: python berserk_scan.py
