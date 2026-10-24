@@ -137,6 +137,41 @@ def candidates(board: dict, universe: dict, data: dict, scan_fn: Optional[Callab
     return out
 
 
+def complex_candidates(board: dict, universe: dict, data: dict, complex_map: dict, getter: Optional[Callable] = None,
+                       today=None, now=None, n: int = N_PICKS, scan_fn: Optional[Callable] = None,
+                       min_turnover: float = ni.MIN_TURNOVER_SEK, **kw) -> dict:
+    """Viking Nine per råvarukomplex (K4): komplexprofilen (complex_profiles) genom omslaget complex_nine över de
+    likvida nordiska bolag vars komplex (complex_map = valhall.complexes.member_complexes) är rutans. Körs
+    BREDVID BERSERK i Energi/Material (beslut 8) — papperet avgör. {complexes: {key: {status, turn, strategy,
+    profile, picks, scanned, driver}}, liquid}. scan_fn = complex_nine.scan_complex (utbytbar i tester)."""
+    import complex_nine as cn
+    import complex_profiles as cp
+    scan = scan_fn or cn.scan_complex
+    liq = liquid(data, universe, min_turnover)
+    closes_getter = _closes_from(data)
+    kw.setdefault("held", {})
+    states = {c["key"]: (c.get("state") or {}) for c in board.get("complexes") or [] if isinstance(c, dict)}
+    out = {"complexes": {}, "liquid": len(liq)}
+    for p in cp.complexes():
+        st = states.get(p.key) or {}
+        tickers = sorted(t for t in liq if (complex_map or {}).get(t) == p.key)
+        entry = {"status": st.get("status", cycle.NODATA), "turn": st.get("turn"), "strategy": f"{VIKING} · {p.label}",
+                 "profile": p.key, "picks": [], "scanned": 0, "universe": len(tickers), "driver": None}
+        if tickers:
+            res = scan(p, tickers, closes_getter=closes_getter, max_candidates=SEGMENT_CANDIDATES, getter=getter,
+                       today=today, now=now, **kw)
+            entry["scanned"] = len(res.get("rows") or [])
+            entry["driver"] = res.get("driver")
+            for x in pick(res.get("rows") or [], n):
+                u = universe.get(x["ticker"], {})
+                c = compact(x, u.get("segment"), None, u.get("name", ""))
+                if c:
+                    c.update(strategy=entry["strategy"], profile=p.key, complex=p.key)
+                    entry["picks"].append(c)
+        out["complexes"][p.key] = entry
+    return out
+
+
 def niche(universe: dict, berserk_blob: Optional[dict] = None, insider_blob: Optional[dict] = None) -> dict:
     """Befintliga nischsignaler per segment: BERSERK (KÖP/BEVAKA i råvaruteman) och Insider Norden-kluster."""
     out = {s.key: {"berserk": [], "insider": []} for s in sgm.SEGMENTS}
