@@ -78,15 +78,72 @@ def _gist_file_content(files: dict, name: str, timeout: int = 20) -> str:
     return content
 
 
+# ── Ett GET per sidladdning (granskning 2, F8) ──────────────────────────────
+# Varje blobläsning hämtade hela gisten (~1 MB) igen: ~30 GET per startsida, och utan token tog 60/h-kvoten slut
+# på andra laddningen. Svaret hålls SNAP_TTL sekunder i processen (nyckel: requests.get, så att tester som byter
+# ut den alltid får en färsk läsning) och töms när den här processen skriver.
+SNAP_TTL = 60
+_SNAP: dict = {"key": None, "t": 0.0, "files": None}
+UNREADABLE_NAMES: set = set()          # filer vars senaste läsning fallerade (nät, trunkerad, trasig JSON)
+
+
+class GistUnreadable(Exception):
+    """Gisten svarade inte (nät, kvot, 5xx) — inte samma sak som att filen saknas."""
+
+
+def _gist_files(timeout: int = 10) -> dict:
+    import time
+    key = (id(requests.get), _get_github_token())       # ny token (eller ingen) = ny läsning
+    if _SNAP["files"] is not None and _SNAP["key"] == key and time.time() - _SNAP["t"] < SNAP_TTL:
+        return _SNAP["files"]
+    try:
+        r = requests.get(GIST_API_URL, headers=_read_headers(), timeout=timeout)
+    except Exception as exc:
+        raise GistUnreadable(f"{type(exc).__name__}") from exc
+    if r.status_code != 200:
+        raise GistUnreadable(f"HTTP {r.status_code}")
+    files = r.json().get("files", {}) or {}
+    _SNAP.update(key=key, t=time.time(), files=files)
+    return files
+
+
+def _invalidate() -> None:
+    _SNAP["files"] = None
+
+
+def read_blob(filename: str) -> tuple:
+    """("ok", data) | ("missing", None) | ("unreadable", orsak) — skiljer en fil som inte finns (första körningen)
+    från en läsning som fallerade, så att ett nätverksfel aldrig behandlas som 'ingen baslinje'."""
+    try:
+        files = _gist_files()
+    except Exception as exc:
+        return "unreadable", str(exc) or "Gisten svarade inte"
+    f = files.get(filename)
+    if not f:
+        return "missing", None
+    content = f.get("content") or ""
+    if f.get("truncated") and f.get("raw_url"):
+        try:
+            rr = requests.get(f["raw_url"], timeout=20)
+            if rr.status_code != 200:
+                return "unreadable", f"raw HTTP {rr.status_code}"
+            content = rr.text
+        except Exception as exc:
+            return "unreadable", f"raw {type(exc).__name__}"
+    if not content.strip():
+        return "missing", None
+    try:
+        return "ok", json.loads(content)
+    except ValueError:
+        return "unreadable", "trasig JSON"
+
+
 def gist_file(name: str, timeout: int = 10) -> str:
     """Hela innehållet i en fil i holdings-gisten, eller "" om den inte nås."""
     try:
-        r = requests.get(GIST_API_URL, headers=_read_headers(), timeout=timeout)
-        if r.status_code == 200:
-            return _gist_file_content(r.json().get("files", {}), name)
+        return _gist_file_content(_gist_files(timeout), name)
     except Exception:
-        pass
-    return ""
+        return ""
 
 
 def load_holdings() -> dict:
@@ -158,6 +215,7 @@ def save_holdings(data: dict) -> bool:
             }
         }
         r = requests.patch(GIST_API_URL, headers=headers, json=payload, timeout=10)
+        _invalidate()                                     # nästa läsning ska se det vi just skrev
         return r.status_code == 200
     except Exception:
         return False
@@ -171,12 +229,14 @@ def load_blob(filename: str, fallback):
     alongside holdings without touching holdings_init.json.
     """
     local = f".{filename}"
-    try:
-        content = gist_file(filename)
-        if content:
-            return json.loads(content)
-    except Exception:
-        pass
+    status, data = read_blob(filename)
+    if status == "ok":
+        UNREADABLE_NAMES.discard(filename)
+        return data
+    if status == "unreadable":
+        UNREADABLE_NAMES.add(filename)
+    else:
+        UNREADABLE_NAMES.discard(filename)
     try:
         if os.path.exists(local):
             with open(local) as f:
@@ -209,6 +269,7 @@ def save_blob(filename: str, data) -> bool:
         payload = {"files": {filename: {"content": json.dumps(
             data, separators=(",", ":"), ensure_ascii=False, default=str)}}}
         r = requests.patch(GIST_API_URL, headers=headers, json=payload, timeout=10)
+        _invalidate()                                     # nästa läsning ska se det vi just skrev
         return r.status_code == 200
     except Exception:
         return False

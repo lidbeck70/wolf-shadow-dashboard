@@ -73,6 +73,12 @@ def load(loader=None) -> dict:
     if loader is None:
         from gist_storage import load_blob as loader
     out = tc.load_blobs(loader)
+    try:                                                    # filer vars läsning fallerade — FEL, inte SAKNAS (F7)
+        import gist_storage as gs
+        out["unreadable"] = sorted(k for k, name in tc.BLOBS.items()
+                                   if name in gs.UNREADABLE_NAMES and out.get(k) is None)
+    except Exception:
+        out["unreadable"] = []
     try:
         out["regime"] = loader("wolf_regime.json", None)
     except Exception:
@@ -121,7 +127,9 @@ def universe_member(st, ticker: str, loader=None):
             u = ur.load([key], loader)
         except Exception:
             u = None
-        store[key] = u.members if u else {}
+        if not u:                                         # misslyckad läsning sparas inte — nästa tryck försöker igen
+            return None
+        store[key] = u.members
     return store[key].get(str(ticker or "").strip().upper())
 
 
