@@ -516,9 +516,12 @@ def _storlek(st, ident, strategy: str, c) -> None:
     if c is None or not c.entry or not c.stop:
         return
     capital = us.capital() or 100000.0
-    sz = sk.size(c.entry, c.stop, capital, sk.risk_pct(strategy), sk.cap_pct(strategy))
+    ccy, fx = sk.fx_for(c.ticker)
+    sz = sk.size(c.entry, c.stop, capital, sk.risk_pct(strategy), sk.cap_pct(strategy), fx=fx, currency=ccy)
     if not sz:
         return
+    if "GUL regim" in (c.status or ""):
+        sz = sk.halved(sz)
     st.markdown(f"<div style='border-left:3px solid {CYAN};padding:6px 12px;margin:6px 0;font-size:0.82rem;'>"
                 f"<b>STORLEK</b> · {sk.row_text(ident.yf, reg.label(strategy), sz)}</div>", unsafe_allow_html=True)
     if not us.capital():
@@ -533,7 +536,7 @@ def _storlek(st, ident, strategy: str, c) -> None:
              "stopp och mål; journalraden skrivs när du stänger den.")
         if st.button("Logga köp", key="thor_log_buy", disabled=not shares):
             import positions
-            ok, msg = positions.add(**sk.position_args(ident.yf, ident.name or "", strategy, sz, shares))
+            ok, msg = positions.add(**sk.position_args(ident.yf, ident.name or "", strategy, sz, shares, c.target))
             (st.success if ok else st.warning)(msg)
 
 
