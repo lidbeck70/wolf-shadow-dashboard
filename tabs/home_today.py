@@ -37,13 +37,14 @@ def turn_cards(board: Optional[dict], today=None) -> list:
     of = int(plan.get("window_days") or 5)
     today = today if today is not None else pd.Timestamp.today().normalize()
     out = []
+    from valhall import turns as vt
     for w in plan.get("window") or []:
-        if not isinstance(w, dict):
+        if not isinstance(w, dict) or not vt.in_window(w, today, of):       # stängt fönster (gammal karta) visas inte
             continue
         d = _bdays(w.get("confirmed_since") or w.get("since"), today)
         where = {"komplex": "komplex", "tema": "tema"}.get(w.get("level"), w.get("where") or "segment")
         out.append({"label": w.get("label") or w.get("key"), "where": where, "kind": w.get("kind"),
-                    "day": (d + 1) if d is not None else None, "of": of,
+                    "day": d, "of": of,                       # handelsdagar efter bekräftelsen: 0 … of
                     "deep": [x.get("ticker") for x in w.get("deep") or [] if x.get("ticker")],
                     "long": [x.get("ticker") for x in w.get("long") or [] if x.get("ticker")],
                     "etf": w.get("etf") or None})
@@ -56,7 +57,8 @@ def on_the_way(board: Optional[dict]) -> int:
 
 
 def turn_headline(card: dict) -> str:
-    day = f" · dag {card['day']} av {card['of']}" if card.get("day") else ""
+    d = card.get("day")
+    day = (" · bekräftad i dag" if d == 0 else f" · dag {d} av {card['of']}" if d is not None else "")
     return f"⚡ VÄNDNING — {card['label']}{day}"
 
 
@@ -66,7 +68,8 @@ def no_turn_line(board: Optional[dict]) -> str:
 
 
 def qualifiers(rows: list) -> tuple:
-    """(antal KÖP, antal BEVAKA, de TOP_N första KÖP-raderna i Thors ordning)."""
+    """(antal KÖP, antal BEVAKA, de TOP_N första KÖP-raderna i Thors ordning). Gamla körningar räknas med men
+    märks GAMMAL på raden (stale_tag)."""
     from thor import candidates as tc
     rows = sorted(rows or [], key=tc.sort_key)
     buy = [c for c in rows if c.status_class == tc.KOP]
@@ -74,10 +77,18 @@ def qualifiers(rows: list) -> tuple:
     return len(buy), len(watch), buy[:TOP_N]
 
 
+def stale_tag(c) -> str:
+    """' · GAMMAL (körd 2026-10-01)' när raden kommer ur en körning äldre än Thors gräns, annars ''."""
+    return f" · GAMMAL (körd {c.asof})" if getattr(c, "stale", False) else ""
+
+
 def size_line(c, capital: float) -> str:
     from thor import registry as reg
     from thor import storlek as sk
-    sz = sk.size(c.entry, c.stop, capital, sk.risk_pct(c.strategy), sk.cap_pct(c.strategy))
+    ccy, fx = sk.fx_for(c.ticker)
+    sz = sk.size(c.entry, c.stop, capital, sk.risk_pct(c.strategy), sk.cap_pct(c.strategy), fx=fx, currency=ccy)
+    if sz and "GUL regim" in (c.status or ""):
+        sz = sk.halved(sz)
     return sk.row_text(c.ticker, reg.label(c.strategy), sz) if sz else f"{c.ticker} · {reg.label(c.strategy)} · nivåer saknas"
 
 
@@ -96,8 +107,29 @@ def holdings_lines(alert_state: Optional[dict], n_open: Optional[int] = None) ->
     return sorted(out, key=lambda x: (order[x[1]], x[0]))
 
 
-def all_hold_line(n_open: Optional[int]) -> str:
-    return f"Alla {n_open} positioner: HÅLL" if n_open else "Inga öppna positioner"
+def all_hold_line(alert_state: Optional[dict], n_open: Optional[int] = None) -> str:
+    """Raden när inget ska säljas. Larmtillståndet bedömer bara Momentum-positionerna (alert_scan) — säg det, och
+    säg 'saknas' när tillståndet inte gick att läsa i stället för att påstå HÅLL."""
+    if not isinstance(alert_state, dict):
+        return "Säljläget saknas — larmtillståndet gick inte att läsa"
+    n = len((((alert_state or {}).get("swing") or {}).get("verdicts")) or {})
+    other = f" · övriga {n_open - n} positioner bedöms på sina egna sidor" if n_open and n_open > n else ""
+    return (f"Alla {n} Momentum-positioner: HÅLL" if n else "Inga Momentum-positioner bedöms") + other
+
+
+RELOAD_MIN = 30
+
+
+def needs_reload(loaded: Optional[str], now=None) -> bool:
+    """Läs om när datan hämtades en annan dag eller för mer än RELOAD_MIN minuter sedan."""
+    if not loaded:
+        return False
+    try:
+        t = pd.Timestamp(loaded)
+    except Exception:
+        return True
+    now = pd.Timestamp(now) if now is not None else pd.Timestamp.now()
+    return t.date() != now.date() or (now - t) > pd.Timedelta(minutes=RELOAD_MIN)
 
 
 def load(loader=None) -> dict:
