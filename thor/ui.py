@@ -104,7 +104,9 @@ def freshness_rows(rows: list, data: dict) -> list:
     out = []
     for key, label, n, asof, state in live.freshness(rows, data):
         how = f"schemat — {live.HEAVY[key]}" if key in live.HEAVY else "⚡ Skanna nu" if live.can_run(key) else "schemat"
-        out.append({"Strategi": label, "Läge": state, "Rader": n, "Körd": asof or "—", "Körs": how})
+        acct = (reg.get(key).paper if reg.get(key) else "") or ""
+        out.append({"Strategi": label, "Läge": state, "Rader": n, "Körd": asof or "—", "Körs": how,
+                    "Papper": "ARKEN → 📊 Papperskonton" if acct else "—"})
     return out
 
 

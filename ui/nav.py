@@ -52,7 +52,7 @@ SUBS: dict = {
     # Beslutsunderlaget efter screeningen. Durrett har sitt ark
     # (data/confidence.json); Wolf Asymmetry har sitt eget med Confidence inbyggt.
     "review": ["Rick Rule", "Royalty C", "Poängmodell", "Tiggre", "Insider",
-               "🧭 Durrett", "🐺 Wolf Asymmetry", "🚀 Råvaruhävstång", "🎯 Scorecard"],
+               "🧭 Durrett", "🐺 Wolf Asymmetry", "🚀 Råvaruhävstång", "🎯 Scorecard", "📊 Papperskonton"],
     "portfolio": ["📓 Trade Journal", "Holdings", "Swing", "Allokering", "Backtest"],
     "rules": ["Regler & Guider", "Position Sizing", "Data Health"],
     "rules/Regler & Guider": ["🚀 KOM IGÅNG", "📋 HANDELSREGLER", "⚡ FUSKLAPP",
