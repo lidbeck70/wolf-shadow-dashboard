@@ -188,14 +188,15 @@ def viking_exit_ctx(getter, today=None) -> dict:
 
 def _paper(state, berserk_state, board, sw, buys, universe, insider_blob, getter, nordic_market, today,
            wolf=None, long_scan=None, arc_sigs=None, complex_swing=None, turn_plan=None, ember_blob=None,
-           deep_blob=None, royalty_blob=None, turns=None) -> tuple:
+           deep_blob=None, royalty_blob=None, turns=None, momentum_ok=None) -> tuple:
     """Papperskontona ett steg fram: dagens signaler blir order, gårdagens fylls, positionerna förvaltas."""
     import pandas as pd
 
     from valhall import paper as vpa
     today = pd.Timestamp(today) if today is not None else pd.Timestamp.today().normalize()
     sigs = vpa.signals(sw, buys, universe, insider_blob, wolf, long_scan, arc_sigs, complex_swing=complex_swing,
-                       turn_plan=turn_plan, ember_blob=ember_blob, deep_blob=deep_blob, royalty_blob=royalty_blob)
+                       turn_plan=turn_plan, ember_blob=ember_blob, deep_blob=deep_blob, royalty_blob=royalty_blob,
+                       momentum_ok=momentum_ok)
     market = None
     if nordic_market is not None and len(nordic_market):
         m = pd.Series(nordic_market).astype(float).dropna()
@@ -337,7 +338,8 @@ def run(api=None, data_getter=None, getter=None, load=None, save=None, today=Non
                                          getter, nordic_market, today, wolf, long_scan, arc_sigs,
                                          complex_swing=complex_swing, turn_plan=payload.get("turn_plan"),
                                          ember_blob=_ember_blob(load), deep_blob=deep_blob,
-                                         royalty_blob=load("royalty_scan.json", None), turns=payload["turns"])
+                                         royalty_blob=load("royalty_scan.json", None), turns=payload["turns"],
+                                         momentum_ok=swing.liquid(keep, universe))
             payload["paper"] = vpa.results(paper_state, berserk_state)
             history = vpa.append_history(load(PAPER_HISTORY_BLOB, None), vpa.snapshot(payload["paper"], today))
             for e in events:

@@ -139,6 +139,32 @@ def run(api=None, getter=None, data_getter=None, viking_run=None, berserk_run=No
                     "portfolio_by_period": {p: vbk.portfolios(btag, yrs[p], pc=bbt.live_portfolio(), filters=bfil,
                                                               period=p) for p in yrs}},
     }
+    # Fas 3b (K9): VÄNDER-fasen och bekräftad vändning som grind, och Viking Nine per komplex
+    result["fas3b"] = {"viking": vbk.portfolios(vtag, years, filters=vbk.FILTERS_3B),
+                       "viking_by_period": {p: vbk.portfolios(vtag, yrs[p], filters=vbk.FILTERS_3B, period=p) for p in yrs},
+                       "berserk": vbk.portfolios(btag, years, pc=bbt.live_portfolio(), filters=vbk.FILTERS_3B_THEME),
+                       "berserk_by_period": {p: vbk.portfolios(btag, yrs[p], pc=bbt.live_portfolio(),
+                                                               filters=vbk.FILTERS_3B_THEME, period=p) for p in yrs}}
+    try:
+        import complex_backtest as cbt
+        import ovtlyr_nine as on
+        from valhall import complexes as vcx
+        drivers = {}
+        for k in vcx.KEYS:
+            closes = {t: fr["themes"][t]["close"] for t in vcx.themes_of(k) if "close" in fr["themes"].get(t, {})}
+            _syms, drivers[k] = vcx.basket(k, {t: (t, c) for t, c in closes.items()})
+        result["fas3b"]["complex"] = cbt.run(getter, nordic=on.nordic_market(int((years + 2) * 262)), drivers=drivers,
+                                             cfg=vbt.Config(start_year=START_YEAR))
+    except Exception as exc:
+        log.exception("Fas 3b — komplexvarianten fallerade: %s", exc)
+        result["fas3b"]["complex"] = None
+    lines_3b = (_fmt_port(result["fas3b"]["viking"], "FAS 3B — VIKING NINE, VÄNDNINGSGRINDEN 2008–idag")
+                + sum((_fmt_port(v, f"FAS 3B — VIKING NINE {p}") for p, v in result["fas3b"]["viking_by_period"].items()), [])
+                + _fmt_port(result["fas3b"]["berserk"], "FAS 3B — BERSERK, TEMATS VÄNDNING 2008–idag")
+                + sum((_fmt_port(v, f"FAS 3B — BERSERK {p}") for p, v in result["fas3b"]["berserk_by_period"].items()), [])
+                + [""] + ["FAS 3B — VIKING NINE PER KOMPLEX (standard SPDR · komplexets ETF · + drivargrind)"]
+                + [f"  {r['complex']:<13} {r['variant']:<9} n {r['n']:>4} · exp {r['exp']} R · vinst {r['win']} % · "
+                   f"summa {r['sum_r']} R" for r in result["fas3b"]["complex"] or []])
     for line in (_fmt_table(result["viking"]["all"], "VIKING NINE — ALLA SEGMENT (Nordens status)")
                  + _fmt_table(result["viking"]["by_segment"], "VIKING NINE — PER SEGMENT (Nordens status)")
                  + _fmt_table([r for r in result["viking"]["global"] if r["status"] != "alla"],
@@ -148,7 +174,8 @@ def run(api=None, getter=None, data_getter=None, viking_run=None, berserk_run=No
                  + _fmt_table(result["berserk"]["all"], "BERSERK — ALLA (temats status)")
                  + _fmt_table(result["berserk"]["by_theme"], "BERSERK — PER TEMA (temats status)")
                  + _fmt_port(result["berserk"]["portfolio"], "BERSERK — PORTFÖLJ 2008–idag")
-                 + sum((_fmt_port(v, f"BERSERK — PORTFÖLJ {p}") for p, v in result["berserk"]["portfolio_by_period"].items()), [])):
+                 + sum((_fmt_port(v, f"BERSERK — PORTFÖLJ {p}") for p, v in result["berserk"]["portfolio_by_period"].items()), [])
+                 + lines_3b):
         log.info("%s", line)
     if not no_save:
         if save is None:

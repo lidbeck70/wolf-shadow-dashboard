@@ -647,6 +647,41 @@ def fiat_alerts(fiat_data: Optional[dict], prev: Optional[dict], rules=None) -> 
     return alerts, {"on": now}
 
 
+def turn_alerts(board_data: Optional[dict], prev: Optional[dict]) -> tuple:
+    """(larm, nytt tillstånd) för Valhalls händelsemotor (K10): en ruta som går in i köpfönstret efter BEKRÄFTAD
+    cykelvändning larmar en gång — med planen 2 Deep Contrarian + 2 lång + 1 UCITS-ETF ur turn_plan.
+    board_data = valhall_board.json; None/utan turn_plan = oläsbar → baslinjen står still."""
+    if not isinstance(board_data, dict) or not isinstance(board_data.get("turn_plan"), dict):
+        return [], (prev if isinstance(prev, dict) else {"rooms": {}})
+    rooms = {}
+    for w in board_data["turn_plan"].get("window") or []:
+        if not isinstance(w, dict) or not w.get("key"):
+            continue
+        rooms[f"{w.get('level')}:{w['key']}:{w.get('where')}"] = w
+    state = {"rooms": {k: str(v.get("confirmed_since") or v.get("since") or "") for k, v in rooms.items()}}
+    if prev is None:
+        return [], state
+    seen = (prev or {}).get("rooms") or {}
+    alerts = []
+    for k, w in rooms.items():
+        if k in seen and seen[k] == state["rooms"][k]:
+            continue
+        parts = []
+        if w.get("deep"):
+            parts.append("Deep Contrarian: " + ", ".join(x.get("ticker", "") for x in w["deep"]))
+        if w.get("long"):
+            parts.append("Lång: " + ", ".join(x.get("ticker", "") for x in w["long"]))
+        e = w.get("etf") or {}
+        if e.get("ticker"):
+            parts.append(f"ETF: {e['ticker']} ({e.get('exposure')}{'' if e.get('verified') else ', verifiera hos Nordnet'})")
+        alerts.append(_alert(
+            "cycle_turn",
+            f"⚡ VÄNDNING: {w.get('label') or w.get('key')} — {w.get('kind')} bekräftad",
+            ("; ".join(parts) or "Inga kandidater i rutan i dag") + ". Papperet köper på nästa öppning; riktiga order "
+            "läggs manuellt. Se Valhall → Kartan och ARKEN → 📊 Papperskonton."))
+    return alerts, state
+
+
 def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
              themes: list, prev_state: Optional[dict],
              settings: Optional[dict] = None,
@@ -659,7 +694,8 @@ def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
              screens_data: Optional[dict] = None,
              sheets_data: Optional[dict] = None,
              market_risk_data: Optional[dict] = None,
-             fiat_data: Optional[dict] = None) -> tuple:
+             fiat_data: Optional[dict] = None,
+             board_data: Optional[dict] = None) -> tuple:
     """(larm-med-kanaler, nytt tillstånd) för hela körningen.
 
     settings: data/alerts.json — {"swing": {"enabled", "channels"},
@@ -734,7 +770,10 @@ def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
     f_alerts, f_state = fiat_alerts(fiat_data, _prev("fiat"), fiat_cfg.get("rules"))
     out += _route("fiat", f_alerts)
 
+    t_alerts, t_state = turn_alerts(board_data, _prev("turns"))
+    out += _route("turns", t_alerts)
+
     return out, {"swing": s_state, "blindspot": b_state, "ember": e_state,
                  "wolf": w_state, "viking": v_state, "contrarian": c_state,
                  "quality": q_state, "insider": i_state, "screens": sc_state, "sheets": sh_state,
-                 "market_risk": mr_state, "fiat": f_state}
+                 "market_risk": mr_state, "fiat": f_state, "turns": t_state}

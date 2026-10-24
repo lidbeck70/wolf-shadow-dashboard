@@ -240,7 +240,7 @@ def main() -> int:
         ember_data=ember_data, wolf_data=wolf_data, viking_data=viking_data,
         contrarian_data=contrarian_data, quality_data=quality_data, insider_data=insider_data,
         screens_data=screens_data, sheets_data=sheets_data, market_risk_data=market_risk_data,
-        fiat_data=fiat_data)
+        fiat_data=fiat_data, board_data=load_blob("valhall_board.json", None))
     if not themes and isinstance(prev_state, dict):
         new_state["blindspot"] = prev_state.get("blindspot",
                                                 new_state["blindspot"])
