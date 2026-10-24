@@ -264,7 +264,8 @@ def run(api=None, data_getter=None, getter=None, load=None, save=None, today=Non
                                      analyze=analyze), board)
     payload = {"generated": datetime.now(tz=timezone.utc).isoformat(), "universe_source": universe_source,
                "board": _json_safe(board),
-               "cycle_starts": vb.cycle_starts(board), "swing": sw, "niche": nich, "buys": buys,
+               "cycle_starts": vb.cycle_starts(board), "turns": vb.turns(board), "swing": sw, "niche": nich,
+               "buys": buys,
                "wolf": vwolf.by_segment(arc, entries, wolf, universe),
                "sources": {"ca_runs": len(src.get("ca") or []), "screens": bool(src.get("screens")),
                            "sheets": sorted(k for k, v in (src.get("sheets") or {}).items() if v)},
