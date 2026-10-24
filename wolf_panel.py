@@ -574,6 +574,9 @@ def main():
             st.markdown("---")
             if sub_rules == "Regler & Guider":
                 _page(RULES_AVAILABLE, render_rules_page, "Rules", "ovtlyr/ui")
+            elif sub_rules == "⚙️ Inställningar":
+                from ui.settings import render_settings_page
+                _page(True, render_settings_page, "Inställningar", "ui/settings")
             elif sub_rules == "Position Sizing":
                 try:
                     from position_sizing import render_position_sizing
