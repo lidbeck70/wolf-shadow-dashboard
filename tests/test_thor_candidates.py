@@ -99,7 +99,8 @@ SCREENS = {"generated": GEN, "screens": {
     "tiggre": {"label": "Tiggre (sweet spot)", "sheet": "Tiggre",
                "rows": [{"ticker": "CU.V", "name": "Cu", "universe": "CA"}], "new": []}}}
 BLOBS = {"board": BOARD, "berserk": BERSERK, "arc": ARC, "momentum": MOMENTUM, "ember": EMBER, "ca_quality": CA_Q,
-         "ca_deep": CA_D, "insider": INSIDER, "screens": SCREENS}
+         "ca_deep": CA_D, "insider": INSIDER, "screens": SCREENS,
+         "regime": {"regime": "GRÖN", "generated": "2026-10-14T04:17"}}      # Momentum köper bara i GRÖN/GUL regim
 CTX = tc.segment_context(BOARD)
 
 
@@ -123,7 +124,8 @@ def test_registry_is_complete_and_consistent():
 
 # ── Källorna ─────────────────────────────────────────────────────────────────
 def test_segment_context():
-    assert CTX["segments"]["technology"] == {"status": "GRÖN", "cykel": "MITTEN", "phase": "STARK"}
+    assert CTX["segments"]["technology"] == {"status": "GRÖN", "cykel": "MITTEN", "phase": "STARK",
+                                             "global_status": CTX["segments"]["technology"]["global_status"]}
     assert CTX["themes"]["guld"]["status"] == "GRÖN" and CTX["themes"]["guld"]["segment"] == "materials"
     assert tc.segment_context(None) == {"segments": {}, "themes": {}}
 
@@ -227,12 +229,14 @@ def test_arc_usa_parts_become_wolf_and_viking_rows():
 
 
 def test_momentum_rows_map_borsdata_form_and_rank():
-    rows = _by(tc.from_momentum(MOMENTUM, CTX))
+    rows = _by(tc.from_momentum(MOMENTUM, CTX, regime={"regime": "GRÖN"}))
     e = rows[("momentum", "ERIC-B.ST")]
     assert e.status == "rad 1 · setup A" and e.status_class == tc.KOP and e.score == 100.0 and e.entry == 80.0 and e.stop == 72.0
     assert rows[("momentum", "ANOT.ST")].status_class == tc.HALL and rows[("momentum", "ANOT.ST")].score == 50.0
     assert rows[("momentum", "ABB.ST")].status_class == tc.BEVAKA and rows[("momentum", "ABB.ST")].score == 90.0
-    assert tc.momentum_yf("ERIC B", {"ERIC B": "ERIC-B.ST"}) == "ERIC-B.ST" and tc.momentum_yf("NHY", {"NHY": "NHY.OL"}) == "NHY.OL"
+    assert tc.momentum_yf("ERIC B", {"ERIC B": "ERIC-B.ST"}) == ("ERIC-B.ST", False)
+    assert tc.momentum_yf("NHY", {"NHY": "NHY.OL"}) == ("NHY.OL", False) and tc.momentum_yf("NHY", None, "NHY.OL") == ("NHY.OL", False)
+    assert tc.momentum_yf("NHY") == ("NHY.ST", True)                                   # gissning — märks på raden
 
 
 def test_ember_rows():

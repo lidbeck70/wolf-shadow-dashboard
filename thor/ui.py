@@ -77,10 +77,13 @@ def load(loader=None) -> dict:
     except Exception:
         out["regime"] = None
     out["universe"] = ur.load_index(loader)                 # registrets index: statistik och Nordens tickerkarta
-    try:                                                    # registrets sektorer → segment för rader utan eget
-        out["segment_map"] = tc.segment_map_from_register(ur.load(None, loader))
+    try:                                                    # registrets sektorer → segment, och namn, för rader utan eget
+        reg_ = ur.load(None, loader)
+        out["segment_map"] = tc.segment_map_from_register(reg_)
+        out["names"] = {str(t).upper(): getattr(m, "name", "") for t, m in (getattr(reg_, "members", None) or {}).items()
+                        if getattr(m, "name", "")}
     except Exception:
-        out["segment_map"] = {}
+        out["segment_map"], out["names"] = {}, {}
     out["loaded"] = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")
     return out
 
@@ -89,7 +92,8 @@ def rebuild(data: dict) -> dict:
     """Listans rader ur källorna i data (samma bygge efter 📡 Uppdatera och efter ⚡ Skanna nu)."""
     errors: dict = {}
     bd_map = (data.get("universe") or {}).get("bd_map") or None   # 'EQNR' → 'EQNR.OL', inte '.ST'
-    data["rows"] = tc.build(data, errors=errors, momentum_map=bd_map, segment_map=data.get("segment_map"))
+    data["rows"] = tc.build(data, errors=errors, momentum_map=bd_map, segment_map=data.get("segment_map"),
+                            names=data.get("names"))
     data["errors"] = errors
     return data
 
@@ -197,10 +201,10 @@ def _stores() -> dict:
 
 def lage_items(data: dict, rows: list) -> list:
     """Lägets fyra kort: swingregimen, Norden och globalt på Valhall-kartan, kandidaterna. Ren funktion."""
-    regime = data.get("regime") or {}
-    segs = ((data.get("board") or {}).get("board") or {}).get("segments") or []
-    n_green = sum(1 for r in segs if (r.get("nordic") or {}).get("status") == "GRÖN")
-    g_green = sum(1 for r in segs if (r.get("global") or {}).get("status") == "GRÖN")
+    regime = data.get("regime") if isinstance(data.get("regime"), dict) else {}
+    segs = tc.segment_context(data.get("board")).get("segments") or {}      # tål en trasig karta (tom i stället för krasch)
+    n_green = sum(1 for r in segs.values() if r.get("status") == "GRÖN")
+    g_green = sum(1 for r in segs.values() if r.get("global_status") == "GRÖN")
     s = tc.summary(rows)
     asof = max((v.get("asof") or "" for v in s["by_strategy"].values()), default="")
     sw = str(regime.get("regime") or "OKÄND").upper()
@@ -392,7 +396,10 @@ def _list(st, rows: list, board: Optional[dict] = None, data: Optional[dict] = N
     if not shown:
         from ui.components import empty_state
         fails = {k: v for k, v in live.blob_errors(data).items() if pick == ALL or reg.label(k) == pick}
-        if fails:
+        if "gist" in (data.get("errors") or {}):
+            empty_state("Gisten gick inte att läsa (nätverk eller token) — listan är tom av det skälet, inte för att "
+                        "körningar saknas. Tryck 📡 Uppdatera om en stund.")
+        elif fails:
             empty_state("Körningen fallerade: " + "; ".join(f"{reg.label(k)} — {err} ({gen})" for k, (err, gen) in fails.items())
                         + ". Kör den igen när felet är rättat.")
         else:
