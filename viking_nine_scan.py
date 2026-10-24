@@ -87,11 +87,39 @@ def scan_market(key: str, members: dict, scan_fn: Optional[Callable] = None, **k
     order = {c: i for i, c in enumerate(KEEP)}
     rows.sort(key=lambda e: (order.get(e["category"], 9), -(e.get("nine_weighted") or 0), e["ticker"]))
     funnel = {k: v for k, v in (res.get("funnel") or {}).items() if k != "momentum"}
+    funnel["scores"] = score_counts(res.get("rows") or [])
     return {"funnel": funnel, "rows": rows}
 
 
+def score_counts(rows: list) -> dict:
+    """Hur många av steg 2:s kandidater som fick 9, 8, 7 och högst 6 av nio faktorer — så att '0 DEVELOPING' i
+    loggen visar VARFÖR (diagnostik, ingen regel)."""
+    out = {"9": 0, "8": 0, "7": 0, "≤6": 0}
+    for r in rows:
+        n = getattr(r.get("nine"), "passed", None)
+        if n is None:
+            continue
+        out[str(n) if n >= 7 else "≤6"] += 1
+    return out
+
+
+MARKET_OF = {"norden": "OMXS30", "usa": "SPY"}
+
+
+def market_layer_status(key: str, layer_fn: Optional[Callable] = None) -> list:
+    """Marknadslagret (Trend, Signal, Breadth) som alla aktier på marknaden delar: [{label, status, detail}].
+    Fallerar lagret kan ingen aktie nå DEVELOPING (sex faktorer återstår av nio) — loggen och Thor visar det."""
+    if layer_fn is None:
+        import ovtlyr_nine as on
+        layer_fn = on.market_layer
+    try:
+        return [{"label": f.label, "status": f.status, "detail": f.detail} for f in layer_fn(MARKET_OF[key])]
+    except Exception as exc:
+        return [{"label": "Marknadslagret", "status": "DATA UNAVAILABLE", "detail": str(exc)[:120]}]
+
+
 def run(loader=None, usa_api=None, save=None, dry_run: bool = False, scan_fn: Optional[Callable] = None,
-        members: Optional[dict] = None, **kw) -> dict:
+        members: Optional[dict] = None, layer_fn: Optional[Callable] = None, **kw) -> dict:
     """Hela körningen. members = {marknad: {ticker: (namn, segment)}} ersätter registret (tester)."""
     members = members if members is not None else universes(loader, usa_api)
     payload = {"generated": datetime.now(tz=timezone.utc).isoformat(), "markets": {}, "rows": []}
@@ -103,11 +131,21 @@ def run(loader=None, usa_api=None, save=None, dry_run: bool = False, scan_fn: Op
         except Exception as exc:
             log.exception("Viking Nine %s fallerade: %s", key, exc)
             res = {"funnel": {"universe": len(m)}, "rows": [], "error": str(exc)}
+        # Marknadslagret räknas i den riktiga körningen; tester med egen scan_fn hoppar över det om de inte ger layer_fn
+        res["market_layer"] = market_layer_status(key, layer_fn) if m and (layer_fn or scan_fn is None) else []
         payload["markets"][key] = res
         payload["rows"] += res["rows"]
         cats = {c: sum(1 for r in res["rows"] if r["category"] == c) for c in KEEP}
         log.info("Viking Nine %s: %d bolag · steg 1 %s · %s", key, len(m), res["funnel"].get("passed", "—"),
                  " · ".join(f"{c} {n}" for c, n in cats.items()))
+        if res["market_layer"]:
+            ok = sum(1 for f in res["market_layer"] if f["status"] == "PASS")
+            log.info("  marknadslagret %s %d/3: %s", MARKET_OF[key], ok,
+                     " · ".join(f"{f['label']} {f['status']}" + (f" ({f['detail']})" if f.get("detail") else "")
+                                for f in res["market_layer"]))
+        sc = res["funnel"].get("scores")
+        if sc:
+            log.info("  steg 2 poäng: 9/9 %d · 8/9 %d · 7/9 %d · ≤6/9 %d", sc["9"], sc["8"], sc["7"], sc["≤6"])
     if dry_run:
         log.info("[DRY-RUN] sparar inte till Gisten.")
         return {"payload": payload, "saved": False}
