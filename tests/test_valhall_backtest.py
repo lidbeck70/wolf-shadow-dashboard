@@ -98,3 +98,62 @@ def test_fas3_runner(monkeypatch):
 def test_backtest_workflow():
     src = open(os.path.join(ROOT, ".github", "workflows", "valhall-backtest.yml"), encoding="utf-8").read()
     assert "workflow_dispatch" in src and "python valhall_fas3.py" in src and "BORSDATA_API_KEY" in src
+
+
+# ── Fas 3b (K9): vändningsgrinden och Viking Nine per komplex ───────────────
+def _turn_frame():
+    idx = pd.bdate_range("2015-01-01", periods=120)
+    ph = [cycle.BAISSE] * 40 + [cycle.VANDER] * 50 + [cycle.STARK] * 30
+    conf = [False] * 60 + [True] * 30 + [False] * 30
+    return pd.DataFrame({"status": cycle.GRON, "phase": ph, "cykel": cycle.TIDIG, "confirmed": conf}, index=idx)
+
+
+def test_asof_carries_the_turn():
+    f = _turn_frame()
+    a = vbk.asof(f, f.index[45])
+    assert a["phase"] == cycle.VANDER and a["vander_days"] == 6 and not a["confirmed"]
+    b = vbk.asof(f, f.index[70])
+    assert b["vander_days"] == 31 and b["confirmed"]
+    assert vbk.asof(f, f.index[100])["vander_days"] == 0
+    assert vbk.asof(_frame({"2015-01-02": cycle.GRON}), "2015-06-01")["confirmed"] is False
+
+
+def test_fas3b_filters_select_on_phase_and_age():
+    f = _turn_frame()
+    trades = [_t("VOLV-B.ST", str(f.index[45].date()), 1.0), _t("VOLV-B.ST", str(f.index[70].date()), 2.0),
+              _t("VOLV-B.ST", str(f.index[100].date()), -1.0)]
+    tagged = vbk.tag(trades, SEG, {"nordic": {"industrials": f}, "global": {}, "themes": {}})
+    sel = {name: [r["trade"].r for r in tagged if fn(r)] for name, fn in vbk.FILTERS_3B.items()}
+    assert sel["Norden VÄNDER"] == [1.0, 2.0] and sel["Norden VÄNDER bekräftad"] == [2.0]
+    assert sel["Norden VÄNDER ≤ 20 d"] == [1.0] and sel["Norden VÄNDER ≤ 60 d"] == [1.0, 2.0]
+    tt = vbk.tag(trades, SEG, {"themes": {"koppar": f}}, theme_of=lambda t: "koppar")
+    th = {name: [r["trade"].r for r in tt if fn(r)] for name, fn in vbk.FILTERS_3B_THEME.items()}
+    assert th["Tema VÄNDER bekräftad"] == [2.0] and th["Tema VÄNDER ≤ 20 d"] == [1.0]
+    out = {r["filter"]: r for r in vbk.portfolios(tagged, 1.0, filters=vbk.FILTERS_3B)}
+    assert out["Norden VÄNDER"]["trades"] == 2 and out["Alla affärer"]["trades"] == 3
+
+
+def test_complex_backtest_compares_standard_complex_and_driver(monkeypatch):
+    import numpy as np
+    import complex_backtest as cbt
+    import complex_profiles as cp
+    idx = pd.bdate_range("2015-01-01", periods=400)
+    up = pd.Series(np.linspace(100, 200, 400), index=idx)
+    down = pd.Series(np.linspace(200, 100, 400), index=idx)
+    assert cbt.gate_ok(cbt.driver_turn_series(up), idx[-1]) is True
+    assert cbt.gate_ok(cbt.driver_turn_series(down), idx[-1]) is False and cbt.gate_ok(None, idx[-1]) is None
+    seen = []
+
+    def fake_bt(t, df, m, sec, breadth, cfg, start=None, market_label="SPY"):
+        seen.append((t, sec is not None))
+        return {"trades": [_t(t, str(idx[-1].date()), 1.0 if sec is not None else -1.0)]}
+    monkeypatch.setattr(cbt.vbt, "backtest_ticker", fake_bt)
+    frame = pd.DataFrame({"Open": up, "High": up, "Low": up, "Close": up, "Volume": 1e6})
+    getter = lambda t, p: frame if t in ("BOL.ST", "COPX") else None  # noqa: E731
+    res = cbt.run_complex(cp.get("basmetaller"), ["BOL.ST"], getter, {"close": up, "breadth": None}, driver=down)
+    assert [t.r for t in res["standard"]] == [-1.0] and [t.r for t in res["komplex"]] == [1.0]
+    assert res["drivare"] == []                                                 # drivaren har inte vänt
+    rows = cbt.run(getter, members={"basmetaller": ["BOL.ST"]}, nordic={"close": up}, drivers={"basmetaller": up})
+    by = {r["variant"]: r for r in rows}
+    assert set(by) == {"standard", "komplex", "drivare"} and by["drivare"]["n"] == 1 and by["komplex"]["exp"] == 1.0
+    assert cbt.summary([])["n"] == 0
