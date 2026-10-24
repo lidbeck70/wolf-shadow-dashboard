@@ -140,7 +140,7 @@ LEGACY_PATHS: dict = {
 TARGETS: dict = {
     "home": ("home",),
     "thor": ("thor",),
-    "turn": ("valhall", "Kartan"),
+    "turn": ("home",),
     "valhall_map": ("valhall", "Kartan"),
     "laget": ("odin", "Marknad", "Läget"),
     "swing_regime": ("odin", "Marknad", "Läget"),
