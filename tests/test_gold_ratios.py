@@ -170,4 +170,4 @@ def test_navigation_and_guide():
     src = open(os.path.join(ROOT, "wolf_panel.py"), encoding="utf-8").read()
     assert 'elif sub == "🥇 Guldkvoter":' in src and "render_gold_ratios_page" in src
     from ovtlyr.ui.rules_page import _PANEL_GUIDE
-    assert any(t == "ODINS VISDOM → Råvaror → 🥇 Guldkvoter" for t, _r, _u in _PANEL_GUIDE)
+    assert any(t == "ODIN → Råvaror → 🥇 Guldkvoter" for t, _r, _u in _PANEL_GUIDE)

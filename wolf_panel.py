@@ -236,7 +236,7 @@ try:
 except ImportError:
     COMMODITY_LEVERAGE_AVAILABLE = False
 
-# Guld/silver-kvoten (ODINS VISDOM → Råvaror)
+# Guld/silver-kvoten (ODIN → Råvaror)
 try:
     from gold_silver.ui import render_gold_silver_page
     GOLD_SILVER_AVAILABLE = True
@@ -250,7 +250,7 @@ try:
 except ImportError:
     VIKING_NINE_AVAILABLE = False
 
-# Viking Nine Regime (ODINS VISDOM → Marknad → Arc Regime) — beslutet för en aktie i Viking Nine
+# Viking Nine Regime (MER → Motorsidor) — beslutet för en aktie i Viking Nine
 try:
     from ovtlyr.ui.viking_nine_regime import render_viking_nine_regime_page
     VIKING_NINE_REGIME_AVAILABLE = True
@@ -273,7 +273,7 @@ except Exception:
     render_thor_page = None
     THOR_AVAILABLE = False
 
-# 🪓 BERSERK (THOR, ODINS VISDOM → Råvaror) — contrarian swing i råvarumarknaden
+# 🪓 BERSERK (THOR, ODIN → Råvaror) — contrarian swing i råvarumarknaden
 try:
     from berserk.screen_ui import render_berserk_screen_page
     from berserk.regime_ui import render_berserk_regime_page
@@ -281,7 +281,7 @@ try:
 except ImportError:
     BERSERK_AVAILABLE = False
 
-# Marknadsrisk (ODINS VISDOM → Marknad) — riskmodellen för SPY och OMXS30
+# Marknadsrisk (ODIN → Marknad) — riskmodellen för SPY och OMXS30
 try:
     from market_risk_ui import render_market_risk_page
     MARKET_RISK_AVAILABLE = True
@@ -295,14 +295,14 @@ try:
 except ImportError:
     TECH_ANALYSIS_AVAILABLE = False
 
-# Guldkvoter (ODINS VISDOM → Råvaror) — råvaror och index mätta i guld
+# Guldkvoter (ODIN → Råvaror) — råvaror och index mätta i guld
 try:
     from gold_ratios.ui import render_gold_ratios_page
     GOLD_RATIOS_AVAILABLE = True
 except ImportError:
     GOLD_RATIOS_AVAILABLE = False
 
-# 🐺 Fiat Debasement (ODINS VISDOM → Makro) — penningmängd, inflation, köpkraft och fiat mot guld
+# 🐺 Fiat Debasement (ODIN → Makro) — penningmängd, inflation, köpkraft och fiat mot guld
 try:
     from fiat_debasement.ui import render_fiat_debasement_page
     FIAT_AVAILABLE = True
@@ -414,6 +414,134 @@ def _page(available: bool, render, name: str, module: str, rules_key: str = "") 
             pass
 
 
+def _tab_odin() -> None:
+    group = _sub("odin")
+    st.markdown("---")
+    if group == "Läget":
+        from odin.laget import render_laget_page
+        _page(True, render_laget_page, "Läget", "odin/laget")
+    elif group == "Kartan":
+        if VALHALL_AVAILABLE:
+            render_valhall_page("Kartan")
+        else:
+            tab_not_found("Valhall", "valhall")
+    elif group == "Marknad":
+        sub = _sub("odin/Marknad")
+        st.markdown("---")
+        if sub == "Flow Divergence":
+            _page(SECTOR_CYCLE_AVAILABLE, render_sector_cycle_page, "Sector & Global Regime", "sector_cycle")
+        elif sub == "Heatmap":
+            _page(HEATMAP_AVAILABLE, render_heatmap_page, "Heatmap", "heatmap")
+    elif group == "Makro":
+        sub = _sub("odin/Makro")
+        st.markdown("---")
+        if sub == "🐺 Fiat Debasement":
+            _page(FIAT_AVAILABLE, render_fiat_debasement_page, "Fiat Debasement", "fiat_debasement")
+        elif sub == "Sentiment":
+            _page(SENTIMENT_AVAILABLE, render_sentiment_page, "Sentiment & Flow", "sentiment")
+        elif sub == "Retail Pulse":
+            _page(RETAIL_SENTIMENT_AVAILABLE, render_retail_sentiment_page, "Retail Sentiment", "retail_sentiment")
+    else:
+        sub = _sub("odin/Råvaror")
+        st.markdown("---")
+        if sub == "Odin's Blindspot":
+            _page(BLINDSPOT_AVAILABLE, render_blindspot_page, "Odin's Blindspot Index", "blindspot")
+        elif sub == "🌍 EMBER Regime":
+            _page(EMBER_AVAILABLE, render_ember_regime_page, "EMBER Regime", "ember")
+        elif sub == "🪓 BERSERK Regime":
+            _page(BERSERK_AVAILABLE, render_berserk_regime_page, "BERSERK Regime", "berserk")
+        elif sub == "Råvarurotation":
+            _page(ROTATION_AVAILABLE, render_rotation_page, "Råvarurotationen", "rotation")
+        elif sub == "🥇🥈 Guld/Silver":
+            _page(GOLD_SILVER_AVAILABLE, render_gold_silver_page, "Guld/Silver", "gold_silver")
+        elif sub == "🥇 Guldkvoter":
+            _page(GOLD_RATIOS_AVAILABLE, render_gold_ratios_page, "Guldkvoter", "gold_ratios")
+
+
+def _tab_review() -> None:
+    sub = _sub("review")
+    st.markdown("---")
+    if sub in ("Rick Rule", "Royalty C", "🐺 Wolf Asymmetry", "🚀 Råvaruhävstång") and FIAT_ENV_AVAILABLE:
+        render_fiat_environment()             # bakgrund, ingen signal
+    if sub in ("Rick Rule", "Royalty C"):
+        if PRODUCERS_AVAILABLE:
+            render_producers_page(sheet=sub)
+        else:
+            tab_not_found("Granskningsarken", "producers")
+    elif sub == "Poängmodell":
+        _page(SCORING_AVAILABLE, render_scoring_page, "Poängmodellen", "scoring")
+    elif sub == "Tiggre":
+        _page(TIGGRE_AVAILABLE, render_tiggre_page, "Tiggre", "tiggre")
+    elif sub == "Insider":
+        _page(INSIDER_AVAILABLE, render_insider_page, "Insiderbevakaren", "insider")
+    elif sub == "🧭 Durrett":
+        _page(DURRETT_AVAILABLE, render_durrett_page, "Durrett", "engines/durrett/ui")
+    elif sub == "🐺 Wolf Asymmetry":
+        _page(ASYMMETRY_AVAILABLE, render_asymmetry_page, "Wolf Asymmetry", "asymmetry/ui")
+    elif sub == "🚀 Råvaruhävstång":
+        _page(COMMODITY_LEVERAGE_AVAILABLE, render_commodity_leverage_page, "Råvaruhävstång",
+              "commodity_leverage/ui")
+    elif sub == "🎯 Scorecard":
+        _page(SCORECARD_AVAILABLE, render_scorecard_page, "Master Scorecard", "scorecard")
+
+
+def _tab_portfolio() -> None:
+    sub = _sub("portfolio")
+    st.markdown("---")
+    if sub == "📓 Trade Journal":
+        _page(JOURNAL_AVAILABLE, render_trade_journal_page, "Trade Journal", "trade_journal")
+    elif sub == "🎯 Mot målet":
+        from portfolio.mot_malet import render_mot_malet_page
+        _page(True, render_mot_malet_page, "Mot målet", "portfolio/mot_malet")
+    elif sub == "📊 Papperskonton":
+        from valhall.paper_ui import render_paper_page
+        _page(True, render_paper_page, "Papperskonton", "valhall/paper_ui")
+    elif sub == "Holdings":
+        _page(HOLDINGS_AVAILABLE, render_holdings_page, "Holdings", "holdings")
+    elif sub == "Swing":
+        _page(SWING_AVAILABLE, render_swing_page, "Swing", "swing")
+    elif sub == "Allokering":
+        _page(ALLOCATOR_AVAILABLE, render_allocator_page, "Portföljallokeraren", "allocator")
+
+
+def _tab_more() -> None:
+    sub = _sub("more")
+    st.markdown("---")
+    if sub == "Larm":
+        tab_alerts()
+    elif sub == "⚙️ Inställningar":
+        from ui.settings import render_settings_page
+        _page(True, render_settings_page, "Inställningar", "ui/settings")
+    elif sub == "Regler & Guider":
+        _page(RULES_AVAILABLE, render_rules_page, "Rules", "ovtlyr/ui")
+    elif sub == "Copilot":
+        try:
+            from tabs.copilot import render_copilot_page
+        except ImportError as _cp_e:
+            tab_not_found("AI Trading Copilot", f"tabs/copilot ({_cp_e})")
+        else:
+            render_copilot_page()
+    elif sub == "Motorsidor":
+        inner = _sub("more/Motorsidor")
+        st.markdown("---")
+        if inner == "Wolf Regime":
+            _page(True, tab_regime, "Wolf Regime", "tabs/regime", rules_key="wolf")
+        elif inner == "Viking Regime":
+            _page(OVTLYR_AVAILABLE, render_ovtlyr_page, "OVTLYR", "ovtlyr", rules_key="viking")
+        elif inner == "⚔️ Viking Nine Regime":
+            _page(VIKING_NINE_REGIME_AVAILABLE, render_viking_nine_regime_page, "Viking Nine Regime",
+                  "viking_nine_regime")
+        elif inner == "Quality & Contrarian":
+            _page(ALPHA_REGIME_AVAILABLE, render_alpha_regime, "Alpha Regime Monitor", "alpha_regime",
+                  rules_key="alpha")
+        elif inner == "Long Trend":
+            _page(LONG_REGIME_AVAILABLE, render_long_regime_monitor, "Long Trend Monitor", "long_regime_monitor")
+        elif inner == "Market Cycle":
+            _page(MARKET_CYCLE_AVAILABLE, render_market_cycle_page, "Market Cycle Engine", "tabs/market_cycle")
+    elif sub == "Egen backtest":
+        tab_backtest_consolidated()
+
+
 def main():
     if not render_login_gate():
         return
@@ -426,22 +554,17 @@ def main():
     tabs = dict(zip([k for k, _l in nav.TOP],
                     st.tabs(tab_labels, on_change="rerun", key="main_tabs")))
 
-    # ── HOME ─────────────────────────────────────────────────────────────────
+    # ── 🏠 I DAG ──────────────────────────────────────────────────────────────
     if _is_open(tabs["home"]):
         with tabs["home"]:
             tab_home()
 
-    # ── VALHALL ───────────────────────────────────────────────────────────────
-    if _is_open(tabs["valhall"]):
-        with tabs["valhall"]:
-            sub = _sub("valhall")
-            st.markdown("---")
-            if VALHALL_AVAILABLE:
-                render_valhall_page(sub)
-            else:
-                tab_not_found("Valhall", "valhall")
+    # ── 👁 ODIN — var kapitalet ska ligga ───────────────────────────────────
+    if _is_open(tabs["odin"]):
+        with tabs["odin"]:
+            _tab_odin()
 
-    # ── THOR ──────────────────────────────────────────────────────────────────
+    # ── 🔨 THOR ───────────────────────────────────────────────────────────────
     if _is_open(tabs["thor"]):
         with tabs["thor"]:
             if THOR_AVAILABLE:
@@ -449,167 +572,22 @@ def main():
             else:
                 tab_not_found("Thor", "thor")
 
-    # ── ARKEN (förr GRANSKNING) ──────────────────────────────────────────────
+    # ── 📒 ARKEN ──────────────────────────────────────────────────────────────
     # Beslutsunderlaget efter screeningen. Inget här screenar — screeningen
     # sker i Thor och Börsdata; det här är arken som avgör vilket bolag som köps.
     if _is_open(tabs["review"]):
         with tabs["review"]:
-            sub = _sub("review")
-            st.markdown("---")
-            if sub in ("Rick Rule", "Royalty C", "🐺 Wolf Asymmetry", "🚀 Råvaruhävstång") and FIAT_ENV_AVAILABLE:
-                render_fiat_environment()             # bakgrund, ingen signal
-            if sub in ("Rick Rule", "Royalty C"):
-                if PRODUCERS_AVAILABLE:
-                    render_producers_page(sheet=sub)
-                else:
-                    tab_not_found("Granskningsarken", "producers")
-            elif sub == "Poängmodell":
-                _page(SCORING_AVAILABLE, render_scoring_page, "Poängmodellen", "scoring")
-            elif sub == "Tiggre":
-                _page(TIGGRE_AVAILABLE, render_tiggre_page, "Tiggre", "tiggre")
-            elif sub == "Insider":
-                _page(INSIDER_AVAILABLE, render_insider_page, "Insiderbevakaren", "insider")
-            elif sub == "🧭 Durrett":
-                _page(DURRETT_AVAILABLE, render_durrett_page, "Durrett", "engines/durrett/ui")
-            elif sub == "🐺 Wolf Asymmetry":
-                _page(ASYMMETRY_AVAILABLE, render_asymmetry_page, "Wolf Asymmetry", "asymmetry/ui")
-            elif sub == "🚀 Råvaruhävstång":
-                _page(COMMODITY_LEVERAGE_AVAILABLE, render_commodity_leverage_page, "Råvaruhävstång",
-                      "commodity_leverage/ui")
-            elif sub == "🎯 Scorecard":
-                _page(SCORECARD_AVAILABLE, render_scorecard_page, "Master Scorecard", "scorecard")
-            elif sub == "📊 Papperskonton":
-                from valhall.paper_ui import render_paper_page
-                _page(True, render_paper_page, "Papperskonton", "valhall/paper_ui")
+            _tab_review()
 
-    # ── ODINS VISDOM (förr REGIME + INTELLIGENCE) ────────────────────────────
-    # Råvarorna, makro och marknaden. SCREENING-sidorna och Teknisk analys har
-    # ingen flik längre — Thor gör det jobbet; koden ligger kvar tills städningen.
-    if _is_open(tabs["odin"]):
-        with tabs["odin"]:
-            group = _sub("odin")
-            if group == "Marknad":
-                sub = _sub("odin/Marknad")
-                st.markdown("---")
-                if sub == "Arc Regime":
-                    inner = _sub("odin/Marknad/Arc Regime")
-                    if inner == "Wolf Regime":
-                        _page(True, tab_regime, "Wolf Regime", "tabs/regime", rules_key="wolf")
-                    elif inner == "Viking Regime":
-                        _page(OVTLYR_AVAILABLE, render_ovtlyr_page, "OVTLYR", "ovtlyr", rules_key="viking")
-                    elif inner == "⚔️ Viking Nine Regime":
-                        _page(VIKING_NINE_REGIME_AVAILABLE, render_viking_nine_regime_page, "Viking Nine Regime",
-                              "viking_nine_regime")
-                elif sub == "Alpha Regime":
-                    inner = _sub("odin/Marknad/Alpha Regime")
-                    if inner == "Quality & Contrarian":
-                        _page(ALPHA_REGIME_AVAILABLE, render_alpha_regime, "Alpha Regime Monitor",
-                              "alpha_regime", rules_key="alpha")
-                    elif inner == "Long Trend":
-                        _page(LONG_REGIME_AVAILABLE, render_long_regime_monitor, "Long Trend Monitor",
-                              "long_regime_monitor")
-                elif sub == "Läget":
-                    from odin.laget import render_laget_page
-                    _page(True, render_laget_page, "Läget", "odin/laget")
-                elif sub == "Swing Regime":
-                    _page(WOLF_REGIME_AVAILABLE, render_wolf_regime_page, "Swing Regime", "wolf_regime_ui")
-                elif sub == "Flow Divergence":
-                    _page(SECTOR_CYCLE_AVAILABLE, render_sector_cycle_page, "Sector & Global Regime",
-                          "sector_cycle")
-                elif sub == "Market Cycle":
-                    _page(MARKET_CYCLE_AVAILABLE, render_market_cycle_page, "Market Cycle Engine",
-                          "tabs/market_cycle")
-                elif sub == "🌩️ Marknadsrisk":
-                    _page(MARKET_RISK_AVAILABLE, render_market_risk_page, "Marknadsrisk", "market_risk_ui")
-                elif sub == "Heatmap":
-                    _page(HEATMAP_AVAILABLE, render_heatmap_page, "Heatmap", "heatmap")
-                elif sub == "Retail Pulse":
-                    _page(RETAIL_SENTIMENT_AVAILABLE, render_retail_sentiment_page, "Retail Sentiment",
-                          "retail_sentiment")
-            elif group == "Makro":
-                sub = _sub("odin/Makro")
-                st.markdown("---")
-                if sub == "🐺 Fiat Debasement":
-                    _page(FIAT_AVAILABLE, render_fiat_debasement_page, "Fiat Debasement", "fiat_debasement")
-                elif sub == "Sentiment":
-                    _page(SENTIMENT_AVAILABLE, render_sentiment_page, "Sentiment & Flow", "sentiment")
-            else:
-                sub = _sub("odin/Råvaror")
-                st.markdown("---")
-                if sub == "Odin's Blindspot":
-                    _page(BLINDSPOT_AVAILABLE, render_blindspot_page, "Odin's Blindspot Index", "blindspot")
-                elif sub == "🌍 EMBER Regime":
-                    _page(EMBER_AVAILABLE, render_ember_regime_page, "EMBER Regime", "ember")
-                elif sub == "🪓 BERSERK Regime":
-                    _page(BERSERK_AVAILABLE, render_berserk_regime_page, "BERSERK Regime", "berserk")
-                elif sub == "Råvarurotation":
-                    _page(ROTATION_AVAILABLE, render_rotation_page, "Råvarurotationen", "rotation")
-                elif sub == "🥇🥈 Guld/Silver":
-                    _page(GOLD_SILVER_AVAILABLE, render_gold_silver_page, "Guld/Silver", "gold_silver")
-                elif sub == "🥇 Guldkvoter":
-                    _page(GOLD_RATIOS_AVAILABLE, render_gold_ratios_page, "Guldkvoter", "gold_ratios")
-
-    # ── PORTFOLIO ─────────────────────────────────────────────────────────────
+    # ── 💼 PORTFÖLJ ───────────────────────────────────────────────────────────
     if _is_open(tabs["portfolio"]):
         with tabs["portfolio"]:
-            sub = _sub("portfolio")
-            st.markdown("---")
-            if sub == "📓 Trade Journal":
-                _page(JOURNAL_AVAILABLE, render_trade_journal_page, "Trade Journal", "trade_journal")
-            elif sub == "🎯 Mot målet":
-                from portfolio.mot_malet import render_mot_malet_page
-                _page(True, render_mot_malet_page, "Mot målet", "portfolio/mot_malet")
-            elif sub == "Holdings":
-                _page(HOLDINGS_AVAILABLE, render_holdings_page, "Holdings", "holdings")
-            elif sub == "Swing":
-                _page(SWING_AVAILABLE, render_swing_page, "Swing", "swing")
-            elif sub == "Allokering":
-                _page(ALLOCATOR_AVAILABLE, render_allocator_page, "Portföljallokeraren", "allocator")
-            elif sub == "Backtest":
-                tab_backtest_consolidated()
+            _tab_portfolio()
 
-    # ── ALERTS ───────────────────────────────────────────────────────────────
-    if _is_open(tabs["alerts"]):
-        with tabs["alerts"]:
-            tab_alerts()
-
-    # ── RULES ────────────────────────────────────────────────────────────────
-    if _is_open(tabs["rules"]):
-        with tabs["rules"]:
-            sub_rules = _sub("rules")
-            st.markdown("---")
-            if sub_rules == "Regler & Guider":
-                _page(RULES_AVAILABLE, render_rules_page, "Rules", "ovtlyr/ui")
-            elif sub_rules == "⚙️ Inställningar":
-                from ui.settings import render_settings_page
-                _page(True, render_settings_page, "Inställningar", "ui/settings")
-            elif sub_rules == "Position Sizing":
-                try:
-                    from position_sizing import render_position_sizing
-                    render_position_sizing()
-                except Exception as _ps_e:
-                    st.error(f"Position Sizing kunde inte laddas: {_ps_e}")
-            else:
-                try:
-                    from data_health import render_data_health
-                    render_data_health()
-                except Exception as _dh_e:
-                    st.error(f"Data Health kunde inte laddas: {_dh_e}")
-
-    # ── STRATEGIES ───────────────────────────────────────────────────────────
-    if _is_open(tabs["strategies"]):
-        with tabs["strategies"]:
-            tab_strategy_overview()
-
-    # ── COPILOT ──────────────────────────────────────────────────────────────
-    if _is_open(tabs["copilot"]):
-        with tabs["copilot"]:
-            try:
-                from tabs.copilot import render_copilot_page
-            except ImportError as _cp_e:
-                tab_not_found("AI Trading Copilot", f"tabs/copilot ({_cp_e})")
-            else:
-                render_copilot_page()
+    # ── ⋯ MER ─────────────────────────────────────────────────────────────────
+    if _is_open(tabs["more"]):
+        with tabs["more"]:
+            _tab_more()
 
     # Senast sparad, och vad som ligger osparat i sessionen.
     storage_ui.footer()

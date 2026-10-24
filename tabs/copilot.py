@@ -337,7 +337,7 @@ def _render_review(ticker: str, strategy_key: str):
 def _render_market_phase(ticker: str, strategy_key: str):
     """Fas-boxen för contrarian/quality. Returnerar fas-dicten eller None.
 
-    Motorn är densamma som ODINS VISDOM → Marknad → Market Cycle och cachas en timme — samma
+    Motorn är densamma som MER → Motorsidor → Market Cycle och cachas en timme — samma
     fas där som här.
     """
     if not cycle.requires_market_cycle(strategy_key):
@@ -356,7 +356,7 @@ def _render_market_phase(ticker: str, strategy_key: str):
         f'<span style="color:{color};font-weight:700;">Marknadscykelfas: '
         f'{phase.replace("_", " ")} · {state["confidence"]:g} % säkerhet</span>'
         f'<div style="color:{_DIM};font-size:11px;margin-top:2px;">'
-        f'Market Cycle Engine — samma motor som ODINS VISDOM. Playbookens '
+        f'Market Cycle Engine — samma motor som ODIN. Playbookens '
         f'köpfaser: {", ".join(sorted(sets["buy"])) or "–"}.</div></div>',
         unsafe_allow_html=True)
     return state
@@ -365,7 +365,7 @@ def _render_market_phase(ticker: str, strategy_key: str):
 def _swing_rule_checks(ticker: str, strategy_key: str):
     """Momentum-reglernas underlag: regimljus, ranking, setup, veckotak.
 
-    Läser samma sessioncachade data som ODINS VISDOM och THOR, plus
+    Läser samma sessioncachade data som ODIN och THOR, plus
     swing-lagret. Bara för momentum — övriga strategier får None och
     regelkontrollen faller tillbaka på sina vanliga vägar.
     """
@@ -739,7 +739,7 @@ def _render_journal_log(ticker: str, strategy_key: str,
             log_note   = st.text_input("Anteckning (valfri)")
             log_open   = st.checkbox(
                 "Köpt — lägg in som öppen position i Holdings", value=True,
-                help="Registret (PORTFOLIO → Holdings) är panelens enda "
+                help="Registret (PORTFÖLJ → Holdings) är panelens enda "
                      "positionslista: allokeraren, larmen och journalen läser "
                      "därifrån. Avmarkera om det bara är en kandidat.")
 

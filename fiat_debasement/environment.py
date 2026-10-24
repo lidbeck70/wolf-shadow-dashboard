@@ -52,7 +52,7 @@ def badge_html(env: dict) -> str:
             f"FIAT ENVIRONMENT {env.get('currency', '')}</span> "
             f"<span style='background:{col}22;color:{col};border:1px solid {col};border-radius:4px;"
             f"padding:1px 7px;font-weight:700;'>{lvl}{val}</span> "
-            f"<span style='color:#8a8578;'>· bakgrund ur ODINS VISDOM → Makro → 🐺 Fiat Debasement — "
+            f"<span style='color:#8a8578;'>· bakgrund ur ODIN → Makro → 🐺 Fiat Debasement — "
             f"ingen köp- eller säljsignal</span></div>")
 
 

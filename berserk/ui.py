@@ -1,5 +1,5 @@
 """
-berserk/ui.py — PORTFOLIO → Backtest → 🪓 BERSERK.
+berserk/ui.py — MER → Egen backtest → 🪓 BERSERK.
 
 Kör berserk.backtest över råvaruaktier och råvaru-ETF:er och visar nyckeltalen
 i R per setup, portföljen (max 8 positioner, 20 % per position, 2 per tema,

@@ -685,7 +685,7 @@ def _positions(data: dict) -> None:
                       f"tak {r.hard_cap:g} %" for r in POSITION_RULES)
     st.caption(caps)
 
-    # Positionerna kommer ur registret (PORTFOLIO → Holdings). Här skrivs
+    # Positionerna kommer ur registret (PORTFÖLJ → Holdings). Här skrivs
     # inget in längre; värdet är antal × kurs i SEK med källan angiven.
     fresh = _fresh_rows()
     positions_ = derived_positions(fresh)
@@ -701,7 +701,7 @@ def _positions(data: dict) -> None:
             st.rerun()
     if not positions_:
         st.caption("Inga öppna positioner i registret — lägg in dem under "
-                   "PORTFOLIO → Holdings så kontrolleras taken här.")
+                   "PORTFÖLJ → Holdings så kontrolleras taken här.")
         return
 
     total = sum(max(0.0, _num(v, 0.0) or 0.0) for v in data["values"].values())

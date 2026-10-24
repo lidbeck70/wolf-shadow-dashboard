@@ -60,8 +60,15 @@ def test_resolve_accepts_the_swedish_top_label_and_truncates_unknown_tails():
 
 
 def test_old_links_land_in_the_new_tree():
-    """Fas 8: REGIME och INTELLIGENCE → Odins visdom, SCREENING och Teknisk analys → Thor, GRANSKNING → Arken."""
-    assert nav.resolve("regime/marknad/arc-regime/viking-regime") == ["odin", "Marknad", "Arc Regime", "Viking Regime"]
+    """Fas 8: REGIME och INTELLIGENCE → Odins visdom, SCREENING och Teknisk analys → Thor, GRANSKNING → Arken.
+    Design PR 9: Arc/Alpha Regime → MER → Motorsidor, VALHALL/ALERTS/RULES/COPILOT flyttade."""
+    assert nav.resolve("regime/marknad/arc-regime/viking-regime") == ["more", "Motorsidor", "Viking Regime"]
+    assert nav.resolve("odin/marknad/alpha-regime/long-trend") == ["more", "Motorsidor", "Long Trend"]
+    assert nav.resolve("alerts") == ["more", "Larm"] and nav.resolve("copilot") == ["more", "Copilot"]
+    assert nav.resolve("rules/regler-guider/fusklapp") == ["more", "Regler & Guider", "⚡ FUSKLAPP"]
+    assert nav.resolve("rules/position-sizing") == ["more", "⚙️ Inställningar"]
+    assert nav.resolve("strategies") == ["more", "Regler & Guider"]
+    assert nav.resolve("portfolio/backtest") == ["more", "Egen backtest"]
     assert nav.resolve("regime/ravaror/ember-regime") == ["odin", "Råvaror", "🌍 EMBER Regime"]
     assert nav.resolve("regime/makro/fiat-debasement") == ["odin", "Makro", "🐺 Fiat Debasement"]
     assert nav.resolve("regime/marknad/finns-inte") == ["odin", "Marknad"] and nav.resolve("regime") == ["odin"]
@@ -77,14 +84,13 @@ def test_old_links_land_in_the_new_tree():
 
 def test_seed_and_current_round_trip_through_widget_keys():
     state = {}
-    nav.seed(state, ["odin", "Marknad", "Arc Regime", "Viking Regime"])
-    assert state[nav.TABS_KEY] == nav.tab_label("odin")
-    assert state["sub_odin"] == "Marknad" and state["sub_odin_marknad"] == "Arc Regime"
-    assert state["sub_regime_arc"] == "Viking Regime"
-    assert nav.current(state) == ["odin", "Marknad", "Arc Regime", "Viking Regime"]
+    nav.seed(state, ["more", "Motorsidor", "Viking Regime"])
+    assert state[nav.TABS_KEY] == nav.tab_label("more")
+    assert state["sub_more"] == "Motorsidor" and state["sub_motor"] == "Viking Regime"
+    assert nav.current(state) == ["more", "Motorsidor", "Viking Regime"]
     # tom session → första fliken, första alternativen
     assert nav.current({}) == ["home"]
-    assert nav.current({nav.TABS_KEY: nav.tab_label("odin")}) == ["odin", "Råvaror", "Odin's Blindspot"]
+    assert nav.current({nav.TABS_KEY: nav.tab_label("odin")}) == ["odin", "Läget"]
 
 
 def test_every_branch_in_the_tree_has_a_widget_key_and_the_panel_uses_them():
@@ -95,7 +101,7 @@ def test_every_branch_in_the_tree_has_a_widget_key_and_the_panel_uses_them():
         assert path in nav.STATE_KEY, path
     assert "_apply_deep_link()" in src and "_sync_url()" in src
     rules = _src("ovtlyr/ui/rules_page.py")
-    assert '_nav.STATE_KEY["rules/Regler & Guider"]' in rules
+    assert '_nav.STATE_KEY["more/Regler & Guider"]' in rules
     assert 'key="rules_sub"' not in rules
 
 
@@ -103,8 +109,8 @@ def test_flikguide_rows_all_resolve_to_a_link():
     from ovtlyr.ui.rules_page import _PANEL_GUIDE
     for tab, _r, _u in _PANEL_GUIDE:
         assert nav.link_for(tab).startswith("?p="), tab
-    assert nav.link_for("ODINS VISDOM → Marknad → Swing Regime") == "?p=odin/marknad/swing-regime"
-    assert nav.link_for("ODINS VISDOM → Finns inte") == ""
+    assert nav.link_for("ODIN → Läget") == "?p=odin/laget"
+    assert nav.link_for("ODIN → Finns inte") == ""
     assert "LÄNK" in _src("ovtlyr/ui/rules_page.py")
 
 
@@ -136,10 +142,11 @@ def _script():
     with tabs[keys.index("odin")]:
         g = st.radio("g", nav.options("odin"), key=nav.STATE_KEY["odin"], horizontal=True)
         if g == "Marknad":
-            s = st.radio("s", nav.options("odin/Marknad"), key=nav.STATE_KEY["odin/Marknad"])
-            if s == "Arc Regime":
-                st.radio("i", nav.options("odin/Marknad/Arc Regime"),
-                         key=nav.STATE_KEY["odin/Marknad/Arc Regime"])
+            st.radio("s", nav.options("odin/Marknad"), key=nav.STATE_KEY["odin/Marknad"])
+    with tabs[keys.index("more")]:
+        m = st.radio("m", nav.options("more"), key=nav.STATE_KEY["more"], horizontal=True)
+        if m == "Motorsidor":
+            st.radio("i", nav.options("more/Motorsidor"), key=nav.STATE_KEY["more/Motorsidor"])
     with tabs[keys.index("portfolio")]:
         st.radio("p", nav.options("portfolio"), key=nav.STATE_KEY["portfolio"])
     wp._sync_url()
@@ -151,14 +158,14 @@ def test_query_param_opens_the_tab_and_the_url_follows_the_user():
     at.query_params["p"] = "regime/marknad/arc-regime/viking-regime"            # gammal länk
     at.run()
     assert not at.exception
-    assert at.session_state[nav.TABS_KEY] == nav.tab_label("odin")
-    assert at.radio(key="sub_regime_arc").value == "Viking Regime"
-    assert _p(at) == "odin/marknad/arc-regime/viking-regime"
+    assert at.session_state[nav.TABS_KEY] == nav.tab_label("more")
+    assert at.radio(key="sub_motor").value == "Viking Regime"
+    assert _p(at) == "more/motorsidor/viking-regime"
 
     # användaren klickar vidare — länken ska INTE dra tillbaka
-    at.radio(key="sub_regime_arc").set_value("Wolf Regime").run()
-    assert at.radio(key="sub_regime_arc").value == "Wolf Regime"
-    assert _p(at) == "odin/marknad/arc-regime/wolf-regime"
+    at.radio(key="sub_motor").set_value("Wolf Regime").run()
+    assert at.radio(key="sub_motor").value == "Wolf Regime"
+    assert _p(at) == "more/motorsidor/wolf-regime"
 
     # Home-kortet: nav_goto byter toppflik i samma session
     at.session_state["nav_goto"] = "portfolio/holdings"

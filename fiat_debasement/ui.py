@@ -1,5 +1,5 @@
 """
-fiat_debasement/ui.py — ODINS VISDOM → Makro → 🐺 Fiat Debasement.
+fiat_debasement/ui.py — ODIN → Makro → 🐺 Fiat Debasement.
 
 Sektioner:
   1. FIAT OVERVIEW        en rad per valuta: penningmängd, KPI, real BNP,
@@ -605,7 +605,7 @@ def _real_assets(ccy: str) -> None:
 
 
 def _gs_ratio(ccy: str) -> None:
-    _section("GOLD/SILVER RATIO", "samma kvot som ODINS VISDOM → Råvaror → 🥇🥈 Guld/Silver")
+    _section("GOLD/SILVER RATIO", "samma kvot som ODIN → Råvaror → 🥇🥈 Guld/Silver")
     ratio, rows = gs_ratio()
     if ratio is None:
         note(f"Guld/silver-kvoten: {NA}")
@@ -765,7 +765,7 @@ METHODOLOGY = (
                                  f"historik sedan {cfg.INDEX_SINCE[:4]} (expanderande fönster, minst "
                                  f"{cfg.INDEX_MIN_OBS} månader) innan viktning. Färggränser 40/70. En modellbaserad "
                                  "indikator, inte ett officiellt mått."),
-    ("Larm och FIAT ENVIRONMENT", "ALERTS → 🐺 Fiat Debasement larmar när ett mått NYTT passerar en gräns "
+    ("Larm och FIAT ENVIRONMENT", "MER → Larm → 🐺 Fiat Debasement larmar när ett mått NYTT passerar en gräns "
                                   "(M2 > 7 %, KPI > 5 %, Monetary Gap > 4 pe, guld/silver > 80 eller < 50, "
                                   "valutan −10 % mot guld på ett år) — du väljer reglerna. FIAT ENVIRONMENT på "
                                   "gruvsidorna = USD-indexet: Low < 40, Neutral 40–70, Elevated > 70. Båda är "

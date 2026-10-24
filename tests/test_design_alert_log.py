@@ -43,4 +43,4 @@ def test_go_opens_thor_with_ticker_and_strategy():
 def test_go_other_target_only_navigates():
     state = {}
     links.go("market_risk", "SPY", state=state)
-    assert state == {"nav_goto": "odin/marknad/marknadsrisk"}
+    assert state == {"nav_goto": "odin/laget", "laget_risk": True}

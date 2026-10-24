@@ -147,7 +147,7 @@ MARKET_CYCLE_STRATEGIES = ("contrarian", "quality")
 
 PHASE_UNKNOWN = ("Fasen kunde inte läsas — Market Cycle Engine gav inget "
                  "svar för tickern. Kontrollera symbolen, eller läs fasen "
-                 "manuellt i ODINS VISDOM → Marknad → Market Cycle.")
+                 "manuellt i MER → Motorsidor → Market Cycle.")
 
 
 def requires_market_cycle(strategy: str) -> bool:

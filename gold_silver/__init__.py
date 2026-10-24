@@ -1,1 +1,1 @@
-"""Guld/silver-kvoten — fristående scenariomotor under ODINS VISDOM → Råvaror."""
+"""Guld/silver-kvoten — fristående scenariomotor under ODIN → Råvaror."""

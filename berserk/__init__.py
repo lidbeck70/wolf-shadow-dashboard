@@ -15,7 +15,7 @@ Long-only, dagsdata, köp nästa dags öppning.
                S3 Snapback (allt kausalt)
   backtest.py  backtest i R med exit per setup; affärerna går genom Viking Nines
                portföljläge och robusthetsverktyg
-  ui.py        PORTFOLIO → Backtest → 🪓 BERSERK
+  ui.py        MER → Egen backtest → 🪓 BERSERK
 
 Regime, skanner och automatik kommer i PR 2–3. Temaindelningen följer Ember
 (ember.config) där teman är gemensamma, så att komplexen säger samma sak.

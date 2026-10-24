@@ -4,7 +4,7 @@ thor/cykel.py — Cykel-fliken i Thors analysblock.
 Aktiens egen psykologifas (Market Cycle Engine, 14 faser DISBELIEF → DISBELIEF_NEW) med mätaren, fasens
 beskrivning, regelutfallet (vilka villkor som slog in), nyckelindikatorerna och tidslinjen; hemmamarknadens
 fas; Valhall-segmentets (eller temats) status/fas/cykel med ⚡ cykelstart; och playbookens köp/håll/sälj-faser
-som grinden PASS/MANUAL/FAIL överst. Samma motor och samma grafer som ODINS VISDOM → Marknad → Market Cycle
+som grinden PASS/MANUAL/FAIL överst. Samma motor och samma grafer som MER → Motorsidor → Market Cycle
 (market_cycle.cache, tabs/market_cycle) — inga regler ändras.
 """
 

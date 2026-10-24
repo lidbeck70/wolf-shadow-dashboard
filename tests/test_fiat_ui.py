@@ -146,9 +146,9 @@ def test_source_rows_show_what_was_used(fake_data):
 
 # ── Navigation och sidan ────────────────────────────────────────────────────
 def test_navigation():
-    assert nav.options("odin") == ["Råvaror", "Makro", "Marknad"]
-    assert nav.options("odin/Makro") == ["🐺 Fiat Debasement", "Sentiment"]
-    assert "ODINS VISDOM → Makro → 🐺 Fiat Debasement" in nav.paths()
+    assert nav.options("odin") == ["Läget", "Kartan", "Råvaror", "Makro", "Marknad"]
+    assert nav.options("odin/Makro")[0] == "🐺 Fiat Debasement" and "Sentiment" in nav.options("odin/Makro")
+    assert "ODIN → Makro → 🐺 Fiat Debasement" in nav.paths()
     assert nav.STATE_KEY["odin/Makro"] == "sub_odin_makro"
     assert nav.resolve("regime/makro/fiat-debasement") == ["odin", "Makro", "🐺 Fiat Debasement"]
     src_panel = open(os.path.join(ROOT, "wolf_panel.py"), encoding="utf-8").read()

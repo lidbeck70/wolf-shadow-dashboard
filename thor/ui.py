@@ -48,21 +48,21 @@ _UNIVERSE = "thor_universe"
 # Bryggorna till sidorna i Odins visdom och Arken: regimlayout → (djuplänk, sidans namn, widget att förifylla).
 # Ett värde satt i session_state före widgeten vinner över value= — så fälten förifylls även där sidan har ett
 # eget startvärde (Wolf Regime XOM, Viking Regime, EMBER Regime). BERSERK Regime har inget tickerfält.
-BRIDGE = {"viking_nine": ("odin/marknad/arc-regime/viking-nine-regime", "Viking Nine Regime", "vnr_ticker"),
-          "viking": ("odin/marknad/arc-regime/viking-regime", "Viking Regime", "ovtlyr_ticker"),
-          "wolf": ("odin/marknad/arc-regime/wolf-regime", "Wolf Regime", "reg_ticker"),
-          "momentum": ("odin/marknad/swing-regime", "Swing Regime", "swreg_ticker"),
+BRIDGE = {"viking_nine": ("more/motorsidor/viking-nine-regime", "Viking Nine Regime", "vnr_ticker"),
+          "viking": ("more/motorsidor/viking-regime", "Viking Regime", "ovtlyr_ticker"),
+          "wolf": ("more/motorsidor/wolf-regime", "Wolf Regime", "reg_ticker"),
+          "momentum": ("odin/laget", "Läget (Swing Regime)", "swreg_ticker"),
           "berserk": ("odin/ravaror/berserk-regime", "BERSERK Regime", None),
           "ember": ("odin/ravaror/ember-regime", "EMBER Regime", "ember_regime_ticker_search"),
-          "alpha_quality": ("odin/marknad/alpha-regime/quality-contrarian", "Alpha Regime", "ar_ticker"),
-          "alpha_contrarian": ("odin/marknad/alpha-regime/quality-contrarian", "Alpha Regime", "ar_ticker"),
-          "long_screener": ("odin/marknad/alpha-regime/long-trend", "Long Trend", "long_regime_ticker_input"),
+          "alpha_quality": ("more/motorsidor/quality-contrarian", "Alpha Regime", "ar_ticker"),
+          "alpha_contrarian": ("more/motorsidor/quality-contrarian", "Alpha Regime", "ar_ticker"),
+          "long_screener": ("more/motorsidor/long-trend", "Long Trend", "long_regime_ticker_input"),
           "insider": ("review/insider", "Insiderbevakaren", None), "sheet": ("review", "Granskningsarken", None),
           "royalty": ("review/royalty-c", "Royalty C", None)}
-COPILOT = ("copilot", "Copiloten", "copilot_ticker")
+COPILOT = ("more/copilot", "Copiloten", "copilot_ticker")
 ASYMMETRY = ("review/wolf-asymmetry", "Wolf Asymmetry", "asym_quick_ticker")
-BACKTEST = ("portfolio/backtest", "Backtest", None)
-VALHALL_BT = ("valhall/backtester", "Valhalls backtester", None)
+BACKTEST = ("more/egen-backtest", "Backtest", None)
+VALHALL_BT = ("portfolio/mot-malet", "Valhalls backtester", None)
 SHEET_LINK = {"rule": "review/rick-rule", "royalty": "review/royalty-c", "sprott": "review/poangmodell",
               "durrett": "review/poangmodell", "tiggre": "review/tiggre", "insider": "review/insider"}
 
@@ -106,7 +106,7 @@ def freshness_rows(rows: list, data: dict) -> list:
         how = f"schemat — {live.HEAVY[key]}" if key in live.HEAVY else "⚡ Skanna nu" if live.can_run(key) else "schemat"
         acct = (reg.get(key).paper if reg.get(key) else "") or ""
         out.append({"Strategi": label, "Läge": state, "Rader": n, "Körd": asof or "—", "Körs": how,
-                    "Papper": "ARKEN → 📊 Papperskonton" if acct else "—"})
+                    "Papper": "PORTFÖLJ → 📊 Papperskonton" if acct else "—"})
     return out
 
 
@@ -520,14 +520,14 @@ def _storlek(st, ident, strategy: str, c) -> None:
     st.markdown(f"<div style='border-left:3px solid {CYAN};padding:6px 12px;margin:6px 0;font-size:0.82rem;'>"
                 f"<b>STORLEK</b> · {sk.row_text(ident.yf, reg.label(strategy), sz)}</div>", unsafe_allow_html=True)
     if not us.capital():
-        note("Kapital 100 000 kr (standard) — fyll i ditt eget under RULES → ⚙️ Inställningar.")
+        note("Kapital 100 000 kr (standard) — fyll i ditt eget under MER → ⚙️ Inställningar.")
     if strategy in sk.SHEET_STRATEGIES:
         st.button("Köpgrinden: öppna 🎯 Scorecard →", key="thor_to_scorecard", on_click=go, args=("scorecard",))
         return
     with st.expander("📝 Logga köp", expanded=False):
         default = sz["risk_shares"] if sz["risk_shares"] is not None else (sz["cap_shares"] or 0)
         shares = st.number_input("Antal aktier", min_value=0, value=int(default), step=1, key="thor_buy_shares")
-        note("Riskstorleken och taket står ovan — du väljer antalet. Positionen hamnar i PORTFOLIO → Holdings med "
+        note("Riskstorleken och taket står ovan — du väljer antalet. Positionen hamnar i PORTFÖLJ → Holdings med "
              "stopp och mål; journalraden skrivs när du stänger den.")
         if st.button("Logga köp", key="thor_log_buy", disabled=not shares):
             import positions

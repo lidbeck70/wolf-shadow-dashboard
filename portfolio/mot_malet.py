@@ -1,5 +1,5 @@
 """
-portfolio/mot_malet.py — 💼 PORTFOLIO → Mot målet (designförslaget PR 7, avsnitt 7): hur det går mot CAGR-målet.
+portfolio/mot_malet.py — 💼 PORTFÖLJ → Mot målet (designförslaget PR 7, avsnitt 7): hur det går mot CAGR-målet.
 
 Fem delar:
   1. Mätaren         realiserad årstakt ur journalen mot golvet 20 % och målet 35 % (beslut 2)
@@ -136,7 +136,11 @@ def render_mot_malet_page() -> None:
         st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
     else:
         note("Inga affärer än — varken på papper eller i journalen.")
-    c1, c2 = st.columns(2)
-    c1.button("📊 Papperskonton →", key="goal_paper", on_click=go, args=("paper",), width="stretch")
-    c2.button("Vad reglerna gett historiskt (Valhall → Backtester) →", key="goal_bt", on_click=go,
-              args=("backtests",), width="stretch")
+    st.button("📊 Papperskonton →", key="goal_paper", on_click=go, args=("paper",), width="stretch")
+    st.markdown("#### Vad reglerna gett historiskt")
+    if st.toggle("Visa Valhalls backtester (2008–idag)", key="goal_backtests"):
+        try:
+            from valhall.ui import render_valhall_page
+            render_valhall_page("Backtester")
+        except Exception as exc:
+            note(f"Backtesterna kunde inte visas: {exc}")

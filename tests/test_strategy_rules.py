@@ -354,8 +354,7 @@ def test_panel_guide_table_uses_real_paths():
     for tab, _rules, _usage in _PANEL_GUIDE:
         parts = [p.strip() for p in tab.split("→")]
         head = parts[0]
-        assert head in {"HOME", "VALHALL", "THOR", "ODINS VISDOM", "ARKEN",
-                        "PORTFOLIO", "ALERTS", "RULES", "STRATEGIES", "COPILOT"}, head
+        assert head in {"I DAG", "ODIN", "THOR", "ARKEN", "PORTFÖLJ", "MER"}, head
         for part in parts[1:]:
             clean = "".join(c for c in part if c.isalnum() or c in " &'-").strip()
             assert part in real or clean in plain, (
@@ -474,10 +473,10 @@ def test_regime_stays_about_market_state():
 
 
 def test_the_three_steps_are_three_tabs():
-    """Guidens flöde: var (ODINS VISDOM) -> vilka och analysen (THOR) -> vilket (ARKEN)."""
+    """Guidens flöde: var (ODIN) -> vilka och analysen (THOR) -> vilket (ARKEN)."""
     from ui import nav
     labels = [label for _k, label in nav.TOP]
-    for label in ("👁 ODINS VISDOM", "🔨 THOR", "📒 ARKEN"):
+    for label in ("👁 ODIN", "🔨 THOR", "📒 ARKEN"):
         assert label in labels, label
     for gone in ("🔱 SCREENING", "🔬 GRANSKNING", "📡 REGIME", "👁 INTELLIGENCE"):
         assert gone not in labels, gone

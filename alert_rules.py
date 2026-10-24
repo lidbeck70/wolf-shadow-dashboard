@@ -106,7 +106,7 @@ def swing_alerts(regime_data: dict, screener_data: dict, swing_data: dict,
     if light and prev_light and light != prev_light:
         rules = (regime_data or {}).get("rules", []) or []
         body = ("\n".join(f"• {r}" for r in rules)
-                or "Se ODINS VISDOM → Marknad → Swing Regime för regelverket.")
+                or "Se ODIN → Läget för regelverket.")
         alerts.append(_alert(
             "swing_regime",
             f"Swing-regimen skiftade: {prev_light} → {light}",
@@ -631,7 +631,7 @@ def market_risk_alerts(levels: Optional[dict], prev: Optional[dict]) -> tuple:
                 f"{r.get('points')} av {r.get('possible')} varningar lyser: {act} ({r.get('date')}). "
                 f"Viking Nine tar inga nya entries på marknaden och Wolf halverar positionerna. Historiskt har "
                 f"−10 % inom tre månader följt betydligt oftare än normalt i HÖG — träffbilden finns i "
-                f"ODINS VISDOM → Marknad → 🌩️ Marknadsrisk.", target="market_risk"))
+                f"ODIN → Läget (🌩️ Marknadsrisk).", target="market_risk"))
         elif old == "HÖG" and new != "HÖG":
             alerts.append(_alert(
                 "market_risk_clear", f"✅ Marknadsrisk {r.get('label', m)} ner till {new}",
@@ -675,7 +675,7 @@ def fiat_alerts(fiat_data: Optional[dict], prev: Optional[dict], rules=None) -> 
                 "fiat_" + key, f"🐺 Fiat Debasement — {who}{label}",
                 f"Enligt valda indikatorer är {metric.replace('_', ' ')} {value:+.1f} "
                 f"(gräns {op} {limit:g}){f', {date}' if date else ''}. Bakgrundsinformation ur "
-                f"ODINS VISDOM → Makro → 🐺 Fiat Debasement — ingen köp- eller säljsignal.", target="fiat"))
+                f"ODIN → Makro → 🐺 Fiat Debasement — ingen köp- eller säljsignal.", target="fiat"))
     return alerts, {"on": now}
 
 
@@ -710,7 +710,7 @@ def turn_alerts(board_data: Optional[dict], prev: Optional[dict]) -> tuple:
             "cycle_turn",
             f"⚡ VÄNDNING: {w.get('label') or w.get('key')} — {w.get('kind')} bekräftad",
             ("; ".join(parts) or "Inga kandidater i rutan i dag") + ". Papperet köper på nästa öppning; riktiga order "
-            "läggs manuellt. Se Valhall → Kartan och ARKEN → 📊 Papperskonton.", target="turn"))
+            "läggs manuellt. Se ODIN → Kartan och PORTFÖLJ → 📊 Papperskonton.", target="turn"))
     return alerts, state
 
 

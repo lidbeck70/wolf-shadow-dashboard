@@ -39,7 +39,7 @@ def test_panel_paths_point_at_tabs_that_exist():
     """A routine that sends you to a tab we do not have is worse than none."""
     from ui import nav
     known = {label.split(" ", 1)[1] for _k, label in nav.TOP}                  # dagens toppflikar
-    assert {"THOR", "ODINS VISDOM", "ARKEN"} <= known
+    assert {"THOR", "ODIN", "ARKEN"} <= known
     for r in rt.ROUTINES:
         for s in r.steps:
             if not s.panel:

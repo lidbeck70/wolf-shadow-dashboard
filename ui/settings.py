@@ -94,6 +94,13 @@ def render_settings_page() -> None:
     note("Discord-larmen får en länk till rätt vy när hemligheten PANEL_URL finns i GitHub (Settings → Secrets → "
          "Actions) med panelens adress. Utan den skickas larmen som förut, utan länk.")
 
+    with st.expander("Positionskalkylator", expanded=False):
+        try:
+            from position_sizing import render_position_sizing
+            render_position_sizing()
+        except Exception as exc:
+            note(f"Kalkylatorn kunde inte visas: {exc}")
+
     with st.expander("Datakällor", expanded=False):
         try:
             from data_health import render_data_health

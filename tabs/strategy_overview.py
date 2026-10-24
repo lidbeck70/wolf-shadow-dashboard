@@ -298,7 +298,7 @@ def _render_strategy_card(display_name: str, strat: dict) -> None:
         st.markdown(_section_label("Var i panelen"), unsafe_allow_html=True)
         st.markdown(
             f'<div style="color:{_DIM};font-size:0.76rem;">'
-            f'{meta.get("where", "RULES → Regler & Guider → 📖 STRATEGIGUIDER")}</div>',
+            f'{meta.get("where", "MER → Regler & Guider → 📖 STRATEGIGUIDER")}</div>',
             unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)

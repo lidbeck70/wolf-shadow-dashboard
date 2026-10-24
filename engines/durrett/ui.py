@@ -172,7 +172,7 @@ def _rows(data: dict) -> None:
     companies = cs.companies(data)
     if not companies:
         st.caption("Inga kandidater ännu. Håven fylls av den schemalagda Durrett-screenern i Börsdata "
-                   "(kriterierna står i RULES → 📚 SNABBREFERENS); ➕ Ny kandidat för manuell inläggning.")
+                   "(kriterierna står i MER → Regler & Guider → 📚 SNABBREFERENS); ➕ Ny kandidat för manuell inläggning.")
         return
     overrides_all = st.session_state.get(_SCEN_KEY, {})
     analyses = {t: analyze(c, scenario_overrides=overrides_all.get(t), today=date.today())

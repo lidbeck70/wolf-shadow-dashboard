@@ -511,7 +511,7 @@ def _producers(data: dict) -> None:
     rows = ranked_producers(data[PRODUCERS])
     if not rows:
         st.caption("Inga bolag ännu. Överlevar-screenern körs i Börsdata — "
-                   "filtret står i RULES → 📚 SNABBREFERENS.")
+                   "filtret står i MER → Regler & Guider → 📚 SNABBREFERENS.")
         return
 
     for r in rows:
@@ -747,7 +747,7 @@ def _royalty(data: dict) -> None:
     rows = ranked_royalty(data[ROYALTY])
     if not rows:
         st.caption("Inga bolag ännu. Royalty-screenern körs en gång i "
-                   "Börsdata — filtret står i RULES → 📚 SNABBREFERENS.")
+                   "Börsdata — filtret står i MER → Regler & Guider → 📚 SNABBREFERENS.")
         return
 
     for r in rows:

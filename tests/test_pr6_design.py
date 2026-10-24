@@ -39,12 +39,12 @@ def test_nav_tree_is_consistent():
         assert len(opts) == len(set(opts))
     assert "🧭 Durrett" in nav.options("review") and "🐺 Wolf Asymmetry" in nav.options("review")
     assert "🐺 Durrett" not in nav.leaves() and "🧭 Confidence score" not in nav.leaves()
-    assert nav.options("odin") == ["Råvaror", "Makro", "Marknad"]
-    assert "Market Cycle" in nav.options("odin/Marknad")
+    assert nav.options("odin") == ["Läget", "Kartan", "Råvaror", "Makro", "Marknad"]       # design PR 9
+    assert "Market Cycle" in nav.options("more/Motorsidor")
     keys = [k for k, _l in nav.TOP]
     assert "screening" not in keys and "regime" not in keys and "intel" not in keys     # fas 8
-    assert nav.TOP_LABEL["odin"] == "👁 ODINS VISDOM" and nav.TOP_LABEL["review"] == "📒 ARKEN"
-    assert "ODINS VISDOM → Råvaror → 🌍 EMBER Regime" in nav.paths()
+    assert nav.TOP_LABEL["odin"] == "👁 ODIN" and nav.TOP_LABEL["review"] == "📒 ARKEN"
+    assert "ODIN → Råvaror → 🌍 EMBER Regime" in nav.paths()
 
 
 def test_panel_renders_its_radios_from_the_tree():
@@ -76,8 +76,7 @@ def test_flikguide_paths_exist_in_the_tree_and_cover_every_top_tab():
         heads.add(parts[0])
         for p in parts[1:]:
             assert p in leaves, f"FLIKGUIDE: '{p}' i '{tab}' är ingen flik"
-    assert {"THOR", "ODINS VISDOM", "ARKEN", "VALHALL", "PORTFOLIO",
-            "ALERTS", "RULES", "COPILOT"} <= heads
+    assert {"THOR", "ODIN", "ARKEN", "PORTFÖLJ", "MER"} <= heads
     assert any("🧭 Durrett" in t for t, _r, _u in _PANEL_GUIDE)
     assert any("Wolf Asymmetry" in t for t, _r, _u in _PANEL_GUIDE)
     assert any("Allokering" in t for t, _r, _u in _PANEL_GUIDE)

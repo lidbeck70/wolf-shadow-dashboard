@@ -1,5 +1,5 @@
 """
-ovtlyr/ui/viking_nine_backtest.py — PORTFOLIO → Backtest → ⚔️ Viking Nine.
+ovtlyr/ui/viking_nine_backtest.py — MER → Egen backtest → ⚔️ Viking Nine.
 
 Kör viking_backtest över en lista tickers (förval: senaste ⚔️ Viking Nine-
 skanningen) och visar nyckeltalen i R: antal affärer, win rate, snitt- och

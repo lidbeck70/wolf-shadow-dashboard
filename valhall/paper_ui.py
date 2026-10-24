@@ -1,5 +1,5 @@
 """
-valhall/paper_ui.py — 📒 ARKEN → 📊 Papperskonton (K8): alla papperskonton på ett ställe.
+valhall/paper_ui.py — 📒 PORTFÖLJ → 📊 Papperskonton (K8): alla papperskonton på ett ställe.
 
 Sidan räknar ingenting — den läser vad Valhall Scan (valhall_paper.json, valhall_board.json["paper"],
 valhall_paper_history.json) och BERSERK Scan (berserk_paper.json) sparat i Gisten:

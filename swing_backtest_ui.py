@@ -1,5 +1,5 @@
 """
-swing_backtest_ui.py — PORTFOLIO → Backtest → 📈 Momentum Swing.
+swing_backtest_ui.py — MER → Egen backtest → 📈 Momentum Swing.
 
 Kör swing_backtest över svenska Large + Mid Cap (Börsdata) med veckorutinens
 regler, som en portfölj: kontokurva mot OMXSPI, CAGR, max drawdown,

@@ -81,6 +81,6 @@ def test_registry_allocator_thor_and_guide_point_at_the_new_playbooks():
     order = list(sr.LEARNING_ORDER)
     assert order.index("viking_nine") == order.index("viking") + 1 and order.index("berserk") == order.index("ember") + 1
     tabs = [t for t, _r, _u in _PANEL_GUIDE]
-    assert "THOR" in tabs and "ODINS VISDOM → Råvaror → 🪓 BERSERK Regime" in tabs
+    assert "THOR" in tabs and "ODIN → Råvaror → 🪓 BERSERK Regime" in tabs
     # de gamla playbookerna är orörda
     assert len(sr.PLAYBOOKS["viking"].entry) == 10 and len(sr.PLAYBOOKS["ember"].entry) == 4
