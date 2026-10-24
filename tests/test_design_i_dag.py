@@ -9,14 +9,16 @@ from thor import candidates as tc
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 BOARD = {"turn_plan": {"window_days": 5, "window": [
     {"level": "komplex", "key": "basmetaller", "label": "Basmetaller", "kind": "VÄNDER",
-     "confirmed_since": "2026-10-22", "deep": [{"ticker": "BOL.ST"}, {"ticker": "LUMI.ST"}],
+     "confirmed": True, "confirmed_since": "2026-10-22", "deep": [{"ticker": "BOL.ST"}, {"ticker": "LUMI.ST"}],
      "long": [{"ticker": "SSAB-B.ST"}], "etf": {"ticker": "COPX.L", "exposure": "koppargruvor", "verified": False}}]},
     "turns": [{"confirmed": True}, {"confirmed": False}, {"confirmed": False}]}
 
 
 def test_turn_card_counts_days_from_confirmation():
     c = ht.turn_cards(BOARD, today=pd.Timestamp("2026-10-23"))[0]
-    assert ht.turn_headline(c) == "⚡ VÄNDNING — Basmetaller · dag 2 av 5"
+    assert ht.turn_headline(c) == "⚡ VÄNDNING — Basmetaller · dag 1 av 5"
+    c0 = ht.turn_cards(BOARD, today=pd.Timestamp("2026-10-22"))[0]
+    assert ht.turn_headline(c0) == "⚡ VÄNDNING — Basmetaller · bekräftad i dag"
     assert c["deep"] == ["BOL.ST", "LUMI.ST"] and c["long"] == ["SSAB-B.ST"] and c["etf"]["ticker"] == "COPX.L"
 
 
@@ -48,7 +50,7 @@ def test_holdings_lines_from_saved_verdicts():
                                     "AAA.ST": {"verdict": "HOLD", "reason": ""},
                                     "BBB.ST": {"verdict": "PARTIAL", "reason": "+20 %"}}}}
     assert ht.holdings_lines(state) == [("EKTA-B.ST", "SÄLJ", "stängning under MA50"), ("BBB.ST", "MINSKA", "+20 %")]
-    assert ht.all_hold_line(6) == "Alla 6 positioner: HÅLL"
+    assert ht.all_hold_line({"swing": {"verdicts": {"A": {}, "B": {}}}}, 2) == "Alla 2 Momentum-positioner: HÅLL"
 
 
 def test_load_never_fails_and_reads_only_saved_data():

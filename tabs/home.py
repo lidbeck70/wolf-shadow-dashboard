@@ -164,8 +164,10 @@ def _open(label: str, key: str, target: str, ticker: str = "", strategy: str = "
 
 
 def _today_data() -> dict:
+    """Det sparade, läst en gång per session — och igen efter 📡, när dagen bytts eller efter 30 minuter."""
     from tabs import home_today as ht
-    if st.session_state.get("_home_refresh") or "home_today" not in st.session_state:
+    if (st.session_state.get("_home_refresh") or "home_today" not in st.session_state
+            or ht.needs_reload((st.session_state.get("home_today") or {}).get("loaded"))):
         st.session_state.pop("_home_refresh", None)
         with st.spinner("Läser det sparade …"):
             st.session_state["home_today"] = ht.load()
@@ -210,16 +212,21 @@ def _render_today() -> None:
 
     # 2 · Kvalar  ·  3 · Storlek
     _block("Kvalar och storlek", ACCENT)
+    gist_err = ((d.get("thor") or {}).get("errors") or {}).get("gist")
     n_buy, n_watch, top = ht.qualifiers((d.get("thor") or {}).get("rows"))
-    _line(f"<b>{n_buy} KÖP · {n_watch} BEVAKA</b>")
+    if gist_err:
+        _line(f"Saknas — Gisten gick inte att läsa ({escape(str(gist_err))}). Tryck 📡 Uppdatera.", AMBER_C, "0.82rem")
+    else:
+        _line(f"<b>{n_buy} KÖP · {n_watch} BEVAKA</b>")
     capital = us.capital() or 100000.0
     for c in top:
         new = " · NY" if c.new else ""
-        _line(escape(ht.size_line(c, capital)) + f"<span style='color:{DIM};'> · {escape(c.status)}{new}</span>",
+        _line(escape(ht.size_line(c, capital)) + f"<span style='color:{DIM};'> · {escape(c.status)}{new}"
+              f"{escape(ht.stale_tag(c))}</span>",
               TEXT, "0.8rem")
         _open(f"{c.ticker} → Thor ({reg.label(c.strategy)})", f"home_buy_{c.strategy}_{c.ticker}", "thor",
               c.ticker, c.strategy)
-    if not top:
+    if not top and not gist_err:
         _line("Inga KÖP i dag.", DIM, "0.8rem")
     _open("Hela listan i Thor →", "home_thor", "thor")
 
@@ -229,7 +236,7 @@ def _render_today() -> None:
     for t, w, why in lines:
         _line(f"<b>{escape(t)}</b> · {w} — {escape(why)}", TEXT, "0.82rem")
     if not lines:
-        _line(escape(ht.all_hold_line(d.get("n_open"))), DIM, "0.8rem")
+        _line(escape(ht.all_hold_line(d.get("alert_state"), d.get("n_open"))), DIM, "0.8rem")
     _open("Positioner →", "home_holdings", "holdings")
 
     # 5 · Mot målet
@@ -273,8 +280,10 @@ def _render_due() -> None:
 def tab_home() -> None:
     section_title("I dag", "🏠")
     c1, c2 = st.columns([3, 1])
+    loaded = (st.session_state.get("home_today") or {}).get("loaded")
     c1.markdown(f'<p style="color:{DIM};font-size:0.8rem;margin:-8px 0 8px;">{swedish_date(datetime.now())} · '
-                f'vändning → kapital → kvalar → storlek → sälj → mål</p>', unsafe_allow_html=True)
+                f'vändning → kapital → kvalar → storlek → sälj → mål'
+                + (f' · hämtad {loaded[11:16]}' if loaded else '') + '</p>', unsafe_allow_html=True)
     if c2.button("📡 Uppdatera", key="home_refresh"):
         st.session_state["_home_refresh"] = True
         st.rerun()

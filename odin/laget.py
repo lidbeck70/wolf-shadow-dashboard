@@ -60,7 +60,9 @@ def risk_worst(blob: Optional[dict]) -> str:
 
 def nordic_light(board: Optional[dict]) -> tuple:
     """('5/9 GRÖN', ...) — antal nordiska segment som är GRÖNA av dem som har ett läge."""
-    st = [((r or {}).get("nordic") or {}).get("status") for r in (board or {}).get("segments") or []]
+    from thor import candidates as tc
+    segs = tc.board_segments(board) or [r for r in (board or {}).get("segments") or [] if isinstance(r, dict)]
+    st = [((r or {}).get("nordic") or {}).get("status") for r in segs]
     st = [s for s in st if s in ("GRÖN", "GUL", "RÖD")]
     if not st:
         return SAKNAS, "valhall_board.json saknas"
