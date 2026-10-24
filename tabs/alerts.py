@@ -370,6 +370,39 @@ def _render_log_entry(entry: Dict[str, Any]) -> None:
     _card(content, border_color=f"{status_color}44")
 
 
+# ── Larmloggen ur Gisten (designförslaget PR 2) ─────────────────────────────
+@st.cache_data(ttl=300, show_spinner=False)
+def _saved_log() -> list:
+    try:
+        from alerts import history
+        from gist_storage import load_blob
+        return load_blob(history.BLOB, None) or []
+    except Exception:
+        return []
+
+
+def _render_saved_log() -> None:
+    """De schemalagda körningarnas senaste larm, nyast först, med 'Öppna →' dit Discord-länken leder."""
+    from alerts import history
+    from ui.links import go
+    section_title("Larmloggen — de senaste larmen från de schemalagda körningarna")
+    rows = history.latest(_saved_log(), history.LIMIT)
+    if not rows:
+        st.markdown(f'<div style="color:{_DIM};font-size:0.8rem;">Inga sparade larm än. Loggen fylls av nästa '
+                    f'schemalagda körning som skickar ett larm.</div>', unsafe_allow_html=True)
+        return
+    for i, r in enumerate(rows):
+        miss = " · ⚠️ nådde ingen kanal" if r.get("delivered") is False else ""
+        c1, c2 = st.columns([5, 1])
+        c1.markdown(f'<div style="border-left:2px solid {_CYAN};padding:2px 10px;margin:4px 0;">'
+                    f'<div style="color:{_TEXT};font-size:0.8rem;font-weight:600;">{r.get("title", "")}</div>'
+                    f'<div style="color:{_DIM};font-size:0.72rem;">{r.get("time", "")}{miss} · '
+                    f'{str(r.get("body", ""))[:220]}</div></div>', unsafe_allow_html=True)
+        if r.get("target"):
+            c2.button("Öppna →", key=f"alertlog_go_{i}", on_click=go,
+                      args=(r["target"], r.get("ticker") or "", r.get("strategy") or ""), width="stretch")
+
+
 # ── Channel status panel ─────────────────────────────────────────────────────
 
 def _render_scheduled_settings(send_fn) -> None:
@@ -621,11 +654,16 @@ def tab_alerts() -> None:
 
     # ── Tabs within the Alerts page ──────────────────────────────────────────
     inner_tabs = st.tabs([
+        "  LARMLOGGEN  ",
         "  SETTINGS  ",
         "  SCHEMALAGDA  ",
         "  ALERT LOG  ",
         "  CHANNELS  ",
     ])
+    log_tab, inner_tabs = inner_tabs[0], inner_tabs[1:]
+
+    with log_tab:
+        _render_saved_log()
 
     with inner_tabs[0]:
         _render_strategy_settings(STRATEGIES)

@@ -263,6 +263,15 @@ def main() -> int:
         log.info("[DRY-RUN] tillståndet sparas inte.")
         return 0
 
+    if alerts:
+        # Larmloggen i Gisten (ALERTS och startsidan läser den) — även larm som ingen kanal tog emot, märkta.
+        from alerts import history
+        stamp = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime())
+        rows = history.append(load_blob(history.BLOB, None), alerts, stamp,
+                              {a["title"]: a["title"] not in failed for a in alerts})
+        if not save_blob(history.BLOB, rows):
+            log.warning("Larmloggen kunde inte sparas till Gisten.")
+
     if alerts and not delivered:
         # Ingen kanal tog emot något av larmen — spara INTE tillståndet, så
         # övergången larmas om vid nästa körning i stället för att ätas upp.
