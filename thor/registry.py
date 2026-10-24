@@ -44,11 +44,11 @@ STRATEGIES: dict = {s.key: s for s in (
              "momentum", "momentum", "wolf"),
     Strategy("berserk", "BERSERK", RAVARA, "berserk_scan.json", "setup S2 100 · S1 80 · S3 60, BEVAKA −20",
              "berserk", "berserk", "berserk"),
-    Strategy("ember", "EMBER", RAVARA, "ember_results.json", "setup_score 0–100", "ember", "ember"),
+    Strategy("ember", "EMBER", RAVARA, "ember_results.json", "setup_score 0–100", "ember", "ember", "ember"),
     Strategy("quality", "Quality Contrarian", LANG, "contrarian_alpha_results_quality.json",
              "composite 0–100 (tak 100)", "quality", "alpha_quality", "quality"),
     Strategy("deep", "Deep Contrarian", LANG, "contrarian_alpha_results_deep_contrarian.json",
-             "composite 0–100 (tak 100)", "contrarian", "alpha_contrarian"),
+             "composite 0–100 (tak 100)", "contrarian", "alpha_contrarian", "deep"),
     Strategy("long", "Long Screener", LANG, "valhall_board.json (long)", "poäng % × 100", "alpha", "long_screener", "long"),
     Strategy("insider", "Insider Norden", INSIDER, "insider_scan.json", "poäng 0–10 × 10", "insider", "insider", "insider"),
     Strategy("rule", "Rick Rule", RAVARA, "valhall_board.json (råvaror) + screens.json", "arket 0–5 × 20 · Quality composite · håven utan rang",
@@ -58,7 +58,7 @@ STRATEGIES: dict = {s.key: s for s in (
     Strategy("tiggre", "Tiggre", RAVARA, "valhall_board.json (råvaror) + screens.json", "faktorpoäng 0–10 × 10",
              "tiggre", "sheet", "tiggre"),
     Strategy("royalty", "Royalty", RAVARA, "royalty_scan.json", "composite 0–100 (playbookens grindar + CA-pelarna)",
-             "royalty", "royalty"),
+             "royalty", "royalty", "royalty"),
     Strategy("hav", "Håvarna", HAV, "screens.json", "ingen — en träff är en träff"),
 )}
 ORDER: list = list(STRATEGIES)                 # listans ordning vid lika rang

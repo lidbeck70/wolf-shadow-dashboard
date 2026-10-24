@@ -478,6 +478,9 @@ def main():
                       "commodity_leverage/ui")
             elif sub == "🎯 Scorecard":
                 _page(SCORECARD_AVAILABLE, render_scorecard_page, "Master Scorecard", "scorecard")
+            elif sub == "📊 Papperskonton":
+                from valhall.paper_ui import render_paper_page
+                _page(True, render_paper_page, "Papperskonton", "valhall/paper_ui")
 
     # ── ODINS VISDOM (förr REGIME + INTELLIGENCE) ────────────────────────────
     # Råvarorna, makro och marknaden. SCREENING-sidorna och Teknisk analys har
