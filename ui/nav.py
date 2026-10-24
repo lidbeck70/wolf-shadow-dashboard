@@ -53,7 +53,7 @@ SUBS: dict = {
     # (data/confidence.json); Wolf Asymmetry har sitt eget med Confidence inbyggt.
     "review": ["Rick Rule", "Royalty C", "Poängmodell", "Tiggre", "Insider",
                "🧭 Durrett", "🐺 Wolf Asymmetry", "🚀 Råvaruhävstång", "🎯 Scorecard", "📊 Papperskonton"],
-    "portfolio": ["📓 Trade Journal", "Holdings", "Swing", "Allokering", "Backtest"],
+    "portfolio": ["📓 Trade Journal", "🎯 Mot målet", "Holdings", "Swing", "Allokering", "Backtest"],
     "rules": ["Regler & Guider", "⚙️ Inställningar", "Position Sizing", "Data Health"],
     "rules/Regler & Guider": ["🚀 KOM IGÅNG", "📋 HANDELSREGLER", "⚡ FUSKLAPP",
                               "🗺 FLIKGUIDE", "📖 STRATEGIGUIDER", "🗓 ÅRSHJULET",
@@ -159,6 +159,8 @@ TARGETS: dict = {
     "journal": ("portfolio", "📓 Trade Journal"),
     "alerts": ("alerts",),
     "settings": ("rules", "⚙️ Inställningar"),
+    "goal": ("portfolio", "🎯 Mot målet"),
+    "backtests": ("valhall", "Backtester"),
 }
 
 
