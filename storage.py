@@ -197,11 +197,16 @@ def load_json(name: str, default: Any = None) -> Any:
         return default
     try:
         raw = base64.b64decode(meta.get("content", "")).decode("utf-8")
-        return json.loads(raw) if raw.strip() else default
+        data = json.loads(raw) if raw.strip() else default
     except (ValueError, UnicodeDecodeError) as exc:
         raise StorageError(
             f"{path} går inte att tolka som JSON: {exc}. Filen har blivit "
             f"korrupt — återställ den ur historiken i GitHub.") from exc
+    import private_data
+    try:                                   # privata ark (positioner, metaller) ligger krypterade
+        return private_data.unseal(data)
+    except private_data.PrivateDataError as exc:
+        raise StorageError(f"{path}: {exc}") from exc
 
 
 def load_sha(name: str) -> Optional[str]:
@@ -224,6 +229,12 @@ def save_json(name: str, data: Any, sha: Optional[str] = None) -> SaveResult:
         meta = _get_file(cfg, path)
         sha = meta.get("sha") if meta else None
 
+    import private_data
+    if private_data.is_private(name):      # det publika repot får aldrig se de privata arken i klartext
+        try:
+            data = private_data.seal(data)
+        except private_data.PrivateDataError as exc:
+            raise StorageError(str(exc)) from exc
     when = datetime.now(timezone.utc).isoformat(timespec="seconds")
     body = json.dumps(data, indent=2, ensure_ascii=False, default=str,
                       sort_keys=True)

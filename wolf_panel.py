@@ -542,7 +542,12 @@ def _tab_portfolio() -> None:
         from valhall.paper_ui import render_paper_page
         _page(True, render_paper_page, "Papperskonton", "valhall/paper_ui")
     elif sub == "Positioner":
-        _page(HOLDINGS_AVAILABLE, render_holdings_page, "Holdings", "holdings")
+        from portfolio.private_lock import gate
+        if gate():                         # lösenord på de egna innehaven (HOLDINGS_PASSWORD)
+            _page(HOLDINGS_AVAILABLE, render_holdings_page, "Holdings", "holdings")
+            st.markdown("---")
+            from portfolio.metals import render_metals_section
+            _page(True, render_metals_section, "Fysiska metaller", "portfolio/metals")
     elif sub == "Veckorutin":
         _page(SWING_AVAILABLE, render_swing_page, "Swing", "swing")
     elif sub == "Allokering":

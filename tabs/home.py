@@ -232,10 +232,15 @@ def _render_today() -> None:
 
     # 4 · Sälj och bevaka
     _block("Sälj och bevaka", GREEN)
-    lines = ht.holdings_lines(d.get("alert_state"))
-    for t, w, why in lines:
-        _line(f"<b>{escape(t)}</b> · {w} — {escape(why)}", TEXT, "0.82rem")
-    if not lines:
+    from portfolio import private_lock
+    if not private_lock.unlocked():        # innehaven bakom lösenord (HOLDINGS_PASSWORD)
+        _line("🔒 Innehaven är låsta — lås upp under PORTFÖLJ → Positioner.", DIM, "0.8rem")
+        lines = None
+    else:
+        lines = ht.holdings_lines(d.get("alert_state"))
+        for t, w, why in lines:
+            _line(f"<b>{escape(t)}</b> · {w} — {escape(why)}", TEXT, "0.82rem")
+    if lines == []:
         _line(escape(ht.all_hold_line(d.get("alert_state"), d.get("n_open"))), DIM, "0.8rem")
     _open("Positioner →", "home_holdings", "holdings")
 

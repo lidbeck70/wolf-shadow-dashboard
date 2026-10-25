@@ -117,6 +117,7 @@ jobs:
           BORSDATA_API_KEY: ${{ secrets.BORSDATA_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
           ALERT_REPO_TOKEN: ${{ secrets.ALERT_REPO_TOKEN }}
+          PANEL_DATA_KEY: ${{ secrets.PANEL_DATA_KEY }}
         run: python sheets_refresh.py
 
       # Schemalagda larm — swing-övergångar, Blindspots temakarta (tidig
@@ -134,6 +135,7 @@ jobs:
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
           GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
           ALERT_REPO_TOKEN: ${{ secrets.ALERT_REPO_TOKEN }}
+          PANEL_DATA_KEY: ${{ secrets.PANEL_DATA_KEY }}
           EMBER_GIST_ID: ${{ secrets.EMBER_GIST_ID }}
           CA_GIST_ID: ${{ secrets.CA_GIST_ID }}
           BORSDATA_API_KEY: ${{ secrets.BORSDATA_API_KEY }}
