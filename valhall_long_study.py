@@ -175,7 +175,10 @@ def run(getter=None, api=None, save=None, no_save=False, today=None, n_boot=None
         if api is None:
             from borsdata_api import get_api
             api = get_api()
-        if api is not None and getattr(api, "is_configured", lambda: True)():
+        ok = getattr(api, "is_configured", True) if api is not None else False
+        if callable(ok) and not isinstance(ok, bool):
+            ok = ok()                                  # BorsdataAPI har en egenskap; testernas falska API en metod
+        if ok:
             bs, check = bolag_series(api, sector_events, today)
             series += bs
         else:

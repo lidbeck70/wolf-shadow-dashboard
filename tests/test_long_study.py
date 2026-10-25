@@ -220,3 +220,17 @@ def test_script_decides_on_bolag_only_when_delisted_are_covered(monkeypatch):
     res2 = vls.run(getter=_getter, api=_Api(old=3), today="2026-10-25", n_boot=50, no_save=True)
     assert not res2["delisted_check"]["covered"] and ls.BOLAG not in res2["deciding"]
     assert not any(k.endswith(ls.BOLAG) for k in res2["hypotheses"])
+
+
+class _ApiProperty(_Api):
+    """Som BorsdataAPI: is_configured är en egenskap, inte en metod."""
+    is_configured = True
+
+
+def test_script_accepts_is_configured_as_a_property(monkeypatch):
+    import markets
+    import valhall_long_study as vls
+    monkeypatch.setattr(markets, "load", lambda api=None: {})
+    monkeypatch.setattr(markets, "nordic_stock_ids", lambda table=None: {1})
+    res = vls.run(getter=_getter, api=_ApiProperty(old=25), today="2026-10-25", n_boot=50, no_save=True)
+    assert res["delisted_check"].get("error") is None and any(s["group"] == ls.BOLAG for s in res["series"])
