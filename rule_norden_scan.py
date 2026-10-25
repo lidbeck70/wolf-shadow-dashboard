@@ -39,11 +39,21 @@ def run(api=None, save=None, no_save=False, today=None) -> dict:
     info, seg_of, sel, closes, vols, market, kp, table = (u[k] for k in keys)
     now = sorted({i for per in sel.values() for i in per.get(today.year, [])})
     signals, watch = [], []
+    funnel = {"hatade nu": 0, "kvalitet OK": 0, "balans OK": 0, "båda OK": 0, "katalysator redan i perioden": 0,
+              "nyckeltal saknas": 0}
     for iid in now:
         fr = cycle.cycle_frame(closes[iid], vols.get(iid), market, 50, cykel_base=market)
         eps = hs.episodes(hs.hated(fr))
         hist = {k: kp[k].get(iid) for k in rs.KPIS}
         res = rs.live(closes[iid], market, eps, hist, today)
+        if eps and eps[-1]["censored"]:                          # tratten: varför blir det (inte) signal?
+            funnel["hatade nu"] += 1
+            g = rs.gates(hist, today)
+            funnel["kvalitet OK"] += bool(g["quality"])
+            funnel["balans OK"] += bool(g["balance"])
+            funnel["båda OK"] += bool(g["quality"] and g["balance"])
+            funnel["nyckeltal saknas"] += g["quality"] is None or g["balance"] is None
+            funnel["katalysator redan i perioden"] += rs.catalyst_day(rs.catalyst(closes[iid]), eps[-1]) is not None
         i = info[iid]
         base = {"ticker": _markets.to_yf(i.get("ticker"), i.get("marketId"), table), "name": i.get("name"),
                 "segment": seg_of.get(iid)}
@@ -53,7 +63,9 @@ def run(api=None, save=None, no_save=False, today=None) -> dict:
             watch.append({**base, **res["watch"]})
     last = market.index[-1] if len(market) else today
     out = {"generated": datetime.now(tz=timezone.utc).isoformat(), "date": str(pd.Timestamp(last).date()),
-           "universe": len(now), "signals": signals, "watch": sorted(watch, key=lambda r: r["hate_since"])}
+           "universe": len(now), "funnel": funnel, "signals": signals,
+           "watch": sorted(watch, key=lambda r: r["hate_since"])}
+    log.info("Tratten: %s", " · ".join(f"{k} {v}" for k, v in funnel.items()))
     log.info("Rule-köp Norden %s: %d bolag i urvalet · %d signaler · %d på bevakning", out["date"], len(now),
              len(signals), len(watch))
     for r in signals:

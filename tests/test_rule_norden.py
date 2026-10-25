@@ -67,5 +67,6 @@ def test_scan_runs_end_to_end(monkeypatch):
     saved = {}
     out = rns.run(api=_Api(), today="2026-10-25", save=lambda n, d: saved.setdefault(n, d) is not None)
     assert out["universe"] == 30 and isinstance(out["signals"], list) and isinstance(out["watch"], list)
+    assert set(out["funnel"]) >= {"hatade nu", "båda OK", "katalysator redan i perioden"}
     assert rns.BLOB in saved and out["saved"]
     assert all(r["ticker"].endswith(".ST") for r in out["signals"] + out["watch"])
