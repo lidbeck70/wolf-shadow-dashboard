@@ -26,14 +26,14 @@ BLOB = "rule_kop.json"
 START_YEAR = 2006
 
 
-def study(api, today, rng, n_boot=None) -> dict:
+def universe(api, today) -> dict:
+    """Urvalet som testet och papperskontot delar: Nordens 30 största per sektor och år (föregående års
+    börsvärde), kurser, marknadsindexet av samma urval och nyckeltalshistoriken."""
     import markets as _markets
     from hate_duration_study import _ohlc
-    from valhall import cycle
     from valhall import hate_study as hs
     from valhall import rule_study as rs
     from valhall import segments as sgm
-    n_boot = n_boot or hs.N_BOOT
     table = _markets.load(api=api)
     nordic_ids = _markets.nordic_stock_ids(table)
     info = {i["insId"]: i for i in api.get_instruments() if i.get("marketId") in nordic_ids and i.get("insId")}
@@ -56,6 +56,19 @@ def study(api, today, rng, n_boot=None) -> dict:
     members = sorted({i for ys in allm.values() for i in ys})
     market = hs.universe_index({i: closes[i] for i in members}, allm)
     kp = {k: api.get_kpi_history_batch(members, kid, "year", "mean", max_count=20) for k, kid in rs.KPIS.items()}
+    return {"table": table, "info": info, "segment_of": segment_of, "sel": sel, "members": members,
+            "closes": closes, "vols": vols, "market": market, "kp": kp, "years": years}
+
+
+def study(api, today, rng, n_boot=None) -> dict:
+    from valhall import cycle
+    from valhall import hate_study as hs
+    from valhall import rule_study as rs
+    n_boot = n_boot or hs.N_BOOT
+    u = universe(api, today)
+    keys = ("info", "segment_of", "sel", "closes", "vols", "market", "kp")
+    info, segment_of, sel, closes, vols, market, kp = (u[k] for k in keys)
+    members = u["members"]
     roic_now = [vals[-1]["v"] for vals in kp["roic"].values() if vals and vals[-1].get("v") is not None]
     de_now = [vals[-1]["v"] for vals in kp["de"].values() if vals and vals[-1].get("v") is not None]
     log.info("Kontroll av enheter: ROIC median %.1f (förväntat %%) · skuldsättningsgrad median %.2f (förväntat kvot)",
