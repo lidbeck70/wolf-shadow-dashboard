@@ -1,0 +1,32 @@
+name: Hatat och billigt
+
+# Manuell: slår hatat och billigt hatat men dyrt (rank 11–30, ej sedda bolag)? Förregistrerat i
+# docs/forskning/hatat_och_billigt_spec.md. Resultatet i loggen och i Gisten (hate_value.json).
+# Ändrar inga regler.
+on:
+  workflow_dispatch:
+
+jobs:
+  hate-value:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Hatat och billigt
+        env:
+          BORSDATA_API_KEY: ${{ secrets.BORSDATA_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+        run: python hate_value_study.py

@@ -365,6 +365,13 @@ def render_map(board: dict) -> None:
          "UCITS-ETF hos Nordnet), råvaror absolut. Överstrukna kvalitetsköp är spärrade av grinden ej RÖD. "
          "Wolf = Arc-Wolfs regimpoäng (ENTRY när strategins köpregel är uppfylld) · Momentum = Swing Screenerns "
          "topp 20 med setup A. Riktiga order läggs alltid manuellt.")
+    with st.expander("Hatade storbolag och råvaror i dag — hur länge (Hatets varaktighet)", expanded=False):
+        try:
+            from gist_storage import load_blob
+            from odin.sektorrotation import HATE_BLOB, render_hate_section
+            render_hate_section(load_blob(HATE_BLOB, None))
+        except Exception as exc:
+            note(f"Kunde inte visas: {exc}")
 
 
 def render_paper(res: Optional[dict]) -> None:

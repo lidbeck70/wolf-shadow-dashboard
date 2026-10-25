@@ -84,14 +84,55 @@ def validation(blob: Optional[dict]) -> tuple:
     return "EJ VALIDERAD", "red", "Backtestet godkände inte modellen — visas som information, ingen grind."
 
 
-def ui_rows(rows: list, status: Optional[dict] = None) -> list:
+HATE_BLOB = "hate_duration.json"
+
+
+def hate_by_sector(blob: Optional[dict]) -> dict:
+    """{sektornamn: {count, longest, typical}} ur studien Hatets varaktighet (hate_duration.json): hur många av
+    sektorns topp 10 som är hatade i dag, den som varit hatad längst och sektorns typiska längd (KM-median)."""
+    nd = (blob or {}).get("nordic") if isinstance(blob, dict) else None
+    if not isinstance(nd, dict):
+        return {}
+    variants = nd.get("variants") or {}
+    d1 = (variants.get("10") or variants.get(10) or {}).get("d1") or {}
+    out = {sec: {"count": 0, "longest": None, "typical": (k or {}).get("median_m")} for sec, k in d1.items()}
+    for r in nd.get("current") or []:
+        if not isinstance(r, dict) or not r.get("sector"):
+            continue
+        e = out.setdefault(r["sector"], {"count": 0, "longest": None, "typical": r.get("typical_m")})
+        e["count"] += 1
+        if e["longest"] is None or (r.get("months") or 0) > e["longest"][1]:
+            e["longest"] = (r.get("name"), r.get("months") or 0)
+    return out
+
+
+def hate_rows(blob: Optional[dict]) -> list:
+    """En rad per hatat storbolag och råvara i dag: grupp, namn, sedan, månader, typiskt för gruppen."""
+    out = []
+    for key, col in (("nordic", "sector"), ("commodities", "group")):
+        part = blob.get(key) if isinstance(blob, dict) else None
+        cur = part.get("current") if isinstance(part, dict) else None
+        for r in cur if isinstance(cur, list) else []:
+            if isinstance(r, dict):
+                out.append({"Grupp": r.get(col), "Namn": r.get("name"), "Hatad sedan": r.get("since"),
+                            "Månader": r.get("months"), "Typiskt (mån)": r.get("typical_m"),
+                            "Långt över det typiska": "ja" if (r.get("months") or 0) > 2 * (r.get("typical_m") or 99) else ""})
+    return sorted(out, key=lambda r: -(r["Månader"] or 0))
+
+
+def ui_rows(rows: list, status: Optional[dict] = None, hate: Optional[dict] = None) -> list:
     """Tabellraderna för sidan."""
     out = []
     for r in rows or []:
-        out.append({"Sektor": r.get("label") or r["ticker"], "Fond": r["ticker"], "Fas": r.get("phase"),
+        label = r.get("label") or r["ticker"]
+        h = (hate or {}).get(label) or {}
+        longest = h.get("longest")
+        out.append({"Sektor": label, "Fond": r["ticker"], "Fas": r.get("phase"),
                     "Poäng S": r.get("S"), "R12": r.get("R12"), "R6": r.get("R6"), "R3": r.get("R3"),
                     "Filter": "".join(FILTER_MARK[bool(r.get(k))] for k in ("f1", "f2", "f3")),
-                    "Klättring 3 mån": r.get("climb"), "Valhall": (status or {}).get(r["ticker"]) or "—"})
+                    "Klättring 3 mån": r.get("climb"), "Valhall": (status or {}).get(r["ticker"]) or "—",
+                    "Hatade storbolag": f"{h.get('count', 0)}/10" if h else "—",
+                    "Längst hatad": f"{longest[0]} {longest[1]:.0f} mån (typiskt {h.get('typical')})" if longest else "—"})
     return out
 
 
@@ -124,15 +165,15 @@ def render_sektorrotation_page() -> None:
     def _saved() -> tuple:
         try:
             from gist_storage import load_blob
-            return load_blob(BACKTEST_BLOB, None), load_blob("valhall_board.json", None)
+            return load_blob(BACKTEST_BLOB, None), load_blob("valhall_board.json", None), load_blob(HATE_BLOB, None)
         except Exception:
-            return None, None
+            return None, None, None
 
     if st.button("📡 Uppdatera", key="rotation_refresh"):
         _live.clear()
         _saved.clear()
     data = _live()
-    blob, board = _saved()
+    blob, board, hate_blob = _saved()
     word, ck, text = validation(blob)
     col = {"green": GREEN, "gold": GOLD, "red": RED, "dim": DIM}[ck]
     by = ((blob or {}).get("by_period") or {}).get("Hela") or {}
@@ -148,13 +189,14 @@ def render_sektorrotation_page() -> None:
         note(f"Kurserna kunde inte hämtas: {data['error']}")
         return
     st.markdown(f"#### Sektorerna · månadsskiftet {data.get('date') or '—'}")
-    rows = ui_rows(data.get("sectors"), valhall_status(board))
+    rows = ui_rows(data.get("sectors"), valhall_status(board), hate_by_sector(hate_blob))
     if rows:
         st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
     note("Filter: över 10-månaders snittet · snittet stiger · relativa linjen mot SPY över sitt 6-månaders snitt. "
          "Fas 2 = bekräftad ledare (momentum); Valhalls GRÖN/RÖD är cykeln (contrarian) — två olika frågor.")
     st.markdown(f"**Rankningen 1 mån:** {climb_text(data.get('climb_1m') or [])}")
     st.markdown(f"**Rankningen 3 mån:** {climb_text(data.get('climb_3m') or [])}")
+    render_hate_section(hate_blob)
     st.markdown("#### Undergrupper: råvaruproducenter")
     prod = ui_rows(data.get("producers"))
     if prod:
@@ -163,3 +205,21 @@ def render_sektorrotation_page() -> None:
     note("Producenterna rankas mot varandra och mot SPY — gruvbolag har andra drivkrafter än materialsektorn. "
          "Makrolagret (räntor, krediter, dollar) finns under ODIN → Makro. Nordiska branschindex visas inte: de byggs "
          "ur dagens bolag.")
+
+
+def render_hate_section(hate_blob: Optional[dict]) -> None:
+    """Hatade storbolag och råvaror i dag (studien Hatets varaktighet) — information, ingen regel."""
+    import pandas as pd
+    import streamlit as st
+
+    from ui.components import note
+    rows = hate_rows(hate_blob)
+    st.markdown("#### Hatade i dag — hur länge")
+    if not rows:
+        note("Studien Hatets varaktighet har inte körts än (hate_duration.json saknas).")
+        return
+    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+    note("Hatad = tioårspercentil ≤ 30 och hatpoäng ≥ 60 mot marknaden (storbolagen mot Nordens storbolag). "
+         "Studien (docs/forskning/hatets_varaktighet_spec.md): de flesta hatperioder släpper efter 2–4 månader men "
+         "12–36 % varar över ett år; köp vid hatets start har i snitt gått sämre än marknaden på två år — utom när "
+         "bolaget också var undervärderat. Information, ingen köpregel.")
