@@ -120,7 +120,7 @@ def test_commodity_prices_convert_to_the_report_currency():
     assert got["p0"] == 55.0 and got["fx_now"] == 11.0
     usd = quick_data.commodity_prices("guld", "USD", lambda s, p="10y": px)
     assert usd["prices"] == {2024: 4.0, 2025: 5.0} and usd["fx_now"] == 1.0
-    assert quick_data.commodity_prices("uran", "USD", lambda s, p="10y": px)["ticker"] == ""
+    assert quick_data.commodity_prices("kol", "USD", lambda s, p="10y": px)["ticker"] == ""
     no_fx = quick_data.commodity_prices("koppar", "SEK", lambda s, p="10y": px if s == "HG=F" else pd.Series(dtype=float))
     assert no_fx["prices"] == {} and no_fx["p0"] is None                  # utan valuta hellre inget
 
@@ -208,3 +208,23 @@ def test_multi_metal_producer_break_even_is_not_measurable_in_one_metal():
 
 def test_price_format_keeps_decimals_for_small_prices():
     assert ql.fmt_price(6.63) == "6.63" and ql.fmt_price(4183.9) == "4,184" and ql.fmt_price(None) == "—"
+
+
+def test_uranium_uses_sprott_physical_in_cad():
+    from asymmetry import quick_config as qc
+    assert qc.LEV_PRICE_TICKERS["uran"] == "U-UN.TO" and qc.LEV_PRICE_CCY["U-UN.TO"] == "CAD"
+    px = _daily({2024: 20.0, 2025: 30.0})                      # CAD per andel
+    cadusd = _daily({2024: 0.75, 2025: 0.70})
+    seen = []
+
+    def getter(s, p="10y"):
+        seen.append(s)
+        return {"U-UN.TO": px, "CADUSD=X": cadusd}[s]
+    usd = quick_data.commodity_prices("uran", "USD", getter)
+    assert seen == ["U-UN.TO", "CADUSD=X"]                      # CAD → rapportvalutan, inte USD → USD
+    assert usd["prices"] == {2024: 15.0, 2025: 21.0} and usd["fx_now"] == 0.70
+    cad = quick_data.commodity_prices("uran", "CAD", lambda s, p="10y": px)
+    assert cad["prices"] == {2024: 20.0, 2025: 30.0} and cad["fx_now"] == 1.0
+    rev, eb, fcf = _company(2000)
+    lev = ql.estimate(rev, eb, fcf, PRICES, 4.0, commodity="uran", ticker="U-UN.TO")
+    assert lev.unit == "CAD/andel (SPUT)" and lev.error is None

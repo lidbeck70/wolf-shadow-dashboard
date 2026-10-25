@@ -59,10 +59,18 @@ LEV_MIN_R2 = 0.30                  # svagare samband än så → visas men poän
 # sällsynta, skog och agri saknar en ren prisserie på Yahoo → DATA_GAP.
 LEV_PRICE_TICKERS = {"guld": "GC=F", "silver": "SI=F", "platina": "PL=F", "palladium": "PA=F",
                      "koppar": "HG=F", "olja": "CL=F", "naturgas": "NG=F",
-                     "vete": "ZW=F", "kaffe": "KC=F", "kakao": "CC=F"}
+                     "vete": "ZW=F", "kaffe": "KC=F", "kakao": "CC=F",
+                     # Ingen uranterminsserie på Yahoo — Sprott Physical Uranium Trust äger fysiskt uran och följer
+                     # spotpriset (före 2021 Uranium Participation Corp på samma notering; samma drivare som BERSERK).
+                     "uran": "U-UN.TO"}
+# Prisseriens valuta när den inte är USD (räknas om till rapportvalutan via {valuta}{rapportvaluta}=X)
+LEV_PRICE_CCY = {"U-UN.TO": "CAD"}
+# Förklaring som visas när råvarans serie är en ersättare för spotpriset
+LEV_PRICE_NOTE = {"uran": "Uran: Sprott Physical Uranium Trust (U-UN.TO, fysiskt uran) används som spotpris — "
+                          "andelen följer spotpriset men kan handlas något över eller under sitt substansvärde."}
 LEV_PRICE_UNITS = {"GC=F": "USD/oz", "SI=F": "USD/oz", "PL=F": "USD/oz", "PA=F": "USD/oz",
                    "HG=F": "USD/lb", "CL=F": "USD/fat", "NG=F": "USD/MMBtu",
-                   "ZW=F": "USc/bu", "KC=F": "USc/lb", "CC=F": "USD/t"}
+                   "ZW=F": "USc/bu", "KC=F": "USc/lb", "CC=F": "USD/t", "U-UN.TO": "CAD/andel (SPUT)"}
 # Break-even-marginal (pris − break-even) / pris i % → band (spec §5)
 BREAK_EVEN_BANDS = ((40.0, "UTMÄRKT"), (25.0, "STARK"), (10.0, "MÅTTLIG"), (0.0, "SVAG"))
 BREAK_EVEN_FAILED = "UNDER BREAK-EVEN"
