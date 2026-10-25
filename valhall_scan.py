@@ -238,6 +238,31 @@ def _lang_signals(getter, api, instruments, nordic_ids, to_yf) -> list:
         return []
 
 
+RULE_BLOB, RULE_MAX_AGE_DAYS = "rule_norden_signals.json", 10
+
+
+def _rule_signals(load, today=None) -> list:
+    """Rule-köp i Norden (rule_norden_scan.py) till kontot rule_norden — signaler med katalysatordag de senaste
+    tio dagarna (papperet tar varje bolag en gång). Tomt om blobben saknas eller är gammal."""
+    import pandas as pd
+
+    from valhall import paper as vpa
+    try:
+        blob = load(RULE_BLOB, None) or {}
+        now = pd.Timestamp(today) if today is not None else pd.Timestamp.today().normalize()
+        out = []
+        for r in blob.get("signals") or []:
+            if not r.get("ticker") or (now - pd.Timestamp(r.get("day"))).days > RULE_MAX_AGE_DAYS:
+                continue
+            out.append(vpa._sig("rule_norden", r["ticker"], r.get("name"), r.get("segment"), None, True,
+                                f"katalysator {r.get('day')} · hatad sedan {r.get('hate_since')} · kvalitet och balans OK"))
+        log.info("Rule-köp Norden: %d signaler ur %s (%s)", len(out), RULE_BLOB, blob.get("date") or "saknas")
+        return out
+    except Exception as exc:
+        log.exception("Rule-köp Norden fallerade: %s", exc)
+        return []
+
+
 def instruments_for(api, load) -> tuple:
     """(instrumentrader, källa): Nordens Börsdata-bolag ur universum-registret (alla listor) i Börsdatas form —
     annars api.get_instruments() precis som förut."""
@@ -356,7 +381,7 @@ def run(api=None, data_getter=None, getter=None, load=None, save=None, today=Non
     else:
         try:
             deep_blob = next((b for b in src.get("ca") or [] if (b or {}).get("mode") == "deep_contrarian"), None)
-            lang_sigs = _lang_signals(getter, api, instruments, nordic_ids, to_yf)
+            lang_sigs = _lang_signals(getter, api, instruments, nordic_ids, to_yf) + _rule_signals(load, today)
             paper_state, events = _paper(paper_state, berserk_state, board, sw, buys, universe, insider_blob,
                                          getter, nordic_market, today, wolf, long_scan, arc_sigs,
                                          complex_swing=complex_swing, turn_plan=payload.get("turn_plan"),

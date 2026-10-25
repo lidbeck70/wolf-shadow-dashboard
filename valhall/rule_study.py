@@ -129,3 +129,32 @@ def summary(rows: list, rng: np.random.Generator, n_boot: int = hs.N_BOOT) -> di
             "K3": {"n": len(k3), "mean": hs._pct(np.mean(k3)) if k3 else None, "median": hs._pct(np.median(k3)) if k3 else None},
             "fail_quality": sum(1 for r in rows if r["group"] == "utan" and not r["quality"]),
             "fail_balance": sum(1 for r in rows if r["group"] == "utan" and not r["balance"])}
+
+
+# ── Papperskontot rule_norden (live, samma regler som testet) ───────────────
+SIGNAL_DAYS = 5                    # en katalysatordag räknas som dagens signal i fem handelsdagar
+
+
+def live(close: pd.Series, market: pd.Series, eps: list, hist: dict, today=None) -> dict:
+    """{"signal": {day, ...} | None, "watch": {...} | None} för ett bolag i dag.
+    signal: katalysatordag bland de SIGNAL_DAYS sista handelsdagarna med kvalitet och balansräkning godkända
+    (en per hatperiod, som i testet). watch: hatat nu och grindarna godkända, men ingen katalysator än."""
+    c = close.astype(float).dropna()
+    out = {"signal": None, "watch": None}
+    if not len(c) or not eps:
+        return out
+    cat = catalyst(c)
+    first_recent = c.index[max(0, len(c) - SIGNAL_DAYS)]
+    for e in reversed(eps):
+        d = catalyst_day(cat, e)
+        if d is not None and d >= first_recent:
+            g = gates(hist, d)
+            if g["quality"] and g["balance"]:
+                out["signal"] = {"day": str(d.date()), "hate_since": str(e["start"].date())}
+            break
+    last = eps[-1]
+    if out["signal"] is None and last["censored"] and catalyst_day(cat, last) is None:
+        g = gates(hist, today if today is not None else c.index[-1])
+        if g["quality"] and g["balance"]:
+            out["watch"] = {"hate_since": str(last["start"].date())}
+    return out
