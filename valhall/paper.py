@@ -52,7 +52,10 @@ STRATEGIES = {"viking": ("Viking Nine", SWING), "insider": ("Insider Norden", SW
               # K7 (analysen 2026-10-24 §7.1): komplexstrategierna och kontona som saknades
               "komplex_viking": ("Viking Nine · komplex", SWING), "komplex_deep": ("Deep Contrarian · vändning", LONG),
               "komplex_long": ("Lång · vändning", LONG), "komplex_etf": ("UCITS-ETF · vändning", LONG),
-              "ember": ("EMBER", SWING), "deep": ("Deep Contrarian", LONG), "royalty": ("Royalty", LONG)}
+              "ember": ("EMBER", SWING), "deep": ("Deep Contrarian", LONG), "royalty": ("Royalty", LONG),
+              # Långsidans cykeltest framåt (valhall/long_paper.py, docs/forskning/lang_cykel_spec.md)
+              "lang_e1": ("Lång · billig och hatad (E1)", LONG), "lang_e3": ("Lång · bekräftad vändning (E3)", LONG)}
+LANG_TEST_DAYS = 730               # lang_e1/lang_e3: sälj efter två år — testets huvudhorisont (504 handelsdagar)
 EMBER_DAYS = 60                    # EMBER: tidsstopp (beslut 11 — EMBER har ingen egen exitmotor; stoppen ur setup-kortet)
 N_DEEP_DAILY = 2                   # kontot deep (kontrollgrupp): två bästa per segment varje dag, som quality
 LONG_SELL = ("SELL", "STRONG SELL")      # cagr_scoring: EMA200-brott, röd regim eller poäng under 35 %
@@ -509,6 +512,10 @@ def _manage(state: dict, p: dict, df: Optional[pd.DataFrame], market, wolf, boar
                 return
             if held >= EMBER_DAYS:
                 _close(state, p, float(c[j]), f"tidsstopp {EMBER_DAYS} dagar", date, ev)
+                return
+        elif p["strategy"] in ("lang_e1", "lang_e3"):
+            if held >= LANG_TEST_DAYS:
+                _close(state, p, float(c[j]), "tidsstopp 2 år (testets horisont)", date, ev)
                 return
         elif kind == LONG and held >= LONG_DAYS:
             _close(state, p, float(c[j]), "tidsstopp 3 år", date, ev)
