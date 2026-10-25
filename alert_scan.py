@@ -83,7 +83,8 @@ def _repo_file(path: str, default):
             log.info("%s finns inte på %s — använder default", path, branch)
             return default
         r.raise_for_status()
-        return json.loads(base64.b64decode(r.json()["content"]))
+        import private_data                # privata ark (positionerna) ligger krypterade
+        return private_data.unseal(json.loads(base64.b64decode(r.json()["content"])))
     except Exception as exc:
         log.error("kunde inte läsa %s: %s — använder default", path, exc)
         return default

@@ -18,3 +18,4 @@ openai==3.2.0
 # Copilot-extraktionen i granskningsarken: PDF → text med sidmarkeringar.
 # Utan paketet fungerar bara klistra-in-vägen.
 pypdf==5.4.0
+cryptography==43.0.3
