@@ -310,3 +310,77 @@ def current(name: str, h: pd.Series, eps: list) -> Optional[dict]:
     e = eps[-1]
     days = int(len(h.loc[e["start"]:]))
     return {"name": name, "since": str(e["start"].date()), "months": round(days / MONTH, 1)}
+
+
+# ── Hatat och billigt (docs/forskning/hatat_och_billigt_spec.md, version 1) ─
+V_MIN_N, V_MIN_YEARS = 30, 5
+MID_RANKS = (10, 30)                     # rank 11–30 (0-indexerat 10..29)
+
+
+def ranks(members: dict, have: set, lo: int, hi: int) -> dict:
+    """{år: [id]} — plats lo..hi-1 bland dem med kursdata (0 = störst)."""
+    return {y: [i for i in ids if i in have][lo:hi] for y, ids in members.items()}
+
+
+def start_rows(close: pd.Series, market: pd.Series, eps: list, start=START) -> list:
+    """{year, rel, undervalued} — köp dagen efter hatets start, håll HOLD dagar, relativt marknaden."""
+    c = close.astype(float).dropna()
+    mk = market.reindex(c.index).ffill()
+    out = []
+    for e in eps:
+        if e["start"] < pd.Timestamp(start) or e["start"] not in c.index:
+            continue
+        a = c.index.get_loc(e["start"]) + 1
+        b = a + HOLD
+        if b >= len(c) or pd.isna(mk.iloc[a]) or pd.isna(mk.iloc[b]):
+            continue
+        out.append({"year": int(e["start"].year), "start": str(e["start"].date()),
+                    "rel": float(c.iloc[b] / c.iloc[a] - 1) - float(mk.iloc[b] / mk.iloc[a] - 1),
+                    "undervalued": e.get("undervalued")})
+    return out
+
+
+def _diff_ci(a: list, b: list, rng: np.random.Generator, n: int = N_BOOT) -> list:
+    """95 %-intervall för snitt(a) − snitt(b) med samma dragna år; a, b = [(år, värde)]."""
+    years = sorted({y for y, _v in a} | {y for y, _v in b})
+    if not a or not b:
+        return [None, None]
+
+    def agg(rows):
+        s = np.zeros(len(years))
+        c = np.zeros(len(years))
+        for y, v in rows:
+            k = years.index(y)
+            s[k] += v
+            c[k] += 1
+        return s, c
+    sa, ca = agg(a)
+    sb, cb = agg(b)
+    pick = rng.integers(0, len(years), (n, len(years)))
+    na, nb = ca[pick].sum(axis=1), cb[pick].sum(axis=1)
+    ok = (na > 0) & (nb > 0)
+    d = sa[pick].sum(axis=1)[ok] / na[ok] - sb[pick].sum(axis=1)[ok] / nb[ok]
+    return [float(np.percentile(d, 2.5)), float(np.percentile(d, 97.5))] if len(d) else [None, None]
+
+
+def value_summary(rows: list, rng: np.random.Generator, n_boot: int = N_BOOT) -> dict:
+    """V1 (billigt − dyrt bland de hatade) och V2 (hatat och billigt mot marknaden) med utfall."""
+    cheap = [(r["year"], r["rel"]) for r in rows if r.get("undervalued") is True]
+    dear = [(r["year"], r["rel"]) for r in rows if r.get("undervalued") is False]
+
+    def grp(x):
+        v = [b for _a, b in x]
+        return {"n": len(v), "years": len({a for a, _b in x}), "mean": _pct(np.mean(v)) if v else None,
+                "median": _pct(np.median(v)) if v else None}
+    gc, gd = grp(cheap), grp(dear)
+    ci1 = _diff_ci(cheap, dear, rng, n_boot)
+    v1 = (gc["n"] >= V_MIN_N and gd["n"] >= V_MIN_N and min(gc["years"], gd["years"]) >= V_MIN_YEARS
+          and ci1[0] is not None and ci1[0] > 0 and gc["median"] is not None and gd["median"] is not None
+          and gc["median"] > gd["median"])
+    ci2 = cluster_ci([b for _a, b in cheap], [a for a, _b in cheap], rng, n_boot) if cheap else [None, None]
+    v2 = (gc["n"] >= V_MIN_N and gc["years"] >= V_MIN_YEARS and ci2[0] is not None and ci2[0] > 0
+          and gc["median"] is not None and gc["median"] > 0)
+    return {"cheap": gc, "dear": gd, "no_value": sum(1 for r in rows if r.get("undervalued") is None),
+            "V1": {"diff": _pct(gc["mean"] / 100 - gd["mean"] / 100) if gc["mean"] is not None and gd["mean"] is not None else None,
+                   "ci": [_pct(v) for v in ci1], "pass": bool(v1)},
+            "V2": {"ci": [_pct(v) for v in ci2], "pass": bool(v2)}}
