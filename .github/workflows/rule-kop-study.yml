@@ -1,0 +1,32 @@
+name: Rule-köp i Norden
+
+# Manuell: slår hat + kvalitet + balansräkning + katalysator marknaden i Norden? Förregistrerat i
+# docs/forskning/rule_kop_spec.md. Resultatet i loggen och i Gisten (rule_kop.json).
+# Ändrar inga regler.
+on:
+  workflow_dispatch:
+
+jobs:
+  rule-kop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Rule-köp
+        env:
+          BORSDATA_API_KEY: ${{ secrets.BORSDATA_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+        run: python rule_kop_study.py
