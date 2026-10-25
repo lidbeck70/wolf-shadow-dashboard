@@ -18,6 +18,7 @@ from typing import Callable, Optional
 
 import pandas as pd
 
+import backtest_costs as bc
 import complex_profiles as cp
 import ovtlyr_nine as on
 import viking_backtest as vbt
@@ -82,7 +83,7 @@ def summary(trades: list) -> dict:
 
 def run(getter: Optional[Callable] = None, members: Optional[dict] = None, nordic: Optional[dict] = None,
         drivers: Optional[dict] = None, cfg: vbt.Config = vbt.Config(), start=None) -> list:
-    """[{complex, variant, n, exp, win, sum_r}] för alla råvarukomplex. members = {komplex: [tickers]} (förval:
+    """[{complex, variant, n, exp, win, sum_r, exp_net, sum_r_net}] för alla råvarukomplex. members = {komplex: [tickers]} (förval:
     BERSERK:s nordiska producenter per komplex), drivers = {komplex: serie}."""
     from berserk import universe as buv
     from valhall import complexes as vcx
@@ -98,5 +99,7 @@ def run(getter: Optional[Callable] = None, members: Optional[dict] = None, nordi
             continue
         res = run_complex(p, tickers, getter, nordic, cfg, start, (drivers or {}).get(p.key))
         for variant in ("standard", "komplex", "drivare"):
-            rows.append({"complex": p.key, "variant": variant, "tickers": len(tickers), **summary(res[variant])})
+            net = bc.compare(res[variant])            # efter kostnad (backtest_costs) — samma affärer
+            rows.append({"complex": p.key, "variant": variant, "tickers": len(tickers), **summary(res[variant]),
+                         "exp_net": net["exp_net"], "sum_r_net": net["sum_r_net"]})
     return rows

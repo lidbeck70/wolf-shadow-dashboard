@@ -145,6 +145,18 @@ def run(api=None, getter=None, data_getter=None, viking_run=None, berserk_run=No
                        "berserk": vbk.portfolios(btag, years, pc=bbt.live_portfolio(), filters=vbk.FILTERS_3B_THEME),
                        "berserk_by_period": {p: vbk.portfolios(btag, yrs[p], pc=bbt.live_portfolio(),
                                                                filters=vbk.FILTERS_3B_THEME, period=p) for p in yrs}}
+    # Kostnadsmodellen (backtest_costs): samma affärer och filter, R efter courtage, spread, växling och stoppglidning
+    import backtest_costs as bc
+    vnet = [{**r, "trade": t} for r, t in zip(vtag, bc.net_trades([r["trade"] for r in vtag]))]
+    bnet = [{**r, "trade": t} for r, t in zip(btag, bc.net_trades([r["trade"] for r in btag]))]
+    result["costs"] = {
+        "model_bps": dict(bc.ROUND_TRIP_BPS),
+        "viking": {p: bc.compare([r["trade"] for r in vtag if p == "2008–idag" or r["period"] == p])
+                   for p in ("2008–idag",) + tuple(yrs)},
+        "berserk": {p: bc.compare([r["trade"] for r in btag if p == "2008–idag" or r["period"] == p])
+                    for p in ("2008–idag",) + tuple(yrs)},
+        "viking_portfolio": vbk.portfolios(vnet, years, filters=vbk.FILTERS_3B),
+        "berserk_portfolio": vbk.portfolios(bnet, years, pc=bbt.live_portfolio(), filters=vbk.FILTERS_3B_THEME)}
     try:
         import complex_backtest as cbt
         import ovtlyr_nine as on
@@ -164,7 +176,13 @@ def run(api=None, getter=None, data_getter=None, viking_run=None, berserk_run=No
                 + sum((_fmt_port(v, f"FAS 3B — BERSERK {p}") for p, v in result["fas3b"]["berserk_by_period"].items()), [])
                 + [""] + ["FAS 3B — VIKING NINE PER KOMPLEX (standard SPDR · komplexets ETF · + drivargrind)"]
                 + [f"  {r['complex']:<13} {r['variant']:<9} n {r['n']:>4} · exp {r['exp']} R · vinst {r['win']} % · "
-                   f"summa {r['sum_r']} R" for r in result["fas3b"]["complex"] or []])
+                   f"summa {r['sum_r']} R · netto exp {r.get('exp_net')} R" for r in result["fas3b"]["complex"] or []])
+    lines_cost = ([f"KOSTNADER — tur och retur {result['costs']['model_bps']} bp + stoppglidning (backtest_costs)"]
+                  + [f"  {eng:<8} {p:<10} n {c['n']:>4} · exp {c['exp']} → {c['exp_net']} R · summa {c['sum_r']} → "
+                     f"{c['sum_r_net']} R · kostnad {c['cost_r']} R/affär"
+                     for eng in ("viking", "berserk") for p, c in result["costs"][eng].items()]
+                  + _fmt_port(result["costs"]["viking_portfolio"], "KOSTNADER — VIKING NINE NETTO, VÄNDNINGSGRINDEN")
+                  + _fmt_port(result["costs"]["berserk_portfolio"], "KOSTNADER — BERSERK NETTO, TEMATS VÄNDNING"))
     for line in (_fmt_table(result["viking"]["all"], "VIKING NINE — ALLA SEGMENT (Nordens status)")
                  + _fmt_table(result["viking"]["by_segment"], "VIKING NINE — PER SEGMENT (Nordens status)")
                  + _fmt_table([r for r in result["viking"]["global"] if r["status"] != "alla"],
@@ -175,7 +193,7 @@ def run(api=None, getter=None, data_getter=None, viking_run=None, berserk_run=No
                  + _fmt_table(result["berserk"]["by_theme"], "BERSERK — PER TEMA (temats status)")
                  + _fmt_port(result["berserk"]["portfolio"], "BERSERK — PORTFÖLJ 2008–idag")
                  + sum((_fmt_port(v, f"BERSERK — PORTFÖLJ {p}") for p, v in result["berserk"]["portfolio_by_period"].items()), [])
-                 + lines_3b):
+                 + lines_3b + lines_cost):
         log.info("%s", line)
     if not no_save:
         if save is None:
