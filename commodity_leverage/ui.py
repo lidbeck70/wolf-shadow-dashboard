@@ -119,6 +119,9 @@ def _comparison(rows: list) -> None:
          "år (Snabbkollens motor). Kursbeta = hur mycket aktien rört sig per 1 % i råvaran, veckovis, "
          f"{cc.BETA_YEARS} år. Upp/ned = beta i veckor då råvaran steg respektive föll; ⬆ = följer med mer upp "
          f"än ned (asymmetri). Gul beta = svagt samband (R² < {cc.BETA_WEAK_R2:g}). 🔒 = råvaran vald manuellt.")
+    from asymmetry import quick_config as qc
+    for com in sorted({r.commodity for r in rows if r.commodity in qc.LEV_PRICE_NOTE}):
+        note(qc.LEV_PRICE_NOTE[com])
 
 
 # ── Detaljen ─────────────────────────────────────────────────────────────────

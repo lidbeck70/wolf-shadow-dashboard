@@ -90,9 +90,9 @@ def test_analyze_combines_the_quick_engine_and_the_beta():
 
 def test_beta_needs_a_commodity_series():
     def fetcher(t, series_getter=None, theme_getter=None):
-        return {"ticker": t, "name": t, "commodity_px": {"commodity": "uran", "ticker": ""}}
+        return {"ticker": t, "name": t, "commodity_px": {"commodity": "kol", "ticker": ""}}
     r = ce.analyze("NXE", fetcher=fetcher, series_getter=lambda s, p: pd.Series(dtype=float))
-    assert r.beta is None and "ingen prisserie för uran" in r.beta_error
+    assert r.beta is None and "ingen prisserie för kol" in r.beta_error
     assert r.lev.score is None
 
 
@@ -158,3 +158,15 @@ def test_stock_move_uses_the_down_beta_on_a_fall():
     b.down_beta = 5.0
     assert cb.stock_move(b)[0] == -100.0                                  # golv
     assert cb.stock_move(None) == (None, "")
+
+
+def test_uranium_gets_a_beta_from_the_sprott_proxy():
+    import numpy as np
+    idx = pd.date_range("2022-01-07", periods=200, freq="W-FRI")
+    u = pd.Series(np.exp(np.cumsum(np.random.default_rng(1).normal(0, 0.04, 200))) * 20, index=idx)
+    stock = u ** 1.5
+
+    def fetcher(t, series_getter=None, theme_getter=None):
+        return {"ticker": t, "name": "Cameco", "commodity_px": {"commodity": "uran", "ticker": ""}}
+    r = ce.analyze("CCJ", fetcher=fetcher, series_getter=lambda s, p: {"U-UN.TO": u, "CCJ": stock}[s])
+    assert r.beta_error is None and r.beta is not None and r.beta.beta > 1.2

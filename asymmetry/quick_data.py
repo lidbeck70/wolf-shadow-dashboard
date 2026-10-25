@@ -184,7 +184,8 @@ def _theme_default(sym: str) -> Optional[str]:
 
 def commodity_prices(theme: Optional[str], currency: Optional[str], series_getter: Callable) -> dict:
     """Råvarans årssnitt och dagspris i rapportvalutan (Commodity Leverage).
-    {commodity, ticker, prices: {år: pris}, p0, fx_now} — tomt pris när serien saknas."""
+    {commodity, ticker, prices: {år: pris}, p0, fx_now} — tomt pris när serien saknas. fx_now = rapportvaluta
+    per enhet av seriens valuta (USD, eller CAD för uranets SPUT)."""
     ticker = qc.LEV_PRICE_TICKERS.get(theme or "", "")
     out = {"commodity": theme or "", "ticker": ticker, "prices": {}, "p0": None, "fx_now": 1.0}
     if not ticker:
@@ -197,10 +198,11 @@ def commodity_prices(theme: Optional[str], currency: Optional[str], series_gette
     if px is None or len(px) == 0:
         return out
     ccy = str(currency or "USD").upper()
+    pccy = qc.LEV_PRICE_CCY.get(ticker, "USD")             # seriens egen valuta (SPUT i CAD)
     fx_year, fx_now = {}, 1.0
-    if ccy != "USD":
+    if ccy != pccy:
         try:
-            fxs = series_getter(f"USD{ccy}=X", "10y")
+            fxs = series_getter(f"{pccy}{ccy}=X", "10y")
         except Exception:
             fxs = None
         if fxs is None or len(fxs) == 0:
