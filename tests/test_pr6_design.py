@@ -39,7 +39,7 @@ def test_nav_tree_is_consistent():
         assert len(opts) == len(set(opts))
     assert "🧭 Durrett" in nav.options("review") and "🐺 Wolf Asymmetry" in nav.options("review")
     assert "🐺 Durrett" not in nav.leaves() and "🧭 Confidence score" not in nav.leaves()
-    assert nav.options("odin") == ["Läget", "Kartan", "Råvaror", "Makro", "Marknad"]       # design PR 9
+    assert nav.options("odin") == ["Läget", "Kartan", "Sektorrotation", "Råvaror", "Makro", "Marknad"]       # design PR 9
     assert "Market Cycle" in nav.options("more/Motorsidor")
     keys = [k for k, _l in nav.TOP]
     assert "screening" not in keys and "regime" not in keys and "intel" not in keys     # fas 8

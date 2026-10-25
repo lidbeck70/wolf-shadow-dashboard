@@ -464,6 +464,9 @@ def _tab_odin() -> None:
             render_valhall_page("Kartan")
         else:
             tab_not_found("Valhall", "valhall")
+    elif group == "Sektorrotation":
+        from odin.sektorrotation import render_sektorrotation_page
+        _page(True, render_sektorrotation_page, "Sektorrotation", "odin/sektorrotation")
     elif group == "Marknad":
         sub = _sub("odin/Marknad")
         st.markdown("---")

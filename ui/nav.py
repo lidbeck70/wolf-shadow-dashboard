@@ -35,7 +35,7 @@ TOP_LABEL = dict(TOP)
 # inställningar, regler, Copilot och motorsidorna). VALHALL-fliken är borta (beslut 1): Kartan ligger i ODIN,
 # papperskontona i PORTFÖLJ och backtesterna under Mot målet. Nycklarna i koden är oförändrade (beslut 8).
 SUBS: dict = {
-    "odin": ["Läget", "Kartan", "Råvaror", "Makro", "Marknad"],
+    "odin": ["Läget", "Kartan", "Sektorrotation", "Råvaror", "Makro", "Marknad"],
     # Design PR 10: Guld/Silver och Guldkvoter är en sida (🥇 Guld) med två inre flikar; Sentiment och Retail Pulse
     # likaså. Marknad är bakgrund och märks så på sidorna.
     "odin/Råvaror": ["Odin's Blindspot", "🔥 EMBER", "🪓 BERSERK Regime", "Råvarurotation", "🥇 Guld"],
@@ -61,6 +61,7 @@ HOME_ZONES: tuple = (
     ("odin", "ODIN — VAR KAPITALET SKA", [
         ("Läget", "Allokering · Swing · Marknadsrisk · Norden — fyra ljus, och Swing-läget"),
         ("Kartan", "Valhalls cykelkarta per sektor, råvarukomplex och tema med vändningarna"),
+        ("Sektorrotation", "Var ledarskapet finns: 12–6–3-rankning, trendfilter och fas per sektor bredvid Valhalls cykel"),
         ("Råvaror", "Odin's Blindspot · 🔥 EMBER · BERSERK · Råvarurotation · Guld"),
         ("Makro", "🐺 Fiat Debasement och Sentiment"),
         ("Marknad", "Sektorflöde och värmekarta — bakgrund"),
@@ -170,6 +171,7 @@ TARGETS: dict = {
     "thor": ("thor",),
     "turn": ("home",),
     "valhall_map": ("odin", "Kartan"),
+    "sector_rotation": ("odin", "Sektorrotation"),
     "laget": ("odin", "Läget"),
     "swing_regime": ("odin", "Läget"),
     "market_risk": ("odin", "Läget"),
