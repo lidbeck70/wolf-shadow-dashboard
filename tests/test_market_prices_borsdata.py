@@ -54,7 +54,8 @@ def test_borsdata_first_and_yahoo_for_the_rest(monkeypatch):
     bd = FakeBD({1: _df(), 2: _df(400, 50.0)})
     calls = _setup(monkeypatch, bd, {"BOL.ST": 1, "NEM": 2})
     df = mp.ohlcv("BOL.ST", "1y")
-    assert list(df.columns) == ["Open", "High", "Low", "Close", "Volume"] and len(df) == 300
+    assert list(df.columns) == ["Open", "High", "Low", "Close", "Volume"] and len(df) == 262
+    assert df["Close"].iloc[-1] == 399.0                                           # avkortad till de senaste staplarna
     assert bd.calls == [(1, 262)] and calls == []                                   # inget Yahoo-anrop
     assert mp.close("nem", "2y").iloc[0] == 50.0 and bd.calls[-1] == (2, 524)      # period → antal staplar
     assert mp.ohlcv("BOL.ST", "1y").equals(df) and len(bd.calls) == 2              # cachat

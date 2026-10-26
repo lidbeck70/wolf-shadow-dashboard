@@ -142,10 +142,11 @@ def _bd_ohlcv_raw(ins: int, period: str) -> pd.DataFrame:
     api = _bd_api()
     if api is None:
         raise _NoData("Börsdata saknas")
-    df = api.get_stockprices_df(int(ins), max_count=PERIOD_BARS.get(period, 5040))
+    bars = PERIOD_BARS.get(period, 5040)
+    df = api.get_stockprices_df(int(ins), max_count=bars)
     if df is None or len(df) == 0:
         raise _NoData(f"Börsdata {ins} {period}: tom")
-    return df[["Open", "High", "Low", "Close", "Volume"]]
+    return df[["Open", "High", "Low", "Close", "Volume"]].tail(bars)      # Börsdata kan svara med hela historiken
 
 
 def _from_borsdata(ticker: str, period: str) -> Optional[pd.DataFrame]:
