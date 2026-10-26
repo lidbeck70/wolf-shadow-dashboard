@@ -84,6 +84,18 @@ def test_sector_and_industry_keywords_reach_the_new_themes():
     rg._THEME_CACHE.clear()
 
 
+def test_golden_in_a_company_name_is_not_gold():
+    yahoo = {"GEOS.OL": {"sector": "Energy", "industry": "Oil & Gas Equipment & Services",
+                         "longName": "Golden Energy Offshore Services AS"},
+             "GOGL": {"industry": "Marine Shipping", "longName": "Golden Ocean Group Limited"},
+             "NAME.OL": {"longName": "Golden Energy Offshore Services AS"},       # utan bransch: namnets ord
+             "AEM.TO": {"industry": "Gold"}, "YAR.OL": {"industry": "Agricultural Inputs — Fertilizers"}}
+    rg._THEME_CACHE.clear()
+    got = {t: rg.yahoo_theme(t, lambda s: yahoo.get(s, {})) for t in yahoo}
+    assert got == {"GEOS.OL": "olja", "GOGL": "torrbulk", "NAME.OL": "olja", "AEM.TO": "guld", "YAR.OL": "godsel"}
+    rg._THEME_CACHE.clear()
+
+
 def test_registry_members_need_no_alias_and_every_berserk_theme_registers():
     assert eu.REGISTRY_THEME_ALIAS == {}
     rg._THEME_OVERLAY.clear()
