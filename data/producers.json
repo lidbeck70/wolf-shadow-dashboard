@@ -81,6 +81,16 @@
       "rp_ratio": 17.3,
       "ticker": "VAR.OL",
       "unit_cost": 10.3
+    },
+    {
+      "commodity": "Guld",
+      "date": "2026-10-26",
+      "ev_ebitda": 5.051,
+      "id": "f1dcf038",
+      "ins_id": 1706,
+      "name": "Golden Energy Offshore",
+      "nd_ebitda": 0.998,
+      "ticker": "GEOS.OL"
     }
   ],
   "royalty": []
