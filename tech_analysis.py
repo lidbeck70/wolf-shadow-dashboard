@@ -11,7 +11,7 @@ fristående, utan strategibeslut:
   risk (volatilitet) och momentum
   volatilitetsfördelning · oscillatorns riktning · Bull List %
 
-Data: Yahoo via den delade priscachen, Börsdata som reserv.
+Data: den delade priscachen (market_prices: Börsdata först, Yahoo som reserv), avkortad till vald period.
 """
 
 from __future__ import annotations
@@ -25,6 +25,8 @@ from ui.components import note, page_header
 from ui.tokens import AMBER, BG_CARD, CYAN, DIM, GREEN, RED, TEXT
 
 PERIODS = {"6 mån": "6mo", "1 år": "1y", "2 år": "2y"}
+PERIOD_SPAN = {"3mo": pd.DateOffset(months=3), "6mo": pd.DateOffset(months=6), "1y": pd.DateOffset(years=1),
+               "2y": pd.DateOffset(years=2)}
 BULL_LIST_ETFS = ("XLE", "XLF", "XLK", "XLV", "XLI", "XLB", "XLC", "XLY", "XLP", "XLU", "XLRE")
 PATTERN_LOOKBACK = 5
 
@@ -42,14 +44,28 @@ def _bd_ohlcv(ticker: str) -> Optional[pd.DataFrame]:
         return None
 
 
+def trim_to_period(df: pd.DataFrame, period: str) -> pd.DataFrame:
+    """Bara den valda perioden (räknat bakåt från sista dagen). Kurslagret kan svara med längre historik än
+    perioden (Börsdata-först), och då ska 6 mån ändå betyda 6 mån."""
+    span = PERIOD_SPAN.get(period)
+    if span is None or df is None or not len(df):
+        return df
+    return df[df.index >= df.index[-1] - span]
+
+
 def load_ohlcv(ticker: str, period: str, getter=None, bd=None) -> tuple:
-    """(DataFrame med Date-kolumn | None, källa). Yahoo först, Börsdata som reserv."""
+    """(DataFrame med Date-kolumn | None, källa). Kurslagret (Börsdata först, Yahoo som reserv), sedan
+    Börsdata direkt. Avkortad till perioden."""
+    stats = None
     if getter is None:
+        from market_prices import STATS as stats
         from market_prices import ohlcv as getter
     df, src = None, ""
     try:
+        before = stats["borsdata"] if stats is not None else None
         df = getter(ticker, period)
-        src = f"Yahoo Finance {ticker}"
+        from_bd = stats is not None and stats["borsdata"] > before
+        src = f"Börsdata {ticker}" if from_bd else f"Yahoo Finance {ticker}"
     except Exception:
         df = None
     if df is None or len(df) < 30:
@@ -61,6 +77,9 @@ def load_ohlcv(ticker: str, period: str, getter=None, bd=None) -> tuple:
     if getattr(df.index, "tz", None) is not None:
         df.index = df.index.tz_localize(None)
     df = df[["Open", "High", "Low", "Close", "Volume"]].astype(float).dropna(subset=["Close"])
+    df = trim_to_period(df[~df.index.duplicated(keep="last")].sort_index(), period)
+    if len(df) < 30:
+        return None, ""
     out = df.reset_index()
     out = out.rename(columns={out.columns[0]: "Date"})
     out["Date"] = pd.to_datetime(out["Date"])
@@ -108,6 +127,18 @@ def patterns_html(title: str, color: str, groups: list, empty: str) -> str:
 
 
 # ── Order blocks ────────────────────────────────────────────────────────────
+def unique_orderblocks(obs: list) -> list:
+    """Ett block per ljus och typ. Detektorn kör två känsligheter (28 % och 50 %), och en stor rörelse korsar båda
+    samma dag — då pekar båda ut samma ljus och blocket kom med två gånger."""
+    seen, out = set(), []
+    for ob in obs or []:
+        key = (ob.type, str(ob.date)[:10], round(float(ob.low), 6), round(float(ob.high), 6))
+        if key not in seen:
+            seen.add(key)
+            out.append(ob)
+    return out
+
+
 def orderblock_rows(obs: list, price: float) -> list:
     """Aktiva block sorterade på avstånd: [(typ, låg, hög, avstånd %, datum, styrka, inne?)]."""
     rows = []
@@ -214,7 +245,7 @@ def _render(ticker: str, df: pd.DataFrame, src: str) -> None:
     volume = _safe(lambda: compute_volume(df), {})
     vol = _safe(lambda: compute_volatility(df), {})
     mom = _safe(lambda: compute_momentum(df), {})
-    obs = _safe(lambda: detect_orderblocks(df), [])
+    obs = _safe(lambda: unique_orderblocks(detect_orderblocks(df)), [])
     oa = _safe(lambda: classify_price_vs_ob(price, obs), {"signal_bias": "HOLD"}) if obs else {"signal_bias": "HOLD"}
     pats = _safe(lambda: detect_patterns(df, lookback=PATTERN_LOOKBACK), {"bullish": [], "bearish": []})
 

@@ -320,5 +320,28 @@
     "notes": "",
     "sector": "Materials",
     "source": "holdings"
+  },
+  {
+    "id": "367edd06-d866-40be-98ec-427f7b8a022d",
+    "position_id": "7147648e",
+    "ticker": "BOL.ST",
+    "strategy": "contrarian",
+    "entry_date": "2026-06-10",
+    "exit_date": "2026-10-26",
+    "entry_price": 310.0,
+    "exit_price": 341.0,
+    "shares": 40,
+    "direction": "long",
+    "pnl_pct": 10.0,
+    "pnl_amount": 1240.0,
+    "r_multiple": null,
+    "stop_loss": null,
+    "setup": null,
+    "sell_rule": null,
+    "holding_days": 138,
+    "exit_reason": "ema200",
+    "notes": "",
+    "sector": "Materials",
+    "source": "holdings"
   }
 ]

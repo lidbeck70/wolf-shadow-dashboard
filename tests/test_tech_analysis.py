@@ -29,11 +29,43 @@ def _walk(n=500, seed=0, drift=0.0005):
 
 
 def test_load_prefers_yahoo_and_falls_back_to_borsdata():
-    df, src = ta.load_ohlcv("NVDA", "1y", getter=lambda t, p: _walk(), bd=lambda t: None)
+    df, src = ta.load_ohlcv("NVDA", "2y", getter=lambda t, p: _walk(), bd=lambda t: None)
     assert src == "Yahoo Finance NVDA" and list(df.columns)[:1] == ["Date"] and len(df) == 500
-    df, src = ta.load_ohlcv("VOLV-B.ST", "1y", getter=lambda t, p: pd.DataFrame(), bd=lambda t: _walk(seed=2))
+    df, src = ta.load_ohlcv("VOLV-B.ST", "2y", getter=lambda t, p: pd.DataFrame(), bd=lambda t: _walk(seed=2))
     assert src == "Börsdata VOLV-B.ST" and len(df) == 500
     assert ta.load_ohlcv("X", "1y", getter=lambda t, p: pd.DataFrame(), bd=lambda t: None) == (None, "")
+
+
+def test_period_limits_the_view_even_when_the_source_sends_full_history():
+    full = _walk(n=3000)                                                  # ~12 år, som Börsdata kan svara med
+    full = pd.concat([full, full.iloc[[-1]]])                             # och en dubblerad sista dag
+    for period, first in (("6mo", "2026-04-02"), ("1y", "2025-10-02"), ("2y", "2024-10-02")):
+        df, _src = ta.load_ohlcv("AMC", period, getter=lambda t, p: full, bd=lambda t: None)
+        assert str(df["Date"].iloc[0].date()) >= first and df["Date"].iloc[0] < pd.Timestamp(first) + pd.Timedelta(days=5)
+        assert df["Date"].is_unique and str(df["Date"].iloc[-1].date()) == "2026-10-02"
+
+
+def test_source_label_follows_the_price_layer(monkeypatch):
+    import market_prices
+    monkeypatch.setattr(market_prices, "STATS", {"borsdata": 0, "yahoo": 0, "missing": 0})
+
+    def from_bd(t, p):
+        market_prices.STATS["borsdata"] += 1
+        return _walk()
+    monkeypatch.setattr(market_prices, "ohlcv", from_bd)
+    assert ta.load_ohlcv("AMC", "1y")[1] == "Börsdata AMC"
+    monkeypatch.setattr(market_prices, "ohlcv", lambda t, p: _walk())
+    assert ta.load_ohlcv("SPY", "1y")[1] == "Yahoo Finance SPY"
+
+
+def test_same_candle_from_both_sensitivities_is_one_block():
+    ob = lambda t, lo, hi, d, s: SimpleNamespace(type=t, low=lo, high=hi, status="Active", date=d,  # noqa: E731
+                                                 vol_strength=1.2, sensitivity=s)
+    obs = [ob("bullish", 2.85, 2.96, "2026-10-07", 1), ob("bullish", 2.85, 2.96, "2026-10-07", 2),
+           ob("bearish", 2.85, 2.96, "2026-10-07", 1), ob("bullish", 2.85, 2.96, "2026-09-01", 2)]
+    assert [(o.type, o.date) for o in ta.unique_orderblocks(obs)] == [
+        ("bullish", "2026-10-07"), ("bearish", "2026-10-07"), ("bullish", "2026-09-01")]
+    assert len(ta.orderblock_rows(ta.unique_orderblocks(obs), 2.9)) == 3
 
 
 def test_repeated_patterns_are_grouped_with_the_latest_day():
