@@ -22,6 +22,7 @@ DATA_GAP is never treated as GREEN — it counts 0, like AMBER, and is flagged.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
@@ -240,7 +241,8 @@ def yahoo_theme(ticker: str, info_getter=None) -> Optional[str]:
         info = info_getter(t) or {}
         text = " ".join(str(info.get(k) or "") for k in ("industry", "sector", "longName", "shortName")).lower()
         for kw, th in INDUSTRY_KEYWORD_THEME:
-            if kw in text:
+            # hela ord (plural tillåten): "Golden Energy Offshore" är inte guld, "Golden Ocean" inte heller
+            if re.search(rf"\b{re.escape(kw)}(s|es)?\b", text):
                 theme = th
                 break
     except Exception as exc:
