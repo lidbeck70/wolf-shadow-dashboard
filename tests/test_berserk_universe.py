@@ -144,15 +144,16 @@ def test_one_listing_per_company_and_every_theme_known():
 
 
 def test_region_index_and_region_of():
-    assert uv.REGION_INDEX == {"Norden": "OMXS30", "USA": "SPY", "Kanada": "^GSPTSE", "London": "^FTSE"}
-    assert [uv.region_of(t) for t in ("BOL.ST", "SU.TO", "GLEN.L", "FCX", "GLD")] == \
-        ["Norden", "Kanada", "London", "USA", "USA"]
+    assert uv.REGION_INDEX == {"Norden": "OMXS30", "USA": "SPY", "Kanada": "^GSPTSE", "London": "^FTSE",
+                               "Europa": "^STOXX50E"}
+    assert [uv.region_of(t) for t in ("BOL.ST", "SU.TO", "GLEN.L", "FCX", "GLD", "NESN.SW", "SDF.DE", "KGH.WA")] == \
+        ["Norden", "Kanada", "London", "USA", "USA", "Europa", "Europa", "Europa"]
     assert uv.theme_of("FMG.AX") == ""
 
 
 def test_probe_checks_region_indices():
     syms = {s for g, _t, s in probe.candidates() if g == "Index"}
-    assert syms == {"SPY", "^GSPTSE", "^FTSE"}
+    assert syms == {"SPY", "^GSPTSE", "^FTSE", "^STOXX50E"}
     groups = {g for g, _t, _s in probe.candidates()}
     assert set(uv.REGIONS) <= groups
 

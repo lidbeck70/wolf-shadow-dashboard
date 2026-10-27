@@ -181,7 +181,10 @@ def evaluate(ticker: str, stock: pd.DataFrame, driver: Optional[pd.Series], mark
            "region": uv.region_of(ticker), "kind": uv.kind_of(ticker), "driver": driver_symbol,
            "status": INGET, "setup": None, "why": [], "close": None, "stop": None, "position_pct": None,
            "shares": None, "risk_pct": None, "date": None, "error": None}
-    stock = stock.dropna(subset=["Open", "High", "Low", "Close"]) if stock is not None else None
+    ohlc = ["Open", "High", "Low", "Close"]
+    if stock is not None and not set(ohlc) <= set(getattr(stock, "columns", ())):
+        stock = None                              # tom ram utan kolumner (avnoterad, Yahoo utan data) = saknas
+    stock = stock.dropna(subset=ohlc) if stock is not None else None
     if stock is None or len(stock) < 220:
         row["error"] = "DATA UNAVAILABLE — för lite kurshistorik"
         return row
