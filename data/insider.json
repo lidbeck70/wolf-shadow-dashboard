@@ -15,7 +15,7 @@
       "okar_25": false,
       "price_now": 5.72,
       "role": "VD/CFO",
-      "ticker": "ARR.ST",
+      "ticker": "ARR.OL",
       "trigger": "Nej"
     },
     {
@@ -51,7 +51,7 @@
       "okar_25": false,
       "price_now": 53.3,
       "role": "VD/CFO",
-      "ticker": "VAR.ST",
+      "ticker": "VAR.OL",
       "trigger": "A"
     }
   ]
