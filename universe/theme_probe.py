@@ -64,6 +64,30 @@ CANDIDATES: dict = {
              "GALP.LS", "PNOR.OL", "DNO.OL", "OKEA.OL", "BWE.OL", "ENQ.L", "HBR.L"),
 }
 
+# Europa (hemmanoteringar) — registrets marknad Europa tar bara in temalistornas bolag.
+EUROPE_CANDIDATES: dict = {
+    "olja": ("TTE.PA", "ENI.MI", "REP.MC", "GALP.LS", "PKN.WA"),
+    "naturgas_eu": ("TTE.PA", "ENI.MI", "REP.MC", "ENGI.PA", "SRG.MI", "PKN.WA"),
+    "kol": ("JSW.WA",),
+    "koppar": ("KGH.WA", "NDA.DE"),
+    "aluminium": ("AMG.AS",),
+    "zink_nickel": ("ERA.PA",),
+    "stal": ("MT.AS", "TKA.DE", "SZG.DE", "ACX.MC", "APAM.AS", "KCO.DE"),
+    "litium": ("AMG.AS",),
+    "platina": ("UMI.BR",),
+    "palladium": ("UMI.BR",),
+    "godsel": ("SDF.DE", "OCI.AS", "ATT.WA"),
+    "skog": ("NVG.LS", "ALTR.LS", "ENC.MC", "SEM.LS"),
+    "vete": ("KWS.DE", "RIN.PA"),
+    "majs": ("KWS.DE", "RIN.PA"),
+    "soja": ("KWS.DE",),
+    "socker": ("SZU.DE", "KWS.DE"),
+    "kaffe": ("NESN.SW",),
+    "kakao": ("BARN.SW", "LISN.SW", "NESN.SW"),
+}
+for _th, _ts in EUROPE_CANDIDATES.items():
+    CANDIDATES[_th] = tuple(dict.fromkeys(CANDIDATES.get(_th, ()) + _ts))
+
 # Börsdatas sektorer att lista branschvis (Energi 3, Material 7, Dagligvaror 2) och branschnamn (delsträng)
 # i andra sektorer som bär råvaror (frakt, skog, jordbruk, fiske).
 BRANCH_SECTORS = (2, 3, 7)

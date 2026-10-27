@@ -36,15 +36,16 @@ GLOBAL = [{"insId": 10, "name": "Teck Resources", "ticker": "TECK B", "marketId"
 
 # ── Marknaderna ─────────────────────────────────────────────────────────────
 def test_markets_and_suffix_rules():
-    assert [m.key for m in ur.MARKETS] == ["norden", "usa", "kanada", "london", "australien"]
-    assert ur.DEFAULT == ("norden",) and ur.COMMODITY_MARKETS == ("norden", "usa", "kanada")
+    assert [m.key for m in ur.MARKETS] == ["norden", "usa", "kanada", "london", "europa", "australien"]
+    assert ur.DEFAULT == ("norden",) and ur.COMMODITY_MARKETS == ("norden", "usa", "kanada", "london", "europa")
     assert ur.BY_KEY["norden"].index == "OMXS30" and ur.BY_KEY["kanada"].index == "^GSPTSE"
     for t, key in (("BOL.ST", "norden"), ("EQNR.OL", "norden"), ("NOVO-B.CO", "norden"), ("NOKIA.HE", "norden"),
                    ("NEM", "usa"), ("AEM.TO", "kanada"), ("IPT.V", "kanada"), ("X.CN", "kanada"), ("RIO.L", "london"),
-                   ("BHP.AX", "australien"), ("SIE.DE", ""), ("", "")):
+                   ("BHP.AX", "australien"), ("SIE.DE", "europa"), ("NESN.SW", "europa"), ("7203.T", ""), ("", "")):
         assert ur.market_of(t) == key, t
     assert ur.market_for_country("Sverige") == "norden" and ur.market_for_country("canada") == "kanada"
-    assert ur.market_for_country("Tyskland") is None and ur.market_for_country(None) is None
+    assert ur.market_for_country("Tyskland") == "europa" and ur.market_for_country("Japan") is None
+    assert ur.market_for_country(None) is None
     assert ur.label("usa") == "USA" and ur.label("x") == "x"
 
 
@@ -54,7 +55,7 @@ def test_strategy_defaults_follow_the_family():
     for key in ("viking_nine", "wolf", "momentum", "insider", "long", "quality", "deep", "okänd"):
         assert ur.markets_for(key) == ur.DEFAULT, key
     rows = {r["Strategi"]: r["Marknader"] for r in ur.strategy_rows()}
-    assert rows["BERSERK"] == "Norden · USA · Kanada" and rows["Viking Nine"] == "Norden"
+    assert rows["BERSERK"] == "Norden · USA · Kanada · London · Europa" and rows["Viking Nine"] == "Norden"
 
 
 # ── Medlemmarna ─────────────────────────────────────────────────────────────
@@ -117,7 +118,7 @@ def test_blob_roundtrip_save_and_load():
     assert set(loaded.members) == set(u.members) and loaded.stats == u.stats
     assert ur.load(["norden"], loader=lambda name, fb: saved.get(name, fb)).counts()["usa"] == 0
     assert ur.load(loader=lambda name, fb: fb) is None and ur.load_index(lambda n, fb: fb) is None
-    assert [r["Marknad"] for r in ur.summary_rows(idx)] == ["Norden", "USA", "Kanada", "London", "Australien"]
+    assert [r["Marknad"] for r in ur.summary_rows(idx)] == ["Norden", "USA", "Kanada", "London", "Europa", "Australien"]
     assert ur.summary_rows(idx)[0]["Bolag"] == 3 and ur.summary_rows(None)[0]["Bolag"] == 0
 
 
@@ -161,7 +162,7 @@ def test_thor_reads_the_index_filters_by_market_and_maps_momentum_tickers():
     mom = {c.ticker for c in rows if c.strategy == "momentum"}
     assert "EQNR.OL" in mom and "ERIC-B.ST" in mom and "EQNR.ST" not in mom
     assert tui.MARKET_LABELS == {"Norden": "norden", "USA": "usa", "Kanada": "kanada", "London": "london",
-                                 "Australien": "australien"}
+                                 "Europa": "europa", "Australien": "australien"}
     shown = tui.shown_rows(rows, tui.ALL, [], ["USA"])
     assert shown and all(ur.market_of(c.ticker) == "usa" for c in shown)
     assert len(tui.shown_rows(rows, tui.ALL, [], [])) == len(rows)
@@ -186,7 +187,7 @@ def test_universe_member_and_fill_from_universe():
     m = tui.universe_member(st, "TECK-B.TO", loader)
     assert m.name == "Teck Resources" and calls == ["universe.json", "universe_kanada.json"]
     assert tui.universe_member(st, "AEM.TO", loader) is None and len(calls) == 2           # marknaden i sessionen
-    assert tui.universe_member(st, "SIE.DE", loader) is None and len(calls) == 2
+    assert tui.universe_member(st, "7203.T", loader) is None and len(calls) == 2            # okänd marknad
     ident = identify("TECK-B.TO")
     assert ident.name == "" and tui.fill_from_universe(ident, m) and ident.name == "Teck Resources"
     assert ident.currency == "CAD" and ident.theme is None                                  # inget tema i registret
