@@ -266,6 +266,33 @@ KPI_SCREENER_CALC: dict = {94: ("1year", "cagr"), 97: ("1year", "cagr"), 163: ("
 KPI_SCREENER_UNAVAILABLE: frozenset = frozenset({174, 179})
 
 
+# Yahoo-suffix → Börsdatas countryId (/countries, borsdata_probe PROBE_SECTION=markets 2026-10-27).
+SUFFIX_COUNTRY: dict = {".ST": 1, ".OL": 2, ".HE": 3, ".CO": 4}
+
+
+def match_by_country(instruments, query: str) -> Optional[int]:
+    """insId för en nordisk Yahoo-ticker där landet i suffixet avgör: samma Börsdata-ticker kan finnas i två
+    länder (GENO = Genovis i Sverige och General Oceans i Norge), och utan landet vann den som lästes sist.
+    None när suffixet inte är nordiskt eller inget bolag i det landet har tickern — då gäller det gamla
+    uppslaget som förut."""
+    q = str(query or "").upper().strip()
+    suffix = next((s for s in SUFFIX_COUNTRY if q.endswith(s)), None)
+    if suffix is None:
+        return None
+    base = q[:-len(suffix)]
+    forms = [base, base.replace("-", " ")]
+    parts = base.split("-")
+    if len(parts) == 2 and len(parts[1]) <= 2:
+        forms.append(parts[0])
+    cid = SUFFIX_COUNTRY[suffix]
+    for form in forms:
+        for inst in instruments or []:
+            if str(inst.get("ticker") or "").upper() == form and inst.get("countryId") == cid \
+                    and inst.get("insId") is not None:
+                return inst["insId"]
+    return None
+
+
 def screener_calc(kpi_id: int, calc_group: str = "last", calc: str = "latest") -> tuple:
     """(calcGroup, calc) som KPI-screenern faktiskt svarar på. Bara standardvalet last/latest byts —
     den som uttryckligen ber om en annan kombination får den."""
@@ -478,6 +505,10 @@ class BorsdataAPI:
         # Direct match
         if query in self._ticker_map:
             return self._ticker_map[query]
+
+        hit = match_by_country(getattr(self, "_instruments", None) or [], query)
+        if hit is not None:
+            return hit
 
         # Strip yfinance suffixes (.ST, .OL, .CO, .HE, .AS, .DE, .PA)
         for suffix in (".ST", ".OL", ".CO", ".HE", ".AS", ".DE", ".PA"):

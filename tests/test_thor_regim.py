@@ -107,18 +107,19 @@ def test_every_regime_layout_in_the_registry_has_a_renderer():
 # ── Regim per layout ─────────────────────────────────────────────────────────
 def test_wolf_layout_shows_the_module_numbers(engines):
     at, text = _run("wolf", "BOL.ST")
+    closed = lambda t: regim._closed(_prices(t), t)  # noqa: E731 — som sidan: dagens stapel bort under öppettid
     ident = td.identify("BOL.ST")
-    want = wrs.regime(_prices("SPY"), _prices(ident.sector_etf or "SPY"), _prices("BOL.ST"))
+    want = wrs.regime(closed("SPY"), closed(ident.sector_etf or "SPY"), closed("BOL.ST"))
     lbl, _c = wrs.label(want["total"])
     assert "REGIME SCORE" in text and f">{want['total']}</div>" in text and lbl in text and "/ 125 MAX" in text
     assert len(at.get("plotly_chart")) == 4                                               # fyra mätare
     assert ("GATE OPEN" if want["total"] >= wrs.GATE_MIN else "GATE CLOSED") in text
     assert "WOLF ENTRY CHECKLIST" in text and "SWING TRADING GATES" in text and "MÄTBARA GRINDAR" in text
-    chk = wrs.checklist(want, _prices("BOL.ST"))
+    chk = wrs.checklist(want, closed("BOL.ST"))
     gs = wrs.gate_summary(wrs.gates(want, chk))
     assert f"{gs['passed']}/{gs['measurable']} MÄTBARA GRINDAR" in text and "4 manuella" in text
     assert f"ATR ratio {chk['atr_ratio']:.2f}x" in text and f"RSI {want['rsi']:.1f}" in text
-    p = wrs.sltp(_prices("BOL.ST"), 100000, wrs.RISK_PCT)
+    p = wrs.sltp(closed("BOL.ST"), 100000, wrs.RISK_PCT)
     assert "SL / TP KALKYLATOR — WOLF" in text and f"{p['sl']:.2f}" in text and f"{p['shares']} aktier" in text
     assert at.number_input(key="thor_capital").value == 100000.0 and at.number_input(key="thor_wolf_risk").value == wrs.RISK_PCT
     assert "wolf_regime_score.py" in text

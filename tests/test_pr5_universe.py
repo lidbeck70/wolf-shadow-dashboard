@@ -49,8 +49,8 @@ def test_to_yf_dashes_share_classes_and_leaves_unknown_markets_bare():
 
 def test_fallback_is_the_read_table_with_the_baltic_suffixes_corrected():
     assert mk.FALLBACK[53].suffix == ".RG" and mk.FALLBACK[54].suffix == ".VS"
-    assert {m.id for m in mk.FALLBACK.values() if m.kind == mk.INDEX} == {7, 8, 13, 19, 28, 31}
-    assert mk.FALLBACK[9].country == "Norge" and mk.FALLBACK[14].country == "Danmark"
+    assert {m.id for m in mk.FALLBACK.values() if m.kind == mk.INDEX} == {7, 8, 13, 19, 28}   # 31 = Pepins (aktier)
+    assert mk.FALLBACK[9].country == "Norge" and mk.FALLBACK[14].country == "Finland"      # /markets 2026-10-27
 
 
 def test_load_prefers_blob_then_api_then_fallback():

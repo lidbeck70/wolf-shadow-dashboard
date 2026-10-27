@@ -145,28 +145,29 @@ def _fb(mid, name, cid, country, kind=STOCK, exchange=""):
 
 
 FALLBACK: dict = {m.id: m for m in (
-    # Sverige (landId 1). Listnamnen för 4–6 är inte avlästa — bara att de
-    # är svenska aktielistor. Id 18 syns i /instruments utan känt namn.
+    # Norden avläst ur /markets och /countries (borsdata_probe PROBE_SECTION=markets, 2026-10-27).
+    # Länder: 1 Sverige, 2 Norge, 3 Finland, 4 Danmark. Id 18 syns i /instruments utan rad i /markets.
     _fb(1, "Large Cap", 1, "Sverige"), _fb(2, "Mid Cap", 1, "Sverige"),
-    _fb(3, "Small Cap", 1, "Sverige"), _fb(4, "Sverige · lista 4", 1, "Sverige"),
-    _fb(5, "Sverige · lista 5", 1, "Sverige"), _fb(6, "Sverige · lista 6", 1, "Sverige"),
-    _fb(18, "Sverige · lista 18", 1, "Sverige"),
-    _fb(7, "Sverige · index", 1, "Sverige", INDEX), _fb(8, "Sverige · index", 1, "Sverige", INDEX),
+    _fb(3, "Small Cap", 1, "Sverige"), _fb(4, "First North", 1, "Sverige"),
+    _fb(5, "Spotlight", 1, "Sverige"), _fb(6, "NGM", 1, "Sverige"),
+    _fb(31, "Pepins Market", 1, "Sverige"), _fb(18, "Sverige · lista 18", 1, "Sverige"),
+    _fb(7, "Index", 1, "Sverige", INDEX),
     # Norge (2)
-    _fb(9, "Oslo Børs", 2, "Norge"), _fb(10, "Norge · lista 10", 2, "Norge"),
-    _fb(11, "Norge · lista 11", 2, "Norge"), _fb(12, "Norge · lista 12", 2, "Norge"),
-    _fb(27, "Norge · lista 27", 2, "Norge"), _fb(78, "Norge · lista 78", 2, "Norge"),
-    _fb(13, "Norge · index", 2, "Norge", INDEX),
-    # Danmark (3)
-    _fb(14, "Köpenhamn", 3, "Danmark"), _fb(15, "Danmark · lista 15", 3, "Danmark"),
-    _fb(16, "Danmark · lista 16", 3, "Danmark"), _fb(17, "Danmark · lista 17", 3, "Danmark"),
-    _fb(30, "Danmark · lista 30", 3, "Danmark"),
-    _fb(19, "Danmark · index", 3, "Danmark", INDEX),
-    # Finland (4)
-    _fb(20, "Helsingfors", 4, "Finland"), _fb(21, "Finland · lista 21", 4, "Finland"),
-    _fb(22, "Finland · lista 22", 4, "Finland"), _fb(23, "Finland · lista 23", 4, "Finland"),
-    _fb(48, "Finland · lista 48", 4, "Finland"),
-    _fb(28, "Index", None, "", INDEX), _fb(31, "Index", None, "", INDEX),
+    _fb(9, "Oslo Bors", 2, "Norge"), _fb(10, "OB Match", 2, "Norge"),
+    _fb(11, "OB Standard", 2, "Norge"), _fb(12, "Oslo Expand", 2, "Norge"),
+    _fb(27, "Oslo Growth", 2, "Norge"), _fb(78, "Spotlight", 2, "Norge"),
+    _fb(8, "Index", 2, "Norge", INDEX),
+    # Finland (3)
+    _fb(14, "Large Cap", 3, "Finland"), _fb(15, "Mid Cap", 3, "Finland"),
+    _fb(16, "Small Cap", 3, "Finland"), _fb(17, "Prelist", 3, "Finland"),
+    _fb(30, "First North", 3, "Finland"),
+    _fb(13, "Index", 3, "Finland", INDEX),
+    # Danmark (4)
+    _fb(20, "Large Cap", 4, "Danmark"), _fb(21, "Mid Cap", 4, "Danmark"),
+    _fb(22, "Small Cap", 4, "Danmark"), _fb(23, "First North", 4, "Danmark"),
+    _fb(48, "Spotlight", 4, "Danmark"),
+    _fb(19, "Index", 4, "Danmark", INDEX),
+    _fb(28, "Index", 5, "USA", INDEX),
     # Globalt (/instruments/global)
     _fb(32, "NYSE", 5, "USA", exchange="NYSE"), _fb(33, "Nasdaq", 5, "USA", exchange="Nasdaq"),
     _fb(34, "OTC", 5, "USA", exchange="OTC"),
