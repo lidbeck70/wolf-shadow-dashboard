@@ -60,6 +60,12 @@ def test_producer_divergence_and_s1_permission():
     assert sg.S1 in g["setups"]
 
 
+def test_empty_frame_without_columns_is_missing_data_not_a_crash():
+    import pandas as pd
+    row = live.evaluate("PAAS", pd.DataFrame(), None, None)        # avnoterad: Yahoo ger en tom ram utan kolumner
+    assert row["error"].startswith("DATA UNAVAILABLE") and row["status"] == live.INGET
+
+
 def test_market_states():
     rows = {r["region"]: r for r in live.market_states({"SPY": _ser(UP), "^GSPTSE": _ser(DOWN)})}
     assert rows["USA"]["ok"] is True and rows["USA"]["vs_sma200"] > 0

@@ -13,7 +13,7 @@ olja (raffinering). Tickers i Yahoo-form; datasonden visar vilka som saknas.
   ETFS       råvaru-ETF:er (themes.ETFS) — handlas med setup 2 och 3
   REGISTRY   universum-registrets bolag (universe/registry.py), lagda ovanpå listorna av skanningen
              (register) — theme_of/kind_of känner dem, listorna själva ändras inte
-  REGION_INDEX  marknadsgrindens index per region (OMXS30, SPY, TSX, FTSE)
+  REGION_INDEX  marknadsgrindens index per region (OMXS30, SPY, TSX, FTSE, Euro Stoxx 50)
 
 Ett bolag finns bara med en gång (ingen dubbelnotering): Rio Tinto och BHP via
 London, Kinross via NYSE osv. Datasonden 2026-10 (berserk-probe) sorterade bort
@@ -112,7 +112,9 @@ REGIONS: dict = {"Norden": NORDIC, "USA": US, "Kanada": CANADA, "London": LONDON
 LISTS: dict = {**{name: tuple(m) for name, m in REGIONS.items()}, "Råvaru-ETF:er": tuple(ETFS)}
 
 # Marknadsgrinden per region (indexet över SMA200). Norden = OMXS30 (Börsdata), övriga Yahoo-index.
-REGION_INDEX: dict = {"Norden": "OMXS30", "USA": "SPY", "Kanada": "^GSPTSE", "London": "^FTSE"}
+REGION_INDEX: dict = {"Norden": "OMXS30", "USA": "SPY", "Kanada": "^GSPTSE", "London": "^FTSE", "Europa": "^STOXX50E"}
+# Kontinentala Europa (registrets temalistor: TotalEnergies, Nestlé, K+S …) — egen marknadsgrind, inte SPY.
+EUROPE_SUFFIXES: tuple = (".DE", ".PA", ".MC", ".LS", ".MI", ".SW", ".BR", ".AS", ".WA")
 
 
 # Universum-registrets bolag (universe/registry.py) läggs ovanpå listorna av skanningen (berserk_scan.universe):
@@ -142,6 +144,8 @@ def region_of(ticker: str) -> str:
         return "Kanada"
     if t.endswith(".L"):
         return "London"
+    if t.endswith(EUROPE_SUFFIXES):
+        return "Europa"
     return "USA"
 
 
