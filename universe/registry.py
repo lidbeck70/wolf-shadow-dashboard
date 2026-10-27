@@ -13,7 +13,8 @@ Contrarian Alpha, ticker_universe, Wolf-screenern …) och bara markets.py som d
                (BERSERK, ticker_universe, Contrarian Alphas US/CA-CSV, Viking Nine-backtestet, Wolf-screenern,
                heatmapen, EMBER, Long Screener). Bara aktielistor (markets.is_stock); OTC hoppas över.
   for_strategy()  förvalet per strategi: råvarustrategierna (BERSERK, EMBER, Rick Rule, Durrett, Tiggre,
-               Håvarna) Norden + USA + Kanada, övriga Norden — alla marknader går att välja.
+               Håvarna) Norden + USA + Kanada + London och Europa (de två bara kurerade bolag), övriga Norden — alla
+               marknader går att välja.
   bloben       universe.json (index: statistik, Nordens Börsdata-form → Yahoo-karta) och universe_<marknad>.json
                per marknad (medlemmarna som kompakta rader) — Gistens filer har ett tak på ≈ 1 MB.
 
@@ -29,6 +30,7 @@ from datetime import datetime, timezone
 from typing import Callable, Iterable, Optional
 
 NORDEN, USA, KANADA, LONDON, AUSTRALIEN = "norden", "usa", "kanada", "london", "australien"
+EUROPA = "europa"
 STOCK, ETF = "stock", "etf"
 EXCLUDE_MARKET_IDS = (34,)             # OTC — går inte att handla hos Nordnet; EMBER och Contrarian hoppar den
 INDEX_BLOB = "universe.json"
@@ -63,12 +65,19 @@ MARKETS: tuple = (
            "Börsdata /instruments/global (Pro+ global) · annars panelens listor"),
     Market(LONDON, "London", ("england", "storbritannien", "united kingdom", "uk"), (".L",), "^FTSE", False,
            "extra — håvarna (Rule/Sprott/Durrett/Tiggre) och BERSERK skannar London redan"),
+    Market(EUROPA, "Europa", ("tyskland", "germany", "frankrike", "france", "spanien", "spain", "portugal", "italien",
+                              "italy", "schweiz", "switzerland", "belgien", "belgium", "nederländerna", "netherlands",
+                              "holland", "polen", "poland"),
+           (".DE", ".PA", ".MC", ".LS", ".MI", ".SW", ".BR", ".AS", ".WA"), "^STOXX50E", False,
+           "extra — bara temalistornas bolag (de största med kassaflöde per tema på kartan)"),
     Market(AUSTRALIEN, "Australien", ("australien", "australia"), (".AX",), "^AXJO", False,
            "extra — håvarna räknar med ASX (går inte att handla hos Nordnet)"),
 )
 BY_KEY: dict = {m.key: m for m in MARKETS}
 DEFAULT: tuple = tuple(m.key for m in MARKETS if m.default)
-COMMODITY_MARKETS: tuple = (NORDEN, USA, KANADA)
+COMMODITY_MARKETS: tuple = (NORDEN, USA, KANADA, LONDON, EUROPA)
+# Marknader där skannrarna bara tar panelens kurerade bolag (BERSERK-listan, temalistorna …), inte hela Börsdata.
+CURATED_ONLY: frozenset = frozenset({LONDON, EUROPA})
 COMMODITY_FAMILIES = ("råvara", "håv")
 
 
@@ -94,7 +103,7 @@ def market_for_country(country) -> Optional[str]:
 
 
 def markets_for(strategy: str) -> tuple:
-    """Strategins förval: råvarustrategierna Norden + USA + Kanada, övriga Norden (thor.registry-nycklar)."""
+    """Strategins förval: råvarustrategierna Norden, USA, Kanada, London och Europa, övriga Norden (thor.registry)."""
     try:
         from thor import registry as reg
         s = reg.get(strategy)
@@ -209,12 +218,23 @@ def from_instruments(instruments: Iterable[dict], table: Optional[dict] = None, 
         if key is None:
             continue
         yf = mk.to_yf(inst["ticker"], mid, table)
+        if key == EUROPA and yf.upper() not in _europe_allow():
+            continue                              # Europa: bara temalistornas bolag (Stuttgart listar tusentals)
         out.append(Member(yf, str(inst.get("name") or ""), key, m.country if m else "",
                           str(inst["ticker"]).strip().upper(), _int(inst.get("insId")), mid,
                           _int(inst.get("sectorId")), _int(inst.get("branchId")), _int(inst.get("instrumentType")),
                           str(inst.get("stockPriceCurrency") or ""), _theme(yf, inst.get("branchId")), STOCK,
                           (source,)))
     return out
+
+
+def _europe_allow() -> set:
+    """Europas bolag i registret: temalistornas (universe.theme_members)."""
+    try:
+        from universe import theme_members as tm
+        return {t for t in tm.tickers() if market_of(t) == EUROPA}
+    except Exception:
+        return set()
 
 
 def _alive(ticker) -> str:

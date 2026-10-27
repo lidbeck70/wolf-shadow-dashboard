@@ -7,7 +7,8 @@ universe/scan.py — skannrarnas väg in i universum-registret.
                             Köpenhamn, Helsingfors, NYSE, Nasdaq, Toronto, London — MAIN_BOARD_IDS ur markets.FALLBACK),
                             inte First North, TSX Venture eller CSE; bolag ur panelens kurerade listor räknas alltid.
   Taket (max_members)       skyddar jobbens körtid: kurerade listor först, sedan huvudlistorna marknad för marknad
-                            (Norden, USA, Kanada, London, Australien) i bokstavsordning.
+                            (Norden, USA, Kanada, London, Europa, Australien) i bokstavsordning.
+  London och Europa             bara kurerade bolag (BERSERK-listan, temalistorna …) — inte hela Börsdatas listor.
   describe(members)         en rad för loggen: antal per marknad och källa.
 Rena funktioner; registret skickas in eller läses med den loader som ges (gist_storage.load_blob som förval).
 """
@@ -47,6 +48,8 @@ def select(universe: ur.Universe, markets: Iterable[str], themes: Optional[Itera
             continue
         if main_boards and not is_curated(m) and m.market_id not in MAIN_BOARD_IDS:
             continue
+        if m.market in ur.CURATED_ONLY and not is_curated(m):
+            continue                              # London och Europa: bara panelens kurerade bolag
         out.append(m)
     out.sort(key=_priority)
     return out[:max_members] if max_members else out

@@ -52,7 +52,8 @@ def lists() -> list:
 
 def universe(loader=None) -> list:
     """Dagens lista: listorna, plus universum-registrets bolag för BERSERK (Norden + USA + Kanada med råvarutema
-    på huvudlistorna, högst EXTRA_MAX nya) — bara listorna när registret inte finns i Gisten."""
+    på huvudlistorna, London och Europa bara kurerade, högst EXTRA_MAX nya) — bara listorna när registret inte
+    finns i Gisten."""
     from berserk import themes as th
     from berserk import universe as uv
     base = lists()
