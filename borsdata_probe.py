@@ -215,6 +215,41 @@ def probe_kpi_calc(api, out=print) -> dict:
     return found
 
 
+MARKET_PROBE_TICKERS = ("GENO", "ARR", "VAR", "EQNR", "DOFG", "VOLV B", "NOVO B", "NOKIA")
+
+
+def probe_markets(api) -> None:
+    """Rå /markets och /countries, tabellen panelen bygger av dem, och var referensbolagen hamnar
+    (marketId, instrumentets countryId, Yahoo-tickern) — för att se varför norska bolag får .ST."""
+    import markets as mk
+    print("=" * 72)
+    print("/countries")
+    countries = api.get_countries()
+    for c in countries:
+        print(f"  {c}")
+    print("=" * 72)
+    print("/markets (rå) → panelens tabell (land, suffix, typ)")
+    raw = api.get_markets()
+    table = mk.from_api(raw, countries)
+    for m in raw:
+        t = table.get(int(m.get("id")))
+        print(f"  {m}  →  {t.country if t else '?'} {t.suffix if t else '?'} {t.kind if t else '?'}")
+    print("=" * 72)
+    print("Referensbolag")
+    insts = api.get_instruments()
+    merged = mk._merge(table)
+    for tk in MARKET_PROBE_TICKERS:
+        for i in insts:
+            if str(i.get("ticker") or "").upper() == tk:
+                print(f"  {tk:8} insId={i.get('insId')} marketId={i.get('marketId')} countryId={i.get('countryId')} "
+                      f"ccy={i.get('stockPriceCurrency')} namn={i.get('name')} → {mk.to_yf(i['ticker'], i.get('marketId'), merged)}")
+    per = Counter((i.get("marketId"), i.get("countryId")) for i in insts)
+    print("=" * 72)
+    print("(marketId, countryId) → antal instrument")
+    for k, n in sorted(per.items(), key=lambda kv: (str(kv[0][0]), str(kv[0][1]))):
+        print(f"  {k}: {n}")
+
+
 def main() -> int:
     if not os.environ.get("BORSDATA_API_KEY"):
         print("BORSDATA_API_KEY saknas — inget att göra.")
@@ -227,6 +262,9 @@ def main() -> int:
         return 0
     if os.environ.get("PROBE_SECTION", "all") == "kpicalc":
         probe_kpi_calc(api)
+        return 0
+    if os.environ.get("PROBE_SECTION", "all") == "markets":
+        probe_markets(api)
         return 0
 
     print("=" * 72)

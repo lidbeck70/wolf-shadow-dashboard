@@ -413,6 +413,11 @@ class BDClient:
         if query in ticker_map:
             return ticker_map[query]
 
+        from borsdata_api import match_by_country
+        hit = match_by_country(instruments, query)
+        if hit is not None:
+            return hit
+
         # Strip yfinance exchange suffixes
         for suffix in (".ST", ".OL", ".CO", ".HE", ".AS", ".DE", ".PA", ".L"):
             if query.endswith(suffix):
