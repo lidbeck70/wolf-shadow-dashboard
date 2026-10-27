@@ -266,6 +266,11 @@ def main() -> int:
     if os.environ.get("PROBE_SECTION", "all") == "markets":
         probe_markets(api)
         return 0
+    if os.environ.get("PROBE_SECTION", "all") == "themes":
+        from market_prices import close
+        from universe import theme_probe
+        theme_probe.probe(api, fx_getter=lambda sym: close(sym, "1mo"))
+        return 0
 
     print("=" * 72)
     print("SEKTORER (id → namn)")
