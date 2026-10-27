@@ -244,25 +244,60 @@ def pick_to_filter(pick: str) -> tuple:
 SEGMENT_ALL = "alla"                         # segmentrullgardinens "Alla segment"
 
 
+THEME_PREFIX, COMPLEX_PREFIX = "tema:", "komplex:"   # rullgardinens nycklar för kartans teman och komplex
+
+
+def _with_status(text: str, status) -> str:
+    return f"{text} · {status}" if status else text
+
+
 def segment_choices(board: Optional[dict] = None) -> list:
-    """[(nyckel, text)] för segmentrullgardinen: "Alla segment" först, sedan Valhalls segment i kartans ordning
-    med den nordiska statusen när kartan finns ("Hälsovård · GRÖN") — så du kan söka köp bara där det är grönt."""
+    """[(nyckel, text)] för segmentrullgardinen: "Alla segment" först, sedan Valhalls segment i kartans ordning med
+    sina teman under ("Energi › Uran") och sist råvarukomplexen — med kartans status när den finns ("Hälsovård ·
+    GRÖN"), så du kan söka köp bara där det är grönt."""
+    from berserk import themes as bth
+    from ember.config import COMPLEX_LABEL
     from valhall import segments as sgm
-    status = tc.segment_context(board).get("segments") or {}
+    ctx = tc.segment_context(board)
+    status, tstatus = ctx.get("segments") or {}, ctx.get("themes") or {}
     out = [(SEGMENT_ALL, "Alla segment")]
     for s in sgm.SEGMENTS:
-        st_ = (status.get(s.key) or {}).get("status")
-        out.append((s.key, f"{s.label} · {st_}" if st_ else s.label))
+        out.append((s.key, _with_status(s.label, (status.get(s.key) or {}).get("status"))))
+        for th in s.themes:
+            out.append((THEME_PREFIX + th, _with_status(f"{s.label} › {bth.label(th)}", (tstatus.get(th) or {}).get("status"))))
+    inner = (board or {}).get("board") if isinstance(board, dict) else None
+    cxs = inner.get("complexes") if isinstance(inner, dict) and isinstance(inner.get("complexes"), list) else []
+    cstatus = {c.get("key"): (c.get("state") or {}).get("status") for c in cxs if isinstance(c, dict)}
+    for key, lbl in COMPLEX_LABEL.items():
+        out.append((COMPLEX_PREFIX + key, _with_status(f"Komplex: {lbl.capitalize()}", cstatus.get(key))))
     return out
+
+
+def _segment_themes(segment: Optional[str]) -> Optional[set]:
+    """Temana bakom ett tema- eller komplexval, annars None (vanligt segment)."""
+    s = str(segment or "")
+    if s.startswith(THEME_PREFIX):
+        return {s[len(THEME_PREFIX):]}
+    if s.startswith(COMPLEX_PREFIX):
+        from ember.config import THEME_TO_COMPLEX
+        return {th for th, cx in THEME_TO_COMPLEX.items() if cx == s[len(COMPLEX_PREFIX):]}
+    return None
 
 
 def shown_rows(rows: list, pick: str, filters, markets=None, segment: Optional[str] = None) -> list:
     """Listans filter: rullgardinen, chipsen, marknaderna (registrets etiketter; tomt = alla) och segmentet
-    (Valhall-kartans nyckel; raden måste ha segmentet, eller ett tema som hör till det)."""
+    (Valhall-kartans nyckel; raden måste ha segmentet, eller ett tema som hör till det). Ett tema- eller komplexval
+    visar rader med temat — eller bolag som står under temat i temalistan (ADM: vete, majs, soja, socker)."""
+    from universe import theme_members as tm
     family, strategy = pick_to_filter(pick)
     flt = set(filters or [])
+    themes = _segment_themes(segment)
+    seg = None if segment in (None, SEGMENT_ALL) or themes is not None else segment
     out = tc.filter_rows(rows, family=family, strategy=strategy, only_buy="bara KÖP" in flt,
-                         nordic_only="bara Norden" in flt, segment=None if segment in (None, SEGMENT_ALL) else segment)
+                         nordic_only="bara Norden" in flt, segment=seg)
+    if themes is not None:
+        listed = {t for th in themes for t in tm.members(th)}
+        out = [c for c in out if c.theme in themes or c.ticker.upper() in listed]
     keys = {MARKET_LABELS.get(m, m) for m in (markets or [])}
     if keys:
         out = [c for c in out if ur.market_of(c.ticker) in keys]
@@ -400,7 +435,7 @@ def _list(st, rows: list, board: Optional[dict] = None, data: Optional[dict] = N
     choices = dict(segment_choices(board))
     seg = c2.selectbox("Segment", list(choices), format_func=lambda k: choices.get(k, str(k)), key="thor_segment",
                        label_visibility="collapsed",
-                       help="Valhall-kartans segment med nordisk status — sök köp bara där det är grönt")
+                       help="Valhall-kartans segment, teman och råvarukomplex med status — sök köp bara där det är grönt")
     if hasattr(st, "pills"):
         flt = st.pills("Filter", list(FILTERS), selection_mode="multi", key="thor_filters", label_visibility="collapsed")
         mkts = st.pills("Marknad", list(MARKET_LABELS), selection_mode="multi", key="thor_markets",

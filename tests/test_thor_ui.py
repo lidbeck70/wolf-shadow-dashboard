@@ -63,6 +63,22 @@ def test_lage_items_and_pick_filter():
     assert len(tui.shown_rows(rows, tui.ALL, [], None, tui.SEGMENT_ALL)) == len(rows)
 
 
+def test_segment_choices_have_the_maps_themes_and_complexes():
+    from types import SimpleNamespace
+    keys = [k for k, _v in tui.segment_choices(DATA["board"])]
+    assert keys[:3] == [tui.SEGMENT_ALL, "energy", "tema:olja"] and "tema:lax" in keys and "komplex:frakt" in keys
+    assert keys.index("tema:kaffe") > keys.index("consumer_staples") > keys.index("tema:skog")   # temat under sitt segment
+    labels = dict(tui.segment_choices(None))
+    assert labels["tema:uran"] == "Energi › Uran" and labels["komplex:adelmetaller"] == "Komplex: Ädelmetaller"
+    row = lambda t, th=None: SimpleNamespace(ticker=t, theme=th, family=reg.RAVARA, strategy="x",  # noqa: E731
+                                             status_class=tc.KOP, nordic=False, segment=None, new=False)
+    rows = [row("ADM", "majs"), row("BG"), row("SBUX"), row("MOWI.OL", "lax"), row("NEM", "guld"), row("XYZ")]
+    pick = lambda seg: [c.ticker for c in tui.shown_rows(rows, tui.ALL, [], None, seg)]  # noqa: E731
+    assert pick("tema:vete") == ["ADM", "BG"]                      # temalistan: ADM står under vete också
+    assert pick("tema:kaffe") == ["SBUX"] and pick("tema:lax") == ["MOWI.OL"]
+    assert pick("komplex:adelmetaller") == ["NEM"] and set(pick("komplex:agri")) == {"ADM", "BG", "SBUX", "MOWI.OL"}
+
+
 def test_load_builds_the_segment_map_from_the_register():
     import markets as mk
     from universe import registry as ur
