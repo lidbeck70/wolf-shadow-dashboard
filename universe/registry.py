@@ -307,8 +307,13 @@ def from_lists() -> list:
         return (_list_members(list(cl.NORDIC_TICKERS), "Long Screener", names=cl.NORDIC_TICKERS)
                 + _list_members(list(cl.ETF_TICKERS), "Long Screener", kind=ETF, names=cl.ETF_TICKERS))
 
+    def theme_lists():
+        from universe import theme_members as tm
+        return _list_members(tm.tickers(), "Temalistor", {t: tm.theme_of(t) for t in tm.tickers()})
+
     for name, fn in (("berserk", berserk), ("ticker_universe", ticker_universe), ("csv", contrarian_csv),
-                     ("viking", viking), ("wolf", wolf), ("heatmap", heatmap), ("ember", ember), ("cagr", cagr)):
+                     ("viking", viking), ("wolf", wolf), ("heatmap", heatmap), ("ember", ember), ("cagr", cagr),
+                     ("teman", theme_lists)):
         add(name, fn)
     return out
 

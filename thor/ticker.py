@@ -27,6 +27,7 @@ from thor.candidates import NORDIC_SUFFIX, yf as yf_form
 
 BRANCH_THEME = {1: "olja", 2: "olja", 3: "olja", 4: "olja", 5: "olja", 6: "kol", 7: "uran", 18: "guld"}
 SOURCE_SHEET, SOURCE_BERSERK, SOURCE_EMBER, SOURCE_BRANCH = "arket", "BERSERK-listan", "EMBER-listan", "Börsdata-bransch"
+SOURCE_THEMES = "temalistan (störst med kassaflöde)"
 NORDIC_MARKET, US_MARKET = "OMXS30", "SPY"
 
 
@@ -108,7 +109,8 @@ def lookup(api, ticker) -> Optional[dict]:
 
 
 def theme_for(ticker, sheets: Optional[dict] = None, branch_id=None) -> tuple:
-    """(BERSERK-tema | None, källa) — arken, BERSERK-listan, EMBER-listan, Börsdata-branschen, i den ordningen."""
+    """(BERSERK-tema | None, källa) — arken, BERSERK-listan, EMBER-listan, temalistan (universe.theme_members),
+    Börsdata-branschen, i den ordningen."""
     from berserk import themes as bth
     from berserk import universe as buv
     fs = forms(ticker)
@@ -131,6 +133,10 @@ def theme_for(ticker, sheets: Optional[dict] = None, branch_id=None) -> tuple:
             return e, SOURCE_EMBER
     except Exception:
         pass
+    from universe import theme_members as tm
+    th = tm.theme_of(fs[0])
+    if th in bth.THEMES:
+        return th, SOURCE_THEMES
     try:
         bid = int(branch_id) if branch_id is not None else None
     except (TypeError, ValueError):
