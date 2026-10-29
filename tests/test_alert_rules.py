@@ -499,6 +499,8 @@ def test_watch_freezes_on_unreadable_missing_or_stale_runs():
 
 
 SHEETS = {"rule", "durrett", "tiggre"}
+# Håvarnas egna nycklar i watch_fresh (_screen_part): testernas screens.json har Rick Rules och Tiggres håvar
+HAV = {ar._screen_part(s) for s in ("rule", "tiggre")}
 # Vad valhall_scan skriver i brädans sources när allt gick att läsa (testernas bräda saknar fältet)
 SOURCES = {"ca_runs": 2, "screens": True, "sheets": ["confidence", "holdings", "insider", "producers", "tiggre"]}
 
@@ -550,7 +552,7 @@ def test_watch_fresh_reads_each_lists_own_stamp():
     """Färsk = varje lista strategin byggs ur är högst tc.STALE_DAYS gammal enligt sin egen stämpel, och felfri."""
     full = _full()
     fresh = ar.watch_fresh(full, today="2026-10-15")
-    assert set(fresh) == set(ar.WATCH_SOURCES) and fresh["berserk"] == "2026-10-14" and fresh["ember"] == "2026-10-14"
+    assert set(fresh) == set(ar.WATCH_SOURCES) | HAV and fresh["berserk"] == "2026-10-14" and fresh["ember"] == "2026-10-14"
     assert ar.watch_fresh(full, today="2026-10-18") == fresh                       # fyra dagar: fortfarande färsk
     assert ar.watch_fresh(full, today="2026-10-19") == {}                          # fem: gammal, som Thors GAMMAL
     # utan användbar stämpel räknas listan inte som färsk (då gäller raderna, som förut)
@@ -732,7 +734,7 @@ def test_watch_a_read_but_empty_sheet_list_means_out_and_partial_gaps():
                          ({"sheets": "trasig"}, {"rule"})):
         b = {**blobs, "board": {**blobs["board"], "sources": sources}}
         assert ar.watch_frozen(b) == {ar._board_gap(s) for s in gap}, sources
-        assert set(ar.watch_fresh(b, today="2026-10-15")) == set(ar.WATCH_SOURCES) - gap
+        assert set(ar.watch_fresh(b, today="2026-10-15")) == set(ar.WATCH_SOURCES) - gap | HAV   # håven: utan brädan
     # arken: ett tappat ark (läst dag 1, inte i dag) är en lucka för strategierna som beror av det — Tiggres tema
     # kommer också ur Durrett- och producentarket. Utan minne (första körningen) krävs bara strategins eget ark.
     for read, gap, first in ((["confidence", "producers"], {"tiggre"}, {"tiggre"}),
@@ -741,7 +743,7 @@ def test_watch_a_read_but_empty_sheet_list_means_out_and_partial_gaps():
                              (["confidence", "producers", "tiggre"], set(), set()),
                              ("trasig", SHEETS, SHEETS)):
         b = {**blobs, "board": {**blobs["board"], "sources": {**src, "sheets": read}}}
-        assert not ar.watch_frozen(b) and set(ar.watch_fresh(b, today="2026-10-15")) == set(ar.WATCH_SOURCES)
+        assert not ar.watch_frozen(b) and set(ar.watch_fresh(b, today="2026-10-15")) == set(ar.WATCH_SOURCES) | HAV
         today = ar.watch_sheets(b, today="2026-10-16")
         assert ar._sheet_gaps(s0["sheets"], today) == gap and ar._sheet_gaps(None, today) == first, read
     # en bräda utan sources: ingen lucka att se — inget fryses, men brädan gör inte arkens listor färska
@@ -843,6 +845,87 @@ def test_watch_a_sheet_that_never_existed_freezes_nothing():
     alerts, s1 = _run(items, d2, "2026-10-16", s0)
     assert [(a["kind"], a["ticker"]) for a in alerts] == [("watch_out", "GHI.V"), ("watch_out", "PLAT.V")]
     assert not any(v["in_list"] for v in s1["items"].values())
+
+
+def _empty_screens(*keys, generated):
+    """Håvarna körda (generated) utan träffar i keys — de andra som i testernas filer."""
+    import copy
+    scr = copy.deepcopy(_PICK_SCREENS)
+    for k in keys:
+        scr["screens"][k]["rows"] = []
+    return {**scr, "generated": generated}
+
+
+def test_watch_a_screen_pair_follows_the_screens_own_run():
+    """Utan Durrett-arket (ingen data/confidence.json — ägarens panel) har Durrett bara håvens TRÄFF-rader. Ett par
+    som stod där prövas mot håvens egen körning (screens.json: stämpeln och håvens felfält), oberoende av brädan: en
+    färsk men tom Durrett-håv är 'föll ur listan' även när Valhalls bräda är gammal, saknar sources, byggdes utan ett
+    ark eller benet saknar minnet av arken — förut stod paret still. Brädans par (PLAT.V) står still som förut."""
+    items = _pairs(("GHI.V", "durrett"), ("PLAT.V", "tiggre"))
+    d1 = _picks_blobs(_without("confidence"), "2026-10-14T16:50:00+00:00")
+    _a, s0 = _run(items, d1, "2026-10-15", None)
+    assert {k: v["class"] for k, v in s0["items"].items()} == {"GHI.V|durrett": "TRÄFF", "PLAT.V|tiggre": "BEVAKA"}
+    empty = _empty_screens("durrett", generated="2026-10-15T16:50:00+00:00")
+    stale = {**d1, "screens": {**empty, "generated": "2026-10-19T16:50:00+00:00"}}   # brädan sex dagar gammal
+    legacy = {**d1, "board": {k: v for k, v in d1["board"].items() if k != "sources"}, "screens": empty}
+    lost = _picks_blobs(_without("confidence", "scoring"), "2026-10-15T16:50:00+00:00", empty)
+    whole = _picks_blobs(_without("confidence"), "2026-10-15T16:50:00+00:00", empty)
+    for b, today, prev, day in ((stale, "2026-10-20", s0, "2026-10-19"), (legacy, "2026-10-16", s0, "2026-10-15"),
+                                (lost, "2026-10-16", s0, "2026-10-15"),
+                                (whole, "2026-10-16", {"items": s0["items"]}, "2026-10-15")):   # före minnet
+        fresh = ar.watch_fresh(b, today=today)
+        # brädan gör inte Durrett färsk i dag (gammal, utan sources, eller en lucka i arken) — håven är färsk
+        assert "durrett" not in fresh or "durrett" in ar._sheet_gaps(prev.get("sheets"), ar.watch_sheets(b, today))
+        assert fresh[ar._screen_part("durrett")] == day and not [c for c in tc.build(b, today=today)
+                                                                 if c.strategy == "durrett" and not c.stale]
+        alerts, s1 = _run(items, b, today, prev)
+        assert [(a["kind"], a["ticker"]) for a in alerts] == [("watch_out", "GHI.V")], today
+        assert f"({day})" in alerts[0]["body"] and s1["items"]["GHI.V|durrett"]["in_list"] is False
+        assert s1["items"]["PLAT.V|tiggre"] == s0["items"]["PLAT.V|tiggre"]
+
+
+def test_watch_rule_and_tiggre_screen_pairs_follow_their_screens_too():
+    """Samma för Rick Rule och Tiggre: ett par på håvens TRÄFF-rad faller ur listan när håven är färsk men tom, även
+    när Valhalls bräda är gammal och Rick Rules del av den inte lästes (en Quality Contrarian-körning). Brädans par
+    (NEM, PLAT.V) står still: på den gamla brädan, och på en luckdag ('rule@brädan', ett tappat ark)."""
+    items = _pairs(("XOM", "rule"), ("UUU.V", "tiggre"), ("NEM", "rule"), ("PLAT.V", "tiggre"))
+    d1 = _picks_blobs(tvp.SHEETS, "2026-10-14T16:50:00+00:00")
+    _a, s0 = _run(items, d1, "2026-10-15", None)
+    assert {k: v["class"] for k, v in s0["items"].items()} == {
+        "XOM|rule": "TRÄFF", "UUU.V|tiggre": "TRÄFF", "NEM|rule": "KÖP", "PLAT.V|tiggre": "BEVAKA"}
+    empty = _empty_screens("rule", "tiggre", generated="2026-10-19T16:50:00+00:00")
+    old = {**d1, "board": {**d1["board"], "sources": {**d1["board"]["sources"], "ca_runs": 1}}, "screens": empty}
+    assert ar._board_gap("rule") in ar.watch_frozen(old) and not HAV - set(ar.watch_fresh(old, today="2026-10-20"))
+    alerts, s1 = _run(items, old, "2026-10-20", s0)
+    assert [(a["kind"], a["ticker"]) for a in alerts] == [("watch_out", "XOM"), ("watch_out", "UUU.V")]
+    assert all(s1["items"][k] == s0["items"][k] for k in ("NEM|rule", "PLAT.V|tiggre"))
+    # luckdag på en färsk bräda: Rick Rules del oläst, Poängmodellen tappad — håvparen faller, brädans står still
+    gap = _picks_blobs(_without("scoring"), "2026-10-15T16:50:00+00:00", empty)
+    gap["board"]["sources"]["ca_runs"] = 1
+    alerts, s2 = _run(items, gap, "2026-10-16", s0)
+    assert [(a["kind"], a["ticker"]) for a in alerts] == [("watch_out", "XOM"), ("watch_out", "UUU.V")]
+    assert all(s2["items"][k] == s0["items"][k] for k in ("NEM|rule", "PLAT.V|tiggre"))
+
+
+def test_watch_a_stale_failing_or_missing_screen_stands_still():
+    """Håvparet står still när håven själv inte går att lita på: screens.json gammal, håven med felfält, håven
+    saknas i körningen eller hela screens.json saknas — också när brädan är färsk och har strategins rader (förut
+    föll Rick Rules XOM då ur listan på brädans färska rader)."""
+    import copy
+    items = _pairs(("GHI.V", "durrett"), ("XOM", "rule"))
+    d1 = _picks_blobs(_without("confidence"), "2026-10-14T16:50:00+00:00")
+    _a, s0 = _run(items, d1, "2026-10-15", None)
+    board = _picks_blobs(_without("confidence"), "2026-10-15T16:50:00+00:00")["board"]      # brädan färsk i dag
+    empty = _empty_screens("durrett", "rule", generated="2026-10-15T16:50:00+00:00")
+    failing = copy.deepcopy(empty)
+    for k in ("durrett", "rule"):
+        failing["screens"][k]["error"] = "Börsdata nere"
+    missing = {**empty, "screens": {k: v for k, v in empty["screens"].items() if k not in ("durrett", "rule")}}
+    for scr in ({**empty, "generated": "2026-10-09T16:50:00+00:00"}, failing, missing, None):
+        b = {**d1, "board": board, "screens": scr}
+        assert not {ar._screen_part("durrett"), ar._screen_part("rule")} & set(ar.watch_fresh(b, today="2026-10-16"))
+        assert [c for c in tc.build(b, today="2026-10-16") if c.strategy == "rule" and not c.stale]   # brädans rader
+        assert _still(_run(items, b, "2026-10-16", s0), s0)
 
 
 def test_watch_a_sheet_gone_longer_than_the_memory_freezes_no_more():
@@ -1079,6 +1162,7 @@ def test_the_alert_settings_have_the_watch_leg_on_with_discord(monkeypatch):
     assert at.multiselect(key="sched_watch_ch").value == ["discord"]
     assert any("BLIR KÖP" in c.value and "faller ur strategins lista" in c.value
                and "Long Screener som föll" in c.value and "ark som inte gick att läsa" in c.value
+               and "håvs TRÄFF-rad följer håvens egen körning" in c.value
                and f"över {ar.SHEET_MEMORY_DAYS} dagar räknas som borttaget" in c.value for c in at.caption)
     tog.set_value(False).run()
     assert at.session_state["alerts"]["watch"] == {"enabled": False, "channels": ["discord"]}
@@ -1093,6 +1177,7 @@ def test_the_watch_texts_name_the_two_alerts(monkeypatch):
     row = next(r for r in _PANEL_GUIDE if r[0] == "PORTFÖLJ → 👀 Övervakning")
     assert "BLIR KÖP eller faller ur listan" in row[2] and "MER → Larm" in row[2]
     assert "Long Screener som föll" in row[2] and "ark som inte gick att läsa" in row[2]
+    assert "håvs TRÄFF-rad följer håvens egen körning" in row[2]
     assert f"över {ar.SHEET_MEMORY_DAYS} dagar räknas som borttaget" in row[2]
     at, _repo = twu._app(monkeypatch, twu.ITEMS)                     # sidan säger samma sak under tabellen
     at.run()

@@ -1079,7 +1079,8 @@ _PANEL_GUIDE: list[tuple] = [
      "Larm på Discord (MER → Larm, benet 👀 Övervakning) när en bevakad aktie BLIR KÖP eller faller ur listan — "
      "också när en färsk körning är tom; en saknad, felande eller gammal körning (eller en tom utan tidsstämpel) "
      "larmar inte, inte heller en Long Screener som föll eller ett ark som inte gick att läsa i Valhalls körning "
-     "(Rick Rule, Durrett, Tiggre; ett ark som saknats i över 14 dagar räknas som borttaget)."),
+     "(Rick Rule, Durrett, Tiggre; en aktie på en håvs TRÄFF-rad följer håvens egen körning; ett ark som saknats i "
+     "över 14 dagar räknas som borttaget)."),
     ("ODIN → Läget", "Momentum: entry #1, #6",
      "Trafikljus GRÖN/GUL/RÖD + regelverk, OMXSPI vs MA200, marknadsbredd "
      "(dör före index) och regimhistorik."),
