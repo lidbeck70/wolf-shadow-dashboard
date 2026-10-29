@@ -129,8 +129,10 @@ def candidate_card(c: tc.Candidate) -> str:
     chips = [family_chip(c.strategy), status_chip(c)]
     if c.status_of == "tema":               # temats läge: segmentet utan status, temat med sitt eget läge
         chips += [segment_chip(c.segment), segment_chip(c.segment, c.segment_status, c.cykel, theme=c.theme)]
-    else:
-        chips.append(segment_chip(c.segment, c.segment_status, c.cykel))
+    else:                                   # utanför Norden: segmentets globala läge, som aktiens huvud
+        abroad = c.status_of == "segment" and not c.nordic
+        chips.append(segment_chip(c.segment, c.global_status, where="globalt") if abroad
+                     else segment_chip(c.segment, c.segment_status, c.cykel))
         if c.theme:
             from berserk import themes as bth
             chips.append(chip(bth.label(c.theme), EMBER))

@@ -144,30 +144,59 @@ def sheet_forms(ticker, sheet_map: Optional[dict] = None) -> list:
     return [f for f in forms(t) if not ctx["sheet_map"] or f == t or " " in f or tc.sheet_yf(f, ctx) == t]
 
 
+def _sheet_rows(fs: list, stores: dict, full: dict) -> tuple:
+    """(granskningarna, Confidence-raden, scorecardets kort, {form: [ark]}) för arkformerna fs — formen raden
+    matchades på följer med, så att dossiern kan säga vilka rader som står på ett kortnamn utan börssuffix."""
+    import review_link
+    reviews: dict = {}
+    used: dict = {}
+    for key in review_link.SHEET:
+        for f in fs:
+            rev = review_link.review(key, f, full)
+            if rev and rev.get("found"):
+                reviews[key] = rev
+                used.setdefault(f, []).append(str(rev.get("sheet") or key))
+                break
+    comps = (stores.get("confidence") or {}).get("companies") or {}
+    hit = next((f for f in fs if isinstance(comps.get(f), dict)), None)
+    if hit is not None:
+        used.setdefault(hit, []).append("Durrett/Confidence")
+    cards: dict = {}
+    for k, v in ((stores.get("scorecard") or {}).get("cards") or {}).items():
+        f = next((f for f in fs if str(k).endswith("|" + f)), None)
+        if f is not None:
+            cards[k] = v
+            used.setdefault(f, []).append("Scorecardet")
+    return reviews, (dict(comps[hit]) if hit is not None else None), cards, used
+
+
+def _tk(r) -> str:
+    return str(r.get("ticker") or "").strip().upper() if isinstance(r, dict) else ""
+
+
 def sheets_for(ticker, stores: Optional[dict], sheet_map: Optional[dict] = None) -> dict:
     """Vad arken säger om bolaget, bara läsning: granskningarnas utfall (review_link, PASS/MANUAL/FAIL),
     Durrett/Wolf Asymmetry-raden (confidence), scorecardets kort, registrets positioner (öppna och
     stängda), journalens affärer och Copilotens anteckningar. stores = {arknamn: data} ur
     storage.session_load — aldrig modulernas _load(). Arken matchas på sheet_forms (sheet_map = registrets
     karta för arkens bara nordiska former), innehav/journal/Copilot på held_forms: en bar 'TEL' hamnar aldrig
-    på Telenor TEL.OL."""
+    på Telenor TEL.OL.
+
+    Inget försvinner tyst: elsewhere = rader på aktiens kortnamn som räknas som en annan notering ('BOL' i
+    innehaven, 'EQX' i Rick Rule på EQX.TO), ambiguous = arkens bara former en nordisk sida matchade utan
+    registrets karta — då går 'TEL' inte att skilja från Telenor."""
     import review_link
     from positions import BUCKET_KEYS, normalize_row
     stores = stores or {}
     fs = sheet_forms(ticker, sheet_map)
     fset = set(held_forms(ticker))
     full = {name: stores.get(name) or review_link.STORE_DEFAULTS[name] for name in review_link.STORE_DEFAULTS}
-    reviews: dict = {}
-    for key in review_link.SHEET:
-        for f in fs:
-            rev = review_link.review(key, f, full)
-            if rev and rev.get("found"):
-                reviews[key] = rev
-                break
-    comps = (stores.get("confidence") or {}).get("companies") or {}
-    conf = next((dict(comps[f]) for f in fs if isinstance(comps.get(f), dict)), None)
-    cards = {k: v for k, v in ((stores.get("scorecard") or {}).get("cards") or {}).items()
-             if any(str(k).endswith("|" + f) for f in fs)}
+    reviews, conf, cards, used = _sheet_rows(fs, stores, full)
+    away = [f for f in forms(ticker) if f not in fs]          # kortnamnet räknas som en annan notering här
+    elsewhere = [f"{place} '{f}'" for f, places in (_sheet_rows(away, stores, full)[3] if away else {}).items()
+                 for place in places]
+    ambiguous = ([f for f in used if "." not in f and " " not in f]       # utan kartan kan 'TEL' vara TE Connectivity
+                 if tc.is_nordic(tc.yf(ticker)) and not any((sheet_map or {}).values()) else [])
     entries: dict = {}
     if cards:                                  # kortens kandidatrader — samma som 🎯 Scorecard räknar grinden på
         try:
@@ -176,25 +205,32 @@ def sheets_for(ticker, stores: Optional[dict], sheet_map: Optional[dict] = None)
         except Exception:
             entries = {}
 
-    def mine(r) -> bool:                       # innehav, journal, Copilot: Yahoo-form, aldrig den bara formen
-        return isinstance(r, dict) and str(r.get("ticker") or "").strip().upper() in fset
-
     hold = stores.get("holdings") or {}
-    open_rows = [normalize_row(r, b) for b in BUCKET_KEYS for r in (hold.get(b) or []) if mine(r)]
-    closed = [normalize_row(r) for r in (hold.get("closed") or []) if mine(r)]
-    journal = [t for t in (stores.get("journal") or []) if mine(t)]
-    copilot = [e for e in ((stores.get("copilot_journal") or {}).get("entries") or []) if mine(e)]
+    held = ([("innehav", b, r) for b in BUCKET_KEYS for r in (hold.get(b) or [])]
+            + [("stängd position", None, r) for r in (hold.get("closed") or [])]
+            + [("journalen", None, t) for t in (stores.get("journal") or [])]
+            + [("Copiloten", None, e) for e in ((stores.get("copilot_journal") or {}).get("entries") or [])])
+    mine = [(place, b, r) for place, b, r in held if _tk(r) in fset]   # Yahoo-form, aldrig den bara formen
+    open_rows = [normalize_row(r, b) for place, b, r in mine if place == "innehav"]
+    closed = [normalize_row(r) for place, _b, r in mine if place == "stängd position"]
+    journal = [r for place, _b, r in mine if place == "journalen"]
+    copilot = [r for place, _b, r in mine if place == "Copiloten"]
+    other = set(forms(ticker)) - fset                         # 'BOL' i innehaven är en amerikansk ticker i panelen
+    elsewhere += list(dict.fromkeys(f"{place} '{_tk(r)}'" for place, _b, r in held if _tk(r) in other))
     return {"reviews": reviews, "confidence": conf, "scorecard": cards, "positions": open_rows, "closed": closed,
             "journal": journal, "copilot": copilot, "found": bool(reviews or conf or cards or open_rows),
             "rotation": stores.get("rotation"), "confidence_store": stores.get("confidence"),
-            "scorecard_entries": {k: entries.get(k) for k in cards}, "sheet_forms": fs}
+            "scorecard_entries": {k: entries.get(k) for k in cards}, "sheet_forms": fs,
+            "elsewhere": elsewhere, "ambiguous": ambiguous}
 
 
 def assemble(raw, rows: Optional[list] = None, board: Optional[dict] = None, stores: Optional[dict] = None,
              df=None, api=None, sheets: Optional[dict] = None, phase_fn: Optional[Callable] = None,
-             strategy: Optional[str] = None, table: Optional[dict] = None) -> dict:
+             strategy: Optional[str] = None, table: Optional[dict] = None,
+             sheet_map: Optional[dict] = None) -> dict:
     """Dossierns data i ett dict: ticker (identiteten), strategy, candidates, snapshot, cycle, sheets.
-    Allt valfritt — det som inte skickas in blir None/tomt, aldrig ett fel."""
+    Allt valfritt — det som inte skickas in blir None/tomt, aldrig ett fel. sheet_map = registrets karta för
+    arkens bara nordiska former (Universe.sheet_map), samma som sidan skickar till sheets_for."""
     sh = sheets if sheets is not None else stores
     ident = identify(raw, api, sh, table)
     cands = candidates_for(rows or [], ident.yf)
@@ -208,4 +244,4 @@ def assemble(raw, rows: Optional[list] = None, board: Optional[dict] = None, sto
     return {"ticker": ident.as_dict(), "strategy": strategy, "strategy_label": reg.label(strategy),
             "candidates": [c.as_dict() for c in cands], "snapshot": snap, "snapshot_error": snap_err,
             "cycle": cycle(ident, strategy, board, phase_fn) if (phase_fn is not None or board) else None,
-            "sheets": sheets_for(ident.yf, stores)}
+            "sheets": sheets_for(ident.yf, stores, sheet_map)}

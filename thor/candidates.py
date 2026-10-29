@@ -73,6 +73,7 @@ class Candidate:
     why: str = ""
     data_asof: str = ""            # stängningen motorn räknade på (Viking Nine) — tomt när källan inte säger
     status_of: str = ""            # vems läge segment_status är: "tema" eller "segment" (tomt = inget läge)
+    global_status: Optional[str] = None    # segmentets globala läge — kortet visar det för rader utanför Norden
 
     @property
     def family(self) -> str:
@@ -193,6 +194,8 @@ def _tag(c: Candidate, ctx: dict) -> Candidate:
         st, src = (ctx.get("segments") or {}).get(c.segment), "segment"
     if st:
         c.segment_status, c.cykel, c.status_of = st.get("status"), st.get("cykel"), src
+        if src == "segment":
+            c.global_status = st.get("global_status")
         if not c.segment:
             c.segment = st.get("segment")
     return c

@@ -87,13 +87,15 @@ class Result:
 
 
 # ── Kontrollen ───────────────────────────────────────────────────────────────
-def _forms(ticker: str) -> set:
+def _forms(ticker: str, sheet_map: Optional[dict] = None) -> set:
+    """Arkformerna (thor.dossier.sheet_forms) med samma karta som underlaget — svarets ticker prövas mot de rader
+    underlaget lästes ur: 'EQX' är inte EQX.TO, och med registrets karta är 'TEL' inte Telenor TEL.OL."""
     t = str(ticker or "").strip().upper()
     if not t:
         return set()
     try:
-        from thor.ticker import forms
-        out = {x.upper() for x in forms(t) if x}
+        from thor.dossier import sheet_forms
+        out = {x.upper() for x in sheet_forms(t, sheet_map) if x}
     except Exception:
         out = set()
     return out | {t}
@@ -175,13 +177,14 @@ def check(answers: list, exp, writable: Optional[set] = None) -> Result:
     res = Result()
     fields = getattr(exp, "fields", None) or {}
     rows = getattr(exp, "source_rows", None) or {}
-    want = _forms(getattr(exp, "ticker", ""))
+    smap = getattr(exp, "sheet_map", None)
+    want = _forms(getattr(exp, "ticker", ""), smap)
     label = {s: cat.SHEETS[s].label for s in cat.SHEETS}
     resolved, siblings = [], {}
     for a in answers or []:
         if blank(a.value):
             continue
-        if a.ticker and want and not (_forms(a.ticker) & want):
+        if a.ticker and want and not (_forms(a.ticker, smap) & want):
             res.issues.append((a.line, a.key, f"annan ticker ({a.ticker}) — underlaget gäller {exp.ticker}"))
             continue
         f, why = resolve(a.key, fields)
