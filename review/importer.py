@@ -5,8 +5,10 @@ review/importer.py — ChatGPT-svaret tillbaka in i arket: kontrollera, visa ski
                           fältnyckel och ogiltiga värden avvisas, 'Bara du' hoppas över, en enhet eller valuta som
                           skiljer sig ger en VARNING (review.units) — ingenting räknas om
   apply(changes, rows)    skriver de valda ändringarna i arkens rader: platta ark får värdet plus radens 'sources'
-                          {fält: "ChatGPT: <källa> · <datum>"}, Durrett/Wolf Asymmetry ett Datapoint med källa
-                          ('ChatGPT: <källa>', källtyp ur svaret eller 'unsupported')
+                          {fält: {värdet, "ChatGPT: <källa> · <datum>"}} (catalog.set_source — källan visas bara
+                          medan värdet står kvar), Durrett/Wolf Asymmetry ett Datapoint med källa ('ChatGPT:
+                          <källa>', källtyp ur svaret eller 'unsupported'). Tiggres katalysatorer får id och status,
+                          och en tom plats svaret hoppade över tas bort
   widget_keys(…)          widgetnycklarna som ska släppas så att kortet ritas om med de nya värdena
 
 Inget sparas härifrån — 💾 Spara sköter GitHub som vanligt. Rena funktioner, ingen Streamlit.
@@ -28,6 +30,7 @@ from review.answers import Answer, ImportFormatError, blank, coerce, iso_date, r
 SOURCE_TYPES = ("primary", "independent", "secondary", "mixed", "weak", "unsupported")
 UNSUPPORTED = "unsupported"
 CONFIDENCES = ("high", "medium", "low")
+OVERWRITE = "skriver över värdet i arket — kryssa själv om det ska bytas"
 
 
 @dataclass
@@ -57,9 +60,16 @@ class Change:
         return self.field.key
 
     @property
+    def overwrites(self) -> bool:
+        """Står det redan ett värde i arket (ditt, Börsdatas eller ett tidigare svar)?"""
+        return not cat.is_empty(self.old)
+
+    @property
     def default_use(self) -> bool:
-        """Förkryssad bara med säkerhet high/medium, en källa och utan varning — allt annat kryssar du själv."""
-        return self.confidence in ("high", "medium") and bool(self.source) and not self.warnings
+        """Förkryssad bara med säkerhet high/medium, en källa, utan varning och i ett tomt fält — allt annat kryssar
+        du själv. Ett värde som skriver över arkets är aldrig förkryssat, hur säkert svaret än är."""
+        return (self.confidence in ("high", "medium") and bool(self.source) and not self.warnings
+                and not self.overwrites)
 
 
 @dataclass
@@ -86,18 +96,6 @@ def _forms(ticker: str) -> set:
     except Exception:
         out = set()
     return out | {t}
-
-
-def same(old, new) -> bool:
-    """Står värdet redan i arket? Tal jämförs som tal, Ja/Nej som Ja/Nej, text som text."""
-    if cat.is_empty(old):
-        return cat.is_empty(new)
-    if isinstance(old, bool) or isinstance(new, bool):
-        return isinstance(old, bool) and isinstance(new, bool) and old == new
-    try:
-        return abs(float(old) - float(new)) < 1e-9
-    except (TypeError, ValueError):
-        return str(old).strip() == str(new).strip()
 
 
 def _source_type(raw: str) -> tuple:
@@ -232,9 +230,11 @@ def check(answers: list, exp, writable: Optional[set] = None) -> Result:
         if not source:
             notes.append("källa saknas")
         old = cat.get_value(row, f.path)
-        if same(old, new):
+        if cat.same_value(old, new):              # står redan i arket
             res.same += 1
             continue
+        if not cat.is_empty(old):
+            notes.append(OVERWRITE)
         if f.key in picked:
             res.ignored.append((a.line, f.key, "dubbel rad — den sista gäller"))
         picked[f.key] = Change(f, old, new, unit=unit, source=source, source_type=stype, date=when,
@@ -261,18 +261,24 @@ def point(ch: Change):
 
 
 def _finish_catalysts(row: dict) -> None:
-    """En katalysator som svaret lade till får id och status Väntar, som när den läggs in i arket."""
+    """Katalysatorerna efter inskrivningen. En plats som svaret hoppade över (svaret skrev katalysator 2 i en tom
+    lista) blir en tom rad utan id — den tas bort, så att listan inte får en '? / ?'-rad som arket skriver status
+    på när det öppnas. En katalysator som svaret lade till får id och status Väntar, som när den läggs in i arket;
+    raderna du lagt in själv rörs inte."""
     import uuid
     import tiggre
     cats = row.get("catalysts")
     if not isinstance(cats, list):
         return
-    for i, c in enumerate(cats):
-        if not isinstance(c, dict):
-            cats[i] = c = {}
-        if c.get("name") or c.get("date"):
-            c.setdefault("id", uuid.uuid4().hex[:8])
+    kept = []
+    for c in cats:
+        if not isinstance(c, dict) or not (c.get("id") or c.get("name") or c.get("date")):
+            continue
+        if not c.get("id"):
+            c["id"] = uuid.uuid4().hex[:8]
             c.setdefault("status", tiggre.CAT_WAITING)
+        kept.append(c)
+    cats[:] = kept
 
 
 def apply(changes: list, rows: dict) -> int:
@@ -286,9 +292,7 @@ def apply(changes: list, rows: dict) -> int:
             cat.set_value(row, ch.path, point(ch))
         else:
             cat.set_value(row, ch.path, ch.new)
-            src = row.get("sources") if isinstance(row.get("sources"), dict) else {}
-            src[ch.path] = provenance(ch)
-            row["sources"] = src
+            cat.set_source(row, ch.path, ch.new, provenance(ch))
         n += 1
     tg = (rows or {}).get("tiggre")
     if isinstance(tg, dict) and any(c.sheet == "tiggre" and c.path.startswith("catalysts.") for c in changes or []):

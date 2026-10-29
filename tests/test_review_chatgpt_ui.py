@@ -1,7 +1,8 @@
 """
 review/chatgpt_ui — "📋 Underlag till ChatGPT" i arkens kort, i Scorecardet och i Thors Arken-flik (AppTest).
 
-Expandern finns i varje kort med Excel- och CSV-knapp och prompten i ett kodblock (kopieringsknappen), arket är
+Expandern finns i varje kort med Excel- och CSV-knapp och prompten i ett kodblock (kopieringsknappen) bakom "Visa
+prompten" — filerna och prompten byggs först när de behövs, så ett stängt kort skickar ingen stor text — arket är
 oförändrat efter ritningen (underlaget skriver ingenting), utan openpyxl finns bara CSV, och i Thor följer arkens
 dom med när Regim-fliken redan fällt den. Inget nätverk: lagringen, sifferuppdateringen och Gisten är fejkade.
 """
@@ -51,6 +52,17 @@ def _same(a, b) -> bool:
     return json.dumps(a, sort_keys=True, default=str) == json.dumps(b, sort_keys=True, default=str)
 
 
+def _prompts(at) -> list:
+    """Slår på "Visa prompten" i varje underlag och ger prompterna."""
+    toggles = [t for t in at.toggle if str(t.key).startswith("rv_prompt_")]
+    assert toggles
+    for t in toggles:
+        t.set_value(True)
+    at.run()
+    assert not at.exception, at.exception
+    return [c.value for c in at.code if c.value.startswith("Underlag för köpbeslut")]
+
+
 @pytest.fixture
 def page(monkeypatch):
     """Arken ur en fejkad lagring — inget GitHub, ingen Gist, ingen sifferuppdatering."""
@@ -96,7 +108,7 @@ def test_every_card_has_the_export_and_writes_nothing(page, module, fn, kw, stor
     downloads = {d.key: d.proto.label for d in at.get("download_button")}
     assert downloads.get(csv_key) == "⬇ CSV", downloads
     assert downloads.get(csv_key.replace("rv_csv_", "rv_xlsx_")) == "⬇ Excel (.xlsx)", downloads
-    prompts = [c.value for c in at.code if c.value.startswith("Underlag för köpbeslut")]
+    prompts = _prompts(at)
     assert prompts and any(f"({ticker})" in p for p in prompts), prompts
     assert all("\"Bara du\" rör du aldrig" in p for p in prompts)
     assert not any("kunde inte byggas" in c.value for c in at.caption)
@@ -106,9 +118,26 @@ def test_every_card_has_the_export_and_writes_nothing(page, module, fn, kw, stor
             assert _same(at.session_state[other], STORES[other]), other
 
 
+def test_collapsed_cards_send_no_prompt_and_no_file_until_asked(page):
+    """Ett stängt kort ritar ändå sitt innehåll vid varje ändring — prompten (5–8 000 tecken) visas först när
+    "Visa prompten" slås på, och Excel och CSV byggs först när knappen trycks (ingen fil följer med sidan)."""
+    at = page("producers", "render_producers_page", {"sheet": "Rick Rule"})
+    assert not [c for c in at.code if c.value.startswith("Underlag för köpbeslut")]
+    tog = at.toggle(key="rv_prompt_rule_p1")
+    assert tog.value is False and tog.label == "Visa prompten"
+    for d in at.get("download_button"):
+        if str(d.key).startswith("rv_"):
+            assert d.proto.deferred_file_id and not d.proto.url, d.key      # byggs vid klick, inte vid ritning
+    tog.set_value(True).run()
+    p = next(c.value for c in at.code if c.value.startswith("Underlag för köpbeslut"))
+    assert "(BOL.ST)" in p and "\"Bara du\" rör du aldrig" in p
+    at.toggle(key="rv_prompt_rule_p1").set_value(False).run()
+    assert not [c for c in at.code if c.value.startswith("Underlag för köpbeslut")]
+
+
 def test_scorecard_export_covers_the_sheet_and_the_card(page):
     at = page("scorecard", "render_scorecard_page", {})
-    p = next(c.value for c in at.code if "(BOL.ST)" in c.value)
+    p = next(x for x in _prompts(at) if "(BOL.ST)" in x)
     assert "Ark: Rick Rule, Scorecard" in p
     assert "[rule:unit_cost]" in p and "Vald säljregel" in p and "[beslutas av mig — fyll inte i]" in p
     caps = " ".join(c.value for c in at.caption)
@@ -154,7 +183,7 @@ def test_durrett_sheet_exports_every_field_for_the_stage(monkeypatch):
     at.run()
     assert not at.exception, at.exception
     assert chatgpt_ui.TITLE in [e.label for e in at.expander]
-    p = next(c.value for c in at.code if c.value.startswith("Underlag för köpbeslut"))
+    p = _prompts(at)[0]
     assert "(GPR)" in p and "Ark: Durrett 10-steg" in p and "confidence:fields." in p
     assert {d.key for d in at.get("download_button")} >= {"rv_csv_durrett_GPR", "rv_xlsx_durrett_GPR"}
 
@@ -195,7 +224,7 @@ def _thor(monkeypatch, strategy="rule", ctx=None):
 def test_thor_arken_tab_has_the_export_for_the_strategy_sheet(monkeypatch):
     at = _thor(monkeypatch)
     assert chatgpt_ui.TITLE in [e.label for e in at.expander]
-    p = next(c.value for c in at.code if c.value.startswith("Underlag för köpbeslut"))
+    p = _prompts(at)[0]
     assert "(BOL.ST)" in p and "· strategi Rick Rule" in p and "Ark: Rick Rule, Scorecard" in p
     assert "Arkens dom just nu" not in p                         # Regim-fliken har inte fällt domen än
     from thor import arken
@@ -207,10 +236,10 @@ def test_thor_arken_tab_has_the_export_for_the_strategy_sheet(monkeypatch):
 
 def test_thor_export_carries_the_dom_when_the_regim_tab_has_judged(monkeypatch):
     at = _thor(monkeypatch, ctx={"ticker": "BOL.ST", "ctx": {}})
-    p = next(c.value for c in at.code if c.value.startswith("Underlag för köpbeslut"))
+    p = _prompts(at)[0]
     assert "Arkens dom just nu (Thor)" in p and "Arkens dom:" in p and "Strategi: Rick Rule" in p
     other = _thor(monkeypatch, ctx={"ticker": "NEM", "ctx": {}})               # domen gällde en annan aktie
-    p2 = next(c.value for c in other.code if c.value.startswith("Underlag för köpbeslut"))
+    p2 = _prompts(other)[0]
     assert "Arkens dom just nu" not in p2
 
 

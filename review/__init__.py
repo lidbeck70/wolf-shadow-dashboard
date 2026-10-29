@@ -9,7 +9,7 @@ review — underlaget till köpbeslutet, ovanpå arken.
   importer    svaret mot underlaget: avvisa, hoppa över, varna, visa skillnaden och skriv in det du valt
   chatgpt_ui  "📋 Underlag till ChatGPT" i arkens kort, i Scorecardet och i Thors Arken-flik (där bara läsning)
   focus       fokusläget: ett bolag i taget, Thors arkknappar öppnar arket på bolaget
-  card        kortens rubriksvans '· x/y ifyllda' och raden "Saknas för köpbeslut"
+  card        raden först i kortet: 'x/y fält ifyllda' och "Saknas för köpbeslut" (rubriken är oförändrad)
 
 Arkens regler är facit. Ingenting här räknar en poäng eller en grind på nytt. ChatGPT fyller i fakta och förslag,
 du granskar skillnaden och väljer vad som skrivs in i arket, och 💾 Spara sparar som vanligt — inget går till

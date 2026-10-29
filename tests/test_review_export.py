@@ -132,6 +132,22 @@ def test_prompt_says_the_rules_and_lists_what_is_missing():
     assert "rule:unit_cost" in todo and "scorecard:sell_rule" not in todo and "rule:position_pct" not in todo
 
 
+def test_empty_borsdata_gaps_are_not_asked_of_chatgpt_without_the_refresh():
+    """Utan läst sifferuppdatering (Scorecardet och Thor: blob=None) står ett tomt Börsdata-fält kvar som Börsdata,
+    och regel 1 säger att raden har sitt tal — luckan får då inte se ut som en uppgift ('[rule:price]')."""
+    row = {"id": "p1", "ticker": "BOL", "name": "Boliden", "commodity": "Koppar"}
+    stores = {"producers": {"producers": [row], "royalty": []}}
+    exp = ex.build("BOL", stores, ["rule"], blob=None, rows={"rule": row})
+    p = ex.build_prompt(exp.ticker, exp.name, exp.rows, missing=exp.missing)
+    gaps = p.split("Saknas för köpbeslut (börja här):", 1)[1].split("\n\n", 1)[0]
+    assert "- Rick Rule · Råvarupris nu — " in gaps and "Råvarupris nu" not in p.split("Fält att fylla i", 1)[1]
+    assert "[Börsdata — fylls i arket]" in gaps and "[rule:price]" not in gaps
+    assert "[rule:unit_cost]" in gaps                                             # ChatGPT-raden är en uppgift
+    # sifferuppdateringen läst men utan tal för raden: då är fältet ChatGPT:s, och luckan en uppgift
+    exp2 = ex.build("BOL", stores, ["rule"], blob={"rows": {}}, rows={"rule": row})
+    assert "[rule:price]" in ex.build_prompt(exp2.ticker, exp2.name, exp2.rows, missing=exp2.missing)
+
+
 def test_filename_is_safe():
     assert ex.filename("ERIC-B.ST", "csv", date(2026, 1, 2)) == "underlag_ERIC-B-ST_2026-01-02.csv"
     assert ex.filename("", ".xlsx", date(2026, 1, 2)) == "underlag_aktie_2026-01-02.xlsx"

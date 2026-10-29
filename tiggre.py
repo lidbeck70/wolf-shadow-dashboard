@@ -472,7 +472,8 @@ def _suggest(*args, **kw) -> None:
 
 
 def _chatgpt(data: dict, cand: dict) -> None:
-    """📋 Underlag till ChatGPT för kandidaten — Excel/CSV och prompten. Skriver inget i arket."""
+    """📋 Underlag till ChatGPT för kandidaten — Excel/CSV och prompten, och svaret tillbaka efter granskning: det
+    du väljer skrivs i kandidaten i sessionen, 💾 sparar."""
     try:
         from review import chatgpt_ui
     except Exception:
@@ -576,9 +577,8 @@ def _candidate_card(data: dict, cand: dict, expanded: bool = False) -> None:
             f"  ·  {hits}/3 fraser  ·  U/N {un:.1f}:1" if un is not None
             else f"{'✅' if all_pass else '🔍'}  {cand.get('ticker','?')}  ·  {hits}/3 fraser")
     rc = _rc()
-    with st.expander(f"{head}  ·  poäng {score}/10" + (rc.suffix("tiggre", cand) if rc else ""), expanded=expanded):
-        if rc:
-            rc.render_missing("tiggre", cand)
+    with st.expander(f"{head}  ·  poäng {score}/10", expanded=expanded):
+        top = rc.slot() if rc else None
         # Grovsållning
         st.markdown(f"<b style='color:{TEXT};'>Grovsållning</b> "
                     f"<span style='color:{DIM};font-size:0.78rem;'>"
@@ -718,6 +718,8 @@ def _candidate_card(data: dict, cand: dict, expanded: bool = False) -> None:
 
         if changed:
             _save(data)
+        if rc:
+            rc.fill(top, "tiggre", cand)
 
 
 def _catalysts(data: dict, cand: dict) -> None:
@@ -738,7 +740,7 @@ def _catalysts(data: dict, cand: dict) -> None:
         cur = cat.get("status") if cat.get("status") in CAT_STATUSES else CAT_WAITING
         new = cc3.selectbox("Status", list(CAT_STATUSES),
                             index=CAT_STATUSES.index(cur),
-                            key=f"tg_catst_{cand['id']}_{cat.get('id','')}")
+                            key=f"tg_catst_{cand['id']}_{cat.get('id', '')}")
         if new != cat.get("status"):
             cat["status"] = new
             changed = True
@@ -757,7 +759,7 @@ def _catalysts(data: dict, cand: dict) -> None:
             rea = o2.number_input("Kursreaktion %",
                                   value=_num(cat.get("reaction")),
                                   step=1.0,
-                                  key=f"tg_catrea_{cand['id']}_{cat.get('id','')}")
+                                  key=f"tg_catrea_{cand['id']}_{cat.get('id', '')}")
             les = o3.text_input("Lärdom", value=cat.get("lesson", ""),
                                 key=f"tg_catles_{cand['id']}_{cat.get('id','')}",
                                 placeholder="Utfall / lärdom — vad lärde den dig?")

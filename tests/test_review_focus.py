@@ -1,9 +1,10 @@
 """
 Arken (PR B3) — enklare att fylla i, bara yta: inga regler, trösklar eller grindar är ändrade.
 
-Fokusläget (ett bolag i taget, "Visa alla", Thors arkknappar öppnar arket på bolaget), '· x/y ifyllda' i kortens
-rubriker, den dämpat röda raden "Saknas för köpbeslut" först i korten, kriteriet i 0–2-rullgardinerna, synliga
-etiketter i CSM-matrisen, Lukacs-scenarierna och Tiggres katalysatorer, Wolf Asymmetry-knapparna "Uppdatera arket",
+Fokusläget (ett bolag i taget, "Visa alla", Thors arkknappar öppnar arket på bolaget), raden först i korten —
+'x/y fält ifyllda' och den dämpat röda "Saknas för köpbeslut", ritad sist så att den läser körningens värden, medan
+kortets rubrik står still (en ny etikett fällde ihop kortet) — kriteriet i 0–2-rullgardinerna, synliga etiketter i
+CSM-matrisen, Lukacs-scenarierna och Tiggres katalysatorer, Wolf Asymmetry-knapparna "Uppdatera arket",
 Durrett-arkets "Visa bara saknade / köpkritiska", nivån i Royalty-kortet, "Durrett →" till Poängmodellen och
 🧭 Durrett som egen knapp, Rick Rules position som förslag i Scorecardet och extraktionens förslag utan API-nyckel.
 """
@@ -11,6 +12,7 @@ import copy
 import inspect
 import json
 import os
+import re
 import sys
 
 import pytest
@@ -101,6 +103,13 @@ def _cards(at, marker: str) -> list:
     return [e for e in at.expander if marker in e.label]
 
 
+def _count(card) -> tuple:
+    """(ifyllda, totalt) ur raden först i kortet."""
+    m = re.search(r"(\d+)/(\d+) fält ifyllda", card.markdown[0].value)
+    assert m, card.markdown[0].value
+    return int(m.group(1)), int(m.group(2))
+
+
 # ── Fokusläget ───────────────────────────────────────────────────────────────
 def test_focus_matches_every_ticker_form():
     assert focus.matches("BOL", "BOL.ST") and focus.matches("bol.st", "BOL") and not focus.matches("BOL", "NEM")
@@ -136,7 +145,7 @@ def test_focus_works_in_every_sheet_and_writes_nothing(page):
         assert _same(at.session_state[store], STORES[store]), module
 
 
-# ── Rubrikerna och saknas-raden ──────────────────────────────────────────────
+# ── Raden först i kortet ─────────────────────────────────────────────────────
 @pytest.mark.parametrize("module,fn,kw,sheet,row_of,marker", [
     ("producers", "render_producers_page", {"sheet": "Rick Rule"}, "rule",
      lambda s: s["producers"]["producers"][0], "BOL ·"),
@@ -146,13 +155,52 @@ def test_focus_works_in_every_sheet_and_writes_nothing(page):
     ("tiggre", "render_tiggre_page", {}, "tiggre", lambda s: s["tiggre"]["candidates"][0], "LOB"),
     ("insider", "render_insider_page", {}, "insider", lambda s: s["insider"]["signals"][0], "EKTA-B.ST"),
 ])
-def test_headers_count_filled_fields_and_cards_open_with_what_is_missing(page, module, fn, kw, sheet, row_of, marker):
+def test_the_first_line_counts_filled_fields_and_names_what_is_missing(page, module, fn, kw, sheet, row_of, marker):
     at = page(module, fn, kw)
     card = next(e for e in at.expander if e.label.startswith(marker) or marker in e.label.split("·")[0])
     done, total, _m = cat.progress(sheet, row_of(STORES))
-    assert card.label.endswith(f" · {done}/{total} ifyllda"), card.label
+    assert "ifyllda" not in card.label                                    # rubriken är som förr
     first = card.markdown[0].value
+    assert f"{done}/{total} fält ifyllda" in first, first
     assert "Saknas för köpbeslut:" in first and "#c44545" in first, first
+
+
+# (sida, argument, kortets början, widget, nytt värde) — ett fält som inte rör rubrikens poäng eller dom
+EDITS = [
+    ("producers", "render_producers_page", {"sheet": "Rick Rule"}, "BOL ·", ("number_input", "pr_c_p1"), 1200.0),
+    ("producers", "render_producers_page", {"sheet": "Royalty C"}, "FNV ·", ("number_input", "ro_pn_r1"), 0.5),
+    ("scoring", "render_scoring_page", {}, "JR ·", ("number_input", "sc_cash_s1"), 20.0),
+    ("tiggre", "render_tiggre_page", {}, "🔍  LOB", ("number_input", "tg_nav_c1"), 500.0),
+    ("insider", "render_insider_page", {}, "EKTA-B.ST", ("number_input", "ins_a_i1"), 5000.0),
+    ("scorecard", "render_scorecard_page", {}, "📋  BOL", ("text_input", "sc_sell_boliden|BOL"), "Stopp −20 %"),
+]
+
+
+@pytest.mark.parametrize("module,fn,kw,marker,widget,value", EDITS)
+def test_an_edit_keeps_the_card_label_and_the_line_follows_in_the_same_run(
+        page, module, fn, kw, marker, widget, value):
+    """Rubriken byter inte text när ett fält fylls i (då fälldes kortet ihop), och raden först i kortet räknar
+    med värdet redan i samma körning — de platta arken körs inte om efter en ändring."""
+    at = page(module, fn, kw)
+    card = next(e for e in at.expander if e.label.startswith(marker))
+    label, (done, total) = card.label, _count(card)
+    getattr(at, widget[0])(key=widget[1]).set_value(value).run()
+    assert not at.exception, at.exception
+    card = next(e for e in at.expander if e.label.startswith(marker))
+    assert card.label == label
+    assert _count(card) == (done + 1, total)
+
+
+def test_the_missing_line_drops_a_field_in_the_run_it_is_filled(page):
+    """Granskningens fall: AISC ifylld — lagret har talet och raden slutar be om det i samma körning."""
+    at = page("producers", "render_producers_page", {"sheet": "Rick Rule"})
+    nem = next(e for e in at.expander if e.label.startswith("NEM"))
+    assert "Kostnad per enhet (AISC/C1)" in nem.markdown[0].value
+    at.number_input(key="pr_c_p2").set_value(1200.0).run()
+    assert at.session_state["producers"]["producers"][1]["unit_cost"] == 1200.0
+    nem = next(e for e in at.expander if e.label.startswith("NEM"))
+    line = nem.markdown[0].value
+    assert "Kostnad per enhet" not in line and "Råvarupris nu" in line and "1/" in line, line
 
 
 def test_the_missing_line_names_the_gate_inputs_and_says_when_nothing_is_missing(page):
@@ -170,10 +218,11 @@ def test_the_missing_line_names_the_gate_inputs_and_says_when_nothing_is_missing
     assert "Inget saknas för köpbeslut" in card.markdown[0].value
 
 
-def test_scorecard_and_durrett_cards_have_the_header_and_the_line(page, monkeypatch):
+def test_scorecard_and_durrett_cards_have_the_line(page, monkeypatch):
     at = page("scorecard", "render_scorecard_page", {})
     card = next(e for e in at.expander if "BOL" in e.label and "producenter" in e.label)
-    assert card.label.endswith("ifyllda") and "Saknas för köpbeslut:" in card.markdown[0].value
+    assert "ifyllda" not in card.label and "fält ifyllda" in card.markdown[0].value
+    assert "Saknas för köpbeslut:" in card.markdown[0].value
     assert at.session_state["scorecard"]["cards"] == {}                            # orört kort skrivs inte
     import durrett_cases as dcs
     from confidence import store as cs
@@ -181,7 +230,8 @@ def test_scorecard_and_durrett_cards_have_the_header_and_the_line(page, monkeypa
     cs.put(data, dcs.gold_producer())
     at = page("engines.durrett.ui", "render_durrett_page", {}, {"confidence": data})
     card = next(e for e in at.expander if e.label.startswith("GPR · Guld"))
-    assert card.label.endswith("ifyllda") and "Saknas för köpbeslut:" in card.markdown[0].value
+    assert "ifyllda" not in card.label and "fält ifyllda" in card.markdown[0].value
+    assert "Saknas för köpbeslut:" in card.markdown[0].value
 
 
 # ── Rullgardinerna och etiketterna ───────────────────────────────────────────
@@ -320,17 +370,37 @@ def test_poangmodellen_opens_on_the_model_and_company_thor_set(page):
 
 
 # ── Scorecardet: Rick Rules position som förslag ─────────────────────────────
+RULE_HINT = "Rick Rule-kortet: tänkt position"
+
+
 def test_scorecard_offers_the_rick_rule_position_and_writes_it_only_on_anvand(page):
-    at = page("scorecard", "render_scorecard_page", {})
+    at = page("scorecard", "render_scorecard_page", {}, {"scorecard": {"cards": {
+        "boliden|BOL": {"strategy": "producenter"}}}})
     key = "boliden|BOL"
-    assert any("Rick Rule-kortet: tänkt position 5 % av total" in c.value for c in at.caption)
-    assert at.session_state["scorecard"]["cards"] == {}                            # bara ett förslag
+    assert any(f"{RULE_HINT} 5 % av total" in c.value for c in at.caption)
+    assert at.session_state["scorecard"]["cards"][key] == {"strategy": "producenter"}  # bara ett förslag
     at.button(key=f"sc_userule_{key}").click().run()
     assert not at.exception, at.exception
     card = at.session_state["scorecard"]["cards"][key]
-    assert card["position_pct_total"] == 5.0 and card["strategy"] == at.selectbox(key=f"sc_strat_{key}").value
+    assert card["position_pct_total"] == 5.0 and card["strategy"] == "producenter"
     assert at.number_input(key=f"sc_post_{key}").value == 5.0
-    assert not any("Rick Rule-kortet: tänkt position" in c.value for c in at.caption)
+    assert not any(RULE_HINT in c.value for c in at.caption)
+
+
+def test_the_rick_rule_position_is_offered_only_for_producenter_and_until_the_card_has_a_size(page):
+    """Förslaget gäller Rick Rule-beslutet: inte när kortet gäller en annan strategi (här Durrett, kandidatens
+    första), och inte när du redan valt en storlek."""
+    at = page("scorecard", "render_scorecard_page", {})
+    key = "boliden|BOL"
+    assert at.selectbox(key=f"sc_strat_{key}").value == "durrett"
+    assert not any(RULE_HINT in c.value for c in at.caption)
+    assert at.session_state["scorecard"]["cards"] == {}
+    at.selectbox(key=f"sc_strat_{key}").select("producenter").run()
+    assert any(RULE_HINT in c.value for c in at.caption)
+    at.number_input(key=f"sc_post_{key}").set_value(2.0).run()
+    assert not at.exception, at.exception
+    assert not any(RULE_HINT in c.value for c in at.caption)
+    assert at.session_state["scorecard"]["cards"][key]["position_pct_total"] == 2.0     # ditt val står
 
 
 # ── Extraktionen utan API-nyckel ─────────────────────────────────────────────

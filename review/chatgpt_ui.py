@@ -1,14 +1,15 @@
 """
 review/chatgpt_ui.py — "📋 Underlag till ChatGPT" i arkens kort, i Scorecardet och i Thors Arken-flik.
 
-Ut: Excel (med rullgardiner) och CSV att ladda ner, och prompten att klistra in med kopieringsknappen. Excel-filen
-byggs först när knappen trycks (download_button med callable), så ett kort med många rader ritas inte långsammare.
+Ut: Excel (med rullgardiner) och CSV att ladda ner, och prompten att klistra in med kopieringsknappen. Filerna och
+prompten byggs först när de behövs — Excel och CSV när knappen trycks (download_button med callable), prompten när
+"Visa prompten" slås på — så ett stängt kort skickar ingen stor text eller fil till webbläsaren vid varje ändring.
 
 In (render_import, samma expander): det ifyllda arket eller det inklistrade svaret läses (review.answers),
 kontrolleras (review.importer) och visas som en skillnadstabell med "Använd" per rad — förkryssad för säkerhet
-high/medium med källa och utan varning. "Skriv in N ändringar" skriver i arkets rad i sessionen (on_click, och
-kortets widgets släpps så att de ritas om med de nya värdena). Ingenting skrivs till GitHub — 💾 Spara som vanligt.
-Thors Arken-flik är bara läsning och har ingen import.
+high/medium med källa, utan varning och utan att skriva över ett värde som redan står i arket. "Skriv in N
+ändringar" skriver i arkets rad i sessionen (on_click, och kortets widgets släpps så att de ritas om med de nya
+värdena). Ingenting skrivs till GitHub — 💾 Spara som vanligt. Thors Arken-flik är bara läsning och har ingen import.
 """
 
 from __future__ import annotations
@@ -73,7 +74,9 @@ def render_export(ticker: str, stores: Optional[dict] = None, sheets=None, key: 
         return
     out = exp.rows
     xlsx_name = ex.filename(exp.ticker, "xlsx")
-    prompt = ex.build_prompt(exp.ticker, exp.name, out, strategy, dom_text, exp.missing, xlsx_name)
+
+    def _prompt() -> str:
+        return ex.build_prompt(exp.ticker, exp.name, out, strategy, dom_text, exp.missing, xlsx_name)
     need = sum(1 for r in out if r["required"])
     k = key or exp.ticker
     with st.expander(TITLE, expanded=False):
@@ -86,16 +89,19 @@ def render_export(ticker: str, stores: Optional[dict] = None, sheets=None, key: 
                        + " än — de raderna är en tom mall. Lägg in bolaget i arket för att kunna skriva in svaren.")
         c1, c2 = st.columns(2)
         if ex.xlsx_available():
-            c1.download_button("⬇ Excel (.xlsx)", data=lambda: ex.to_xlsx(out, prompt) or b"", file_name=xlsx_name,
+            c1.download_button("⬇ Excel (.xlsx)", data=lambda: ex.to_xlsx(out, _prompt()) or b"", file_name=xlsx_name,
                                mime=ex.XLSX_MIME, key=f"rv_xlsx_{k}", on_click="ignore",
                                help="Blå kolumner fylls i, rullgardiner för Ja/Nej, val och 0–2. Fliken "
                                     "Instruktion har prompten.")
         else:
             c1.caption("Excel kräver paketet openpyxl — CSV fungerar alltid.")
-        c2.download_button("⬇ CSV", data=ex.to_csv(out), file_name=ex.filename(exp.ticker, "csv"), mime="text/csv",
-                           key=f"rv_csv_{k}", on_click="ignore",
+        c2.download_button("⬇ CSV", data=lambda: ex.to_csv(out), file_name=ex.filename(exp.ticker, "csv"),
+                           mime="text/csv", key=f"rv_csv_{k}", on_click="ignore",
                            help="Semikolonseparerad, samma kolumner som Excel-arket.")
-        st.code(prompt, language=None)
+        if st.toggle("Visa prompten", key=f"rv_prompt_{k}",
+                     help="Texten att klistra in i ChatGPT tillsammans med filen — kopieringsknappen sitter i rutans "
+                          "hörn. Den står också i Excel-arkets flik Instruktion."):
+            st.code(_prompt(), language=None)
         if importable:
             live = dict(targets) if targets is not None else dict(rows or {})
             if not reset:
@@ -107,12 +113,16 @@ def render_export(ticker: str, stores: Optional[dict] = None, sheets=None, key: 
 
 # ── Importen ─────────────────────────────────────────────────────────────────
 def _fmt(v) -> str:
+    """Värdet i skillnadstabellen på svenska: '1 250,5', 'Ja'/'Nej', '–' för tomt."""
     if v is None or v == "":
         return "–"
     if isinstance(v, bool):
         return "Ja" if v else "Nej"
     if isinstance(v, float):
-        return f"{v:,.6g}".replace(",", " ")
+        s = f"{v:,.6f}".rstrip("0").rstrip(".")       # högst sex decimaler, aldrig 1.2e+06
+        if v and s in ("0", "-0"):
+            s = f"{v:.3g}"                              # ett mycket litet tal blir inte 0
+        return s.replace(",", " ").replace(".", ",")
     return str(v)
 
 
@@ -180,13 +190,14 @@ def render_import(exp, targets: dict, k: str, reset: tuple = (), on_apply: Optio
     table = pd.DataFrame([{
         "Använd": c.default_use, "Fält": c.field.label, "Nu": _fmt(c.old), "Nytt": _fmt(c.new),
         "Enhet": c.unit or c.field.unit, "Källa": im.provenance(c).removeprefix("ChatGPT: "),
-        "Säkerhet": c.confidence or "–", "Varning": " · ".join(c.warnings), "Ark": c.field.key,
+        "Säkerhet": c.confidence or "–", "Varning": " · ".join(c.warnings), "Fältnyckel": c.field.key,
     } for c in res.changes])
     edited = st.data_editor(
         table, key=f"rv_imp_tab_{k}_{gen}_{res.signature()}", hide_index=True, width="stretch",
         disabled=[c for c in table.columns if c != "Använd"],
         column_config={"Använd": st.column_config.CheckboxColumn(
-            "Använd", help="Förkryssad för säkerhet high/medium med källa och utan varning.")})
+            "Använd", help="Förkryssad för säkerhet high/medium med källa och utan varning. Ett värde som skriver "
+                           "över det som står i arket kryssar du själv.")})
     picked = [c for c, use in zip(res.changes, list(edited["Använd"])) if bool(use)]
     n = len(picked)
     st.button(f"Skriv in {n} ändring" if n == 1 else f"Skriv in {n} ändringar", key=f"rv_imp_go_{k}",

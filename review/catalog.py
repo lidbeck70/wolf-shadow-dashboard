@@ -536,6 +536,43 @@ def is_empty(value) -> bool:
     return value is None or (isinstance(value, str) and not value.strip())
 
 
+def same_value(old, new) -> bool:
+    """Samma värde? Tal jämförs som tal, Ja/Nej som Ja/Nej, text som text."""
+    if is_empty(old):
+        return is_empty(new)
+    if isinstance(old, bool) or isinstance(new, bool):
+        return isinstance(old, bool) and isinstance(new, bool) and old == new
+    try:
+        return abs(float(old) - float(new)) < 1e-9
+    except (TypeError, ValueError):
+        return str(old).strip() == str(new).strip()
+
+
+# ── Källan till ett inläst värde (platta arken) ──────────────────────────────
+# row['sources'] = {sökväg: {"value": det inlästa värdet, "source": "ChatGPT: <källa> · <datum>"}}. Värdet sparas med
+# källan, så att källan bara visas medan arket har kvar det inlästa värdet — ett värde du skrivit själv har ingen.
+SOURCES = "sources"
+
+
+def set_source(row: dict, path: str, value, source: str) -> None:
+    """Källan för ett inläst värde i ett platt ark (review.importer.apply)."""
+    src = row.get(SOURCES) if isinstance(row.get(SOURCES), dict) else {}
+    src[path] = {"value": value, "source": source}
+    row[SOURCES] = src
+
+
+def source_for(row, path: str) -> str:
+    """Källan för fältets värde i ett platt ark, eller tomt: bara medan värdet är det som lästes in med källan."""
+    src = _as_row(row).get(SOURCES)
+    rec = src.get(path) if isinstance(src, dict) else None
+    if not isinstance(rec, dict) or "value" not in rec:
+        return ""
+    v = get_value(row, path)
+    if is_empty(v) or not same_value(rec["value"], v):
+        return ""
+    return str(rec.get("source") or "")
+
+
 def progress(sheet: str, row, stage: Optional[str] = None, position_pct=None) -> tuple:
     """(ifyllda, totalt, saknade sökvägar) för kortet — underlaget till 'x/y fält ifyllda'."""
     fs = fields_for(sheet, row, stage, position_pct)

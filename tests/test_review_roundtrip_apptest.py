@@ -2,10 +2,11 @@
 review — ChatGPT-svaret tillbaka in i arket under AppTest (PR D).
 
 Inklistrat CSV-svar eller uppladdad fil → kontroll → skillnadstabell med "Använd" (förkryssad för high/medium med
-källa och utan varning) → "Skriv in N ändringar" skriver i sessionens rad, kortets widgets ritas om med de nya
-värdena och ingenting sparas till GitHub (storage.save_json får inte anropas). Durrett-arket får Datapoints med
-källa 'ChatGPT: …' och källtyp 'unsupported' när den saknas, Scorecardet läser bara in kortets egna fält, och Thors
-Arken-flik är bara läsning. Inget nätverk: lagringen, sifferuppdateringen och Gisten är fejkade.
+källa, utan varning och utan att skriva över arkets värde) → "Skriv in N ändringar" skriver i sessionens rad, kortets
+widgets ritas om med de nya värdena och ingenting sparas till GitHub (storage.save_json får inte anropas). Källan
+'ChatGPT: …' följer värdet, inte fältet, och Tiggres katalysatorer skrivs utan tomma rader. Durrett-arket får
+Datapoints med källa 'ChatGPT: …' och källtyp 'unsupported' när den saknas, Scorecardet läser bara in kortets egna
+fält, och Thors Arken-flik är bara läsning. Inget nätverk: lagringen, sifferuppdateringen och Gisten är fejkade.
 """
 import copy
 import json
@@ -115,7 +116,7 @@ def test_pasted_answer_shows_the_diff_and_writes_only_after_the_button(page):
     row = _rule(at)
     assert row["unit_cost"] == 1250.5 and row["mine_life"] == 14.0 and row["kapitaldisciplin"] is True
     assert row.get("nav_musd") is None and row.get("position_pct") is None
-    assert row["sources"]["unit_cost"] == "ChatGPT: Q2-rapporten s. 12 · 2026-08-01"
+    assert row["sources"]["unit_cost"]["source"] == "ChatGPT: Q2-rapporten s. 12 · 2026-08-01"
     assert at.number_input(key="pr_c_p1").value == 1250.5               # widgeten ritades om med nya värdet
     assert at.checkbox(key="pr_ch_p1_kapitaldisciplin").value is True
     assert any("3 ändringar inskrivna i arket" in s.value for s in at.success)
@@ -146,7 +147,47 @@ def test_unit_mismatch_warns_and_is_not_ticked(page):
     assert go.disabled and go.label == "Skriv in 0 ändringar"
     table = at.dataframe[0].value                                       # skillnadstabellen
     assert list(table["Använd"]) == [False] and "lb mot oz" in table["Varning"][0]
-    assert table["Nytt"][0] == "4.1"                                     # talet står kvar — inget räknat om
+    assert table["Nytt"][0] == "4,1"                                     # talet står kvar — inget räknat om
+
+
+def test_an_answer_that_overwrites_your_value_is_unticked_and_flagged(page):
+    """Råvarupriset står redan i arket (3000): säkerhet high med källa kryssar inte i bytet — du gör det själv.
+    Tabellen skriver talen på svenska och visar fältnyckeln under sitt eget namn."""
+    at = page("producers", "render_producers_page", {"sheet": "Rick Rule"})
+    answer = "\n".join([HEAD, "BOL.ST;rule:price;3100,5;USD/oz;LBMA 2026-09-30;primary;2026-09-30;high;",
+                        "BOL.ST;rule:unit_cost;1250,5;USD/oz;Q2-rapporten;primary;2026-08-01;high;"])
+    at.text_area(key="rv_imp_txt_rule_p1_0").set_value(answer).run()
+    assert not at.exception, at.exception
+    table = at.dataframe[0].value
+    assert "Ark" not in table.columns and list(table["Fältnyckel"]) == ["rule:price", "rule:unit_cost"]
+    rows = {k: i for i, k in enumerate(table["Fältnyckel"])}
+    price, cost = rows["rule:price"], rows["rule:unit_cost"]
+    assert not table["Använd"][price]
+    assert "skriver över värdet i arket" in table["Varning"][price]
+    assert table["Nu"][price] == "3 000" and table["Nytt"][price] == "3 100,5"
+    assert bool(table["Använd"][cost]) and table["Varning"][cost] == "" and table["Nytt"][cost] == "1 250,5"
+    go = at.button(key="rv_imp_go_rule_p1")
+    assert go.label == "Skriv in 1 ändring"
+    go.click().run()
+    assert _rule(at)["price"] == 3000.0 and _rule(at)["unit_cost"] == 1250.5          # ditt pris står kvar
+
+
+def test_the_chatgpt_source_is_not_kept_on_a_value_you_change(page):
+    """Källan 'ChatGPT: …' gäller det inlästa talet. Skriver du ett eget i kortet följer den inte med till nästa
+    underlag ('Källa nu')."""
+    from review import export as ex
+    at = page("producers", "render_producers_page", {"sheet": "Rick Rule"})
+    at.text_area(key="rv_imp_txt_rule_p1_0").set_value(RULE_ANSWER).run()
+    at.button(key="rv_imp_go_rule_p1").click().run()
+
+    def _source():
+        row = _rule(at)
+        e = ex.build("BOL.ST", {"producers": {"producers": [row], "royalty": []}}, ["rule"], rows={"rule": row})
+        return {r["key"]: r["source"] for r in e.rows}["rule:unit_cost"]
+    assert _source() == "ChatGPT: Q2-rapporten s. 12 · 2026-08-01"
+    at.number_input(key="pr_c_p1").set_value(1300.0).run()
+    assert not at.exception, at.exception
+    assert _rule(at)["unit_cost"] == 1300.0 and _source() == ""
 
 
 def test_uploaded_csv_file_is_read_like_the_pasted_answer(page):
@@ -201,6 +242,25 @@ def test_tiggre_catalysts_from_the_answer_get_id_and_status(page):
     assert at.checkbox(key="tg_sc_c1_fs").value is True
 
 
+def test_a_catalyst_answer_into_an_empty_list_leaves_one_row_and_nothing_is_written_on_render(page):
+    """Granskningens fall: bara tiggre:catalysts.1.date i en tom lista. Förr blev plats 1 en tom rad utan id som
+    ritades '? / ?' och fick status när arket ritades — nu en rad med id och status, och en ny ritning ändrar
+    ingenting."""
+    import tiggre
+    at = page("tiggre", "render_tiggre_page", {})
+    answer = "\n".join([HEAD, "LOB;tiggre:catalysts.1.date;2027-03;;PR 2026-09;primary;2026-09-01;high;"])
+    at.text_area(key="rv_imp_txt_tiggre_c1_0").set_value(answer).run()
+    at.button(key="rv_imp_go_tiggre_c1").click().run()
+    assert not at.exception, at.exception
+    (cat,) = at.session_state["tiggre"]["candidates"][0]["catalysts"]
+    assert cat["date"] == "2027-03" and cat["id"] and cat["status"] == tiggre.CAT_WAITING
+    before = copy.deepcopy(at.session_state["tiggre"])
+    at.run()
+    assert not at.exception, at.exception
+    assert _same(at.session_state["tiggre"], before)                        # att rita skriver inget
+    assert at.selectbox(key=f"tg_catst_c1_{cat['id']}").value == tiggre.CAT_WAITING
+
+
 def test_durrett_sheet_import_writes_datapoints_with_chatgpt_source(monkeypatch):
     import durrett_cases as dcs
     import refresh_ui
@@ -237,6 +297,13 @@ def test_durrett_sheet_import_writes_datapoints_with_chatgpt_source(monkeypatch)
                         f"medium;", f"{t};confidence:fields.irr_pct;31;%;FS 2024;primary;2024-05-01;medium;"])
     at.text_area(key=f"rv_imp_txt_durrett_{t}_0").set_value(answer).run()
     assert not at.exception, at.exception
+    # AISC står redan i arket — bytet kryssas inte i av sig självt, du kryssar det
+    table = at.dataframe[0].value
+    i = list(table["Fältnyckel"]).index("confidence:fields.aisc")
+    assert not table["Använd"][i] and "skriver över värdet i arket" in table["Varning"][i]
+    tab = next(k for k in at.session_state.filtered_state if str(k).startswith(f"rv_imp_tab_durrett_{t}_0_"))
+    at.session_state[tab] = {"edited_rows": {i: {"Använd": True}}, "added_rows": [], "deleted_rows": []}
+    at.run()
     at.button(key=f"rv_imp_go_durrett_{t}").click().run()
     assert not at.exception, at.exception
     f = at.session_state["confidence"]["companies"][t]["fields"]

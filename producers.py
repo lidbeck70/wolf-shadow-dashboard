@@ -542,11 +542,9 @@ def _producers(data: dict) -> None:
         head = (f"{row.get('ticker','?')} · {row.get('commodity','')} · "
                 f"{sc if sc is not None else '–'}/{PROD_MAX_SCORE} p · "
                 f"{vd.label if vd else 'ofullständig'}"
-                + (f" · {r['ev_nav']:.2f}× NAV" if r.get("ev_nav") is not None else "")
-                + (rc.suffix("rule", row) if rc else ""))
+                + (f" · {r['ev_nav']:.2f}× NAV" if r.get("ev_nav") is not None else ""))
         with st.expander(head, expanded=bool(foc)):
-            if rc:
-                rc.render_missing("rule", row)
+            top = rc.slot() if rc else None
             changed = False
             v1, v2, v3, v4 = st.columns(4)
             ev = v1.number_input("EV/EBITDA", min_value=0.0, step=0.5,
@@ -677,6 +675,8 @@ def _producers(data: dict) -> None:
                 st.rerun()
             if changed:
                 _save(data)
+            if rc:
+                rc.fill(top, "rule", row)
 
 
 def _fetch_ev(row: dict, widget_key: str) -> None:
@@ -799,10 +799,9 @@ def _royalty(data: dict) -> None:
         if rc and not rc.same_ticker(row.get("ticker"), foc):
             continue
         head = (f"{row.get('ticker','?')} · nivå {row.get('level','?')} · "
-                f"{vd.label}" + (rc.suffix("royalty", row) if rc else ""))
+                f"{vd.label}")
         with st.expander(head, expanded=bool(foc)):
-            if rc:
-                rc.render_missing("royalty", row)
+            top = rc.slot() if rc else None
             changed = _level(row)
 
             p1, p2, p3 = st.columns(3)
@@ -877,3 +876,5 @@ def _royalty(data: dict) -> None:
                 st.rerun()
             if changed:
                 _save(data)
+            if rc:
+                rc.fill(top, "royalty", row)

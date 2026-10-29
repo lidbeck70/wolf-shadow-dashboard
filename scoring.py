@@ -315,7 +315,8 @@ def _extract_section(data: dict, row: dict, key: str) -> None:
 
 
 def _chatgpt(data: dict, row: dict, key: str) -> None:
-    """📋 Underlag till ChatGPT för kortets aktie — Excel/CSV och prompten. Skriver inget i arket."""
+    """📋 Underlag till ChatGPT för kortets aktie — Excel/CSV och prompten, och svaret tillbaka efter granskning: det
+    du väljer skrivs i raden i sessionen, 💾 sparar."""
     try:
         from review import chatgpt_ui
     except Exception:
@@ -424,10 +425,9 @@ def _rows(data: dict, key: str) -> None:
         c = VERDICT_COLOR.get(vd, DIM)
         head = (f"{row.get('ticker','?')} · {row.get('commodity','')} · "
                 f"{sc if sc is not None else '–'}/{MAX_SCORE} p · "
-                f"{vd or 'ej poängsatt'}" + (rc.suffix(key, row) if rc else ""))
+                f"{vd or 'ej poängsatt'}")
         with st.expander(head, expanded=bool(foc)):
-            if rc:
-                rc.render_missing(key, row)
+            top = rc.slot() if rc else None
             if key == SPROTT:
                 _sprott_math(data, row)
                 _extract_section(data, row, SPROTT)
@@ -470,6 +470,8 @@ def _rows(data: dict, key: str) -> None:
                 data[key] = [x for x in data[key] if x["id"] != row["id"]]
                 _save(data)
                 st.rerun()
+            if rc:
+                rc.fill(top, key, row)
 
 
 def _sprott_math(data: dict, row: dict) -> None:

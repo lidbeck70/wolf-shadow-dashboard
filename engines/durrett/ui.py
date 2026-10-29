@@ -188,11 +188,9 @@ def _rows(data: dict) -> None:
         head = (f"{t} · {com.REGISTRY[company.commodity].label if company.commodity in com.REGISTRY else company.commodity}"
                 f" · {a.classification.company_type} · Durrett {_f(a.quality_score.value, '{:.0f}', '–')}"
                 f" · Risk {_f(a.risk_score.value, '{:.0f}', '–')} {a.risk_level}"
-                f" · Upside {_f(a.upside_multiple, '{:.1f}×', '–')} · Confidence {_f(a.confidence_score.value, '{:.0f} %', '–')}"
-                + (rc.suffix("confidence", company.as_dict()) if rc else ""))
+                f" · Upside {_f(a.upside_multiple, '{:.1f}×', '–')} · Confidence {_f(a.confidence_score.value, '{:.0f} %', '–')}")
         with st.expander(head, expanded=bool(foc)):
-            if rc:
-                rc.render_missing("confidence", company.as_dict())
+            top = rc.slot() if rc else None
             sub = st.radio("", ["Arket", "Analys", "Scenarier", "Mer"], horizontal=True,
                            label_visibility="collapsed", key=f"durrett_row_sub_{t}")
             if sub == "Arket":
@@ -203,6 +201,8 @@ def _rows(data: dict) -> None:
                 _render_scenarios(a, company)
             else:
                 _render_more(data, company, a)
+            if rc:
+                rc.fill(top, "confidence", (data.get("companies") or {}).get(t) or company)
 
 
 def _sheet_widget(company: CompanyInput, key: str, label: str, wkey: str):

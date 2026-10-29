@@ -5,8 +5,10 @@ Läsningen: kort CSV-svar (';', ',' eller tabb, i kodstaket, med BOM), hela expo
 (rader eller extraktionens schema) och Excel. Tolkningen: decimalkomma, tusental, %, Ja/Nej, val, 0–2, heltal,
 datum och månad — och "vet inte" (null, N/A, –) är tomt. Kontrollen: annan ticker, okänd nyckel och ogiltigt värde
 avvisas, 'Bara du' och andra ark hoppas över, en enhet/valuta/skala som skiljer sig varnar (aldrig omräkning),
-Lukacs target-yield prövas mot FCF-klassens band, och bara ändrade värden blir ändringar. Inskrivningen: platta ark
-får värdet och 'sources', Durrett/Wolf Asymmetry ett Datapoint ('ChatGPT: …', källtyp 'unsupported' när den saknas).
+Lukacs target-yield prövas mot FCF-klassens band, bara ändrade värden blir ändringar och ett värde som skriver över
+arkets är aldrig förkryssat. Inskrivningen: platta ark får värdet och 'sources' (källan visas bara medan värdet står
+kvar), Durrett/Wolf Asymmetry ett Datapoint ('ChatGPT: …', källtyp 'unsupported' när den saknas), och Tiggres
+katalysatorer får id och status utan tomma utfyllnadsrader.
 """
 import copy
 import io
@@ -242,6 +244,20 @@ def test_only_changed_values_become_changes_and_defaults_follow_confidence_and_s
     assert "källa saknas" in notes["rule:nav_musd"] and any("ÅÅÅÅ-MM-DD" in w for w in notes["rule:insyn"])
 
 
+def test_a_value_that_overwrites_the_sheet_is_never_ticked_and_says_so():
+    """Säkerhet high med källa räcker inte när fältet redan har ett värde — ett klick fick inte byta ut ditt tal."""
+    row = _rule_row(mine_life=12.0, kapitaldisciplin=False)
+    res, _r, _e = _check(["BOL.ST;rule:mine_life;14;år;43-101 2025;primary;2025-03-01;high;",
+                          "BOL.ST;rule:kapitaldisciplin;Ja;;Årsredovisning;primary;2026-02-01;high;",
+                          "BOL.ST;rule:rp_ratio;9;år;Rapport;primary;2026-01-01;high;"], row=row)
+    by = {c.key: c for c in res.changes}
+    assert by["rule:mine_life"].overwrites and not by["rule:mine_life"].default_use
+    assert im.OVERWRITE in by["rule:mine_life"].warnings and by["rule:mine_life"].old == 12.0
+    assert by["rule:kapitaldisciplin"].overwrites and not by["rule:kapitaldisciplin"].default_use   # Nej är ett svar
+    assert not by["rule:rp_ratio"].overwrites and by["rule:rp_ratio"].default_use
+    assert im.OVERWRITE not in by["rule:rp_ratio"].warnings
+
+
 def test_bare_keys_and_extraction_aliases_resolve_without_conversion():
     res, _r, _e = _check(["BOL.ST;mine_life;14;år;x;primary;;high;",
                           "BOL.ST;aisc;2,4;USD/lb;x;primary;;high;",              # AISC = unit_cost (faktor 1)
@@ -284,8 +300,8 @@ def test_apply_flat_rows_get_values_and_sources_and_the_gates_read_them():
                            f"BOL.ST;rule:{ctl.DS_FIELDS[0].key};1;;Kassa/burn;primary;2026-08-01;medium;"])
     assert im.apply(res.changes, {"rule": row}) == 5
     assert row["unit_cost"] == 2.1 and row["jurisdiktion"] is True and row[ctl.DS_FIELDS[0].key] == 1
-    assert row["sources"]["unit_cost"] == "ChatGPT: Q2 s. 12 · 2026-08-01"
-    assert row["sources"]["kapitaldisciplin"] == "ChatGPT: Årsredovisning"
+    assert row["sources"]["unit_cost"] == {"value": 2.1, "source": "ChatGPT: Q2 s. 12 · 2026-08-01"}
+    assert cat.source_for(row, "kapitaldisciplin") == "ChatGPT: Årsredovisning"
     score = prod.producer_score(row)                                          # arkets egen regel, oförändrad
     assert score == prod.margin_points(prod.margin_pct(4.1, 2.1)) + 2
     assert prod.producer_verdict(score, prod.asset_dying(row)).label == prod.P_BUY
@@ -293,6 +309,51 @@ def test_apply_flat_rows_get_values_and_sources_and_the_gates_read_them():
     e2 = ex.build("BOL.ST", {"producers": {"producers": [row], "royalty": []}}, ["rule"], rows={"rule": row})
     src = {r["key"]: r["source"] for r in e2.rows}
     assert src["rule:unit_cost"] == "ChatGPT: Q2 s. 12 · 2026-08-01"
+
+
+def test_the_chatgpt_source_follows_the_value_not_the_field():
+    """Ändrar du ett inläst värde själv står ChatGPT-källan inte kvar på ditt tal — varken i kortet eller i nästa
+    underlag. Står det inlästa värdet kvar (även som 2.10) gäller källan."""
+    res, row, _e = _check(["BOL.ST;rule:unit_cost;2,1;USD/lb;Q2 s. 12;primary;2026-08-01;high;",
+                           "BOL.ST;rule:jurisdiktion;Ja;;Fraser 2025;secondary;2025-12-01;high;"])
+    im.apply(res.changes, {"rule": row})
+    row["unit_cost"], row["jurisdiktion"] = 2.3, False                       # du skrev själv
+    assert cat.source_for(row, "unit_cost") == "" and cat.source_for(row, "jurisdiktion") == ""
+    e2 = ex.build("BOL.ST", {"producers": {"producers": [row], "royalty": []}}, ["rule"], rows={"rule": row})
+    src = {r["key"]: r["source"] for r in e2.rows}
+    assert src["rule:unit_cost"] == "" and src["rule:jurisdiktion"] == ""
+    row["unit_cost"] = 2.10
+    assert cat.source_for(row, "unit_cost") == "ChatGPT: Q2 s. 12 · 2026-08-01"
+    assert cat.source_for({"sources": {"x": "ChatGPT: gammal"}, "x": 1.0}, "x") == ""   # utan värde: ingen källa
+
+
+def test_catalysts_from_the_answer_leave_no_empty_padding_and_all_get_an_id():
+    """Svaret fyllde katalysator 2 (catalysts.1) i en tom lista: förr blev plats 1 en tom rad utan id, '? / ?' i
+    arket, som fick status när arket öppnades — och två sådana rader krockade på widgetnycklarna."""
+    import tiggre
+    cand = {"id": "c1", "ticker": "LOB", "name": "Lobo", "screen": {}, "factors": {}, "catalysts": []}
+    stores = {"tiggre": {"candidates": [cand], "positions": [], "closed": [], "parked": []}}
+    e = ex.build("LOB", stores, ["tiggre"], rows={"tiggre": cand})
+    res = im.check(an.read_text("\n".join([HEAD, "LOB;tiggre:catalysts.1.date;2027-03;;PR;primary;;high;"])), e)
+    assert im.apply(res.changes, {"tiggre": cand}) == 1
+    (only,) = cand["catalysts"]                                               # ingen tom rad före
+    assert only["date"] == "2027-03" and only["id"] and only["status"] == tiggre.CAT_WAITING
+    # namn och datum på plats 2 i en tom lista: en rad, med id
+    cand["catalysts"] = []
+    answer = "\n".join([HEAD, "LOB;tiggre:catalysts.1.name;Byggstart;;PR;primary;;high;",
+                        "LOB;tiggre:catalysts.1.date;2027-06;;PR;primary;;high;"])
+    res = im.check(an.read_text(answer), e)
+    im.apply(res.changes, {"tiggre": cand})
+    assert [(c["name"], c["date"], c["status"]) for c in cand["catalysts"]] == [
+        ("Byggstart", "2027-06", tiggre.CAT_WAITING)] and cand["catalysts"][0]["id"]
+    # en rad du lagt in själv behåller sitt id och sin status
+    mine = {"id": "k1", "name": "FID", "date": "2027-01", "status": tiggre.CAT_DELIVERED}
+    cand2 = {"id": "c2", "ticker": "LOB", "catalysts": [dict(mine)]}
+    e2 = ex.build("LOB", {"tiggre": {"candidates": [cand2]}}, ["tiggre"], rows={"tiggre": cand2})
+    res2 = im.check(an.read_text("\n".join([HEAD, "LOB;tiggre:catalysts.1.name;Bygglov;;PR;primary;;high;"])), e2)
+    im.apply(res2.changes, {"tiggre": cand2})
+    assert cand2["catalysts"][0] == mine and [c.get("name") for c in cand2["catalysts"]] == ["FID", "Bygglov"]
+    assert cand2["catalysts"][1]["id"] and cand2["catalysts"][1]["id"] != "k1"
 
 
 def test_the_copper_trap_changes_nothing_unless_you_tick_it():

@@ -227,8 +227,8 @@ def _rows_for(ticker: str, sheet: str, row: Optional[dict], blob: Optional[dict]
         if point is not None and not point.missing:
             source = " · ".join(x for x in (point.source, point.pub_date or "") if x)
             unit = point.unit or unit
-        elif stored and isinstance(r.get("sources"), dict):
-            source = str(r["sources"].get(f.path) or "")         # inläst ur ChatGPT-svaret (review.importer)
+        elif stored:
+            source = cat.source_for(r, f.path)       # inläst ur ChatGPT-svaret — bara medan värdet står kvar
         if cat.is_empty(v):
             sug = None
             if f.who == cat.BORSDATA and sheet in cat.FLAT_SHEETS:
@@ -485,8 +485,12 @@ def build_prompt(ticker: str, name: str, rows: list, strategy: str = "", dom_tex
         for it in gaps:
             sheet = cat.SHEETS[it.sheet].label if it.sheet in cat.SHEETS else it.sheet
             key = f"{it.sheet}:{it.path}" if it.path else ""
-            mine = (not it.path) or who.get(key) == cat.BARA_DU
-            tail = " [beslutas av mig — fyll inte i]" if mine else f" [{key}]"
+            if not it.path or who.get(key) == cat.BARA_DU:
+                tail = " [beslutas av mig — fyll inte i]"
+            elif who.get(key) == cat.BORSDATA:
+                tail = " [Börsdata — fylls i arket]"        # regel 1: panelen fyller Börsdata-raderna själv
+            else:
+                tail = f" [{key}]"
             lines.append(f"- {sheet} · {it.label} — {it.reason}{tail}")
     if dom_text:
         lines += ["", "Arkens dom just nu (Thor) — bara bakgrund, ändra inget efter den:", dom_text.strip()]

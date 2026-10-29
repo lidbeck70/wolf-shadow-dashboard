@@ -265,7 +265,8 @@ def _sheet(data: dict, company: Optional[CompanyInput]) -> None:
 
 
 def _chatgpt(data: dict, company: CompanyInput) -> None:
-    """📋 Underlag till ChatGPT: fälten de tre poängen läser, som Excel/CSV och prompten. Skriver inget."""
+    """📋 Underlag till ChatGPT: fälten de tre poängen läser, som Excel/CSV och prompten — och svaret tillbaka som
+    Datapoints med källa ('ChatGPT: <källa>') efter granskning. Skrivs i sessionen, 💾 sparar."""
     try:
         from review import chatgpt_ui
     except Exception:

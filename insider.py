@@ -297,7 +297,8 @@ def _suggest(*args, **kw) -> None:
 
 
 def _chatgpt(data: dict, sig: dict) -> None:
-    """📋 Underlag till ChatGPT för signalen — Excel/CSV och prompten. Skriver inget i arket."""
+    """📋 Underlag till ChatGPT för signalen — Excel/CSV och prompten, och svaret tillbaka efter granskning: det du
+    väljer skrivs i signalen i sessionen, 💾 sparar."""
     try:
         from review import chatgpt_ui
     except Exception:
@@ -504,11 +505,12 @@ def _signals(data: dict) -> None:
         c = STATUS_COLOR.get(stat, DIM)
         head = (f"{sig.get('ticker','?')}"
                 f"  ·  {pts if pts is not None else '–'}/{MAX_SCORE} p"
-                f"  ·  {stat or 'ofullständig'}" + (rc.suffix("insider", sig) if rc else ""))
+                f"  ·  {stat or 'ofullständig'}")
         with st.expander(head, expanded=bool(foc)):
-            if rc:
-                rc.render_missing("insider", sig)
+            top = rc.slot() if rc else None
             _signal_body(data, sig, r, c)
+            if rc:
+                rc.fill(top, "insider", sig)
 
 
 def _signal_body(data: dict, sig: dict, r: dict, color: str) -> None:

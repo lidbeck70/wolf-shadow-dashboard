@@ -506,12 +506,10 @@ def _card(data: dict, cards: dict, entry: dict, expanded: bool = False) -> None:
     rc = _rc()
     head = (f"{'✅' if state['ready'] else '📋'}  {entry['ticker']}"
             f"  ·  {entry['name'] or '—'}"
-            f"  ·  {', '.join(entry['strategies'])}"
-            + (rc.suffix("scorecard", _shown(card, entry)) if rc else ""))
+            f"  ·  {', '.join(entry['strategies'])}")
 
     with st.expander(head, expanded=expanded):
-        if rc:
-            rc.render_missing("scorecard", card, entry=entry)
+        top = rc.slot() if rc else None
         changed = False
 
         # Vilken strategi beslutet gäller — styr proportionalitetsregeln.
@@ -616,6 +614,8 @@ def _card(data: dict, cards: dict, entry: dict, expanded: bool = False) -> None:
             cards[entry["key"]] = card
             _save(data)
         _chatgpt(entry, _shown(card, entry), data)
+        if rc:
+            rc.fill(top, "scorecard", _shown(card, entry), entry=entry)
 
 
 def _use_position(data: dict, cards: dict, entry: dict, strategy: str, value: float) -> None:
@@ -628,10 +628,17 @@ def _use_position(data: dict, cards: dict, entry: dict, strategy: str, value: fl
     _save(data)
 
 
+RULE_STRATEGY = "producenter"        # Rick Rule-arkets strateginamn i kandidatraden (sources_from_stores)
+
+
 def _rule_position(data: dict, cards: dict, entry: dict, strategy: str, pos_total) -> None:
     """Förslag: positionen du skrev i Rick Rule-kortet för bolaget — samma tal styr kontrollerna där. "Använd"
-    skriver in den här; inget fylls i av sig självt, och strategin står kvar som du valt."""
-    rule = _num((((entry or {}).get("rows") or {}).get("producenter") or {}).get("position_pct"))
+    skriver in den här; inget fylls i av sig självt. Bara när beslutet gäller Rick Rule (strategin producenter) och
+    kortet ännu saknar position (tomt eller 0 %) — har du valt en storlek står den, och en annan strategi har sin
+    egen."""
+    if strategy != RULE_STRATEGY or (_num(pos_total) or 0) > 0:
+        return
+    rule = _num((((entry or {}).get("rows") or {}).get(RULE_STRATEGY) or {}).get("position_pct"))
     if rule is None or not storage.differs(pos_total, rule):
         return
     a, b = st.columns([3, 1], vertical_alignment="center")
