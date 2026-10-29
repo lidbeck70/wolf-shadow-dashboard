@@ -258,6 +258,17 @@ def _sheet(data: dict, company: Optional[CompanyInput]) -> None:
     _block(data, company, "core", "Confidence — kärnan (tungt vägd)", fields.confidence_core(company.stage))
     _block(data, company, "more", "Confidence — finlir (lätt vägd)", fields.confidence_more(company.stage))
     cui.render_extractor(data, company, sheet_label="Wolf Asymmetry")
+    _chatgpt(data, company)
+
+
+def _chatgpt(data: dict, company: CompanyInput) -> None:
+    """📋 Underlag till ChatGPT: fälten de tre poängen läser, som Excel/CSV och prompten. Skriver inget."""
+    try:
+        from review import chatgpt_ui
+    except Exception:
+        return
+    chatgpt_ui.render_export(company.ticker, {ast.STORE: data}, ["asymmetry"], key=f"asym_{company.ticker}",
+                             name=company.name, rows={"asymmetry": company.as_dict()})
 
 
 def _block(data: dict, company: CompanyInput, key: str, title: str, specs: list, expanded: bool = False) -> None:

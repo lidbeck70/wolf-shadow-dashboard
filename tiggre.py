@@ -470,6 +470,16 @@ def _suggest(*args, **kw) -> None:
         pass
 
 
+def _chatgpt(data: dict, cand: dict) -> None:
+    """📋 Underlag till ChatGPT för kandidaten — Excel/CSV och prompten. Skriver inget i arket."""
+    try:
+        from review import chatgpt_ui
+    except Exception:
+        return
+    chatgpt_ui.render_export(cand.get("ticker", ""), {STORE: data}, ["tiggre"], key=f"tiggre_{cand['id']}",
+                             name=cand.get("name", ""), rows={"tiggre": cand})
+
+
 def _fresh_rows() -> dict:
     """Sifferuppdateringens rader ({'tiggre:<id>': {price, mcap_musd, asof}}).
     Tom utan blob — då räknar arket på sina sparade tal som förut."""
@@ -654,6 +664,7 @@ def _candidate_card(data: dict, cand: dict) -> None:
             f"<div style='border:1px solid {(GREEN if all_pass else RED)}55;"
             f"background:{(GREEN if all_pass else RED)}0d;border-radius:8px;"
             f"padding:10px 14px;'>{gate_html}</div>", unsafe_allow_html=True)
+        _chatgpt(data, cand)
 
         b1, b2, b3 = st.columns([1.4, 1, 1])
         n_pos = len(open_positions())

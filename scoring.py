@@ -311,6 +311,16 @@ def _extract_section(data: dict, row: dict, key: str) -> None:
     extract_ui.render_extractor(key, row, widget_keys=keys, on_apply=lambda: _save(data))
 
 
+def _chatgpt(data: dict, row: dict, key: str) -> None:
+    """📋 Underlag till ChatGPT för kortets aktie — Excel/CSV och prompten. Skriver inget i arket."""
+    try:
+        from review import chatgpt_ui
+    except Exception:
+        return
+    chatgpt_ui.render_export(row.get("ticker", ""), {STORE: data}, [key], key=f"{key}_{row['id']}",
+                             name=row.get("name", ""), rows={key: row})
+
+
 def _screen_section(data: dict, key: str) -> None:
     """Håvens träffar (screens_scan.py: sprott/durrett) med "lägg in i arket"."""
     try:
@@ -437,6 +447,7 @@ def _rows(data: dict, key: str) -> None:
             if com != row.get("comment", ""):
                 row["comment"] = com
                 _save(data)
+            _chatgpt(data, row, key)
             if confirm_delete("Ta bort", key=f"sc_del_{row['id']}"):
                 data[key] = [x for x in data[key] if x["id"] != row["id"]]
                 _save(data)

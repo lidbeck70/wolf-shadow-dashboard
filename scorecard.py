@@ -597,6 +597,24 @@ def _card(data: dict, cards: dict, entry: dict) -> None:
         if changed:
             cards[entry["key"]] = card
             _save(data)
+        _chatgpt(entry, _shown(card, entry))
+
+
+def _chatgpt(entry: dict, card: dict) -> None:
+    """📋 Underlag till ChatGPT för hela köpbeslutet: kandidatens ark plus kortet. Skriver inget.
+
+    Sifferuppdateringen läses inte här (blob=None) — Börsdata-förslagen med "Använd" finns i respektive ark.
+    """
+    try:
+        from review import catalog as rcat
+        from review import chatgpt_ui
+    except Exception:
+        return
+    sheets = [rcat.STRATEGY_SHEET[s] for s in entry.get("strategies") or [] if s in rcat.STRATEGY_SHEET]
+    rows = {rcat.STRATEGY_SHEET[s]: r for s, r in (entry.get("rows") or {}).items()
+            if rcat.STRATEGY_SHEET.get(s) in rcat.FLAT_SHEETS and isinstance(r, dict)}
+    chatgpt_ui.render_export(entry.get("ticker", ""), None, sheets + ["scorecard"], key=f"scorecard_{entry['key']}",
+                             name=entry.get("name", ""), blob=None, rows={**rows, "scorecard": card}, entry=entry)
 
 
 def _summary_row(entry: dict, state: dict, strategy: str) -> None:

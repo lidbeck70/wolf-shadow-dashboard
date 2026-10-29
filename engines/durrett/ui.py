@@ -249,6 +249,17 @@ def _render_sheet(data: dict, company: CompanyInput, a: DurrettAnalysis) -> None
             st.success(f"{changed} fält uppdaterade — spara med 💾 när du är klar.")
             st.rerun()
     _sheet_summary(a)
+    _chatgpt(data, company)
+
+
+def _chatgpt(data: dict, company: CompanyInput) -> None:
+    """📋 Underlag till ChatGPT: alla Durrett/Confidence-fält för bolagets stage som Excel/CSV och prompten."""
+    try:
+        from review import chatgpt_ui
+    except Exception:
+        return
+    chatgpt_ui.render_export(company.ticker, {cs.STORE: data}, ["confidence"], key=f"durrett_{company.ticker}",
+                             name=company.name, rows={"confidence": company.as_dict()})
 
 
 def _render_refresh(data: dict, company: CompanyInput) -> None:

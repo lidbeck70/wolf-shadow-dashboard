@@ -755,7 +755,7 @@ def _tab_asymmetri(st, data, ident, strategy, sheets, cands) -> None:
 def _tab_arken(st, data, ident, strategy, sheets, cands) -> None:
     """Vad arken säger om bolaget — granskningarna, motorerna, scorecardet, insiderklustret, registret (thor.arken)."""
     from thor import arken
-    arken.render(st, data, ident, sheets, cands, SHEET_LINK, _jump)
+    arken.render(st, data, ident, sheets, cands, SHEET_LINK, _jump, strategy=strategy)
 
 
 def _tab_backtest(st, data, ident, strategy, sheets, cands) -> None:

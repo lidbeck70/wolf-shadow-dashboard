@@ -385,6 +385,16 @@ def _suggest(*args, **kw) -> None:
         pass
 
 
+def _chatgpt(data: dict, row: dict, sheet: str) -> None:
+    """📋 Underlag till ChatGPT för kortets aktie — Excel/CSV och prompten. Skriver inget i arket."""
+    try:
+        from review import chatgpt_ui
+    except Exception:
+        return
+    chatgpt_ui.render_export(row.get("ticker", ""), {STORE: data}, [sheet], key=f"{sheet}_{row['id']}",
+                             name=row.get("name", ""), rows={sheet: row})
+
+
 def _screen_section(screen_key: str, data: dict, bucket: str, extra) -> None:
     """Håvens träffar (screens_scan.py) med "lägg in i arket"."""
     try:
@@ -643,6 +653,7 @@ def _producers(data: dict) -> None:
                     kind=ctl.PRODUCER):
                 changed = True
 
+            _chatgpt(data, row, "rule")
             if confirm_delete("Ta bort", key=f"pr_del_{row['id']}"):
                 data[PRODUCERS] = [x for x in data[PRODUCERS]
                                    if x["id"] != row["id"]]
@@ -823,6 +834,7 @@ def _royalty(data: dict) -> None:
                 f"<div style='color:{TEXT};font-size:0.8rem;margin-top:3px;'>"
                 f"{vd2.why}</div></div>", unsafe_allow_html=True)
 
+            _chatgpt(data, row, "royalty")
             if confirm_delete("Ta bort", key=f"ro_del_{row['id']}"):
                 data[ROYALTY] = [x for x in data[ROYALTY] if x["id"] != row["id"]]
                 _save(data)

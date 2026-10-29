@@ -197,7 +197,8 @@ def test_ark_shows_only_score_fields_and_writes_to_shared_store(monkeypatch):
     labels = [e.label for e in at.expander]
     assert [l.split(" ·")[0].split(" —")[0] for l in labels] == [
         "➕ Nytt bolag", "📥 Hämta från registret (Holdings)", "Identitet och strategi", "Börsdata fyller",
-        "Ekonomi", "Confidence", "Confidence", "🤖 Läs ur presentationen / tekniska rapporten (AI-förslag"]
+        "Ekonomi", "Confidence", "Confidence", "🤖 Läs ur presentationen / tekniska rapporten (AI-förslag",
+        "📋 Underlag till ChatGPT"]
     assert any(l.startswith("Ekonomi") and l.endswith("3/4 ifyllda") for l in labels)   # GPR saknar produktionsenhet
     keys = {t.key for t in at.text_input}
     assert "cf_GPR_aisc_v" in keys and "cf_GPR_production_current_v" in keys
