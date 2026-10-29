@@ -91,14 +91,33 @@ def _dom_text(st, ident: Ticker, strategy: str, sheets: dict) -> str:
         return ""
 
 
-def _export(st, ident: Ticker, sheets: dict, stores: Optional[dict], strategy: str) -> None:
+def _export(st, ident: Ticker, sheets: dict, stores: Optional[dict], strategy: str,
+            sheet_map: Optional[dict] = None) -> None:
     keys = export_sheets(sheets, strategy)
     if not keys:
         return
     from review import chatgpt_ui
     chatgpt_ui.render_export(ident.yf, stores, keys, key=f"thor_{ident.yf}", name=ident.name,
                              strategy=reg.label(strategy) if reg.get(strategy) else "",
-                             dom_text=_dom_text(st, ident, strategy, sheets), blob=None, importable=False)
+                             dom_text=_dom_text(st, ident, strategy, sheets), blob=None, importable=False,
+                             sheet_map=sheet_map)       # samma arkformer som dossiern ovan (T13)
+
+
+def form_notes(ident: Ticker, sheets: dict) -> list:
+    """Noteringarna om arkformerna (HTML): rader på aktiens kortnamn som räknas som en annan notering, och arkens
+    bara former en nordisk sida matchade utan registrets karta. Inget försvinner tyst."""
+    out = []
+    away = (sheets or {}).get("elsewhere") or []
+    if away:
+        out.append(f"Visas inte på {escape(ident.yf)}: {escape(', '.join(away), quote=False)}. En ticker utan "
+                   f"börssuffix räknas som amerikansk i panelen — är det samma bolag, skriv om raden som "
+                   f"{escape(ident.yf)}.")
+    bare = ", ".join("'" + f + "'" for f in (sheets or {}).get("ambiguous") or [])
+    if bare:
+        out.append(f"Registrets tickerkarta saknas, så arkraderna {escape(bare, quote=False)} matchas här på "
+                   f"kortnamnet — de kan gälla ett annat bolag med samma ticker ('TEL' är TE Connectivity, inte "
+                   f"Telenor TEL.OL).")
+    return out
 
 
 DURRETT_10 = "review/durrett"       # 🧭 Durrett — 10-stegsarket (data/confidence.json)
@@ -126,6 +145,8 @@ def render(st, data: dict, ident: Ticker, sheets: dict, cands: list, links: dict
     if not sheets.get("found"):
         note(f"{ident.yf} finns inte i något ark än. Ordningen är screener → granskning → köp: lägg in bolaget i "
              f"rätt ark först.")
+    for line in form_notes(ident, sheets):
+        note(line)
     _block("Granskningarna", lambda: _reviews(st, sheets), note)
     if sheets.get("confidence"):
         _title(st, "CONFIDENCE · DURRETT · WOLF ASYMMETRY")
@@ -138,12 +159,15 @@ def render(st, data: dict, ident: Ticker, sheets: dict, cands: list, links: dict
         _title(st, "INSIDERKLUSTRET")
         _block("Insiderklustret", lambda: _insider(st, cluster), note)
     _block("Registret", lambda: _register(st, sheets, note), note)
-    _block("Underlaget till ChatGPT", lambda: _export(st, ident, sheets, stores, strategy), note)
-    from review.focus import FOCUS
+    smap = (data or {}).get("sheet_map")
+    _block("Underlaget till ChatGPT", lambda: _export(st, ident, sheets, stores, strategy, smap), note)
+    from review.focus import FOCUS, FORMS
+    # arket öppnar på samma rad som dossiern läste: formerna följer med fokus ('TEL' är inte Telenor TEL.OL)
+    forms = {FORMS: {"ticker": ident.yf, "forms": list(sheets.get("sheet_forms") or [])}}
     cols = st.columns(3)
     for i, (key, label, path, extra) in enumerate(sheet_buttons(links, sheets)):
-        cols[i % 3].button(label, key=f"thor_sheet_{key}", on_click=jump, args=(path, FOCUS, ident.yf, extra),
-                           width="stretch")
+        cols[i % 3].button(label, key=f"thor_sheet_{key}", on_click=jump,
+                           args=(path, FOCUS, ident.yf, {**(extra or {}), **forms}), width="stretch")
 
 
 def _reviews(st, sheets: dict) -> None:

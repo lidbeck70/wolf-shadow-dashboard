@@ -11,6 +11,11 @@ sparning.
 
 Gisten är lika publik (id:t står i koden). Filerna där som bär innehaven (PRIVATE_BLOBS) sparas därför i samma
 kuvert när nyckeln finns; utan nyckel går de i klartext som förut, med en varning i loggen (F12).
+
+Byts eller tappas frasen gäller det alla kuvert, inte bara arken: holdings och metals går bara att läsa med frasen
+de sparades med, larmen står still (alert_state.json oläsbar) och larmloggen uppdateras inte förrän alert_state.json
+och alert_log.json tagits bort ur Gisten (ny baslinje), och tradejournalen (journal_data.json) är spärrad för
+sparning tills den gamla frasen är tillbaka eller filen tagits bort. sheets_refresh.json skrivs om av nästa körning.
 """
 from __future__ import annotations
 
@@ -110,7 +115,9 @@ def seal_blob(filename: str, data: Any) -> Any:
         return data
     phrase = passphrase()
     if phrase:
-        return seal(data, phrase)
+        # Samma JSON-tur som klartextvägen först: seal sorterar nycklarna, och en dict med blandade nyckeltyper
+        # ({"a": 1, 2: "b"}) som går bra i klartext ska inte fälla sparningen bara för att nyckeln finns.
+        return seal(json.loads(json.dumps(data, ensure_ascii=False, default=str)), phrase)
     if not _warned:
         _warned = True
         log.warning("%s saknas — innehavsdelen (%s) publiceras i klartext i den publika Gisten tills %s läggs in "

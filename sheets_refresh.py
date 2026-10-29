@@ -182,7 +182,13 @@ def _last_close(api, ins_id: int):
     return float(bars[-1]["c"]), str(bars[-1].get("d") or "")[:10]
 
 
-def _yf_close(ticker: str):
+def _yf_close(ticker: str, quiet: bool = False):
+    """Yahoo-reserven. quiet tystar yfinance egen fellogg (den namnger tickern) — för registrets rader när
+    PANEL_DATA_KEY finns, eftersom Actions-loggen är publik."""
+    yf_log = logging.getLogger("yfinance")
+    level = yf_log.level
+    if quiet:
+        yf_log.setLevel(logging.CRITICAL + 1)
     try:
         import yfinance as yf
         h = yf.Ticker(ticker).history(period="5d", auto_adjust=True)
@@ -191,6 +197,14 @@ def _yf_close(ticker: str):
         return float(h["Close"].iloc[-1]), str(h.index[-1])[:10]
     except Exception:
         return None, None
+    finally:
+        if quiet:
+            yf_log.setLevel(level)
+
+
+def _held(ref: dict) -> bool:
+    """Raden är ett innehav ur registret (positionernas kurser, Tiggre-positionerna) — inte en arkkandidat."""
+    return ref["sheet"] == "holdings" or (ref["sheet"] == "tiggre" and bucket_of(ref) == "positions")
 
 
 def _median(vals: list) -> Optional[float]:
@@ -294,6 +308,8 @@ def refresh(api, sheets: dict) -> dict:
                               if r["sheet"] == "producers" and r["bucket"] == "producers")
         price_cache = {}
         report_cache: dict = {}
+        import private_data
+        hide = bool(private_data.passphrase())      # Actions-loggen är publik: innehavens tickers syns inte där
         for r in refs:
             iid = resolved.get(r["key"])
             s = {"ticker": r["ticker"], "ins_id": iid, "price": None, "asof": None,
@@ -348,7 +364,7 @@ def refresh(api, sheets: dict) -> dict:
                     for k in ("pe", "ps", "rs_rank", "ebitda_margin"):
                         s[k] = _f(snap.get(k))
             else:
-                s["price"], s["asof"] = _yf_close(r["ticker"])
+                s["price"], s["asof"] = _yf_close(r["ticker"], quiet=hide and _held(r))
                 s["source"] = "yfinance" if s["price"] is not None else None
             out["rows"][r["key"]] = s
         out["events"] = build_events(sheets, out["rows"])

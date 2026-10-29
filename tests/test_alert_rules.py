@@ -928,6 +928,32 @@ def test_watch_a_stale_failing_or_missing_screen_stands_still():
         assert _still(_run(items, b, "2026-10-16", s0), s0)
 
 
+def test_watch_rows_only_a_screen_pair_needs_a_fresh_traff_row():
+    """Utan fresh (bara Thors rader) visar en färsk TRÄFF-rad ur samma håv att håven körde: ett håvpar som föll ur
+    den larmar med håvens körningsdag, inte '(i dag)'. Brädans färska rader (KÖP/BEVAKA) visar inte att håven körde
+    — då står håvparet still, och med fresh = watch_fresh(blobs) (som larmjobbet skickar) faller det ur listan."""
+    items = _pairs(("GHI.V", "durrett"), ("PLAT.V", "tiggre"))
+    d1 = _picks_blobs(_without("confidence"), "2026-10-14T16:50:00+00:00")
+    _a, s0 = _run(items, d1, "2026-10-15", None)
+    scr = _empty_screens("durrett", generated="2026-10-19T16:50:00+00:00")
+    scr["screens"]["durrett"]["rows"] = [{"ticker": "ZZZ.V", "name": "Zzz"}]          # håven körd, utan GHI.V
+    rows = tc.build({**d1, "screens": scr}, today="2026-10-20", sheet_map=d1["sheet_map"])   # brädan gammal
+    alerts, s1 = ar.watch_alerts(items, rows, s0)
+    assert [(a["kind"], a["ticker"]) for a in alerts] == [("watch_out", "GHI.V")]
+    assert "(2026-10-19)" in alerts[0]["body"] and "(i dag)" not in alerts[0]["body"]
+    assert s1["items"]["PLAT.V|tiggre"] == s0["items"]["PLAT.V|tiggre"]
+    # Rick Rule: håven färsk men tom, brädan färsk med Rick Rules KÖP-rader
+    items = _pairs(("XOM", "rule"), ("NEM", "rule"))
+    _a, r0 = _run(items, _picks_blobs(tvp.SHEETS, "2026-10-14T16:50:00+00:00"), "2026-10-15", None)
+    b = _picks_blobs(tvp.SHEETS, "2026-10-15T16:50:00+00:00", _empty_screens("rule", generated="2026-10-15"))
+    rows = tc.build(b, today="2026-10-16", sheet_map=b["sheet_map"])
+    rule = [c for c in rows if c.strategy == "rule" and not c.stale]
+    assert rule and not [c for c in rule if c.status_class == tc.TRAFF]
+    assert _still(ar.watch_alerts(items, rows, r0), r0)
+    alerts, _s = _run(items, b, "2026-10-16", r0)
+    assert [(a["kind"], a["ticker"]) for a in alerts] == [("watch_out", "XOM")] and "(2026-10-15)" in alerts[0]["body"]
+
+
 def test_watch_a_sheet_gone_longer_than_the_memory_freezes_no_more():
     """Ett ark som brädan inte lästs ur på mer än SHEET_MEMORY_DAYS dagar räknas som borttaget: strategin fryser
     inte längre för det, och det som arket bar faller ur listan."""

@@ -51,10 +51,12 @@ def _blob() -> Optional[dict]:
 def render_export(ticker: str, stores: Optional[dict] = None, sheets=None, key: str = "", name: str = "",
                   strategy: str = "", dom_text: str = "", stage: Optional[str] = None, blob=_LOAD,
                   rows: Optional[dict] = None, entry: Optional[dict] = None, importable: bool = True,
-                  targets: Optional[dict] = None, reset: tuple = (), on_apply: Optional[Callable] = None) -> None:
+                  targets: Optional[dict] = None, reset: tuple = (), on_apply: Optional[Callable] = None,
+                  sheet_map: Optional[dict] = None) -> None:
     """Expandern med Excel, CSV och prompten för aktien — och importen av svaret. sheets=None tar arken aktien
     finns i; rows={ark: rad} låser kortets egen rad (Scorecardet: rows['scorecard'] är kortet och entry dess
-    kandidatrad).
+    kandidatrad). sheet_map = registrets karta för arkens bara nordiska former (Thor: samma rader som dossiern —
+    'TEL' i arket är TE Connectivity, inte Telenor TEL.OL).
 
     blob=None hoppar över sifferuppdateringen (Scorecardet och Thor, som inte läser den annars): då står tomma
     Börsdata-fält kvar som Börsdata — förslaget med "Använd" finns i arket.
@@ -66,7 +68,7 @@ def render_export(ticker: str, stores: Optional[dict] = None, sheets=None, key: 
     from review import export as ex
     try:
         exp = ex.build(ticker, stores if stores is not None else session_stores(), sheets, stage,
-                       _blob() if blob is _LOAD else blob, name, rows, entry)
+                       _blob() if blob is _LOAD else blob, name, rows, entry, sheet_map)
     except Exception as exc:                                # underlaget får aldrig fälla kortet
         st.caption(f"Underlaget till ChatGPT kunde inte byggas: {exc}")
         return

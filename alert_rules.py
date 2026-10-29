@@ -1000,7 +1000,8 @@ def watch_alerts(watch_data: Optional[dict], rows: Optional[list], prev: Optiona
     utan ett ark den beror av (sheets = watch_sheets(blobs) mot minnet, _sheet_gaps) — då är brädan inte heller
     färsk för strategin. Ett par som stod på håvens TRÄFF-rad (Rick Rule, Durrett, Tiggre) och inte står på brädan
     i dag prövas i stället mot håvens egen körning ('durrett@håven' i fresh, eller en färsk TRÄFF-rad), oberoende av
-    brädan. En färsk lista utan aktien är däremot 'föll ur listan', även när listan är tom.
+    brädan — brädans rader visar inte att håven körde, så utan fresh står ett sådant par still tills håven har en färsk
+    TRÄFF-rad. En färsk lista utan aktien är däremot 'föll ur listan', även när listan är tom.
     Tillståndet: {"items": {"TICKER|strategi": {"id", "in_list", "class", "status"}}, "sheets": {ark: senast läst}};
     "sheets" saknas tills brädans ark gått att pröva en gång."""
     if rows is None or not isinstance(watch_data, dict):
@@ -1016,10 +1017,11 @@ def watch_alerts(watch_data: Optional[dict], rows: Optional[list], prev: Optiona
     raw_ids = {str(r.get("id")) for r in raw if isinstance(r, dict) and r.get("id")}   # lagrade id (inte påhittade)
     asof: dict = {s: d for s, d in (fresh or {}).items() if s not in gaps}
     ran = set(asof) | {c.strategy for c in rows if not c.stale}
-    ran |= {_screen_part(c.strategy) for c in rows                 # en färsk TRÄFF-rad: håven körde
-            if c.strategy in _BOARD_DEPS and c.status_class == tc.TRAFF and not c.stale}
     for c in rows:
         asof[c.strategy] = max(asof.get(c.strategy, ""), c.asof or "")
+        if c.strategy in _BOARD_DEPS and c.status_class == tc.TRAFF and not c.stale:   # en färsk TRÄFF-rad: håven körde
+            ran.add(_screen_part(c.strategy))
+            asof[_screen_part(c.strategy)] = max(asof.get(_screen_part(c.strategy), ""), c.asof or "")
     items, alerts = {}, []
     for it in wl.normalize({"items": list(raw)})["items"]:
         t, s = it["ticker"], it["strategy"]

@@ -65,6 +65,7 @@ class Export:
     absent: list = field(default_factory=list)       # ark där aktien inte finns — raderna är en tom mall
     fields: dict = field(default_factory=dict)       # {fältnyckel: SheetField} — importen läser svaret mot dem
     source_rows: dict = field(default_factory=dict)  # {ark: raden underlaget lästes ur} — None där aktien saknas
+    sheet_map: dict = field(default_factory=dict)    # registrets karta raderna matchades med — importen tar samma
 
     @property
     def filled(self) -> int:
@@ -73,11 +74,14 @@ class Export:
 
 
 # ── Var aktien finns ─────────────────────────────────────────────────────────
-def _forms(ticker: str) -> list:
+def _forms(ticker: str, sheet_map: Optional[dict] = None) -> list:
+    """Arkformerna för tickern — samma som Thors dossier (thor.dossier.sheet_forms): en nordisk notering tar
+    Börsdatas former ('BOL', 'ERIC B'), med registrets karta bara de bara former kartan ger just den noteringen
+    ('TEL' är TE Connectivity, inte Telenor TEL.OL); en utländsk notering (EQX.TO) bara sin egen form."""
     t = str(ticker or "").strip().upper()
     try:
-        from thor.ticker import forms
-        out = [f for f in forms(t) if f]
+        from thor.dossier import sheet_forms
+        out = [f for f in sheet_forms(t, sheet_map) if f]
     except Exception:
         out = []
     return out or ([t] if t else [])
@@ -88,14 +92,14 @@ def _store(stores: dict, sheet: str) -> dict:
     return s if isinstance(s, dict) else {}
 
 
-def find(sheet: str, ticker: str, stores: dict) -> Optional[dict]:
-    """Aktiens rad i arket (någon av tickerns former), eller None. Scorecardet: kortet."""
-    fs = _forms(ticker)
+def find(sheet: str, ticker: str, stores: dict, sheet_map: Optional[dict] = None) -> Optional[dict]:
+    """Aktiens rad i arket (någon av tickerns arkformer), eller None. Scorecardet: kortet."""
+    fs = _forms(ticker, sheet_map)
     if sheet in cat.CONFIDENCE_SHEETS:
         comps = _store(stores, sheet).get("companies") or {}
         return next((comps[f] for f in fs if isinstance(comps.get(f), dict)), None)
     if sheet == "scorecard":
-        return card_for(ticker, stores)[1]
+        return card_for(ticker, stores, sheet_map)[1]
     for f in fs:
         row = review_link.find_row(sheet, f, stores or {})
         if row is not None:
@@ -103,9 +107,9 @@ def find(sheet: str, ticker: str, stores: dict) -> Optional[dict]:
     return None
 
 
-def card_for(ticker: str, stores: dict) -> tuple:
+def card_for(ticker: str, stores: dict, sheet_map: Optional[dict] = None) -> tuple:
     """(kortnyckel, kortet, kandidatraden) ur scorecardet — kortet som det visas (strategin förvald)."""
-    fs = _forms(ticker)
+    fs = _forms(ticker, sheet_map)
     cards = _store(stores, "scorecard").get("cards") or {}
     entries = sc.entries_for(fs, stores or {})
     for k, entry in entries.items():
@@ -117,9 +121,9 @@ def card_for(ticker: str, stores: dict) -> tuple:
     return None, None, None
 
 
-def sheets_with(ticker: str, stores: dict) -> list:
+def sheets_with(ticker: str, stores: dict, sheet_map: Optional[dict] = None) -> list:
     """Arken aktien finns i, i katalogens ordning. Durrett 10-steg täcker Wolf Asymmetry (samma lager)."""
-    return [s for s in cat.SHEETS if s != "asymmetry" and find(s, ticker, stores) is not None]
+    return [s for s in cat.SHEETS if s != "asymmetry" and find(s, ticker, stores, sheet_map) is not None]
 
 
 # ── Värdena ──────────────────────────────────────────────────────────────────
@@ -267,26 +271,28 @@ def _rank(r: dict) -> int:
 
 
 def build(ticker: str, stores: dict, sheets=None, stage: Optional[str] = None, blob: Optional[dict] = None,
-          name: str = "", rows: Optional[dict] = None, entry: Optional[dict] = None) -> Export:
+          name: str = "", rows: Optional[dict] = None, entry: Optional[dict] = None,
+          sheet_map: Optional[dict] = None) -> Export:
     """Underlaget för aktien. sheets=None tar arken aktien finns i; ett ark i listan där aktien saknas blir en
     tom mall. blob är sifferuppdateringen (sheets_refresh.json) — None när den inte lästs, och då står tomma
     Börsdata-fält kvar som Börsdata (förslaget finns i arket). rows={ark: rad} låser raden (kortet som ritas)
-    i stället för att söka på tickern; rows['scorecard'] är kortet och entry dess kandidatrad (scorecard.collect)."""
+    i stället för att söka på tickern; rows['scorecard'] är kortet och entry dess kandidatrad (scorecard.collect).
+    sheet_map = registrets karta för arkens bara nordiska former (Thor skickar den — samma rader som dossiern)."""
     t = str(ticker or "").strip().upper()
     stores = stores or {}
-    wanted = [s for s in (sheets if sheets is not None else sheets_with(t, stores)) if s in cat.SHEETS]
+    wanted = [s for s in (sheets if sheets is not None else sheets_with(t, stores, sheet_map)) if s in cat.SHEETS]
     wanted = list(dict.fromkeys(wanted))
-    _k, card, found = card_for(t, stores)
+    _k, card, found = card_for(t, stores, sheet_map)
     entry = entry if entry is not None else found
     if (rows or {}).get("scorecard") is not None:
         card = rows["scorecard"]
     card_pos = (card or {}).get("position_pct_total")
     card_sheet = cat.STRATEGY_SHEET.get((card or {}).get("strategy") or "")
-    exp = Export(t, name)
+    exp = Export(t, name, sheet_map=dict(sheet_map or {}))
     for sheet in wanted:
         row = (rows or {}).get(sheet)
         if row is None:
-            row = find(sheet, t, stores)
+            row = find(sheet, t, stores, sheet_map)
         if row is None and sheet != "scorecard":
             exp.absent.append(sheet)
         if row is not None and not exp.name:
