@@ -198,8 +198,10 @@ def _same(a, b):
     for k, v in b.items():
         if isinstance(v, float):
             assert a[k] == pytest.approx(v, rel=1e-12, abs=1e-12), k
-        elif isinstance(v, list):
+        elif isinstance(v, list) and all(isinstance(x, (int, float)) for x in v):
             assert a[k] == pytest.approx(v, rel=1e-12), k
+        elif isinstance(v, list):                       # mönsternamn: nyare pytest godtar inte text i approx
+            assert a[k] == v, k
         else:
             assert a[k] == v, k
 
