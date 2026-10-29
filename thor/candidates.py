@@ -72,6 +72,7 @@ class Candidate:
     stale: bool = False            # körningen äldre än STALE_DAYS
     why: str = ""
     data_asof: str = ""            # stängningen motorn räknade på (Viking Nine) — tomt när källan inte säger
+    status_of: str = ""            # vems läge segment_status är: "tema" eller "segment" (tomt = inget läge)
 
     @property
     def family(self) -> str:
@@ -181,15 +182,17 @@ def segment_map_from_register(universe) -> dict:
 
 
 def _tag(c: Candidate, ctx: dict) -> Candidate:
-    """Kartans läge på raden: temats om raden har ett tema på kartan, annars segmentets. Saknar raden segment
+    """Kartans läge på raden: temats om raden har ett tema på kartan, annars segmentets — och varifrån
+    (status_of), så att kortet aldrig visar temats läge under segmentets namn. Saknar raden segment
     (Viking, Wolf utan entry, Insider …) tas det ur registrets sektor (ctx["segment_of"]: ticker → segment)."""
     if not c.segment and not c.theme:
         c.segment = (ctx.get("segment_of") or {}).get(c.ticker) or None
     st = (ctx.get("themes") or {}).get(c.theme) if c.theme else None
+    src = "tema"
     if not st and c.segment:
-        st = (ctx.get("segments") or {}).get(c.segment)
+        st, src = (ctx.get("segments") or {}).get(c.segment), "segment"
     if st:
-        c.segment_status, c.cykel = st.get("status"), st.get("cykel")
+        c.segment_status, c.cykel, c.status_of = st.get("status"), st.get("cykel"), src
         if not c.segment:
             c.segment = st.get("segment")
     return c

@@ -29,6 +29,7 @@ from ui.tokens import AMBER, CYAN, DIM, GREEN, GREY, RED, TEXT
 
 PERIODS = {"3 år": 3, "5 år": 5, "10 år": 10}
 DEFAULT_PERIOD = "5 år"
+LATE_DAYS = 30                  # historik som börjar mer än en månad efter periodens start märks (T11)
 FILL_NEXT_OPEN = "signal på stängning · entry nästa öppning · stopp intradag"
 FILL_MOMENTUM = "ranking fredag stängning · köp nästa öppning · stopp −10 % intradag"
 FILL_CLOSE = "Pine-spegling: beslut och fyllnad på stängningen"
@@ -118,6 +119,34 @@ def metrics_pct(m: dict) -> list:
             ("Halva sålda", f"{m.get('half_sold_share', 0):.0f} %", AMBER, "andel affärer som nådde +20 %")]
 
 
+def short_history(res: Result, df, warmup: int) -> bool:
+    """Aktiens egen historik mot motorns uppvärmning (warmup = motorns WARMUP_BARS; reglerna kräver warmup + 2
+    dagar, annars ger motorn tomt utan fel). För kort → Result.error och perioden från första dagen: True, då
+    kördes reglerna aldrig. Börjar historiken efter periodens start visas perioden från första dagen, med en
+    varning först. Reglerna ändras inte — bara vad fliken säger om perioden."""
+    df = _frame(df)
+    if df is None:
+        return False
+    bars = df.dropna(subset=[k for k in ("Open", "High", "Low", "Close") if k in df]).index
+    end = pd.Timestamp(res.period[1]) if res.period and res.period[1] else None
+    if end is not None:                                       # som motorn: inget efter periodens slutdag
+        bars = bars[bars < end + pd.Timedelta(days=1)]
+    if not len(bars):
+        return False
+    n, since = len(bars), _day(bars[0])
+    head = f"bara {n} dagars historik (från {since})"
+    start = pd.Timestamp(res.period[0]) if res.period and res.period[0] else None
+    if n < warmup + 2:
+        res.error = f"{head} — för kort för reglerna, som behöver {warmup + 2} dagar ({warmup} dagars uppvärmning)."
+        res.period = (since, res.period[1] if res.period else "")
+        return True
+    if start is not None and bars[0] > start + pd.Timedelta(days=LATE_DAYS):
+        res.warnings.insert(0, f"{head} — perioden börjar där, inte {_day(start)}; de första {warmup} dagarna är "
+                               f"uppvärmning, så reglerna kunde handla först från {_day(bars[warmup])}.")
+        res.period = (since, res.period[1])
+    return False
+
+
 def rows_r(trades: list, signal_of: Callable) -> list:
     """viking_backtest.Trade (Viking Nine och BERSERK) → affärsrader."""
     out = []
@@ -142,6 +171,9 @@ def run_viking(ident: Ticker, years: int, prices: Callable, today=None) -> Resul
     if per.get("error"):
         out.error = str(per["error"])
         return out
+    df = prices(ident.yf, f"{years + 1}y")
+    if short_history(out, df, vb.WARMUP_BARS):           # motorn ger tomt utan fel när historiken är för kort
+        return out
     trades = per.get("trades") or []
     out.metrics = metrics_r(vb.metrics(trades)) + [
         ("Signaler", str(per.get("signals", 0)), DIM,
@@ -150,7 +182,7 @@ def run_viking(ident: Ticker, years: int, prices: Callable, today=None) -> Resul
     if ident.nordic and per.get("market") != on.NORDIC_LABEL:
         out.warnings.append("OMXS30 och den svenska bredden saknas (Börsdata) — aktien testades mot SPY och USA:s bredd.")
     out.warnings.append("Snabbläge: marknadsriskspärren (🌩️) är av och sektorn är dagens.")
-    out.close = _close(prices(ident.yf, f"{years + 1}y"))
+    out.close = _close(df)
     return out
 
 
@@ -166,6 +198,9 @@ def run_berserk(ident: Ticker, years: int, prices: Callable, today=None) -> Resu
     if per.get("error"):
         out.error = str(per["error"])
         return out
+    df = prices(ident.yf, f"{years + 1}y")
+    if short_history(out, df, bb.WARMUP_BARS):           # samma tystnad i BERSERK-motorn (260 dagars uppvärmning)
+        return out
     trades = per.get("trades") or []
     sig = per.get("signals") or {}
     out.metrics = metrics_r(vb.metrics(trades)) + [
@@ -174,7 +209,7 @@ def run_berserk(ident: Ticker, years: int, prices: Callable, today=None) -> Resu
     out.trades = rows_r(trades, lambda t: str((t.features or {}).get("setup") or ""))
     drv = (res.get("drivers") or {}).get(per.get("theme")) or per.get("driver") or "—"
     out.warnings.append(f"Drivare {drv} (temat {per.get('theme') or '—'}) · skannerns regler (live_config).")
-    out.close = _close(prices(ident.yf, f"{years + 1}y"))
+    out.close = _close(df)
     return out
 
 

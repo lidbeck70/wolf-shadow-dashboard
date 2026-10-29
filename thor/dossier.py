@@ -118,16 +118,44 @@ def cycle(ident: Ticker, strategy: str, board: Optional[dict] = None, phase_fn: 
             "gate": {"status": status, "note": note}}
 
 
-def sheets_for(ticker, stores: Optional[dict]) -> dict:
+def held_forms(ticker) -> list:
+    """Formerna en innehavs-, journal- eller Copilotrad kan ha för aktien. Raderna skrivs i Yahoo-form
+    (positions.add, Thor), och en bar rad är en amerikansk ticker: 'TEL' är TE Connectivity och hör aldrig till
+    Telenor TEL.OL — och TEL.OL aldrig till TEL. Bara Börsdatas form med mellanslag ('ERIC B'), som ingen
+    amerikansk ticker har, når en nordisk sida."""
+    t = tc.yf(ticker)
+    if "." not in t:
+        return forms(t)
+    return [t] + ([f for f in forms(t) if " " in f] if tc.is_nordic(t) else [])
+
+
+def sheet_forms(ticker, sheet_map: Optional[dict] = None) -> list:
+    """Formerna en arkrad kan ha för aktien. Arken sparar tickern som den skrevs: en nordisk sida tar Börsdatas
+    former ('BOL', 'ERIC B', 'ERIC-B') — med registrets karta (Universe.sheet_map) bara de bara former kartan ger
+    just den här noteringen ('TEL' är TE Connectivity, inte Telenor TEL.OL); formen med mellanslag är alltid
+    nordisk. En utländsk notering (EQX.TO, TTE.PA) tar bara sin egen form — en bar arkrad är en amerikansk
+    ticker, som i listan (candidates.sheet_yf)."""
+    t = tc.yf(ticker)
+    if "." not in t:
+        return forms(t)
+    if not tc.is_nordic(t):
+        return [t]
+    ctx = {"sheet_map": {str(k).strip().upper(): v for k, v in (sheet_map or {}).items() if v}}
+    return [f for f in forms(t) if not ctx["sheet_map"] or f == t or " " in f or tc.sheet_yf(f, ctx) == t]
+
+
+def sheets_for(ticker, stores: Optional[dict], sheet_map: Optional[dict] = None) -> dict:
     """Vad arken säger om bolaget, bara läsning: granskningarnas utfall (review_link, PASS/MANUAL/FAIL),
     Durrett/Wolf Asymmetry-raden (confidence), scorecardets kort, registrets positioner (öppna och
     stängda), journalens affärer och Copilotens anteckningar. stores = {arknamn: data} ur
-    storage.session_load — aldrig modulernas _load()."""
+    storage.session_load — aldrig modulernas _load(). Arken matchas på sheet_forms (sheet_map = registrets
+    karta för arkens bara nordiska former), innehav/journal/Copilot på held_forms: en bar 'TEL' hamnar aldrig
+    på Telenor TEL.OL."""
     import review_link
     from positions import BUCKET_KEYS, normalize_row
     stores = stores or {}
-    fs = forms(ticker)
-    fset = set(fs)
+    fs = sheet_forms(ticker, sheet_map)
+    fset = set(held_forms(ticker))
     full = {name: stores.get(name) or review_link.STORE_DEFAULTS[name] for name in review_link.STORE_DEFAULTS}
     reviews: dict = {}
     for key in review_link.SHEET:
@@ -148,7 +176,7 @@ def sheets_for(ticker, stores: Optional[dict]) -> dict:
         except Exception:
             entries = {}
 
-    def mine(r) -> bool:
+    def mine(r) -> bool:                       # innehav, journal, Copilot: Yahoo-form, aldrig den bara formen
         return isinstance(r, dict) and str(r.get("ticker") or "").strip().upper() in fset
 
     hold = stores.get("holdings") or {}
@@ -159,7 +187,7 @@ def sheets_for(ticker, stores: Optional[dict]) -> dict:
     return {"reviews": reviews, "confidence": conf, "scorecard": cards, "positions": open_rows, "closed": closed,
             "journal": journal, "copilot": copilot, "found": bool(reviews or conf or cards or open_rows),
             "rotation": stores.get("rotation"), "confidence_store": stores.get("confidence"),
-            "scorecard_entries": {k: entries.get(k) for k in cards}}
+            "scorecard_entries": {k: entries.get(k) for k in cards}, "sheet_forms": fs}
 
 
 def assemble(raw, rows: Optional[list] = None, board: Optional[dict] = None, stores: Optional[dict] = None,

@@ -114,7 +114,7 @@ def test_cards_are_plain_html():
     assert "Cykelgrinden: MANUAL" in cards.gate_card({}, "")
     head = cards.header_card({"yf": "BOL.ST", "name": "Boliden", "home_index": "^OMX", "market": "OMXS30", "segment": "materials",
                               "theme": "koppar", "theme_label": "Koppar", "theme_source": "BERSERK-listan", "sector_etf": "XLB"},
-                             [rows[("berserk", "BOL.ST")]], held=True)
+                             [rows[("berserk", "BOL.ST")]], held=True, board=DATA["board"])   # läget ur kartan
     for text in ("BOL.ST", "Boliden", "^OMX · OMXS30", "Material · RÖD · TOPP", "Koppar · BERSERK-listan", "INNEHAV", "finns i dag i"):
         assert text in head, text
     snap = cards.snapshot_row({"price": 312.5, "as_of": "2026-10-14", "ret_1m_pct": 4.2, "ret_3m_pct": -1.0, "atr_pct": 2.1,

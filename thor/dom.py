@@ -166,9 +166,11 @@ def _engine_checks(strategy: str, sheets: dict, ticker: str, company_fn: Optiona
     checks, facts = [], []
     label, src = "Confidence/Durrett-motorn", "🧭 Durrett"
     try:
-        if company_fn is None:
-            from thor.arken import company_for as company_fn
-        company = company_fn((sheets or {}).get("confidence_store"), ticker)
+        if company_fn is None:                   # samma arkformer som dossiern matchade (sheets_for, T13)
+            from thor.arken import company_for
+            company = company_for((sheets or {}).get("confidence_store"), ticker, (sheets or {}).get("sheet_forms"))
+        else:
+            company = company_fn((sheets or {}).get("confidence_store"), ticker)
     except Exception:
         company = None
     if company is None:
