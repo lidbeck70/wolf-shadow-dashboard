@@ -117,6 +117,16 @@ def test_round_trip_with_a_key_hides_the_holdings(net, monkeypatch):
     assert ht.holdings_lines(gs.load_blob("alert_state.json", None)) == [(HELD, "SÄLJ", "Ur topp 30")]
 
 
+def test_the_scrypt_key_is_derived_once_per_phrase():
+    """Varje Gist-läsning av en privat fil öppnar ett kuvert; scrypt (~40 ms) räknas en gång per fras och process."""
+    pdata._derived.cache_clear()
+    for _ in range(3):
+        pdata.unseal(pdata.seal({"a": 1}, KEY), KEY)
+    assert pdata._derived.cache_info().misses == 1
+    assert pdata.unseal(pdata.seal({"a": 1}, KEY + "x"), KEY + "x") == {"a": 1}
+    assert pdata._derived.cache_info().misses == 2
+
+
 def test_without_a_key_the_payload_is_unchanged_and_one_warning_is_logged(net, monkeypatch, caplog):
     _key(monkeypatch, None)
     caplog.set_level(logging.INFO)

@@ -15,6 +15,7 @@ kuvert när nyckeln finns; utan nyckel går de i klartext som förut, med en var
 from __future__ import annotations
 
 import base64
+import functools
 import hashlib
 import json
 import logging
@@ -49,10 +50,16 @@ def passphrase() -> Optional[str]:
     return v or None
 
 
+@functools.lru_cache(maxsize=4)
+def _derived(phrase: str) -> bytes:
+    """scrypt-nyckeln för frasen — ~40 ms, så den räknas en gång per process (varje Gist-läsning av en privat fil
+    öppnar ett kuvert)."""
+    return hashlib.scrypt(phrase.encode("utf-8"), salt=_SALT, n=2 ** 14, r=8, p=1, dklen=32)
+
+
 def _fernet(phrase: str):
     from cryptography.fernet import Fernet
-    raw = hashlib.scrypt(phrase.encode("utf-8"), salt=_SALT, n=2 ** 14, r=8, p=1, dklen=32)
-    return Fernet(base64.urlsafe_b64encode(raw))
+    return Fernet(base64.urlsafe_b64encode(_derived(phrase)))
 
 
 def is_private(name: str) -> bool:
