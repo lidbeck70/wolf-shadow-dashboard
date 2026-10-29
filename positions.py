@@ -300,7 +300,8 @@ def by_bucket() -> dict:
 # ── Skrivning ────────────────────────────────────────────────────────────────
 def save() -> Optional[storage.SaveResult]:
     """Sparar registret direkt. Fel loggas och läggs i storage.meta() så
-    sparraden visar dem — sessionen behåller ändringen oavsett."""
+    sparraden visar dem — sessionen behåller ändringen oavsett. Misslyckades
+    läsningen vägrar storage att spara (skulle skriva över GitHub-filen)."""
     try:
         return storage.save_session(STORE)
     except storage.StorageError as exc:
@@ -309,9 +310,13 @@ def save() -> Optional[storage.SaveResult]:
         return None
 
 
-def _commit(data: dict) -> None:
+def _commit(data: dict) -> Optional[str]:
+    """Sessionen först, sedan sparningen. Returnerar felet när den inte gick
+    (None = sparat), så att anroparen inte säger "tillagd" om något osparat."""
     st.session_state[STORE] = data
-    save()
+    if save() is not None:
+        return None
+    return storage.load_error(STORE) or "sparningen misslyckades"
 
 
 def add(ticker: str, strategy: str = "Untagged", entry_price=0, shares=0,
@@ -340,7 +345,9 @@ def add(ticker: str, strategy: str = "Untagged", entry_price=0, shares=0,
         "notes": notes, "source": source, "extras": dict(extras or {}),
     })
     rows.append(row)
-    _commit(data)
+    err = _commit(data)
+    if err:
+        return False, f"{t} är INTE sparad: {err}"
     return True, f"{t} tillagd i {BUCKETS[bucket]['name']}."
 
 

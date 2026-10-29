@@ -66,5 +66,7 @@ def record_close(row: dict) -> Optional[dict]:
         return None
     trades.append(trade)
     if not tj.save_journal(trades):
-        logger.warning("journalen sparades bara lokalt för %s", trade["ticker"])
+        # Gick journalen inte att läsa vägrar save_journal — raden finns kvar som stängd i registret.
+        logger.warning("journalraden för %s sparades inte i Gisten (%s)", trade["ticker"],
+                       tj.journal_unreadable() or "ingen token eller nätfel")
     return trade

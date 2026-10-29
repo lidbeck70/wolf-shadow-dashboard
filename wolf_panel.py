@@ -551,7 +551,9 @@ def _tab_portfolio() -> None:
     elif sub == "Veckorutin":
         _page(SWING_AVAILABLE, render_swing_page, "Swing", "swing")
     elif sub == "Allokering":
-        _page(ALLOCATOR_AVAILABLE, render_allocator_page, "Portföljallokeraren", "allocator")
+        from portfolio.private_lock import gate
+        if gate(key="holdings_pw_alloc"):  # samma lås: sidan listar registrets positioner, antal och kassa
+            _page(ALLOCATOR_AVAILABLE, render_allocator_page, "Portföljallokeraren", "allocator")
 
 
 def _tab_more() -> None:

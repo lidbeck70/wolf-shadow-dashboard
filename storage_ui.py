@@ -22,7 +22,7 @@ def save_bar(name: str, label: str = "", key: Optional[str] = None) -> bool:
     Anropas överst i fliken, efter storage.session_load().
     """
     key = key or f"save_{name}"
-    err = storage.load_error(name)
+    err = storage.load_failed(name) or storage.load_error(name)   # läsfelet står kvar till omladdning
     if err:
         st.error(f"Kunde inte läsa sparad data för {label or name}: {err}\n\n"
                  f"Fliken visar tom data. Spara INTE förrän det här är löst — "

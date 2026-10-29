@@ -99,9 +99,52 @@ def test_password_check_and_lockout():
 def test_positions_and_start_page_are_behind_the_lock():
     panel = (ROOT / "wolf_panel.py").read_text(encoding="utf-8")
     assert "if gate():" in panel and "render_metals_section" in panel
+    assert 'if gate(key="holdings_pw_alloc"):' in panel                         # Allokering bakom samma lås
     home = (ROOT / "tabs" / "home.py").read_text(encoding="utf-8")
     assert "private_lock.unlocked()" in home
     assert "wolf2026" in (ROOT / "auth.py").read_text(encoding="utf-8")         # huvudlösenordets reserv orörd
+
+
+def test_allokering_shows_nothing_from_the_register_while_locked(monkeypatch):
+    """Allokering listar registrets positioner, antal och kassa — samma lås som Positioner."""
+    import copy
+
+    from streamlit.testing.v1 import AppTest
+
+    import refresh_ui
+    import storage
+    seed = {"holdings": {"long": [{"id": "q1", "ticker": "HEMLIG.ST", "strategy": "Quality", "entry_price": 70.0,
+                                   "shares": 33}], "cash": 21000}}
+    monkeypatch.setattr(storage, "load_json", lambda name, default=None: copy.deepcopy(seed.get(name, default)))
+    monkeypatch.setattr(storage, "legacy_gist", lambda *a, **k: None)
+    monkeypatch.setattr(refresh_ui, "load_refresh", lambda: {})
+    monkeypatch.setenv("LOCK_TEST_ROOT", str(ROOT))
+
+    def app():
+        import os as _o
+        import sys as _s
+        _s.path.insert(0, _o.environ["LOCK_TEST_ROOT"])
+        import wolf_panel
+        wolf_panel._tab_portfolio()
+
+    def texts(at):
+        colls = (at.markdown, at.caption, at.error, at.info, at.warning)
+        return " ".join(getattr(e, "value", "") or "" for coll in colls for e in coll)
+
+    at = AppTest.from_function(app, default_timeout=120)
+    at.session_state["sub_portfolio"] = "Allokering"
+    at.run()
+    assert not at.exception, at.exception
+    t = texts(at)
+    assert "låsta" in t and "HEMLIG" not in t and "21,000" not in t and "Ur registret" not in t
+    assert not [b for b in at.get("download_button")]                          # ingen Positioner-CSV
+
+    at = AppTest.from_function(app, default_timeout=120)                        # upplåst: sidan ritas som förut
+    at.session_state["sub_portfolio"] = "Allokering"
+    at.session_state[pl.STATE] = True
+    at.run()
+    assert not at.exception, at.exception
+    assert "HEMLIG.ST" in texts(at) and any(b.label == "🔒 Lås innehaven" for b in at.button)
 
 
 def test_gate_renders_locked_without_a_secret():

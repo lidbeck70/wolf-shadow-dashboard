@@ -320,12 +320,23 @@ def legacy_gist(filename: str) -> Any:
     Panelen sparade tidigare till en Gist. Den datan får inte försvinna bara
     för att lagringen bytt plats, så första gången data/<flik>.json saknas
     hämtas den därifrån och skrivs till repot vid nästa sparning.
+
+    Bara Gisten själv läses, aldrig den lokala ".<fil>"-reserven (där låg
+    testdata som annars såg ut som din). Saknas filen i Gisten blir det None;
+    svarar inte Gisten kastas StorageError, så att läsfelet syns och sparandet
+    spärras i stället för att tom data skriver över den riktiga.
     """
     try:
-        from gist_storage import load_blob
-        return load_blob(filename, None)
-    except Exception:
-        return None
+        from gist_storage import read_blob
+        status, data = read_blob(filename)
+    except Exception as exc:
+        status, data = "unreadable", type(exc).__name__
+    if status == "ok":
+        return data
+    if status == "unreadable":
+        raise StorageError(f"Gamla Gisten ({filename}) gick inte att läsa ({data}). "
+                           f"Ladda om sidan innan du sparar.")
+    return None
 
 
 def session_load(name: str, default: Any = None,
@@ -352,15 +363,17 @@ def session_load(name: str, default: Any = None,
             if data is None:
                 data = default
     except StorageError as exc:
-        error = str(exc)
+        data, error = default, str(exc)    # även när repofilen saknades och Gisten sedan fallerade
 
     st.session_state[name] = data
     # Migrerad data räknas som OSPARAD: den ligger fortfarande bara i Gisten,
     # och först ett sparklick flyttar den till repot.
     st.session_state[_clean_key(name)] = (
         "<omigrerad>" if migrated else _fingerprint(data))
-    st.session_state[_meta_key(name)] = {"error": error, "saved": None,
-                                         "migrated": migrated}
+    # load_failed är klistrigt: "error" delas med sparfelen och töms av
+    # mark_saved, men en misslyckad läsning gäller hela sessionen.
+    st.session_state[_meta_key(name)] = {"error": error, "load_failed": error,
+                                         "saved": None, "migrated": migrated}
     return data
 
 
@@ -383,7 +396,16 @@ def mark_saved(name: str, result: Optional[SaveResult] = None) -> None:
 
 
 def save_session(name: str) -> SaveResult:
-    """Sparar st.session_state[name] och markerar den som ren."""
+    """Sparar st.session_state[name] och markerar den som ren.
+
+    Vägrar när sessionens läsning misslyckades: då håller sessionen bara
+    default-datan, och en sparning skulle skriva över det som ligger i GitHub.
+    Spärren gäller tills sidan laddas om (session_load läser en gång).
+    """
+    failed = load_failed(name)
+    if failed:
+        raise StorageError(f"Läsningen av {name} misslyckades ({failed}) — sparar inte över det som "
+                           f"ligger i GitHub. Ladda om sidan.")
     result = save_json(name, st.session_state.get(name))
     mark_saved(name, result)
     return result
@@ -399,6 +421,11 @@ def last_saved(name: str) -> Optional[dict]:
 
 def load_error(name: str) -> Optional[str]:
     return meta(name).get("error")
+
+
+def load_failed(name: str) -> Optional[str]:
+    """Felet om sessionens läsning av lagret misslyckades — klistrigt, till omladdning."""
+    return meta(name).get("load_failed")
 
 
 def dirty_stores() -> list:
