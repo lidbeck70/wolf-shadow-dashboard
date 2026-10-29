@@ -509,7 +509,8 @@ def _render_scheduled_settings(send_fn) -> None:
              "inte heller nytillagda aktier — och inget larmar när körningen "
              "saknas, felar eller är gammal (en tom körning utan tidsstämpel "
              "räknas som saknad, liksom en Long Screener som föll eller ett "
-             "ark som inte gick att läsa i Valhalls körning).", None)):
+             "ark som inte gick att läsa i Valhalls körning; ett ark som "
+             "saknats i över 14 dagar räknas som borttaget).", None)):
         cfg = data[key]
         c1, c2 = st.columns([1, 2])
         enabled = c1.toggle(label, value=bool(cfg.get("enabled", True)),

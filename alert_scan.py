@@ -299,8 +299,13 @@ def main() -> int:
     # 👀 Övervakningen: listan ur panel-data (oläsbar → None, benet fryser) mot Thors rader. Bara KÖP och
     # "föll ur listan" larmar (alert_rules.watch_alerts).
     watch_data = _repo_file(WATCH_PATH, None)
+    # Brädan läses en gång: händelsemotorn, Thors rader och arken den lästes ur (watch_sheets) ser samma körning.
+    board_data = load_blob("valhall_board.json", None)
+
+    def _blob(name, fallback=None):
+        return board_data if name == "valhall_board.json" else load_blob(name, fallback)
     watch_rows, frozen_watch, fresh_watch = _watch_rows(
-        watch_data, load_blob, regime_data,
+        watch_data, _blob, regime_data,
         ca_loader={"quality": quality_data, "deep_contrarian": contrarian_data}.get,   # None = oläsbar → fryser
         ember_loader=lambda: ember_data)
 
@@ -311,8 +316,9 @@ def main() -> int:
         ember_data=ember_data, wolf_data=wolf_data, viking_data=viking_data,
         contrarian_data=contrarian_data, quality_data=quality_data, insider_data=insider_data,
         screens_data=screens_data, sheets_data=sheets_data, market_risk_data=market_risk_data,
-        fiat_data=fiat_data, board_data=load_blob("valhall_board.json", None),
-        watch_data=watch_data, watch_rows=watch_rows, frozen_watch=frozen_watch, fresh_watch=fresh_watch)
+        fiat_data=fiat_data, board_data=board_data,
+        watch_data=watch_data, watch_rows=watch_rows, frozen_watch=frozen_watch, fresh_watch=fresh_watch,
+        sheets_watch=alert_rules.watch_sheets({"board": board_data}))
     if not themes and isinstance(prev_state, dict):
         new_state["blindspot"] = prev_state.get("blindspot",
                                                 new_state["blindspot"])
