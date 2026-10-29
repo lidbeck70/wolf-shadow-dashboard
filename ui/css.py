@@ -155,10 +155,136 @@ code, pre, .stCode, [class*="monospace"] {
     font-family: 'JetBrains Mono', monospace !important;
 }
 
-.stSelectbox > div > div:focus,
+/* Streamlit 1.59: rullgardinens ruta får aldrig :focus — React Aria sätter
+   data-focus-within på div[role=group] i stället. */
+.stSelectbox [role="group"][data-focus-within],
 .stTextInput > div > div > input:focus {
     border-color: #00E5FF !important;
     box-shadow: 0 2px 6px rgba(0,0,0,0.3) !important;
+}
+
+/* ── Läsbar text i fält, rullgardiner och utfällbara rutor ───── */
+/* Bakgrunderna ovan målas mörka oavsett Streamlit-tema, så texten måste
+   också sättas här — annars ärvs ljusa temats #31333F (1,3:1 mot #1A1F25).
+   .streamlit/config.toml tvingar mörkt tema; det här håller även utan det.
+   Streamlit 1.59: st.selectbox = React Aria
+   (div.stSelectbox > div.react-aria-ComboBox > div[role=group] > input). */
+
+/* Värdet: valt värde i rullgardinen, inskrivet värde, tal, datum, textyta */
+.stSelectbox input,
+.stTextInput input,
+.stNumberInput input,
+.stDateInput input,
+.stTextArea textarea,
+.stMultiSelect input {
+    color: #00E5FF !important;
+    -webkit-text-fill-color: #00E5FF !important;   /* iOS Safari */
+    caret-color: #00E5FF !important;
+    font-weight: 500 !important;
+    opacity: 1 !important;
+}
+
+/* Fältens ytor som Streamlit annars ger secondaryBg (#f0f2f6 i ljust tema) */
+[data-testid="stTextInputRootElement"],
+[data-testid="stNumberInputContainer"],
+[data-testid="stTextAreaRootElement"],
+.stDateInput [data-baseweb="input"],
+.stMultiSelect [data-baseweb="select"] > div {
+    background-color: #1A1F25 !important;
+    border-color: rgba(0,229,255,0.25) !important;
+}
+
+/* Platshållaren ("Skriv en ticker …", "Choose an option") — ljusare än
+   DIM (#8a8578 ger bara 4,5:1 mot #1A1F25), #a8a397 ger 6,6:1 */
+.stSelectbox input::placeholder,
+.stTextInput input::placeholder,
+.stNumberInput input::placeholder,
+.stDateInput input::placeholder,
+.stTextArea textarea::placeholder,
+.stMultiSelect input::placeholder {
+    color: #a8a397 !important;
+    -webkit-text-fill-color: #a8a397 !important;
+    opacity: 1 !important;
+    font-weight: 400 !important;
+}
+
+/* Pilen i rullgardinen och +/- i talfältet */
+.stSelectbox [role="group"] button,
+[data-testid="stNumberInputContainer"] button {
+    color: #00E5FF !important;
+}
+
+/* Låsta fält: dämpat men läsbart (DIM) */
+.stSelectbox input:disabled,
+.stTextInput input:disabled,
+.stNumberInput input:disabled,
+.stDateInput input:disabled,
+.stTextArea textarea:disabled {
+    color: #8a8578 !important;
+    -webkit-text-fill-color: #8a8578 !important;
+}
+
+/* Den utfällda listan (portal i <body>, gäller selectbox och multiselect) */
+[data-testid="stSelectboxVirtualDropdown"] {
+    background-color: #0D1117 !important;
+    border: 1px solid rgba(0,229,255,0.25) !important;
+}
+[data-testid="stSelectboxVirtualDropdown"] [role="option"] {
+    color: #e8e4dc !important;
+}
+[data-testid="stSelectboxVirtualDropdown"] [role="option"][data-focused] [data-item-hl],
+[data-testid="stSelectboxVirtualDropdown"] [role="option"][data-hovered] [data-item-hl],
+[data-testid="stSelectboxVirtualDropdown"] li[role="option"]:hover {
+    background-color: rgba(0,229,255,0.12) !important;
+}
+[data-testid="stSelectboxVirtualDropdown"] [role="option"][aria-selected="true"] {
+    color: #00E5FF !important;
+}
+
+/* Utfällbara rutor (st.expander) — bakgrunden tvingas, annars blir den
+   öppna rubriken en ljus list (#f8f9fb) där TEXT inte syns */
+[data-testid="stExpander"] details {
+    border-color: rgba(0,229,255,0.2) !important;
+}
+[data-testid="stExpander"] summary {
+    background-color: transparent !important;
+}
+[data-testid="stExpander"] details[open] > summary,
+[data-testid="stExpander"] summary:hover {
+    background-color: rgba(0,229,255,0.06) !important;
+}
+[data-testid="stExpander"] summary,
+[data-testid="stExpander"] summary p,
+[data-testid="stExpander"] summary [data-testid="stIconMaterial"] {
+    color: #e8e4dc !important;
+}
+[data-testid="stExpander"] summary p {
+    font-weight: 600 !important;
+}
+[data-testid="stExpander"] summary:hover p,
+[data-testid="stExpander"] summary:hover [data-testid="stIconMaterial"] {
+    color: #00E5FF !important;
+}
+
+/* Etiketter och radio-/kryssval — på label-elementet (p ärver), så sidornas
+   egna ".stSelectbox label { color: CYAN !important }" (heatmap, cagr) fortfarande vinner */
+[data-testid="stWidgetLabel"] {
+    color: #e8e4dc !important;
+}
+.stRadio [role="radiogroup"] label p,
+.stCheckbox label p {
+    color: #e8e4dc !important;      /* p har egen färg i 1.59 — ärver inte */
+}
+
+/* Telefon: 16px i fälten — större text och ingen iOS-zoom vid fokus */
+@media (max-width: 768px) {
+    .stSelectbox input,
+    .stTextInput input,
+    .stNumberInput input,
+    .stDateInput input,
+    .stTextArea textarea {
+        font-size: 16px !important;
+    }
 }
 
 /* ── Slider ──────────────────────────────────────────────────── */
@@ -420,8 +546,8 @@ def color_score(val):
 
 def color_entry(val):
     if val == "YES":
-        return f'<span class="entry-yes">✦ YES</span>'
-    return f'<span class="entry-no">·no·</span>'
+        return '<span class="entry-yes">✦ YES</span>'
+    return '<span class="entry-no">·no·</span>'
 
 
 def tab_not_found(module_name: str, folder: str):
