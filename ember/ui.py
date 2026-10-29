@@ -525,7 +525,8 @@ def _own_tickers() -> list[str]:
     try:
         import storage as _storage
         from confidence import store as _cs
-        out += list(_cs.companies(_cs.normalize(_storage.session_load(_cs.STORE, _cs.default()))))
+        # läser bara — att normalisera sessionens ark här vore en osparad ändring i Durrett
+        out += list(_cs.companies(_storage.session_load(_cs.STORE, _cs.default())))
     except Exception:
         pass
     return [t for t in dict.fromkeys(out) if t]

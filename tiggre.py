@@ -316,11 +316,8 @@ def _load() -> dict:
     gången och töms här — kandidater, parkerade och historiken stannar."""
     data = storage.session_load(STORE, _default(),
                                 legacy_file="tiggre_data.json")
-    if not isinstance(data, dict):
-        data = _default()
-        st.session_state[STORE] = data
-    for k, v in _default().items():
-        data.setdefault(k, v)
+    # saknade nycklar fylls i utan att det räknas som en osparad ändring
+    data = storage.session_normalize(STORE, data, lambda d: storage.fill_defaults(d, _default()))
     _migrate_positions(data)
     return data
 

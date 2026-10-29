@@ -254,12 +254,8 @@ def _load() -> dict:
     """Laddas EN gång per session; därefter äger sessionen sanningen."""
     data = storage.session_load(STORE, _default(),
                                 legacy_file="insider_data.json")
-    if not isinstance(data, dict):
-        data = _default()
-        st.session_state[STORE] = data
-    for k, v in _default().items():
-        data.setdefault(k, v)
-    return data
+    # saknade nycklar fylls i utan att det räknas som en osparad ändring
+    return storage.session_normalize(STORE, data, lambda d: storage.fill_defaults(d, _default()))
 
 
 def _save(data: dict) -> None:

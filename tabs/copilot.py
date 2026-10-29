@@ -79,10 +79,8 @@ def _legacy_entries() -> list[dict]:
 def _load_journal() -> list[dict]:
     """Journalen ur sessionen; laddas en gång per session ur repot."""
     data = storage.session_load(STORE, {"entries": []})
-    if not isinstance(data, dict):
-        data = {"entries": []}
-        st.session_state[STORE] = data
-    data.setdefault("entries", [])
+    # en saknad "entries" är ingen osparad ändring; räddade poster nedan är det
+    data = storage.session_normalize(STORE, data, lambda d: storage.fill_defaults(d, {"entries": []}))
 
     if not data["entries"]:
         rescued = _legacy_entries()

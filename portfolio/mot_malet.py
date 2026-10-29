@@ -5,12 +5,14 @@ Fem delar:
   1. Mätaren         realiserad årstakt ur journalen mot golvet 20 % och målet 35 % (beslut 2)
   2. Per strategi    papperskontona (valhall/paper.py, samma siffror som 📊 Papperskonton) bredvid journalen
                      — stängda affärer x/20, vinstandel, snitt-R, payoff och enhetskurvans årstakt
-  3. Plan följd      andelen journalaffärer enligt plan (fältet followed_plan, beslut 4)
+  3. Plan följd      andelen affärer enligt plan (fältet followed_plan, beslut 4) — Trade Journal och
+                     Copilotens stängda poster; en affär som står i båda räknas en gång
   4. Historiskt      länk till Valhalls backtester
   5. Länk            till 📊 Papperskonton
 
 Under 20 stängda affärer står "för få affärer" i stället för en slutsats. Sidan räknar inga nya regler; den
-läser journalen och papperet. Strategi, journal och papper kopplas via Thors register (playbook och paper).
+läser journalen, Copilotens journal (bara för Plan följd) och papperet. Strategi, journal och papper kopplas via
+Thors register (playbook och paper).
 """
 from __future__ import annotations
 
@@ -64,14 +66,59 @@ def strategy_rows(paper: Optional[dict], trades: Optional[list]) -> list:
     return rows
 
 
-def plan_followed(trades: Optional[list]) -> Optional[float]:
-    """Andelen journalaffärer med followed_plan = ja, av dem där fältet är ifyllt. None utan ifyllda.
-    Journalen och Copiloten sparar "Ja"/"Nej"; True/False läses också."""
+def _plan(t: dict) -> Optional[bool]:
+    """followed_plan som True/False, eller None när fältet inte är ifyllt. "Ja"/"Nej" och True/False läses."""
     m = {"JA": True, "NEJ": False, True: True, False: False}
-    vals = [m.get(str(t.get("followed_plan")).upper() if isinstance(t.get("followed_plan"), str) else t.get("followed_plan"))
-            for t in trades or [] if isinstance(t, dict)]
-    vals = [v for v in vals if isinstance(v, bool)]
+    v = t.get("followed_plan")
+    try:
+        v = m.get(v.strip().upper() if isinstance(v, str) else v)
+    except TypeError:                      # en lista eller dict i fältet är inget svar
+        return None
+    return v if isinstance(v, bool) else None
+
+
+def _same_trade(t: dict, id_key: str, day_key: str) -> set:
+    """Nycklarna en affär känns igen på i båda journalerna: positionen i registret (journalens position_id =
+    Copilotens holdings_id) och aktie + köpdag (journalens entry_date = Copilotens date)."""
+    keys = set()
+    if t.get(id_key):
+        keys.add(("pos", str(t[id_key])))
+    ticker, day = str(t.get("ticker") or "").strip().upper(), str(t.get(day_key) or "")[:10]
+    if ticker and day:
+        keys.add(("dag", ticker, day))
+    return keys
+
+
+def plan_followed(trades: Optional[list], copilot: Optional[list] = None) -> Optional[float]:
+    """Andelen affärer med followed_plan = ja, av dem där fältet är ifyllt. None utan ifyllda.
+
+    Läser Trade Journal (trades) och Copilotens STÄNGDA poster (copilot, data/copilot_journal.json). Båda sparar
+    "Ja"/"Nej"; True/False läses också. En affär som står i båda — samma position, eller samma aktie och köpdag —
+    räknas en gång: journalens svar gäller, och Copilotens bara när journalens rad saknar svar."""
+    vals, answered = [], set()
+    for t in trades or []:
+        if isinstance(t, dict) and _plan(t) is not None:
+            vals.append(_plan(t))
+            answered |= _same_trade(t, "position_id", "entry_date")
+    for e in copilot or []:
+        if not isinstance(e, dict) or not e.get("exit_price") or _plan(e) is None:
+            continue                       # öppen post, eller frågan obesvarad
+        if _same_trade(e, "holdings_id", "date") & answered:
+            continue                       # samma affär har redan ett svar i journalen
+        vals.append(_plan(e))
     return round(sum(vals) / len(vals) * 100, 1) if vals else None
+
+
+def copilot_entries() -> list:
+    """Copilotens journalposter ur sessionen (laddas en gång per session, som på Copilot-sidan). Tom lista när
+    lagret inte går att läsa — läsfelet visas på Copilot-sidan, och här räknas då bara Trade Journal."""
+    try:
+        import storage
+        data = storage.session_load("copilot_journal", {"entries": []})
+    except Exception:
+        return []
+    entries = data.get("entries") if isinstance(data, dict) else None
+    return list(entries) if isinstance(entries, list) else []
 
 
 def today_line(cagr: Optional[float], paper: Optional[dict], trades: Optional[list]) -> str:
@@ -125,12 +172,14 @@ def render_mot_malet_page() -> None:
     word, ck = zone(cagr)
     col = {"green": GREEN, "cyan": CYAN, "gold": GOLD, "red": RED, "dim": DIM}[ck]
     n = len(js._closed(trades))
+    plan = plan_followed(trades, copilot_entries())        # sessionens Copilot-journal: dina svar syns direkt
     st.markdown(cards.kpi_row([
         ("Journalens årstakt", f"{cagr:+.1f} %" if cagr is not None else "—", col,
          f"{word} · {n}/{MIN_CLOSED} stängda" + (" — för få affärer" if n < MIN_CLOSED else "")),
         ("Golv / mål", f"{GOAL_FLOOR:.0f} % / {GOAL_TARGET:.0f} %", CYAN, "ditt mål, ingen strategiregel"),
-        ("Plan följd", f"{plan_followed(trades):.0f} %" if plan_followed(trades) is not None else "—", CYAN,
-         "andel journalaffärer enligt plan")]), unsafe_allow_html=True)
+        ("Plan följd", f"{plan:.0f} %" if plan is not None else "—", CYAN,
+         "andel affärer enligt plan — Trade Journal och Copilotens stängda poster, samma affär en gång")]),
+        unsafe_allow_html=True)
     pct = max(0.0, min(50.0, cagr or 0.0)) / 50 * 100
     st.markdown(f"<div style='position:relative;height:12px;background:#1a1f25;border-radius:6px;margin:6px 0 2px;'>"
                 f"<div style='width:{pct:.0f}%;height:12px;background:{col};border-radius:6px;'></div>"

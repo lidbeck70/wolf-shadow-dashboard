@@ -245,12 +245,10 @@ def _normalize(data) -> dict:
 # ── Läsning ──────────────────────────────────────────────────────────────────
 def load() -> dict:
     """Registret, laddat EN gång per session (repot först, annars Gisten).
-    Raderna normaliseras på plats så att sessionen alltid har radschemat."""
+    Raderna normaliseras på plats så att sessionen alltid har radschemat — och normaliseringen ensam räknas inte
+    som en osparad ändring (storage.session_normalize)."""
     data = storage.session_load(STORE, _default(), legacy_file=LEGACY_FILE)
-    norm = _normalize(data)
-    if norm is not data:
-        st.session_state[STORE] = norm
-    return norm
+    return storage.session_normalize(STORE, data, _normalize)
 
 
 def all_positions() -> List[dict]:
