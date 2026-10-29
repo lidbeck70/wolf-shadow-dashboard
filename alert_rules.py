@@ -1011,7 +1011,8 @@ def watch_alerts(watch_data: Optional[dict], rows: Optional[list], prev: Optiona
         st = wl.status_of(it, rows)
         now = {"id": it["id"] if it["id"] in raw_ids else "", "in_list": st["in_list"],
                "class": st["status_class"], "status": st["status"] if st["in_list"] else ""}
-        gap = s in gaps and (_on_board(before) or _on_board(now))
+        # ett nytt par en luckdag får sin baslinje först när brädan är hel (första körningen larmar ändå inte)
+        gap = s in gaps and ((before is None and not first) or _on_board(before) or _on_board(now))
         if s in frozen or k in frozen or s not in ran or st["stale"] or gap:
             if before is not None:
                 items[k] = before

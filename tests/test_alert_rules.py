@@ -806,6 +806,23 @@ def test_watch_a_lost_scoring_sheet_freezes_durrett_for_the_day():
     assert [a["title"] for a in _run(items, d3, "2026-10-17", blind)[0]] == ["👀 ABC.TO blev KÖP — Durrett"]
 
 
+def test_watch_a_pair_added_on_a_gap_day_gets_its_baseline_when_the_board_is_whole():
+    """Ett par som läggs till en dag då Poängmodellen inte gick att läsa, och som luckan sköt ur brädans topp 5 (ingen
+    håvrad), fick baslinjen 'inte i listan' — och '👀 ABC.TO blev KÖP' när arket var tillbaka. Nu får det sin
+    baslinje först den dag brädan är hel, tyst."""
+    old = _pairs(("NEM", "rule"))
+    d1 = _picks_blobs(tvp.SHEETS, "2026-10-14T16:50:00+00:00")
+    _a, s0 = _run(old, d1, "2026-10-15", None)
+    both = {"items": old["items"] + [{"id": "ny", "ticker": "ABC.TO", "strategy": "durrett", "added": "2026-10-16"}]}
+    d2 = _picks_blobs(_without("scoring"), "2026-10-15T16:50:00+00:00")
+    rows = [c for c in tc.build(d2, today="2026-10-16", sheet_map=d2["sheet_map"]) if c.ticker != "ABC.TO"]
+    alerts, s1 = ar.watch_alerts(both, rows, s0, ar.watch_frozen(d2), ar.watch_fresh(d2, today="2026-10-16"),
+                                 ar.watch_sheets(d2, today="2026-10-16"))
+    assert alerts == [] and "ABC.TO|durrett" not in s1["items"]
+    alerts, s2 = _run(both, _picks_blobs(tvp.SHEETS, "2026-10-16T16:50:00+00:00"), "2026-10-17", s1)
+    assert alerts == [] and s2["items"]["ABC.TO|durrett"]["class"] == "KÖP"
+
+
 def test_watch_a_sheet_that_never_existed_freezes_nothing():
     """Durrett-arket (confidence) finns inte i alla paneler. Ett ark som benet aldrig sett brädan läsas ur fryser
     varken Durrett eller Tiggre (Tiggres tema kan komma ur det): en färsk, tom Durrett-håv är 'föll ur listan', och
