@@ -20,14 +20,18 @@ NO_PLAYBOOK = "Strategin har ingen playbook med cykelfaser — fasen visas, men 
 
 def candidates_for(rows: list, ticker) -> list:
     """Dagens Thor-rader för aktien (alla strategier), i listans ordning. 'BOL' hittar 'BOL.ST'; med suffix krävs
-    samma notering — EQNR.OL får inte EQNR-raden från New York (granskning 2, F10)."""
+    samma notering — EQNR.OL får inte EQNR-raden från New York (granskning 2, F10) — och samma marknad: L'Oréal
+    OR.PA får inte Osiskos OR.TO (granskning 3)."""
+    from universe import registry as ur
     want = base(ticker)
     t = str(ticker or "").strip().upper()
     if "." in t:
         exact = [c for c in rows or [] if str(c.ticker).upper() == t]
         if exact:
             return exact
-        return [c for c in rows or [] if want and base(c.ticker) == want and "." in str(c.ticker)]
+        mkt = ur.market_of(t)
+        return [c for c in rows or [] if want and base(c.ticker) == want and "." in str(c.ticker)
+                and ur.market_of(c.ticker) == mkt]
     return [c for c in rows or [] if want and base(c.ticker) == want]
 
 

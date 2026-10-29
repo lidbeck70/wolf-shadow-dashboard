@@ -337,3 +337,9 @@ def test_momentum_row_without_a_ticker_is_skipped():
                                          {"rank": 1, "ticker": "ERIC B", "setupA": True, "price": 80.0}]}
     rows = tc.from_momentum(blob, fx.CTX, {"ERIC B": "ERIC-B.ST"}, regime={"regime": "GRÖN"})
     assert sorted(c.ticker for c in rows) == ["ERIC-B.ST", "NHY.OL"] and ".ST" not in [c.ticker for c in rows]
+
+
+def test_a_suffixed_ticker_only_borrows_rows_from_its_own_market():
+    rows = [tc.Candidate("OR.TO", "Osisko", "royalty", "KÖP", tc.KOP), tc.Candidate("EQNR.OL", "Equinor", "wolf", "x", tc.HALL)]
+    assert td.candidates_for(rows, "OR.PA") == []                       # L'Oréal får inte Osiskos rad
+    assert [c.ticker for c in td.candidates_for(rows, "EQNR.ST")] == ["EQNR.OL"]       # samma marknad (Norden)
