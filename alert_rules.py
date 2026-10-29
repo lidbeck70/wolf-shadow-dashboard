@@ -756,6 +756,14 @@ _NOT_LISTS = ("regime", "sheet_map")               # ger inga rader: prövas bar
 _BUILD_PARTS = {"themes": ("rule", "durrett", "tiggre"), "arc": ("wolf", "viking"),
                 "screens": ("hav", "rule", "durrett", "tiggre"),
                 "board": tuple(s for s, keys in WATCH_SOURCES.items() if "board" in keys)}
+# valhall_board.json bär flera strategiers listor, och en del kan falla utan felfält (valhall_scan): Long Screenern
+# som kastar sparas som long = None (då står Long Screener still), och ett ark, håvarna eller Quality Contrarian som
+# inte gick att läsa syns bara som en lucka i sources. Då står Rick Rules, Durretts och Tiggres par på brädans rader
+# (KÖP/BEVAKA) still, och brädans stämpel gör inte deras lista färsk. Håvarnas TRÄFF-rader för samma strategier går
+# som vanligt: ett ark som aldrig skapats (Durrett-arket finns inte i alla paneler) ser ut som en lucka, och hela
+# strategin fick då aldrig larma.
+_BOARD_SHEETS = {"rule": ("producers",), "durrett": ("confidence",), "tiggre": ("tiggre",)}
+_CA_MODES = 2                                       # quality och deep_contrarian (valhall_scan._load_sources)
 
 
 def watch_key(ticker: str, strategy: str) -> str:
@@ -783,6 +791,8 @@ def _source_ok(key: str, blob, strategy: str) -> bool:
         return bool(blob)
     if blob.get("error"):
         return False
+    if key == "board" and strategy == "long":
+        return isinstance(blob.get("long"), dict)            # Long Screenern som kastade: long = None, inga rader
     if key == "arc":
         return not any(_dict(blob.get(p)).get("error") for p in _ARC_PARTS.get(strategy, ()))
     if key == "viking_nine":
@@ -793,10 +803,39 @@ def _source_ok(key: str, blob, strategy: str) -> bool:
     return True
 
 
+def _board_read(board, strategy: str) -> Optional[bool]:
+    """Lästes strategins delar av valhall_board.json i körningen (brädans sources)? Arket den byggs ur, och för Rick
+    Rule även håvarna och båda Quality Contrarian-körningarna. None = brädan saknar sources och går inte att pröva
+    (sources kom med arkens köp, valhall fas 2b) — då gör brädan inte listan färsk, men fryser inget heller."""
+    sheets = _BOARD_SHEETS.get(strategy)
+    if sheets is None:
+        return True
+    src = _dict(board).get("sources")
+    if not isinstance(src, dict):
+        return None
+    if not set(sheets) <= {str(x) for x in _list(src.get("sheets"))}:
+        return False
+    ca = src.get("ca_runs")
+    return strategy != "rule" or (bool(src.get("screens")) and isinstance(ca, int) and ca >= _CA_MODES)
+
+
+def _board_gap(strategy: str) -> str:
+    """frozen-nyckeln 'rule@brädan': strategins del av Valhalls bräda lästes inte (_board_read) — paren som står eller
+    stod på en rad ur brädan (KÖP/BEVAKA) står still; håvarnas TRÄFF-rader går som vanligt."""
+    return f"{strategy}@brädan"
+
+
+def _on_board(state: Optional[dict]) -> bool:
+    """Parets läge kommer ur brädans rader: Rick Rule, Durrett och Tiggre har KÖP/BEVAKA bara där (håvarna: TRÄFF)."""
+    from thor import candidates as tc
+    return isinstance(state, dict) and bool(state.get("in_list")) and state.get("class") in (tc.KOP, tc.BEVAKA)
+
+
 def watch_frozen(blobs: Optional[dict], errors: Optional[dict] = None) -> set:
     """Det som står still i dag: strategier vars källa saknas eller felar (WATCH_SOURCES, thor.live.blob_errors)
-    eller vars del föll i bygget (errors ur thor.candidates.build), och par 'TICKER|strategi' där just aktiens
-    hämtning fallerade (BERSERK:s missing, EMBER-rader med error)."""
+    eller vars del föll i bygget (errors ur thor.candidates.build), 'strategi@brädan' när strategins del av Valhalls
+    bräda inte lästes (_board_gap), och par 'TICKER|strategi' där just aktiens hämtning fallerade (BERSERK:s missing,
+    EMBER-rader med error)."""
     from thor import candidates as tc
     from thor import live
     b = _dict(blobs)
@@ -804,6 +843,7 @@ def watch_frozen(blobs: Optional[dict], errors: Optional[dict] = None) -> set:
     out |= {s for s, keys in WATCH_SOURCES.items() if not all(_source_ok(k, b.get(k), s) for k in keys)}
     for part in _dict(errors):
         out |= set(_BUILD_PARTS.get(part) or ((part,) if part in WATCH_SOURCES else WATCH_SOURCES))
+    out |= {_board_gap(s) for s in _BOARD_SHEETS if s not in out and _board_read(b.get("board"), s) is False}
     out |= {watch_key(tc.yf(t), "berserk") for t in _list(_dict(b.get("berserk")).get("missing")) if t}
     ember = _dict(b.get("ember"))
     for r in _list(ember.get("eligible")) + _list(ember.get("near_misses")):
@@ -838,14 +878,15 @@ def _recent(stamp, today) -> bool:
 def watch_fresh(blobs: Optional[dict], today=None) -> dict:
     """{strategi: körd} för strategier vars listor är färska enligt sina EGNA tidsstämplar (högst tc.STALE_DAYS
     gamla) och felfria. Där betyder en aktie som saknas 'inte i listan' — även när listan är tom (BERSERK bär bara
-    KÖP/BEVAKA, Viking Nine bara GOLDEN/READY/DEVELOPING). En lista utan användbar stämpel räknas inte som färsk:
-    utan färska rader står strategins par då still, som när körningen saknas."""
+    KÖP/BEVAKA, Viking Nine bara GOLDEN/READY/DEVELOPING). En lista utan användbar stämpel räknas inte som färsk,
+    inte heller en del av Valhalls bräda som inte lästes eller inte går att pröva (_board_read, Long Screener i
+    _source_ok): utan färska rader står strategins par då still, som när körningen saknas."""
     from datetime import date
     t0 = date.fromisoformat(str(today)[:10]) if today else date.today()
     b = _dict(blobs)
     out = {}
     for s, keys in WATCH_SOURCES.items():
-        if not all(_source_ok(k, b.get(k), s) for k in keys):
+        if not all(_source_ok(k, b.get(k), s) for k in keys) or _board_read(b.get("board"), s) is not True:
             continue
         stamps = [x for k in keys if k not in _NOT_LISTS for x in _stamps(k, b.get(k), s)]
         if stamps and all(_recent(x, t0) for x in stamps):
@@ -895,7 +936,8 @@ def watch_alerts(watch_data: Optional[dict], rows: Optional[list], prev: Optiona
     rows = thor.candidates.build(...); None = körningarna gick inte att läsa → benet fryser, liksom när listan
     (watch_data) inte gick att läsa. frozen = watch_frozen(blobs), fresh = watch_fresh(blobs). En strategi som varken
     har en färsk rad eller en färsk, felfri lista enligt källans egen stämpel (saknas, eller äldre än tc.STALE_DAYS)
-    och ett par vars egen rad är gammal behåller förra läget — en körning som inte gick är ingen övergång. En färsk
+    och ett par vars egen rad är gammal behåller förra läget — en körning som inte gick är ingen övergång; likaså ett
+    par på brädans rader när strategins del av Valhalls bräda inte lästes ('strategi@brädan' i frozen). En färsk
     lista utan aktien är däremot 'föll ur listan', även när listan är tom.
     Tillståndet: {"items": {"TICKER|strategi": {"id", "in_list", "class", "status"}}}."""
     if rows is None or not isinstance(watch_data, dict):
@@ -917,12 +959,13 @@ def watch_alerts(watch_data: Optional[dict], rows: Optional[list], prev: Optiona
         if before and before.get("id") and it["id"] in raw_ids and before["id"] != it["id"]:
             before = None                                # borttagen och tillagd igen: ett nytt par, ny baslinje
         st = wl.status_of(it, rows)
-        if s in frozen or k in frozen or s not in ran or st["stale"]:
+        now = {"id": it["id"] if it["id"] in raw_ids else "", "in_list": st["in_list"],
+               "class": st["status_class"], "status": st["status"] if st["in_list"] else ""}
+        gap = _board_gap(s) in frozen and (_on_board(before) or _on_board(now))
+        if s in frozen or k in frozen or s not in ran or st["stale"] or gap:
             if before is not None:
                 items[k] = before
             continue
-        now = {"id": it["id"] if it["id"] in raw_ids else "", "in_list": st["in_list"],
-               "class": st["status_class"], "status": st["status"] if st["in_list"] else ""}
         items[k] = now
         if first or before is None or not it["alert"]:
             continue

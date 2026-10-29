@@ -1078,7 +1078,8 @@ _PANEL_GUIDE: list[tuple] = [
      "Lägg till med 👀 i Thor (strategin i Bedöm som) eller under Nära köp nu (strategiernas BEVAKA-rader). "
      "Larm på Discord (MER → Larm, benet 👀 Övervakning) när en bevakad aktie BLIR KÖP eller faller ur listan — "
      "också när en färsk körning är tom; en saknad, felande eller gammal körning (eller en tom utan tidsstämpel) "
-     "larmar inte."),
+     "larmar inte, inte heller en Long Screener som föll eller ett ark som inte gick att läsa i Valhalls körning "
+     "(Rick Rule, Durrett, Tiggre)."),
     ("ODIN → Läget", "Momentum: entry #1, #6",
      "Trafikljus GRÖN/GUL/RÖD + regelverk, OMXSPI vs MA200, marknadsbredd "
      "(dör före index) och regimhistorik."),
