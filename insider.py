@@ -303,7 +303,16 @@ def _chatgpt(data: dict, sig: dict) -> None:
     except Exception:
         return
     chatgpt_ui.render_export(sig.get("ticker", ""), {STORE: data}, ["insider"], key=f"insider_{sig['id']}",
-                             name=sig.get("name", ""), rows={"insider": sig})
+                             name=sig.get("name", ""), rows={"insider": sig}, on_apply=lambda: _save(data))
+
+
+def _rc():
+    """Kortstödet (fokus, x/y ifyllda, saknas-raden) — None om review-paketet inte går att läsa."""
+    try:
+        from review import card
+        return card
+    except Exception:
+        return None
 
 
 # ── Automatisk skanning (insider_scan.py via GitHub Actions) ─────────────────
@@ -485,14 +494,20 @@ def _signals(data: dict) -> None:
                    "Holdings.")
         return
 
+    rc = _rc()
+    foc = rc.focus("insider", [r["signal"].get("ticker") for r in rows]) if rc else None
     for r in rows:
         sig = r["signal"]
+        if rc and not rc.same_ticker(sig.get("ticker"), foc):
+            continue
         pts, stat = r["score"], r["status"]
         c = STATUS_COLOR.get(stat, DIM)
         head = (f"{sig.get('ticker','?')}"
                 f"  ·  {pts if pts is not None else '–'}/{MAX_SCORE} p"
-                f"  ·  {stat or 'ofullständig'}")
-        with st.expander(head, expanded=False):
+                f"  ·  {stat or 'ofullständig'}" + (rc.suffix("insider", sig) if rc else ""))
+        with st.expander(head, expanded=bool(foc)):
+            if rc:
+                rc.render_missing("insider", sig)
             _signal_body(data, sig, r, c)
 
 

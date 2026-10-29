@@ -38,6 +38,9 @@ MODES = (QUICK, "Analys", "Ark")
 _SEV_COLOR = {"CRITICAL": RED, "HIGH": RED, "MEDIUM": AMBER, "LOW": DIM}
 _BAND_COLOR = {acfg.BREAK_EVEN_STRONG: GREEN, acfg.BREAK_EVEN_MODERATE: AMBER, acfg.BREAK_EVEN_WEAK: RED}
 _REC_COLOR = {"BUY CANDIDATE": GREEN, "WATCH": AMBER, "PASS": DIM, "REJECT": RED}
+# Arkets formknappar skriver bara i sessionen — det är 💾 som sparar (förr hette knappen "Spara")
+UPDATE = "Uppdatera arket"
+SAVE_NOTE = "Uppdatera arket skriver i sessionen — spara med 💾."
 
 
 # ── lagret ───────────────────────────────────────────────────────────────────
@@ -267,8 +270,11 @@ def _chatgpt(data: dict, company: CompanyInput) -> None:
         from review import chatgpt_ui
     except Exception:
         return
-    chatgpt_ui.render_export(company.ticker, {ast.STORE: data}, ["asymmetry"], key=f"asym_{company.ticker}",
-                             name=company.name, rows={"asymmetry": company.as_dict()})
+    t = company.ticker
+    chatgpt_ui.render_export(t, {ast.STORE: data}, ["asymmetry"], key=f"asym_{t}", name=company.name,
+                             rows={"asymmetry": company.as_dict()},
+                             targets={"asymmetry": lambda: (data.get("companies") or {}).get(t)},
+                             reset=((), (f"cf_{t}_",)), on_apply=lambda: _save(data))
 
 
 def _block(data: dict, company: CompanyInput, key: str, title: str, specs: list, expanded: bool = False) -> None:
@@ -276,7 +282,8 @@ def _block(data: dict, company: CompanyInput, key: str, title: str, specs: list,
     with st.expander(f"{title} · {filled}/{len(specs)} ifyllda", expanded=expanded):
         with st.form(f"asym_{key}_{company.ticker}"):
             widgets = [(cui._field_widgets(company, f), f) for f in specs]
-            if st.form_submit_button("Spara"):
+            st.caption(SAVE_NOTE)
+            if st.form_submit_button(UPDATE):
                 for w, f in widgets:
                     point = cui._point_from_widgets(w, f)
                     if point is None:
@@ -302,7 +309,8 @@ def _render_auto(data: dict, company: CompanyInput) -> None:
         _render_futures(data, company)
         with st.form(f"asym_auto_{company.ticker}"):
             widgets = [(cui._field_widgets(company, f), f) for f in fields.auto()]
-            if st.form_submit_button("Spara ändringar"):
+            st.caption(SAVE_NOTE)
+            if st.form_submit_button(UPDATE):
                 for w, f in widgets:
                     point = cui._point_from_widgets(w, f)
                     if point is None:

@@ -26,6 +26,7 @@ fallback, cachad per session.
 
 from __future__ import annotations
 
+import re
 import streamlit as st
 from datetime import date
 from typing import Optional
@@ -477,7 +478,27 @@ def _chatgpt(data: dict, cand: dict) -> None:
     except Exception:
         return
     chatgpt_ui.render_export(cand.get("ticker", ""), {STORE: data}, ["tiggre"], key=f"tiggre_{cand['id']}",
-                             name=cand.get("name", ""), rows={"tiggre": cand})
+                             name=cand.get("name", ""), rows={"tiggre": cand}, on_apply=lambda: _save(data))
+
+
+def _rc():
+    """Kortstödet (fokus, x/y ifyllda, saknas-raden) — None om review-paketet inte går att läsa."""
+    try:
+        from review import card
+        return card
+    except Exception:
+        return None
+
+
+def factor_levels(text: str) -> dict:
+    """Nivåtexten ur faktorns hjälptext ('Löst = 2. Delvis = 1. Ofinansierat = 0.') — {2: 'Löst', …}. Bara de
+    nivåer som står där: Stadium och Människor har ingen nivåtext, och då visar rullgardinen bara siffran."""
+    out = {}
+    for part in re.split(r"[.;]", text or ""):
+        m = re.match(r"\s*(.+?)\s*=\s*([0-2])\s*$", part)
+        if m:
+            out[int(m.group(2))] = m.group(1)
+    return out
 
 
 def _fresh_rows() -> dict:
@@ -534,11 +555,15 @@ def _candidates(data: dict) -> None:
         st.caption("Tom — kör håven i Börsdata och lägg in bolagen du vill grovsålla.")
         return
 
+    rc = _rc()
+    foc = rc.focus("tiggre", [c.get("ticker") for c in data["candidates"]]) if rc else None
     for cand in list(data["candidates"]):
-        _candidate_card(data, cand)
+        if rc and not rc.same_ticker(cand.get("ticker"), foc):
+            continue
+        _candidate_card(data, cand, expanded=bool(foc))
 
 
-def _candidate_card(data: dict, cand: dict) -> None:
+def _candidate_card(data: dict, cand: dict, expanded: bool = False) -> None:
     hits = screen_hits(cand.get("screen", {}))
     up = upside_pct(cand.get("mcap"), cand.get("nav"))
     pn = p_nav(cand.get("mcap"), cand.get("nav"))
@@ -550,7 +575,10 @@ def _candidate_card(data: dict, cand: dict) -> None:
     head = (f"{'✅' if all_pass else '🔍'}  {cand.get('ticker','?')}"
             f"  ·  {hits}/3 fraser  ·  U/N {un:.1f}:1" if un is not None
             else f"{'✅' if all_pass else '🔍'}  {cand.get('ticker','?')}  ·  {hits}/3 fraser")
-    with st.expander(f"{head}  ·  poäng {score}/10", expanded=False):
+    rc = _rc()
+    with st.expander(f"{head}  ·  poäng {score}/10" + (rc.suffix("tiggre", cand) if rc else ""), expanded=expanded):
+        if rc:
+            rc.render_missing("tiggre", cand)
         # Grovsållning
         st.markdown(f"<b style='color:{TEXT};'>Grovsållning</b> "
                     f"<span style='color:{DIM};font-size:0.78rem;'>"
@@ -619,8 +647,10 @@ def _candidate_card(data: dict, cand: dict) -> None:
                 continue
             cur = _num(fac.get(fkey))
             cur = None if cur is None else int(max(0, min(2, int(cur))))
+            lv = factor_levels(fhelp)
             v = col.selectbox(flabel, opts, index=opts.index(cur) if cur is not None else 0,
-                              key=f"tg_f_{cand['id']}_{fkey}", help=fhelp)
+                              key=f"tg_f_{cand['id']}_{fkey}", help=fhelp,
+                              format_func=lambda o, lv=lv: f"{o} — {lv[o]}" if o in lv else str(o))
             new = None if v == "–" else int(v)
             if new != cur:
                 if new is None:
@@ -700,7 +730,7 @@ def _catalysts(data: dict, cand: dict) -> None:
     cats = cand.setdefault("catalysts", [])
     changed = False
     for cat in list(cats):
-        cc1, cc2, cc3, cc4 = st.columns([2.0, 1.0, 1.6, 0.4])
+        cc1, cc2, cc3, cc4 = st.columns([2.0, 1.0, 1.6, 0.4], vertical_alignment="bottom")
         cc1.markdown(f"<span style='color:{TEXT};font-size:0.84rem;'>"
                      f"{cat.get('name','?')}</span>", unsafe_allow_html=True)
         cc2.markdown(f"<span style='color:{DIM};font-size:0.8rem;'>"
@@ -708,8 +738,7 @@ def _catalysts(data: dict, cand: dict) -> None:
         cur = cat.get("status") if cat.get("status") in CAT_STATUSES else CAT_WAITING
         new = cc3.selectbox("Status", list(CAT_STATUSES),
                             index=CAT_STATUSES.index(cur),
-                            key=f"tg_catst_{cand['id']}_{cat.get('id','')}",
-                            label_visibility="collapsed")
+                            key=f"tg_catst_{cand['id']}_{cat.get('id','')}")
         if new != cat.get("status"):
             cat["status"] = new
             changed = True
@@ -724,17 +753,14 @@ def _catalysts(data: dict, cand: dict) -> None:
             o1, o2, o3 = st.columns([1.0, 1.0, 3.0])
             act = o1.text_input("Faktiskt datum", value=cat.get("actual", ""),
                                 key=f"tg_catact_{cand['id']}_{cat.get('id','')}",
-                                placeholder="ÅÅÅÅ-MM-DD",
-                                label_visibility="collapsed")
+                                placeholder="ÅÅÅÅ-MM-DD")
             rea = o2.number_input("Kursreaktion %",
                                   value=_num(cat.get("reaction")),
                                   step=1.0,
-                                  key=f"tg_catrea_{cand['id']}_{cat.get('id','')}",
-                                  label_visibility="collapsed")
+                                  key=f"tg_catrea_{cand['id']}_{cat.get('id','')}")
             les = o3.text_input("Lärdom", value=cat.get("lesson", ""),
                                 key=f"tg_catles_{cand['id']}_{cat.get('id','')}",
-                                placeholder="Utfall / lärdom — vad lärde den dig?",
-                                label_visibility="collapsed")
+                                placeholder="Utfall / lärdom — vad lärde den dig?")
             if (act != cat.get("actual", "") or rea != cat.get("reaction")
                     or les != cat.get("lesson", "")):
                 cat["actual"], cat["reaction"], cat["lesson"] = act, rea, les
@@ -754,12 +780,11 @@ def _catalysts(data: dict, cand: dict) -> None:
     if changed:
         _save(data)
 
-    a1, a2, a3 = st.columns([2.4, 1.2, 0.5])
-    cname = a1.text_input("Händelse", key=f"tg_cat_name_{cand['id']}",
-                          label_visibility="collapsed",
+    a1, a2, a3 = st.columns([2.4, 1.2, 0.5], vertical_alignment="bottom")
+    cname = a1.text_input("Ny katalysator", key=f"tg_cat_name_{cand['id']}",
                           placeholder="t.ex. Finansieringsbesked")
-    cdate = a2.text_input("Datum", key=f"tg_cat_date_{cand['id']}",
-                          label_visibility="collapsed", placeholder="ÅÅÅÅ-MM")
+    cdate = a2.text_input("När (ÅÅÅÅ-MM)", key=f"tg_cat_date_{cand['id']}",
+                          placeholder="ÅÅÅÅ-MM")
     if a3.button("+", key=f"tg_addcat_{cand['id']}"):
         if cname.strip() and cdate.strip():
             cats.append({"id": _uid(), "name": cname.strip(),

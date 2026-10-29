@@ -67,22 +67,24 @@ def render_extractor(sheet: str, row: dict, widget_keys: dict,
     ticker = str(row.get("ticker") or "")
     with st.expander("🤖 Läs ur presentationen (AI-förslag — inget skrivs in utan Använd)",
                      expanded=False):
-        if not oc.configured():
+        # Utan nyckel göms bara Extrahera — ett utdrag som redan finns i sessionen visas och går att använda
+        on = oc.configured()
+        if not on:
             st.caption("OPENAI_API_KEY saknas i secrets — extraktionen är avstängd. "
-                       "Arket fungerar som vanligt.")
-            return
-        st.caption("Ladda upp bolagspresentationen eller tekniska rapporten (PDF) eller "
-                   "klistra in text. Ett utdrag räcker: modellen letar upp ALLA arkens fält "
-                   "på en gång, och förslagen dyker upp i varje ark där bolaget finns. "
-                   "Poäng, status och kryssrutor räknar och sätter du som förut.")
-        c1, c2 = st.columns([1, 1])
-        up = c1.file_uploader("PDF", type=["pdf"], key=f"{skey}_pdf")
-        pasted = c2.text_area("… eller klistra in text", height=120, key=f"{skey}_txt",
-                              placeholder="Text ur presentationen")
-        docname = st.text_input("Dokumentets namn (blir källa)",
-                                value=(up.name if up is not None else ""),
-                                key=f"{skey}_name", placeholder="DFS 2025 (Ausenco)")
-        if st.button("Extrahera", key=f"{skey}_go"):
+                       "Arket fungerar som vanligt, och förslag som redan lästs in visas nedan.")
+        else:
+            st.caption("Ladda upp bolagspresentationen eller tekniska rapporten (PDF) eller "
+                       "klistra in text. Ett utdrag räcker: modellen letar upp ALLA arkens fält "
+                       "på en gång, och förslagen dyker upp i varje ark där bolaget finns. "
+                       "Poäng, status och kryssrutor räknar och sätter du som förut.")
+            c1, c2 = st.columns([1, 1])
+            up = c1.file_uploader("PDF", type=["pdf"], key=f"{skey}_pdf")
+            pasted = c2.text_area("… eller klistra in text", height=120, key=f"{skey}_txt",
+                                  placeholder="Text ur presentationen")
+            docname = st.text_input("Dokumentets namn (blir källa)",
+                                    value=(up.name if up is not None else ""),
+                                    key=f"{skey}_name", placeholder="DFS 2025 (Ausenco)")
+        if on and st.button("Extrahera", key=f"{skey}_go"):
             try:
                 if up is not None:
                     text = doc.pdf_to_text(up.getvalue())

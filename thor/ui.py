@@ -65,8 +65,10 @@ COPILOT = ("more/copilot", "Copiloten", "copilot_ticker")
 ASYMMETRY = ("review/wolf-asymmetry", "Wolf Asymmetry", "asym_quick_ticker")
 BACKTEST = ("more/egen-backtest", "Backtest", None)
 VALHALL_BT = ("portfolio/mot-malet", "Valhalls backtester", None)
+# Arkknapparna. Durrett-granskningen som Thor läser bor i Poängmodellen (review_link.SHEET) — dit går "Durrett →";
+# 🧭 Durrett (10-stegsarket) är en egen knapp i Arken-fliken (thor.arken.DURRETT_10).
 SHEET_LINK = {"rule": "review/rick-rule", "royalty": "review/royalty-c", "sprott": "review/poangmodell",
-              "durrett": "review/durrett", "tiggre": "review/tiggre", "insider": "review/insider"}
+              "durrett": "review/poangmodell", "tiggre": "review/tiggre", "insider": "review/insider"}
 # Extra fält som bryggan sätter på målsidan (granskning 2, D10/D11): Alpha-sidans läge och Copilotens strategi.
 BRIDGE_EXTRA = {"alpha_quality": {"ar_mode": "quality"}, "alpha_contrarian": {"ar_mode": "contrarian"}}
 

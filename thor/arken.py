@@ -9,7 +9,9 @@ thor/arken.py — Arken-fliken i Thors analysblock: vad arken säger om bolaget,
   Registret        öppna och stängda positioner, journalens affärer och Copilotens loggade anteckningar
   Underlaget       "📋 Underlag till ChatGPT": strategins ark, arken bolaget finns i, Durrett och scorecardet som
                    Excel/CSV med prompten (review.chatgpt_ui) — det som saknas för köpbeslut först
-"Finns inte i arket → lägg in" med knappar till arken. Ingenting skrivs; samma data som arken själva visar.
+"Finns inte i arket → lägg in" med knappar till arken. Knapparna öppnar arket med bolaget i fokus (review.focus) —
+Durrett och Sprott på rätt modell i Poängmodellen, och 🧭 Durrett (10-stegsarket) som egen knapp. Ingenting skrivs;
+samma data som arken själva visar, och ChatGPT-svaret läses tillbaka i arket, inte här.
 """
 
 from __future__ import annotations
@@ -95,7 +97,26 @@ def _export(st, ident: Ticker, sheets: dict, stores: Optional[dict], strategy: s
     from review import chatgpt_ui
     chatgpt_ui.render_export(ident.yf, stores, keys, key=f"thor_{ident.yf}", name=ident.name,
                              strategy=reg.label(strategy) if reg.get(strategy) else "",
-                             dom_text=_dom_text(st, ident, strategy, sheets), blob=None)
+                             dom_text=_dom_text(st, ident, strategy, sheets), blob=None, importable=False)
+
+
+DURRETT_10 = "review/durrett"       # 🧭 Durrett — 10-stegsarket (data/confidence.json)
+
+
+def sheet_buttons(links: dict, sheets: dict) -> list:
+    """[(nyckel, etikett, sökväg, extra fält)] för arkknapparna: de tre första arken alltid, övriga när bolaget finns
+    där, och 🧭 Durrett när Durrett-granskningen eller Durrett/Confidence-arket har bolaget. extra sätter
+    Poängmodellens modellväljare, så "Durrett →" öppnar Durrett-delen där granskningen bor."""
+    import scoring
+    reviews = (sheets or {}).get("reviews") or {}
+    out = []
+    for i, (key, path) in enumerate((links or {}).items()):
+        if key in reviews or i < 3:
+            extra = {scoring.WHICH_KEY: scoring.WHICH_FOR[key]} if key in scoring.WHICH_FOR else None
+            out.append((key, f"{reg.label(key) if reg.get(key) else key.title()} →", path, extra))
+    if "durrett" in reviews or (sheets or {}).get("confidence"):
+        out.append(("durrett10", "🧭 Durrett →", DURRETT_10, None))
+    return out
 
 
 def render(st, data: dict, ident: Ticker, sheets: dict, cands: list, links: dict, jump: Callable,
@@ -117,11 +138,11 @@ def render(st, data: dict, ident: Ticker, sheets: dict, cands: list, links: dict
         _block("Insiderklustret", lambda: _insider(st, cluster), note)
     _block("Registret", lambda: _register(st, sheets, note), note)
     _block("Underlaget till ChatGPT", lambda: _export(st, ident, sheets, stores, strategy), note)
+    from review.focus import FOCUS
     cols = st.columns(3)
-    for i, (key, path) in enumerate(links.items()):
-        if key in (sheets.get("reviews") or {}) or i < 3:
-            cols[i % 3].button(f"{reg.label(key) if reg.get(key) else key.title()} →", key=f"thor_sheet_{key}",
-                               on_click=jump, args=(path, None, ident.yf), width="stretch")
+    for i, (key, label, path, extra) in enumerate(sheet_buttons(links, sheets)):
+        cols[i % 3].button(label, key=f"thor_sheet_{key}", on_click=jump, args=(path, FOCUS, ident.yf, extra),
+                           width="stretch")
 
 
 def _reviews(st, sheets: dict) -> None:

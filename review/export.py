@@ -12,7 +12,8 @@ review/export.py — "Underlag till ChatGPT": aktiens fält som kalkylark och en
                             0–2 med en mening, rör aldrig 'Bara du'
   filename(ticker, ext)     underlag_<ticker>_<datum>.<ext>
 
-Inget skrivs i arken härifrån. Rena funktioner, ingen Streamlit.
+Exporten bär också fälten och raderna den lästes ur (fields, source_rows) — importen (review.importer) prövar
+svaret mot samma fält. Inget skrivs i arken härifrån. Rena funktioner, ingen Streamlit.
 """
 
 from __future__ import annotations
@@ -62,6 +63,8 @@ class Export:
     rows: list = field(default_factory=list)
     missing: list = field(default_factory=list)      # [MissingItem]
     absent: list = field(default_factory=list)       # ark där aktien inte finns — raderna är en tom mall
+    fields: dict = field(default_factory=dict)       # {fältnyckel: SheetField} — importen läser svaret mot dem
+    source_rows: dict = field(default_factory=dict)  # {ark: raden underlaget lästes ur} — None där aktien saknas
 
     @property
     def filled(self) -> int:
@@ -224,6 +227,8 @@ def _rows_for(ticker: str, sheet: str, row: Optional[dict], blob: Optional[dict]
         if point is not None and not point.missing:
             source = " · ".join(x for x in (point.source, point.pub_date or "") if x)
             unit = point.unit or unit
+        elif stored and isinstance(r.get("sources"), dict):
+            source = str(r["sources"].get(f.path) or "")         # inläst ur ChatGPT-svaret (review.importer)
         if cat.is_empty(v):
             sug = None
             if f.who == cat.BORSDATA and sheet in cat.FLAT_SHEETS:
@@ -249,7 +254,7 @@ def _rows_for(ticker: str, sheet: str, row: Optional[dict], blob: Optional[dict]
                     **{k: "" for k in INPUT_KEYS},
                     "_kind": f.kind, "_choices": choice_list(f), "_lo": f.lo, "_hi": f.hi, "_path": f.path,
                     "_sheet": sheet, "_stored": stored})
-    return out, items
+    return out, items, fields
 
 
 def _rank(r: dict) -> int:
@@ -288,10 +293,13 @@ def build(ticker: str, stores: dict, sheets=None, stage: Optional[str] = None, b
             exp.name = str(cat._as_row(row).get("name") or "")
         if sheet == "scorecard":
             strategies = tuple((entry or {}).get("strategies") or ())
-            got, items = _rows_for(t, sheet, card or {}, blob, stage, None, entry, strategies)
+            got, items, fs = _rows_for(t, sheet, card or {}, blob, stage, None, entry, strategies)
+            exp.source_rows[sheet] = card
         else:
             pos = card_pos if (sheet == card_sheet and cat.SHEETS[sheet].strategy) else None
-            got, items = _rows_for(t, sheet, row, blob, stage, pos, None, ())
+            got, items, fs = _rows_for(t, sheet, row, blob, stage, pos, None, ())
+            exp.source_rows[sheet] = cat._as_row(row) if row is not None else None
+        exp.fields.update({f.key: f for f in fs})
         exp.sheets.append(sheet)
         exp.rows += got
         exp.missing += items
