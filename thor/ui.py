@@ -604,8 +604,9 @@ def _analysis(st, data: dict, rows: list, ticker: str) -> None:
         st.session_state["thor_strategy"] = reg.label(td.default_strategy(ident, cands))
     st.session_state["_thor_last"] = ident.yf
     st.session_state.pop("_thor_strategy_set", None)
-    sheets = td.sheets_for(ident.yf, stores)
-    st.markdown(cards.header_card(ident.as_dict(), cands, held=bool(sheets["positions"])), unsafe_allow_html=True)
+    sheets = td.sheets_for(ident.yf, stores, data.get("sheet_map"))
+    st.markdown(cards.header_card(ident.as_dict(), cands, held=bool(sheets["positions"]), board=data.get("board")),
+                unsafe_allow_html=True)
     if d["snapshot"]:
         st.markdown(cards.snapshot_row(d["snapshot"]), unsafe_allow_html=True)
     else:

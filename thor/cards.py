@@ -71,14 +71,24 @@ def family_chip(strategy: str) -> str:
                 reg.FAMILY_COLOR.get(s.family, GREY) if s else GREY)
 
 
-def segment_chip(segment: Optional[str], status: Optional[str] = None, cykel: Optional[str] = None) -> str:
-    """Segmentets namn med Valhall-status (och cykelläge) i trafikljusets färg."""
-    if not segment:
+def segment_chip(segment: Optional[str], status: Optional[str] = None, cykel: Optional[str] = None,
+                 theme: Optional[str] = None, where: str = "") -> str:
+    """Segmentets namn med Valhall-status (och cykelläge) i trafikljusets färg. theme = läget är temats: chipet
+    bär temats namn ('Guld · GRÖN · TIDIG'), aldrig segmentets — kartans Material kan vara RÖD när guldet är
+    GRÖN. where = vems vy statusen är när den inte är Nordens ('Material · globalt GUL')."""
+    if theme:
+        from berserk import themes as bth
+        try:
+            label = bth.label(theme)
+        except Exception:
+            label = theme
+    elif segment:
+        from valhall import segments as sgm
+        s = sgm.get(segment)
+        label = s.label if s else segment
+    else:
         return ""
-    from valhall import segments as sgm
-    s = sgm.get(segment)
-    label = s.label if s else segment
-    parts = [label] + [x for x in (status, cykel) if x]
+    parts = [label] + [x for x in ((f"{where} {status}".strip() if status else ""), cykel) if x]
     return chip(" · ".join(parts), regime_color(status) if status else DIM)
 
 
@@ -116,10 +126,14 @@ def candidate_card(c: tc.Candidate) -> str:
     strategins egen siffra, nivåer och varför."""
     col = CLASS_COLOR.get(c.status_class, GREY)
     score = f"{c.score:.0f}" if c.score is not None else "—"
-    chips = [family_chip(c.strategy), status_chip(c), segment_chip(c.segment, c.segment_status, c.cykel)]
-    if c.theme:
-        from berserk import themes as bth
-        chips.append(chip(bth.label(c.theme), EMBER))
+    chips = [family_chip(c.strategy), status_chip(c)]
+    if c.status_of == "tema":               # temats läge: segmentet utan status, temat med sitt eget läge
+        chips += [segment_chip(c.segment), segment_chip(c.segment, c.segment_status, c.cykel, theme=c.theme)]
+    else:
+        chips.append(segment_chip(c.segment, c.segment_status, c.cykel))
+        if c.theme:
+            from berserk import themes as bth
+            chips.append(chip(bth.label(c.theme), EMBER))
     if c.new:
         chips.append(chip("NY", CYAN, filled=True))
     if c.stale:
@@ -236,15 +250,23 @@ def snapshot_row(snap: Optional[dict]) -> str:
     return kpi_row(items)
 
 
-def header_card(t: dict, cands: list, held: bool = False) -> str:
+def header_card(t: dict, cands: list, held: bool = False, board: Optional[dict] = None) -> str:
     """Aktiens huvud: ticker och namn, chips (marknad, segment, råvarutema med källa, INNEHAV) och
-    'finns i' — dagens kandidatrader per strategi."""
+    'finns i' — dagens kandidatrader per strategi. Segmentets läge läses ur kartan (board) för aktiens egen
+    marknad — Norden för nordiska bolag, annars globalt — och temats läge står på ett eget chip med temats namn,
+    aldrig ur första kandidatraden (där kunde temats GRÖN stå under segmentets namn)."""
     home = t.get("home_label") or t.get("home_index")                 # registrets index: ^FTSE, ^STOXX50E … (T15)
     chips = [chip(f"{home or '—'} · {t.get('market') or ''}".strip(" ·"), CYAN)]
     seg = t.get("segment")
-    first = cands[0] if cands else None
+    ctx = tc.segment_context(board)
     if seg:
-        chips.append(segment_chip(seg, first.segment_status if first else None, first.cykel if first else None))
+        row = ctx["segments"].get(seg) or {}
+        nordic = t["nordic"] if "nordic" in t else tc.is_nordic(t.get("yf"))
+        chips.append(segment_chip(seg, row.get("status"), row.get("cykel")) if nordic
+                     else segment_chip(seg, row.get("global_status"), where="globalt"))
+    th = (ctx["themes"].get(t["theme"]) if t.get("theme") else None) or {}
+    if th.get("status"):
+        chips.append(segment_chip(seg, th.get("status"), th.get("cykel"), theme=t["theme"]))
     if t.get("theme"):
         chips.append(chip(f"{t.get('theme_label') or t['theme']} · {t.get('theme_source') or ''}".strip(" ·"), EMBER))
     if t.get("sector_etf"):

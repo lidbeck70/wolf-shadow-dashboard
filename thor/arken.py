@@ -50,11 +50,12 @@ def insider_cluster(blob: Optional[dict], ticker: str) -> Optional[dict]:
     return None
 
 
-def company_for(store: Optional[dict], ticker: str):
-    """CompanyInput ur Confidence/Durrett-arket för någon av tickerns former, eller None."""
+def company_for(store: Optional[dict], ticker: str, forms: Optional[list] = None):
+    """CompanyInput ur Confidence/Durrett-arket för någon av tickerns arkformer, eller None. forms = formerna
+    dossiern matchade arken på (sheets["sheet_forms"]); annars td.sheet_forms — en bar 'EQX' är inte EQX.TO."""
     from confidence import store as cs
     data = cs.normalize(dict(store or {}))
-    for f in td.forms(ticker):
+    for f in forms or td.sheet_forms(ticker):
         c = cs.get(data, f)
         if c is not None:
             return c
@@ -171,7 +172,7 @@ def _engines(st, ident: Ticker, sheets: dict, note) -> None:
         line = None
     if line:
         st.markdown(f"<div style='color:{TEXT};font-size:0.8rem;margin:4px 0;'>{escape(line)}</div>", unsafe_allow_html=True)
-    company = company_for(sheets.get("confidence_store"), ident.yf)
+    company = company_for(sheets.get("confidence_store"), ident.yf, sheets.get("sheet_forms"))
     if company is None:
         note("Bolaget finns i arket men raden gick inte att läsa som CompanyInput.")
         return

@@ -93,12 +93,17 @@ def test_sheets_for_reads_every_store_read_only():
         "copilot_journal": {"entries": [{"ticker": "EQX", "note": "x"}]},
     }
     before = {k: repr(v) for k, v in stores.items()}
+    # En bar rad ('EQX') är en amerikansk ticker i panelen: den hör till EQX, aldrig till Toronto-noteringen EQX.TO
+    # (granskningen, T13) — och EQX.TO-raderna hör aldrig till EQX.
+    us = td.sheets_for("EQX", stores)
+    assert set(us["reviews"]) == {"rule"} and us["reviews"]["rule"]["found"]
+    assert us["reviews"]["rule"]["status"] in ("PASS", "MANUAL", "FAIL") and us["reviews"]["rule"]["sheet"] == "Rick Rule"
+    assert us["confidence"]["name"] == "Equinox" and list(us["scorecard"]) == ["equinox|EQX"]
+    assert us["positions"] == [] and len(us["closed"]) == 1 and us["journal"] == [] and len(us["copilot"]) == 1 and us["found"]
     s = td.sheets_for("EQX.TO", stores)
-    assert set(s["reviews"]) == {"rule"} and s["reviews"]["rule"]["found"]
-    assert s["reviews"]["rule"]["status"] in ("PASS", "MANUAL", "FAIL") and s["reviews"]["rule"]["sheet"] == "Rick Rule"
-    assert s["confidence"]["name"] == "Equinox" and list(s["scorecard"]) == ["equinox|EQX"]
+    assert s["reviews"] == {} and s["confidence"] is None and s["scorecard"] == {}
     assert [p["_bucket"] for p in s["positions"]] == ["long"] and s["positions"][0]["ticker"] == "EQX.TO"
-    assert len(s["closed"]) == 1 and len(s["journal"]) == 1 and len(s["copilot"]) == 1 and s["found"]
+    assert s["closed"] == [] and len(s["journal"]) == 1 and s["copilot"] == [] and s["found"]
     assert {k: repr(v) for k, v in stores.items()} == before                      # bara läsning
     empty = td.sheets_for("ZZZ.ST", {})
     assert not empty["found"] and empty["reviews"] == {} and empty["confidence"] is None and empty["positions"] == []
