@@ -71,7 +71,7 @@ def test_a_failed_load_refuses_every_save_and_the_store_is_untouched(session, gi
     positions.set_cash(25000)                                           # en ändring sparas direkt …
     ok, msg = positions.add("CCJ", "Quality")
     assert writes == [] and disk["holdings"] == before                  # … men inget skrevs över
-    assert not ok and "INTE sparad" in msg and "sparar inte över" in msg
+    assert ok and positions.UNSAVED in msg and "sparar inte över" in msg  # i sessionen, och texten säger det
     assert "Läsningen av holdings misslyckades" in storage.load_error("holdings")
 
     with pytest.raises(storage.StorageError, match="sparar inte över det som ligger i GitHub"):
@@ -185,8 +185,16 @@ def test_an_unreadable_gist_is_a_load_error_not_fixture_data(session, monkeypatc
 
 
 def test_no_fixture_dotfiles_are_tracked():
+    import subprocess
     ignore = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
     assert "/.*_data.json" in ignore and "/.ca_auto_scan_date" in ignore
+    try:
+        tracked = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, timeout=30).stdout
+    except (OSError, subprocess.SubprocessError):
+        pytest.skip("git saknas")
+    names = {".scorecard_data.json", ".scoring_data.json", ".producers_data.json", ".tiggre_data.json",
+             ".rotation_data.json", ".journal_data.json", ".ca_auto_scan_date"}
+    assert not names & set(tracked.splitlines())                        # inte heller tillagda med git add -f
 
 
 # ── F3: journalen läses med token och sparar aldrig efter ett läsfel ─────────
@@ -236,9 +244,9 @@ def test_local_journal_without_token_never_reaches_the_gist(session, monkeypatch
 
 
 def test_journal_uses_the_gist_storage_token(monkeypatch):
-    monkeypatch.undo()                                                  # conftest stänger av token — släpp den här
+    # conftest stänger av token för hela testet — den riktiga läsaren sparas undan, skyddet ligger kvar
     monkeypatch.setattr(gist_storage, "_get_github_token", lambda: "tok-ur-miljon")
-    assert tj._get_github_token() == "tok-ur-miljon"
+    assert tj._real_get_github_token() == "tok-ur-miljon" and tj._get_github_token() is None
 
 
 def test_a_close_during_a_journal_outage_writes_nothing(session, monkeypatch):

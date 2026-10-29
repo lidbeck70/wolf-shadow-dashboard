@@ -29,5 +29,6 @@ def _journal_stays_out_of_the_repo(monkeypatch, tmp_path):
     Gist-vägen sätter en egen.
     """
     import trade_journal as tj
+    monkeypatch.setattr(tj, "_real_get_github_token", tj._get_github_token, raising=False)   # för tokentestet
     monkeypatch.setattr(tj, "LOCAL_FALLBACK", str(tmp_path / ".journal_data.json"))
     monkeypatch.setattr(tj, "_get_github_token", lambda: None)

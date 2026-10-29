@@ -245,7 +245,16 @@ def test_now_se_is_swedish_time_not_server_utc(monkeypatch):
 
 
 def test_load_stamps_swedish_time(monkeypatch):
+    import positions
+    from odin import laget
+    from portfolio import mot_malet as mm
+    from thor import ui as tui
     monkeypatch.setattr(ht, "datetime", _UtcKlocka)
+    monkeypatch.setattr(tui, "load", lambda loader=None: {})                # ingen nätväg: Thor, Odin, journalen
+    monkeypatch.setattr(tui, "rebuild", lambda data: {"rows": []})
+    monkeypatch.setattr(laget, "load", lambda: {})
+    monkeypatch.setattr(positions, "all_positions", lambda: [])
+    monkeypatch.setattr(mm, "load", lambda: {"paper": None, "trades": []})
     assert ht.load(loader=lambda name, default=None: None)["loaded"] == "2026-10-29 00:30"
 
 

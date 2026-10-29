@@ -324,6 +324,10 @@ def _commit(data: dict) -> Optional[str]:
     return storage.load_error(STORE) or "sparningen misslyckades"
 
 
+# add() svarar ok även när sparningen misslyckades (raden finns i sessionen) — texten säger det då.
+UNSAVED = "men INTE sparad"
+
+
 def add(ticker: str, strategy: str = "Untagged", entry_price=0, shares=0,
         sector: str = "Unknown", name: str = "", entry_date: str = "",
         stop=None, target=None, notes: str = "", source: str = "holdings",
@@ -351,8 +355,8 @@ def add(ticker: str, strategy: str = "Untagged", entry_price=0, shares=0,
     })
     rows.append(row)
     err = _commit(data)
-    if err:
-        return False, f"{t} är INTE sparad: {err}"
+    if err:                         # raden finns i sessionen — men inte i GitHub
+        return True, f"{t} tillagd i {BUCKETS[bucket]['name']}, {UNSAVED}: {err}"
     return True, f"{t} tillagd i {BUCKETS[bucket]['name']}."
 
 

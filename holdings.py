@@ -135,7 +135,7 @@ def _add_holding(
         if strategy == "Deep Contrarian" else {}
     ok, msg = positions.add(ticker, strategy, entry_price, shares, sector=sector,
                             extras=extras, bucket=portfolio_key)
-    if not ok:
+    if not ok or positions.UNSAVED in msg:
         st.warning(msg)
     return ok
 

@@ -143,7 +143,7 @@ def test_a_failed_save_is_reported_not_swallowed_and_the_session_keeps_the_chang
     monkeypatch.setattr(storage, "save_session", _boom)
     ok, msg = positions.add("CCJ", "Quality")
     assert positions.find("CCJ") is not None                             # ändringen finns kvar
-    assert not ok and "INTE sparad" in msg and "403" in msg              # anroparen säger inte "tillagd"
+    assert ok and positions.UNSAVED in msg and "403" in msg              # raden finns — men texten säger osparad
     assert "403" in storage.meta("holdings")["error"]                    # och felet syns i sparraden
 
 
