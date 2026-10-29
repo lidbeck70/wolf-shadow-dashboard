@@ -610,6 +610,8 @@ def _alive(row: dict, key: str) -> bool:
     for part in key.split("."):
         if part.isdigit():
             return False            # äldre nyckel på listplatsen
+        if not part or part == ITEM or isinstance(cur, list) != part.startswith(ITEM):
+            return False            # trasig nyckel ('catalysts.#', 'catalysts..date') — kan aldrig läsas
         if part.startswith(ITEM):
             items = cur if isinstance(cur, list) else []
             cur = next((c for c in items if _item_id(c) == part[len(ITEM):]), None)

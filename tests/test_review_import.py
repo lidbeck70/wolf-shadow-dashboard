@@ -393,6 +393,8 @@ def test_old_source_keys_on_the_list_place_are_ignored_and_dropped_on_the_next_i
             "catalysts": [{"id": "0", "name": "FID", "date": "2027-03"}],
             "sources": {"catalysts.0.date": {"value": "2027-03", "source": "ChatGPT: gammal"},
                         "catalysts.0": "trasig", "catalysts.#borta.date": {"value": "x", "source": "ChatGPT: x"},
+                        "catalysts.#": "trasig", "catalysts..date": "trasig", "": "trasig", "..": "trasig",
+                        "catalysts.date": "trasig", "nav.#0": "trasig",
                         "nav": {"value": 120.0, "source": "ChatGPT: DFS"}}}
     assert cat.source_for(cand, "catalysts.0.date") == "" and cat.source_for(cand, "catalysts.3.date") == ""
     assert cat.source_for(cand, "nav") == "ChatGPT: DFS"
