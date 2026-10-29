@@ -8,7 +8,9 @@
       "ds_historik": 2,
       "ds_runway": 0,
       "ds_warrants": 1,
-      "ev_ebitda": 6.0,
+      "ev_ebitda": 5.329196929931641,
+      "ev_musd": 8512.7,
+      "fin_catalyst_text": "Ej obligatorisk utifrån angivna DS-poäng (summa 5/10)",
       "forvantad_utspadning": 3.0,
       "fully_diluted_shares": 1200.0,
       "id": "8f260497",
@@ -17,10 +19,30 @@
       "kapitaldisciplin": true,
       "mine_life": 25.0,
       "name": "",
-      "nd_ebitda": 0.15,
+      "nav_musd": 16.5,
+      "nav_price": 4250.0,
+      "nd_ebitda": 0.06580323725938797,
       "position_pct": 0.0,
-      "price": 4250.0,
+      "price": 4039.8,
       "rp_ratio": 0.0,
+      "sources": {
+        "ds_capex": {
+          "source": "ChatGPT: https://www.equinoxgold.com/news/equinox-gold-delivers-strong-second-quarter-results-increases-2026-production-guidance-following-successful-completion-of-the-orla-mining-merger-quarterly-dividend-increased-by-50/ · 2026-10-29",
+          "value": 1
+        },
+        "fin_catalyst_text": {
+          "source": "ChatGPT: https://www.equinoxgold.com/news/equinox-gold-delivers-strong-second-quarter-results-increases-2026-production-guidance-following-successful-completion-of-the-orla-mining-merger-quarterly-dividend-increased-by-50/ · 2026-10-29",
+          "value": "Ej obligatorisk utifrån angivna DS-poäng (summa 5/10)"
+        },
+        "fully_diluted_shares": {
+          "source": "ChatGPT: https://www.equinoxgold.com/share-structure/ · 2026-10-29",
+          "value": 1247.5
+        },
+        "unit_cost": {
+          "source": "ChatGPT: https://www.equinoxgold.com/news/equinox-gold-delivers-strong-second-quarter-results-increases-2026-production-guidance-following-successful-completion-of-the-orla-mining-merger-quarterly-dividend-increased-by-50/ · 2026-10-29",
+          "value": 1950.0
+        }
+      },
       "ticker": "EQX",
       "unit_cost": 2175.0
     },
