@@ -369,3 +369,732 @@ def test_evaluate_routes_the_new_legs_and_reads_thresholds():
     assert "ANOT" in state2["viking"]["qualified"]
     # ember: FCX in i eligible
     assert "FCX" in kinds["ember_eligible"]["title"]
+
+
+# ── 👀 Övervakningen ─────────────────────────────────────────────────────────
+# Ägarens beslut: bara KÖP (in i KÖP från vad som helst) och "föll ur listan" larmar. Raderna är Thors egna,
+# byggda ur testernas filer på ett fast datum (inget är gammalt).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import test_thor_ui as tu  # noqa: E402
+from thor import candidates as tc  # noqa: E402
+from thor import registry as reg  # noqa: E402
+
+WATCH = {"items": [
+    {"id": "w1", "ticker": "HEXA-B.ST", "strategy": "viking_nine", "name": "Hexagon", "added": "2026-10-20"},
+    {"id": "w2", "ticker": "ERIC-B.ST", "strategy": "wolf", "added": "2026-10-21"},
+    {"id": "w3", "ticker": "ABB.ST", "strategy": "momentum", "added": "2026-10-22"}]}
+
+
+def _wrows(today="2026-10-15", drop=()):
+    """Thors rader; drop = (ticker, strategi)-par, eller strategier, som inte står i körningen."""
+    return [c for c in tc.build(tu.DATA, today=today)
+            if (c.ticker, c.strategy) not in drop and c.strategy not in drop]
+
+
+def _was(state, key, cls, status, in_list=True, ident=None):
+    """Förra körningens läge för ett par — resten av tillståndet som det var."""
+    items = dict(state["items"])
+    items[key] = {"id": ident if ident is not None else items[key]["id"], "in_list": in_list, "class": cls,
+                  "status": status}
+    return {"items": items}
+
+
+def test_watch_baseline_unchanged_and_new_pairs_are_silent():
+    alerts, s0 = ar.watch_alerts(WATCH, _wrows(), None)
+    assert alerts == []                                               # baslinjen tyst, även för KÖP-raderna
+    assert s0["items"]["HEXA-B.ST|viking_nine"] == {"id": "w1", "in_list": True, "class": "KÖP",
+                                                    "status": "GOLDEN TICKET"}
+    assert s0["items"]["ABB.ST|momentum"]["class"] == "BEVAKA"
+    alerts, s1 = ar.watch_alerts(WATCH, _wrows(), s0)
+    assert alerts == [] and s1 == s0                                  # oförändrat: tyst
+    more = {"items": WATCH["items"] + [{"id": "w4", "ticker": "MYCR.ST", "strategy": "quality"}]}
+    alerts, s2 = ar.watch_alerts(more, _wrows(), s0)
+    assert alerts == [] and s2["items"]["MYCR.ST|quality"]["class"] == "KÖP"   # nytillagd KÖP: baslinje, inget larm
+
+
+def test_watch_alerts_when_a_watched_pair_becomes_kop():
+    _a, s0 = ar.watch_alerts(WATCH, _wrows(), None)
+    alerts, s1 = ar.watch_alerts(WATCH, _wrows(), _was(s0, "HEXA-B.ST|viking_nine", "BEVAKA", "READY"))
+    assert len(alerts) == 1
+    a = alerts[0]
+    assert a["kind"] == "watch_buy" and a["title"] == "👀 HEXA-B.ST blev KÖP — Viking Nine"
+    assert a["body"].startswith("Hexagon: READY → GOLDEN TICKET") and "2026-10-14" in a["body"]
+    assert "Bevakad sedan 2026-10-20" in a["body"] and "pröva storlek" in a["body"]
+    assert ar.format_alert(a, "https://p").endswith("?p=thor&t=HEXA-B.ST&s=viking_nine")
+    assert s1["items"]["HEXA-B.ST|viking_nine"]["class"] == "KÖP"
+    alerts, _s = ar.watch_alerts(WATCH, _wrows(), s1)
+    assert alerts == []                                               # samma KÖP nästa körning: tyst
+    # från att inte stå i listan rakt in i KÖP larmar också
+    alerts, _s = ar.watch_alerts(WATCH, _wrows(), _was(s0, "ERIC-B.ST|wolf", "", "", in_list=False))
+    assert [x["kind"] for x in alerts] == ["watch_buy"]
+    assert "ERIC-B.ST: inte i listan → ENTRY · BULL" in alerts[0]["body"] and "stopp 70.00" in alerts[0]["body"]
+
+
+def test_watch_alerts_when_a_watched_pair_falls_out_of_the_list():
+    _a, s0 = ar.watch_alerts(WATCH, _wrows(), None)
+    alerts, s1 = ar.watch_alerts(WATCH, _wrows(drop={("ERIC-B.ST", "wolf")}), s0)
+    assert len(alerts) == 1
+    a = alerts[0]
+    assert a["kind"] == "watch_out" and a["title"] == "👀 ERIC-B.ST föll ur listan — Wolf"
+    assert "stod som ENTRY · BULL" in a["body"] and "(2026-10-14)" in a["body"] and "👀 Övervakning" in a["body"]
+    assert a["target"] == "thor" and a["strategy"] == "wolf"
+    assert s1["items"]["ERIC-B.ST|wolf"] == {"id": "w2", "in_list": False, "class": "", "status": ""}
+    alerts, _s = ar.watch_alerts(WATCH, _wrows(drop={("ERIC-B.ST", "wolf")}), s1)
+    assert alerts == []                                               # fortfarande ute: tyst
+
+
+def test_watch_other_class_changes_are_silent():
+    _a, s0 = ar.watch_alerts(WATCH, _wrows(), None)
+    prev = _was(_was(s0, "ABB.ST|momentum", "HÅLL", "rad 25"), "HEXA-B.ST|viking_nine", "KÖP", "GOLDEN TICKET")
+    items = {"items": WATCH["items"] + [{"id": "w5", "ticker": "ERIC-B.ST", "strategy": "viking_nine"}]}
+    _a, base = ar.watch_alerts(items, _wrows(), None)
+    prev["items"]["ERIC-B.ST|viking_nine"] = {"id": "w5", "in_list": True, "class": "KÖP", "status": "GOLDEN TICKET"}
+    alerts, s1 = ar.watch_alerts(items, _wrows(), prev)
+    assert alerts == []                                               # HÅLL → BEVAKA och KÖP → BEVAKA: tysta
+    assert s1["items"]["ABB.ST|momentum"]["class"] == "BEVAKA"
+    assert s1["items"]["ERIC-B.ST|viking_nine"] == base["items"]["ERIC-B.ST|viking_nine"]
+
+
+def test_watch_alert_flag_readded_pairs_and_items_without_id():
+    _a, s0 = ar.watch_alerts(WATCH, _wrows(), None)
+    quiet = {"items": [dict(WATCH["items"][0], alert=False)] + WATCH["items"][1:]}
+    alerts, s1 = ar.watch_alerts(quiet, _wrows(), _was(s0, "HEXA-B.ST|viking_nine", "BEVAKA", "READY"))
+    assert alerts == [] and s1["items"]["HEXA-B.ST|viking_nine"]["class"] == "KÖP"     # räknas, larmar inte
+    # borttagen och tillagd igen mellan två körningar (nytt id): ett nytt par, ny baslinje
+    alerts, s2 = ar.watch_alerts(WATCH, _wrows(), _was(s0, "HEXA-B.ST|viking_nine", "BEVAKA", "READY", ident="old"))
+    assert alerts == [] and s2["items"]["HEXA-B.ST|viking_nine"]["id"] == "w1"
+    # en handskriven rad utan id får ett nytt id vid varje läsning — den larmar ändå
+    bare = {"items": [{"ticker": "hexa-b.st", "strategy": "viking_nine"}]}
+    _a, b0 = ar.watch_alerts(bare, _wrows(), None)
+    assert b0["items"]["HEXA-B.ST|viking_nine"]["id"] == ""
+    alerts, _s = ar.watch_alerts(bare, _wrows(), _was(b0, "HEXA-B.ST|viking_nine", "BEVAKA", "READY"))
+    assert [x["kind"] for x in alerts] == ["watch_buy"]
+
+
+def test_watch_freezes_on_unreadable_missing_or_stale_runs():
+    _a, s0 = ar.watch_alerts(WATCH, _wrows(), None)
+    prev = _was(s0, "HEXA-B.ST|viking_nine", "BEVAKA", "READY")
+    # körningarna (eller listan) gick inte att läsa: hela benet står still
+    assert ar.watch_alerts(WATCH, None, prev) == ([], prev)
+    assert ar.watch_alerts(None, _wrows(), prev) == ([], prev)
+    assert ar.watch_alerts(WATCH, None, None) == ([], {"items": {}})
+    # strategins källa saknas eller felar (watch_frozen): paret behåller förra läget, och larmar när den är tillbaka
+    for frozen in ({"viking_nine"}, {"HEXA-B.ST|viking_nine"}):
+        alerts, s1 = ar.watch_alerts(WATCH, _wrows(), prev, frozen)
+        assert alerts == [] and s1["items"]["HEXA-B.ST|viking_nine"] == prev["items"]["HEXA-B.ST|viking_nine"]
+        alerts, _s = ar.watch_alerts(WATCH, _wrows(), s1)
+        assert [x["kind"] for x in alerts] == ["watch_buy"]
+    # strategin har inga rader alls i dag (saknad körning): inget "föll ur listan"
+    alerts, s2 = ar.watch_alerts(WATCH, _wrows(drop={"wolf"}), s0)
+    assert alerts == [] and s2["items"]["ERIC-B.ST|wolf"] == s0["items"]["ERIC-B.ST|wolf"]
+    # gamla körningar (äldre än tc.STALE_DAYS): varken KÖP eller "ur listan" larmar
+    old = _wrows(today="2026-11-30", drop={("ERIC-B.ST", "wolf")})
+    assert all(c.stale for c in old)
+    alerts, s3 = ar.watch_alerts(WATCH, old, prev)
+    assert alerts == [] and s3 == prev
+    # ett nytt par i en fryst strategi läggs inte i baslinjen (det får sin baslinje när källan är tillbaka)
+    _a, s4 = ar.watch_alerts(WATCH, _wrows(), {"items": {}}, {"wolf"})
+    assert "ERIC-B.ST|wolf" not in s4["items"] and "HEXA-B.ST|viking_nine" in s4["items"]
+
+
+SHEETS = {"rule", "durrett", "tiggre"}
+# Vad valhall_scan skriver i brädans sources när allt gick att läsa (testernas bräda saknar fältet)
+SOURCES = {"ca_runs": 2, "screens": True, "sheets": ["confidence", "holdings", "insider", "producers", "tiggre"]}
+
+
+def _full():
+    """Testernas filer med alla källor: Viking Nine, Royalty, registrets tickerkarta (som Thor bygger med) och
+    brädans sources."""
+    vn = {"generated": "2026-10-14", "rows": [], "markets": {"norden": {"error": None}}}
+    return {**tu.DATA, "board": {**tu.DATA["board"], "sources": SOURCES}, "viking_nine": vn,
+            "royalty": {"generated": "2026-10-14", "rows": []}, "sheet_map": {"BOL": "BOL.ST"}}
+
+
+def test_watch_frozen_names_missing_and_failing_sources():
+    keys = set(tc.BLOBS) | {"ca_quality", "ca_deep", "ember", "regime", "sheet_map"}
+    assert set(ar.WATCH_SOURCES) == set(reg.STRATEGIES)               # varje strategi har sina källor
+    assert all(set(v) <= keys for v in ar.WATCH_SOURCES.values())
+    base = dict(tu.DATA)
+    # testernas filer saknar Viking Nine, Royalty och registrets karta (arkens 'BOL' → 'BOL.ST')
+    assert ar.watch_frozen(base) == {"viking_nine", "royalty"} | SHEETS
+    full = _full()
+    vn = full["viking_nine"]
+    assert ar.watch_frozen(full) == set()
+    for no_map in (None, {}):                                          # registret oläsbart: arkstrategierna står still
+        assert ar.watch_frozen({**full, "sheet_map": no_map}) == SHEETS
+    usa_down = {**vn, "markets": {"usa": {"error": "HTTP 500"}}}
+    assert ar.watch_frozen({**full, "viking_nine": usa_down}) == {"viking_nine"}
+    arc = {**full["arc"], "wolf_usa": {"rows": [], "error": "licens"}}
+    assert ar.watch_frozen({**full, "arc": arc}) == {"wolf"}          # Viking-delen är frisk
+    screens = {**full["screens"], "screens": {**full["screens"]["screens"], "rule": {"rows": [], "error": "nät"}}}
+    assert ar.watch_frozen({**full, "screens": screens}) == {"rule", "hav"}
+    assert ar.watch_frozen({**full, "regime": {}}) == {"momentum"}
+    assert ar.watch_frozen({**full, "board": None}) == {"viking_nine", "wolf", "quality", "long", "rule", "durrett",
+                                                        "tiggre"}
+    assert ar.watch_frozen({**full, "ca_quality": {"timestamp": None, "results": []}}) == {"quality"}
+    assert ar.watch_frozen({**full, "insider": {"error": "Börsdata nere"}}) == {"insider"}
+    berserk = {**full["berserk"], "missing": ["bol.st"]}
+    ember = {**full["ember"], "near_misses": full["ember"]["near_misses"] + [{"ticker": "NHY.OL", "error": "yf"}]}
+    assert ar.watch_frozen({**full, "berserk": berserk, "ember": ember}) == {"BOL.ST|berserk", "NHY.OL|ember"}
+    assert ar.watch_frozen(None) == set(ar.WATCH_SOURCES)
+    # en del som föll i Thors bygge (thor.candidates.build errors) gav inga rader — ingen tom lista
+    assert ar.watch_frozen(full, {"berserk": "KeyError: 'rows'"}) == {"berserk"}
+    assert ar.watch_frozen(full, {"themes": "x"}) == SHEETS and ar.watch_frozen(full, {"arc": "x"}) == {"wolf", "viking"}
+    assert ar.watch_frozen(full, {"screens": "x"}) == SHEETS | {"hav"}
+    assert ar.watch_frozen(full, {"board": "x"}) == {"viking_nine", "wolf", "quality", "long"} | SHEETS
+    assert ar.watch_frozen(full, {"okänd": "x"}) == set(ar.WATCH_SOURCES)
+
+
+def test_watch_fresh_reads_each_lists_own_stamp():
+    """Färsk = varje lista strategin byggs ur är högst tc.STALE_DAYS gammal enligt sin egen stämpel, och felfri."""
+    full = _full()
+    fresh = ar.watch_fresh(full, today="2026-10-15")
+    assert set(fresh) == set(ar.WATCH_SOURCES) and fresh["berserk"] == "2026-10-14" and fresh["ember"] == "2026-10-14"
+    assert ar.watch_fresh(full, today="2026-10-18") == fresh                       # fyra dagar: fortfarande färsk
+    assert ar.watch_fresh(full, today="2026-10-19") == {}                          # fem: gammal, som Thors GAMMAL
+    # utan användbar stämpel räknas listan inte som färsk (då gäller raderna, som förut)
+    no_stamp = {**full, "berserk": {"rows": []}, "insider": {**full["insider"], "generated": "trasig"}}
+    assert {"berserk", "insider"}.isdisjoint(ar.watch_fresh(no_stamp, today="2026-10-15"))
+    # varje del räknas: Wolfs USA-del gammal → Wolf inte färsk; Viking Nines marknad med eget datum
+    arc = {**full["arc"], "wolf_usa": {"generated": "2026-10-01", "rows": []}}
+    got = ar.watch_fresh({**full, "arc": arc}, today="2026-10-15")
+    assert "wolf" not in got and "viking" in got
+    vn = {**full["viking_nine"], "markets": {"norden": {"generated": "2026-10-14"}, "usa": {"generated": "2026-10-02"}}}
+    assert "viking_nine" not in ar.watch_fresh({**full, "viking_nine": vn}, today="2026-10-15")
+    # en källa som saknas eller felar är aldrig färsk (den står i watch_frozen)
+    assert not {"momentum"} & set(ar.watch_fresh({**full, "regime": None}, today="2026-10-15"))
+    assert not SHEETS & set(ar.watch_fresh({**full, "sheet_map": None}, today="2026-10-15"))
+    assert ar.watch_fresh(None) == {}
+
+
+def test_watch_a_fresh_but_empty_list_means_out_of_the_list():
+    """BERSERK bär bara KÖP/BEVAKA: en färsk körning utan BOL.ST — även helt tom — är 'föll ur listan'. Bara KÖP och
+    'föll ur listan' larmar (ägarens beslut); en gammal, ostämplad eller i bygget fallerad lista står still."""
+    import copy
+    item = {"items": [{"id": "b1", "ticker": "BOL.ST", "strategy": "berserk", "added": "2026-10-01"}]}
+    blobs = _full()
+    _a, s0 = ar.watch_alerts(item, tc.build(blobs, today="2026-10-15"), None)
+    assert s0["items"]["BOL.ST|berserk"]["class"] == "KÖP"
+    empty = {**blobs, "berserk": {"generated": "2026-10-16T21:40:00+00:00", "rows": []}}
+    rows = tc.build(empty, today="2026-10-17")
+    assert not [c for c in rows if c.strategy == "berserk"]
+    # utan källornas besked (bara raderna): en strategi utan rader står still, som förut
+    assert ar.watch_alerts(item, rows, s0) == ([], s0)
+    # med listans egen stämpel: färsk och felfri → ur listan
+    alerts, s1 = ar.watch_alerts(item, rows, s0, ar.watch_frozen(empty), ar.watch_fresh(empty, today="2026-10-17"))
+    assert [a["kind"] for a in alerts] == ["watch_out"]
+    assert "stod som KÖP · S2 Cykelvändning" in alerts[0]["body"] and "(2026-10-16)" in alerts[0]["body"]
+    assert s1["items"]["BOL.ST|berserk"]["in_list"] is False
+    # gammal tom lista, tom lista utan stämpel, eller en del som föll i bygget: ingen övergång
+    for blob, today, errors in (({"generated": "2026-10-09", "rows": []}, "2026-10-17", None),
+                                ({"rows": []}, "2026-10-17", None),
+                                (empty["berserk"], "2026-10-17", {"berserk": "KeyError: 'rows'"})):
+        b = {**blobs, "berserk": blob}
+        r = tc.build(b, today=today)
+        assert ar.watch_alerts(item, r, s0, ar.watch_frozen(b, errors), ar.watch_fresh(b, today=today)) == ([], s0)
+    # tillbaka som BEVAKA: tyst (bara KÖP larmar); sedan KÖP: larm
+    bev = copy.deepcopy(blobs)
+    bev["berserk"]["rows"][0]["status"] = "BEVAKA"
+    alerts, s2 = ar.watch_alerts(item, tc.build(bev, today="2026-10-15"), s1, ar.watch_frozen(bev),
+                                 ar.watch_fresh(bev, today="2026-10-15"))
+    assert alerts == [] and s2["items"]["BOL.ST|berserk"]["class"] == "BEVAKA"
+    alerts, _s = ar.watch_alerts(item, tc.build(blobs, today="2026-10-15"), s2, ar.watch_frozen(blobs),
+                                 ar.watch_fresh(blobs, today="2026-10-15"))
+    assert [a["kind"] for a in alerts] == ["watch_buy"]
+
+
+def _run(items, blobs, today, prev, errors=None):
+    """En körning av benet som larmjobbet gör den: Thors rader, watch_frozen, watch_fresh och watch_sheets ur samma
+    filer."""
+    rows = tc.build(blobs, today=today, errors=errors, sheet_map=blobs.get("sheet_map"))
+    return ar.watch_alerts(items, rows, prev, ar.watch_frozen(blobs, errors), ar.watch_fresh(blobs, today=today),
+                           ar.watch_sheets(blobs, today=today))
+
+
+def _still(result, prev) -> bool:
+    """Inget larm och paren som förra körningen (minnet av brädans ark får dagens datum även en tyst dag)."""
+    alerts, state = result
+    return alerts == [] and state["items"] == prev["items"]
+
+
+def test_watch_a_long_screener_that_fell_is_no_empty_list(monkeypatch):
+    """valhall_scan sparar long = None när Long Screenern kastar — utan felfält, och brädans stämpel är färsk. Det är
+    ingen tom lista: inget 'föll ur listan' den dagen och inget 'blev KÖP' när screenern går igen."""
+    import copy
+
+    import alert_scan
+    item = {"items": [{"id": "l1", "ticker": "LAGR-B.ST", "strategy": "long", "added": "2026-10-01"}]}
+    blobs = _full()
+    _a, s0 = _run(item, blobs, "2026-10-15", None)
+    assert s0["items"]["LAGR-B.ST|long"]["class"] == "KÖP"
+    fell = copy.deepcopy(blobs)
+    fell["board"].update(generated="2026-10-16T16:50:00+00:00", long=None)
+    errors: dict = {}
+    assert not [c for c in tc.build(fell, today="2026-10-17", errors=errors) if c.strategy == "long"]
+    assert errors == {}                                               # bygget ser inget fel
+    assert "long" in ar.watch_frozen(fell) and "long" not in ar.watch_fresh(fell, today="2026-10-17")
+    assert _still(_run(item, fell, "2026-10-17", s0), s0)
+    # larmjobbets väg med samma bräda
+    _no_net(monkeypatch)
+    _r, frozen, fresh = alert_scan._watch_rows(item, _register_loader(fell["board"]), tu.DATA["regime"],
+                                               today="2026-10-17")
+    assert "long" in frozen and "long" not in fresh
+    # nästa dag går screenern igen: samma KÖP — tyst
+    back = copy.deepcopy(blobs)
+    back["board"]["generated"] = "2026-10-17T16:50:00+00:00"
+    assert _still(_run(item, back, "2026-10-18", s0), s0)
+    # en läst och färsk Long Screener utan aktien är däremot 'föll ur listan' — också när den är tom
+    back["board"]["long"] = {"segments": {}}
+    alerts, _s = _run(item, back, "2026-10-18", s0)
+    assert [a["kind"] for a in alerts] == ["watch_out"] and "(2026-10-17)" in alerts[0]["body"]
+
+
+def _sheets_unread(board):
+    """Brädan dagen efter, när valhall_scan inte kunde läsa arken (load_sheets kastade → {}): arkens val saknas och
+    syns bara som en lucka i sources.sheets — inget felfält. Rule-håven och Quality Contrarian finns kvar."""
+    import copy
+    b = copy.deepcopy(board)
+    b["generated"] = "2026-10-16T16:50:00+00:00"
+    sheet = ("Rick Rule-arket", "Durrett", "Tiggre")
+    for th in b["buys"]["themes"].values():
+        for part in ("quality", "leverage"):
+            th[part]["picks"] = [p for p in th[part]["picks"] if p.get("source") not in sheet]
+    b["buys"]["unknown_commodity"] = []
+    b["sources"] = {**b["sources"], "sheets": []}
+    return b
+
+
+def test_watch_sheets_that_were_not_read_are_no_empty_list():
+    """Ett ark som valhall_scan inte kunde läsa syns bara som en lucka i brädans sources — benet minns vilka ark
+    brädan lästes ur. Rick Rules, Durretts och Tiggres par på brädans rader står då still — även när strategin har
+    andra rader (håvarna, Rule-håven) — så inget 'föll ur listan' i dag och inget 'blev KÖP' när arket är tillbaka.
+    Håvarnas TRÄFF-par larmar som vanligt."""
+    import copy
+    items = {"items": [{"id": "d1", "ticker": "MMY.V", "strategy": "durrett", "added": "2026-10-01"},
+                       {"id": "t1", "ticker": "CU.V", "strategy": "tiggre", "added": "2026-10-01"},
+                       {"id": "t2", "ticker": "UNK.V", "strategy": "tiggre", "added": "2026-10-01"},
+                       {"id": "t3", "ticker": "SCR.V", "strategy": "tiggre", "added": "2026-10-01"},
+                       {"id": "r1", "ticker": "NEM", "strategy": "rule", "added": "2026-10-01"}]}
+    blobs = copy.deepcopy(_full())
+    blobs["screens"]["screens"]["tiggre"]["rows"].append({"ticker": "SCR.V", "name": "Screen", "universe": "CA"})
+    _a, s0 = _run(items, blobs, "2026-10-15", None)
+    assert {k: (v["class"], v["in_list"]) for k, v in s0["items"].items()} == {
+        "MMY.V|durrett": ("KÖP", True), "CU.V|tiggre": ("KÖP", True), "UNK.V|tiggre": ("BEVAKA", True),
+        "SCR.V|tiggre": ("TRÄFF", True), "NEM|rule": ("KÖP", True)}
+    # dag 2: arken gick inte att läsa; håvarna körde i dag utan SCR.V
+    day2 = {**blobs, "board": _sheets_unread(blobs["board"]), "screens": copy.deepcopy(blobs["screens"])}
+    day2["screens"]["generated"] = "2026-10-16T16:50:00+00:00"
+    day2["screens"]["screens"]["tiggre"]["rows"] = [r for r in day2["screens"]["screens"]["tiggre"]["rows"]
+                                                    if r["ticker"] != "SCR.V"]
+    rows = tc.build(day2, today="2026-10-17", sheet_map=day2["sheet_map"])
+    assert {(c.ticker, c.status_class) for c in rows if c.strategy == "tiggre"} == {("CU.V", "TRÄFF")}
+    assert {c.ticker for c in rows if c.strategy == "rule"} == {"AEM"}           # Rule-håven finns kvar
+    assert not [c for c in rows if c.strategy == "durrett"]
+    # brädan själv är läst och färsk; luckan är arken som lästes dag 1 men inte i dag (minnet i tillståndet)
+    assert s0["sheets"] == dict.fromkeys(SOURCES["sheets"], "2026-10-15")
+    assert ar.watch_sheets(day2, today="2026-10-17") == {"date": "2026-10-17", "read": []}
+    assert not ar.watch_frozen(day2) and SHEETS <= set(ar.watch_fresh(day2, today="2026-10-17"))
+    assert ar._sheet_gaps(s0["sheets"], ar.watch_sheets(day2, today="2026-10-17")) == SHEETS
+    alerts, s1 = _run(items, day2, "2026-10-17", s0)
+    assert [(a["kind"], a["ticker"]) for a in alerts] == [("watch_out", "SCR.V")]   # bara håvens eget par
+    assert {k: v for k, v in s1["items"].items() if k != "SCR.V|tiggre"} == \
+        {k: v for k, v in s0["items"].items() if k != "SCR.V|tiggre"}
+    assert s1["sheets"] == s0["sheets"]                               # inget läst i dag: minnet står kvar
+    # utan arken (watch_sheets) hade arkets par fallit ur (NEM, UNK.V, MMY.V) och CU.V blivit TRÄFF — det som
+    # larmade fel
+    no_gap = ar.watch_alerts(items, rows, s0, ar.watch_frozen(day2), ar.watch_fresh(day2, today="2026-10-17"))
+    assert {a["ticker"] for a in no_gap[0] if a["kind"] == "watch_out"} == {"NEM", "UNK.V", "MMY.V", "SCR.V"}
+    # dag 3: arken är tillbaka — inget 'blev KÖP' för det som stod still
+    day3 = {**day2, "board": {**blobs["board"], "generated": "2026-10-17T16:50:00+00:00"}}
+    alerts, s2 = _run(items, day3, "2026-10-18", s1)
+    assert _still((alerts, s2), s1) and s2["sheets"] == dict.fromkeys(SOURCES["sheets"], "2026-10-18")
+
+
+def test_watch_a_read_but_empty_sheet_list_means_out_and_partial_gaps():
+    """Ett ark som lästes men inte längre har aktien är 'föll ur listan' — även när strategins lista är tom. Luckan
+    gäller bara strategierna vars del saknas (ett tappat ark: de som beror av det); en bräda utan sources går inte att
+    pröva (färsk nej, fryser inget)."""
+    import copy
+    item = {"items": [{"id": "d1", "ticker": "MMY.V", "strategy": "durrett", "added": "2026-10-01"}]}
+    blobs = _full()
+    _a, s0 = _run(item, blobs, "2026-10-15", None)
+    empty = copy.deepcopy(blobs)
+    empty["board"]["generated"] = "2026-10-16T16:50:00+00:00"
+    empty["board"]["buys"]["themes"]["guld"]["leverage"]["picks"] = []        # Durrett-arket läst, utan bolag i dag
+    assert "durrett" in ar.watch_fresh(empty, today="2026-10-17") and not ar.watch_frozen(empty)
+    alerts, s1 = _run(item, empty, "2026-10-17", s0)
+    assert [(a["kind"], a["title"]) for a in alerts] == [("watch_out", "👀 MMY.V föll ur listan — Durrett")]
+    assert s1["items"]["MMY.V|durrett"]["in_list"] is False
+    # för Rick Rule även håvarna och båda Quality Contrarian-körningarna (brädans sources, watch_frozen)
+    src = blobs["board"]["sources"]
+    for sources, gap in (({**src, "ca_runs": 1}, {"rule"}), ({**src, "screens": False}, {"rule"}),
+                         ({"sheets": "trasig"}, {"rule"})):
+        b = {**blobs, "board": {**blobs["board"], "sources": sources}}
+        assert ar.watch_frozen(b) == {ar._board_gap(s) for s in gap}, sources
+        assert set(ar.watch_fresh(b, today="2026-10-15")) == set(ar.WATCH_SOURCES) - gap
+    # arken: ett tappat ark (läst dag 1, inte i dag) är en lucka för strategierna som beror av det — Tiggres tema
+    # kommer också ur Durrett- och producentarket. Utan minne (första körningen) krävs bara strategins eget ark.
+    for read, gap, first in ((["confidence", "producers"], {"tiggre"}, {"tiggre"}),
+                             (["producers", "tiggre"], {"durrett", "tiggre"}, {"durrett"}),
+                             (["confidence", "tiggre"], {"rule", "tiggre"}, {"rule"}),
+                             (["confidence", "producers", "tiggre"], set(), set()),
+                             ("trasig", SHEETS, SHEETS)):
+        b = {**blobs, "board": {**blobs["board"], "sources": {**src, "sheets": read}}}
+        assert not ar.watch_frozen(b) and set(ar.watch_fresh(b, today="2026-10-15")) == set(ar.WATCH_SOURCES)
+        today = ar.watch_sheets(b, today="2026-10-16")
+        assert ar._sheet_gaps(s0["sheets"], today) == gap and ar._sheet_gaps(None, today) == first, read
+    # en bräda utan sources: ingen lucka att se — inget fryses, men brädan gör inte arkens listor färska
+    legacy = {**blobs, "board": {k: v for k, v in blobs["board"].items() if k != "sources"}}
+    assert ar.watch_frozen(legacy) == set() and not SHEETS & set(ar.watch_fresh(legacy, today="2026-10-15"))
+    assert ar.watch_sheets(legacy) is None and ar._sheet_gaps(s0["sheets"], None) == set()
+
+
+# Valhalls bräda som valhall_scan bygger den ur arken: testernas syntetiska ark (test_valhall_picks.SHEETS:
+# producers, scoring, confidence, tiggre) genom valhall.picks, sources med namnen på arken som gick att läsa.
+import test_valhall_picks as tvp  # noqa: E402
+
+_PICK_SCREENS = {"screens": {k: {"label": k, "rows": tvp.SCREENS["screens"][k]["rows"]}
+                             for k in ("rule", "durrett", "tiggre")}}
+
+
+def _picks_blobs(sheets, generated, screens=None):
+    import copy
+
+    from valhall import picks as vp
+    base = _full()
+    board = copy.deepcopy(base["board"])
+    scr = copy.deepcopy(screens or _PICK_SCREENS)
+    scr["generated"] = generated
+    buys = vp.build([tvp.CA_Q, tvp.CA_D], {"screens": scr["screens"]}, sheets, analyze=tvp.fake_analyze)
+    board.update(generated=generated, buys=vp.gate_segments(buys, board["board"]),
+                 sources={"ca_runs": 2, "screens": True, "sheets": sorted(k for k, v in sheets.items() if v)})
+    return {**base, "board": board, "screens": scr}
+
+
+def _pairs(*pairs):
+    return {"items": [{"id": f"p{n}", "ticker": t, "strategy": s, "added": "2026-10-01"}
+                      for n, (t, s) in enumerate(pairs)]}
+
+
+def _without(*names):
+    return {k: v for k, v in tvp.SHEETS.items() if k not in names}
+
+
+def test_watch_a_lost_scoring_sheet_freezes_durrett_for_the_day():
+    """Poängmodellen (scoring) ger Durretts 15-BAGGER och topp 5. Gick den inte att läsa en dag blev ABC.TO tyst
+    BEVAKA på brädan och nästa dag '👀 ABC.TO blev KÖP' — falskt. Ett ark som brädan lästes ur i går men inte i dag
+    är tappat: Durretts och Tiggres par på brädans rader står still den dagen, och inget larmar när arket är
+    tillbaka."""
+    items = _pairs(("ABC.TO", "durrett"), ("DEF.V", "durrett"), ("URX.TO", "tiggre"), ("NEM", "rule"))
+    d1 = _picks_blobs(tvp.SHEETS, "2026-10-14T16:50:00+00:00")
+    _a, s0 = _run(items, d1, "2026-10-15", None)
+    assert s0["items"]["ABC.TO|durrett"]["status"] == "15-BAGGER"
+    assert s0["sheets"] == dict.fromkeys(["confidence", "producers", "scoring", "tiggre"], "2026-10-15")
+    d2 = _picks_blobs(_without("scoring"), "2026-10-15T16:50:00+00:00")
+    rows = tc.build(d2, today="2026-10-16", sheet_map=d2["sheet_map"])
+    assert ("ABC.TO", "BEVAKA") in {(c.ticker, c.status_class) for c in rows if c.strategy == "durrett"}
+    assert ar._sheet_gaps(s0["sheets"], ar.watch_sheets(d2, today="2026-10-16")) == {"durrett", "tiggre"}
+    alerts, s1 = _run(items, d2, "2026-10-16", s0)
+    assert _still((alerts, s1), s0) and s1["sheets"]["scoring"] == "2026-10-15"
+    d3 = _picks_blobs(tvp.SHEETS, "2026-10-16T16:50:00+00:00")
+    alerts, s2 = _run(items, d3, "2026-10-17", s1)
+    assert _still((alerts, s2), s0) and s2["sheets"]["scoring"] == "2026-10-17"
+    # utan minnet av arken: KÖP → BEVAKA tyst i dag, och 'blev KÖP' när Poängmodellen är tillbaka
+    _a, blind = ar.watch_alerts(items, rows, s0, ar.watch_frozen(d2), ar.watch_fresh(d2, today="2026-10-16"))
+    assert blind["items"]["ABC.TO|durrett"]["class"] == "BEVAKA"
+    assert [a["title"] for a in _run(items, d3, "2026-10-17", blind)[0]] == ["👀 ABC.TO blev KÖP — Durrett"]
+
+
+def test_watch_a_pair_added_on_a_gap_day_gets_its_baseline_when_the_board_is_whole():
+    """Ett par som läggs till en dag då Poängmodellen inte gick att läsa, och som luckan sköt ur brädans topp 5 (ingen
+    håvrad), fick baslinjen 'inte i listan' — och '👀 ABC.TO blev KÖP' när arket var tillbaka. Nu får det sin
+    baslinje först den dag brädan är hel, tyst."""
+    old = _pairs(("NEM", "rule"))
+    d1 = _picks_blobs(tvp.SHEETS, "2026-10-14T16:50:00+00:00")
+    _a, s0 = _run(old, d1, "2026-10-15", None)
+    both = {"items": old["items"] + [{"id": "ny", "ticker": "ABC.TO", "strategy": "durrett", "added": "2026-10-16"}]}
+    d2 = _picks_blobs(_without("scoring"), "2026-10-15T16:50:00+00:00")
+    rows = [c for c in tc.build(d2, today="2026-10-16", sheet_map=d2["sheet_map"]) if c.ticker != "ABC.TO"]
+    alerts, s1 = ar.watch_alerts(both, rows, s0, ar.watch_frozen(d2), ar.watch_fresh(d2, today="2026-10-16"),
+                                 ar.watch_sheets(d2, today="2026-10-16"))
+    assert alerts == [] and "ABC.TO|durrett" not in s1["items"]
+    alerts, s2 = _run(both, _picks_blobs(tvp.SHEETS, "2026-10-16T16:50:00+00:00"), "2026-10-17", s1)
+    assert alerts == [] and s2["items"]["ABC.TO|durrett"]["class"] == "KÖP"
+
+
+def test_watch_a_sheet_that_never_existed_freezes_nothing():
+    """Durrett-arket (confidence) finns inte i alla paneler. Ett ark som benet aldrig sett brädan läsas ur fryser
+    varken Durrett eller Tiggre (Tiggres tema kan komma ur det): en färsk, tom Durrett-håv är 'föll ur listan', och
+    ett bolag som tiggararket släppt likaså."""
+    import copy
+    items = _pairs(("GHI.V", "durrett"), ("PLAT.V", "tiggre"))
+    d1 = _picks_blobs(_without("confidence"), "2026-10-14T16:50:00+00:00")
+    _a, s0 = _run(items, d1, "2026-10-15", None)
+    assert {k: v["class"] for k, v in s0["items"].items()} == {"GHI.V|durrett": "TRÄFF", "PLAT.V|tiggre": "BEVAKA"}
+    assert "confidence" not in s0["sheets"]
+    sheets = copy.deepcopy(_without("confidence"))
+    sheets["tiggre"]["candidates"] = [c for c in sheets["tiggre"]["candidates"] if c["ticker"] != "PLAT.V"]
+    screens = copy.deepcopy(_PICK_SCREENS)
+    screens["screens"]["durrett"]["rows"] = []
+    d2 = _picks_blobs(sheets, "2026-10-15T16:50:00+00:00", screens)
+    assert ar._sheet_gaps(s0["sheets"], ar.watch_sheets(d2, today="2026-10-16")) == set()
+    assert {"durrett", "tiggre"} <= set(ar.watch_fresh(d2, today="2026-10-16"))
+    alerts, s1 = _run(items, d2, "2026-10-16", s0)
+    assert [(a["kind"], a["ticker"]) for a in alerts] == [("watch_out", "GHI.V"), ("watch_out", "PLAT.V")]
+    assert not any(v["in_list"] for v in s1["items"].values())
+
+
+def test_watch_a_sheet_gone_longer_than_the_memory_freezes_no_more():
+    """Ett ark som brädan inte lästs ur på mer än SHEET_MEMORY_DAYS dagar räknas som borttaget: strategin fryser
+    inte längre för det, och det som arket bar faller ur listan."""
+    items = _pairs(("DEF.V", "durrett"))
+    _a, s0 = _run(items, _picks_blobs(tvp.SHEETS, "2026-10-14T16:50:00+00:00"), "2026-10-15", None)
+    gone = _picks_blobs(_without("confidence"), "2026-10-15T16:50:00+00:00")
+    assert ar.SHEET_MEMORY_DAYS == 14
+    for last, frozen in (("2026-10-02", True), ("2026-10-01", False)):     # 14 resp. 15 dagar före 2026-10-16
+        prev = {**s0, "sheets": {**s0["sheets"], "confidence": last}}
+        alerts, s1 = _run(items, gone, "2026-10-16", prev)
+        if frozen:
+            assert _still((alerts, s1), s0) and s1["sheets"]["confidence"] == last
+        else:
+            assert [(a["kind"], a["ticker"]) for a in alerts] == [("watch_out", "DEF.V")]
+
+
+def test_watch_state_keeps_the_sheet_memory_and_reads_old_states():
+    """Tillståndet {"items", "sheets"} klarar JSON fram och tillbaka. Ett tillstånd från före minnet ({"items"} utan
+    "sheets") prövas som förut — strategins eget ark krävs — och får minnet. Utan brädans ark i dag (watch_sheets
+    None) eller utan rader står minnet kvar; evaluate bär arken till benet."""
+    import json
+    items = _pairs(("ABC.TO", "durrett"), ("DEF.V", "durrett"))
+    d1 = _picks_blobs(tvp.SHEETS, "2026-10-14T16:50:00+00:00")
+    _a, s0 = _run(items, d1, "2026-10-15", None)
+    back = json.loads(json.dumps(s0, ensure_ascii=False))
+    assert back == s0 and set(back) == {"items", "sheets"}
+    no_scoring = _picks_blobs(_without("scoring"), "2026-10-15T16:50:00+00:00")
+    assert _still(_run(items, no_scoring, "2026-10-16", back), s0)
+    # före minnet: Durrett-arket krävs (saknas det står paren still), Poängmodellen inte — som förut
+    old = {"items": s0["items"]}
+    alerts, s1 = _run(items, _picks_blobs(_without("confidence"), "2026-10-15T16:50:00+00:00"), "2026-10-16", old)
+    assert _still((alerts, s1), s0) and s1["sheets"] == dict.fromkeys(["producers", "scoring", "tiggre"], "2026-10-16")
+    alerts, s2 = _run(items, no_scoring, "2026-10-16", old)
+    assert alerts == [] and s2["items"]["ABC.TO|durrett"]["class"] == "BEVAKA"
+    # inget att pröva i dag, eller inga rader: minnet (och tillståndet) står kvar
+    rows = tc.build(d1, today="2026-10-16", sheet_map=d1["sheet_map"])
+    blind = ar.watch_alerts(items, rows, s0, ar.watch_frozen(d1), ar.watch_fresh(d1, today="2026-10-16"))
+    assert blind == ([], s0)
+    assert ar.watch_alerts(items, None, s0, (), None, ar.watch_sheets(d1, today="2026-10-16")) == ([], s0)
+    _a, st = ar.evaluate({}, {}, {}, [], {"watch": s0}, None, watch_data=items, watch_rows=rows,
+                         frozen_watch=ar.watch_frozen(d1), fresh_watch=ar.watch_fresh(d1, today="2026-10-16"),
+                         sheets_watch=ar.watch_sheets(d1, today="2026-10-16"))
+    assert st["watch"]["items"] == s0["items"] and set(st["watch"]["sheets"].values()) == {"2026-10-16"}
+
+
+def test_evaluate_routes_the_watch_leg():
+    rows = _wrows()
+    _a, s0 = ar.evaluate({}, {}, {}, [], None, {}, watch_data=WATCH, watch_rows=rows)
+    assert _a == [] and "HEXA-B.ST|viking_nine" in s0["watch"]["items"]
+    s0["watch"] = _was(s0["watch"], "ERIC-B.ST|wolf", "HÅLL", "NEUTRAL")
+    alerts, s1 = ar.evaluate({}, {}, {}, [], s0, None, watch_data=WATCH, watch_rows=rows)
+    assert [(a["kind"], a["channels"]) for a in alerts if a["kind"].startswith("watch")] == \
+        [("watch_buy", ["discord"])]
+    off, s2 = ar.evaluate({}, {}, {}, [], s0, {"watch": {"enabled": False}}, watch_data=WATCH, watch_rows=rows)
+    assert not [a for a in off if a["kind"].startswith("watch")] and s2["watch"] == s1["watch"]   # avstängt: räknas
+    frozen, s3 = ar.evaluate({}, {}, {}, [], s0, None, watch_data=WATCH, watch_rows=rows, frozen_watch={"wolf"})
+    assert not [a for a in frozen if a["kind"].startswith("watch")]
+    assert s3["watch"]["items"]["ERIC-B.ST|wolf"]["class"] == "HÅLL"
+    _a, s4 = ar.evaluate({}, {}, {}, [], s0, None)                    # ingen lista inläst: benet fryser
+    assert s4["watch"] == s0["watch"]
+
+
+# ── alert_scan: listan och raderna ───────────────────────────────────────────
+def _gist(name, fallback=None):
+    names = {v: k for k, v in tc.BLOBS.items()}
+    return tu.DATA.get(names.get(name), fallback) if name in names else fallback
+
+
+def _no_net(monkeypatch):
+    """Inget nätverk: CA- och EMBER-läsarna ger testernas filer; ett anrop som ändå går ut stoppas och hamnar i
+    listan som returneras (testet kräver att den är tom)."""
+    tried = []
+
+    def _offline(url, *_a, **_k):
+        tried.append(url)
+        raise OSError("inget nätverk i testet")
+    monkeypatch.setattr("requests.get", _offline)
+    monkeypatch.setattr("contrarian_alpha.cache.load_screener_results",
+                        lambda mode=None: tu.DATA["ca_quality" if mode == "quality" else "ca_deep"])
+    monkeypatch.setattr("ember.cache.load_ember_results", lambda: tu.DATA["ember"])
+    return tried
+
+
+def test_alert_scan_builds_watch_rows_only_when_something_is_watched(monkeypatch):
+    import alert_scan
+    tried = _no_net(monkeypatch)
+    calls = []
+
+    def loader(name, fallback=None):
+        calls.append(name)
+        return _gist(name, fallback)
+    assert alert_scan._watch_rows(None, loader, {}) == (None, set(), {})         # listan oläsbar: benet fryser
+    assert alert_scan._watch_rows({"items": []}, loader, {}) == ([], set(), {})  # inget bevakas: ingen läsning
+    assert calls == []
+    rows, frozen, fresh = alert_scan._watch_rows(WATCH, loader, tu.DATA["regime"], today="2026-10-15")
+    got = {(c.ticker, c.strategy, c.status_class) for c in rows}
+    assert got >= {("ERIC-B.ST", "wolf", "KÖP"), ("ABB.ST", "momentum", "BEVAKA")}
+    assert not [c for c in rows if c.stale]                           # samma dag för raderna och listornas stämplar
+    # testernas Gist saknar Viking Nine, Royalty och registret (arkstrategierna står still utan Thors tickerkarta)
+    assert frozen == {"viking_nine", "royalty"} | SHEETS and "valhall_board.json" in calls
+    assert fresh["wolf"] == "2026-10-14" and not ({"viking_nine", "royalty"} | SHEETS) & set(fresh)
+    assert alert_scan._watch_rows(WATCH, lambda n, f=None: None, {}) == (None, set(), {})   # Gisten oläsbar
+    assert tried == []
+
+
+def _register_loader(board, register=True):
+    """Gisten med en annan karta och (valfritt) universum-registret: BOL i Stockholm (Börsdatas form 'BOL')."""
+    import markets as mk
+    from universe import registry as ur
+    saved: dict = {}
+    if register:
+        nordic = [{"insId": 7, "ticker": "BOL", "name": "Boliden", "marketId": 1, "sectorId": 3,
+                   "stockPriceCurrency": "SEK"}]
+        ur.save(ur.build(table=mk.FALLBACK, nordic=nordic, global_=[], include_lists=False),
+                lambda name, data: saved.setdefault(name, data) is not None)
+
+    def loader(name, fallback=None):
+        if name == "valhall_board.json":
+            return board
+        return saved[name] if name in saved else _gist(name, fallback)
+    return loader
+
+
+def test_alert_scan_maps_sheet_tickers_like_thor(monkeypatch):
+    """Arken sparar tickern som den skrevs ('BOL'). Thor gör den till 'BOL.ST' med registrets karta — larmbenet
+    bygger med samma karta; går registret inte att läsa står Rick Rule, Durrett och Tiggre still i stället för att
+    larma 'föll ur listan' (och nästa dag 'blev KÖP') för en bevakad BOL.ST."""
+    import copy
+
+    import alert_scan
+    from thor import ui as tui
+    tried = _no_net(monkeypatch)
+    board = copy.deepcopy(_full()["board"])
+    board["buys"]["themes"]["guld"]["quality"]["picks"].append(
+        {"ticker": "BOL", "name": "Boliden", "source": "Rick Rule-arket", "score": 4, "verdict": "Köpkandidat"})
+    item = {"items": [{"id": "r1", "ticker": "BOL.ST", "strategy": "rule", "added": "2026-10-01"}]}
+    loader = _register_loader(board)
+    rows, frozen, fresh = alert_scan._watch_rows(item, loader, tu.DATA["regime"], today="2026-10-15")
+    thor_rows = tui.rebuild(tui.load(loader))["rows"]                 # Thors egen väg (📡 Uppdatera)
+
+    def sheet(rs):
+        return sorted((c.ticker, c.strategy, c.status_class) for c in rs if c.strategy in SHEETS)
+    assert sheet(rows) == sheet(thor_rows) and ("BOL.ST", "rule") in {(t, s) for t, s, _c in sheet(rows)}
+    assert not SHEETS & frozen and "rule" in fresh
+    _a, s0 = ar.watch_alerts(item, rows, None, frozen, fresh)
+    assert s0["items"]["BOL.ST|rule"]["in_list"] is True
+    # samma dag utan registret: arkets bara 'BOL' blir ingen 'BOL.ST'-rad — benet står still, inget larm
+    bare_rows, bare_frozen, bare_fresh = alert_scan._watch_rows(item, _register_loader(board, register=False),
+                                                                tu.DATA["regime"], today="2026-10-15")
+    assert ("BOL", "rule") in {(c.ticker, c.strategy) for c in bare_rows} and SHEETS <= bare_frozen
+    assert ar.watch_alerts(item, bare_rows, s0, bare_frozen, bare_fresh) == ([], s0)
+    # ett trasigt register fäller inte benet
+    monkeypatch.setattr("universe.registry.load", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("nere")))
+    rows2, frozen2, _f = alert_scan._watch_rows(item, loader, tu.DATA["regime"], today="2026-10-15")
+    assert rows2 is not None and SHEETS <= frozen2
+    assert tried == []
+
+
+def test_alert_scan_sends_the_watch_alert_and_saves_the_state(monkeypatch):
+    import alert_scan
+    import gist_storage as gs
+    tried = _no_net(monkeypatch)
+    reads = []                                                        # CA och EMBER läses en gång, inte om för benet
+
+    def _ca(mode=None):
+        reads.append(mode)
+        return tu.DATA["ca_quality" if mode == "quality" else "ca_deep"]
+    monkeypatch.setattr("contrarian_alpha.cache.load_screener_results", _ca)
+    monkeypatch.setattr("ember.cache.load_ember_results", lambda: reads.append("ember") or tu.DATA["ember"])
+    build = tc.build
+    monkeypatch.setattr(tc, "build", lambda blobs, **k: build(blobs, **{**k, "today": "2026-10-15"}))
+    prev = {"watch": {"items": {"ERIC-B.ST|wolf": {"id": "w2", "in_list": True, "class": "BEVAKA",
+                                                   "status": "MODERATE"}}}}
+    monkeypatch.setattr(gs, "read_blob",
+                        lambda name: ("ok", prev) if name == alert_scan.STATE_FILE else ("missing", None))
+    boards = []                                                       # brädan läses en gång, med arkens sources
+
+    def _load(name, fallback=None):
+        if name == "valhall_board.json":
+            boards.append(name)
+            return {**tu.DATA["board"], "sources": SOURCES}
+        return _gist(name, fallback)
+    monkeypatch.setattr(gs, "load_blob", _load)
+    monkeypatch.setattr(gs, "load_wolf_json", lambda name: {"wolf_regime.json": tu.DATA["regime"],
+                                                            "wolf_screener.json": tu.DATA["momentum"]}.get(name))
+    saved = {}
+    monkeypatch.setattr(gs, "save_blob", lambda name, data: saved.update({name: data}) or True)
+    files = {alert_scan.WATCH_PATH: WATCH}
+    monkeypatch.setattr(alert_scan, "_repo_file", lambda path, default: files.get(path, default))
+    monkeypatch.setattr("market_risk_gate.current", lambda m, evaluator=None: None)
+    monkeypatch.setattr("fiat_debasement.alerts.collect", lambda: None)
+    sent = []
+    monkeypatch.setattr("alerts.engine.send_alert",
+                        lambda text, ch, metadata=None: sent.append(text) or {"discord": True})
+    monkeypatch.setenv("PANEL_URL", "https://panel")
+    monkeypatch.setattr("sys.argv", ["alert_scan.py", "--no-blindspot"])
+    assert alert_scan.main() == 0
+    assert len(sent) == 1 and "👀 ERIC-B.ST blev KÖP — Wolf" in sent[0]          # övriga ben lägger baslinje
+    assert sent[0].endswith("→ https://panel/?p=thor&t=ERIC-B.ST&s=wolf")
+    watch = saved[alert_scan.STATE_FILE]["watch"]["items"]
+    assert watch["ERIC-B.ST|wolf"]["class"] == "KÖP" and "HEXA-B.ST|viking_nine" not in watch   # Viking Nine fryst
+    assert set(saved[alert_scan.STATE_FILE]["watch"]["sheets"]) == set(SOURCES["sheets"])     # minnet av arken
+    assert boards == ["valhall_board.json"]
+    assert sorted(reads) == ["deep_contrarian", "ember", "quality"] and tried == []
+
+
+def test_alert_scan_and_settings_wire_the_watch_leg():
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    scan = open(os.path.join(root, "alert_scan.py"), encoding="utf-8").read()
+    assert 'WATCH_PATH = "data/watchlist.json"' in scan and "watch_data=watch_data" in scan
+    assert "frozen_watch=frozen_watch" in scan and "sheets_watch=alert_rules.watch_sheets(" in scan
+    tab = open(os.path.join(root, "tabs", "alerts.py"), encoding="utf-8").read()
+    assert '"watch": {"enabled": True, "channels": ["discord"]}' in tab and '("watch", "👀 Övervakning",' in tab
+    assert ar.KIND_TARGET["watch_buy"][1] == ar.KIND_TARGET["watch_out"][1] == "thor"
+
+
+# ── Inställningarna (MER → Larm) och texterna ────────────────────────────────
+def _settings_page():
+    from tabs.alerts import _render_scheduled_settings
+    _render_scheduled_settings(None)
+
+
+def test_the_alert_settings_have_the_watch_leg_on_with_discord(monkeypatch):
+    """En sparad alerts.json från före benet får benet påslaget med Discord; att stänga av det hamnar i filen."""
+    from streamlit.testing.v1 import AppTest
+    import test_watch_ui as twu
+    twu.fake_repo(monkeypatch, {"alerts": {"swing": {"enabled": True, "channels": ["discord"]}}})
+    at = AppTest.from_function(_settings_page, default_timeout=60).run()
+    assert not at.exception
+    tog = at.toggle(key="sched_watch_on")
+    assert tog.label == "👀 Övervakning" and tog.value is True
+    assert at.multiselect(key="sched_watch_ch").value == ["discord"]
+    assert any("BLIR KÖP" in c.value and "faller ur strategins lista" in c.value
+               and "Long Screener som föll" in c.value and "ark som inte gick att läsa" in c.value
+               and f"över {ar.SHEET_MEMORY_DAYS} dagar räknas som borttaget" in c.value for c in at.caption)
+    tog.set_value(False).run()
+    assert at.session_state["alerts"]["watch"] == {"enabled": False, "channels": ["discord"]}
+
+
+def test_the_watch_texts_name_the_two_alerts(monkeypatch):
+    from ovtlyr.ui.rules_page import _PANEL_GUIDE
+    from ui import nav
+    import test_watch_ui as twu
+    cards = dict(nav.HOME_ZONES[[k for k, _t, _c in nav.HOME_ZONES].index("portfolio")][2])
+    assert "larm när en blir KÖP" in cards["👀 Övervakning"]
+    row = next(r for r in _PANEL_GUIDE if r[0] == "PORTFÖLJ → 👀 Övervakning")
+    assert "BLIR KÖP eller faller ur listan" in row[2] and "MER → Larm" in row[2]
+    assert "Long Screener som föll" in row[2] and "ark som inte gick att läsa" in row[2]
+    assert f"över {ar.SHEET_MEMORY_DAYS} dagar räknas som borttaget" in row[2]
+    at, _repo = twu._app(monkeypatch, twu.ITEMS)                     # sidan säger samma sak under tabellen
+    at.run()
+    assert "Larm på Discord när en bevakad aktie BLIR KÖP eller faller ur listan" in \
+        " ".join(m.value for m in at.markdown)

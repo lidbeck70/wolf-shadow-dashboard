@@ -432,6 +432,7 @@ def _render_scheduled_settings(send_fn) -> None:
         "market_risk": {"enabled": True, "channels": ["discord"]},
         "fiat":      {"enabled": True, "channels": ["discord"]},
         "sheets":    {"enabled": True, "channels": ["discord"]},
+        "watch": {"enabled": True, "channels": ["discord"]},
     }
     data = storage.session_load("alerts", {k: dict(v)
                                            for k, v in _LEG_DEFAULTS.items()})
@@ -500,7 +501,16 @@ def _render_scheduled_settings(send_fn) -> None:
              "(−15 % under klustersnitt) och passa (+30 %), Tiggre +100 % "
              "(sälj halva) och 0,8× NAV, Royalty-signal som byter, Rick Rule "
              "skuld över 1,0×, Durretts 10×-regel. Förslagen syns i arken med "
-             "'Använd'.", None)):
+             "'Använd'.", None),
+            ("watch", "👀 Övervakning",
+             "En aktie du bevakar (PORTFÖLJ → 👀 Övervakning) som BLIR KÖP i "
+             "strategins egen körning, eller som faller ur strategins lista "
+             "(också när en färsk körning är tom). Andra byten larmar inte, "
+             "inte heller nytillagda aktier — och inget larmar när körningen "
+             "saknas, felar eller är gammal (en tom körning utan tidsstämpel "
+             "räknas som saknad, liksom en Long Screener som föll eller ett "
+             "ark som inte gick att läsa i Valhalls körning; ett ark som "
+             "saknats i över 14 dagar räknas som borttaget).", None)):
         cfg = data[key]
         c1, c2 = st.columns([1, 2])
         enabled = c1.toggle(label, value=bool(cfg.get("enabled", True)),

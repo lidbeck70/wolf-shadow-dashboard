@@ -1073,6 +1073,13 @@ _PANEL_GUIDE: list[tuple] = [
      "Contrarian, Momentum Swing, Long Screener — körs i schemat); Körningar per strategi visar hur färsk varje "
      "lista är. Tryck Öppna på en aktie så kommer analysen på samma sida: regim, teknik, cykel, råvara, "
      "asymmetri, arken, backtest och regler."),
+    ("PORTFÖLJ → 👀 Övervakning", "Alla strategier: nära köp",
+     "Aktier du bevakar med strategin — läget och avståndet till köp ur strategins egen körning, → Thor per rad. "
+     "Lägg till med 👀 i Thor (strategin i Bedöm som) eller under Nära köp nu (strategiernas BEVAKA-rader). "
+     "Larm på Discord (MER → Larm, benet 👀 Övervakning) när en bevakad aktie BLIR KÖP eller faller ur listan — "
+     "också när en färsk körning är tom; en saknad, felande eller gammal körning (eller en tom utan tidsstämpel) "
+     "larmar inte, inte heller en Long Screener som föll eller ett ark som inte gick att läsa i Valhalls körning "
+     "(Rick Rule, Durrett, Tiggre; ett ark som saknats i över 14 dagar räknas som borttaget)."),
     ("ODIN → Läget", "Momentum: entry #1, #6",
      "Trafikljus GRÖN/GUL/RÖD + regelverk, OMXSPI vs MA200, marknadsbredd "
      "(dör före index) och regimhistorik."),

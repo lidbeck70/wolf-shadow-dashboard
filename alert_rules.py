@@ -49,6 +49,8 @@ KIND_TARGET = {
     "insider_buy": ("👥 Insider KÖP-läge", "thor"),
     "blindspot_early": ("Blindspot TIDIG", "rotation"),
     "fiat": ("🐺 Fiat Debasement", "fiat"),
+    "watch_buy": ("👀 Bevakad aktie blev KÖP", "thor"),
+    "watch_out": ("👀 Bevakad aktie föll ur listan", "thor"),
 }
 
 
@@ -735,6 +737,296 @@ def turn_alerts(board_data: Optional[dict], prev: Optional[dict]) -> tuple:
     return alerts, state
 
 
+# ── 👀 Övervakningen (data/watchlist.json mot Thors rader) ──────────────────
+# Källorna som varje strategis rader i Thor byggs ur (thor.candidates.build; nycklarna i load_blobs, regime =
+# wolf_regime.json, sheet_map = registrets karta för arkens bara nordiska former, 'BOL' → 'BOL.ST', som Thor bygger
+# med). Saknas eller felar en av dem står strategins par still — annars vore "föll ur listan" falskt, liksom KÖP när
+# källan kommer tillbaka (Wolfs ENTRY ur kartan, Momentums regimljus, Qualitys RÖDA sektor, arkens 'BOL' mot 'BOL.ST').
+WATCH_SOURCES = {"viking_nine": ("board", "viking_nine"), "wolf": ("arc", "board"), "viking": ("arc",),
+                 "momentum": ("momentum", "regime"), "berserk": ("berserk",), "ember": ("ember",),
+                 "quality": ("ca_quality", "board"), "deep": ("ca_deep",), "long": ("board",),
+                 "insider": ("insider",), "rule": ("board", "screens", "sheet_map"),
+                 "durrett": ("board", "screens", "sheet_map"), "tiggre": ("board", "screens", "sheet_map"),
+                 "royalty": ("royalty",), "hav": ("screens",)}
+_ARC_PARTS = {"wolf": ("wolf", "wolf_usa"), "viking": ("viking", "viking_usa")}
+_STAMPED = ("ember", "ca_quality", "ca_deep")      # läsarna ger timestamp None när källan inte gick att läsa
+_NOT_LISTS = ("regime", "sheet_map")               # ger inga rader: prövas bara för att de finns, ingen tidsstämpel
+# thor.candidates.build:s delar (nycklarna i errors) som ger rader åt andra strategier än sitt namn. En del som föll i
+# bygget gav inga rader — det är ingen tom lista.
+_BUILD_PARTS = {"themes": ("rule", "durrett", "tiggre"), "arc": ("wolf", "viking"),
+                "screens": ("hav", "rule", "durrett", "tiggre"),
+                "board": tuple(s for s, keys in WATCH_SOURCES.items() if "board" in keys)}
+# valhall_board.json bär flera strategiers listor, och en del kan falla utan felfält (valhall_scan): Long Screenern
+# som kastar sparas som long = None (då står Long Screener still), och ett ark, håvarna eller Quality Contrarian som
+# inte gick att läsa syns bara som en lucka i sources. Då står Rick Rules, Durretts och Tiggres par på brädans rader
+# (KÖP/BEVAKA) still, och brädans stämpel gör inte deras lista färsk. Håvarnas TRÄFF-rader för samma strategier går
+# som vanligt.
+# Arken som strategins rader på brädan byggs ur (valhall.picks): Rick Rules producenter ur producentarket; Durretts
+# bolag ur Durrett-arket, och 15-BAGGER och topp 5 ur Poängmodellen (scoring); Tiggres kandidater ur tiggararket, med
+# temat ur Durrett-arket, producentarket och Poängmodellen (_commodity_lookup). Ett ark som brädan lästes ur någon
+# gång de senaste SHEET_MEMORY_DAYS dagarna men inte i dag är tappat (watch_alerts minns arken) — en lucka för
+# strategierna som beror av det. Ett ark som aldrig funnits (Durrett-arket finns inte i alla paneler), eller saknats
+# längre än så, är ingen lucka: annars fick strategin aldrig larma.
+_BOARD_DEPS = {"rule": ("producers",), "durrett": ("confidence", "scoring"),
+               "tiggre": ("tiggre", "confidence", "producers", "scoring")}
+SHEET_MEMORY_DAYS = 14
+# Utan minne (första körningen, eller ett tillstånd från före minnet) krävs arket som strategin byggs ur, som förut.
+_BOARD_SHEETS = {"rule": ("producers",), "durrett": ("confidence",), "tiggre": ("tiggre",)}
+_CA_MODES = 2                                       # quality och deep_contrarian (valhall_scan._load_sources)
+
+
+def watch_key(ticker: str, strategy: str) -> str:
+    """Parets nyckel i tillståndet och i frozen: 'HEXA-B.ST|viking_nine'."""
+    return f"{ticker}|{strategy}"
+
+
+def _dict(x) -> dict:
+    return x if isinstance(x, dict) else {}
+
+
+def _list(x) -> list:
+    return x if isinstance(x, list) else []
+
+
+def _source_ok(key: str, blob, strategy: str) -> bool:
+    """Källan finns och strategins del av den bär inget felfält (en del som fallerade har inga rader)."""
+    if not isinstance(blob, dict):
+        return False
+    if key in _STAMPED:
+        return bool(blob.get("timestamp")) and not blob.get("error")
+    if key == "regime":
+        return bool(blob.get("regime"))
+    if key == "sheet_map":
+        return bool(blob)
+    if blob.get("error"):
+        return False
+    if key == "board" and strategy == "long":
+        return isinstance(blob.get("long"), dict)            # Long Screenern som kastade: long = None, inga rader
+    if key == "arc":
+        return not any(_dict(blob.get(p)).get("error") for p in _ARC_PARTS.get(strategy, ()))
+    if key == "viking_nine":
+        return not any(_dict(m).get("error") for m in _dict(blob.get("markets")).values())
+    if key == "screens":
+        return not any(_dict(v).get("error") for k, v in _dict(blob.get("screens")).items()
+                       if strategy == "hav" or k == strategy)
+    return True
+
+
+def _board_read(board, strategy: str) -> Optional[bool]:
+    """Lästes strategins delar av valhall_board.json i körningen (brädans sources)? För Rick Rule håvarna och båda
+    Quality Contrarian-körningarna; arken prövas mot minnet i watch_alerts (_sheet_gaps). None = brädan saknar sources
+    och går inte att pröva (sources kom med arkens köp, valhall fas 2b) — då gör brädan inte listan färsk, men fryser
+    inget heller."""
+    if strategy not in _BOARD_DEPS:
+        return True
+    src = _dict(board).get("sources")
+    if not isinstance(src, dict):
+        return None
+    ca = src.get("ca_runs")
+    return strategy != "rule" or (bool(src.get("screens")) and isinstance(ca, int) and ca >= _CA_MODES)
+
+
+def _board_gap(strategy: str) -> str:
+    """frozen-nyckeln 'rule@brädan': strategins del av Valhalls bräda lästes inte (_board_read) — paren som står eller
+    stod på en rad ur brädan (KÖP/BEVAKA) står still; håvarnas TRÄFF-rader går som vanligt."""
+    return f"{strategy}@brädan"
+
+
+def _on_board(state: Optional[dict]) -> bool:
+    """Parets läge kommer ur brädans rader: Rick Rule, Durrett och Tiggre har KÖP/BEVAKA bara där (håvarna: TRÄFF)."""
+    from thor import candidates as tc
+    return isinstance(state, dict) and bool(state.get("in_list")) and state.get("class") in (tc.KOP, tc.BEVAKA)
+
+
+def watch_frozen(blobs: Optional[dict], errors: Optional[dict] = None) -> set:
+    """Det som står still i dag: strategier vars källa saknas eller felar (WATCH_SOURCES, thor.live.blob_errors)
+    eller vars del föll i bygget (errors ur thor.candidates.build), 'strategi@brädan' när strategins del av Valhalls
+    bräda inte lästes (_board_gap; ett tappat ark avgör watch_alerts, som minns arken), och par 'TICKER|strategi'
+    där just aktiens hämtning fallerade (BERSERK:s missing, EMBER-rader med error)."""
+    from thor import candidates as tc
+    from thor import live
+    b = _dict(blobs)
+    out = set(live.blob_errors(b))
+    out |= {s for s, keys in WATCH_SOURCES.items() if not all(_source_ok(k, b.get(k), s) for k in keys)}
+    for part in _dict(errors):
+        out |= set(_BUILD_PARTS.get(part) or ((part,) if part in WATCH_SOURCES else WATCH_SOURCES))
+    out |= {_board_gap(s) for s in _BOARD_DEPS if s not in out and _board_read(b.get("board"), s) is False}
+    out |= {watch_key(tc.yf(t), "berserk") for t in _list(_dict(b.get("berserk")).get("missing")) if t}
+    ember = _dict(b.get("ember"))
+    for r in _list(ember.get("eligible")) + _list(ember.get("near_misses")):
+        if isinstance(r, dict) and r.get("error") and r.get("ticker"):
+            out.add(watch_key(tc.yf(r["ticker"]), "ember"))
+    return out
+
+
+def _stamps(key: str, blob, strategy: str) -> list:
+    """Listans egna tidsstämplar för strategin — samma fält som Thor visar som körd (arc per del, Viking Nine per
+    marknad)."""
+    b = _dict(blob)
+    if key == "arc":
+        return [_dict(b.get(p)).get("generated") for p in _ARC_PARTS.get(strategy, ()) if isinstance(b.get(p), dict)]
+    if key == "viking_nine":
+        return [_dict(m).get("generated") or b.get("generated") for m in _dict(b.get("markets")).values()] or \
+            [b.get("generated")]
+    return [b.get("timestamp" if key in _STAMPED else "generated")]
+
+
+def _recent(stamp, today, days: Optional[int] = None) -> bool:
+    """Stämpeln är högst days (förval tc.STALE_DAYS, samma gräns som Thors GAMMAL) dagar gammal. Ingen eller
+    oläslig = nej."""
+    from datetime import date
+
+    from thor import candidates as tc
+    try:
+        return (today - date.fromisoformat(str(stamp or "")[:10])).days <= (tc.STALE_DAYS if days is None else days)
+    except ValueError:
+        return False
+
+
+def watch_fresh(blobs: Optional[dict], today=None) -> dict:
+    """{strategi: körd} för strategier vars listor är färska enligt sina EGNA tidsstämplar (högst tc.STALE_DAYS
+    gamla) och felfria. Där betyder en aktie som saknas 'inte i listan' — även när listan är tom (BERSERK bär bara
+    KÖP/BEVAKA, Viking Nine bara GOLDEN/READY/DEVELOPING). En lista utan användbar stämpel räknas inte som färsk,
+    inte heller en del av Valhalls bräda som inte lästes eller inte går att pröva (_board_read, Long Screener i
+    _source_ok; ett tappat ark tar watch_alerts bort): utan färska rader står strategins par då still, som när
+    körningen saknas."""
+    from datetime import date
+    t0 = date.fromisoformat(str(today)[:10]) if today else date.today()
+    b = _dict(blobs)
+    out = {}
+    for s, keys in WATCH_SOURCES.items():
+        if not all(_source_ok(k, b.get(k), s) for k in keys) or _board_read(b.get("board"), s) is not True:
+            continue
+        stamps = [x for k in keys if k not in _NOT_LISTS for x in _stamps(k, b.get(k), s)]
+        if stamps and all(_recent(x, t0) for x in stamps):
+            out[s] = max(str(x)[:10] for x in stamps)
+    return out
+
+
+def watch_sheets(blobs: Optional[dict], today=None) -> Optional[dict]:
+    """Arken som Valhalls bräda lästes ur i körningen (brädans sources.sheets) och dagens datum:
+    {"date": "2026-10-17", "read": ["confidence", ...]} — watch_alerts minns dem och ser vilka som tappats. None när
+    brädan saknas, felar eller saknar sources (sources kom med arkens köp, valhall fas 2b): arken går inte att pröva."""
+    from datetime import date
+    board = _dict(_dict(blobs).get("board"))
+    src = board.get("sources")
+    if board.get("error") or not isinstance(src, dict):
+        return None
+    t0 = date.fromisoformat(str(today)[:10]) if today else date.today()
+    return {"date": t0.isoformat(), "read": sorted({str(x) for x in _list(src.get("sheets"))})}
+
+
+def _sheet_gaps(seen: Optional[dict], sheets: Optional[dict]) -> set:
+    """Strategierna vars rader på brädan i dag byggdes utan ett ark de beror av (_BOARD_DEPS): ett ark som brädan
+    lästes ur högst SHEET_MEMORY_DAYS dagar före i dag (seen = {ark: senast läst}) men inte i dag. Utan minne
+    (seen None) krävs arket strategin byggs ur (_BOARD_SHEETS), som förut. sheets = watch_sheets; None = inget att
+    pröva."""
+    from datetime import date
+    if not isinstance(sheets, dict):
+        return set()
+    read = set(_list(sheets.get("read")))
+    if seen is None:
+        return {s for s, need in _BOARD_SHEETS.items() if not set(need) <= read}
+    t0 = date.fromisoformat(str(sheets.get("date"))[:10])
+    lost = {str(n) for n, d in seen.items() if n not in read and _recent(d, t0, SHEET_MEMORY_DAYS)}
+    return {s for s, deps in _BOARD_DEPS.items() if lost & set(deps)}
+
+
+def _sheets_seen(seen: Optional[dict], sheets: Optional[dict]) -> Optional[dict]:
+    """Minnet efter i dag: {ark: senast läst} — dagens ark får dagens datum, de andra står kvar."""
+    if not isinstance(sheets, dict):
+        return seen
+    return {**(seen or {}), **{str(n): str(sheets.get("date")) for n in _list(sheets.get("read"))}}
+
+
+def _px(v) -> str:
+    return f"{v:.2f}" if isinstance(v, (int, float)) else "–"
+
+
+def _watch_alert(item: dict, before: dict, now: dict, st: dict, asof: str) -> Optional[dict]:
+    """Larmet för ett pars övergång — eller None när övergången inte är en av de två som larmar."""
+    from thor import candidates as tc
+    from thor import registry as reg
+    t, s = item["ticker"], item["strategy"]
+    label, who = reg.label(s), item.get("name") or t
+    since = f" Bevakad sedan {item['added']}." if item.get("added") else ""
+    if now["class"] == tc.KOP and before.get("class") != tc.KOP:
+        was = (before.get("status") or before.get("class")) if before.get("in_list") else "inte i listan"
+        lv = " · ".join(f"{n} {_px(st.get(k))}" for k, n in (("entry", "entry"), ("stop", "stopp"), ("target", "mål"))
+                        if st.get(k) is not None)
+        lv = f"{lv}{' (dina egna nivåer)' if st.get('own') else ''}. " if lv else ""
+        extra = f" · {st['score_text']}" if st.get("score_text") else ""
+        return _alert(
+            "watch_buy", f"👀 {t} blev KÖP — {label}",
+            f"{who}: {was or '?'} → {now['status']}{extra}. {lv}Strategins egen körning ({st.get('asof') or '?'}) "
+            f"säger KÖP — öppna i THOR och pröva storlek och R:R innan du agerar.{since}",
+            target="thor", ticker=t, strategy=s)
+    if before.get("in_list") and not now["in_list"]:
+        return _alert(
+            "watch_out", f"👀 {t} föll ur listan — {label}",
+            f"{who} stod som {before.get('status') or before.get('class') or '?'} men finns inte i strategins körning "
+            f"({asof or 'i dag'}). Öppna i THOR för strategins dom i dag, eller ta bort den ur PORTFÖLJ → "
+            f"👀 Övervakning.{since}", target="thor", ticker=t, strategy=s)
+    return None
+
+
+def watch_alerts(watch_data: Optional[dict], rows: Optional[list], prev: Optional[dict], frozen=(),
+                 fresh: Optional[dict] = None, sheets: Optional[dict] = None) -> tuple:
+    """(larm, nytt tillstånd) för 👀 Övervakningen: de bevakade paren (aktie, strategi) mot Thors rader.
+
+    Ägarens beslut: bara två övergångar larmar — paret BLIR KÖP (från vad som helst annat, även från att inte stå i
+    listan) eller FALLER UR strategins lista (stod där, saknas nu). Andra byten är tysta. Första körningen och
+    nytillagda par lägger baslinjen tyst; ett par med alert = False räknas men larmar inte.
+
+    rows = thor.candidates.build(...); None = körningarna gick inte att läsa → benet fryser, liksom när listan
+    (watch_data) inte gick att läsa. frozen = watch_frozen(blobs), fresh = watch_fresh(blobs). En strategi som varken
+    har en färsk rad eller en färsk, felfri lista enligt källans egen stämpel (saknas, eller äldre än tc.STALE_DAYS)
+    och ett par vars egen rad är gammal behåller förra läget — en körning som inte gick är ingen övergång; likaså ett
+    par på brädans rader när strategins del av Valhalls bräda inte lästes ('strategi@brädan' i frozen) eller byggdes
+    utan ett ark den beror av (sheets = watch_sheets(blobs) mot minnet, _sheet_gaps) — då är brädan inte heller
+    färsk för strategin. En färsk lista utan aktien är däremot 'föll ur listan', även när listan är tom.
+    Tillståndet: {"items": {"TICKER|strategi": {"id", "in_list", "class", "status"}}, "sheets": {ark: senast läst}};
+    "sheets" saknas tills brädans ark gått att pröva en gång."""
+    if rows is None or not isinstance(watch_data, dict):
+        return [], (prev if isinstance(prev, dict) else {"items": {}})
+    import watchlist as wl
+    first = not isinstance(prev, dict)
+    seen = _dict(_dict(prev).get("items"))
+    known = _dict(prev).get("sheets")
+    known = known if isinstance(known, dict) else None
+    gaps = {s for s in _BOARD_DEPS if _board_gap(s) in frozen} | _sheet_gaps(known, sheets)
+    raw = watch_data.get("items") if isinstance(watch_data.get("items"), list) else []
+    raw_ids = {str(r.get("id")) for r in raw if isinstance(r, dict) and r.get("id")}   # lagrade id (inte påhittade)
+    asof: dict = {s: d for s, d in (fresh or {}).items() if s not in gaps}
+    ran = set(asof) | {c.strategy for c in rows if not c.stale}
+    for c in rows:
+        asof[c.strategy] = max(asof.get(c.strategy, ""), c.asof or "")
+    items, alerts = {}, []
+    for it in wl.normalize({"items": list(raw)})["items"]:
+        t, s = it["ticker"], it["strategy"]
+        k = watch_key(t, s)
+        before = seen.get(k) if isinstance(seen.get(k), dict) else None
+        if before and before.get("id") and it["id"] in raw_ids and before["id"] != it["id"]:
+            before = None                                # borttagen och tillagd igen: ett nytt par, ny baslinje
+        st = wl.status_of(it, rows)
+        now = {"id": it["id"] if it["id"] in raw_ids else "", "in_list": st["in_list"],
+               "class": st["status_class"], "status": st["status"] if st["in_list"] else ""}
+        # ett nytt par en luckdag får sin baslinje först när brädan är hel (första körningen larmar ändå inte)
+        gap = s in gaps and ((before is None and not first) or _on_board(before) or _on_board(now))
+        if s in frozen or k in frozen or s not in ran or st["stale"] or gap:
+            if before is not None:
+                items[k] = before
+            continue
+        items[k] = now
+        if first or before is None or not it["alert"]:
+            continue
+        a = _watch_alert(it, before, now, st, asof.get(s, ""))
+        if a:
+            alerts.append(a)
+    known = _sheets_seen(known, sheets)
+    return alerts, ({"items": items} if known is None else {"items": items, "sheets": known})
+
+
 def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
              themes: list, prev_state: Optional[dict],
              settings: Optional[dict] = None,
@@ -748,7 +1040,12 @@ def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
              sheets_data: Optional[dict] = None,
              market_risk_data: Optional[dict] = None,
              fiat_data: Optional[dict] = None,
-             board_data: Optional[dict] = None) -> tuple:
+             board_data: Optional[dict] = None,
+             watch_data: Optional[dict] = None,
+             watch_rows: Optional[list] = None,
+             frozen_watch=None,
+             fresh_watch: Optional[dict] = None,
+             sheets_watch: Optional[dict] = None) -> tuple:
     """(larm-med-kanaler, nytt tillstånd) för hela körningen.
 
     settings: data/alerts.json — {"swing": {"enabled", "channels"},
@@ -759,6 +1056,9 @@ def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
 
     ember/wolf/viking-källorna är None när de inte gick att läsa (eller
     aldrig körts) — respektive ben behåller då sin gamla baslinje orörd.
+    watch_data/watch_rows/frozen_watch/fresh_watch/sheets_watch = Övervakningens
+    lista, Thors rader, watch_frozen, watch_fresh och watch_sheets (blobbarna)
+    — se watch_alerts.
     Avstängda ben räknar ändå sitt tillstånd, så en återaktivering inte
     exploderar i retro-larm.
     """
@@ -826,7 +1126,11 @@ def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
     t_alerts, t_state = turn_alerts(board_data, _prev("turns"))
     out += _route("turns", t_alerts)
 
+    wa_alerts, wa_state = watch_alerts(watch_data, watch_rows, _prev("watch"), frozen_watch or (),
+                                       fresh_watch, sheets_watch)
+    out += _route("watch", wa_alerts)
+
     return out, {"swing": s_state, "blindspot": b_state, "ember": e_state,
                  "wolf": w_state, "viking": v_state, "contrarian": c_state,
                  "quality": q_state, "insider": i_state, "screens": sc_state, "sheets": sh_state,
-                 "market_risk": mr_state, "fiat": f_state, "turns": t_state}
+                 "market_risk": mr_state, "fiat": f_state, "turns": t_state, "watch": wa_state}
