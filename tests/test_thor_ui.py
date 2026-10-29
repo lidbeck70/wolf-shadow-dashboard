@@ -191,6 +191,53 @@ def test_segment_dropdown_narrows_the_list(monkeypatch):
     assert "0 KANDIDATER · 0 KÖP · ALLA STRATEGIER · HÄLSOVÅRD" in text and "Inga rader med de filtren" in text
 
 
+def test_theme_shows_the_biggest_companies_without_a_signal(monkeypatch):
+    """Palladium: inga rader i listan, men temats fyra största står under — INGEN SIGNAL, egna Öppna-knappar."""
+    from streamlit.testing.v1 import AppTest
+    _patch(monkeypatch)
+    at = AppTest.from_function(_script)
+    at.run(timeout=60)
+    at.selectbox(key="thor_segment").select("tema:palladium").run(timeout=60)
+    assert not at.exception
+    text = " ".join(m.value for m in at.markdown)
+    assert "0 KANDIDATER · 0 KÖP · ALLA STRATEGIER · MATERIAL › PALLADIUM · 4 STÖRSTA UTAN SIGNAL" in text
+    assert "STÖRST I PALLADIUM — INGEN SIGNAL I DAG" in text and "Största i segmentet" in text and "INGEN SIGNAL" in text
+    assert ">storst<" not in text and "Palladium har bara 4 noterade bolag" in text
+    opens = [b.key for b in at.button if b.label == "Öppna →"]
+    assert opens == ["thor_open_storst_VALT.L", "thor_open_storst_SBSW", "thor_open_storst_UMI.BR",
+                     "thor_open_storst_JMAT.L"]
+    assert "32 · 13 KÖP" in text                                                   # Kandidater-rutan räknar bara riktiga rader
+    at.pills(key="thor_filters").set_value(["bara KÖP"]).run(timeout=60)
+    text = " ".join(m.value for m in at.markdown)
+    assert "Inga rader med de filtren" in text and "STÖRST I PALLADIUM" not in text
+    assert not [b for b in at.button if str(b.key).startswith("thor_open_storst_")]
+    at.pills(key="thor_filters").set_value([]).run(timeout=60)
+    next(b for b in at.button if b.key == "thor_open_storst_SBSW").click().run(timeout=120)
+    assert not at.exception
+    assert at.text_input(key="thor_ticker").value == "SBSW"
+    assert at.selectbox(key="thor_strategy").value == "BERSERK"                    # default_strategy: råvarubolag
+    text = " ".join(m.value for m in at.markdown)
+    assert "VAD SKA JAG GÖRA?" in text and "INGEN SIGNAL" in text and "Kandidater (32)" in " ".join(e.label for e in at.expander)
+
+
+def test_one_strategy_pick_shows_its_own_missing_signal_and_opens_with_it(monkeypatch):
+    """BERSERK + Uran: CCJ har bara EMBER:s rad — står som 'Ingen BERSERK-signal i dag' och öppnas som BERSERK."""
+    from streamlit.testing.v1 import AppTest
+    _patch(monkeypatch)
+    at = AppTest.from_function(_script)
+    at.run(timeout=60)
+    at.selectbox(key="thor_pick").select("BERSERK").run(timeout=60)
+    at.selectbox(key="thor_segment").select("tema:uran").run(timeout=60)
+    assert not at.exception
+    text = " ".join(m.value for m in at.markdown)
+    assert "STÖRST I URAN — INGEN BERSERK-SIGNAL I DAG" in text and "Ingen BERSERK-signal i dag" in text
+    keys = [b.key for b in at.button if str(b.key).startswith("thor_open_storst_")]
+    assert keys == ["thor_open_storst_CCJ", "thor_open_storst_BWXT", "thor_open_storst_PDN.TO", "thor_open_storst_UROY"]
+    next(b for b in at.button if b.key == "thor_open_storst_CCJ").click().run(timeout=120)
+    assert not at.exception
+    assert at.selectbox(key="thor_strategy").value == "BERSERK"                    # inte EMBER-raden
+
+
 def test_a_broken_source_is_reported_not_fatal(monkeypatch):
     from streamlit.testing.v1 import AppTest
     _patch(monkeypatch)

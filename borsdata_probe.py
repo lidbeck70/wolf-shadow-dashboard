@@ -18,6 +18,8 @@ i stället för gissningar:
   5. PROBE_SECTION=kpicalc: vilka calcGroup/calc som ger värden i KPI-screenern för Long Screeners
      nyckeltal som svarar 400 på last/latest (94, 97, 163, 167, 174, 179, 192) — med Börsdatas
      felmeddelande, KPI-metadata och referensbolagens värden (enheter). Även historiken (year/mean).
+  6. PROBE_SECTION=sectors: segmentens största bolag med kassaflöde per marknad (universe/segment_top.py —
+     samma lista som Universum-registret sparar för Thor), med bolagets land så att ADR:er syns.
 
 Skriver ingenting, ändrar ingenting. Exit 0 alltid.
 """
@@ -270,6 +272,14 @@ def main() -> int:
         from market_prices import close
         from universe import theme_probe
         theme_probe.probe(api, fx_getter=lambda sym: close(sym, "1mo"))
+        return 0
+    if os.environ.get("PROBE_SECTION", "all") == "sectors":
+        import market_prices
+        from universe import segment_top
+        try:
+            segment_top.probe(api, fx_getter=lambda sym: market_prices.close(sym, "1mo"))
+        except Exception as exc:                            # proben säger vad som gick fel, exit 0 ändå
+            print(f"Segmentlistan gick inte att räkna: {exc}")
         return 0
 
     print("=" * 72)

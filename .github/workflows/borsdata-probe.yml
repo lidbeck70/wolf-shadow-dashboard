@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       section:
-        description: "Vad som körs: commodities = bara råvarorna (snabb), kpicalc = Long Screeners KPI-kombinationer, markets = marknader och suffix, themes = största bolagen med kassaflöde per tema, all = hela proben"
+        description: "Vad som körs: commodities = bara råvarorna (snabb), kpicalc = Long Screeners KPI-kombinationer, markets = marknader och suffix, themes = största bolagen med kassaflöde per tema, sectors = största bolagen med kassaflöde per segment och marknad, all = hela proben"
         type: choice
-        options: [commodities, kpicalc, markets, themes, all]
+        options: [commodities, kpicalc, markets, themes, sectors, all]
         default: commodities
 
 jobs:
