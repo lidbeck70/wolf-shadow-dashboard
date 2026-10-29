@@ -62,12 +62,14 @@ def test_rank_segments_shows_the_b_share_and_the_home_listing():
     så A-aktien och valutalinjen kan se större ut. Bolaget rangordnas på sitt största slag, B/huvudnoteringen visas."""
     nordic = [_inst(1, "Ericsson A", "ERIC A", 1, 5), _inst(2, "Ericsson B", "ERIC B", 1, 5),
               _inst(3, "Nokia SEK", "NOKIA SEK", 1, 5), _inst(4, "Nokia", "NOKIA", 14, 5, ccy="EUR", country=3),
-              _inst(5, "Mindre AB", "MIND", 1, 5)]
-    mcap = {1: 300_000, 2: 250_000, 3: 330_000, 4: 30_000, 5: 270_000}
-    ocf = {1: 1, 2: 1, 3: 1, 4: 1, 5: 1}
+              _inst(5, "Mindre AB", "MIND", 1, 5),
+              _inst(6, "SEB A", "SEB A", 1, 5), _inst(7, "SEB C", "SEB C", 1, 5)]       # A före C (andra körningen)
+    mcap = {1: 300_000, 2: 250_000, 3: 330_000, 4: 30_000, 5: 270_000, 6: 200_000, 7: 210_000}
+    ocf = {1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1}
     out = ust.rank_segments(nordic, [], mk.FALLBACK, mcap, ocf, {"SEK": 0.1, "EUR": 1.1})
-    assert [r["ticker"] for r in out["industrials"]["norden"]] == ["NOKIA.HE", "ERIC-B.ST", "MIND.ST"]
+    assert [r["ticker"] for r in out["industrials"]["norden"]] == ["NOKIA.HE", "ERIC-B.ST", "MIND.ST", "SEB-A.ST"]
     assert out["industrials"]["norden"][1]["mcap_usd"] == 25_000      # det visade slagets eget värde
+    assert [ust._class_rank(t) for t in ("ERIC B", "RCI.B", "SEB A", "CAST", "SEB C", "BRK.A")] == [0, 0, 1, 1, 2, 1]
 
 
 def test_theme_tops_rank_the_probe_pool_without_otc():

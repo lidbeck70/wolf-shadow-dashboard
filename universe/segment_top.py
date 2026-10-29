@@ -64,15 +64,28 @@ def _company(r: dict) -> str:
     return " ".join(words)
 
 
+def _class_rank(bd: str) -> int:
+    """Aktieslaget att visa ur Börsdatas ticker: B (den handlade i Norden) 0, A eller ett ensamt slag 1,
+    C/D/pref 2 ('SEB C' är den illikvida, 'SEB A' den handlade)."""
+    parts = bd.split()
+    last = parts[-1] if len(parts) > 1 else ""
+    if last == "B" or bd.endswith(".B"):
+        return 0
+    if last in ("C", "D", "R", "PREF") or bd.endswith((".C", ".D")):
+        return 2
+    return 1
+
+
 def _one_per_company(rows: list, n: int) -> list:
     """Bolagen störst först (bolagets största aktieslag i USD), ett aktieslag per bolag, högst n rader.
-    Slaget som visas: huvudnoteringen före en valutalinje ('NOKIA SEK'), B-aktien före A — Börsdata räknar
-    börsvärdet på varje slags egen kurs, så A-aktien ser ofta större ut fast B är den handlade — annars det största."""
+    Slaget som visas: huvudnoteringen före en valutalinje ('NOKIA SEK'), sedan B, A, C/D (_class_rank) — Börsdata
+    räknar börsvärdet på varje slags egen kurs, så A- och C-aktien ser ofta större ut fast B är den handlade —
+    annars det största."""
     best: dict = {}
-    for usd, is_b, ccy_line, r in rows:
+    for usd, cls, ccy_line, r in rows:
         k = _company(r)
         size, pick = best.get(k, (0.0, None))
-        pref = (ccy_line, not is_b, -usd, r["ticker"])
+        pref = (ccy_line, cls, -usd, r["ticker"])
         if pick is None or pref < pick[0]:
             pick = (pref, r)
         best[k] = (max(size, usd), pick)
@@ -102,7 +115,7 @@ def rank_segments(nordic: list, global_: list, table: Optional[dict], mcap: dict
         row = {"ticker": mk.to_yf(inst["ticker"], inst.get("marketId"), table), "name": str(inst.get("name") or ""),
                "mcap_usd": round(usd), "ins_id": iid}
         bd = str(inst["ticker"]).strip().upper()
-        by.setdefault(seg, {}).setdefault(key, []).append((usd, bd.endswith("B"), bd.split()[-1] in CCY_LINES, row))
+        by.setdefault(seg, {}).setdefault(key, []).append((usd, _class_rank(bd), bd.split()[-1] in CCY_LINES, row))
     return {s.key: {k: _one_per_company((by.get(s.key) or {}).get(k) or [], n) for k in MARKETS}
             for s in sgm.SEGMENTS}
 
