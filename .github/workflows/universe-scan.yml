@@ -2,7 +2,8 @@ name: Universum-registret
 
 # Bygger universum-registret (Norden förval, USA, Kanada; London och Australien som extra) ur Börsdata nordiskt
 # + globalt och panelens listor, och sparar universe.json + universe_<marknad>.json i Gisten. Måndagar och
-# manuellt. Ändrar inga skanningar — skannrarna läser registret i egna steg.
+# manuellt. Ändrar inga skanningar — skannrarna läser registret i egna steg. Sparar också segment_top.json
+# (segmentens största bolag med kassaflöde, Börsdata KPI 50/62) som Thor visar under listan.
 on:
   workflow_dispatch:
   schedule:

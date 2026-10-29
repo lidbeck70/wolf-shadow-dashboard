@@ -15,9 +15,10 @@ from thor import registry as reg
 from ui import vocab
 from ui.tokens import AMBER, BG_ALT, BORDER_FAINT, CYAN, DIM, EMBER, FONT_MONO, GOLD, GREEN, GREY, RED, TEXT, regime_color
 
-CLASS_COLOR = {tc.KOP: GREEN, tc.BEVAKA: AMBER, tc.TRAFF: CYAN, tc.HALL: GREY, tc.SPARRAD: RED, tc.SALJ: RED}
+CLASS_COLOR = {tc.KOP: GREEN, tc.BEVAKA: AMBER, tc.TRAFF: CYAN, tc.HALL: GREY, tc.SPARRAD: RED, tc.SALJ: RED,
+               tc.INGEN: GREY}
 VERDICT_WORD = {tc.KOP: "KÖP", tc.BEVAKA: "BEVAKA", tc.TRAFF: "GRANSKA", tc.HALL: "AVVAKTA", tc.SPARRAD: "SPÄRRAD",
-                tc.SALJ: "SÄLJ"}
+                tc.SALJ: "SÄLJ", tc.INGEN: "INGEN SIGNAL"}
 GATE_COLOR = {"PASS": GREEN, "MANUAL": AMBER, "FAIL": RED}
 
 
@@ -64,8 +65,10 @@ def status_chip(c: tc.Candidate) -> str:
 
 
 def family_chip(strategy: str) -> str:
+    """Strategins namn i familjens färg — radslag utan strategi (TOP) får sitt namn i grått, aldrig nyckeln."""
     s = reg.get(strategy)
-    return chip(s.label if s else strategy, reg.FAMILY_COLOR.get(s.family, GREY) if s else GREY)
+    return chip(s.label if s else tc.EXTRA_LABELS.get(strategy, strategy),
+                reg.FAMILY_COLOR.get(s.family, GREY) if s else GREY)
 
 
 def segment_chip(segment: Optional[str], status: Optional[str] = None, cykel: Optional[str] = None) -> str:

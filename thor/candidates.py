@@ -31,7 +31,12 @@ import pandas as pd
 from thor import registry as reg
 
 KOP, BEVAKA, TRAFF, HALL, SPARRAD, SALJ = "KÖP", "BEVAKA", "TRÄFF", "HÅLL", "SPÄRRAD", "SÄLJ"
-CLASS_ORDER = {KOP: 0, BEVAKA: 1, TRAFF: 2, HALL: 3, SPARRAD: 4, SALJ: 5}
+INGEN = "INGEN SIGNAL"                 # segmentets största bolag utan rad i listan (thor.segment_top) — aldrig ett köp
+CLASS_ORDER = {KOP: 0, BEVAKA: 1, TRAFF: 2, HALL: 3, SPARRAD: 4, SALJ: 5, INGEN: 6}
+# Radslag utan egen strategi: ritas bara i listan, aldrig i data["rows"] och aldrig i thor.registry (då hamnade
+# de i Screening-, 'Bedöm som'- och körningsrutorna).
+TOP = "storst"
+EXTRA_LABELS = {TOP: "Största i segmentet"}
 NORDIC_SUFFIX = (".ST", ".OL", ".CO", ".HE", ".IC")
 STALE_DAYS = 4                                 # en körning äldre än så visas, men märks gammal
 UNREADABLE = "_unreadable"          # sätts av load_blobs när ingen enda blob gick att läsa (nät/token), inte "ingen körning"
@@ -48,9 +53,9 @@ WOLF_BANDS = ((85, "BULL"), (65, "MODERATE"), (45, "NEUTRAL"))      # Wolf Regim
 class Candidate:
     ticker: str                    # Yahoo-form
     name: str
-    strategy: str                  # thor.registry-nyckel
+    strategy: str                  # thor.registry-nyckel (eller TOP)
     status: str                    # strategins eget verdikt, ordagrant
-    status_class: str              # KÖP · BEVAKA · TRÄFF · HÅLL · SPÄRRAD · SÄLJ
+    status_class: str              # KÖP · BEVAKA · TRÄFF · HÅLL · SPÄRRAD · SÄLJ (INGEN SIGNAL bara för TOP)
     score: Optional[float] = None  # Thor-rank 0–100 (None = ingen rang)
     score_text: str = ""           # strategins egen siffra
     segment: Optional[str] = None
@@ -70,11 +75,15 @@ class Candidate:
 
     @property
     def family(self) -> str:
-        return reg.STRATEGIES[self.strategy].family
+        """Strategins familj — tom för radslag utan strategi (TOP)."""
+        s = reg.get(self.strategy)
+        return s.family if s else ""
 
     @property
     def label(self) -> str:
-        return reg.STRATEGIES[self.strategy].label
+        """Strategins namn — 'Största i segmentet' för TOP, aldrig ett KeyError."""
+        s = reg.get(self.strategy)
+        return s.label if s else EXTRA_LABELS.get(self.strategy, str(self.strategy))
 
     def as_dict(self) -> dict:
         return {**asdict(self), "family": self.family, "label": self.label}

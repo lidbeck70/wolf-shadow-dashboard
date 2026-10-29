@@ -10,7 +10,8 @@ kurshävstång och tillväxtscenarier), Arken av thor.arken och Backtest av thor
 gamla sidorna, som har bryggknappar kvar tills städningen.
 
 Designen följer Valhall: sidans data i st.session_state[_STATE] med en 📡-knapp, kort som rena HTML-
-funktioner (thor/cards.py), bara den öppna sidofliken ritas (st.tabs med on_change="rerun").
+funktioner (thor/cards.py), bara den öppna sidofliken ritas (st.tabs med on_change="rerun"). Med ett segment,
+tema eller komplex valt står segmentets största bolag utan signal under listan (thor.segment_top) — bara där.
 """
 
 from __future__ import annotations
@@ -94,6 +95,11 @@ def load(loader=None) -> dict:
         out["sheet_map"] = reg_.sheet_map() if reg_ is not None else {}   # arkens 'BOL' → 'BOL.ST' (T4)
     except Exception:
         out["segment_map"], out["names"], out["sheet_map"] = {}, {}, {}
+    try:                                                    # segmentens största med kassaflöde (Universum-registret)
+        from universe import segment_top as ust
+        out["segment_top"] = loader(ust.BLOB, None)
+    except Exception:
+        out["segment_top"] = None
     out["loaded"] = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")
     return out
 
@@ -444,6 +450,9 @@ def _scan_now(st, data: dict, strategy: str) -> None:
 
 
 def _list(st, rows: list, board: Optional[dict] = None, data: Optional[dict] = None) -> None:
+    """Listan: Screening-valet, segmentet, filtren och marknaderna, de riktiga raderna (sidvis) — och under dem
+    segmentets största bolag utan signal (thor.segment_top) när ett segment, tema eller komplex är valt."""
+    from thor import segment_top as stp
     c1, c2 = st.columns([3, 2])
     pick = c1.selectbox("Screening", [ALL] + list(FAMILY_ALL) + [s.label for s in reg.STRATEGIES.values()],
                         key="thor_pick", label_visibility="collapsed")
@@ -462,30 +471,61 @@ def _list(st, rows: list, board: Optional[dict] = None, data: Optional[dict] = N
     if strategy and data is not None:
         _scan_now(st, data, strategy)
     shown = shown_rows(rows, pick, flt, mkts, seg)
+    d = data or {}
+    unreadable = "gist" in (d.get("errors") or {})                  # ingen körning gick att läsa: inget att säga om signaler
+    extra, extra_note = ([], "") if unreadable else stp.top_rows(seg, rows, pick, flt, mkts, board, d.get("segment_top"),
+                                                                 d.get("names"), shown)
     s = tc.summary(shown)
     where = f" · {escape(choices.get(seg, str(seg)).upper())}" if seg and seg != SEGMENT_ALL else ""
+    more = f" · {len(extra)} STÖRSTA UTAN SIGNAL" if extra else ""
     st.markdown(f"<div style='color:{CYAN};font-size:0.72rem;letter-spacing:0.1em;margin:6px 0 2px;'>"
-                f"{s['n']} KANDIDATER · {s['buy']} KÖP · {pick.upper()}{where}</div>", unsafe_allow_html=True)
+                f"{s['n']} KANDIDATER · {s['buy']} KÖP · {pick.upper()}{where}{more}</div>", unsafe_allow_html=True)
     if not shown:
         from ui.components import empty_state
         fails = {k: v for k, v in live.blob_errors(data).items() if pick == ALL or reg.label(k) == pick}
-        if "gist" in (data.get("errors") or {}):
+        if unreadable:
             empty_state("Gisten gick inte att läsa (nätverk eller token) — listan är tom av det skälet, inte för att "
                         "körningar saknas. Tryck 📡 Uppdatera om en stund.")
         elif fails:
             empty_state("Körningen fallerade: " + "; ".join(f"{reg.label(k)} — {err} ({gen})" for k, (err, gen) in fails.items())
                         + ". Kör den igen när felet är rättat.")
+        elif extra:
+            empty_state("Ingen kandidatrad med de filtren i dag — segmentets största bolag utan signal står nedan.")
         else:
             empty_state("Inga rader med de filtren. Kör skanningarna i GitHub Actions eller lätta på filtren.")
-        return
-    n = int(st.session_state.get("thor_show") or PAGE)
-    for c in shown[:n]:
+        if not (extra or extra_note):
+            return
+    else:
+        n = int(st.session_state.get("thor_show") or PAGE)
+        for c in shown[:n]:
+            a, b = st.columns([5, 1])
+            a.markdown(cards.candidate_card(c), unsafe_allow_html=True)
+            b.button("Öppna →", key=f"thor_open_{c.strategy}_{c.ticker}", on_click=_goto, args=(c.ticker, c.strategy),
+                     width="stretch")
+        if len(shown) > n:
+            st.button(f"Visa fler ({len(shown) - n} till)", key="thor_more", on_click=_more, width="stretch")
+    _top_section(st, extra, extra_note, stp.title(seg, pick), strategy, d)
+
+
+def _top_section(st, extra: list, note_txt: str, title: str, strategy: Optional[str], data: dict) -> None:
+    """Avsnittet under listan: segmentets största bolag utan rad i Screening-valet (thor.segment_top) — INGEN
+    SIGNAL i grått, egna Öppna-knappar. Raderna finns bara här, aldrig i data["rows"]. Öppna → skickar strategin
+    när valet är en strategi, annars väljer analysblocket (td.default_strategy)."""
+    from ui.components import note
+    if extra:
+        st.markdown(f"<div style='color:{DIM};font-size:0.72rem;letter-spacing:0.1em;margin:14px 0 2px;'>"
+                    f"{escape(title)}</div>", unsafe_allow_html=True)
+    if note_txt:
+        note(escape(note_txt))
+    failed = sorted(set(data.get("errors") or {}) | set(live.blob_errors(data)))
+    if extra and failed:
+        note("Gick inte att läsa: " + escape(", ".join(reg.label(k) for k in failed))
+             + " — där kan det finnas signaler som inte syns här.")
+    for c in extra:
         a, b = st.columns([5, 1])
         a.markdown(cards.candidate_card(c), unsafe_allow_html=True)
-        b.button("Öppna →", key=f"thor_open_{c.strategy}_{c.ticker}", on_click=_goto, args=(c.ticker, c.strategy),
+        b.button("Öppna →", key=f"thor_open_{tc.TOP}_{c.ticker}", on_click=_goto, args=(c.ticker, strategy),
                  width="stretch")
-    if len(shown) > n:
-        st.button(f"Visa fler ({len(shown) - n} till)", key="thor_more", on_click=_more, width="stretch")
 
 
 def _universe_box(st, index: Optional[dict]) -> None:
