@@ -43,7 +43,8 @@ code, pre, .stCode, [class*="monospace"] {
 /* ── Flikar (st.tabs) ────────────────────────────────────────── */
 /* Streamlit 1.59 ritar st.tabs med React Aria, inte BaseWeb — de gamla
    [data-baseweb="tab"]-reglerna matchade ingenting, så flikarna fick
-   Streamlits standard: 14px och en röd list under den aktiva fliken.
+   Streamlits standard: 14px och en röd list under den aktiva fliken (bara
+   den oavgränsade [aria-selected]-regeln träffade — den ersätts här).
    DOM:en i 1.59:
      div.stTabs[data-testid=stTabs] > div > div[role=tablist]
        > div[role=tab][data-testid=stTab][aria-selected]
