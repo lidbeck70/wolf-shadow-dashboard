@@ -40,40 +40,85 @@ code, pre, .stCode, [class*="monospace"] {
     border-right: 1px solid rgba(0,229,255,0.15);
 }
 
-/* ── Tab styling ─────────────────────────────────────────────── */
-.stTabs [data-baseweb="tab-list"] {
-    background-color: #0D1117;
-    border-bottom: 2px solid rgba(0,229,255,0.2);
+/* ── Flikar (st.tabs) ────────────────────────────────────────── */
+/* Streamlit 1.59 ritar st.tabs med React Aria, inte BaseWeb — de gamla
+   [data-baseweb="tab"]-reglerna matchade ingenting, så flikarna fick
+   Streamlits standard: 14px och en röd list under den aktiva fliken.
+   DOM:en i 1.59:
+     div.stTabs[data-testid=stTabs] > div > div[role=tablist]
+       > div[role=tab][data-testid=stTab][aria-selected]
+         > (div[data-testid=stMarkdownContainer] > p) + div.react-aria-SelectionIndicator
+   plus knapparna stTabsScrollLeft/stTabsScrollRight när raden inte får plats.
+   [role="tablist"] i selektorn ger (0,3,0): slår sidornas egna
+   ".stTabs [role=tab]"-regler (Viking-sidan), så flikraden ser likadan ut överallt. */
+.stTabs [role="tablist"] {
     gap: 4px;
-    padding: 0 8px;
+    overflow-x: auto;                    /* rullar i sidled i stället för att radbryta */
+    flex-wrap: nowrap;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+}
+.stTabs [role="tablist"]::after {        /* baslinjen under raden */
+    background-color: rgba(0,229,255,0.2);
 }
 
-.stTabs [data-baseweb="tab"] {
-    background-color: transparent;
-    border: 1px solid rgba(0,229,255,0.15);
-    border-bottom: none;
+.stTabs [role="tablist"] > [role="tab"] {
+    height: 44px;                        /* tryckyta 44px (Apple HIG) */
+    padding: 0 14px;
+    flex-shrink: 0;
+    white-space: nowrap;
+    border: none;
     border-radius: 6px 6px 0 0;
-    color: rgba(0,229,255,0.5);
+    background-color: transparent;
+    color: #e8e4dc;                      /* TEXT — 16:1 mot #05070A */
     font-family: 'Space Grotesk', sans-serif;
+    font-size: 16px;
+    font-weight: 600;
+    transition: color 0.15s ease, background-color 0.15s ease;
+}
+/* Etiketten är en markdown-ruta (14px Source Sans) med ett p (vikt 400) —
+   båda måste ärva från fliken, annars når storleken och vikten aldrig texten */
+.stTabs [role="tablist"] > [role="tab"] [data-testid="stMarkdownContainer"],
+.stTabs [role="tablist"] > [role="tab"] p {
+    font-family: inherit;
+    font-size: inherit;
+    font-weight: inherit;
+    color: inherit;
+}
+.stTabs [role="tablist"] > [role="tab"]:hover,
+.stTabs [role="tablist"] > [role="tab"][data-focus-visible] {
+    color: #00E5FF;
+    background-color: rgba(0,229,255,0.06);
+}
+
+/* Aktiv flik: cyan text på cyan ton och en tjock cyan list — i stället för
+   Streamlits röda primärfärg. Listen är React Arias SelectionIndicator;
+   klassnamnet är inte hashat (Streamlits egen CSS väljer på det). */
+.stTabs [role="tablist"] > [role="tab"][aria-selected="true"] {
+    color: #00E5FF;
+    background-color: rgba(0,229,255,0.12);
     font-weight: 700;
-    font-size: 13px;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    padding: 10px 20px;
-    transition: all 0.2s ease;
+}
+.stTabs [role="tablist"] > [role="tab"] .react-aria-SelectionIndicator {
+    height: 3px;
+}
+.stTabs [role="tablist"] > [role="tab"][aria-selected="true"] .react-aria-SelectionIndicator {
+    background-color: #00E5FF;
 }
 
-.stTabs [aria-selected="true"] {
-    background: linear-gradient(180deg, rgba(0,229,255,0.12) 0%, transparent 100%);
-    border: 1px solid #00E5FF;
-    border-bottom: none;
+/* Rullpilarna vid radens kanter: lika höga som flikarna, cyan, och tonar
+   mot panelens bakgrund (#05070A) i stället för Streamlits #0e1117 */
+.stTabs [data-testid="stTabsScrollLeft"],
+.stTabs [data-testid="stTabsScrollRight"] {
+    height: 44px;
+    width: 32px;
     color: #00E5FF;
-    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
 }
-
-.stTabs [data-baseweb="tab"]:hover {
-    color: #00E5FF;
-    border-color: rgba(0,229,255,0.4);
+.stTabs [data-testid="stTabsScrollLeft"] {
+    background-image: linear-gradient(to left, rgba(5,7,10,0), #05070A 40%);
+}
+.stTabs [data-testid="stTabsScrollRight"] {
+    background-image: linear-gradient(to right, rgba(5,7,10,0), #05070A 40%);
 }
 
 /* ── Metric cards ────────────────────────────────────────────── */
@@ -442,16 +487,6 @@ hr {
 
 /* ── iPad & Mobile Responsive ─────────────────────────────────── */
 @media (max-width: 1024px) {
-    .stTabs [data-baseweb="tab"] {
-        font-size: 10px !important;
-        letter-spacing: 1px !important;
-        padding: 8px 12px !important;
-    }
-    .stTabs [data-baseweb="tab-list"] {
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-        flex-wrap: nowrap;
-    }
     [data-testid="stMetricValue"] {
         font-size: 20px !important;
     }
@@ -461,16 +496,14 @@ hr {
 }
 
 @media (max-width: 768px) {
-    .stTabs [data-baseweb="tab"] {
-        font-size: 9px !important;
-        padding: 6px 8px !important;
-        letter-spacing: 0.5px !important;
+    /* Telefon: flikarna behåller 44px tryckyta, lite mindre text och
+       luft så att fler syns innan raden rullar */
+    .stTabs [role="tablist"] > [role="tab"] {
+        font-size: 15px;
+        padding: 0 12px;
     }
     [data-testid="stMetricValue"] {
         font-size: 16px !important;
-    }
-    [data-testid="column"] {
-        min-width: 100% !important;
     }
 }
 
@@ -483,16 +516,6 @@ hr {
 /* Smooth scrolling iOS */
 [data-testid="stAppViewContainer"] {
     -webkit-overflow-scrolling: touch;
-}
-
-/* Scrollable tab bar on iPad */
-.stTabs [data-baseweb="tab-list"] {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-}
-.stTabs [data-baseweb="tab"] {
-    white-space: nowrap;
-    flex-shrink: 0;
 }
 
 </style>
