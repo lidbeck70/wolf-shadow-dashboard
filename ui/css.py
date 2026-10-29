@@ -57,9 +57,14 @@ code, pre, .stCode, [class*="monospace"] {
     flex-wrap: nowrap;
     overscroll-behavior-x: contain;
     -webkit-overflow-scrolling: touch;
+    /* Baslinjen under raden. En inre skugga på den rullande raden står still
+       och täcker hela den synliga bredden, hur långt raden än är rullad. */
+    box-shadow: inset 0 -2px 0 rgba(0,229,255,0.2);
 }
-.stTabs [role="tablist"]::after {        /* baslinjen under raden */
-    background-color: rgba(0,229,255,0.2);
+/* Streamlits egen baslinje är ett ::after lika brett som den synliga raden.
+   Det rullar med flikarna och tar slut mitt i raden på telefonen — bort med det. */
+.stTabs [role="tablist"]::after {
+    content: none;
 }
 
 .stTabs [role="tablist"] > [role="tab"] {
@@ -90,6 +95,11 @@ code, pre, .stCode, [class*="monospace"] {
     color: #00E5FF;
     background-color: rgba(0,229,255,0.06);
 }
+/* Tangentbordsfokus: cyan ring i stället för Streamlits röda. Ringen ligger
+   innanför fliken — raden klipper allt som sticker ut ovanför och under. */
+.stTabs [role="tablist"] > [role="tab"][data-focus-visible] {
+    box-shadow: inset 0 0 0 2px rgba(0,229,255,0.5);
+}
 
 /* Aktiv flik: cyan text på cyan ton och en tjock cyan list — i stället för
    Streamlits röda primärfärg. Listen är React Arias SelectionIndicator;
@@ -119,6 +129,10 @@ code, pre, .stCode, [class*="monospace"] {
 }
 .stTabs [data-testid="stTabsScrollRight"] {
     background-image: linear-gradient(to right, rgba(5,7,10,0), #05070A 40%);
+}
+.stTabs [data-testid="stTabsScrollLeft"]:focus-visible,
+.stTabs [data-testid="stTabsScrollRight"]:focus-visible {
+    box-shadow: inset 0 0 0 2px rgba(0,229,255,0.5);
 }
 
 /* ── Metric cards ────────────────────────────────────────────── */

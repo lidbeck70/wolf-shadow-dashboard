@@ -8,7 +8,8 @@ BaseWebs [data-baseweb="tab"] / "tab-list" och matchade ingenting, så
 flikarna fick Streamlits standard (14px, röd list under den aktiva).
 Här kontrolleras att reglerna väljer på den riktiga DOM:en, att aktiv flik
 får panelens cyan, att texten är större och läsbar, att raden rullar i sidled
-på telefonen och att döda selektorer inte kommit tillbaka.
+på telefonen, att baslinjen och fokusringen följer med i panelens cyan och att
+döda selektorer inte kommit tillbaka.
 """
 import os
 import re
@@ -115,7 +116,15 @@ def test_tab_row_scrolls_horizontally_instead_of_wrapping():
     assert row["flex-wrap"] == "nowrap"
     tab = RULES[TAB]
     assert tab["flex-shrink"] == "0" and tab["white-space"] == "nowrap"
-    assert "background-color" in RULES[f"{LIST}::after"]            # baslinjen i panelens ton
+
+
+def test_baseline_spans_the_visible_row_while_scrolled():
+    # Streamlits ::after-baslinje är lika bred som den synliga raden och rullar
+    # med flikarna — på telefonen tog den slut mitt i raden. Den ersätts av en
+    # inre skugga på den rullande raden, som står still och täcker hela bredden.
+    assert RULES[f"{LIST}::after"]["content"] == "none"
+    shadow = RULES[LIST]["box-shadow"]
+    assert shadow.startswith("inset 0 -2px 0 rgba(0,229,255,"), shadow
 
 
 # ── Större text och tryckytor ────────────────────────────────────────────────
@@ -150,6 +159,24 @@ def test_active_tab_is_marked_in_the_panel_accent():
     assert RULES[f"{TAB} {INDICATOR}"]["height"] == "3px"
     hover = RULES[f"{TAB}:hover"]
     assert hover["color"] == tokens.CYAN.lower()
+
+
+def test_keyboard_focus_ring_is_cyan_and_inside_the_tab():
+    # Streamlits fokusring är en röd yttre ring (rgba(255,75,75,0.5) 3.2px).
+    # Raden klipper allt utanför flikens höjd, så ringen ligger innanför.
+    focus = RULES[f"{TAB}[data-focus-visible]"]
+    assert focus["color"] == tokens.CYAN.lower()
+    ring = focus["box-shadow"]
+    assert ring.startswith("inset 0 0 0 2px rgba(0,229,255,"), ring
+    for btn in ('[data-testid="stTabsScrollLeft"]', '[data-testid="stTabsScrollRight"]'):
+        assert RULES[f".stTabs {btn}:focus-visible"]["box-shadow"] == ring
+    # Ringen ska synas mot flikens bakgrund (WCAG 1.4.11: minst 3:1) — även på
+    # den aktiva fliken, som får fokus med piltangenterna.
+    ring_col = re.search(r"rgba\([^)]*\)", ring).group(0)
+    for tab_bg in (focus["background-color"], RULES[ACTIVE]["background-color"]):
+        for base in (APP_BG, GRID_BG):
+            behind = _over(tab_bg, base)
+            assert _contrast(_over(ring_col, behind), behind) >= 3.0, (tab_bg, base)
 
 
 def test_tab_text_contrast_is_at_least_4_5_to_1():
