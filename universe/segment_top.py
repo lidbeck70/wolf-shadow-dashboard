@@ -9,7 +9,8 @@ räknas listan här, varje måndag i Universum-registrets jobb (universe_scan.py
                  (valhall.segments.segment_for — Fastighet är bransch 75–76), marknaderna Norden, USA och Kanada
                  på huvudlistorna (universe.scan.MAIN_BOARD_IDS — inte First North, TSX Venture eller OTC),
                  kassaflöde från löpande verksamhet (KPI 62) > 0, ett aktieslag per bolag
-                 (valhall.picks.company_key), störst börsvärde (KPI 50) i USD — topp 10 per segment och marknad.
+                 (valhall.picks.company_key; B-aktien och huvudnoteringen visas, inte A-aktien eller en
+                 valutalinje), störst börsvärde (KPI 50) i USD — topp 10 per segment och marknad.
   theme_tops     temaprobens urval (universe/theme_probe.py) rangordnat på samma sätt — topp 20 per tema.
   build          de fyra KPI-anropen och bloben. probe = samma tabeller i borsdata_probe (PROBE_SECTION=sectors),
                  med bolagets land så att ADR:er syns.
@@ -29,6 +30,7 @@ TOP_N = 10                                    # per segment och marknad
 THEME_N = 20                                  # per tema (samma tak som temaproben)
 MARKETS = (ur.NORDEN, ur.USA, ur.KANADA)      # bara dessa räknas (Nordnet handlar dem, Börsdata har dem)
 SOURCE = "Börsdata KPI 50/62"
+CCY_LINES = {"SEK", "EUR", "USD", "NOK", "DKK"}   # 'NOKIA SEK' — bolagets andra valutalinje, inte huvudnoteringen
 
 
 def _market(inst: dict, table: Optional[dict], main_boards: bool = True) -> Optional[str]:
@@ -53,19 +55,29 @@ def _usd(inst: dict, value: float, fx: dict) -> float:
     return float(value) * fx.get(ccy, 1.0)
 
 
-def _one_per_company(rows: list, n: int) -> list:
-    """Störst först (B-aktien före A vid samma värde), ett aktieslag per bolag, högst n rader."""
+def _company(r: dict) -> str:
+    """valhall.picks.company_key utan valutalinjen: 'Nokia SEK' och 'Nokia' är samma bolag."""
     from valhall import picks as vp
-    seen, out = set(), []
-    for _usd_, _b, r in sorted(rows, key=lambda x: (-x[0], not x[1], x[2]["ticker"])):
-        k = vp.company_key(r)
-        if k in seen:
-            continue
-        seen.add(k)
-        out.append(r)
-        if len(out) == n:
-            break
-    return out
+    words = vp.company_key(r).split()
+    while len(words) > 1 and words[-1].upper() in CCY_LINES:
+        words.pop()
+    return " ".join(words)
+
+
+def _one_per_company(rows: list, n: int) -> list:
+    """Bolagen störst först (bolagets största aktieslag i USD), ett aktieslag per bolag, högst n rader.
+    Slaget som visas: huvudnoteringen före en valutalinje ('NOKIA SEK'), B-aktien före A — Börsdata räknar
+    börsvärdet på varje slags egen kurs, så A-aktien ser ofta större ut fast B är den handlade — annars det största."""
+    best: dict = {}
+    for usd, is_b, ccy_line, r in rows:
+        k = _company(r)
+        size, pick = best.get(k, (0.0, None))
+        pref = (ccy_line, not is_b, -usd, r["ticker"])
+        if pick is None or pref < pick[0]:
+            pick = (pref, r)
+        best[k] = (max(size, usd), pick)
+    ranked = sorted(best.values(), key=lambda v: (-v[0], v[1][1]["ticker"]))
+    return [pick[1] for _size, pick in ranked[:n]]
 
 
 def rank_segments(nordic: list, global_: list, table: Optional[dict], mcap: dict, ocf: dict, fx: dict,
@@ -89,7 +101,8 @@ def rank_segments(nordic: list, global_: list, table: Optional[dict], mcap: dict
         usd = _usd(inst, m, fx)
         row = {"ticker": mk.to_yf(inst["ticker"], inst.get("marketId"), table), "name": str(inst.get("name") or ""),
                "mcap_usd": round(usd), "ins_id": iid}
-        by.setdefault(seg, {}).setdefault(key, []).append((usd, str(inst["ticker"]).strip().upper().endswith("B"), row))
+        bd = str(inst["ticker"]).strip().upper()
+        by.setdefault(seg, {}).setdefault(key, []).append((usd, bd.endswith("B"), bd.split()[-1] in CCY_LINES, row))
     return {s.key: {k: _one_per_company((by.get(s.key) or {}).get(k) or [], n) for k in MARKETS}
             for s in sgm.SEGMENTS}
 
