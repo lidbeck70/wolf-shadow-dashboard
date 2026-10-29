@@ -161,11 +161,12 @@ def save_journal(trades: list) -> bool:
         return False
 
     try:
+        import private_data                            # antal och resultat i kronor: krypterat när nyckeln finns
         headers = _auth_header(token)
         payload = {
             "files": {
                 JOURNAL_FILENAME: {
-                    "content": json.dumps(trades, indent=2, default=str)
+                    "content": json.dumps(private_data.seal_blob(JOURNAL_FILENAME, trades), indent=2, default=str)
                 }
             }
         }

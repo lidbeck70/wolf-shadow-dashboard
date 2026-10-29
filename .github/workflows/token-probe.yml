@@ -19,8 +19,8 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install requests + streamlit (gist_storage importerar st)
-        run: pip install requests streamlit
+      - name: Install requests + streamlit + cryptography (gist_storage importerar st, private_data dekrypterar)
+        run: pip install requests streamlit cryptography
 
       - name: Probe GIST_TOKEN against the Gists API
         env:
@@ -34,6 +34,7 @@ jobs:
       - name: Probe Gist contents (panel read path)
         env:
           GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+          PANEL_DATA_KEY: ${{ secrets.PANEL_DATA_KEY }}   # innehavsfilerna i Gisten är krypterade (private_data)
         run: python gist_probe.py
 
       - name: Probe Discord webhook (metadata + testmeddelande)

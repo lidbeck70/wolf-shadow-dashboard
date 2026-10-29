@@ -27,6 +27,8 @@ Env:
                     repot är privat)
   ALERT_REPO        ägare/repo (default lidbeck70/wolf-shadow-dashboard)
   ALERT_BRANCH   gren för data/-filerna (default panel-data)
+  PANEL_DATA_KEY    läser det krypterade registret; tillståndet och larmloggen
+                    sparas krypterade i Gisten när den finns (private_data)
   EMBER_GIST_ID     EMBER-resultatens gist (för ember-benet)
   DISCORD_WEBHOOK_URL, SMTP_*, EMAIL_TO   kanalerna (se alerts/channels/)
   PANEL_URL         panelens adress (valfri) — larmen får en länk till rätt vy
@@ -55,6 +57,7 @@ SETTINGS_PATH = "data/alerts.json"
 SWING_PATH = "data/swing.json"
 HOLDINGS_PATH = "data/holdings.json"    # registret — positionerna bor här sedan PR 10
 WATCH_PATH = "data/watchlist.json"      # 👀 Övervakningen — bevakade par (aktie, strategi)
+UNREADABLE_PATHS: set = set()           # filer vars senaste läsning fallerade (nät, fel nyckel) — inte 404
 
 
 def _repo_file(path: str, default):
@@ -62,7 +65,8 @@ def _repo_file(path: str, default):
 
     404 → default (filen är inte skapad än — inte ett fel). Alla andra fel
     loggas och ger default, så en trasig läsning inte fäller hela skanningen —
-    men den syns i loggen i stället för att försvinna.
+    men den syns i loggen i stället för att försvinna, och sökvägen hamnar i
+    UNREADABLE_PATHS (ett oläsbart register är inte "inga innehav").
     """
     import base64
     import requests
@@ -83,12 +87,16 @@ def _repo_file(path: str, default):
                          timeout=20)
         if r.status_code == 404:
             log.info("%s finns inte på %s — använder default", path, branch)
+            UNREADABLE_PATHS.discard(path)
             return default
         r.raise_for_status()
         import private_data                # privata ark (positionerna) ligger krypterade
-        return private_data.unseal(json.loads(base64.b64decode(r.json()["content"])))
+        data = private_data.unseal(json.loads(base64.b64decode(r.json()["content"])))
+        UNREADABLE_PATHS.discard(path)
+        return data
     except Exception as exc:
         log.error("kunde inte läsa %s: %s — använder default", path, exc)
+        UNREADABLE_PATHS.add(path)
         return default
 
 
@@ -178,6 +186,26 @@ def _watch_rows(watch_data, loader, regime_data, ca_loader=None, ember_loader=No
         return None, set(), {}
 
 
+def _keep_held_baselines(new_state: dict, prev_state, sheets_data) -> None:
+    """Ett register som inte gick att läsa (fel PANEL_DATA_KEY, nätfel) är inte "inga innehav": innehavens
+    swing-verdikt och Tiggre-positionernas händelser står kvar i baslinjen. Annars larmade varje SÄLJ och varje
+    Tiggre-händelse en gång till när registret går att läsa igen (F12). Inget larm skickas ur det gamla läget."""
+    def _d(x) -> dict:
+        return x if isinstance(x, dict) else {}
+    prev = _d(prev_state)
+    swing, sheets = new_state.get("swing"), new_state.get("sheets")
+    old = _d(prev.get("swing")).get("verdicts")
+    if HOLDINGS_PATH in UNREADABLE_PATHS and isinstance(old, dict) and isinstance(swing, dict):
+        log.warning("Registret gick inte att läsa — innehavens swing-verdikt står kvar i baslinjen.")
+        new_state["swing"] = {**swing, "verdicts": {**old, **_d(swing.get("verdicts"))}}
+    old = _d(prev.get("sheets")).get("events")
+    if _d(sheets_data).get("holdings_unreadable") and isinstance(old, dict) and isinstance(sheets, dict):
+        # Tiggre-händelserna räknas bara på positionerna (sheets_refresh.build_events) — de bär innehaven.
+        held = {k: v for k, v in old.items() if str(_d(v).get("kind") or "").startswith("tiggre_")}
+        log.warning("Sifferuppdateringen kunde inte läsa registret — Tiggre-positionernas händelser står kvar.")
+        new_state["sheets"] = {**sheets, "events": {**held, **_d(sheets.get("events"))}}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
@@ -198,6 +226,7 @@ def main() -> int:
     if state_status == "missing":
         prev_state = None
 
+    UNREADABLE_PATHS.clear()                       # gäller den här körningens läsningar
     settings = _repo_file(SETTINGS_PATH, {})
     regime_data = load_wolf_json("wolf_regime.json") or {}
     screener_data = load_wolf_json("wolf_screener.json") or {}
@@ -322,6 +351,7 @@ def main() -> int:
     if not themes and isinstance(prev_state, dict):
         new_state["blindspot"] = prev_state.get("blindspot",
                                                 new_state["blindspot"])
+    _keep_held_baselines(new_state, prev_state, sheets_data)
 
     if prev_state is None:
         log.info("Första körningen — baslinje läggs, inga larm skickas.")
@@ -363,8 +393,9 @@ def main() -> int:
         # Förut räckte ETT misslyckat larm (Discord 429) för att inget sparades
         # — då skickades hela skörden igen varje körning och rate-limiten slog
         # till ännu hårdare. Nu sparas tillståndet och de missade loggas.
+        import private_data                 # Actions-loggen är publik — rubrikerna kan bära innehavens tickers
         log.error("%d av %d larm nådde ingen kanal (sparas ändå): %s",
-                  len(failed), len(alerts), " | ".join(failed))
+                  len(failed), len(alerts), private_data.public_log(" | ".join(failed)))
 
     if not save_blob(STATE_FILE, new_state):
         log.error("Tillståndet kunde inte sparas till Gisten — nästa körning "
