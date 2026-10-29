@@ -1075,7 +1075,8 @@ _PANEL_GUIDE: list[tuple] = [
      "asymmetri, arken, backtest och regler."),
     ("PORTFÖLJ → 👀 Övervakning", "Alla strategier: nära köp",
      "Aktier du bevakar med strategin — läget och avståndet till köp ur strategins egen körning, → Thor per rad. "
-     "Lägg till med 👀 i Thor (strategin i Bedöm som) eller under Nära köp nu (strategiernas BEVAKA-rader)."),
+     "Lägg till med 👀 i Thor (strategin i Bedöm som) eller under Nära köp nu (strategiernas BEVAKA-rader). "
+     "Larm på Discord (MER → Larm, benet 👀 Övervakning) när en bevakad aktie BLIR KÖP eller faller ur listan."),
     ("ODIN → Läget", "Momentum: entry #1, #6",
      "Trafikljus GRÖN/GUL/RÖD + regelverk, OMXSPI vs MA200, marknadsbredd "
      "(dör före index) och regimhistorik."),

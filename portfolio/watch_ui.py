@@ -171,7 +171,8 @@ def render_watch_page() -> None:
     _auto(st, rows, data, wl.keys(store))
     note("Läget är strategins eget verdikt ur senaste körningen, översatt rakt av som i Thor — GAMMAL betyder att "
          "körningen är äldre än gränsen. 'Inte i dagens körning' betyder att strategins lista inte har aktien i dag "
-         "(listorna bär bara sina bästa rader); → Thor bedömer den med strategins motor. Inga order läggs här.")
+         "(listorna bär bara sina bästa rader); → Thor bedömer den med strategins motor. Inga order läggs här. "
+         "Larm på Discord när en bevakad aktie BLIR KÖP eller faller ur listan — inga andra byten (MER → Larm).")
     if not store["items"]:
         return
     with st.expander("✏️ Egna nivåer och anteckning", expanded=False):

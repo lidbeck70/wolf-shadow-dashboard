@@ -11,7 +11,8 @@ Flödet:
      gäller påslaget med Discord).
   2. Läs signalkällorna: wolf_regime/wolf_screener ur Gisten, positionerna
      ur data/swing.json, Blindspots temakarta (räknas här — tio års kurser
-     per tema, det är därför jobbet ligger i Actions och inte i en rerun).
+     per tema, det är därför jobbet ligger i Actions och inte i en rerun),
+     Övervakningens lista (data/watchlist.json) mot Thors rader.
   3. Jämför mot förra körningens tillstånd (alert_state.json i Gisten) —
      BARA övergångar larmar. Första körningen lägger baslinjen tyst.
   4. Skicka via alerts.engine (Discord/e-post/webhook) och spara tillståndet.
@@ -53,6 +54,7 @@ SEND_PAUSE_S = 0.5          # paus mellan larmen (Discord: ~5 per 2 s och webhoo
 SETTINGS_PATH = "data/alerts.json"
 SWING_PATH = "data/swing.json"
 HOLDINGS_PATH = "data/holdings.json"    # registret — positionerna bor här sedan PR 10
+WATCH_PATH = "data/watchlist.json"      # 👀 Övervakningen — bevakade par (aktie, strategi)
 
 
 def _repo_file(path: str, default):
@@ -127,6 +129,31 @@ def _themes(skip: bool) -> list:
         import traceback
         log.error("temakartan kunde inte byggas:\n%s", traceback.format_exc())
         return []
+
+
+def _watch_rows(watch_data, loader, regime_data, ca_loader=None, ember_loader=None) -> tuple:
+    """(Thors rader, frysta strategier/par) för Övervakningen — ur samma blobbar som Thor läser, men bara när något
+    bevakas. Rader None = körningarna gick inte att läsa (eller bygget föll): benet står still, inget larmar.
+    ca_loader/ember_loader = de redan lästa CA- och EMBER-listorna, så att de inte hämtas en gång till."""
+    if not isinstance(watch_data, dict):
+        return None, set()
+    if not watch_data.get("items"):
+        return [], set()                                  # inget bevakas: inget att läsa, tillståndet töms
+    try:
+        import alert_rules
+        from thor import candidates as tc
+        from universe import registry as ur
+        blobs = tc.load_blobs(loader, ca_loader, ember_loader)
+        if blobs.get(tc.UNREADABLE):
+            log.warning("Körningarna gick inte att läsa — Övervakningen står stilla.")
+            return None, set()
+        blobs["regime"] = regime_data
+        rows = tc.build(blobs, momentum_map=(ur.load_index(loader) or {}).get("bd_map") or None)
+        return rows, alert_rules.watch_frozen(blobs)
+    except Exception:
+        import traceback
+        log.error("Övervakningens rader kunde inte byggas — benet står stilla:\n%s", traceback.format_exc())
+        return None, set()
 
 
 def main() -> int:
@@ -247,6 +274,14 @@ def main() -> int:
     except Exception:
         log.warning("Fiat Debasement kunde inte räknas — benet står stilla.")
 
+    # 👀 Övervakningen: listan ur panel-data (oläsbar → None, benet fryser) mot Thors rader. Bara KÖP och
+    # "föll ur listan" larmar (alert_rules.watch_alerts).
+    watch_data = _repo_file(WATCH_PATH, None)
+    watch_rows, frozen_watch = _watch_rows(
+        watch_data, load_blob, regime_data,
+        ca_loader={"quality": quality_data, "deep_contrarian": contrarian_data}.get,   # None = oläsbar → fryser
+        ember_loader=lambda: ember_data)
+
     # En hoppad temakarta får inte radera Blindspot-baslinjen: behåll den
     # gamla, annars larmar nästa fullkörning om övergångar som aldrig skett.
     alerts, new_state = alert_rules.evaluate(
@@ -254,7 +289,8 @@ def main() -> int:
         ember_data=ember_data, wolf_data=wolf_data, viking_data=viking_data,
         contrarian_data=contrarian_data, quality_data=quality_data, insider_data=insider_data,
         screens_data=screens_data, sheets_data=sheets_data, market_risk_data=market_risk_data,
-        fiat_data=fiat_data, board_data=load_blob("valhall_board.json", None))
+        fiat_data=fiat_data, board_data=load_blob("valhall_board.json", None),
+        watch_data=watch_data, watch_rows=watch_rows, frozen_watch=frozen_watch)
     if not themes and isinstance(prev_state, dict):
         new_state["blindspot"] = prev_state.get("blindspot",
                                                 new_state["blindspot"])

@@ -80,7 +80,7 @@ HOME_ZONES: tuple = (
     ]),
     ("portfolio", "PORTFÖLJ — POSITIONER OCH MÅLET", [
         ("Positioner", "Positionerna och säljreglerna"),
-        ("👀 Övervakning", "Aktier nära köpläge per strategi — läget ur körningarna och länk till Thor"),
+        ("👀 Övervakning", "Aktier nära köpläge per strategi — läget ur körningarna, larm när en blir KÖP"),
         ("🎯 Mot målet", "Årstakten mot 20/35 %, per strategi, och vad reglerna gett historiskt"),
         ("📊 Papperskonton", "Varje strategi på papper"),
         ("Journal", "Stängda affärer och R"),
