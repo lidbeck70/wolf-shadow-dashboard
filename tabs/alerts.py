@@ -504,9 +504,11 @@ def _render_scheduled_settings(send_fn) -> None:
              "'Använd'.", None),
             ("watch", "👀 Övervakning",
              "En aktie du bevakar (PORTFÖLJ → 👀 Övervakning) som BLIR KÖP i "
-             "strategins egen körning, eller som faller ur strategins lista. "
-             "Andra byten larmar inte, inte heller nytillagda aktier — och "
-             "inget larmar när körningen saknas, felar eller är gammal.", None)):
+             "strategins egen körning, eller som faller ur strategins lista "
+             "(också när en färsk körning är tom). Andra byten larmar inte, "
+             "inte heller nytillagda aktier — och inget larmar när körningen "
+             "saknas, felar eller är gammal (en tom körning utan tidsstämpel "
+             "räknas som saknad).", None)):
         cfg = data[key]
         c1, c2 = st.columns([1, 2])
         enabled = c1.toggle(label, value=bool(cfg.get("enabled", True)),

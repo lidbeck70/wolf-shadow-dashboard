@@ -131,14 +131,29 @@ def _themes(skip: bool) -> list:
         return []
 
 
-def _watch_rows(watch_data, loader, regime_data, ca_loader=None, ember_loader=None) -> tuple:
-    """(Thors rader, frysta strategier/par) för Övervakningen — ur samma blobbar som Thor läser, men bara när något
-    bevakas. Rader None = körningarna gick inte att läsa (eller bygget föll): benet står still, inget larmar.
-    ca_loader/ember_loader = de redan lästa CA- och EMBER-listorna, så att de inte hämtas en gång till."""
+def _sheet_map(loader):
+    """Registrets karta för arkens bara nordiska former ('BOL' → 'BOL.ST') — den Thor bygger raderna med
+    (thor.ui.load: ur.load(...).sheet_map()). None när registret inte gick att läsa: då står Rick Rule, Durrett
+    och Tiggre still (alert_rules.WATCH_SOURCES) i stället för att jämföra en annan tickerform än Thors."""
+    try:
+        from universe import registry as ur
+        reg_u = ur.load(None, loader)
+        return (reg_u.sheet_map() if reg_u is not None else None) or None
+    except Exception as exc:
+        log.warning("Registret gick inte att läsa (%s).", type(exc).__name__)
+        return None
+
+
+def _watch_rows(watch_data, loader, regime_data, ca_loader=None, ember_loader=None, today=None) -> tuple:
+    """(Thors rader, frysta strategier/par, färska listor) för Övervakningen — ur samma blobbar och samma
+    tickerkartor som Thor (thor.ui.load/rebuild), men bara när något bevakas. Rader None = körningarna gick inte att
+    läsa (eller bygget föll): benet står still, inget larmar. ca_loader/ember_loader = de redan lästa CA- och
+    EMBER-listorna, så att de inte hämtas en gång till. today (None = i dag) gäller både radernas GAMMAL och
+    listornas egna stämplar (alert_rules.watch_fresh)."""
     if not isinstance(watch_data, dict):
-        return None, set()
+        return None, set(), {}
     if not watch_data.get("items"):
-        return [], set()                                  # inget bevakas: inget att läsa, tillståndet töms
+        return [], set(), {}                              # inget bevakas: inget att läsa, tillståndet töms
     try:
         import alert_rules
         from thor import candidates as tc
@@ -146,14 +161,21 @@ def _watch_rows(watch_data, loader, regime_data, ca_loader=None, ember_loader=No
         blobs = tc.load_blobs(loader, ca_loader, ember_loader)
         if blobs.get(tc.UNREADABLE):
             log.warning("Körningarna gick inte att läsa — Övervakningen står stilla.")
-            return None, set()
+            return None, set(), {}
         blobs["regime"] = regime_data
-        rows = tc.build(blobs, momentum_map=(ur.load_index(loader) or {}).get("bd_map") or None)
-        return rows, alert_rules.watch_frozen(blobs)
+        blobs["sheet_map"] = _sheet_map(loader)
+        if blobs["sheet_map"] is None:
+            log.warning("Registrets tickerkarta saknas — Rick Rule, Durrett och Tiggre står stilla i Övervakningen.")
+        errors: dict = {}
+        rows = tc.build(blobs, today=today, errors=errors, sheet_map=blobs["sheet_map"],
+                        momentum_map=(ur.load_index(loader) or {}).get("bd_map") or None)
+        if errors:
+            log.warning("Övervakningen: delar som föll i bygget står stilla: %s", ", ".join(sorted(errors)))
+        return rows, alert_rules.watch_frozen(blobs, errors), alert_rules.watch_fresh(blobs, today)
     except Exception:
         import traceback
         log.error("Övervakningens rader kunde inte byggas — benet står stilla:\n%s", traceback.format_exc())
-        return None, set()
+        return None, set(), {}
 
 
 def main() -> int:
@@ -277,7 +299,7 @@ def main() -> int:
     # 👀 Övervakningen: listan ur panel-data (oläsbar → None, benet fryser) mot Thors rader. Bara KÖP och
     # "föll ur listan" larmar (alert_rules.watch_alerts).
     watch_data = _repo_file(WATCH_PATH, None)
-    watch_rows, frozen_watch = _watch_rows(
+    watch_rows, frozen_watch, fresh_watch = _watch_rows(
         watch_data, load_blob, regime_data,
         ca_loader={"quality": quality_data, "deep_contrarian": contrarian_data}.get,   # None = oläsbar → fryser
         ember_loader=lambda: ember_data)
@@ -290,7 +312,7 @@ def main() -> int:
         contrarian_data=contrarian_data, quality_data=quality_data, insider_data=insider_data,
         screens_data=screens_data, sheets_data=sheets_data, market_risk_data=market_risk_data,
         fiat_data=fiat_data, board_data=load_blob("valhall_board.json", None),
-        watch_data=watch_data, watch_rows=watch_rows, frozen_watch=frozen_watch)
+        watch_data=watch_data, watch_rows=watch_rows, frozen_watch=frozen_watch, fresh_watch=fresh_watch)
     if not themes and isinstance(prev_state, dict):
         new_state["blindspot"] = prev_state.get("blindspot",
                                                 new_state["blindspot"])

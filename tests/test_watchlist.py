@@ -56,6 +56,32 @@ def test_normalize_survives_broken_shapes_and_keeps_one_row_per_pair():
     assert wl.normalize(copy.deepcopy(data)) == data                                     # idempotent: inget blir 'osparat'
 
 
+def test_normalize_gives_a_reused_id_a_new_one():
+    """Två rader med samma id (handskriven eller hopslagen fil) får inte dela knappnycklar eller remove/set_levels."""
+    data = wl.normalize({"items": [{"id": "same", "ticker": "BOL.ST", "strategy": "berserk"},
+                                   {"id": "same", "ticker": "ABB.ST", "strategy": "momentum"},
+                                   {"id": "same", "ticker": "BOL.ST", "strategy": "berserk"}]})   # paret: bort
+    ids = [i["id"] for i in data["items"]]
+    assert len(data["items"]) == 2 and ids[0] == "same" and ids[1] != "same" and len(set(ids)) == 2
+    assert wl.normalize(copy.deepcopy(data)) == data                                     # och sedan stabilt
+
+
+def test_load_does_not_call_normalization_alone_unsaved(monkeypatch):
+    """En sparad fil som inte redan har lagrets form (gemener, inget id) normaliseras vid läsningen — det är ingen
+    ändring av dig, så sparraden ska inte säga 'osparade ändringar'. En riktig ändring gör det fortfarande."""
+    state: dict = {}
+    monkeypatch.setattr(streamlit, "session_state", state)
+    monkeypatch.setattr(storage, "load_json", lambda name, default=None: {"items": [
+        {"ticker": "bol.st", "strategy": "berserk", "added": "2026-10-20"}]})
+    data = wl.load()
+    assert data["items"][0]["ticker"] == "BOL.ST" and data["items"][0]["id"]
+    assert not storage.is_dirty(wl.STORE)
+    assert wl.load() is data and not storage.is_dirty(wl.STORE)                        # samma id nästa gång
+    data["items"][0]["note"] = "min ändring"
+    wl.load()
+    assert storage.is_dirty(wl.STORE)                                                   # din ändring syns
+
+
 def test_add_dedupes_on_ticker_and_strategy_and_saves_only_inputs(store):
     state, saves = store
     c = next(x for x in ROWS if (x.strategy, x.ticker) == ("berserk", "BOL.ST"))

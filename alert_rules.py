@@ -739,15 +739,23 @@ def turn_alerts(board_data: Optional[dict], prev: Optional[dict]) -> tuple:
 
 # ── 👀 Övervakningen (data/watchlist.json mot Thors rader) ──────────────────
 # Källorna som varje strategis rader i Thor byggs ur (thor.candidates.build; nycklarna i load_blobs, regime =
-# wolf_regime.json). Saknas eller felar en av dem står strategins par still — annars vore "föll ur listan" falskt,
-# liksom KÖP när källan kommer tillbaka (Wolfs ENTRY ur kartan, Momentums regimljus, Qualitys RÖDA sektor).
+# wolf_regime.json, sheet_map = registrets karta för arkens bara nordiska former, 'BOL' → 'BOL.ST', som Thor bygger
+# med). Saknas eller felar en av dem står strategins par still — annars vore "föll ur listan" falskt, liksom KÖP när
+# källan kommer tillbaka (Wolfs ENTRY ur kartan, Momentums regimljus, Qualitys RÖDA sektor, arkens 'BOL' mot 'BOL.ST').
 WATCH_SOURCES = {"viking_nine": ("board", "viking_nine"), "wolf": ("arc", "board"), "viking": ("arc",),
                  "momentum": ("momentum", "regime"), "berserk": ("berserk",), "ember": ("ember",),
                  "quality": ("ca_quality", "board"), "deep": ("ca_deep",), "long": ("board",),
-                 "insider": ("insider",), "rule": ("board", "screens"), "durrett": ("board", "screens"),
-                 "tiggre": ("board", "screens"), "royalty": ("royalty",), "hav": ("screens",)}
+                 "insider": ("insider",), "rule": ("board", "screens", "sheet_map"),
+                 "durrett": ("board", "screens", "sheet_map"), "tiggre": ("board", "screens", "sheet_map"),
+                 "royalty": ("royalty",), "hav": ("screens",)}
 _ARC_PARTS = {"wolf": ("wolf", "wolf_usa"), "viking": ("viking", "viking_usa")}
 _STAMPED = ("ember", "ca_quality", "ca_deep")      # läsarna ger timestamp None när källan inte gick att läsa
+_NOT_LISTS = ("regime", "sheet_map")               # ger inga rader: prövas bara för att de finns, ingen tidsstämpel
+# thor.candidates.build:s delar (nycklarna i errors) som ger rader åt andra strategier än sitt namn. En del som föll i
+# bygget gav inga rader — det är ingen tom lista.
+_BUILD_PARTS = {"themes": ("rule", "durrett", "tiggre"), "arc": ("wolf", "viking"),
+                "screens": ("hav", "rule", "durrett", "tiggre"),
+                "board": tuple(s for s, keys in WATCH_SOURCES.items() if "board" in keys)}
 
 
 def watch_key(ticker: str, strategy: str) -> str:
@@ -771,6 +779,8 @@ def _source_ok(key: str, blob, strategy: str) -> bool:
         return bool(blob.get("timestamp")) and not blob.get("error")
     if key == "regime":
         return bool(blob.get("regime"))
+    if key == "sheet_map":
+        return bool(blob)
     if blob.get("error"):
         return False
     if key == "arc":
@@ -783,19 +793,63 @@ def _source_ok(key: str, blob, strategy: str) -> bool:
     return True
 
 
-def watch_frozen(blobs: Optional[dict]) -> set:
-    """Det som står still i dag: strategier vars källa saknas eller felar (WATCH_SOURCES, thor.live.blob_errors),
-    och par 'TICKER|strategi' där just aktiens hämtning fallerade (BERSERK:s missing, EMBER-rader med error)."""
+def watch_frozen(blobs: Optional[dict], errors: Optional[dict] = None) -> set:
+    """Det som står still i dag: strategier vars källa saknas eller felar (WATCH_SOURCES, thor.live.blob_errors)
+    eller vars del föll i bygget (errors ur thor.candidates.build), och par 'TICKER|strategi' där just aktiens
+    hämtning fallerade (BERSERK:s missing, EMBER-rader med error)."""
     from thor import candidates as tc
     from thor import live
     b = _dict(blobs)
     out = set(live.blob_errors(b))
     out |= {s for s, keys in WATCH_SOURCES.items() if not all(_source_ok(k, b.get(k), s) for k in keys)}
+    for part in _dict(errors):
+        out |= set(_BUILD_PARTS.get(part) or ((part,) if part in WATCH_SOURCES else WATCH_SOURCES))
     out |= {watch_key(tc.yf(t), "berserk") for t in _list(_dict(b.get("berserk")).get("missing")) if t}
     ember = _dict(b.get("ember"))
     for r in _list(ember.get("eligible")) + _list(ember.get("near_misses")):
         if isinstance(r, dict) and r.get("error") and r.get("ticker"):
             out.add(watch_key(tc.yf(r["ticker"]), "ember"))
+    return out
+
+
+def _stamps(key: str, blob, strategy: str) -> list:
+    """Listans egna tidsstämplar för strategin — samma fält som Thor visar som körd (arc per del, Viking Nine per
+    marknad)."""
+    b = _dict(blob)
+    if key == "arc":
+        return [_dict(b.get(p)).get("generated") for p in _ARC_PARTS.get(strategy, ()) if isinstance(b.get(p), dict)]
+    if key == "viking_nine":
+        return [_dict(m).get("generated") or b.get("generated") for m in _dict(b.get("markets")).values()] or \
+            [b.get("generated")]
+    return [b.get("timestamp" if key in _STAMPED else "generated")]
+
+
+def _recent(stamp, today) -> bool:
+    """Stämpeln är högst tc.STALE_DAYS dagar gammal — samma gräns som Thors GAMMAL. Ingen eller oläslig = nej."""
+    from datetime import date
+
+    from thor import candidates as tc
+    try:
+        return (today - date.fromisoformat(str(stamp or "")[:10])).days <= tc.STALE_DAYS
+    except ValueError:
+        return False
+
+
+def watch_fresh(blobs: Optional[dict], today=None) -> dict:
+    """{strategi: körd} för strategier vars listor är färska enligt sina EGNA tidsstämplar (högst tc.STALE_DAYS
+    gamla) och felfria. Där betyder en aktie som saknas 'inte i listan' — även när listan är tom (BERSERK bär bara
+    KÖP/BEVAKA, Viking Nine bara GOLDEN/READY/DEVELOPING). En lista utan användbar stämpel räknas inte som färsk:
+    utan färska rader står strategins par då still, som när körningen saknas."""
+    from datetime import date
+    t0 = date.fromisoformat(str(today)[:10]) if today else date.today()
+    b = _dict(blobs)
+    out = {}
+    for s, keys in WATCH_SOURCES.items():
+        if not all(_source_ok(k, b.get(k), s) for k in keys):
+            continue
+        stamps = [x for k in keys if k not in _NOT_LISTS for x in _stamps(k, b.get(k), s)]
+        if stamps and all(_recent(x, t0) for x in stamps):
+            out[s] = max(str(x)[:10] for x in stamps)
     return out
 
 
@@ -830,7 +884,8 @@ def _watch_alert(item: dict, before: dict, now: dict, st: dict, asof: str) -> Op
     return None
 
 
-def watch_alerts(watch_data: Optional[dict], rows: Optional[list], prev: Optional[dict], frozen=()) -> tuple:
+def watch_alerts(watch_data: Optional[dict], rows: Optional[list], prev: Optional[dict], frozen=(),
+                 fresh: Optional[dict] = None) -> tuple:
     """(larm, nytt tillstånd) för 👀 Övervakningen: de bevakade paren (aktie, strategi) mot Thors rader.
 
     Ägarens beslut: bara två övergångar larmar — paret BLIR KÖP (från vad som helst annat, även från att inte stå i
@@ -838,9 +893,11 @@ def watch_alerts(watch_data: Optional[dict], rows: Optional[list], prev: Optiona
     nytillagda par lägger baslinjen tyst; ett par med alert = False räknas men larmar inte.
 
     rows = thor.candidates.build(...); None = körningarna gick inte att läsa → benet fryser, liksom när listan
-    (watch_data) inte gick att läsa. frozen = watch_frozen(blobs). En strategi utan färsk rad (saknas, eller äldre än
-    tc.STALE_DAYS) och ett par vars egen rad är gammal behåller också förra läget — en körning som inte gick är ingen
-    övergång. Tillståndet: {"items": {"TICKER|strategi": {"id", "in_list", "class", "status"}}}."""
+    (watch_data) inte gick att läsa. frozen = watch_frozen(blobs), fresh = watch_fresh(blobs). En strategi som varken
+    har en färsk rad eller en färsk, felfri lista enligt källans egen stämpel (saknas, eller äldre än tc.STALE_DAYS)
+    och ett par vars egen rad är gammal behåller förra läget — en körning som inte gick är ingen övergång. En färsk
+    lista utan aktien är däremot 'föll ur listan', även när listan är tom.
+    Tillståndet: {"items": {"TICKER|strategi": {"id", "in_list", "class", "status"}}}."""
     if rows is None or not isinstance(watch_data, dict):
         return [], (prev if isinstance(prev, dict) else {"items": {}})
     import watchlist as wl
@@ -848,8 +905,8 @@ def watch_alerts(watch_data: Optional[dict], rows: Optional[list], prev: Optiona
     seen = _dict(_dict(prev).get("items"))
     raw = watch_data.get("items") if isinstance(watch_data.get("items"), list) else []
     raw_ids = {str(r.get("id")) for r in raw if isinstance(r, dict) and r.get("id")}   # lagrade id (inte påhittade)
-    fresh = {c.strategy for c in rows if not c.stale}
-    asof: dict = {}
+    asof: dict = dict(fresh or {})
+    ran = set(asof) | {c.strategy for c in rows if not c.stale}
     for c in rows:
         asof[c.strategy] = max(asof.get(c.strategy, ""), c.asof or "")
     items, alerts = {}, []
@@ -860,7 +917,7 @@ def watch_alerts(watch_data: Optional[dict], rows: Optional[list], prev: Optiona
         if before and before.get("id") and it["id"] in raw_ids and before["id"] != it["id"]:
             before = None                                # borttagen och tillagd igen: ett nytt par, ny baslinje
         st = wl.status_of(it, rows)
-        if s in frozen or k in frozen or s not in fresh or st["stale"]:
+        if s in frozen or k in frozen or s not in ran or st["stale"]:
             if before is not None:
                 items[k] = before
             continue
@@ -891,7 +948,8 @@ def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
              board_data: Optional[dict] = None,
              watch_data: Optional[dict] = None,
              watch_rows: Optional[list] = None,
-             frozen_watch=None) -> tuple:
+             frozen_watch=None,
+             fresh_watch: Optional[dict] = None) -> tuple:
     """(larm-med-kanaler, nytt tillstånd) för hela körningen.
 
     settings: data/alerts.json — {"swing": {"enabled", "channels"},
@@ -902,8 +960,8 @@ def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
 
     ember/wolf/viking-källorna är None när de inte gick att läsa (eller
     aldrig körts) — respektive ben behåller då sin gamla baslinje orörd.
-    watch_data/watch_rows/frozen_watch = Övervakningens lista, Thors rader och
-    watch_frozen(blobbarna) — se watch_alerts.
+    watch_data/watch_rows/frozen_watch/fresh_watch = Övervakningens lista,
+    Thors rader, watch_frozen och watch_fresh (blobbarna) — se watch_alerts.
     Avstängda ben räknar ändå sitt tillstånd, så en återaktivering inte
     exploderar i retro-larm.
     """
@@ -971,7 +1029,8 @@ def evaluate(regime_data: dict, screener_data: dict, swing_data: dict,
     t_alerts, t_state = turn_alerts(board_data, _prev("turns"))
     out += _route("turns", t_alerts)
 
-    wa_alerts, wa_state = watch_alerts(watch_data, watch_rows, _prev("watch"), frozen_watch or ())
+    wa_alerts, wa_state = watch_alerts(watch_data, watch_rows, _prev("watch"), frozen_watch or (),
+                                       fresh_watch)
     out += _route("watch", wa_alerts)
 
     return out, {"swing": s_state, "blindspot": b_state, "ember": e_state,

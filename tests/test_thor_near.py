@@ -29,6 +29,9 @@ def test_buy_and_blocked_rows_say_so_in_the_strategys_own_words():
     assert _t("momentum", "ERIC-B.ST") == "köpläge nu — rad 1 · setup A"
     assert _t("quality", "SSAB-A.ST") == "köpsignal men spärrad — BUY 4/4 · sektorn RÖD"
     assert near_text(None, fx.BLOBS) == ""
+    # en gammal körning säger inget om i dag — samma som Läget 'KÖP · GAMMAL'
+    old = {(c.strategy, c.ticker): c for c in tc.build(fx.BLOBS, today="2026-10-30")}
+    assert near_text(old[("viking_nine", "HEXA-B.ST")], fx.BLOBS) == "KÖP i en gammal körning — GOLDEN TICKET"
 
 
 def test_watch_rows_say_how_far_from_buy():

@@ -76,32 +76,42 @@ def _item(raw: dict) -> dict:
 
 
 def normalize(data) -> dict:
-    """Lagrets form oavsett vad som lästes. Rader utan aktie eller strategi faller bort, och ett par som står
-    två gånger behålls en gång (den första)."""
+    """Lagrets form oavsett vad som lästes. Rader utan aktie eller strategi faller bort, ett par som står
+    två gånger behålls en gång (den första), och ett id som redan används får ett nytt (knapparnas nycklar och
+    remove/set_levels går på id)."""
     if not isinstance(data, dict):
         data = _default()
     raw = data.get("items") if isinstance(data.get("items"), list) else []
-    seen, items = set(), []
+    seen, ids, items = set(), set(), []
     for r in raw:
         if not isinstance(r, dict) or not _yf(r.get("ticker")) or not r.get("strategy"):
             continue
         i = _item(r)
-        if (i["ticker"], i["strategy"]) not in seen:
-            seen.add((i["ticker"], i["strategy"]))
-            items.append(i)
+        if (i["ticker"], i["strategy"]) in seen:
+            continue
+        while i["id"] in ids:                                 # handskriven eller hopslagen fil: samma id två gånger
+            i["id"] = uuid.uuid4().hex[:10]
+        seen.add((i["ticker"], i["strategy"]))
+        ids.add(i["id"])
+        items.append(i)
     data["items"] = items
     return data
 
 
 # ── Läsning ─────────────────────────────────────────────────────────────────
 def load() -> dict:
-    """Listan, laddad EN gång per session och normaliserad på plats (sessionen äger den sedan)."""
+    """Listan, laddad EN gång per session och normaliserad på plats (sessionen äger den sedan). Ändrade bara
+    normaliseringen en ren lista (id, versaler, standardfält) räknas den fortfarande som sparad — sparraden ska
+    inte säga 'osparade ändringar' när du inte ändrat något."""
     import streamlit as st
     import storage
     data = storage.session_load(STORE, _default())
+    clean = not storage.is_dirty(STORE)
     norm = normalize(data)
     if norm is not data:
         st.session_state[STORE] = norm
+    if clean and storage.is_dirty(STORE):
+        st.session_state[storage._clean_key(STORE)] = storage._fingerprint(norm)
     return norm
 
 

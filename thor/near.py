@@ -149,8 +149,8 @@ def near_text(c, data: Optional[dict] = None) -> str:
     körningarnas blobbar (thor.ui.load). Tål trasiga blobbar: då står strategins eget ord."""
     if c is None:
         return ""
-    if c.status_class == tc.KOP:
-        return f"köpläge nu — {c.status}"
+    if c.status_class == tc.KOP:                    # en gammal körning säger inget om i dag (Läge: KÖP · GAMMAL)
+        return f"KÖP i en gammal körning — {c.status}" if c.stale else f"köpläge nu — {c.status}"
     if c.status_class == tc.SPARRAD:
         return f"köpsignal men spärrad — {c.status}"
     fn = NEAR.get(c.strategy)

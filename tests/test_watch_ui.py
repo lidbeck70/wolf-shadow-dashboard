@@ -122,6 +122,14 @@ def test_table_rows_and_missing_reasons():
     assert priced[0]["Kurs"] == "115.50" and priced[0]["Till entry"] == "+5.0 %" and priced[0]["Över stopp"] == "+11.1 %"
     old = thor_data(today="2026-10-30")
     assert wu.table_rows(items[:1], old["rows"], old)[0]["Läge"] == "KÖP · GAMMAL"
+    assert wu.table_rows(items[:1], old["rows"], old)[0]["Avstånd"] == "KÖP i en gammal körning — GOLDEN TICKET"
+    # varje del en gång: BERSERK:s status och siffra delar setupen, ögonblicksbildens klass står i statusen
+    bol = wl.normalize({"items": [{"id": "b1", "ticker": "BOL.ST", "strategy": "berserk", "at_add": {
+        "class": "KÖP", "status": "KÖP · S2 Cykelvändning"}}]})["items"]
+    (row,) = wu.table_rows(bol, data["rows"], data)
+    assert row["Strategins ord"] == "KÖP · S2 Cykelvändning · basmetaller" and row["Vid tillägg"] == "KÖP · S2 Cykelvändning"
+    assert wu.joined("KÖP", "KÖP — logga i journalen", "", None) == "KÖP — logga i journalen"
+    assert wu.joined("BEVAKA", "READY") == "BEVAKA · READY" and wu.joined("", None) == ""
     assert "#6b7280" in wu.lage_color("KÖP · GAMMAL") and "#2d8a4e" in wu.lage_color("KÖP")
     assert wu.missing_text("wolf", {"errors": {"gist": "nere"}}) == "körningarna gick inte att läsa"
     assert wu.missing_text("wolf", {"arc": {"wolf": {"rows": [], "error": "licens saknas"}}}) == \
@@ -176,7 +184,7 @@ def test_page_lists_status_opens_thor_and_removes(monkeypatch):
     assert list(df.columns)[:9] == ["Aktie", "Strategi", "Läge", "Strategins ord", "Avstånd", "Entry/Stopp", "Körd",
                                     "Sedan", "Vid tillägg"]
     labels = [b.label for b in at.button]
-    assert "HEXA-B.ST → Thor (Viking Nine)" in labels and labels.count("✕ Ta bort") == 3
+    assert "HEXA-B.ST → Thor (Viking Nine)" in labels
     at.button(key="watch_open_w1").click().run(timeout=60)
     assert at.session_state["nav_goto"] == "thor" and at.session_state["thor_ticker"] == "HEXA-B.ST"
     assert at.session_state["thor_strategy"] == "Viking Nine"
@@ -185,6 +193,98 @@ def test_page_lists_status_opens_thor_and_removes(monkeypatch):
     assert [i["id"] for i in repo["watchlist"]["items"]] == ["w1", "w3"]
     assert at.dataframe[0].value["Aktie"].tolist() == ["HEXA-B.ST", "ABB.ST"]
     assert any("NOPE.ST borttagen" in t.value for t in at.toast)
+
+
+def _popovers(at) -> dict:
+    """{etikett: [(knappnyckel, knappetikett)]} för sidans popovers — AppTest ritar innehållet även när de är stängda."""
+    out: dict = {}
+
+    def walk(node):
+        for ch in (getattr(node, "children", None) or {}).values():
+            if getattr(ch, "type", None) == "popover":
+                out[ch.proto.popover.label] = [(b.key, b.label) for b in ch.button]
+            walk(ch)
+    walk(at.main)
+    return out
+
+
+def test_remove_names_the_stock_and_sits_behind_a_confirmation(monkeypatch):
+    """Mobilen staplar raderna: '✕ Ta bort' säger vilken aktie, och tar inte bort något förrän du bekräftat inuti."""
+    at, repo = _app(monkeypatch, ITEMS)
+    at.run(timeout=60)
+    assert not at.exception
+    boxes = _popovers(at)
+    assert boxes["✕ Ta bort NOPE.ST"] == [("watch_del_w2", "Ja, ta bort NOPE.ST (Wolf)")]
+    assert set(boxes) == {"✕ Ta bort HEXA-B.ST", "✕ Ta bort NOPE.ST", "✕ Ta bort ABB.ST"}
+    deletes = [b.key for b in at.button if (b.key or "").startswith("watch_del_")]
+    assert sorted(deletes) == sorted(k for v in boxes.values() for k, _l in v)      # ingen ta-bort utanför bekräftelsen
+    assert not [b for b in at.button if b.label.startswith("✕")]
+    at.run(timeout=60)                                                             # att öppna rutan ändrar inget
+    assert len(repo["watchlist"]["items"]) == 3
+    at.button(key="watch_del_w2").click().run(timeout=60)
+    assert [i["id"] for i in repo["watchlist"]["items"]] == ["w1", "w3"] and "✕ Ta bort NOPE.ST" not in _popovers(at)
+
+
+def test_saved_levels_show_in_the_table_in_the_same_run(monkeypatch):
+    """Spara nivåer är en callback: tabellen ovanför visar de nya egna nivåerna direkt, inte först vid nästa klick."""
+    at, repo = _app(monkeypatch, ITEMS)
+    at.run(timeout=60)
+    at.selectbox(key="watch_lv_pick").select("w2").run(timeout=60)
+    assert at.dataframe[0].value["Entry/Stopp"].tolist()[1] == "10.00 / 9.00 (egna)"
+    at.number_input(key="watch_lv_entry_w2").set_value(12.5)
+    at.number_input(key="watch_lv_stop_w2").set_value(11.0)
+    at.text_input(key="watch_lv_note_w2").set_value("vänta på rapporten")
+    at.button(key="watch_lv_save_w2").click().run(timeout=60)
+    assert not at.exception
+    df = at.dataframe[0].value
+    assert df["Entry/Stopp"].tolist()[1] == "12.50 / 11.00 (egna)" and df["Anteckning"].tolist()[1] == "vänta på rapporten"
+    saved = next(i for i in repo["watchlist"]["items"] if i["id"] == "w2")
+    assert saved["levels"] == {"entry": 12.5, "stop": 11.0, "target": None}
+    assert any(t.value == "NOPE.ST: egna nivåer sparade." for t in at.toast)
+    assert at.number_input(key="watch_lv_entry_w2").value == 12.5                    # fälten står kvar
+
+
+def test_two_rows_with_the_same_id_render_and_remove_separately(monkeypatch):
+    """En handskriven fil med samma id två gånger: sidan ritas (inga dubbla nycklar) och ta bort tar rätt rad."""
+    from streamlit.testing.v1 import AppTest
+    tu._patch(monkeypatch)
+    repo = fake_repo(monkeypatch, {"watchlist": {"items": [
+        {"id": "same", "ticker": "HEXA-B.ST", "strategy": "viking_nine", "added": "2026-10-20"},
+        {"id": "same", "ticker": "ABB.ST", "strategy": "momentum", "added": "2026-10-21"}]}})
+    at = AppTest.from_function(_page)
+    at.session_state["thor_data"] = thor_data()
+    at.run(timeout=60)
+    assert not at.exception
+    assert at.dataframe[0].value["Aktie"].tolist() == ["HEXA-B.ST", "ABB.ST"]
+    opens = [b.key for b in at.button if (b.key or "").startswith("watch_open_")]
+    assert len(opens) == len(set(opens)) == 2 and "watch_open_same" in opens
+    other = next(k for k in opens if k != "watch_open_same").removeprefix("watch_open_")
+    at.button(key=f"watch_del_{other}").click().run(timeout=60)
+    assert not at.exception
+    assert [(i["id"], i["ticker"]) for i in repo["watchlist"]["items"]] == [("same", "HEXA-B.ST")]
+
+
+def test_a_stored_file_in_old_form_is_not_unsaved_on_first_render(monkeypatch):
+    """Gemener och inget id i filen: läsningen normaliserar, men det är ingen ändring — ingen 'osparade ändringar'
+    och inget skrivs. En riktig ändring (✕ Ta bort) sparar den normaliserade formen."""
+    from streamlit.testing.v1 import AppTest
+    tu._patch(monkeypatch)
+    repo = fake_repo(monkeypatch, {"watchlist": {"items": [
+        {"ticker": "hexa-b.st", "strategy": "viking_nine", "added": "2026-10-20"},
+        {"ticker": "abb.st", "strategy": "momentum", "added": "2026-10-21"}]}})
+    at = AppTest.from_function(_page)
+    at.session_state["thor_data"] = thor_data()
+    at.run(timeout=60)
+    assert not at.exception
+    text = " ".join(m.value for m in at.markdown)
+    assert "Du har osparade ändringar" not in text and "Inga osparade ändringar" in text
+    assert repo["watchlist"]["items"][0]["ticker"] == "hexa-b.st"                    # ritningen skriver inget
+    assert at.dataframe[0].value["Aktie"].tolist() == ["HEXA-B.ST", "ABB.ST"]
+    at.run(timeout=60)
+    assert "Du har osparade ändringar" not in " ".join(m.value for m in at.markdown)
+    abb = next(b.key for b in at.button if (b.key or "").startswith("watch_del_") and "ABB.ST" in b.label)
+    at.button(key=abb).click().run(timeout=60)
+    assert [(i["ticker"], bool(i["id"])) for i in repo["watchlist"]["items"]] == [("HEXA-B.ST", True)]
 
 
 def test_prices_on_demand_and_own_levels(monkeypatch):

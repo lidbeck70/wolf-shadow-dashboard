@@ -8,7 +8,7 @@ data/watchlist.json (bara inmatningar — läget skrivs aldrig vid ritning).
 
   Min bevakning      Aktie · Strategi · Läge · Strategins ord · Avstånd · Entry/Stopp · Körd · Sedan · Vid tillägg,
                      och per rad → Thor (strategin förvald) och ✕ Ta bort. 💲 Hämta kurser lägger kursen bredvid
-                     (bara i sessionen). Egna nivåer och en anteckning per rad.
+                     (bara i sessionen). Egna nivåer och en anteckning per rad. ✕ Ta bort går via en bekräftelse.
   Nära köp nu        Thors BEVAKA-rader — strategins eget "nästan" — de första per strategi i listans ordning,
                      med 👀 för att bevaka. Svarar på frågan även innan något är bevakat.
 """
@@ -37,10 +37,22 @@ def levels_text(s: dict) -> str:
     return f"{_num(s.get('entry'))} / {_num(s.get('stop'))}" + (" (egna)" if s.get("own") else "")
 
 
+def joined(*texts) -> str:
+    """Texterna ihop med ' · ', varje del en gång: en del som redan står i en annan del tas bort —
+    'KÖP' + 'KÖP · S2 Cykelvändning' → 'KÖP · S2 Cykelvändning'."""
+    parts: list = []
+    for t in texts:
+        for p in str(t or "").split(" · "):
+            p = p.strip()
+            if p and p not in parts:
+                parts.append(p)
+    return " · ".join(p for p in parts if not any(p != q and p in q for q in parts))
+
+
 def at_add_text(item: dict) -> str:
     """Thors läge när paret lades till: 'BEVAKA · rad 5' — 'ingen rad' när strategin saknade aktien då."""
     a = item.get("at_add") or {}
-    return " · ".join(x for x in (a.get("class"), a.get("status")) if x) or "ingen rad"
+    return joined(a.get("class"), a.get("status")) or "ingen rad"
 
 
 def lage(s: dict) -> str:
@@ -79,8 +91,7 @@ def table_rows(items: list, rows: list, data: dict, prices: Optional[dict] = Non
     out = []
     for it in items:
         s = wl.status_of(it, rows)
-        word = (" · ".join(x for x in (s["status"], s["score_text"]) if x) if s["in_list"]
-                else missing_text(it["strategy"], data))
+        word = joined(s["status"], s["score_text"]) if s["in_list"] else missing_text(it["strategy"], data)
         row = {"Aktie": it["ticker"], "Strategi": reg.label(it["strategy"]), "Läge": lage(s),
                "Strategins ord": word, "Avstånd": near.near_text(s["candidate"], data) if s["in_list"] else "—",
                "Entry/Stopp": levels_text(s), "Körd": s["asof"] or "—", "Sedan": it["added"] or "—",
@@ -134,6 +145,16 @@ def _remove(item_id: str) -> None:
 def _pin(ticker: str, name: str, strategy: str, at_add: dict) -> None:
     import watchlist as wl
     _toast(wl.add(ticker, strategy, name=name, source="auto", at_add=at_add)[1])
+
+
+def _save_levels(item_id: str) -> None:
+    """Spara nivåer: fälten läses ur sessionen (callbacken körs före omritningen, så tabellen visar dem direkt).
+    Ett sparfel står i toasten och i sparraden överst."""
+    import streamlit as st
+    import watchlist as wl
+    ss = st.session_state
+    _toast(wl.set_levels(item_id, ss.get(f"watch_lv_entry_{item_id}"), ss.get(f"watch_lv_stop_{item_id}"),
+                         ss.get(f"watch_lv_target_{item_id}"), note=ss.get(f"watch_lv_note_{item_id}"))[1])
 
 
 # ── Sidan ───────────────────────────────────────────────────────────────────
@@ -199,10 +220,19 @@ def _mine(st, pd, items: list, rows: list, data: dict) -> None:
     df = pd.DataFrame(table_rows(items, rows, data, st.session_state.get(_PRICES))).fillna("")
     st.dataframe(df.style.map(lage_color, subset=["Läge"]), hide_index=True, width="stretch")
     for it in items:
+        t, label = it["ticker"], reg.label(it["strategy"])
         a, b = st.columns([3, 1])
-        a.button(f"{it['ticker']} → Thor ({reg.label(it['strategy'])})", key=f"watch_open_{it['id']}", on_click=go,
-                 args=("thor", it["ticker"], it["strategy"]), width="stretch")
-        b.button("✕ Ta bort", key=f"watch_del_{it['id']}", on_click=_remove, args=(it["id"],), width="stretch")
+        a.button(f"{t} → Thor ({label})", key=f"watch_open_{it['id']}", on_click=go,
+                 args=("thor", t, it["strategy"]), width="stretch")
+        # Bakom en bekräftelse (som ui.components.confirm_delete): på mobilen staplas raderna, och ett tryck på fel
+        # rad ska inte ta bort en bevakning — med den försvinner Sedan och läget vid tillägget.
+        with b.popover(f"✕ Ta bort {t}", key=f"watch_delbox_{it['id']}", width="stretch",
+                       help="Öppnar en bekräftelse — inget tas bort direkt."):
+            since = f" sedan {it['added']}" if it.get("added") else ""
+            st.caption(f"{t} med {label}, bevakad{since}. Sedan och läget vid tillägget försvinner — lägger du "
+                       "tillbaka den börjar bevakningen om.")
+            st.button(f"Ja, ta bort {t} ({label})", key=f"watch_del_{it['id']}", type="primary", on_click=_remove,
+                      args=(it["id"],), width="stretch")
 
 
 def _auto(st, rows: list, data: dict, watched: set) -> None:
@@ -233,9 +263,8 @@ def _auto(st, rows: list, data: dict, watched: set) -> None:
 
 
 def _levels(st, items: list) -> None:
-    """Egna nivåer och anteckning för en rad — dina inmatningar; strategins nivåer går före när de finns."""
-    import watchlist as wl
-    from positions import UNSAVED
+    """Egna nivåer och anteckning för en rad — dina inmatningar; strategins nivåer går före när de finns. Spara
+    nivåer är en callback, så tabellen ovanför visar de nya nivåerna i samma körning."""
     from thor import registry as reg
     from ui.components import note
     ids = [i["id"] for i in items]
@@ -249,11 +278,9 @@ def _levels(st, items: list) -> None:
         return
     lv = it.get("levels") or {}
     c1, c2, c3 = st.columns(3)
-    entry = c1.number_input("Entry", min_value=0.0, value=lv.get("entry"), key=f"watch_lv_entry_{pick}")
-    stop = c2.number_input("Stopp", min_value=0.0, value=lv.get("stop"), key=f"watch_lv_stop_{pick}")
-    target = c3.number_input("Mål", min_value=0.0, value=lv.get("target"), key=f"watch_lv_target_{pick}")
-    text = st.text_input("Anteckning", value=it.get("note") or "", key=f"watch_lv_note_{pick}")
+    c1.number_input("Entry", min_value=0.0, value=lv.get("entry"), key=f"watch_lv_entry_{pick}")
+    c2.number_input("Stopp", min_value=0.0, value=lv.get("stop"), key=f"watch_lv_stop_{pick}")
+    c3.number_input("Mål", min_value=0.0, value=lv.get("target"), key=f"watch_lv_target_{pick}")
+    st.text_input("Anteckning", value=it.get("note") or "", key=f"watch_lv_note_{pick}")
     note("Egna nivåer visas när strategins körning inte har några (märkta '(egna)'). De ändrar inga regler.")
-    if st.button("Spara nivåer", key=f"watch_lv_save_{pick}"):
-        ok, msg = wl.set_levels(pick, entry, stop, target, note=text)
-        (st.success if ok and UNSAVED not in msg else st.warning)(msg)
+    st.button("Spara nivåer", key=f"watch_lv_save_{pick}", on_click=_save_levels, args=(pick,))
