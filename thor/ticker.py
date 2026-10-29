@@ -8,7 +8,8 @@ och källan följer alltid med:
   Börsdata    insId, namn, sektor/bransch, marknad, valuta — nordiska listan först, sedan den globala
               (sheets_refresh.resolve). Bara den cachade instrumentlistan, inga nya anrop per aktie.
   segment     Valhalls segment ur Börsdatas sektor/bransch (valhall.segments), annars ur råvarutemat.
-  hemmaindex  ^OMX / OBX.OL / ^OMXC25 / ^OMXH25 / SPY (alpha_regime.quality_scan.benchmark_for).
+  hemmaindex  ^OMX / OBX.OL / ^OMXC25 / ^OMXH25 / SPY (alpha_regime.quality_scan.benchmark_for) — regelinput.
+              Etiketten i huvudet och Cykel-fliken tar registrets index för London/Europa/Kanada (home_label).
   marknad     OMXS30 / SPY — Viking Nines marknadslager (samma regel som ovtlyr_nine.market_for).
   sektor-ETF  Börsdatas sektor → SPDR (ovtlyr_nine.BORSDATA_SECTOR_ETFS), annars segmentets SPDR.
   råvarutema  i ordning: dina ark (Durrett/producent/Poängmodellen) → BERSERK-listan → EMBER-listan →
@@ -24,11 +25,14 @@ from dataclasses import asdict, dataclass
 from typing import Optional
 
 from thor.candidates import NORDIC_SUFFIX, yf as yf_form
+from universe import registry as ur
 
 BRANCH_THEME = {1: "olja", 2: "olja", 3: "olja", 4: "olja", 5: "olja", 6: "kol", 7: "uran", 18: "guld"}
 SOURCE_SHEET, SOURCE_BERSERK, SOURCE_EMBER, SOURCE_BRANCH = "arket", "BERSERK-listan", "EMBER-listan", "Börsdata-bransch"
 SOURCE_THEMES = "temalistan (störst med kassaflöde)"
 NORDIC_MARKET, US_MARKET = "OMXS30", "SPY"
+# Alla börssuffix registret känner (Norden, Kanada, London, Europa, Australien), längst först (granskning 3, T14)
+SUFFIXES = tuple(sorted({s for m in ur.MARKETS for s in m.suffixes if s} | set(NORDIC_SUFFIX), key=lambda s: (-len(s), s)))
 
 
 @dataclass
@@ -47,6 +51,7 @@ class Ticker:
     segment_label: str = ""
     home_index: str = ""
     market: str = ""
+    home_label: str = ""           # hemmamarknaden att visa (registrets index) — home_index är regelinputen
     sector_etf: Optional[str] = None
     sector_source: str = ""
     theme: Optional[str] = None
@@ -64,9 +69,9 @@ class Ticker:
 
 # ── Former ──────────────────────────────────────────────────────────────────
 def base(ticker) -> str:
-    """Tickern utan börssuffix: 'ERIC-B.ST' → 'ERIC-B'."""
+    """Tickern utan börssuffix: 'ERIC-B.ST' → 'ERIC-B', 'TTE.PA' → 'TTE' (alla registrets marknader)."""
     t = yf_form(ticker)
-    for s in NORDIC_SUFFIX + (".TO", ".V", ".L", ".AX"):
+    for s in SUFFIXES:
         if t.endswith(s):
             return t[:-len(s)]
     return t
@@ -176,6 +181,17 @@ def home_index(ticker) -> str:
     return benchmark_for(yf_form(ticker))
 
 
+def home_label(ticker) -> str:
+    """Hemmamarknaden att visa i huvudet och Cykel-fliken: registrets index för London, Europa, Kanada och
+    Australien (^FTSE, ^STOXX50E …), annars samma som home_index. Bara etikett — regelinputen (home_index, t.ex.
+    Alpha Regimes riktmärke) ändras inte (granskning 3, T15)."""
+    t = yf_form(ticker)
+    m = ur.BY_KEY.get(ur.market_of(t))
+    if m is None or m.key in (ur.NORDEN, ur.USA):
+        return home_index(t)
+    return m.index
+
+
 def market_for(ticker) -> str:
     """Viking Nines marknad: nordiskt suffix → OMXS30, annars SPY (ovtlyr_nine.market_for — testet håller dem lika)."""
     return NORDIC_MARKET if yf_form(ticker).endswith(NORDIC_SUFFIX) else US_MARKET
@@ -211,5 +227,6 @@ def identify(raw, api=None, sheets: Optional[dict] = None, table: Optional[dict]
                   sector_id=sector_id, branch_id=branch_id, market_id=inst.get("marketId"),
                   currency=str(inst.get("stockPriceCurrency") or ""), nordic=region == "Norden", region=region,
                   segment=seg, segment_label=sgm.get(seg).label if seg and sgm.get(seg) else "",
-                  home_index=home_index(t), market=market_for(t), sector_etf=etf, sector_source=etf_src,
+                  home_index=home_index(t), market=market_for(t), home_label=home_label(t), sector_etf=etf,
+                  sector_source=etf_src,
                   theme=theme, theme_label=label, theme_source=source, complex=cx)

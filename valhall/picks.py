@@ -137,7 +137,16 @@ def segment_quality(ca_blobs: list, n: int = N_QUALITY) -> dict:
     return out
 
 
-def _producer_rows(sheets: dict) -> list:
+def _sheet_ticker(ticker, to_yf: Optional[dict] = None):
+    """Arkets ticker. Med registrets karta (to_yf = Universe.sheet_map) blir en bar nordisk form Yahoo-form —
+    'BOL' → 'BOL.ST' — så att bolaget räknas som nordiskt och inte som USA (granskning 3, T4)."""
+    if not to_yf:
+        return ticker
+    from universe import registry as ur
+    return ur.nordic_form(ticker, to_yf)
+
+
+def _producer_rows(sheets: dict, to_yf: Optional[dict] = None) -> list:
     """Producentarket (Rick Rule) med poäng och utlåtande."""
     import producers as pr
     out = []
@@ -145,9 +154,10 @@ def _producer_rows(sheets: dict) -> list:
         theme = theme_of_commodity(r.get("commodity"))
         score = pr.producer_score(r)
         verdict = pr.producer_verdict(score, pr.asset_dying(r))
-        out.append({"ticker": r.get("ticker"), "name": r.get("name"), "theme": theme, "score": score,
+        t = _sheet_ticker(r.get("ticker"), to_yf)
+        out.append({"ticker": t, "name": r.get("name"), "theme": theme, "score": score,
                     "verdict": getattr(verdict, "label", verdict), "source": "Rick Rule-arket",
-                    "nordic": buv.region_of(r.get("ticker") or "") == "Norden"})
+                    "nordic": buv.region_of(t or "") == "Norden"})
     return out
 
 
@@ -166,9 +176,9 @@ def _rule_screen_rows(screens: dict) -> list:
     return out
 
 
-def theme_quality(sheets: dict, screens: dict, ca_blobs: list, n: int = N_QUALITY) -> dict:
+def theme_quality(sheets: dict, screens: dict, ca_blobs: list, n: int = N_QUALITY, to_yf: Optional[dict] = None) -> dict:
     """{tema: {"picks": [...], "etf": [...]}} — två bästa Rick Rule-producenter per råvara."""
-    sheet = _producer_rows(sheets)
+    sheet = _producer_rows(sheets, to_yf)
     screen = _rule_screen_rows(screens)
     ca = [dict(r, source="Quality Contrarian", nordic=True) for r in _ca_rows(ca_blobs) if r.get("theme")]
     out = {}
@@ -209,7 +219,7 @@ def _commodity_lookup(sheets: dict) -> dict:
     return out
 
 
-def durrett_rows(sheets: dict, analyze=None) -> list:
+def durrett_rows(sheets: dict, analyze=None, to_yf: Optional[dict] = None) -> list:
     """Durrett-arkets guld- och silverbolag genom motorn + Poängmodellen. 15-BAGGER = bull-fallets
     uppsida minst 15× och Poängmodellen minst 8."""
     import scoring as sc
@@ -231,7 +241,8 @@ def durrett_rows(sheets: dict, analyze=None) -> list:
         score = poang.get(str(t).upper())
         q = getattr(a, "quality_score", None)
         quality = getattr(q, "value", q)
-        out.append({"ticker": str(t).upper(), "name": c.get("name"), "theme": theme, "source": "Durrett",
+        out.append({"ticker": _sheet_ticker(str(t).upper(), to_yf), "name": c.get("name"), "theme": theme,
+                    "source": "Durrett",
                     "bull_multiple": None if bull is None else round(float(bull), 1), "poang": score,
                     "quality": None if quality is None else round(float(quality), 0),
                     "stage": c.get("stage"),
@@ -240,28 +251,29 @@ def durrett_rows(sheets: dict, analyze=None) -> list:
     return out
 
 
-def tiggre_rows(sheets: dict) -> list:
+def tiggre_rows(sheets: dict, to_yf: Optional[dict] = None) -> list:
     """Tiggararkets kandidater: köpgrindarna, faktorpoäng och U/N; råvara ur de andra arken."""
     import tiggre as tg
     lookup = _commodity_lookup(sheets)
     out = []
     for c in ((sheets or {}).get("tiggre") or {}).get("candidates") or []:
-        t = str(c.get("ticker") or "").upper()
+        raw = str(c.get("ticker") or "").upper()
+        t = _sheet_ticker(raw, to_yf)
         gates = tg.buy_gates(c)
         up = tg.upside_pct(tg._num(c.get("mcap")), tg._num(c.get("nav")))
         un = tg.un_ratio(up, tg._num(c.get("downside")))
-        out.append({"ticker": t, "name": c.get("name"), "theme": lookup.get(t) or buv.theme_of(t) or None,
+        out.append({"ticker": t, "name": c.get("name"), "theme": lookup.get(raw) or buv.theme_of(t) or None,
                     "source": "Tiggre", "score": tg.factor_score(c.get("factors") or {}, un),
                     "un": None if un is None else round(un, 1), "buy": all(p for _l, p, _d in gates),
                     "gates_passed": sum(1 for _l, p, _d in gates if p), "gates_total": len(gates)})
     return out
 
 
-def theme_leverage(sheets: dict, screens: dict, analyze=None, n: int = N_LEVERAGE) -> dict:
+def theme_leverage(sheets: dict, screens: dict, analyze=None, n: int = N_LEVERAGE, to_yf: Optional[dict] = None) -> dict:
     """{tema: {"strategy": Durrett|Tiggre, "picks": [...], "to_analyse": [...], "etf": [...]}};
     plus "_okand" för tiggarkandidater utan känd råvara."""
-    dur = durrett_rows(sheets, analyze)
-    tig = tiggre_rows(sheets)
+    dur = durrett_rows(sheets, analyze, to_yf)
+    tig = tiggre_rows(sheets, to_yf)
     scr = ((screens or {}).get("screens") or {})
     out = {}
     for theme in bth.THEMES:
@@ -309,10 +321,12 @@ def gate_segments(buys: dict, board: dict) -> dict:
     return buys
 
 
-def build(ca_blobs: list, screens: Optional[dict], sheets: Optional[dict], analyze=None) -> dict:
-    """Alla köp per ruta: {"segments": segment_quality, "themes": {tema: {quality, leverage}}}."""
-    tq = theme_quality(sheets, screens, ca_blobs)
-    tl = theme_leverage(sheets, screens, analyze)
+def build(ca_blobs: list, screens: Optional[dict], sheets: Optional[dict], analyze=None,
+          to_yf: Optional[dict] = None) -> dict:
+    """Alla köp per ruta: {"segments": segment_quality, "themes": {tema: {quality, leverage}}}.
+    to_yf = registrets karta för arkens bara nordiska tickers (Universe.sheet_map) — valfri."""
+    tq = theme_quality(sheets, screens, ca_blobs, to_yf=to_yf)
+    tl = theme_leverage(sheets, screens, analyze, to_yf=to_yf)
     return {"segments": segment_quality(ca_blobs),
             "themes": {t: {"quality": tq[t], "leverage": tl[t]} for t in bth.THEMES},
             "unknown_commodity": tl["_okand"]["picks"]}

@@ -50,6 +50,9 @@ def _viking_nine(data: dict) -> dict:
     fresh = vns.run(members=members, dry_run=True, earnings_getter=_earnings, held={},
                     risk_getter=_risk_for)["payload"]                 # marknadsriskspärren som i Regim-fliken
     usa = ((old.get("markets") or {}).get("usa")) or {"funnel": {}, "rows": []}
+    # USA-delen behåller sin körnings datum (även vid nästa tryck) — annars blir gamla rader "färska" (granskning 3, T7)
+    usa = {**usa, "generated": usa.get("generated") or old.get("generated")}
+    fresh["markets"]["norden"]["generated"] = fresh.get("generated")
     fresh["markets"]["usa"] = usa
     fresh["rows"] = list(fresh["markets"]["norden"]["rows"]) + list(usa.get("rows") or [])
     return fresh

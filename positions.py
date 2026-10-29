@@ -110,7 +110,8 @@ FX_TO_SEK: dict = {"SEK": 1.0, "NOK": 1.0, "DKK": 1.526, "EUR": 11.368, "USD": 1
 _SUFFIX_CCY: tuple = ((".ST", "SEK"), (".OL", "NOK"), (".CO", "DKK"), (".HE", "EUR"),
                       (".TO", "CAD"), (".V", "CAD"), (".CN", "CAD"), (".AX", "AUD"),
                       (".L", "GBP"), (".SW", "CHF"), (".DE", "EUR"), (".PA", "EUR"),
-                      (".AS", "EUR"), (".MI", "EUR"), (".MC", "EUR"), (".WA", "PLN"))
+                      (".AS", "EUR"), (".MI", "EUR"), (".MC", "EUR"), (".WA", "PLN"),
+                      (".BR", "EUR"), (".LS", "EUR"), (".NE", "CAD"))     # registrets Europa och Kanada
 
 
 def currency_for(ticker: str) -> str:

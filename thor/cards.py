@@ -134,14 +134,17 @@ def candidate_card(c: tc.Candidate) -> str:
 
 
 # ── Analysblockets huvud ────────────────────────────────────────────────────
-def verdict_card(word: str, sentence: str, detail: str = "", color: str = DIM, label: str = "VAD SKA JAG GÖRA?") -> str:
+def verdict_card(word: str, sentence: str, detail: str = "", color: str = DIM, label: str = "VAD SKA JAG GÖRA?",
+                 flag: str = "") -> str:
     """Verdiktet i ett ord, en mening och en dämpad rad — samma mönster som Alpha Regime. Ordet visas som
-    ordlistans huvudord (ui/vocab) med källans ord som chip under när de skiljer sig."""
+    ordlistans huvudord (ui/vocab) med källans ord som chip under när de skiljer sig. flag = en varning i
+    klartext under ordet (GAMMAL KÖRNING …) — ordet står kvar, varningen säger hur gammalt det är."""
     word, own = vocab.pair(word)
     return (f"<div style='border:2px solid {color}66;background:{color}0d;border-radius:10px;padding:14px 16px;margin:8px 0;'>"
             f"<div style='color:{DIM};font-size:0.66rem;letter-spacing:0.14em;'>{_e(label)}</div>"
             f"<div style='color:{color};font-size:2rem;font-weight:900;letter-spacing:0.04em;line-height:1.1;'>{_e(word)}</div>"
             + (f"<div style='margin-top:4px;'>{chip(own, color)}</div>" if own else "")
+            + (f"<div style='color:{AMBER};font-size:0.8rem;font-weight:700;margin-top:6px;'>{_e(flag)}</div>" if flag else "")
             + f"<div style='color:{TEXT};font-size:0.9rem;margin-top:6px;line-height:1.4;'>{_e(sentence)}</div>"
             + (f"<div style='color:{DIM};font-size:0.74rem;margin-top:4px;'>{_e(detail)}</div>" if detail else "") + "</div>")
 
@@ -155,8 +158,13 @@ def verdict_for(c: Optional[tc.Candidate], strategy: str) -> str:
     col = CLASS_COLOR.get(c.status_class, GREY)
     sentence = f"{c.label}: {c.status}" + (f" · {c.score_text}" if c.score_text else "")
     run = (f"körd {c.asof}" if c.asof else "") + (f" på stängning {c.data_asof}" if c.data_asof else "")
+    flag = ""
+    if c.stale:                     # gammal körning: ordet står kvar men grått och märkt, som listans chip (T6)
+        col = GREY
+        flag = f"GAMMAL KÖRNING — körd {c.asof}, äldre än {tc.STALE_DAYS} dagar · tryck 📡 Uppdatera"
+        run = f"på stängning {c.data_asof}" if c.data_asof else ""
     detail = " · ".join(x for x in (levels_text(c), c.why, run.strip()) if x)
-    return verdict_card(VERDICT_WORD.get(c.status_class, c.status_class), sentence, detail, col)
+    return verdict_card(VERDICT_WORD.get(c.status_class, c.status_class), sentence, detail, col, flag=flag)
 
 
 # ── Viking Nine i Thor: en beslutsrad, en kompakt 9-ruta, en Execution-rad ──
@@ -228,7 +236,8 @@ def snapshot_row(snap: Optional[dict]) -> str:
 def header_card(t: dict, cands: list, held: bool = False) -> str:
     """Aktiens huvud: ticker och namn, chips (marknad, segment, råvarutema med källa, INNEHAV) och
     'finns i' — dagens kandidatrader per strategi."""
-    chips = [chip(f"{t.get('home_index') or '—'} · {t.get('market') or ''}".strip(" ·"), CYAN)]
+    home = t.get("home_label") or t.get("home_index")                 # registrets index: ^FTSE, ^STOXX50E … (T15)
+    chips = [chip(f"{home or '—'} · {t.get('market') or ''}".strip(" ·"), CYAN)]
     seg = t.get("segment")
     first = cands[0] if cands else None
     if seg:
@@ -239,7 +248,8 @@ def header_card(t: dict, cands: list, held: bool = False) -> str:
         chips.append(chip(f"sektor-ETF {t['sector_etf']}", DIM))
     if held:
         chips.append(chip("INNEHAV", GREEN, filled=True))
-    found = "".join(f"<span style='margin-right:4px;'>{family_chip(c.strategy)}{status_chip(c)}</span>" for c in cands)
+    found = "".join(f"<span style='margin-right:4px;'>{family_chip(c.strategy)}{status_chip(c)}"
+                    + (chip(f"gammal · {c.asof}", GREY) if c.stale else "") + "</span>" for c in cands)
     return (f"<div style='margin:4px 0;'>"
             f"<div style='display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;'>"
             f"<div><b style='color:{TEXT};font-size:1.3rem;'>{_e(t.get('yf'))}</b> "

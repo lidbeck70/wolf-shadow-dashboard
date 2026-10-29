@@ -368,7 +368,8 @@ def cached(st, ticker: str, api=None, fetch_fn: Optional[Callable] = None, force
         from asymmetry import quick_data
         fetch_fn = quick_data.fetch
     data = fetch_fn(ticker, api=api)
-    empty = isinstance(data, dict) and "source" in data and not data.get("source") \
+    # fetch skriver source '—' när inget hittades — det är också ett tomt svar (granskning 3, T10)
+    empty = isinstance(data, dict) and "source" in data and data.get("source") in ("", "—", None) \
         and not any(data.get(k) for k in ("prices", "price", "close", "last"))
     if empty:                                         # ett tomt svar (källorna nere) cachas inte (granskning 2, Q1)
         cache.pop(ticker, None)
@@ -397,7 +398,8 @@ def render(st, ident, strategy: str, api=None, fetch_fn: Optional[Callable] = No
         note(f"Hittade inget för {ident.yf} i Börsdata eller Yahoo — Snabbkollen kan inte räkna.")
         return
     detected = qv.detect_mode(d)
-    pick = st.radio("Läge", [qc.MODE_AUTO, qc.MODE_COMMODITY, qc.MODE_VALUE], horizontal=True, key="thor_asym_mode",
+    pick = st.radio("Läge", [qc.MODE_AUTO, qc.MODE_COMMODITY, qc.MODE_VALUE], horizontal=True,
+                    key=f"thor_asym_mode_{ident.yf}",         # per aktie: Råvara på BOL följer inte med till ERIC (T12)
                     help="Auto = Råvara när bolaget har ett råvarutema, annars Värde.")
     mode = detected if pick == qc.MODE_AUTO else pick
     res = quick.score(d, mode)

@@ -91,8 +91,9 @@ def load(loader=None) -> dict:
         out["segment_map"] = tc.segment_map_from_register(reg_)
         out["names"] = {str(t).upper(): getattr(m, "name", "") for t, m in (getattr(reg_, "members", None) or {}).items()
                         if getattr(m, "name", "")}
+        out["sheet_map"] = reg_.sheet_map() if reg_ is not None else {}   # arkens 'BOL' → 'BOL.ST' (T4)
     except Exception:
-        out["segment_map"], out["names"] = {}, {}
+        out["segment_map"], out["names"], out["sheet_map"] = {}, {}, {}
     out["loaded"] = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")
     return out
 
@@ -102,7 +103,7 @@ def rebuild(data: dict) -> dict:
     errors: dict = {}
     bd_map = (data.get("universe") or {}).get("bd_map") or None   # 'EQNR' → 'EQNR.OL', inte '.ST'
     data["rows"] = tc.build(data, errors=errors, momentum_map=bd_map, segment_map=data.get("segment_map"),
-                            names=data.get("names"))
+                            names=data.get("names"), sheet_map=data.get("sheet_map"))
     data["errors"] = errors
     return data
 
@@ -136,7 +137,8 @@ def universe_member(st, ticker: str, loader=None):
 
 
 def fill_from_universe(ident, member) -> bool:
-    """Namn, valuta och råvarutema ur registret när Börsdata Norden inte kände tickern. True om något fylldes."""
+    """Namn, valuta och råvarutema ur registret när Börsdata Norden inte kände tickern — med temats segment och
+    komplex när de saknas, som identify gör (annars hittar cykeln inget, granskning 3, T8). True om något fylldes."""
     if member is None:
         return False
     filled = False
@@ -146,11 +148,20 @@ def fill_from_universe(ident, member) -> bool:
         ident.currency, filled = member.currency, True
     if not ident.theme and member.theme:
         from berserk import themes as bth
+        from valhall import segments as sgm
         try:
             ident.theme_label = bth.label(member.theme)
         except Exception:
             ident.theme_label = member.theme
         ident.theme, ident.theme_source, filled = member.theme, "universum-registret", True
+        if not ident.segment:
+            ident.segment = sgm.segment_of_theme(member.theme)
+            ident.segment_label = sgm.get(ident.segment).label if ident.segment and sgm.get(ident.segment) else ""
+        if not ident.complex:
+            try:
+                ident.complex = bth.complex_of(member.theme)
+            except Exception:
+                ident.complex = None
     return filled
 
 
@@ -287,7 +298,10 @@ def _segment_themes(segment: Optional[str]) -> Optional[set]:
 def shown_rows(rows: list, pick: str, filters, markets=None, segment: Optional[str] = None) -> list:
     """Listans filter: rullgardinen, chipsen, marknaderna (registrets etiketter; tomt = alla) och segmentet
     (Valhall-kartans nyckel; raden måste ha segmentet, eller ett tema som hör till det). Ett tema- eller komplexval
-    visar rader med temat — eller bolag som står under temat i temalistan (ADM: vete, majs, soja, socker)."""
+    visar rader med temat — eller bolag som står under temat i temalistan (ADM: vete, majs, soja, socker). Rader
+    utan eget tema (Wolf, håvarna …) matchas på bolagets tema i BERSERK-, EMBER- och temalistorna (NXE: uran) —
+    radens tema och kort ändras inte (granskning 3, T5)."""
+    from thor.ticker import theme_for
     from universe import theme_members as tm
     family, strategy = pick_to_filter(pick)
     flt = set(filters or [])
@@ -297,7 +311,8 @@ def shown_rows(rows: list, pick: str, filters, markets=None, segment: Optional[s
                          nordic_only="bara Norden" in flt, segment=seg)
     if themes is not None:
         listed = {t for th in themes for t in tm.members(th)}
-        out = [c for c in out if c.theme in themes or c.ticker.upper() in listed]
+        out = [c for c in out if c.theme in themes or c.ticker.upper() in listed
+               or (not c.theme and theme_for(c.ticker)[0] in themes)]
     keys = {MARKET_LABELS.get(m, m) for m in (markets or [])}
     if keys:
         out = [c for c in out if ur.market_of(c.ticker) in keys]
@@ -535,7 +550,10 @@ def _analysis(st, data: dict, rows: list, ticker: str) -> None:
     d = _dossier(st, ticker, stores, rows)
     ident = d["ident"]
     cands = td.candidates_for(rows, ident.yf)
-    if "." not in ident.yf and cands and "." in cands[0].ticker:      # 'ERIC B' utan Börsdata → listan vet att det är ERIC-B.ST
+    exact = td.bare_rows(cands, ident.yf)
+    if exact:                                                          # 'TEL' i listan är TE Connectivity, inte TEL.OL (T1)
+        cands = exact
+    elif "." not in ident.yf and cands and "." in cands[0].ticker:    # 'ERIC B' utan Börsdata → listan vet att det är ERIC-B.ST
         d = _dossier(st, cands[0].ticker, stores, rows)
         ident = d["ident"]
         cands = td.candidates_for(rows, ident.yf)
@@ -568,7 +586,8 @@ def _analysis(st, data: dict, rows: list, ticker: str) -> None:
 
 def _storlek(st, ident, strategy: str, c) -> None:
     """Storlek-raden (thor/storlek.py): riskstorlek och allokerarens tak sida vid sida, och 'Logga köp' som lägger
-    positionen i registret. Arkstrategierna går via 🎯 Scorecard (köpgrinden)."""
+    positionen i registret. Arkstrategierna går via 🎯 Scorecard (köpgrinden). Utan färsk KÖP-rad visas storleken
+    bara för planering och 'Logga köp' är avstängt — strategins eget verdikt gäller (granskning 3, T2)."""
     from thor import storlek as sk
     from ui import settings as us
     from ui.components import note
@@ -584,6 +603,12 @@ def _storlek(st, ident, strategy: str, c) -> None:
         sz = sk.halved(sz)
     st.markdown(f"<div style='border-left:3px solid {CYAN};padding:6px 12px;margin:6px 0;font-size:0.82rem;'>"
                 f"<b>STORLEK</b> · {sk.row_text(ident.yf, reg.label(strategy), sz)}</div>", unsafe_allow_html=True)
+    buy_ok = c.status_class == tc.KOP and not c.stale
+    if c.status_class != tc.KOP:
+        note(f"Ingen köpsignal ({escape(cards.main_word(c))}: {escape(c.status or '')}) — storleken är bara för planering.")
+    elif c.stale:
+        note(f"Gammal körning (körd {c.asof}, äldre än {tc.STALE_DAYS} dagar) — storleken är bara för planering. "
+             "Tryck 📡 Uppdatera och kontrollera entry och stopp först.")
     if not us.capital():
         note("Kapital 100 000 kr (standard) — fyll i ditt eget under MER → ⚙️ Inställningar.")
     if strategy in sk.SHEET_STRATEGIES:
@@ -595,7 +620,9 @@ def _storlek(st, ident, strategy: str, c) -> None:
                                  key=f"thor_buy_shares_{strategy}_{ident.yf}")   # nytt fält per aktie och strategi (D2)
         note("Riskstorleken och taket står ovan — du väljer antalet. Positionen hamnar i PORTFÖLJ → Positioner med "
              "stopp och mål; journalraden skrivs när du stänger den.")
-        if st.button("Logga köp", key="thor_log_buy", disabled=not shares):
+        if not buy_ok:
+            note(f"Logga köp öppnas när {escape(reg.label(strategy))} säger KÖP i en färsk körning.")
+        if st.button("Logga köp", key="thor_log_buy", disabled=not shares or not buy_ok):
             import positions
             ok, msg = positions.add(**sk.position_args(ident.yf, ident.name or "", strategy, sz, shares, c.target))
             (st.success if ok and positions.UNSAVED not in msg else st.warning)(msg)

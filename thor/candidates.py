@@ -103,6 +103,14 @@ def is_nordic(ticker) -> bool:
     return str(ticker or "").upper().endswith(NORDIC_SUFFIX)
 
 
+def sheet_yf(ticker, ctx: Optional[dict] = None) -> str:
+    """Yahoo-form av en arkticker. Arken sparar tickern som den skrevs ('BOL'): registrets karta
+    (ctx["sheet_map"], Universe.sheet_map) ger 'BOL.ST', så att raden blir nordisk och inte dubbleras av håvens
+    BOL.ST — också för kartor som sparats före rättelsen i valhall.picks (granskning 3, T4)."""
+    from universe import registry as ur
+    return yf(ur.nordic_form(ticker, (ctx or {}).get("sheet_map")))
+
+
 def _f(v) -> Optional[float]:
     try:
         x = float(v)
@@ -205,10 +213,13 @@ def from_viking_nine(board: Optional[dict], ctx: dict, scan: Optional[dict] = No
             continue
         for p in e.get("picks") or []:
             out.append(row(p, key, asof, str(p.get("reason") or e.get("strategy") or "")))
-    asof = _day((scan or {}).get("generated"))
+    markets = (scan or {}).get("markets") if isinstance((scan or {}).get("markets"), dict) else {}
     for p in (scan or {}).get("rows") or []:
         if isinstance(p, dict) and p.get("ticker"):
-            out.append(row(p, p.get("segment") or None, asof, str(p.get("reason") or "Viking Nine-skanningen")))
+            # marknadens eget datum först: ⚡ Skanna nu räknar bara Norden, USA-delen behåller sitt (granskning 3, T7)
+            m = markets.get(p.get("market"))
+            gen = (m.get("generated") if isinstance(m, dict) else None) or (scan or {}).get("generated")
+            out.append(row(p, p.get("segment") or None, _day(gen), str(p.get("reason") or "Viking Nine-skanningen")))
     return out
 
 
@@ -246,9 +257,10 @@ def from_themes(board: Optional[dict], ctx: dict) -> list:
             else:                                                          # Rule-håven: håven är regeln
                 ev = _f(p.get("ev_ebitda"))
                 score, text = None, f"Rule-håven · EV/EBITDA {ev:g}" if ev is not None else "Rule-håven"
+            t = sheet_yf(p.get("ticker"), ctx)
             out.append(_tag(Candidate(
-                yf(p.get("ticker")), _norm_name(p), "rule", verdict, KOP if buy_ok(p) else BEVAKA, score=score,
-                score_text=text, segment=seg, theme=theme, nordic=bool(p.get("nordic")) or is_nordic(p.get("ticker")),
+                t, _norm_name(p), "rule", verdict, KOP if buy_ok(p) else BEVAKA, score=score,
+                score_text=text, segment=seg, theme=theme, nordic=bool(p.get("nordic")) or is_nordic(t),
                 asof=asof, why=src), ctx))
         lv = e.get("leverage") or {}
         strat = "durrett" if lv.get("strategy") == "Durrett" else "tiggre"
@@ -262,15 +274,17 @@ def from_themes(board: Optional[dict], ctx: dict) -> list:
                 score = q
             else:
                 status, text, score = _tiggre_fields(p)
+            t = sheet_yf(p.get("ticker"), ctx)
             out.append(_tag(Candidate(
-                yf(p.get("ticker")), _norm_name(p), strat, status, KOP if buy_ok(p) else BEVAKA, score=score,
-                score_text=text, segment=seg, theme=theme, nordic=is_nordic(p.get("ticker")), asof=asof,
+                t, _norm_name(p), strat, status, KOP if buy_ok({**p, "ticker": t}) else BEVAKA, score=score,
+                score_text=text, segment=seg, theme=theme, nordic=is_nordic(t), asof=asof,
                 why=str(p.get("source") or lv.get("strategy") or "")), ctx))
     for p in ((board or {}).get("buys") or {}).get("unknown_commodity") or []:   # Tiggre-arket utan känd råvara
         status, text, score = _tiggre_fields(p)
+        t = sheet_yf(p.get("ticker"), ctx)
         out.append(_tag(Candidate(
-            yf(p.get("ticker")), _norm_name(p), "tiggre", f"{status} · okänd råvara", BEVAKA, score=score,
-            score_text=text, nordic=is_nordic(p.get("ticker")), asof=asof,
+            t, _norm_name(p), "tiggre", f"{status} · okänd råvara", BEVAKA, score=score,
+            score_text=text, nordic=is_nordic(t), asof=asof,
             why="Tiggre — råvaran saknas i arket, så kartan kan inte ge tema och cykel (papperet köper inte)"), ctx))
     return out
 
@@ -363,7 +377,7 @@ def from_momentum(blob: Optional[dict], ctx: dict, mapping: Optional[dict] = Non
     light = str((regime or {}).get("regime") or "").upper() if isinstance(regime, dict) else ""
     for r in (blob or {}).get("top") or []:
         rank = r.get("rank")
-        if rank is None:
+        if rank is None or not str(r.get("ticker") or r.get("yf") or "").strip():   # utan ticker: ingen '.ST'-rad (T16)
             continue
         rank = int(rank)
         setup = bool(r.get("setupA"))
@@ -569,10 +583,11 @@ def _collect(errors: Optional[dict], name: str, fn, *args) -> list:
 
 
 def build(blobs: dict, today=None, momentum_map: Optional[dict] = None, errors: Optional[dict] = None,
-          segment_map: Optional[dict] = None, names: Optional[dict] = None) -> list:
+          segment_map: Optional[dict] = None, names: Optional[dict] = None, sheet_map: Optional[dict] = None) -> list:
     """Hela listan ur de lästa filerna (load_blobs-nycklar), sorterad och utan dubbletter. Källor som inte går
     att läsa hoppas över och skrivs i errors ({källa: fel}) så att sidan kan säga vad som saknas.
-    segment_map = {ticker: segment} ur registret (segment_map_from_register) för rader utan eget segment."""
+    segment_map = {ticker: segment} ur registret (segment_map_from_register) för rader utan eget segment;
+    sheet_map = arkens bara nordiska former → Yahoo-form (Universe.sheet_map)."""
     b = blobs or {}
     board = b.get("board") or {}
     try:
@@ -583,6 +598,7 @@ def build(blobs: dict, today=None, momentum_map: Optional[dict] = None, errors: 
         ctx = {"segments": {}, "themes": {}}
     ctx["segment_of"] = {str(k).upper(): v for k, v in (segment_map or {}).items() if v}
     ctx["names"] = {str(k).upper(): v for k, v in (names or {}).items() if v}
+    ctx["sheet_map"] = {str(k).upper(): v for k, v in (sheet_map or {}).items() if v}
     if b.get(UNREADABLE) and errors is not None:
         errors["gist"] = "Gisten gick inte att läsa (nätverk eller token) — inga körningar kunde hämtas; tryck 📡 Uppdatera"
     sources = (("viking_nine", from_viking_nine, (board, ctx, b.get("viking_nine"))), ("long", from_long, (board, ctx)),

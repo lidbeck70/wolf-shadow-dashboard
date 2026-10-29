@@ -97,6 +97,15 @@ def market_of(ticker) -> str:
     return USA if "." not in t else ""
 
 
+def nordic_form(ticker, smap: Optional[dict]) -> str:
+    """Arkets ticker i Yahoo-form när den är en bar nordisk form i sheet_map ('BOL' → 'BOL.ST', 'ERIC B' →
+    'ERIC-B.ST'); annars som den står, i versaler. Arken sparar tickern som den skrevs (granskning 3, T4)."""
+    t = str(ticker or "").strip().upper()
+    if t and "." not in t and smap:
+        return smap.get(t) or smap.get(t.replace(" ", "-")) or t
+    return t
+
+
 def market_for_country(country) -> Optional[str]:
     c = str(country or "").strip().lower()
     return next((m.key for m in MARKETS if c in m.countries), None) if c else None
@@ -180,6 +189,18 @@ class Universe:
         for t, m in sorted(self.members.items()):
             if m.bd_ticker and (ms is None or m.market in ms):
                 out.setdefault(m.bd_ticker.upper(), t)
+        return out
+
+    def sheet_map(self) -> dict:
+        """{bar form: Yahoo-form} för nordiska bolag som arken skrivit utan suffix ('BOL', 'ERIC B', 'ERIC-B' →
+        registrets form). En form som själv är registrets bolag på en annan marknad tas inte med: 'TEL' är TE
+        Connectivity i USA, inte Telenor (granskning 2, F9)."""
+        out: dict = {}
+        for bd, t in self.bd_map((NORDEN,)).items():
+            for form in (bd, bd.replace(" ", "-")):
+                other = self.members.get(form)
+                if other is None or other.market == NORDEN:
+                    out.setdefault(form, t)
         return out
 
 
