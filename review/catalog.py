@@ -549,28 +549,85 @@ def same_value(old, new) -> bool:
 
 
 # ── Källan till ett inläst värde (platta arken) ──────────────────────────────
-# row['sources'] = {sökväg: {"value": det inlästa värdet, "source": "ChatGPT: <källa> · <datum>"}}. Värdet sparas med
+# row['sources'] = {nyckel: {"value": det inlästa värdet, "source": "ChatGPT: <källa> · <datum>"}}. Värdet sparas med
 # källan, så att källan bara visas medan arket har kvar det inlästa värdet — ett värde du skrivit själv har ingen.
+# Nyckeln är sökvägen, men en plats i en lista byts mot radens id ('catalysts.1.date' → 'catalysts.#k1.date'):
+# källan följer katalysatorn, inte platsen. En äldre nyckel på platsen ('catalysts.1.date') läses aldrig.
 SOURCES = "sources"
+ITEM = "#"                  # märker ett id i nyckeln — skiljer det från en listplats
+
+
+def _item_id(item) -> str:
+    ident = str(item.get("id") or "").strip() if isinstance(item, dict) else ""
+    return "" if "." in ident else ident
+
+
+def source_key(row, path: str) -> str:
+    """Nyckeln i row['sources'] för fältet: sökvägen, med en listplats bytt mot radens id. Tomt när platsen inte
+    finns eller saknar id — då finns ingen källa att spara eller visa."""
+    cur, out = _as_row(row), []
+    for part in path.split("."):
+        if isinstance(cur, list):
+            i = int(part) if part.isdigit() else -1
+            cur = cur[i] if 0 <= i < len(cur) else None
+            ident = _item_id(cur)
+            if not ident:
+                return ""
+            out.append(ITEM + ident)
+        elif part.isdigit():
+            return ""               # listan finns inte
+        else:
+            cur = cur.get(part) if isinstance(cur, dict) else None
+            out.append(part)
+    return ".".join(out)
 
 
 def set_source(row: dict, path: str, value, source: str) -> None:
-    """Källan för ett inläst värde i ett platt ark (review.importer.apply)."""
+    """Källan för ett inläst värde i ett platt ark (review.importer.apply). En listplats utan id får ingen."""
+    key = source_key(row, path)
+    if not key:
+        return
     src = row.get(SOURCES) if isinstance(row.get(SOURCES), dict) else {}
-    src[path] = {"value": value, "source": source}
+    src[key] = {"value": value, "source": source}
     row[SOURCES] = src
 
 
 def source_for(row, path: str) -> str:
     """Källan för fältets värde i ett platt ark, eller tomt: bara medan värdet är det som lästes in med källan."""
     src = _as_row(row).get(SOURCES)
-    rec = src.get(path) if isinstance(src, dict) else None
+    key = source_key(row, path)
+    rec = src.get(key) if key and isinstance(src, dict) else None
     if not isinstance(rec, dict) or "value" not in rec:
         return ""
     v = get_value(row, path)
     if is_empty(v) or not same_value(rec["value"], v):
         return ""
     return str(rec.get("source") or "")
+
+
+def _alive(row: dict, key: str) -> bool:
+    cur = row
+    for part in key.split("."):
+        if part.isdigit():
+            return False            # äldre nyckel på listplatsen
+        if part.startswith(ITEM):
+            items = cur if isinstance(cur, list) else []
+            cur = next((c for c in items if _item_id(c) == part[len(ITEM):]), None)
+            if cur is None:
+                return False        # raden finns inte kvar
+        else:
+            cur = cur.get(part) if isinstance(cur, dict) else None
+    return True
+
+
+def prune_sources(row: dict) -> None:
+    """Släpper källorna som inte hör till något längre: en borttagen katalysator och äldre nycklar på listplatsen.
+    Anropas när arket skrivs (inläsningen, ✕ på en katalysator) — aldrig när det ritas."""
+    src = row.get(SOURCES) if isinstance(row, dict) else None
+    if not isinstance(src, dict):
+        return
+    for key in [k for k in src if not _alive(row, str(k))]:
+        del src[key]
 
 
 def progress(sheet: str, row, stage: Optional[str] = None, position_pct=None) -> tuple:

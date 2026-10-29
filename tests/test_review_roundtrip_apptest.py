@@ -261,6 +261,34 @@ def test_a_catalyst_answer_into_an_empty_list_leaves_one_row_and_nothing_is_writ
     assert at.selectbox(key=f"tg_catst_c1_{cat['id']}").value == tiggre.CAT_WAITING
 
 
+def test_the_catalyst_source_is_keyed_by_id_and_leaves_with_the_catalyst(page):
+    """Källan står på katalysatorns id, inte på svarets plats. ✕ på katalysatorn tar källan med sig, och en
+    katalysator du lägger in efteråt med samma datum visas inte som 'ChatGPT: …'. Att rita skriver inga källor."""
+    from review import catalog as cat
+    at = page("tiggre", "render_tiggre_page", {})
+    answer = "\n".join([HEAD, "LOB;tiggre:catalysts.1.date;2027-03;;PR 2026-09;primary;2026-09-01;high;"])
+    at.text_area(key="rv_imp_txt_tiggre_c1_0").set_value(answer).run()
+    at.button(key="rv_imp_go_tiggre_c1").click().run()
+    assert not at.exception, at.exception
+    cand = at.session_state["tiggre"]["candidates"][0]
+    (c,) = cand["catalysts"]
+    assert set(cand["sources"]) == {f"catalysts.#{c['id']}.date"}
+    assert cat.source_for(cand, "catalysts.0.date") == "ChatGPT: PR 2026-09 · 2026-09-01"
+    before = copy.deepcopy(at.session_state["tiggre"])
+    at.run()
+    assert _same(at.session_state["tiggre"], before)                        # att rita skriver inget
+    at.button(key=f"tg_delcat_c1_{c['id']}").click().run()
+    assert not at.exception, at.exception
+    cand = at.session_state["tiggre"]["candidates"][0]
+    assert cand["catalysts"] == [] and cand["sources"] == {}
+    at.text_input(key="tg_cat_name_c1").set_value("Bygglov")
+    at.text_input(key="tg_cat_date_c1").set_value("2027-03")
+    at.button(key="tg_addcat_c1").click().run()
+    assert not at.exception, at.exception
+    cand = at.session_state["tiggre"]["candidates"][0]
+    assert [x["name"] for x in cand["catalysts"]] == ["Bygglov"] and cat.source_for(cand, "catalysts.0.date") == ""
+
+
 def test_durrett_sheet_import_writes_datapoints_with_chatgpt_source(monkeypatch):
     import durrett_cases as dcs
     import refresh_ui

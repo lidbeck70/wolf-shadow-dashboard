@@ -356,6 +356,57 @@ def test_catalysts_from_the_answer_leave_no_empty_padding_and_all_get_an_id():
     assert cand2["catalysts"][1]["id"] and cand2["catalysts"][1]["id"] != "k1"
 
 
+def test_the_chatgpt_source_follows_the_catalyst_not_its_place_in_the_list():
+    """Granskningens fall: svaret skrev bara catalysts.1.date i en tom lista. Förr skrevs källan på svarets plats
+    innan listan drogs ihop — katalysatorn (nu plats 1) stod utan källa i nästa underlag, 'catalysts.1.date' blev
+    kvar, och en katalysator du lade in själv på plats 2 med samma datum visades som 'ChatGPT: …'. Nu står källan
+    på katalysatorns id, och ✕ på katalysatorn tar källan med sig."""
+    import tiggre
+    cand = {"id": "c1", "ticker": "LOB", "name": "Lobo", "screen": {}, "factors": {}, "catalysts": []}
+    stores = {"tiggre": {"candidates": [cand], "positions": [], "closed": [], "parked": []}}
+
+    def _src() -> dict:                                                       # 'Källa nu' i nästa underlag
+        e_ = ex.build("LOB", stores, ["tiggre"], rows={"tiggre": cand})
+        return {r["key"]: r["source"] for r in e_.rows}
+    e = ex.build("LOB", stores, ["tiggre"], rows={"tiggre": cand})
+    answer = "\n".join([HEAD, "LOB;tiggre:catalysts.1.date;2027-03;;PR 2026-09;primary;2026-09-01;high;"])
+    assert im.apply(im.check(an.read_text(answer), e).changes, {"tiggre": cand}) == 1
+    (only,) = cand["catalysts"]
+    assert only["id"] and only["date"] == "2027-03"
+    assert set(cand["sources"]) == {f"catalysts.#{only['id']}.date"}           # ingen nyckel på platsen
+    src = _src()
+    assert src["tiggre:catalysts.0.date"] == "ChatGPT: PR 2026-09 · 2026-09-01" and src["tiggre:catalysts.1.date"] == ""
+    # en katalysator du lägger in själv på plats 2, med samma datum — ingen ChatGPT-källa
+    cand["catalysts"].append({"id": "k2", "name": "Bygglov", "date": "2027-03", "status": tiggre.CAT_WAITING})
+    src = _src()
+    assert src["tiggre:catalysts.0.date"].startswith("ChatGPT: ") and src["tiggre:catalysts.1.date"] == ""
+    # ✕ på den inlästa: källan går med den, och din katalysator (nu plats 1) får ingen
+    tiggre._drop_catalyst(cand, only["id"])
+    assert [c["id"] for c in cand["catalysts"]] == ["k2"] and cand["sources"] == {}
+    assert _src()["tiggre:catalysts.0.date"] == ""
+
+
+def test_old_source_keys_on_the_list_place_are_ignored_and_dropped_on_the_next_import():
+    """Källor sparade på platsen ('catalysts.0.date') före bytet läses aldrig — inte ens av en katalysator vars id
+    råkar vara '0' — och släpps nästa gång något läses in. En plats utan id får ingen källa."""
+    cand = {"id": "c1", "ticker": "LOB", "screen": {}, "factors": {}, "nav": 120.0,
+            "catalysts": [{"id": "0", "name": "FID", "date": "2027-03"}],
+            "sources": {"catalysts.0.date": {"value": "2027-03", "source": "ChatGPT: gammal"},
+                        "catalysts.0": "trasig", "catalysts.#borta.date": {"value": "x", "source": "ChatGPT: x"},
+                        "nav": {"value": 120.0, "source": "ChatGPT: DFS"}}}
+    assert cat.source_for(cand, "catalysts.0.date") == "" and cat.source_for(cand, "catalysts.3.date") == ""
+    assert cat.source_for(cand, "nav") == "ChatGPT: DFS"
+    e = ex.build("LOB", {"tiggre": {"candidates": [cand]}}, ["tiggre"], rows={"tiggre": cand})
+    assert {r["key"]: r["source"] for r in e.rows}["tiggre:catalysts.0.date"] == ""
+    res = im.check(an.read_text("\n".join([HEAD, "LOB;tiggre:screen.fs;Ja;;DFS 2025;primary;;high;"])), e)
+    im.apply(res.changes, {"tiggre": cand})
+    assert set(cand["sources"]) == {"nav", "screen.fs"}
+    assert cat.source_key(cand, "catalysts.0.date") == "catalysts.#0.date"
+    bare = {"catalysts": [{"name": "FID", "date": "2027-03"}]}
+    cat.set_source(bare, "catalysts.0.date", "2027-03", "ChatGPT: x")
+    assert "sources" not in bare and cat.source_key(bare, "catalysts.0.date") == ""
+
+
 def test_the_copper_trap_changes_nothing_unless_you_tick_it():
     """AISC i USD/oz mot kopparpris i USD/lb: varnas, inte förkryssad — och arket står kvar."""
     res, row, _e = _check(["BOL.ST;rule:unit_cost;1250,5;USD/oz;Rapport;primary;2026-08-01;high;"])

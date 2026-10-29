@@ -722,6 +722,17 @@ def _candidate_card(data: dict, cand: dict, expanded: bool = False) -> None:
             rc.fill(top, "tiggre", cand)
 
 
+def _drop_catalyst(cand: dict, cat_id) -> None:
+    """Tar bort katalysatorn — och ChatGPT-källan som hörde till den (review.catalog.prune_sources), så att en
+    katalysator du lägger in senare aldrig visas med en annans källa."""
+    cand["catalysts"] = [c for c in cand.get("catalysts", []) if c.get("id") != cat_id]
+    try:
+        from review import catalog
+    except Exception:
+        return
+    catalog.prune_sources(cand)
+
+
 def _catalysts(data: dict, cand: dict) -> None:
     st.markdown(
         f"<div style='height:6px;'></div><b style='color:{TEXT};'>Katalysatorkalender</b> "
@@ -745,7 +756,7 @@ def _catalysts(data: dict, cand: dict) -> None:
             cat["status"] = new
             changed = True
         if cc4.button("✕", key=f"tg_delcat_{cand['id']}_{cat.get('id','')}"):
-            cand["catalysts"] = [c for c in cats if c.get("id") != cat.get("id")]
+            _drop_catalyst(cand, cat.get("id"))
             _save(data)
             st.rerun()
 

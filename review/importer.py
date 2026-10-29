@@ -8,7 +8,8 @@ review/importer.py — ChatGPT-svaret tillbaka in i arket: kontrollera, visa ski
                           {fält: {värdet, "ChatGPT: <källa> · <datum>"}} (catalog.set_source — källan visas bara
                           medan värdet står kvar), Durrett/Wolf Asymmetry ett Datapoint med källa ('ChatGPT:
                           <källa>', källtyp ur svaret eller 'unsupported'). Tiggres katalysatorer får id och status,
-                          och en tom plats svaret hoppade över tas bort
+                          en tom plats svaret hoppade över tas bort, och källan står på katalysatorns id
+                          ('catalysts.#<id>.date') — inte på platsen i listan
   widget_keys(…)          widgetnycklarna som ska släppas så att kortet ritas om med de nya värdena
 
 Inget sparas härifrån — 💾 Spara sköter GitHub som vanligt. Rena funktioner, ingen Streamlit.
@@ -260,30 +261,45 @@ def point(ch: Change):
               note=ch.comment[:300])
 
 
-def _finish_catalysts(row: dict) -> None:
+def _finish_catalysts(row: dict) -> dict:
     """Katalysatorerna efter inskrivningen. En plats som svaret hoppade över (svaret skrev katalysator 2 i en tom
     lista) blir en tom rad utan id — den tas bort, så att listan inte får en '? / ?'-rad som arket skriver status
     på när det öppnas. En katalysator som svaret lade till får id och status Väntar, som när den läggs in i arket;
-    raderna du lagt in själv rörs inte."""
+    raderna du lagt in själv rörs inte. Returnerar {svarets plats: platsen nu} för raderna som står kvar."""
     import uuid
     import tiggre
     cats = row.get("catalysts")
     if not isinstance(cats, list):
-        return
-    kept = []
-    for c in cats:
+        return {}
+    kept, moved = [], {}
+    for i, c in enumerate(cats):
         if not isinstance(c, dict) or not (c.get("id") or c.get("name") or c.get("date")):
             continue
         if not c.get("id"):
             c["id"] = uuid.uuid4().hex[:8]
             c.setdefault("status", tiggre.CAT_WAITING)
+        moved[i] = len(kept)
         kept.append(c)
     cats[:] = kept
+    return moved
+
+
+def _moved(path: str, moved: Optional[dict]) -> Optional[str]:
+    """Svarets katalysatorplats ('catalysts.1.date') som platsen efter _finish_catalysts, None om raden är borta."""
+    if moved is None or not path.startswith("catalysts."):
+        return path
+    parts = path.split(".", 2)
+    if len(parts) < 3 or not parts[1].isdigit() or int(parts[1]) not in moved:
+        return None
+    return f"catalysts.{moved[int(parts[1])]}.{parts[2]}"
 
 
 def apply(changes: list, rows: dict) -> int:
-    """Skriver ändringarna i raderna {ark: rad} (samma objekt som sessionen håller). Returnerar antalet."""
-    n = 0
+    """Skriver ändringarna i raderna {ark: rad} (samma objekt som sessionen håller). Returnerar antalet.
+
+    Källan skrivs sist: först när Tiggres katalysatorer fått id och listan dragits ihop, så att den hamnar på
+    katalysatorn (catalog.source_key) och inte på svarets plats — och källor som inte hör till något släpps."""
+    n, sourced = 0, []
     for ch in changes or []:
         row = (rows or {}).get(ch.sheet)
         if not isinstance(row, dict):
@@ -292,11 +308,18 @@ def apply(changes: list, rows: dict) -> int:
             cat.set_value(row, ch.path, point(ch))
         else:
             cat.set_value(row, ch.path, ch.new)
-            cat.set_source(row, ch.path, ch.new, provenance(ch))
+            sourced.append((row, ch))
         n += 1
     tg = (rows or {}).get("tiggre")
+    moved = None
     if isinstance(tg, dict) and any(c.sheet == "tiggre" and c.path.startswith("catalysts.") for c in changes or []):
-        _finish_catalysts(tg)
+        moved = _finish_catalysts(tg)
+    for row, ch in sourced:
+        path = _moved(ch.path, moved if ch.sheet == "tiggre" else None)
+        if path is not None:
+            cat.set_source(row, path, ch.new, provenance(ch))
+    for row in {id(r): r for r, _ch in sourced}.values():
+        cat.prune_sources(row)
     return n
 
 
