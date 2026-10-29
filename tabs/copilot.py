@@ -899,46 +899,58 @@ def _render_journal_history() -> None:
             if e.get("note"):
                 st.caption(f"Anteckning: {e['note']}")
 
+            # Det fälten visar — en saknad nyckel visas tom. Posten skrivs bara
+            # när du ändrat ett fält: att fälla ut historiken är ingen osparad ändring.
+            shown = {
+                "exit_price": float(e.get("exit_price") or 0.0),
+                "exit_date": datetime.date.fromisoformat(str(e["exit_date"])[:10])
+                if e.get("exit_date") else datetime.date.today(),
+                "sell_rule": e.get("sell_rule", "") if e.get("sell_rule", "") in
+                journal_stats.SELL_RULES else "",
+                "setup": e.get("setup", "") if e.get("setup", "") in journal_stats.SETUPS else "",
+                "followed_plan": e.get("followed_plan", "")
+                if e.get("followed_plan", "") in ("Ja", "Nej") else "",
+                "shares": int(e.get("shares") or 0),
+            }
+
             c1, c2, c3 = st.columns(3)
             exit_price = c1.number_input(
                 "Säljkurs", min_value=0.0, step=0.5, format="%.2f",
-                value=float(e.get("exit_price") or 0.0),
+                value=shown["exit_price"],
                 key=f"cj_exit_{idx}")
             exit_date = c2.date_input(
                 "Säljdatum", key=f"cj_date_{idx}",
-                value=datetime.date.fromisoformat(str(e["exit_date"])[:10])
-                if e.get("exit_date") else datetime.date.today())
+                value=shown["exit_date"])
             sell_rule = c3.selectbox(
                 "Säljregel", [""] + list(journal_stats.SELL_RULES),
-                index=([""] + list(journal_stats.SELL_RULES)).index(
-                    e.get("sell_rule", "")) if e.get("sell_rule", "") in
-                journal_stats.SELL_RULES else 0,
+                index=([""] + list(journal_stats.SELL_RULES)).index(shown["sell_rule"]),
                 format_func=lambda r: journal_stats.SELL_RULE_LABEL.get(r, "—"),
                 key=f"cj_rule_{idx}")
 
             d1, d2, d3 = st.columns(3)
             shares = d3.number_input(
                 "Antal aktier", min_value=0, step=1,
-                value=int(e.get("shares") or 0), key=f"cj_shares_{idx}",
+                value=shown["shares"], key=f"cj_shares_{idx}",
                 help="Krävs för vinstandel och payoff-kvot.")
             setup = d1.selectbox(
                 "Setup", [""] + list(journal_stats.SETUPS),
-                index=([""] + list(journal_stats.SETUPS)).index(e.get("setup", ""))
-                if e.get("setup", "") in journal_stats.SETUPS else 0,
+                index=([""] + list(journal_stats.SETUPS)).index(shown["setup"]),
                 format_func=lambda x: journal_stats.SETUP_LABEL.get(x, "—"),
                 key=f"cj_setup_{idx}")
             followed = d2.selectbox(
                 "Följde du planen?", ["", "Ja", "Nej"],
-                index=["", "Ja", "Nej"].index(e.get("followed_plan", ""))
-                if e.get("followed_plan", "") in ("Ja", "Nej") else 0,
+                index=["", "Ja", "Nej"].index(shown["followed_plan"]),
                 key=f"cj_plan_{idx}",
                 help="Den enda frågan som mäter dig och inte marknaden.")
 
-            new = {"exit_price": exit_price or None,
-                   "exit_date": str(exit_date) if exit_price else None,
-                   "sell_rule": sell_rule, "setup": setup,
-                   "followed_plan": followed, "shares": int(shares) or None}
-            if any(e.get(k) != v for k, v in new.items()):
+            picked = {"exit_price": exit_price, "exit_date": exit_date,
+                      "sell_rule": sell_rule, "setup": setup,
+                      "followed_plan": followed, "shares": int(shares)}
+            if picked != shown:
+                new = {"exit_price": exit_price or None,
+                       "exit_date": str(exit_date) if exit_price else None,
+                       "sell_rule": sell_rule, "setup": setup,
+                       "followed_plan": followed, "shares": int(shares) or None}
                 just_closed = bool(new["exit_price"]) and not e.get("exit_price")
                 e.update(new)
                 _save_journal(entries)

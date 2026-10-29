@@ -536,7 +536,8 @@ def _render_scheduled_settings(send_fn) -> None:
                 cfg[t_key] = int(value)
         if key == "fiat":
             from fiat_debasement.config import FIAT_ALERT_RULES
-            current_rules = cfg.get("rules") or list(FIAT_ALERT_RULES)
+            # som alert_rules.fiat_alerts: saknad = alla regler, [] = inga
+            current_rules = cfg.get("rules") if cfg.get("rules") is not None else list(FIAT_ALERT_RULES)
             shown_rules = [r for r in current_rules if r in FIAT_ALERT_RULES]
             picked = st.multiselect("Aktiva regler — 🐺 Fiat Debasement", list(FIAT_ALERT_RULES),
                                     default=shown_rules,

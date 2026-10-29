@@ -3,7 +3,8 @@ F9 · Att öppna en flik är ingen osparad ändring. Lagren fyller i saknade nyc
 Asymmetrys strategi-taggar) efter läsningen; förr gjorde det sessionen "osparad" direkt — sparraden sa
 '⚠️ Du har osparade ändringar' och sidfoten 'Osparade ändringar i: alerts/confidence' hela sessionen utan att du
 rört något. storage.session_normalize formar datan och räknar den fortfarande som ren; en riktig ändring syns, och
-inget skrivs vid ritning.
+inget skrivs vid ritning. Samma sak för Copilotens journalhistorik, och fiat-reglerna i MER → Larm visar det
+alert_rules använder (rules: [] = inga).
 
 F10 · Mot målets 'Plan följd' räknar Copilotens stängda poster (data/copilot_journal.json) tillsammans med Trade
 Journal — en affär som står i båda räknas en gång.
@@ -11,6 +12,7 @@ Journal — en affär som står i båda räknas en gång.
 Inget nätverk: lagret går mot ett repo i minnet (test_watch_ui.fake_repo) eller en fejkad session_load.
 """
 import copy
+import datetime
 import json
 import os
 import sys
@@ -167,8 +169,68 @@ def test_a_changed_threshold_and_fiat_rules_still_count(monkeypatch):
     at.number_input(key="sched_wolf_min_score").set_value(90).run()
     assert f"{FOOTER}: alerts" in _text(at) and at.session_state["alerts"]["wolf"]["min_score"] == 90
     rules = at.multiselect(key="sched_fiat_rules")
+    assert len(rules.value) == 6                                               # saknad lista = alla regler
     rules.set_value(rules.value[:2]).run()
     assert at.session_state["alerts"]["fiat"]["rules"] == rules.value[:2]
+
+
+def test_fiat_rules_all_switched_off_show_as_off(monkeypatch):
+    """rules: [] = inga regler, som i alert_rules.fiat_alerts. Förr visade listan då alla sex som aktiva medan
+    larmen var tysta."""
+    from streamlit.testing.v1 import AppTest
+    import gist_storage
+    monkeypatch.setattr(gist_storage, "load_blob", lambda *a, **k: None)
+    stored = dict(STORED_ALERTS, fiat={"enabled": True, "channels": ["discord"], "rules": []})
+    repo = twu.fake_repo(monkeypatch, {"alerts": stored})
+    at = AppTest.from_function(_larm_page, default_timeout=60).run()
+    assert not at.exception, at.exception
+    assert at.multiselect(key="sched_fiat_rules").value == []
+    assert UNSAVED not in _text(at) and FOOTER not in _text(at)
+    at.multiselect(key="sched_fiat_rules").select("m2_high").run()             # du slår på en regel
+    assert at.session_state["alerts"]["fiat"]["rules"] == ["m2_high"] and f"{FOOTER}: alerts" in _text(at)
+    assert repo["alerts"] == stored                                           # sparas först med 💾
+
+
+# ── Copilotens journalhistorik ───────────────────────────────────────────────
+STORED_COPILOT = {"entries": [
+    {"ticker": "VOLV-B.ST", "date": "2026-09-10", "strategy": "ovtlyr", "entry": 250.0, "stop": 240.0,
+     "target": 280.0},                                                         # öppen, inga säljfält alls
+    {"ticker": "ABB.ST", "date": "2026-09-01", "entry": 300.0, "stop": 290.0, "exit_price": 330.0,
+     "shares": 0, "sell_rule": "okänd"},                                       # stängd utan säljdatum
+    {"ticker": "SAND.ST", "date": "2026-09-02", "entry": 240.0, "stop": 230.0, "exit_price": 250.0,
+     "exit_date": "2026-09-20T15:30:00", "followed_plan": True}]}              # tidsstämpel, gammalt svar
+
+
+def _history_page():
+    import storage_ui
+    from tabs import copilot
+    copilot._render_journal_history()
+    storage_ui.footer()
+
+
+def test_opening_the_copilot_journal_history_is_not_an_unsaved_change(monkeypatch):
+    """Fälten fyllde förr i saknade nycklar (exit_price None, sell_rule '' …) vid varje ritning — då blev
+    copilot_journal osparad utan att du rört något. Nu skrivs posten bara när du ändrat ett fält."""
+    from streamlit.testing.v1 import AppTest
+    repo = twu.fake_repo(monkeypatch, {"copilot_journal": STORED_COPILOT})
+    at = AppTest.from_function(_history_page, default_timeout=60).run()
+    assert not at.exception, at.exception
+    assert at.selectbox(key="cj_plan_0").value == "" and at.number_input(key="cj_exit_1").value == 330.0
+    assert FOOTER not in _text(at)
+    at.run()                                                                   # och nästa körning likadant
+    assert FOOTER not in _text(at)
+    assert at.session_state["copilot_journal"] == STORED_COPILOT              # inget fylldes i, inget gammalt svar föll
+    assert repo["copilot_journal"] == STORED_COPILOT
+    # en riktig ändring syns, och posten får sina fält
+    at.selectbox(key="cj_plan_0").set_value("Ja").run()
+    assert not at.exception, at.exception
+    assert f"{FOOTER}: copilot_journal" in _text(at)
+    e = at.session_state["copilot_journal"]["entries"][0]
+    assert e["followed_plan"] == "Ja" and e["exit_price"] is None and e["exit_date"] is None
+    at.number_input(key="cj_exit_0").set_value(270.0).run()                    # stänger affären i dag
+    e = at.session_state["copilot_journal"]["entries"][0]
+    assert e["exit_price"] == 270.0 and e["exit_date"] == str(datetime.date.today()) and e["followed_plan"] == "Ja"
+    assert repo["copilot_journal"] == STORED_COPILOT                           # sparas först med 💾
 
 
 # ── 🐺 Wolf Asymmetry ────────────────────────────────────────────────────────
