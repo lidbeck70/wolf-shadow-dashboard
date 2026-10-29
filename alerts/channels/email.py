@@ -32,6 +32,7 @@ import smtplib
 from email.mime.text import MIMEText
 from typing import Any, Dict, Optional
 
+import private_data
 from alerts.config import secret
 
 logger = logging.getLogger(__name__)
@@ -71,7 +72,8 @@ def _smtp_send(subject: str, body: str, to_addrs: list[str],
                 smtp.ehlo()
                 smtp.login(user, password)
             smtp.sendmail(from_addr, to_addrs, msg.as_string())
-        logger.info("email channel: skickat till %s (%r)", to_addrs, subject)
+        # Actions-loggen är publik — ämnet kan bära ett innehavs ticker (döljs när PANEL_DATA_KEY finns)
+        logger.info("email channel: skickat till %s (%r)", to_addrs, private_data.public_log(subject))
         return True
     except Exception as exc:
         last_error = (f"SMTP-sändningen misslyckades ({type(exc).__name__}): "

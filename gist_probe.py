@@ -12,6 +12,7 @@ import sys
 import requests
 
 import gist_storage as g
+import private_data
 
 BLOBS = ("screens.json", "insider_scan.json", "sheets_refresh.json",
          "arc_screeners.json", "alert_state.json")
@@ -58,6 +59,10 @@ def main() -> int:
             d = json.loads(content)
         except Exception as e:
             print(f"  {name:22} JSON-FEL: {e}")
+            continue
+        if private_data.is_encrypted(d):                 # innehavsfilerna — load_blob nedan läser dem med nyckeln
+            print(f"  {name:22} krypterad ({d['_encrypted']}) · {private_data.KEY_NAME} "
+                  f"{'satt' if private_data.passphrase() else 'saknas'}")
             continue
         if name == "screens.json":
             print(f"  {name:22} generated={d.get('generated')} global={d.get('global_available')} "

@@ -133,9 +133,16 @@ def read_blob(filename: str) -> tuple:
     if not content.strip():
         return "missing", None
     try:
-        return "ok", json.loads(content)
+        data = json.loads(content)
     except ValueError:
         return "unreadable", "trasig JSON"
+    import private_data
+    if private_data.is_encrypted(data):              # innehavsfilerna ligger krypterade (F12)
+        try:
+            data = private_data.unseal(data)
+        except Exception as exc:                     # saknad eller fel nyckel: oläsbar, aldrig "tom"
+            return "unreadable", str(exc) if isinstance(exc, private_data.PrivateDataError) else type(exc).__name__
+    return "ok", data
 
 
 def gist_file(name: str, timeout: int = 10) -> str:
@@ -263,11 +270,13 @@ def save_blob(filename: str, data) -> bool:
     if not token:
         return False
     try:
+        import private_data
+        content = private_data.seal_blob(filename, data)   # innehavsfilerna krypteras när nyckeln finns (F12)
         headers = _auth_header(token)
         # Kompakt JSON: gisten har ett ~1 MB-tak för inline-innehåll, och
         # indent=2 fördubblade storleken på de stora blobbarna.
         payload = {"files": {filename: {"content": json.dumps(
-            data, separators=(",", ":"), ensure_ascii=False, default=str)}}}
+            content, separators=(",", ":"), ensure_ascii=False, default=str)}}}
         r = requests.patch(GIST_API_URL, headers=headers, json=payload, timeout=10)
         _invalidate()                                     # nästa läsning ska se det vi just skrev
         return r.status_code == 200

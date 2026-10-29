@@ -28,7 +28,8 @@ lukacs.deleveraging_state, scoring.durrett_buy_ok) — inga regler ändras:
   durrett_buy_rule    MCap/framtida vinst korsar 10× i Durrett
 
 Env: BORSDATA_API_KEY, GITHUB_TOKEN (gist), ALERT_REPO_TOKEN (Contents: Read
-på panel-data). Flaggor: --dry-run.
+på panel-data), PANEL_DATA_KEY (läser registret; bloben bär innehavens kurser
+och sparas därför krypterad i Gisten när nyckeln finns). Flaggor: --dry-run.
 """
 
 from __future__ import annotations
@@ -523,15 +524,25 @@ def main() -> int:
         log.error("BORSDATA_API_KEY saknas.")
         return 1
     sheets = load_sheets()
+    import alert_scan
+    import private_data
+    hide = bool(private_data.passphrase())        # Actions-loggen är publik: med nyckeln syns inga innehav där
     log.info("Ark: %s", {k: {b: len(v.get(b, []) or []) for b in _BUCKETS[k]}
-                         for k, v in sheets.items() if isinstance(v, dict)})
+                         for k, v in sheets.items() if isinstance(v, dict) and not (hide and k == "holdings")})
     result = refresh(BorsdataAPI(api_key=key), sheets)
+    if SHEET_FILES["holdings"] in alert_scan.UNREADABLE_PATHS:
+        # Fel nyckel eller nätfel är inte "inga innehav": larmen håller Tiggre-positionernas baslinje (alert_scan).
+        result["holdings_unreadable"] = True
+        log.warning("Registret gick inte att läsa — positionernas rader saknas i den här uppdateringen.")
     n_price = sum(1 for s in result["rows"].values() if s.get("price") is not None)
     log.info("Rader: %d, kurs hämtad för %d, händelser: %d%s", len(result["rows"]),
              n_price, len(result["events"]),
              f" (FEL: {result['error']})" if result["error"] else "")
     for e in result["events"]:
-        log.info("  %s — %s", e["title"], e["body"][:90])
+        if hide:
+            log.info("  %s (rubriken dold)", e["kind"])
+        else:
+            log.info("  %s — %s", e["title"], e["body"][:90])
     if args.dry_run:
         log.info("[DRY-RUN] sparar inte till Gisten.")
         return 0
