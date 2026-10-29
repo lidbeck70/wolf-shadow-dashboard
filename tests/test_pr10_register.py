@@ -142,7 +142,9 @@ def test_sheets_refresh_reads_tiggre_positions_from_holdings():
 def test_alert_scan_and_the_other_readers_go_through_the_register():
     src = _src("alert_scan.py")
     assert 'HOLDINGS_PATH = "data/holdings.json"' in src and 'view_rows_from(' in src
-    assert 'm.open_positions()' in _src("scorecard.py")
+    # Scorecard läser Tiggre-positionerna ur registret (samma källor för fliken och Thor: sources_from_stores)
+    assert 'positions.view_rows_from(s.get("holdings"), "Tiggre")' in _src("scorecard.py")
+    assert '_try("holdings", lambda: __import__("positions").load())' in _src("scorecard.py")
     assert '_swing.rules_data()' in _src("tabs/copilot.py")
     assert '_swing.rules_data()' in _src("wolf_regime_ui.py")
     assert '_positions.view_rows("Tiggre")' in _src("confidence/ui.py")

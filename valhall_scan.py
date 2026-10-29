@@ -320,11 +320,13 @@ def run(api=None, data_getter=None, getter=None, load=None, save=None, today=Non
     sw = swing.candidates(board, universe, keep, scan_fn=scan_fn, getter=getter, today=today,
                           berserk_blob=berserk_blob, **scan_kwargs(scan_fn))
     nich = swing.niche(universe, berserk_blob, insider_blob)
-    complex_swing, cmap = None, {}
+    complex_swing, cmap, sheet_map = None, {}, {}
     try:                                                      # bolag → komplex ur registret (K1)
         from universe import registry as ur
         from valhall import complexes as vcx
-        cmap = vcx.member_complexes(ur.load(None, load))
+        reg_u = ur.load(None, load)
+        cmap = vcx.member_complexes(reg_u)
+        sheet_map = reg_u.sheet_map() if reg_u is not None else {}   # arkens 'BOL' → 'BOL.ST' (granskning 3, T4)
     except Exception as exc:
         log.warning("Registret gick inte att läsa för komplexkartan (%s) — komplexen får inga bolag i dag.", exc)
     try:                                                      # Viking Nine per komplex (K4) — kartan sparas även om den fallerar
@@ -342,7 +344,7 @@ def run(api=None, data_getter=None, getter=None, load=None, save=None, today=Non
     arc_sigs = vwolf.arc_signals(arc, entries, universe)
     src = sources if sources is not None else _load_sources(load)
     buys = vp.gate_segments(vp.build(src.get("ca") or [], src.get("screens"), src.get("sheets") or {},
-                                     analyze=analyze), board)
+                                     analyze=analyze, to_yf=sheet_map), board)
     payload = {"generated": datetime.now(tz=timezone.utc).isoformat(), "universe_source": universe_source,
                "board": _json_safe(board),
                "cycle_starts": vb.cycle_starts(board), "turns": vb.turns(board), "swing": sw, "niche": nich,

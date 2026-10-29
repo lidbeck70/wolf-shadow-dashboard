@@ -60,10 +60,14 @@ def cap_pct(strategy: str) -> Optional[float]:
 
 
 def fx_for(ticker: str) -> tuple:
-    """(valuta, kurs mot SEK) för aktiens noteringsvaluta — samma tabell som Positioner (positions.FX_TO_SEK)."""
+    """(valuta, kurs mot SEK) för aktiens noteringsvaluta — samma tabell som Positioner (positions.FX_TO_SEK).
+    London noterar i pence: ('GBp', pundkursen × 0,01), samma enhet som positions.valuation (granskning 3, T3)."""
     import positions
     ccy = positions.currency_for(ticker)
-    return ccy, float(positions.FX_TO_SEK.get(ccy, 1.0))
+    fx = float(positions.FX_TO_SEK.get(ccy, 1.0))
+    if ccy == "GBP" and str(ticker or "").strip().upper().endswith(".L"):
+        return "GBp", fx * 0.01
+    return ccy, fx
 
 
 def size(entry, stop, capital, risk: Optional[float] = None, cap: Optional[float] = None, fx: float = 1.0,

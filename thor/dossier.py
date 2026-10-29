@@ -20,15 +20,28 @@ NO_PLAYBOOK = "Strategin har ingen playbook med cykelfaser — fasen visas, men 
 
 def candidates_for(rows: list, ticker) -> list:
     """Dagens Thor-rader för aktien (alla strategier), i listans ordning. 'BOL' hittar 'BOL.ST'; med suffix krävs
-    samma notering — EQNR.OL får inte EQNR-raden från New York (granskning 2, F10)."""
+    samma notering — EQNR.OL får inte EQNR-raden från New York (granskning 2, F10) — och samma marknad: L'Oréal
+    OR.PA får inte Osiskos OR.TO (granskning 3)."""
+    from universe import registry as ur
     want = base(ticker)
     t = str(ticker or "").strip().upper()
     if "." in t:
         exact = [c for c in rows or [] if str(c.ticker).upper() == t]
         if exact:
             return exact
-        return [c for c in rows or [] if want and base(c.ticker) == want and "." in str(c.ticker)]
+        mkt = ur.market_of(t)
+        return [c for c in rows or [] if want and base(c.ticker) == want and "." in str(c.ticker)
+                and ur.market_of(c.ticker) == mkt]
     return [c for c in rows or [] if want and base(c.ticker) == want]
+
+
+def bare_rows(cands: list, ticker) -> list:
+    """Raderna med exakt samma bara ticker: 'TEL' i listan är TE Connectivity och vinner över Telenor TEL.OL
+    (granskning 3, T1). Tom lista för en noterad ticker eller när ingen bar rad finns."""
+    t = str(ticker or "").strip().upper()
+    if not t or "." in t:
+        return []
+    return [c for c in cands or [] if str(c.ticker).upper() == t]
 
 
 def default_strategy(ident: Ticker, cands: list) -> str:
@@ -62,6 +75,19 @@ def _safe(fn: Optional[Callable], arg) -> tuple:
     return out, ""
 
 
+def valhall_tag(inner: Optional[dict], ident) -> dict:
+    """Valhalls läge för aktien (valhall.paper.cycle_tag): Norden och globalt ur aktiens eget segment, temat ur
+    temats egen segmentrad. Kartan har temat bara under sitt segment, och Börsdatas sektor kan vara en annan
+    (SBUX: Sällanköp, kaffe: Dagligvaror) — då försvann temats läge (granskning 3, T8). cycle_tag ändras inte."""
+    from valhall import segments as sgm
+    from valhall.paper import cycle_tag
+    tag = cycle_tag(inner, ident.segment, None)
+    if ident.theme:
+        th = cycle_tag(inner, sgm.segment_of_theme(ident.theme) or ident.segment, ident.theme)
+        tag.update({k: v for k, v in th.items() if k.startswith("t_")})
+    return tag
+
+
 def cycle(ident: Ticker, strategy: str, board: Optional[dict] = None, phase_fn: Optional[Callable] = None) -> dict:
     """Aktiens egen psykologifas (14 faser), hemmamarknadens, Valhall-segmentets (eller temats) läge och
     playbookens köp/håll/sälj-faser som PASS/MANUAL/FAIL. phase_fn(ticker) → ({phase, confidence}, fel);
@@ -73,12 +99,12 @@ def cycle(ident: Ticker, strategy: str, board: Optional[dict] = None, phase_fn: 
     s = reg.get(strategy)
     pb = (s.playbook if s else "") or ""
     own, err = _safe(phase_fn, ident.yf)
-    bench, berr = _safe(phase_fn, ident.home_index)
+    home = getattr(ident, "home_label", "") or ident.home_index      # visning — grinden läser bara aktiens egen fas
+    bench, berr = _safe(phase_fn, home)
     seg: dict = {}
     inner = (board or {}).get("board") if isinstance((board or {}).get("board"), dict) else board
     if inner and (ident.segment or ident.theme):
-        from valhall.paper import cycle_tag
-        tag = cycle_tag(inner, ident.segment, ident.theme)
+        tag = valhall_tag(inner, ident)
         g = "t" if ident.theme and tag.get("t_status") not in (None, vcy.NODATA) else "n" if ident.nordic else "g"
         seg = {"view": {"t": "temat", "n": "Norden", "g": "globalt"}[g], "status": tag.get(f"{g}_status"),
                "phase": tag.get(f"{g}_phase"), "cykel": tag.get(f"{g}_cykel"), "all": tag}
@@ -87,7 +113,7 @@ def cycle(ident: Ticker, strategy: str, board: Optional[dict] = None, phase_fn: 
         status, note = cy.gate_from_market_phase(own, pb)
     else:
         sets, (status, note) = {"buy": set(), "hold": set(), "sell": set()}, ("MANUAL", NO_PLAYBOOK)
-    return {"phase": own, "error": err, "benchmark": {"index": ident.home_index, "phase": bench, "error": berr},
+    return {"phase": own, "error": err, "benchmark": {"index": home, "phase": bench, "error": berr},
             "segment": seg, "playbook": pb, "phases": {k: sorted(v) for k, v in sets.items()},
             "gate": {"status": status, "note": note}}
 
@@ -114,6 +140,13 @@ def sheets_for(ticker, stores: Optional[dict]) -> dict:
     conf = next((dict(comps[f]) for f in fs if isinstance(comps.get(f), dict)), None)
     cards = {k: v for k, v in ((stores.get("scorecard") or {}).get("cards") or {}).items()
              if any(str(k).endswith("|" + f) for f in fs)}
+    entries: dict = {}
+    if cards:                                  # kortens kandidatrader — samma som 🎯 Scorecard räknar grinden på
+        try:
+            import scorecard
+            entries = scorecard.entries_for(fs, stores)
+        except Exception:
+            entries = {}
 
     def mine(r) -> bool:
         return isinstance(r, dict) and str(r.get("ticker") or "").strip().upper() in fset
@@ -125,7 +158,8 @@ def sheets_for(ticker, stores: Optional[dict]) -> dict:
     copilot = [e for e in ((stores.get("copilot_journal") or {}).get("entries") or []) if mine(e)]
     return {"reviews": reviews, "confidence": conf, "scorecard": cards, "positions": open_rows, "closed": closed,
             "journal": journal, "copilot": copilot, "found": bool(reviews or conf or cards or open_rows),
-            "rotation": stores.get("rotation"), "confidence_store": stores.get("confidence")}
+            "rotation": stores.get("rotation"), "confidence_store": stores.get("confidence"),
+            "scorecard_entries": {k: entries.get(k) for k in cards}}
 
 
 def assemble(raw, rows: Optional[list] = None, board: Optional[dict] = None, stores: Optional[dict] = None,
@@ -136,7 +170,10 @@ def assemble(raw, rows: Optional[list] = None, board: Optional[dict] = None, sto
     sh = sheets if sheets is not None else stores
     ident = identify(raw, api, sh, table)
     cands = candidates_for(rows or [], ident.yf)
-    if "." not in ident.yf and cands and "." in cands[0].ticker:      # 'eric b' → listan vet att det är ERIC-B.ST
+    exact = bare_rows(cands, ident.yf)
+    if exact:                                                          # 'TEL' = TE Connectivity, inte TEL.OL (T1)
+        cands = exact
+    elif "." not in ident.yf and cands and "." in cands[0].ticker:    # 'eric b' → listan vet att det är ERIC-B.ST
         ident = identify(cands[0].ticker, api, sh, table)
     strategy = strategy or default_strategy(ident, cands)
     snap, snap_err = snapshot(df, ident.yf) if df is not None else (None, "")

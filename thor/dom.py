@@ -74,9 +74,9 @@ def cycle_context(ident, data: dict, sheets: dict, prices: Optional[Callable] = 
     inner = board.get("board") if isinstance(board.get("board"), dict) else board
     try:
         if inner and (ident.segment or theme):
+            from thor.dossier import valhall_tag
             from valhall import cycle as vcy
-            from valhall.paper import cycle_tag
-            tag = cycle_tag(inner, ident.segment, theme or None)
+            tag = valhall_tag(inner, ident)                       # temat ur sin egen segmentrad (T8)
             g = "t" if theme and tag.get("t_status") not in (None, vcy.NODATA) else "n" if ident.nordic else "g"
             if tag.get(f"{g}_status") not in (None, vcy.NODATA):
                 out["valhall"] = {"view": {"t": "temat", "n": "Norden", "g": "globalt"}[g],
@@ -144,10 +144,11 @@ def _scorecard_check(strategy: str, sheets: dict, ticker: str, scorecard_fn: Opt
     key = next((k for k, c in cards_.items() if label in str((c or {}).get("strategy") or "").lower()),
                next(iter(cards_)))
     card = cards_[key] or {}
+    entry = ((sheets or {}).get("scorecard_entries") or {}).get(key)     # samma kandidatrad som 🎯 Scorecard läser
     try:
         if scorecard_fn is None:
             from scorecard import gate_state as scorecard_fn
-        g = scorecard_fn(card, {"ticker": ticker})
+        g = scorecard_fn(card, entry)
     except Exception as exc:
         return Check("scorecard", "Scorecardet", MANUAL, f"kunde inte läsas: {exc}", src)
     strat = str(card.get("strategy") or "")

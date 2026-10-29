@@ -347,24 +347,45 @@ def _save(data: dict) -> None:
 
 def _gather() -> dict:
     """Läser de andra flikarnas lagring. Saknas en flik hoppas den över."""
-    sources = {}
+    stores = {}
 
-    def _try(module_name, extract):
+    def _try(name, load):
         try:
-            mod = __import__(module_name)
-            sources.update(extract(mod))
+            stores[name] = load()
         except Exception:
             pass
 
-    _try("scoring", lambda m: {"sprott": m._load().get("sprott", []),
-                               "durrett": m._load().get("durrett", [])})
-    _try("tiggre", lambda m: {"tiggre": (m._load().get("candidates", [])
-                                         + m.open_positions())})
-    _try("producers", lambda m: {"producenter": m._load().get("producers", []),
-                                 "royalty": m._load().get("royalty", [])})
-    _try("insider", lambda m: {"insider": m._load().get("signals", [])})
-    _try("confidence.ui", lambda m: {"confidence": confidence_rows(m.load_store())})
-    return sources
+    _try("scoring", lambda: __import__("scoring")._load())
+    _try("tiggre", lambda: __import__("tiggre")._load())
+    _try("holdings", lambda: __import__("positions").load())
+    _try("producers", lambda: __import__("producers")._load())
+    _try("insider", lambda: __import__("insider")._load())
+    _try("confidence", lambda: __import__("confidence.ui", fromlist=["load_store"]).load_store())
+    return sources_from_stores(stores)
+
+
+def sources_from_stores(stores: dict) -> dict:
+    """Källorna till collect() ur redan lästa lager ({arknamn: data}, samma som storage.session_load ger).
+    Ren funktion — så att Thor kan räkna grinden på samma kandidatrad som fliken (Arkens dom)."""
+    import positions
+    s = stores or {}
+
+    def _part(name, key):
+        store = s.get(name)
+        return list((store.get(key) if isinstance(store, dict) else None) or [])
+
+    return {"sprott": _part("scoring", "sprott"), "durrett": _part("scoring", "durrett"),
+            "tiggre": _part("tiggre", "candidates") + positions.view_rows_from(s.get("holdings"), "Tiggre"),
+            "producenter": _part("producers", "producers"), "royalty": _part("producers", "royalty"),
+            "insider": _part("insider", "signals"),
+            "confidence": confidence_rows(s.get("confidence") if isinstance(s.get("confidence"), dict) else {})}
+
+
+def entries_for(tickers, stores: dict) -> dict:
+    """{kortnyckel: kandidatrad} för tickerns former ('BOL.ST', 'BOL') — raden gate_state ska läsa, inte en
+    attrapp utan arkrad (då blev DS alltid 'inte bedömd' i Thor)."""
+    want = {str(t or "").strip().upper() for t in tickers or [] if t}
+    return {e["key"]: e for e in collect(sources_from_stores(stores)) if e["ticker"] in want}
 
 
 def confidence_rows(store: dict) -> list:

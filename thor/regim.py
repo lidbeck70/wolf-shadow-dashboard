@@ -479,10 +479,10 @@ def _long_screener(st, ident, strategy, data, ohlcv, cands) -> None:
             fetch_fundamentals_batch_fast.clear()                 # cacha inte ett tomt svar i en timme
         except Exception:
             pass
-    from valhall.paper import cycle_tag
+    from thor.dossier import valhall_tag
     blob = data.get("board") or {}
     inner = blob.get("board") if isinstance(blob.get("board"), dict) else blob
-    tag = cycle_tag(inner, ident.segment, ident.theme) if inner else {}
+    tag = valhall_tag(inner, ident) if inner else {}                # temat ur sin egen segmentrad (T8)
     # Nordiska bolag bedöms som i Valhalls Long Screener-rad (sektorns nordiska status); utländska på temat om det
     # finns på kartan, annars globalt (SPDR) — inte på Nordens sektorstatus som förut (NEM ≠ nordiskt Material).
     g = "n" if ident.nordic else ("t" if ident.theme and tag.get("t_status") not in (None, vcy.NODATA) else "g")
