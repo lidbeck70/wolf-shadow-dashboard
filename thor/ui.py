@@ -12,6 +12,7 @@ gamla sidorna, som har bryggknappar kvar tills städningen.
 Designen följer Valhall: sidans data i st.session_state[_STATE] med en 📡-knapp, kort som rena HTML-
 funktioner (thor/cards.py), bara den öppna sidofliken ritas (st.tabs med on_change="rerun"). Med ett segment,
 tema eller komplex valt står segmentets största bolag utan signal under listan (thor.segment_top) — bara där.
+Under verdiktet lägger 👀 aktien med strategin i Övervakningen (watchlist.py, PORTFÖLJ → 👀 Övervakning).
 """
 
 from __future__ import annotations
@@ -612,6 +613,7 @@ def _analysis(st, data: dict, rows: list, ticker: str) -> None:
     strategy = next((s.key for s in reg.STRATEGIES.values() if s.label == picked), "viking_nine")
     c = next((x for x in cands if x.strategy == strategy), None)
     st.markdown(cards.verdict_for(c, strategy), unsafe_allow_html=True)
+    _watch_button(st, ident, strategy, c)
     _storlek(st, ident, strategy, c)
     labels = [x for x in TABS if x != "Råvara" or ident.is_commodity]
     tabs = st.tabs(labels, on_change="rerun", key="thor_tabs")
@@ -622,6 +624,34 @@ def _analysis(st, data: dict, rows: list, ticker: str) -> None:
             continue
         with tab:
             render[lbl](st, data, ident, strategy, sheets, cands)
+
+
+def _watch_add(ticker: str, name: str, strategy: str, at_add: dict) -> None:
+    """Callback: paret till Övervakningen och en toast — ett sparfel sägs rakt ut, som Logga köp."""
+    import streamlit as st
+    import watchlist as wl
+    _ok, msg = wl.add(ticker, strategy, name=name, source="thor", at_add=at_add)
+    st.toast(msg, icon="👀")
+
+
+def _watch_button(st, ident, strategy: str, c) -> None:
+    """👀 Lägg i Övervakning: aktien med strategin i 'Bedöm som' (watchlist.py) — en gång per par. Bevakas paret
+    redan blir knappen en länk dit. c = strategins rad eller None (ingen rad, Största i segmentet)."""
+    import watchlist as wl
+    from ui.links import go
+    try:
+        hit = wl.find(ident.yf, strategy)
+    except Exception:                                      # ett trasigt lager får aldrig fälla analysen
+        hit = None
+    label = reg.label(strategy)
+    if hit:
+        since = f" sedan {hit['added']}" if hit.get("added") else ""
+        st.button(f"👀 Bevakas{since} ({label}) — öppna Övervakning →", key="thor_watch_open", on_click=go,
+                  args=("watch",))
+        return
+    st.button(f"👀 Lägg i Övervakning ({label})", key="thor_watch_add", on_click=_watch_add,
+              args=(ident.yf, ident.name or "", strategy, wl.snapshot(c)),
+              help="Bevaka aktien med strategin — läget följs under PORTFÖLJ → 👀 Övervakning")
 
 
 def _storlek(st, ident, strategy: str, c) -> None:

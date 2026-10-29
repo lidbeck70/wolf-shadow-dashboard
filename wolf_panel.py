@@ -548,6 +548,9 @@ def _tab_portfolio() -> None:
             st.markdown("---")
             from portfolio.metals import render_metals_section
             _page(True, render_metals_section, "Fysiska metaller", "portfolio/metals")
+    elif sub == "👀 Övervakning":           # utanför låset: listan säger bara vilka aktier som bevakas
+        from portfolio.watch_ui import render_watch_page
+        _page(True, render_watch_page, "Övervakning", "portfolio/watch_ui")
     elif sub == "Veckorutin":
         _page(SWING_AVAILABLE, render_swing_page, "Swing", "swing")
     elif sub == "Allokering":

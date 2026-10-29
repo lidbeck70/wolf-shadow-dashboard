@@ -45,8 +45,10 @@ SUBS: dict = {
     # Wolf Asymmetry har sitt eget med Confidence inbyggt.
     "review": ["🎯 Scorecard", "Rick Rule", "Royalty C", "Poängmodell", "Tiggre", "Insider",
                "🧭 Durrett", "🐺 Wolf Asymmetry", "🚀 Råvaruhävstång"],
-    # Design PR 11: fliken heter som sidan och som larmet — Positioner, Journal, Veckorutin.
-    "portfolio": ["Positioner", "🎯 Mot målet", "📊 Papperskonton", "Journal", "Veckorutin", "Allokering"],
+    # Design PR 11: fliken heter som sidan och som larmet — Positioner, Journal, Veckorutin. 👀 Övervakning: aktier
+    # nära köpläge per strategi (Thors 👀-knapp), utanför Positionernas lås.
+    "portfolio": ["Positioner", "👀 Övervakning", "🎯 Mot målet", "📊 Papperskonton", "Journal", "Veckorutin",
+                  "Allokering"],
     # Motorsidorna: Thors flikar gör samma jobb och bryggorna leder hit. Gamla Vikings kod rörs inte.
     "more": ["Larm", "⚙️ Inställningar", "Regler & Guider", "Copilot", "Motorsidor", "Egen backtest"],
     "more/Motorsidor": ["Wolf Regime", "Viking Regime", "⚔️ Viking Nine Regime", "Quality & Contrarian",
@@ -78,6 +80,7 @@ HOME_ZONES: tuple = (
     ]),
     ("portfolio", "PORTFÖLJ — POSITIONER OCH MÅLET", [
         ("Positioner", "Positionerna och säljreglerna"),
+        ("👀 Övervakning", "Aktier nära köpläge per strategi — läget ur körningarna och länk till Thor"),
         ("🎯 Mot målet", "Årstakten mot 20/35 %, per strategi, och vad reglerna gett historiskt"),
         ("📊 Papperskonton", "Varje strategi på papper"),
         ("Journal", "Stängda affärer och R"),
@@ -186,6 +189,7 @@ TARGETS: dict = {
     "durrett": ("review", "🧭 Durrett"),
     "scorecard": ("review", "🎯 Scorecard"),
     "holdings": ("portfolio", "Positioner"),
+    "watch": ("portfolio", "👀 Övervakning"),
     "journal": ("portfolio", "Journal"),
     "alerts": ("more", "Larm"),
     "settings": ("more", "⚙️ Inställningar"),

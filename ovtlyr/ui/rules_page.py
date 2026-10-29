@@ -1073,6 +1073,9 @@ _PANEL_GUIDE: list[tuple] = [
      "Contrarian, Momentum Swing, Long Screener — körs i schemat); Körningar per strategi visar hur färsk varje "
      "lista är. Tryck Öppna på en aktie så kommer analysen på samma sida: regim, teknik, cykel, råvara, "
      "asymmetri, arken, backtest och regler."),
+    ("PORTFÖLJ → 👀 Övervakning", "Alla strategier: nära köp",
+     "Aktier du bevakar med strategin — läget och avståndet till köp ur strategins egen körning, → Thor per rad. "
+     "Lägg till med 👀 i Thor (strategin i Bedöm som) eller under Nära köp nu (strategiernas BEVAKA-rader)."),
     ("ODIN → Läget", "Momentum: entry #1, #6",
      "Trafikljus GRÖN/GUL/RÖD + regelverk, OMXSPI vs MA200, marknadsbredd "
      "(dör före index) och regimhistorik."),
