@@ -149,7 +149,7 @@ def test_home_speaks_swedish_and_reads_the_regime():
 # ── Tomt = saknas ────────────────────────────────────────────────────────────
 def test_number_inputs_start_blank_when_nothing_is_stored():
     for path in ("producers.py", "scoring.py", "insider.py", "tiggre.py", "allocator.py",
-                 "lukacs_ui.py", "controls_ui.py"):
+                 "lukacs_ui.py", "controls_ui.py", "scorecard.py"):
         src = _src(path)
         assert not re.search(r"value=float\((?:_num|fv\.num)\([^\n]*\), 0\.0\) or 0\.0\)", src), path
         assert not re.search(r"storage\.differs\([^\n]*, 0\.0\)", src), path

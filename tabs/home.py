@@ -247,7 +247,9 @@ def _render_today() -> None:
     # 5 · Mot målet
     _block("Mot målet", GOLD_C)
     import journal_stats as js
-    _line(escape(mm.today_line(js.realized_cagr(d.get("trades") or []), d.get("paper"), d.get("trades"))))
+    from trade_journal import start_capital
+    _line(escape(mm.today_line(js.realized_cagr(d.get("trades") or [], start_capital()), d.get("paper"),
+                               d.get("trades"))))
     _open("Mot målet →", "home_goal", "goal")
 
 
@@ -267,11 +269,11 @@ def _render_alert_log(d: dict) -> None:
 
 
 def _render_due() -> None:
-    from datetime import date
+    from tabs.home_today import now_se
 
     try:
         import routines
-        due = routines.due_today(date.today())
+        due = routines.due_today(now_se().date())
     except Exception:
         due = []
     if due:
@@ -283,10 +285,11 @@ def _render_due() -> None:
 
 # ── Sidan ────────────────────────────────────────────────────────────────────
 def tab_home() -> None:
+    from tabs.home_today import now_se
     section_title("I dag", "🏠")
     c1, c2 = st.columns([3, 1])
     loaded = (st.session_state.get("home_today") or {}).get("loaded")
-    c1.markdown(f'<p style="color:{DIM};font-size:0.8rem;margin:-8px 0 8px;">{swedish_date(datetime.now())} · '
+    c1.markdown(f'<p style="color:{DIM};font-size:0.8rem;margin:-8px 0 8px;">{swedish_date(now_se())} · '
                 f'vändning → kapital → kvalar → storlek → sälj → mål'
                 + (f' · hämtad {loaded[11:16]}' if loaded else '') + '</p>', unsafe_allow_html=True)
     if c2.button("📡 Uppdatera", key="home_refresh"):

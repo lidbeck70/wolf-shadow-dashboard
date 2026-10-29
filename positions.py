@@ -121,6 +121,13 @@ def currency_for(ticker: str) -> str:
     return "USD"
 
 
+def sek_factor(ticker: str, ccy: Optional[str] = None) -> float:
+    """SEK per kursenhet: växelkursen ur FX_TO_SEK, och London i pence (GBp)."""
+    c = str(ccy or currency_for(ticker)).upper()
+    unit = 0.01 if (c in ("GBP", "GBX") and str(ticker or "").upper().endswith(".L")) else 1.0
+    return unit * FX_TO_SEK.get("GBP" if c == "GBX" else c, FX_TO_SEK["USD"])
+
+
 def valuation(row: dict, fresh: Optional[dict] = None) -> dict:
     """Positionens värde i SEK: antal × kurs. Kursen tas i ordning ur
     sifferuppdateringen (holdings:<id> eller tiggre:<id>), arkets "Kurs nu"
@@ -137,11 +144,9 @@ def valuation(row: dict, fresh: Optional[dict] = None) -> dict:
         price = _opt(row.get("entry_price")) or None
         source = "inköpskursen"
     ccy = str(ccy or currency_for(row.get("ticker"))).upper()
-    # London noterar i pence
-    unit = 0.01 if (ccy in ("GBP", "GBX") and str(row.get("ticker", "")).upper().endswith(".L")) else 1.0
-    fx = FX_TO_SEK.get("GBP" if ccy == "GBX" else ccy, FX_TO_SEK["USD"])
     shares = _num(row.get("shares"))
-    value = round(price * unit * fx * shares, 0) if (price and shares > 0) else None
+    # London noterar i pence — sek_factor tar med det
+    value = round(price * sek_factor(row.get("ticker"), ccy) * shares, 0) if (price and shares > 0) else None
     return {"price": price, "currency": ccy, "source": source, "shares": shares,
             "value_sek": value, "asof": str(f.get("asof") or "")[:10]}
 

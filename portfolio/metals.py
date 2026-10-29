@@ -157,8 +157,10 @@ def render_metals_section() -> None:
         weight = c4.number_input("Vikt per styck", min_value=0.0, value=1.0, step=1.0, key="metals_weight")
         unit = c5.selectbox("Enhet", list(UNITS), index=1, key="metals_unit",
                             help="oz = troy ounce (31,1 g)")
+        # Nyckel per metall: annars behöll fältet guldets 0,9999 när man valde silver
         purity = c6.number_input("Finhalt (andel)", min_value=0.0, max_value=1.0,
-                                 value=PURITY_DEFAULT[metal], step=0.001, format="%.4f", key="metals_purity",
+                                 value=PURITY_DEFAULT[metal], step=0.001, format="%.4f",
+                                 key=f"metals_purity_{metal}",
                                  help="0,9999 för investeringsguld, 0,9167 för Krugerrand (vikten är då bruttovikt), "
                                       "0,999 för silvertackor, 0,925 för sterling")
         c7, c8 = st.columns(2)

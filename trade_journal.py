@@ -61,6 +61,11 @@ def _start_capital() -> float:
         return STARTING_CAPITAL
 
 
+def start_capital() -> float:
+    """Samma startkapital för Mot målet och 🏠 I dag — annars visar de en annan årstakt än journalen."""
+    return _start_capital()
+
+
 def _cagr_of(df: pd.DataFrame):
     """Realiserad årstakt till i dag (beslut 3) — journal_stats.realized_cagr på journalens rader."""
     try:
@@ -193,10 +198,23 @@ def _trade_key(trade: dict, i: int) -> str:
 # ---------------------------------------------------------------------------
 # Analytics helpers
 # ---------------------------------------------------------------------------
+def _avg_r(df: pd.DataFrame):
+    """Snitt-R över affärerna som HAR ett R (beslut 3) — None när ingen har det. Affärer utan stopp
+    räknas inte som 0R; då drog de ner snittet, och sidan sa emot Swing-statistiken."""
+    if "r_multiple" not in df.columns:
+        return None
+    r = pd.to_numeric(df["r_multiple"], errors="coerce").mean()
+    return None if pd.isna(r) else round(float(r), 2)
+
+
+def _fmt_r(v) -> str:
+    return "—" if v is None else f"{v}"
+
+
 def _compute_kpis(df: pd.DataFrame) -> dict:
     """Compute summary KPIs from trades DataFrame."""
     _empty_kpis = {
-        "total": 0, "win_rate": 0.0, "avg_rr": 0.0,
+        "total": 0, "win_rate": 0.0, "avg_rr": None,
         "profit_factor": 0.0, "best": 0.0, "worst": 0.0,
         "streak": "0", "total_pnl": 0.0, "cagr": None,
     }
@@ -208,7 +226,7 @@ def _compute_kpis(df: pd.DataFrame) -> dict:
         losses = df[df["pnl_pct"] <= 0]
         total = len(df)
         win_rate = (len(wins) / total * 100) if total > 0 else 0.0
-        avg_rr = df["r_multiple"].mean() if "r_multiple" in df.columns else 0.0
+        avg_rr = _avg_r(df)
         gross_wins = wins["pnl_amount"].sum() if not wins.empty else 0.0
         gross_losses = abs(losses["pnl_amount"].sum()) if not losses.empty else 0.0
         profit_factor = (gross_wins / gross_losses) if gross_losses > 0 else gross_wins
@@ -236,7 +254,7 @@ def _compute_kpis(df: pd.DataFrame) -> dict:
         return {
             "total": total,
             "win_rate": round(win_rate, 1),
-            "avg_rr": round(avg_rr, 2),
+            "avg_rr": avg_rr,
             "profit_factor": round(profit_factor, 2),
             "best": round(best, 2),
             "worst": round(worst, 2),
@@ -271,7 +289,7 @@ def _strategy_label(key: str) -> str:
 
 def _strategy_stats(df: pd.DataFrame, strategy: str) -> dict:
     """Stats for a single strategy."""
-    _empty = {"trades": 0, "win_rate": 0.0, "avg_r": 0.0, "total_pnl": 0.0, "cagr": None}
+    _empty = {"trades": 0, "win_rate": 0.0, "avg_r": None, "total_pnl": 0.0, "cagr": None}
     if df.empty or "strategy" not in df.columns:
         return _empty
     try:
@@ -286,7 +304,7 @@ def _strategy_stats(df: pd.DataFrame, strategy: str) -> dict:
         return {
             "trades": len(sub),
             "win_rate": round(len(wins) / len(sub) * 100, 1),
-            "avg_r": round(sub["r_multiple"].mean(), 2) if "r_multiple" in sub.columns else 0.0,
+            "avg_r": _avg_r(sub),
             "total_pnl": round(sub["pnl_amount"].sum(), 2) if "pnl_amount" in sub.columns else 0.0,
             "cagr": cagr,
         }
@@ -420,7 +438,7 @@ def _strategy_card(name: str, stats: dict):
         <div style="color:{_TEXT}; font-size:0.85rem;">
         Trades: <b>{stats['trades']}</b><br/>
         Win Rate: <b>{stats['win_rate']}%</b><br/>
-        Avg R: <b>{stats['avg_r']}</b><br/>
+        Avg R: <b>{_fmt_r(stats['avg_r'])}</b><br/>
         Total P&L: <b style="color:{pnl_color}">{stats['total_pnl']:,.0f} SEK</b><br/>
         CAGR: {cagr_html}
         </div></div>""",
@@ -684,10 +702,13 @@ def render_trade_journal_page():
 
         # Ensure column types
         if not df.empty:
-            for col in ["pnl_pct", "pnl_amount", "r_multiple", "entry_price",
+            for col in ["pnl_pct", "pnl_amount", "entry_price",
                          "exit_price", "shares"]:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+            # R saknas för affärer utan stopp (beslut 3) — tomt, inte 0R
+            if "r_multiple" in df.columns:
+                df["r_multiple"] = pd.to_numeric(df["r_multiple"], errors="coerce")
             if "exit_date" in df.columns:
                 df["exit_date"] = pd.to_datetime(df["exit_date"], errors="coerce")
             if "entry_date" in df.columns:
@@ -719,7 +740,7 @@ def render_trade_journal_page():
             _kpi_card("Win Rate", f"{kpis['win_rate']}%",
                        _GREEN if kpis["win_rate"] >= 50 else _RED)
         with c3:
-            _kpi_card("Avg R:R", f"{kpis['avg_rr']}")
+            _kpi_card("Avg R:R", _fmt_r(kpis["avg_rr"]))
         with c4:
             _kpi_card("Profit Factor", f"{kpis['profit_factor']}")
         with c5:

@@ -442,7 +442,7 @@ def render_scorecard_page() -> None:
     _export(entries, cards)
 
     ready = [e for e in entries
-             if is_ready(cards.get(e["key"], {}), e)]
+             if is_ready(_shown(cards.get(e["key"], {}), e), e)]
     c1, c2 = st.columns(2)
     c1.metric("Kandidater", len(entries))
     c2.metric("Klara för köp", len(ready))
@@ -453,9 +453,22 @@ def render_scorecard_page() -> None:
     _stale(cards)
 
 
+def _shown(card: dict, entry: dict) -> dict:
+    """Kortet som det visas: strategin förvald till kandidatens första när ingen giltig är vald.
+
+    Läses bara. Ett orört kort skrivs inte in i lagringen — förr skapade varje öppning ett kort med
+    position 0,0 per kandidat, och Scorecardet stod som osparat innan något ändrats."""
+    c = dict(card or {})
+    strategies = (entry or {}).get("strategies") or []
+    if strategies and c.get("strategy") not in strategies:
+        c["strategy"] = strategies[0]
+    return c
+
+
 def _card(data: dict, cards: dict, entry: dict) -> None:
-    card = cards.setdefault(entry["key"], {})
-    state = gate_state(card, entry)
+    card = cards.get(entry["key"])
+    card = card if isinstance(card, dict) else {}       # läggs i cards först när något ändras
+    state = gate_state(_shown(card, entry), entry)
     head = (f"{'✅' if state['ready'] else '📋'}  {entry['ticker']}"
             f"  ·  {entry['name'] or '—'}"
             f"  ·  {', '.join(entry['strategies'])}")
@@ -465,22 +478,22 @@ def _card(data: dict, cards: dict, entry: dict) -> None:
 
         # Vilken strategi beslutet gäller — styr proportionalitetsregeln.
         strategies = entry["strategies"]
-        cur = card.get("strategy") if card.get("strategy") in strategies else strategies[0]
+        cur = _shown(card, entry)["strategy"]
         s1, s2, s3 = st.columns(3)
         strategy = s1.selectbox("Strategi", strategies,
                                 index=strategies.index(cur),
                                 key=f"sc_strat_{entry['key']}")
         pos_total = s2.number_input(
             "Position (% av total)", min_value=0.0, step=0.5,
-            value=float(_num(card.get("position_pct_total"), 0.0) or 0.0),
+            value=_num(card.get("position_pct_total")),
             key=f"sc_post_{entry['key']}")
         pos_strat = s3.number_input(
             "Position (% av strategidelen)", min_value=0.0, step=1.0,
-            value=float(_num(card.get("position_pct_strategy"), 0.0) or 0.0),
+            value=_num(card.get("position_pct_strategy")),
             key=f"sc_poss_{entry['key']}")
-        if (strategy != card.get("strategy")
-                or pos_total != card.get("position_pct_total")
-                or pos_strat != card.get("position_pct_strategy")):
+        if (strategy != cur
+                or storage.differs(pos_total, card.get("position_pct_total"))
+                or storage.differs(pos_strat, card.get("position_pct_strategy"))):
             card["strategy"] = strategy
             card["position_pct_total"] = pos_total
             card["position_pct_strategy"] = pos_strat
@@ -537,7 +550,7 @@ def _card(data: dict, cards: dict, entry: dict) -> None:
                         f"padding-left:22px;'>• {gap}</div>",
                         unsafe_allow_html=True)
 
-        state = gate_state(card, entry)
+        state = gate_state(_shown(card, entry), entry)
         if state["ready"]:
             st.markdown(
                 f"<div style='background:{GREEN}22;border:2px solid {GREEN};"
@@ -547,6 +560,7 @@ def _card(data: dict, cards: dict, entry: dict) -> None:
                 unsafe_allow_html=True)
             if st.button("Registrera beslut", key=f"sc_dec_{entry['key']}"):
                 card["last_decision"] = date.today().isoformat()
+                cards[entry["key"]] = card
                 _save(data)
                 st.rerun()
         else:
@@ -560,6 +574,7 @@ def _card(data: dict, cards: dict, entry: dict) -> None:
                 + "</div>", unsafe_allow_html=True)
 
         if changed:
+            cards[entry["key"]] = card
             _save(data)
 
 
@@ -611,7 +626,7 @@ CSV_COLUMNS = [
 def _export(entries: list, cards: dict) -> None:
     rows = []
     for e in entries:
-        card = cards.get(e["key"], {})
+        card = _shown(cards.get(e["key"], {}), e)
         strategy = card.get("strategy") or (e["strategies"][0]
                                             if e["strategies"] else "")
         stt = control_state(e, card.get("position_pct_total"), strategy)

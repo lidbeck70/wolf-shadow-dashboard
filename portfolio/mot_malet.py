@@ -112,7 +112,7 @@ def render_mot_malet_page() -> None:
     from ui.tokens import CYAN, DIM, GOLD, GREEN, RED
     page_header("🎯 Mot målet", f"Golv {GOAL_FLOOR:.0f} % och mål {GOAL_TARGET:.0f} % per år — ur journalen och "
                 "papperskontona. Under 20 stängda affärer dras ingen slutsats.")
-    from trade_journal import journal_unreadable
+    from trade_journal import journal_unreadable, start_capital
     if st.button("📡 Uppdatera", key="goal_refresh") or "goal_data" not in st.session_state or journal_unreadable():
         st.session_state["goal_data"] = load()
     d = st.session_state["goal_data"]
@@ -121,7 +121,7 @@ def render_mot_malet_page() -> None:
         st.error(f"Journalen gick inte att läsa ur Gisten ({blocked}) — journalens siffror nedan saknas. "
                  f"Ladda om sidan om en stund.")
     trades = d.get("trades") or []
-    cagr = js.realized_cagr(trades)
+    cagr = js.realized_cagr(trades, start_capital())       # journalens startkapital (beslut 5), som Journal-sidan
     word, ck = zone(cagr)
     col = {"green": GREEN, "cyan": CYAN, "gold": GOLD, "red": RED, "dim": DIM}[ck]
     n = len(js._closed(trades))

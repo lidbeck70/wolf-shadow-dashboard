@@ -17,11 +17,23 @@ Rena funktioner här; tabs/home.py ritar.
 """
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
 TOP_N = 5
+SE_TZ = "Europe/Stockholm"
+
+
+def now_se() -> datetime:
+    """Klockan i Sverige, utan tidszon. Servern (Streamlit Cloud) går på UTC — efter midnatt svensk tid var
+    det annars fortfarande gårdagen på startsidan: datumet, rutinerna och vändningens dag."""
+    try:
+        return datetime.now(ZoneInfo(SE_TZ)).replace(tzinfo=None)
+    except Exception:                      # ingen tidszonsdatabas — hellre serverns klocka än en krasch
+        return datetime.now()
 
 
 def _bdays(since, today) -> Optional[int]:
@@ -36,7 +48,7 @@ def turn_cards(board: Optional[dict], today=None) -> list:
     plan = (board.get("turn_plan") if isinstance(board, dict) else None) or {}
     plan = plan if isinstance(plan, dict) else {}
     of = int(plan.get("window_days") or 5)
-    today = today if today is not None else pd.Timestamp.today().normalize()
+    today = today if today is not None else pd.Timestamp(now_se()).normalize()
     out = []
     from valhall import turns as vt
     for w in plan.get("window") or []:
@@ -142,7 +154,7 @@ def needs_reload(loaded: Optional[str], now=None) -> bool:
         t = pd.Timestamp(loaded)
     except Exception:
         return True
-    now = pd.Timestamp(now) if now is not None else pd.Timestamp.now()
+    now = pd.Timestamp(now) if now is not None else pd.Timestamp(now_se())
     return t.date() != now.date() or (now - t) > pd.Timedelta(minutes=RELOAD_MIN)
 
 
@@ -182,5 +194,5 @@ def load(loader=None) -> dict:
         out["paper"], out["trades"] = g.get("paper"), g.get("trades")
     except Exception:
         out["paper"], out["trades"] = None, []
-    out["loaded"] = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")
+    out["loaded"] = now_se().strftime("%Y-%m-%d %H:%M")          # samma klocka som needs_reload
     return out
