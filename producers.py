@@ -385,6 +385,25 @@ def _suggest(*args, **kw) -> None:
         pass
 
 
+def _chatgpt(data: dict, row: dict, sheet: str) -> None:
+    """📋 Underlag till ChatGPT för kortets aktie — Excel/CSV och prompten, och svaret tillbaka efter granskning."""
+    try:
+        from review import chatgpt_ui
+    except Exception:
+        return
+    chatgpt_ui.render_export(row.get("ticker", ""), {STORE: data}, [sheet], key=f"{sheet}_{row['id']}",
+                             name=row.get("name", ""), rows={sheet: row}, on_apply=lambda: _save(data))
+
+
+def _rc():
+    """Kortstödet (fokus, x/y ifyllda, saknas-raden) — None om review-paketet inte går att läsa."""
+    try:
+        from review import card
+        return card
+    except Exception:
+        return None
+
+
 def _screen_section(screen_key: str, data: dict, bucket: str, extra) -> None:
     """Håvens träffar (screens_scan.py) med "lägg in i arket"."""
     try:
@@ -514,13 +533,18 @@ def _producers(data: dict) -> None:
                    "filtret står i MER → Regler & Guider → 📚 SNABBREFERENS.")
         return
 
+    rc = _rc()
+    foc = rc.focus("rule", [r["row"].get("ticker") for r in rows]) if rc else None
     for r in rows:
         row, sc, vd = r["row"], r["score"], r["verdict"]
+        if rc and not rc.same_ticker(row.get("ticker"), foc):
+            continue
         head = (f"{row.get('ticker','?')} · {row.get('commodity','')} · "
                 f"{sc if sc is not None else '–'}/{PROD_MAX_SCORE} p · "
                 f"{vd.label if vd else 'ofullständig'}"
                 + (f" · {r['ev_nav']:.2f}× NAV" if r.get("ev_nav") is not None else ""))
-        with st.expander(head, expanded=False):
+        with st.expander(head, expanded=bool(foc)):
+            top = rc.slot() if rc else None
             changed = False
             v1, v2, v3, v4 = st.columns(4)
             ev = v1.number_input("EV/EBITDA", min_value=0.0, step=0.5,
@@ -643,6 +667,7 @@ def _producers(data: dict) -> None:
                     kind=ctl.PRODUCER):
                 changed = True
 
+            _chatgpt(data, row, "rule")
             if confirm_delete("Ta bort", key=f"pr_del_{row['id']}"):
                 data[PRODUCERS] = [x for x in data[PRODUCERS]
                                    if x["id"] != row["id"]]
@@ -650,6 +675,8 @@ def _producers(data: dict) -> None:
                 st.rerun()
             if changed:
                 _save(data)
+            if rc:
+                rc.fill(top, "rule", row)
 
 
 def _fetch_ev(row: dict, widget_key: str) -> None:
@@ -716,6 +743,21 @@ def _ev_nav_section(data: dict, row: dict) -> bool:
     return changed
 
 
+def _level(row: dict) -> bool:
+    """Nivån i kortet (förr bara i ➕ Nytt bolag). Raden skrivs först när du väljer — en rad utan nivå visar –."""
+    cur = _num(row.get("level"))
+    cur = int(cur) if cur is not None and int(cur) in ROYALTY_LEVELS else None
+    opts = ([None] if cur is None else []) + list(ROYALTY_LEVELS)
+    new = st.selectbox("Nivå", opts, index=opts.index(cur), key=f"ro_lvl_{row['id']}",
+                       format_func=lambda lv: "– (ej satt)" if lv is None else LEVEL_NOTE[lv],
+                       help="Nivån styr säljregeln: 1 säljs i princip aldrig, 2 när GEO per aktie stagnerar två år, "
+                            "3 vid uppköp eller när tesen är klar.")
+    if new is not None and new != cur:
+        row["level"] = new
+        return True
+    return False
+
+
 def _royalty(data: dict) -> None:
     csv_export.download_button(
         [{**r["row"], "_discount": _r1(r["discount"]),
@@ -750,13 +792,17 @@ def _royalty(data: dict) -> None:
                    "Börsdata — filtret står i MER → Regler & Guider → 📚 SNABBREFERENS.")
         return
 
+    rc = _rc()
+    foc = rc.focus("royalty", [r["row"].get("ticker") for r in rows]) if rc else None
     for r in rows:
         row, vd = r["row"], r["verdict"]
+        if rc and not rc.same_ticker(row.get("ticker"), foc):
+            continue
         head = (f"{row.get('ticker','?')} · nivå {row.get('level','?')} · "
                 f"{vd.label}")
-        with st.expander(head, expanded=False):
-            st.caption(LEVEL_NOTE.get(int(_num(row.get("level"), 1) or 1), ""))
-            changed = False
+        with st.expander(head, expanded=bool(foc)):
+            top = rc.slot() if rc else None
+            changed = _level(row)
 
             p1, p2, p3 = st.columns(3)
             pn = p1.number_input("P/NAV nu", min_value=0.0, step=0.05,
@@ -823,9 +869,12 @@ def _royalty(data: dict) -> None:
                 f"<div style='color:{TEXT};font-size:0.8rem;margin-top:3px;'>"
                 f"{vd2.why}</div></div>", unsafe_allow_html=True)
 
+            _chatgpt(data, row, "royalty")
             if confirm_delete("Ta bort", key=f"ro_del_{row['id']}"):
                 data[ROYALTY] = [x for x in data[ROYALTY] if x["id"] != row["id"]]
                 _save(data)
                 st.rerun()
             if changed:
                 _save(data)
+            if rc:
+                rc.fill(top, "royalty", row)

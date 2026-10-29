@@ -197,7 +197,8 @@ def test_ark_shows_only_score_fields_and_writes_to_shared_store(monkeypatch):
     labels = [e.label for e in at.expander]
     assert [l.split(" ·")[0].split(" —")[0] for l in labels] == [
         "➕ Nytt bolag", "📥 Hämta från registret (Holdings)", "Identitet och strategi", "Börsdata fyller",
-        "Ekonomi", "Confidence", "Confidence", "🤖 Läs ur presentationen / tekniska rapporten (AI-förslag"]
+        "Ekonomi", "Confidence", "Confidence", "🤖 Läs ur presentationen / tekniska rapporten (AI-förslag",
+        "📋 Underlag till ChatGPT"]
     assert any(l.startswith("Ekonomi") and l.endswith("3/4 ifyllda") for l in labels)   # GPR saknar produktionsenhet
     keys = {t.key for t in at.text_input}
     assert "cf_GPR_aisc_v" in keys and "cf_GPR_production_current_v" in keys
@@ -214,7 +215,7 @@ def test_ark_shows_only_score_fields_and_writes_to_shared_store(monkeypatch):
     assert p["value"] == 3100.5 and p["kind"] == "ASSUMPTION" and "GC=F" in p["source"] and p["pub_date"] == "2026-09-26"
     # ett ekonomifält
     at.text_input(key="cf_GPR_aisc_v").set_value("1400").run()
-    at.button(key="FormSubmitter:asym_econ_GPR-Spara").click().run()
+    at.button(key="FormSubmitter:asym_econ_GPR-Uppdatera arket").click().run()   # knappen hette Spara
     assert not at.exception, at.exception
     assert at.session_state["confidence"]["companies"]["GPR"]["fields"]["aisc"]["value"] == 1400.0
     # strategi-taggen

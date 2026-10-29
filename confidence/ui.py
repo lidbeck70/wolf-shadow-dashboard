@@ -331,9 +331,17 @@ def _render_inputs(data: dict, company: CompanyInput, tools: bool = True, store:
     st.caption("Varje fält: värde · datatyp (ACTUAL/ESTIMATE/GUIDANCE/MODELLED/ASSUMPTION) · källa · "
                "källtyp · datum. Tomt värde = DATA_MISSING. Källtyp styr Data Quality.")
 
+    only = st.toggle("Visa bara saknade / köpkritiska", key=f"conf_only_{company.ticker}",
+                     help="Bara de tomma fälten som Durrett-valideringen och Wolf Asymmetry-poängen behöver för ett "
+                          "köpbeslut — i stället för alla fält med fem rutor var.")
+    critical = _critical_missing(company) if only else None
     groups: dict = {}
     for f in cfg.fields_for(company.stage):
-        groups.setdefault(f.pillar, []).append(f)
+        if critical is None or f.key in critical:
+            groups.setdefault(f.pillar, []).append(f)
+    if critical is not None:
+        st.caption(f"{len(critical)} köpkritiska fält saknas." if critical else
+                   "Inga köpkritiska fält saknas — slå av för att se alla fält.")
     for pillar, fields in groups.items():
         filled = sum(1 for f in fields if company.has(f.key))
         with st.expander(f"{_PILLAR_LABEL.get(pillar, pillar)} · {filled}/{len(fields)} ifyllda", expanded=False):
@@ -349,6 +357,17 @@ def _render_inputs(data: dict, company: CompanyInput, tools: bool = True, store:
                     cs.put(data, company)
                     _save_to(store, data)
                     st.rerun()
+
+
+def _critical_missing(company: CompanyInput) -> set:
+    """Tomma fält som köpbeslutet kräver: Durrett-valideringens DATA_MISSING och fälten Wolf Asymmetry-poängen
+    läser (review.missing) — härlett ur reglerna, inte en egen lista."""
+    try:
+        from review import missing as mis
+        items = mis.missing_for("confidence", company) + mis.missing_for("asymmetry", company)
+    except Exception:
+        return set()
+    return {it.path.split(".", 1)[1] for it in items if it.path.startswith("fields.")}
 
 
 def _field_widgets(company: CompanyInput, f: cfg.FieldSpec) -> dict:
@@ -456,17 +475,20 @@ def _render_extractor(data: dict, company: CompanyInput, store: str = cs.STORE,
     skey = f"cf_xt_{company.ticker}"
     with st.expander("🤖 Läs ur presentationen / tekniska rapporten (AI-förslag — inget skrivs in utan Använd)",
                      expanded=False):
-        if not oc.configured():
-            st.caption("OPENAI_API_KEY saknas i secrets — extraktionen är avstängd.")
-            return
-        st.caption("Ett utdrag räcker: alla arkens fält ställs på en gång, och förslagen "
-                   "dyker upp även i Rick Rule, Poängmodellen och Tiggre där bolaget finns.")
-        c1, c2 = st.columns(2)
-        up = c1.file_uploader("PDF", type=["pdf"], key=f"{skey}_pdf")
-        pasted = c2.text_area("… eller klistra in text", height=120, key=f"{skey}_txt")
-        docname = st.text_input("Dokumentets namn (blir källa)", value=(up.name if up is not None else ""),
-                                key=f"{skey}_name", placeholder="DFS 2025 (Ausenco)")
-        if st.button("Extrahera", key=f"{skey}_go"):
+        # Utan nyckel göms bara Extrahera — förslag som redan finns i sessionen visas och går att använda
+        on = oc.configured()
+        if not on:
+            st.caption("OPENAI_API_KEY saknas i secrets — extraktionen är avstängd. Förslag som redan lästs in "
+                       "visas nedan.")
+        else:
+            st.caption("Ett utdrag räcker: alla arkens fält ställs på en gång, och förslagen "
+                       "dyker upp även i Rick Rule, Poängmodellen och Tiggre där bolaget finns.")
+            c1, c2 = st.columns(2)
+            up = c1.file_uploader("PDF", type=["pdf"], key=f"{skey}_pdf")
+            pasted = c2.text_area("… eller klistra in text", height=120, key=f"{skey}_txt")
+            docname = st.text_input("Dokumentets namn (blir källa)", value=(up.name if up is not None else ""),
+                                    key=f"{skey}_name", placeholder="DFS 2025 (Ausenco)")
+        if on and st.button("Extrahera", key=f"{skey}_go"):
             try:
                 if up is not None:
                     text = doc.pdf_to_text(up.getvalue())

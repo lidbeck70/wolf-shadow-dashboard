@@ -468,10 +468,23 @@ def render_scorecard_page() -> None:
     c1.metric("Kandidater", len(entries))
     c2.metric("Klara för köp", len(ready))
 
+    rc = _rc()
+    foc = rc.focus("scorecard", [e["ticker"] for e in entries]) if rc else None
     for entry in entries:
-        _card(data, cards, entry)
+        if rc and not rc.same_ticker(entry["ticker"], foc):
+            continue
+        _card(data, cards, entry, expanded=bool(foc))
 
     _stale(cards)
+
+
+def _rc():
+    """Kortstödet (fokus, x/y ifyllda, saknas-raden) — None om review-paketet inte går att läsa."""
+    try:
+        from review import card
+        return card
+    except Exception:
+        return None
 
 
 def _shown(card: dict, entry: dict) -> dict:
@@ -486,15 +499,17 @@ def _shown(card: dict, entry: dict) -> dict:
     return c
 
 
-def _card(data: dict, cards: dict, entry: dict) -> None:
+def _card(data: dict, cards: dict, entry: dict, expanded: bool = False) -> None:
     card = cards.get(entry["key"])
     card = card if isinstance(card, dict) else {}       # läggs i cards först när något ändras
     state = gate_state(_shown(card, entry), entry)
+    rc = _rc()
     head = (f"{'✅' if state['ready'] else '📋'}  {entry['ticker']}"
             f"  ·  {entry['name'] or '—'}"
             f"  ·  {', '.join(entry['strategies'])}")
 
-    with st.expander(head, expanded=False):
+    with st.expander(head, expanded=expanded):
+        top = rc.slot() if rc else None
         changed = False
 
         # Vilken strategi beslutet gäller — styr proportionalitetsregeln.
@@ -519,6 +534,7 @@ def _card(data: dict, cards: dict, entry: dict) -> None:
             card["position_pct_total"] = pos_total
             card["position_pct_strategy"] = pos_strat
             changed = True
+        _rule_position(data, cards, entry, strategy, pos_total)
 
         # Sammanställningen — läses, matas inte in.
         st_ = control_state(entry, pos_total, strategy)
@@ -597,6 +613,65 @@ def _card(data: dict, cards: dict, entry: dict) -> None:
         if changed:
             cards[entry["key"]] = card
             _save(data)
+        _chatgpt(entry, _shown(card, entry), data)
+        if rc:
+            rc.fill(top, "scorecard", _shown(card, entry), entry=entry)
+
+
+def _use_position(data: dict, cards: dict, entry: dict, strategy: str, value: float) -> None:
+    """on_click: Rick Rule-kortets tänkta position in i scorecardet (samma tal, en gång)."""
+    card = cards.get(entry["key"]) if isinstance(cards.get(entry["key"]), dict) else {}
+    card["strategy"] = strategy
+    card["position_pct_total"] = value
+    cards[entry["key"]] = card
+    st.session_state[f"sc_post_{entry['key']}"] = value
+    _save(data)
+
+
+RULE_STRATEGY = "producenter"        # Rick Rule-arkets strateginamn i kandidatraden (sources_from_stores)
+
+
+def _rule_position(data: dict, cards: dict, entry: dict, strategy: str, pos_total) -> None:
+    """Förslag: positionen du skrev i Rick Rule-kortet för bolaget — samma tal styr kontrollerna där. "Använd"
+    skriver in den här; inget fylls i av sig självt. Bara när beslutet gäller Rick Rule (strategin producenter) och
+    kortet ännu saknar position (tomt eller 0 %) — har du valt en storlek står den, och en annan strategi har sin
+    egen."""
+    if strategy != RULE_STRATEGY or (_num(pos_total) or 0) > 0:
+        return
+    rule = _num((((entry or {}).get("rows") or {}).get(RULE_STRATEGY) or {}).get("position_pct"))
+    if rule is None or not storage.differs(pos_total, rule):
+        return
+    a, b = st.columns([3, 1], vertical_alignment="center")
+    a.caption(f"Rick Rule-kortet: tänkt position {rule:g} % av total — förslag, inte inskrivet.")
+    b.button("Använd", key=f"sc_userule_{entry['key']}", on_click=_use_position,
+             args=(data, cards, entry, strategy, rule))
+
+
+def _chatgpt(entry: dict, card: dict, data: Optional[dict] = None) -> None:
+    """📋 Underlag till ChatGPT för hela köpbeslutet: kandidatens ark plus kortet. Svaret läses in här bara i
+    kortets egna fält (värdering, trigger) — arkens rader läses in i respektive ark, där 💾 sparar dem.
+
+    Sifferuppdateringen läses inte här (blob=None) — Börsdata-förslagen med "Använd" finns i respektive ark.
+    """
+    try:
+        from review import catalog as rcat
+        from review import chatgpt_ui
+    except Exception:
+        return
+    sheets = [rcat.STRATEGY_SHEET[s] for s in entry.get("strategies") or [] if s in rcat.STRATEGY_SHEET]
+    rows = {rcat.STRATEGY_SHEET[s]: r for s, r in (entry.get("rows") or {}).items()
+            if rcat.STRATEGY_SHEET.get(s) in rcat.FLAT_SHEETS and isinstance(r, dict)}
+    cards = (data or {}).get("cards") if isinstance((data or {}).get("cards"), dict) else None
+
+    def _target():
+        """Kortet i lagret — skapas först när svaret skrivs in (ett orört kort skrivs aldrig)."""
+        if not isinstance(cards.get(entry["key"]), dict):
+            cards[entry["key"]] = {"strategy": card.get("strategy")}
+        return cards[entry["key"]]
+    chatgpt_ui.render_export(entry.get("ticker", ""), None, sheets + ["scorecard"], key=f"scorecard_{entry['key']}",
+                             name=entry.get("name", ""), blob=None, rows={**rows, "scorecard": card}, entry=entry,
+                             targets={"scorecard": _target} if cards is not None else {},
+                             reset=([entry["key"]], ()), on_apply=lambda: _save(data))
 
 
 def _summary_row(entry: dict, state: dict, strategy: str) -> None:

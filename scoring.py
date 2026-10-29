@@ -48,6 +48,10 @@ GREEN, AMBER, RED, CYAN, GOLD = "#2d8a4e", "#d4943a", "#c44545", "#00E5FF", "#c9
 BG_ALT, BORDER = "#1a1f25", "#2a2a38"
 
 SPROTT, DURRETT = "sprott", "durrett"
+# Modellväljaren — Thors arkknappar sätter den (bryggan), så "Durrett →" öppnar Durrett-delen
+WHICH_KEY = "sc_which"
+WHICH = ("Sprott (optionalitet)", "Durrett (snabbpoäng)")
+WHICH_FOR = {SPROTT: WHICH[0], DURRETT: WHICH[1]}
 
 # ── Bedömningen (kolumn M/O) ─────────────────────────────────────────────────
 CORE = "Kärninnehav"
@@ -285,10 +289,9 @@ def render_scoring_page() -> None:
                 f"Durrett-delen är snabbpoängen — hela 10-stegsmetoden ligger i "
                 f"ARKEN → 🧭 Durrett.")
 
-    which = st.radio("Modell", ["Sprott (optionalitet)", "Durrett (snabbpoäng)"],
-                     horizontal=True, key="sc_which",
+    which = st.radio("Modell", list(WHICH), horizontal=True, key=WHICH_KEY,
                      label_visibility="collapsed")
-    key = SPROTT if which.startswith("Sprott") else DURRETT
+    key = SPROTT if which == WHICH[0] else DURRETT
     st.caption(POSITION_NOTE[key])
 
     _export(data, key)
@@ -309,6 +312,26 @@ def _extract_section(data: dict, row: dict, key: str) -> None:
     keys = ({"cash": f"sc_cash_{rid}", "burn": f"sc_burn_{rid}"} if key == SPROTT
             else {"moz": f"sc_moz_{rid}", "prod": f"sc_prod_{rid}", "aisc": f"sc_aisc_{rid}"})
     extract_ui.render_extractor(key, row, widget_keys=keys, on_apply=lambda: _save(data))
+
+
+def _chatgpt(data: dict, row: dict, key: str) -> None:
+    """📋 Underlag till ChatGPT för kortets aktie — Excel/CSV och prompten, och svaret tillbaka efter granskning: det
+    du väljer skrivs i raden i sessionen, 💾 sparar."""
+    try:
+        from review import chatgpt_ui
+    except Exception:
+        return
+    chatgpt_ui.render_export(row.get("ticker", ""), {STORE: data}, [key], key=f"{key}_{row['id']}",
+                             name=row.get("name", ""), rows={key: row}, on_apply=lambda: _save(data))
+
+
+def _rc():
+    """Kortstödet (fokus, x/y ifyllda, saknas-raden) — None om review-paketet inte går att läsa."""
+    try:
+        from review import card
+        return card
+    except Exception:
+        return None
 
 
 def _screen_section(data: dict, key: str) -> None:
@@ -393,13 +416,18 @@ def _rows(data: dict, key: str) -> None:
                    "står i MER → Regler & Guider → 📚 SNABBREFERENS.")
         return
 
+    rc = _rc()
+    foc = rc.focus(key, [r["row"].get("ticker") for r in rows]) if rc else None
     for r in rows:
         row, sc, vd, gate_why = r["row"], r["score"], r["verdict"], r["gate"]
+        if rc and not rc.same_ticker(row.get("ticker"), foc):
+            continue
         c = VERDICT_COLOR.get(vd, DIM)
         head = (f"{row.get('ticker','?')} · {row.get('commodity','')} · "
                 f"{sc if sc is not None else '–'}/{MAX_SCORE} p · "
                 f"{vd or 'ej poängsatt'}")
-        with st.expander(head, expanded=False):
+        with st.expander(head, expanded=bool(foc)):
+            top = rc.slot() if rc else None
             if key == SPROTT:
                 _sprott_math(data, row)
                 _extract_section(data, row, SPROTT)
@@ -437,10 +465,13 @@ def _rows(data: dict, key: str) -> None:
             if com != row.get("comment", ""):
                 row["comment"] = com
                 _save(data)
+            _chatgpt(data, row, key)
             if confirm_delete("Ta bort", key=f"sc_del_{row['id']}"):
                 data[key] = [x for x in data[key] if x["id"] != row["id"]]
                 _save(data)
                 st.rerun()
+            if rc:
+                rc.fill(top, key, row)
 
 
 def _sprott_math(data: dict, row: dict) -> None:
@@ -578,8 +609,10 @@ def _factors(data: dict, row: dict, key: str) -> None:
     for f, col in zip(FACTORS, cols):
         cur = _num(fac.get(f.key))
         idx = opts.index(int(cur)) if cur is not None and int(cur) in (0, 1, 2) else 0
+        crit = {2: f.two, 1: f.one, 0: f.zero}
         v = col.selectbox(f.label.split(". ", 1)[-1], opts, index=idx,
                           key=f"sc_f_{row['id']}_{f.key}",
+                          format_func=lambda o, c=crit: o if o == "–" else f"{o} — {c[o]}",
                           help=f"2: {f.two}\n\n1: {f.one}\n\n0: {f.zero}")
         new = None if v == "–" else int(v)
         if new != (int(cur) if cur is not None else None):

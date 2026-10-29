@@ -296,6 +296,26 @@ def _suggest(*args, **kw) -> None:
         pass
 
 
+def _chatgpt(data: dict, sig: dict) -> None:
+    """📋 Underlag till ChatGPT för signalen — Excel/CSV och prompten, och svaret tillbaka efter granskning: det du
+    väljer skrivs i signalen i sessionen, 💾 sparar."""
+    try:
+        from review import chatgpt_ui
+    except Exception:
+        return
+    chatgpt_ui.render_export(sig.get("ticker", ""), {STORE: data}, ["insider"], key=f"insider_{sig['id']}",
+                             name=sig.get("name", ""), rows={"insider": sig}, on_apply=lambda: _save(data))
+
+
+def _rc():
+    """Kortstödet (fokus, x/y ifyllda, saknas-raden) — None om review-paketet inte går att läsa."""
+    try:
+        from review import card
+        return card
+    except Exception:
+        return None
+
+
 # ── Automatisk skanning (insider_scan.py via GitHub Actions) ─────────────────
 # Fälten som kopieras in i arket — exakt arkets inmatningsfält plus ins_id
 # (så sifferuppdateringen slipper gissa tickern), inget mer.
@@ -475,15 +495,22 @@ def _signals(data: dict) -> None:
                    "Holdings.")
         return
 
+    rc = _rc()
+    foc = rc.focus("insider", [r["signal"].get("ticker") for r in rows]) if rc else None
     for r in rows:
         sig = r["signal"]
+        if rc and not rc.same_ticker(sig.get("ticker"), foc):
+            continue
         pts, stat = r["score"], r["status"]
         c = STATUS_COLOR.get(stat, DIM)
         head = (f"{sig.get('ticker','?')}"
                 f"  ·  {pts if pts is not None else '–'}/{MAX_SCORE} p"
                 f"  ·  {stat or 'ofullständig'}")
-        with st.expander(head, expanded=False):
+        with st.expander(head, expanded=bool(foc)):
+            top = rc.slot() if rc else None
             _signal_body(data, sig, r, c)
+            if rc:
+                rc.fill(top, "insider", sig)
 
 
 def _signal_body(data: dict, sig: dict, r: dict, color: str) -> None:
@@ -587,6 +614,7 @@ def _signal_body(data: dict, sig: dict, r: dict, color: str) -> None:
         sig["comment"] = com
         changed = True
 
+    _chatgpt(data, sig)
     if confirm_delete("Ta bort signalen", key=f"ins_del_{sig['id']}"):
         data["signals"] = [s for s in data["signals"] if s["id"] != sig["id"]]
         _save(data)

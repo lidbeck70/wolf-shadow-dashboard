@@ -33,6 +33,7 @@ REVIEW_KEYS = {"rule": ("rule", "royalty"), "durrett": ("durrett", "sprott"), "t
                "insider": ("insider",), "hav": ()}
 COMMODITY_STRATEGIES = ("rule", "durrett", "tiggre")
 AI_STATE = "thor_dom_ai"
+CTX_STATE = "thor_dom_ctx"      # cykeldatan domen senast fälldes med {ticker, ctx} — Arken-flikens ChatGPT-underlag
 
 
 @dataclass
@@ -368,6 +369,7 @@ def render(st, data: dict, ident, strategy: str, sheets: dict, cands: list, pric
     if ctx is None:
         with st.spinner("Läser arken och regimmotorerna …"):
             ctx = cycle_context(ident, data, sheets, prices)
+    st.session_state[CTX_STATE] = {"ticker": ident.yf, "ctx": ctx}
     dom = judge(strategy, sheets, ctx, ident.yf, held=bool((sheets or {}).get("positions")))
     st.markdown(cards.verdict_card(dom.word, dom.sentence, dom.detail, dom.color,
                                    label="ARKENS DOM — VAD SKA JAG GÖRA?"), unsafe_allow_html=True)

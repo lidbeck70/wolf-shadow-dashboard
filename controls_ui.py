@@ -39,9 +39,15 @@ def _band_badge(label: str, value, maximum: int, band: Optional[str],
             f"{band or 'ej bedömd'}</span></div>")
 
 
+def score_option(v, f) -> str:
+    """Rullgardinens text: '1 — 12–24 mån' — kriteriet syns i valet, inte bara i hjälpen (mobilen har ingen
+    hovring)."""
+    return v if v == "–" else f"{v} — {(f.zero, f.one, f.two)[int(v)]}"
+
+
 def _score_row(row: dict, fields, prefix: str, key: str,
                prefilled: tuple = ()) -> bool:
-    """Ett fält per kolumn, med kriterierna som hjälptext."""
+    """Ett fält per kolumn, med kriteriet i varje val och alla tre i hjälptexten."""
     changed = False
     cols = st.columns(len(fields))
     opts = ["–", 0, 1, 2]
@@ -52,6 +58,7 @@ def _score_row(row: dict, fields, prefix: str, key: str,
         label = f.label + (" ↩" if f.key in prefilled else "")
         v = col.selectbox(
             label, opts, index=idx, key=f"{prefix}_{key}_{f.key}",
+            format_func=lambda o, f=f: score_option(o, f),
             help=f"{f.help}\n\n0: {f.zero}\n\n1: {f.one}\n\n2: {f.two}")
         new = None if v == "–" else int(v)
         if new != cur:
@@ -214,31 +221,28 @@ def render_csm(row: dict, key: str, kind: str = ctl.PRODUCER,
 
     for s in ctl.scenarios(is_core):
         sc = matrix.get(s) if isinstance(matrix.get(s), dict) else {}
-        cols = st.columns(4)
-        cols[0].markdown(f"<div style='padding-top:8px;color:{TEXT};"
+        # Synliga korta etiketter med scenariot: på mobilen staplas kolumnerna och rutorna måste säga vad de är
+        cols = st.columns(4, vertical_alignment="bottom")
+        cols[0].markdown(f"<div style='padding-bottom:8px;color:{TEXT};"
                          f"font-weight:600;'>{s}</div>",
                          unsafe_allow_html=True)
         price = cols[1].number_input(f"Råvarupris ({s})", min_value=0.0,
                                      step=1.0,
                                      value=_opt(sc.get("price")),
-                                     key=f"{prefix}_{key}_{s}_price",
-                                     label_visibility="collapsed")
+                                     key=f"{prefix}_{key}_{s}_price")
         if new_kind == ctl.PRODUCER:
             fcf = cols[2].number_input(f"FCF MUSD ({s})", step=1.0,
                                        value=_opt(sc.get("fcf_musd")),
-                                       key=f"{prefix}_{key}_{s}_fcf",
-                                       label_visibility="collapsed")
+                                       key=f"{prefix}_{key}_{s}_fcf")
             vals = {"price": price, "fcf_musd": fcf}
         else:
             nav = cols[2].number_input(f"NAV MUSD ({s})", step=1.0,
                                        value=_opt(sc.get("nav_musd")),
-                                       key=f"{prefix}_{key}_{s}_nav",
-                                       label_visibility="collapsed")
-            need = cols[3].number_input(f"Finansieringsbehov ({s})",
+                                       key=f"{prefix}_{key}_{s}_nav")
+            need = cols[3].number_input(f"Fin.behov MUSD ({s})",
                                         min_value=0.0, step=1.0,
                                         value=_opt(sc.get("financing_need")),
-                                        key=f"{prefix}_{key}_{s}_need",
-                                        label_visibility="collapsed")
+                                        key=f"{prefix}_{key}_{s}_need")
             vals = {"price": price, "nav_musd": nav, "financing_need": need}
         if any(storage.differs(v, sc.get(k))
                for k, v in vals.items()):

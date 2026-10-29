@@ -19,3 +19,7 @@ openai==3.2.0
 # Utan paketet fungerar bara klistra-in-vägen.
 pypdf==5.4.0
 cryptography==43.0.3
+# Underlag till ChatGPT i arken: Excel-arket med rullgardiner. Utan paketet
+# laddas underlaget ner som CSV.
+openpyxl==3.1.5
+et-xmlfile==2.0.0

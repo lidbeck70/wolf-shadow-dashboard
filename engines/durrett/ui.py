@@ -179,13 +179,18 @@ def _rows(data: dict) -> None:
                 for t, c in companies.items()}
     order = sorted(companies, key=lambda t: (-(analyses[t].quality_score.value
                                               if analyses[t].quality_score.value is not None else -1), t))
+    rc = _rc()
+    foc = rc.focus("durrett10", order) if rc else None
     for t in order:
+        if rc and not rc.same_ticker(t, foc):
+            continue
         company, a = companies[t], analyses[t]
         head = (f"{t} · {com.REGISTRY[company.commodity].label if company.commodity in com.REGISTRY else company.commodity}"
                 f" · {a.classification.company_type} · Durrett {_f(a.quality_score.value, '{:.0f}', '–')}"
                 f" · Risk {_f(a.risk_score.value, '{:.0f}', '–')} {a.risk_level}"
                 f" · Upside {_f(a.upside_multiple, '{:.1f}×', '–')} · Confidence {_f(a.confidence_score.value, '{:.0f} %', '–')}")
-        with st.expander(head, expanded=False):
+        with st.expander(head, expanded=bool(foc)):
+            top = rc.slot() if rc else None
             sub = st.radio("", ["Arket", "Analys", "Scenarier", "Mer"], horizontal=True,
                            label_visibility="collapsed", key=f"durrett_row_sub_{t}")
             if sub == "Arket":
@@ -196,6 +201,8 @@ def _rows(data: dict) -> None:
                 _render_scenarios(a, company)
             else:
                 _render_more(data, company, a)
+            if rc:
+                rc.fill(top, "confidence", (data.get("companies") or {}).get(t) or company)
 
 
 def _sheet_widget(company: CompanyInput, key: str, label: str, wkey: str):
@@ -249,6 +256,30 @@ def _render_sheet(data: dict, company: CompanyInput, a: DurrettAnalysis) -> None
             st.success(f"{changed} fält uppdaterade — spara med 💾 när du är klar.")
             st.rerun()
     _sheet_summary(a)
+    _chatgpt(data, company)
+
+
+def _chatgpt(data: dict, company: CompanyInput) -> None:
+    """📋 Underlag till ChatGPT: alla Durrett/Confidence-fält för bolagets stage som Excel/CSV och prompten — och
+    svaret tillbaka som Datapoints med källa ('ChatGPT: <källa>') efter granskning."""
+    try:
+        from review import chatgpt_ui
+    except Exception:
+        return
+    t = company.ticker
+    chatgpt_ui.render_export(t, {cs.STORE: data}, ["confidence"], key=f"durrett_{t}", name=company.name,
+                             rows={"confidence": company.as_dict()},
+                             targets={"confidence": lambda: (data.get("companies") or {}).get(t)},
+                             reset=((), (f"cf_{t}_", f"ds_{t}_")), on_apply=lambda: _save(data))
+
+
+def _rc():
+    """Kortstödet (fokus, x/y ifyllda, saknas-raden) — None om review-paketet inte går att läsa."""
+    try:
+        from review import card
+        return card
+    except Exception:
+        return None
 
 
 def _render_refresh(data: dict, company: CompanyInput) -> None:

@@ -89,18 +89,19 @@ def render_fv(row: dict, key: str, prefix: str = "fv", sheet: str = "") -> bool:
     # ── Scenarierna ──────────────────────────────────────────────────────────
     for s in fv.FV_SCENARIOS:
         sc = data.setdefault(s, {})
-        cols = st.columns([0.6, 1.2, 1, 1, 1])
-        cols[0].markdown(f"<div style='padding-top:8px;color:{TEXT};"
+        # Synliga korta etiketter: på mobilen staplas kolumnerna och rutorna måste säga vilket scenario de gäller
+        cols = st.columns([0.6, 1.2, 1, 1, 1], vertical_alignment="bottom")
+        cols[0].markdown(f"<div style='padding-bottom:8px;color:{TEXT};"
                          f"font-weight:600;'>{s}</div>", unsafe_allow_html=True)
         fcf = cols[1].number_input(
             f"Forward FCF MUSD ({s})", step=1.0,
             value=fv.num(sc.get("forward_fcf_musd")),
-            key=f"{prefix}_{key}_{s}_fcf", label_visibility="collapsed",
+            key=f"{prefix}_{key}_{s}_fcf",
             help="Normaliserat råvarupris, aldrig toppår.")
         ty = cols[2].number_input(
             f"Target-yield % ({s})", min_value=0.0, step=0.5,
             value=fv.num(sc.get("target_yield")),
-            key=f"{prefix}_{key}_{s}_yield", label_visibility="collapsed",
+            key=f"{prefix}_{key}_{s}_yield",
             disabled=locked,
             help=(f"Låst till klass {q.code}: {band[0]:g}–{band[1]:g} %."
                   if band else fv.NOT_FCF_VALUED))
@@ -112,10 +113,8 @@ def render_fv(row: dict, key: str, prefix: str = "fv", sheet: str = "") -> bool:
 
         one = fv.fair_value_per_share(fcf, ty, shares) if not locked else None
         up = fv.upside_pct(one, price)
-        cols[3].metric(f"FV ({s})", f"{one:,.2f}" if one is not None else "–",
-                       label_visibility="collapsed")
-        cols[4].metric(f"Uppsida ({s})", f"{up:+.0f} %" if up is not None else "–",
-                       label_visibility="collapsed")
+        cols[3].metric(f"FV/aktie ({s})", f"{one:,.2f}" if one is not None else "–")
+        cols[4].metric(f"Uppsida ({s})", f"{up:+.0f} %" if up is not None else "–")
 
         err = fv.yield_error(code, ty)
         if err and err != fv.NOT_FCF_VALUED:
