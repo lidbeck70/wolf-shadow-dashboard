@@ -6,6 +6,7 @@ READ:  No auth needed (gist is accessible by URL).
 WRITE: Requires GITHUB_TOKEN in Streamlit secrets.
 """
 import json
+import logging
 import os
 import requests
 import streamlit as st
@@ -16,6 +17,7 @@ GIST_FILENAME = "holdings_init.json"
 GIST_API_URL = f"https://api.github.com/gists/{GIST_ID}"
 LOCAL_FALLBACK = ".holdings_data.json"
 _EMPTY = {"swing": [], "ovtlyr": [], "long": [], "cash": 0}
+log = logging.getLogger("gist_storage")
 
 
 def _get_github_token() -> Optional[str]:
@@ -280,7 +282,10 @@ def save_blob(filename: str, data) -> bool:
         r = requests.patch(GIST_API_URL, headers=headers, json=payload, timeout=10)
         _invalidate()                                     # nästa läsning ska se det vi just skrev
         return r.status_code == 200
-    except Exception:
+    except Exception as exc:
+        # Bara feltypen: ett krypterings- eller serialiseringsfel ska gå att skilja från en token som saknar
+        # gist-scope (anroparen säger "kontrollera GITHUB_TOKEN"). Meddelandet kan bära innehåll — loggas inte.
+        log.warning("%s sparades inte till Gisten (%s).", filename, type(exc).__name__)
         return False
 
 

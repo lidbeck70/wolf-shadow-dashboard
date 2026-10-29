@@ -160,6 +160,31 @@ def test_a_wrong_or_missing_key_is_unreadable_not_empty(net, monkeypatch, tmp_pa
     assert status == "unreadable" and pdata.KEY_NAME in why
 
 
+def test_mixed_key_types_save_with_the_key_as_without(net, monkeypatch):
+    """seal sorterar nycklarna: {"a": 1, 2: "b"} gick bra i klartext men föll förut med nyckeln — då sparades inte
+    larmtillståndet och samma larm gick ut varje körning."""
+    data = {"swing": {"verdicts": {HELD: {"verdict": "HÅLL", "reason": "x"}}}, "mixed": {"a": 1, 2: "b", None: "c"}}
+    plain = json.loads(json.dumps(data, default=str))              # så läses klartexten tillbaka
+    for phrase in (KEY, None):
+        _key(monkeypatch, phrase)
+        assert gs.save_blob("alert_state.json", data) is True
+        assert (HELD in net.gist["alert_state.json"]) is (phrase is None)
+        assert gs.read_blob("alert_state.json") == ("ok", plain)
+
+
+def test_a_failed_gist_save_logs_the_error_type_only(net, monkeypatch, caplog):
+    import requests
+
+    def boom(*a, **k):
+        raise ValueError(f"svar som nämner {HELD}")
+    _key(monkeypatch, KEY)
+    monkeypatch.setattr(requests, "patch", boom)
+    caplog.set_level(logging.WARNING)
+    assert gs.save_blob("alert_state.json", {"swing": {}}) is False
+    assert "alert_state.json sparades inte till Gisten (ValueError)" in caplog.text
+    assert HELD not in caplog.text and KEY not in caplog.text
+
+
 # ── Tradejournalen (antal och resultat i kronor) ────────────────────────────
 @pytest.fixture
 def session(monkeypatch):
@@ -301,6 +326,49 @@ def test_sheets_refresh_without_a_key_logs_and_publishes_as_before(net, monkeypa
     assert json.loads(net.gist["sheets_refresh.json"])["rows"]["holdings:m1"]["ticker"] == HELD
     assert TIGGRE_EVENT["title"] in caplog.text and "'holdings'" in caplog.text
     assert sum(1 for r in caplog.records if r.name == "private_data") == 1
+
+
+class _NoBorsdata:
+    """Börsdata känner inte igen någon rad — alla går till Yahoo-reserven."""
+    def get_instruments(self):
+        return []
+
+    def get_global_instruments_list(self):
+        return []
+
+    def resolve_instrument_id(self, form):
+        return None
+
+
+@pytest.mark.parametrize("phrase", [KEY, None])
+def test_yahoo_failure_lines_do_not_name_holdings_with_the_key(monkeypatch, caplog, phrase):
+    """yfinance loggar själv tickern när kursen saknas ("X: possibly delisted"). Med nyckeln tystas den raden för
+    registrets innehav; arkkandidaterna och körningen utan nyckel loggas som förut."""
+    import sys
+    import sheets_refresh as sr
+
+    class _Ticker:                                                 # som den riktiga: tickern i felraden, ingen kurs
+        def __init__(self, t):
+            self.t = t
+
+        def history(self, **kw):
+            logging.getLogger("yfinance").error("%s: possibly delisted; no price data found", self.t)
+            return SimpleNamespace(empty=True)
+    monkeypatch.setitem(sys.modules, "yfinance", SimpleNamespace(Ticker=_Ticker))   # inget nät
+    _key(monkeypatch, phrase)
+    caplog.set_level(logging.INFO)
+    yf_log = logging.getLogger("yfinance")
+    level = yf_log.level
+    sheets = {"holdings": {"momentum": HOLDINGS["momentum"],
+                           "tiggre": [{"id": "p1", "ticker": TIGGRE, "strategy": "Tiggre", "entry_price": 6.0}]},
+              "tiggre": {"candidates": [{"id": "c1", "ticker": "JRX.V"}]}}
+    out = sr.refresh(_NoBorsdata(), sheets)
+    assert out["error"] is None and {"holdings:m1", "tiggre:p1", "tiggre:c1"} <= set(out["rows"])
+    assert out["rows"]["holdings:m1"]["price"] is None
+    assert "JRX.V: possibly delisted" in caplog.text                # kandidaten: som förut
+    assert (f"{HELD}: possibly delisted" in caplog.text) is (phrase is None)
+    assert (f"{TIGGRE}: possibly delisted" in caplog.text) is (phrase is None)
+    assert yf_log.level == level                                   # nivån återställd efter varje anrop
 
 
 def test_mail_subject_is_hidden_in_the_log_only_with_a_key(monkeypatch, caplog):
