@@ -121,6 +121,13 @@ def currency_for(ticker: str) -> str:
     return "USD"
 
 
+def sek_factor(ticker: str, ccy: Optional[str] = None) -> float:
+    """SEK per kursenhet: växelkursen ur FX_TO_SEK, och London i pence (GBp)."""
+    c = str(ccy or currency_for(ticker)).upper()
+    unit = 0.01 if (c in ("GBP", "GBX") and str(ticker or "").upper().endswith(".L")) else 1.0
+    return unit * FX_TO_SEK.get("GBP" if c == "GBX" else c, FX_TO_SEK["USD"])
+
+
 def valuation(row: dict, fresh: Optional[dict] = None) -> dict:
     """Positionens värde i SEK: antal × kurs. Kursen tas i ordning ur
     sifferuppdateringen (holdings:<id> eller tiggre:<id>), arkets "Kurs nu"
@@ -137,11 +144,9 @@ def valuation(row: dict, fresh: Optional[dict] = None) -> dict:
         price = _opt(row.get("entry_price")) or None
         source = "inköpskursen"
     ccy = str(ccy or currency_for(row.get("ticker"))).upper()
-    # London noterar i pence
-    unit = 0.01 if (ccy in ("GBP", "GBX") and str(row.get("ticker", "")).upper().endswith(".L")) else 1.0
-    fx = FX_TO_SEK.get("GBP" if ccy == "GBX" else ccy, FX_TO_SEK["USD"])
     shares = _num(row.get("shares"))
-    value = round(price * unit * fx * shares, 0) if (price and shares > 0) else None
+    # London noterar i pence — sek_factor tar med det
+    value = round(price * sek_factor(row.get("ticker"), ccy) * shares, 0) if (price and shares > 0) else None
     return {"price": price, "currency": ccy, "source": source, "shares": shares,
             "value_sek": value, "asof": str(f.get("asof") or "")[:10]}
 
@@ -300,7 +305,8 @@ def by_bucket() -> dict:
 # ── Skrivning ────────────────────────────────────────────────────────────────
 def save() -> Optional[storage.SaveResult]:
     """Sparar registret direkt. Fel loggas och läggs i storage.meta() så
-    sparraden visar dem — sessionen behåller ändringen oavsett."""
+    sparraden visar dem — sessionen behåller ändringen oavsett. Misslyckades
+    läsningen vägrar storage att spara (skulle skriva över GitHub-filen)."""
     try:
         return storage.save_session(STORE)
     except storage.StorageError as exc:
@@ -309,9 +315,17 @@ def save() -> Optional[storage.SaveResult]:
         return None
 
 
-def _commit(data: dict) -> None:
+def _commit(data: dict) -> Optional[str]:
+    """Sessionen först, sedan sparningen. Returnerar felet när den inte gick
+    (None = sparat), så att anroparen inte säger "tillagd" om något osparat."""
     st.session_state[STORE] = data
-    save()
+    if save() is not None:
+        return None
+    return storage.load_error(STORE) or "sparningen misslyckades"
+
+
+# add() svarar ok även när sparningen misslyckades (raden finns i sessionen) — texten säger det då.
+UNSAVED = "men INTE sparad"
 
 
 def add(ticker: str, strategy: str = "Untagged", entry_price=0, shares=0,
@@ -340,7 +354,9 @@ def add(ticker: str, strategy: str = "Untagged", entry_price=0, shares=0,
         "notes": notes, "source": source, "extras": dict(extras or {}),
     })
     rows.append(row)
-    _commit(data)
+    err = _commit(data)
+    if err:                         # raden finns i sessionen — men inte i GitHub
+        return True, f"{t} tillagd i {BUCKETS[bucket]['name']}, {UNSAVED}: {err}"
     return True, f"{t} tillagd i {BUCKETS[bucket]['name']}."
 
 

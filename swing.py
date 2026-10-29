@@ -147,6 +147,8 @@ def _migrate_positions(data: dict) -> None:
     if not rows:
         return
     positions.migrate_rows(STRATEGY, rows, source="swing")
+    if storage.load_error(positions.STORE):  # registret är inte sparat — arket behåller listan
+        return
     data["positions"] = []
     try:                                   # engångsskrivning av tömningen
         storage.save_session(STORE)

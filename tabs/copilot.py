@@ -755,6 +755,8 @@ def _render_journal_log(ticker: str, strategy_key: str,
                     source="copilot")
                 if ok:
                     holdings_id = positions.find(log_ticker)["id"]
+                    if positions.UNSAVED in msg:
+                        st.warning(msg)
                 else:
                     st.warning(f"Inte inlagd i Holdings: {msg}")
             entries = _load_journal()

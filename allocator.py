@@ -421,6 +421,14 @@ def sleeve_sums(rows: list, cash: Optional[float] = None) -> dict:
     return {k: round(v, 0) for k, v in sums.items()}
 
 
+def _cap_total(values: dict, rows: list) -> float:
+    """Totalen positionstaken mäts mot: de inskrivna delarna, annars registret
+    (positionerna + kassan) — samma bas som "Ur registret". Förut lämnades
+    kassan utanför, så en ensam position blev 100 % och fick "Trimma ner"."""
+    t = sum(max(0.0, _num(v, 0.0) or 0.0) for v in (values or {}).values())
+    return t or float(sum(sleeve_sums(rows, positions.cash()).values()))
+
+
 # ── Lagring ──────────────────────────────────────────────────────────────────
 def _default() -> dict:
     return {"values": {s.key: 0.0 for s in SLEEVES}, "positions": [],
@@ -505,9 +513,7 @@ def _export(data: dict) -> None:
             "_action": action, "_cap": s.position_cap})
 
     rows_ = derived_positions(_fresh_rows())
-    total = sum(max(0.0, _num(v, 0.0) or 0.0) for v in vals.values())
-    total = total or sum(max(0.0, _num(p.get("value"), 0.0) or 0.0)
-                         for p in rows_)
+    total = _cap_total(vals, rows_)
     pos_rows = []
     for p in rows_:
         rule = position_rule(p)
@@ -704,8 +710,7 @@ def _positions(data: dict) -> None:
                    "PORTFÖLJ → Positioner så kontrolleras taken här.")
         return
 
-    total = sum(max(0.0, _num(v, 0.0) or 0.0) for v in data["values"].values())
-    total = total or sum(max(0.0, _num(p.get("value"), 0.0) or 0.0) for p in positions_)
+    total = _cap_total(data["values"], positions_)
     measurable = [p for p in positions_ if p.get("value") is not None]
     breaches = {b["ticker"] for b in position_breaches(measurable, total)}
 

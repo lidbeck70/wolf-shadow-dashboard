@@ -12,3 +12,8 @@ output/
 blindspot/blindspot_history.jsonl
 retail_sentiment/sentiment_history.jsonl
 contrarian_alpha/.ca_results_*.json
+
+# Lokala reservkopior som gist_storage/trade_journal skriver i arbetskatalogen.
+# Aldrig i repot: en incheckad kopia lästes som riktig data (testdata som "migrerad").
+/.*_data.json
+/.ca_auto_scan_date

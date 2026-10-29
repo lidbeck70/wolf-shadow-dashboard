@@ -188,7 +188,8 @@ def render_csm(row: dict, key: str, kind: str = ctl.PRODUCER,
     överlever varje scenario, FV vad det är värt där.
     """
     changed = False
-    matrix = row.setdefault("csm", {})
+    # Läggs i raden först när något fylls i — att öppna arket ska inte skriva en tom matris.
+    matrix = row.get("csm") if isinstance(row.get("csm"), dict) else {}
 
     st.markdown(
         f"<b style='color:{TEXT};'>CSM — råvarukänslighet</b> "
@@ -212,7 +213,7 @@ def render_csm(row: dict, key: str, kind: str = ctl.PRODUCER,
         changed = True
 
     for s in ctl.scenarios(is_core):
-        sc = matrix.setdefault(s, {})
+        sc = matrix.get(s) if isinstance(matrix.get(s), dict) else {}
         cols = st.columns(4)
         cols[0].markdown(f"<div style='padding-top:8px;color:{TEXT};"
                          f"font-weight:600;'>{s}</div>",
@@ -242,6 +243,8 @@ def render_csm(row: dict, key: str, kind: str = ctl.PRODUCER,
         if any(storage.differs(v, sc.get(k))
                for k, v in vals.items()):
             sc.update(vals)
+            matrix[s] = sc
+            row["csm"] = matrix
             changed = True
 
     st.caption("Kolumner: scenario · råvarupris · "
@@ -271,6 +274,7 @@ def render_csm(row: dict, key: str, kind: str = ctl.PRODUCER,
             matrix.pop("bear_survival", None)
         else:
             matrix["bear_survival"] = new_val
+            row["csm"] = matrix
         changed = True
 
     if ctl.csm_red_flag(new_kind, matrix, secured):

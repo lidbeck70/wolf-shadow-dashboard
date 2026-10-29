@@ -2,7 +2,8 @@
 trade_journal.py — Trade logging, P&L tracking, and performance analytics.
 
 Uses GitHub Gist for persistence (same pattern as gist_storage.py).
-Falls back to session_state if gist is unavailable.
+En Gist som inte går att läsa visas som fel och spärrar sparandet för
+sessionen — den lokala filen används bara utan token (lokal körning).
 """
 import json
 import uuid
@@ -14,6 +15,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 from typing import Optional
 
+import gist_storage
 # Statistikbladet ur tradingjournal_swing.xlsx — rena funktioner, testade mot
 # arkets formler. R räknas här ur stoppen i stället för att skrivas in.
 import journal_stats as js
@@ -25,7 +27,10 @@ import journal_stats as js
 GIST_ID = "50348cb5b9e325c8ae91439763d5f144"
 JOURNAL_FILENAME = "journal_data.json"
 GIST_API_URL = f"https://api.github.com/gists/{GIST_ID}"
-LOCAL_FALLBACK = ".journal_data.json"
+LOCAL_FALLBACK = ".journal_data.json"     # bara lokal körning utan token — skickas aldrig till Gisten
+UNREADABLE_KEY = "journal_unreadable"     # sessionen: orsaken när Gisten inte gick att läsa
+LOCAL_KEY = "journal_local"               # sessionen: journalen kom ur den lokala filen
+MSG_KEY = "journal_msg"                   # sessionen: sparkvittot som visas efter omritningen
 
 # Nordic Gold palette
 _BG_DARK = "#0c0c12"
@@ -56,6 +61,11 @@ def _start_capital() -> float:
         return STARTING_CAPITAL
 
 
+def start_capital() -> float:
+    """Samma startkapital för Mot målet och 🏠 I dag — annars visar de en annan årstakt än journalen."""
+    return _start_capital()
+
+
 def _cagr_of(df: pd.DataFrame):
     """Realiserad årstakt till i dag (beslut 3) — journal_stats.realized_cagr på journalens rader."""
     try:
@@ -71,80 +81,83 @@ STARTING_CAPITAL = 75_000
 
 
 def _get_github_token() -> Optional[str]:
-    try:
-        token = st.secrets.get("GITHUB_TOKEN", None)
-        if token:
-            return str(token).strip()
-    except Exception:
-        pass
-    try:
-        token = st.secrets["GITHUB_TOKEN"]
-        if token:
-            return str(token).strip()
-    except Exception:
-        pass
-    return None
+    """Samma token som gist_storage läser: secrets, sedan miljön."""
+    return gist_storage._get_github_token()
 
 
 def _auth_header(token: str) -> dict:
-    prefix = "Bearer" if token.startswith("github_pat_") else "token"
-    return {
-        "Authorization": f"{prefix} {token}",
-        "Accept": "application/vnd.github.v3+json",
-    }
+    return gist_storage._auth_header(token)
 
 
 # ---------------------------------------------------------------------------
 # Load / Save journal
 # ---------------------------------------------------------------------------
+def journal_unreadable() -> Optional[str]:
+    """Orsaken när journalen inte gick att läsa ur Gisten i den här sessionen, annars None."""
+    return st.session_state.get(UNREADABLE_KEY)
+
+
+def _read_local() -> list:
+    """Den lokala filen — bara för lokal körning utan token."""
+    import os
+    try:
+        if os.path.exists(LOCAL_FALLBACK):
+            with open(LOCAL_FALLBACK) as f:
+                data = json.load(f)
+            return data if isinstance(data, list) else []
+    except Exception:
+        pass
+    return []
+
+
 def load_journal() -> list:
-    """Load journal trades. Priority: session_state > Gist > empty list."""
+    """Load journal trades. Priority: session_state > Gist > empty list.
+
+    Gisten läses med token när den finns (gist_storage.read_blob). Saknas
+    filen är det en första körning: tom lista. Går Gisten inte att läsa sätts
+    journal_unreadable, listan blir tom men cachas inte (nästa omritning
+    försöker igen) och save_journal vägrar — annars skulle en lista byggd på
+    en misslyckad läsning skriva över den riktiga journalen.
+    """
     if "journal_trades" in st.session_state:
         return st.session_state["journal_trades"]
 
-    data = None
+    status, data = gist_storage.read_blob(JOURNAL_FILENAME)
+    if status == "ok" and not isinstance(data, list):
+        status, data = "unreadable", "journalen i Gisten är inte en lista"
+    if status == "unreadable":
+        st.session_state[UNREADABLE_KEY] = str(data or "Gisten svarade inte")
+        return []
+    st.session_state.pop(UNREADABLE_KEY, None)
 
-    try:
-        r = requests.get(GIST_API_URL, timeout=10)
-        if r.status_code == 200:
-            gist = r.json()
-            from gist_storage import _gist_file_content        # hanterar truncated → raw_url
-            content = _gist_file_content(gist.get("files", {}), JOURNAL_FILENAME)
-            if content:
-                parsed = json.loads(content)
-                if isinstance(parsed, list):
-                    data = parsed
-    except Exception:
-        pass
+    trades = data if status == "ok" else []
+    if status == "missing" and not _get_github_token():
+        # Lokal körning utan secrets: journalen bor i den lokala filen.
+        # Märks i sessionen, så att den aldrig skickas till Gisten.
+        trades = _read_local()
+        st.session_state[LOCAL_KEY] = True
 
-    if data is None:
-        try:
-            import os
-            if os.path.exists(LOCAL_FALLBACK):
-                with open(LOCAL_FALLBACK) as f:
-                    data = json.load(f)
-        except Exception:
-            pass
-
-    if data is None:
-        data = []
-
-    st.session_state["journal_trades"] = data
-    return data
+    st.session_state["journal_trades"] = trades
+    return trades
 
 
 def save_journal(trades: list) -> bool:
-    """Save journal to Gist + session_state. Returns True if gist write succeeded."""
+    """Save journal to Gist + session_state. Returns True if gist write succeeded.
+
+    Spärrad medan journalen inte gick att läsa. Utan token, eller när
+    journalen kom ur den lokala filen, skrivs bara den lokala filen.
+    """
+    if journal_unreadable():
+        return False
     st.session_state["journal_trades"] = trades
 
-    try:
-        with open(LOCAL_FALLBACK, "w") as f:
-            json.dump(trades, f, indent=2, default=str)
-    except Exception:
-        pass
-
     token = _get_github_token()
-    if not token:
+    if not token or st.session_state.get(LOCAL_KEY):
+        try:
+            with open(LOCAL_FALLBACK, "w") as f:
+                json.dump(trades, f, indent=2, default=str)
+        except Exception:
+            pass
         return False
 
     try:
@@ -157,18 +170,51 @@ def save_journal(trades: list) -> bool:
             }
         }
         r = requests.patch(GIST_API_URL, headers=headers, json=payload, timeout=10)
+        gist_storage._invalidate()                     # nästa läsning ska se det vi just skrev
         return r.status_code == 200
     except Exception:
         return False
 
 
+def _save_msg(ok: bool, what: str) -> tuple:
+    """(nivå, text) för sparkvittot — läggs i sessionen och visas överst efter omritningen."""
+    if ok:
+        return "success", f"{what} — sparat i Gisten."
+    blocked = journal_unreadable()
+    if blocked:
+        return "error", (f"Inte sparat: journalen gick inte att läsa ur Gisten ({blocked}). "
+                         f"Ladda om sidan och försök igen.")
+    if st.session_state.get(LOCAL_KEY) or not _get_github_token():
+        return "warning", f"{what} — sparat bara lokalt (ingen GITHUB_TOKEN), inte i Gisten."
+    return "warning", (f"{what} — men Gisten tog inte emot sparningen. Ändringen finns bara i den "
+                       f"här sessionen.")
+
+
+def _trade_key(trade: dict, i: int) -> str:
+    """Affärens id — radnumret bara för gamla rader utan id."""
+    return str(trade.get("id") or f"rad-{i}")
+
+
 # ---------------------------------------------------------------------------
 # Analytics helpers
 # ---------------------------------------------------------------------------
+def _avg_r(df: pd.DataFrame):
+    """Snitt-R över affärerna som HAR ett R (beslut 3) — None när ingen har det. Affärer utan stopp
+    räknas inte som 0R; då drog de ner snittet, och sidan sa emot Swing-statistiken."""
+    if "r_multiple" not in df.columns:
+        return None
+    r = pd.to_numeric(df["r_multiple"], errors="coerce").mean()
+    return None if pd.isna(r) else round(float(r), 2)
+
+
+def _fmt_r(v) -> str:
+    return "—" if v is None else f"{v}"
+
+
 def _compute_kpis(df: pd.DataFrame) -> dict:
     """Compute summary KPIs from trades DataFrame."""
     _empty_kpis = {
-        "total": 0, "win_rate": 0.0, "avg_rr": 0.0,
+        "total": 0, "win_rate": 0.0, "avg_rr": None,
         "profit_factor": 0.0, "best": 0.0, "worst": 0.0,
         "streak": "0", "total_pnl": 0.0, "cagr": None,
     }
@@ -180,7 +226,7 @@ def _compute_kpis(df: pd.DataFrame) -> dict:
         losses = df[df["pnl_pct"] <= 0]
         total = len(df)
         win_rate = (len(wins) / total * 100) if total > 0 else 0.0
-        avg_rr = df["r_multiple"].mean() if "r_multiple" in df.columns else 0.0
+        avg_rr = _avg_r(df)
         gross_wins = wins["pnl_amount"].sum() if not wins.empty else 0.0
         gross_losses = abs(losses["pnl_amount"].sum()) if not losses.empty else 0.0
         profit_factor = (gross_wins / gross_losses) if gross_losses > 0 else gross_wins
@@ -208,7 +254,7 @@ def _compute_kpis(df: pd.DataFrame) -> dict:
         return {
             "total": total,
             "win_rate": round(win_rate, 1),
-            "avg_rr": round(avg_rr, 2),
+            "avg_rr": avg_rr,
             "profit_factor": round(profit_factor, 2),
             "best": round(best, 2),
             "worst": round(worst, 2),
@@ -243,7 +289,7 @@ def _strategy_label(key: str) -> str:
 
 def _strategy_stats(df: pd.DataFrame, strategy: str) -> dict:
     """Stats for a single strategy."""
-    _empty = {"trades": 0, "win_rate": 0.0, "avg_r": 0.0, "total_pnl": 0.0, "cagr": None}
+    _empty = {"trades": 0, "win_rate": 0.0, "avg_r": None, "total_pnl": 0.0, "cagr": None}
     if df.empty or "strategy" not in df.columns:
         return _empty
     try:
@@ -258,7 +304,7 @@ def _strategy_stats(df: pd.DataFrame, strategy: str) -> dict:
         return {
             "trades": len(sub),
             "win_rate": round(len(wins) / len(sub) * 100, 1),
-            "avg_r": round(sub["r_multiple"].mean(), 2) if "r_multiple" in sub.columns else 0.0,
+            "avg_r": _avg_r(sub),
             "total_pnl": round(sub["pnl_amount"].sum(), 2) if "pnl_amount" in sub.columns else 0.0,
             "cagr": cagr,
         }
@@ -392,7 +438,7 @@ def _strategy_card(name: str, stats: dict):
         <div style="color:{_TEXT}; font-size:0.85rem;">
         Trades: <b>{stats['trades']}</b><br/>
         Win Rate: <b>{stats['win_rate']}%</b><br/>
-        Avg R: <b>{stats['avg_r']}</b><br/>
+        Avg R: <b>{_fmt_r(stats['avg_r'])}</b><br/>
         Total P&L: <b style="color:{pnl_color}">{stats['total_pnl']:,.0f} SEK</b><br/>
         CAGR: {cagr_html}
         </div></div>""",
@@ -534,9 +580,15 @@ def _render_import_section(existing_trades: list) -> None:
                 st.caption("Öppna positioner hör hemma i Holdings (registret), inte i journalen.")
                 if st.button(f"Lägg till i Holdings ({len(report.open_positions)})",
                              key="import_open_to_holdings"):
+                    import positions
+                    import storage
                     added, skipped = import_open_positions(report.open_positions)
-                    st.success(f"{len(added)} inlagda i Holdings som Untagged — sätt strategi "
-                               f"där. {len(skipped)} hoppades över (fanns redan eller saknar ticker).")
+                    err = storage.load_error(positions.STORE)
+                    if err:                        # registret sparades inte (t.ex. läsningen misslyckades)
+                        st.error(f"Holdings sparades inte: {err}")
+                    else:
+                        st.success(f"{len(added)} inlagda i Holdings som Untagged — sätt strategi "
+                                   f"där. {len(skipped)} hoppades över (fanns redan eller saknar ticker).")
 
         # ── Confirm ────────────────────────────────────────────────────────
         if report.preview:
@@ -546,10 +598,11 @@ def _render_import_section(existing_trades: list) -> None:
                 key="import_confirm_btn",
                 type="primary",
                 use_container_width=True,
+                disabled=bool(journal_unreadable()),   # en lista byggd på en misslyckad läsning sparas aldrig
             ):
                 ok, msg = apply_import(report.preview)
                 if ok:
-                    st.success(msg)
+                    st.session_state[MSG_KEY] = ("success", msg)   # visas efter omritningen
                     del st.session_state["import_report"]
                     st.rerun()
                 else:
@@ -649,10 +702,13 @@ def render_trade_journal_page():
 
         # Ensure column types
         if not df.empty:
-            for col in ["pnl_pct", "pnl_amount", "r_multiple", "entry_price",
+            for col in ["pnl_pct", "pnl_amount", "entry_price",
                          "exit_price", "shares"]:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+            # R saknas för affärer utan stopp (beslut 3) — tomt, inte 0R
+            if "r_multiple" in df.columns:
+                df["r_multiple"] = pd.to_numeric(df["r_multiple"], errors="coerce")
             if "exit_date" in df.columns:
                 df["exit_date"] = pd.to_datetime(df["exit_date"], errors="coerce")
             if "entry_date" in df.columns:
@@ -663,6 +719,14 @@ def render_trade_journal_page():
             f'<p style="color:{_TEXT_DIM}; margin-top:2px;">Closed-trade analytics & P&L tracking</p>',
             unsafe_allow_html=True,
         )
+        # Kvittot från förra körningen (Log Trade/radering ritar om sidan direkt)
+        msg = st.session_state.pop(MSG_KEY, None)
+        if msg:
+            getattr(st, msg[0], st.info)(msg[1])
+        blocked = journal_unreadable()
+        if blocked:
+            st.error(f"Journalen gick inte att läsa ur Gisten ({blocked}). Sidan visar inga affärer och inget "
+                     f"sparas förrän den går att läsa — ladda om sidan om en stund.")
 
         # ------------------------------------------------------------------
         # 1. SUMMARY KPIs
@@ -676,7 +740,7 @@ def render_trade_journal_page():
             _kpi_card("Win Rate", f"{kpis['win_rate']}%",
                        _GREEN if kpis["win_rate"] >= 50 else _RED)
         with c3:
-            _kpi_card("Avg R:R", f"{kpis['avg_rr']}")
+            _kpi_card("Avg R:R", _fmt_r(kpis["avg_rr"]))
         with c4:
             _kpi_card("Profit Factor", f"{kpis['profit_factor']}")
         with c5:
@@ -935,6 +999,7 @@ def render_trade_journal_page():
             submitted = st.form_submit_button(
                 "Log Trade",
                 use_container_width=True,
+                disabled=bool(blocked),
             )
 
             if submitted:
@@ -988,13 +1053,9 @@ def render_trade_journal_page():
                         trades = load_journal()
                         trades.append(trade)
                         success = save_journal(trades)
-
-                        if success:
-                            st.success(f"Trade logged: {trade['ticker']} — "
-                                       f"P&L {pnl_pct:+.2f}% (saved to cloud)")
-                        else:
-                            st.success(f"Trade logged: {trade['ticker']} — "
-                                       f"P&L {pnl_pct:+.2f}% (local only)")
+                        # Kvittot överlever omritningen — annars syns aldrig ett misslyckat sparande
+                        st.session_state[MSG_KEY] = _save_msg(
+                            success, f"Affären {trade['ticker']} loggad (P&L {pnl_pct:+.2f} %)")
                         st.rerun()
                 except Exception as e:
                     st.error(f"Error saving trade: {e}")
@@ -1004,22 +1065,24 @@ def render_trade_journal_page():
         # ------------------------------------------------------------------
         if not df.empty:
             with st.expander("Manage Trades"):
-                trade_options = []
-                for t in trades:
-                    label = (f"{t.get('exit_date', '?')} | {t.get('ticker', '?')} | "
-                             f"{t.get('strategy', '?')} | P&L {t.get('pnl_pct', 0):+.2f}%")
-                    trade_options.append(label)
+                # Väljs på id, inte på etikett — två likadana affärer (samma dag, ticker och
+                # resultat) gav samma etikett, och då raderades alltid den första.
+                labels = {}
+                for i, t in enumerate(trades):
+                    labels[_trade_key(t, i)] = (f"{t.get('exit_date', '?')} | {t.get('ticker', '?')} | "
+                                                f"{t.get('strategy', '?')} | P&L {t.get('pnl_pct', 0):+.2f}%")
 
-                if trade_options:
-                    selected = st.selectbox("Select trade to delete", trade_options)
+                if labels:
+                    selected = st.selectbox("Select trade to delete", list(labels),
+                                            format_func=lambda k: labels.get(k, k))
                     if st.button("Delete Selected Trade", type="secondary"):
                         try:
-                            idx = trade_options.index(selected)
                             trades = load_journal()
-                            if 0 <= idx < len(trades):
+                            idx = next((i for i, t in enumerate(trades) if _trade_key(t, i) == selected), None)
+                            if idx is not None:
                                 removed = trades.pop(idx)
-                                save_journal(trades)
-                                st.success(f"Deleted trade: {removed.get('ticker', '?')}")
+                                st.session_state[MSG_KEY] = _save_msg(
+                                    save_journal(trades), f"Affären {removed.get('ticker', '?')} borttagen")
                                 st.rerun()
                         except Exception as e:
                             st.error(f"Error deleting trade: {e}")

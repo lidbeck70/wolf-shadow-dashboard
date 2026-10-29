@@ -598,7 +598,7 @@ def _storlek(st, ident, strategy: str, c) -> None:
         if st.button("Logga köp", key="thor_log_buy", disabled=not shares):
             import positions
             ok, msg = positions.add(**sk.position_args(ident.yf, ident.name or "", strategy, sz, shares, c.target))
-            (st.success if ok else st.warning)(msg)
+            (st.success if ok and positions.UNSAVED not in msg else st.warning)(msg)
 
 
 def _bridge(st, label: str, target: tuple, ticker: str, key: str, extra: Optional[dict] = None) -> None:

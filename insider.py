@@ -494,8 +494,9 @@ def _signal_body(data: dict, sig: dict, r: dict, color: str) -> None:
                 f"— kluster, roll och belopp måste alla vara ifyllda</span>",
                 unsafe_allow_html=True)
     p1, p2, p3 = st.columns(3)
+    n_ins = _num(sig.get("insiders"))      # tomt när inget är ifyllt — förr skrevs 0 in vid öppning
     ins = p1.number_input("Antal insiders 30 dgr", min_value=0, step=1,
-                          value=int(_num(sig.get("insiders"), 0) or 0),
+                          value=int(n_ins) if n_ins is not None else None,
                           key=f"ins_n_{sig['id']}",
                           help=f"{CLUSTER_MIN}+ = 3p · 2 = 2p · ensam = 0p")
     role = p2.selectbox("Högsta roll", list(ROLES),

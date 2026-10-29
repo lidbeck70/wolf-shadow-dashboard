@@ -103,6 +103,12 @@ def _strategy_of(h: dict) -> str:
 _num = positions._num
 
 
+def _sek(ticker: str, amount: float) -> float:
+    """Belopp i kursens valuta → SEK (positions.sek_factor, London i pence). Summor och
+    procent märkta SEK räknas så; kursen på raden visas fortfarande i sin egen valuta."""
+    return amount * positions.sek_factor(ticker)
+
+
 def _get_all_holdings_flat() -> List[dict]:
     """Alla öppna positioner, platta, med '_portfolio_key' och Deep
     Contrarian-trancherna lyfta ur extras — formen korten ritar."""
@@ -129,7 +135,7 @@ def _add_holding(
         if strategy == "Deep Contrarian" else {}
     ok, msg = positions.add(ticker, strategy, entry_price, shares, sector=sector,
                             extras=extras, bucket=portfolio_key)
-    if not ok:
+    if not ok or positions.UNSAVED in msg:
         st.warning(msg)
     return ok
 
@@ -505,7 +511,7 @@ def _render_rule_monitor(strategy_tag: str, strategy_holdings: list) -> None:
         for h in strategy_holdings:
             pkey = h.get("_portfolio_key", "long")
             live = _fetch_live_price(h["ticker"], period="2y" if pkey == "long" else "6mo")
-            val = live.get("price", 0) * h.get("shares", 0)
+            val = _sek(h["ticker"], live.get("price", 0) * h.get("shares", 0))
             pos_vals[h["ticker"]] = val
             total_q += val
 
@@ -544,7 +550,7 @@ def _render_rule_monitor(strategy_tag: str, strategy_holdings: list) -> None:
         for h in strategy_holdings:
             pkey = h.get("_portfolio_key", "long")
             live = _fetch_live_price(h["ticker"], period="2y" if pkey == "long" else "6mo")
-            val = live.get("price", 0) * h.get("shares", 0)
+            val = _sek(h["ticker"], live.get("price", 0) * h.get("shares", 0))
             sector = h.get("sector", "Unknown")
             sector_vals[sector] = sector_vals.get(sector, 0.0) + val
             total_c += val
@@ -703,12 +709,12 @@ def _render_strategy_section(strategy_tag: str) -> None:
         shares = holding.get("shares", 0)
         entry  = holding.get("entry_price", 0)
         if shares > 0 and price > 0:
-            total_value += price * shares
+            total_value += _sek(ticker, price * shares)
         if entry > 0 and price > 0:
             total_pnl += (price / entry - 1) * 100
             pnl_count += 1
             if shares > 0:
-                total_abs_pnl += (price - entry) * shares
+                total_abs_pnl += _sek(ticker, (price - entry) * shares)
 
     # Section summary footer
     if pnl_count > 0:
@@ -753,7 +759,7 @@ def _render_summary_header() -> None:
         pkey = h.get("_portfolio_key", "long")
         try:
             live = _fetch_live_price(h["ticker"], period="2y" if pkey == "long" else "6mo")
-            val  = live.get("price", 0) * shares
+            val  = _sek(h["ticker"], live.get("price", 0) * shares)
             strat_vals[_strategy_of(h)] = strat_vals.get(_strategy_of(h), 0.0) + val
             total_invested += val
         except Exception:

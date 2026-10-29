@@ -329,6 +329,8 @@ def _migrate_positions(data: dict) -> None:
     if not rows:
         return
     positions.migrate_rows(STRATEGY, rows, source="tiggre")
+    if storage.load_error(positions.STORE):  # registret är inte sparat — arket behåller listan
+        return
     data["positions"] = []
     try:                                   # engångsskrivning av tömningen
         storage.save_session(STORE)
@@ -488,10 +490,10 @@ def _screen_section(data: dict) -> None:
                 for c in data.get("candidates", []) + open_positions()}
 
     def _add(fields: dict) -> None:
+        # Inget mcap/nav 0,0 — tomt är tomt (håven skickar med börsvärdet när det finns)
         data["candidates"].append({
-            "id": _uid(), "added": _today(), "screen": {}, "nav": 0.0,
-            "downside": -40.0, "factors": {}, "catalysts": [],
-            "mcap": 0.0, **fields})
+            "id": _uid(), "added": _today(), "screen": {},
+            "downside": -40.0, "factors": {}, "catalysts": [], **fields})
         _save(data)
 
     screens_ui.render_screen_section("tiggre", existing, _add, key_prefix="tg")
@@ -510,7 +512,7 @@ def _candidates(data: dict) -> None:
         if tkr.strip():
             data["candidates"].append({
                 "id": _uid(), "ticker": tkr.upper().strip(), "name": nm.strip(),
-                "added": _today(), "screen": {}, "mcap": 0.0, "nav": 0.0,
+                "added": _today(), "screen": {},
                 "downside": -40.0, "factors": {}, "catalysts": [],
             })
             _save(data)
@@ -592,6 +594,9 @@ def _candidate_card(data: dict, cand: dict) -> None:
                     f"— krav ≥ {SCORE_MIN}</span>", unsafe_allow_html=True)
         fac = cand.setdefault("factors", {})
         fcols = st.columns(5)
+        # "–" = ej bedömd (som Poängmodellen): förr blev varje faktor 0 bara av att arket öppnades,
+        # och nollorna fyllde i AQS jurisdiktion/management. Poängen räknar en saknad faktor som 0.
+        opts = ["–", 0, 1, 2]
         for (fkey, flabel, fhelp), col in zip(FACTORS, fcols):
             if fkey == "un":
                 # Räknas ur kvoten, precis som arket — inte en bedömning.
@@ -602,11 +607,16 @@ def _candidate_card(data: dict, cand: dict) -> None:
                     f"<span style='color:{DIM};font-size:0.72rem;'> auto</span></div>",
                     unsafe_allow_html=True)
                 continue
-            v = col.selectbox(flabel, [0, 1, 2],
-                              index=int(max(0, min(2, int(_num(fac.get(fkey), 0) or 0)))),
+            cur = _num(fac.get(fkey))
+            cur = None if cur is None else int(max(0, min(2, int(cur))))
+            v = col.selectbox(flabel, opts, index=opts.index(cur) if cur is not None else 0,
                               key=f"tg_f_{cand['id']}_{fkey}", help=fhelp)
-            if v != fac.get(fkey):
-                fac[fkey] = v
+            new = None if v == "–" else int(v)
+            if new != cur:
+                if new is None:
+                    fac.pop(fkey, None)
+                else:
+                    fac[fkey] = new
                 changed = True
         # Jurisdiktionen ur underlaget (utdraget, Durrett-arket) — förslag, inte poäng.
         try:

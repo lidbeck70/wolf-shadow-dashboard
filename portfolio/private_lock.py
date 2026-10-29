@@ -1,6 +1,6 @@
 """
-portfolio/private_lock.py — lösenord på de egna innehaven (PORTFÖLJ → Positioner, fysiska metaller och
-startsidans säljrader).
+portfolio/private_lock.py — lösenord på de egna innehaven (PORTFÖLJ → Positioner, fysiska metaller,
+PORTFÖLJ → Allokering och startsidans säljrader).
 
 Lösenordet ligger i Streamlit Secrets som HOLDINGS_PASSWORD och visas aldrig. Saknas det är innehaven låsta
 tills det är satt — ett lösenord i koden skulle synas i det publika repot. Efter fem fel i rad väntar grinden en
