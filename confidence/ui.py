@@ -49,7 +49,7 @@ _PILLAR_LABEL = {**{k: l for k, l, _m in cfg.PILLARS}, **{k: l for k, l, _m in c
 # ── lagring ──────────────────────────────────────────────────────────────────
 def _load() -> dict:
     data = storage.session_load(cs.STORE, cs.default())
-    data = cs.normalize(data)
+    data = storage.session_normalize(cs.STORE, data, cs.normalize)     # formen är ingen osparad ändring
     st.session_state[cs.STORE] = data
     return data
 

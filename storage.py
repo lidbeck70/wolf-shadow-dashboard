@@ -33,10 +33,11 @@ här ska laga. Peka därför branch på en gren som INTE deployas, förslagsvis
 from __future__ import annotations
 
 import base64
+import copy
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import requests
 import streamlit as st
@@ -374,6 +375,40 @@ def session_load(name: str, default: Any = None,
     # mark_saved, men en misslyckad läsning gäller hela sessionen.
     st.session_state[_meta_key(name)] = {"error": error, "load_failed": error,
                                          "saved": None, "migrated": migrated}
+    return data
+
+
+def session_normalize(name: str, data: Any, normalize: Callable[[Any], Any]) -> Any:
+    """Formar lagrets data i sessionen (saknade nycklar, standardfält) utan att det blir en osparad ändring.
+
+    Anropas direkt efter session_load, vid varje läsning. Var datan ren — samma som senast lästa eller sparade
+    versionen — räknas den normaliserade formen också som ren: ett fält som bara fylls i med sitt standardvärde
+    är ingen ändring av dig, och sparraden ska inte säga "osparade ändringar" när du inte ändrat något. Var den
+    redan ändrad, eller migrerad och väntar på sin första sparning, förblir den osparad. Att det körs vid varje
+    läsning fångar också data som en annan sida laddat utan normalisering. Skriver aldrig till GitHub.
+
+    normalize ska vara idempotent; den får ändra på plats eller returnera ett nytt objekt (det hamnar då i
+    sessionen).
+    """
+    before = _fingerprint(data)
+    clean = before == st.session_state.get(_clean_key(name))
+    norm = normalize(data)
+    if norm is not data:
+        st.session_state[name] = norm
+    if clean:
+        after = _fingerprint(norm)
+        if after != before:
+            st.session_state[_clean_key(name)] = after
+    return norm
+
+
+def fill_defaults(data: Any, defaults: dict) -> dict:
+    """Normaliseraren för ett lager som är en dict med fasta nycklar: en saknad nyckel får en kopia av sitt
+    standardvärde (som setdefault — befintliga värden rörs inte), och annat än en dict blir standardformen."""
+    data = data if isinstance(data, dict) else {}
+    for k, v in defaults.items():
+        if k not in data:
+            data[k] = copy.deepcopy(v)
     return data
 
 

@@ -46,7 +46,8 @@ SAVE_NOTE = "Uppdatera arket skriver i sessionen — spara med 💾."
 # ── lagret ───────────────────────────────────────────────────────────────────
 def _load() -> dict:
     from confidence import store as cs
-    data = ast.normalize(storage.session_load(ast.STORE, cs.default()))
+    # Formen (strategi-taggarna m.m.) är ingen osparad ändring; flytten nedan är det.
+    data = storage.session_normalize(ast.STORE, storage.session_load(ast.STORE, cs.default()), ast.normalize)
     legacy = storage.session_load(ast.LEGACY_STORE, None)
     if legacy and not st.session_state.get("asym_migrated"):
         moved = ast.merge_legacy(data, legacy)

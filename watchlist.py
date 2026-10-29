@@ -102,17 +102,9 @@ def normalize(data) -> dict:
 def load() -> dict:
     """Listan, laddad EN gång per session och normaliserad på plats (sessionen äger den sedan). Ändrade bara
     normaliseringen en ren lista (id, versaler, standardfält) räknas den fortfarande som sparad — sparraden ska
-    inte säga 'osparade ändringar' när du inte ändrat något."""
-    import streamlit as st
+    inte säga 'osparade ändringar' när du inte ändrat något (storage.session_normalize)."""
     import storage
-    data = storage.session_load(STORE, _default())
-    clean = not storage.is_dirty(STORE)
-    norm = normalize(data)
-    if norm is not data:
-        st.session_state[STORE] = norm
-    if clean and storage.is_dirty(STORE):
-        st.session_state[storage._clean_key(STORE)] = storage._fingerprint(norm)
-    return norm
+    return storage.session_normalize(STORE, storage.session_load(STORE, _default()), normalize)
 
 
 def find(ticker, strategy: str, data: Optional[dict] = None) -> Optional[dict]:

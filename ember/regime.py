@@ -179,7 +179,9 @@ def sheet_commodity(ticker: str) -> Optional[str]:
     try:
         import storage
         from confidence import store as cs
-        data = cs.normalize(storage.session_load(cs.STORE, cs.default()))
+        # Läser bara: cs.get tål saknade nycklar, och att normalisera sessionens
+        # ark här vore en osparad ändring i Durrett/Wolf Asymmetry.
+        data = storage.session_load(cs.STORE, cs.default())
         c = cs.get(data, ticker)
         return str(c.commodity or "").strip().lower() or None if c is not None else None
     except Exception:

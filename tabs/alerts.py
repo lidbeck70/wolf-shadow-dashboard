@@ -436,11 +436,10 @@ def _render_scheduled_settings(send_fn) -> None:
     }
     data = storage.session_load("alerts", {k: dict(v)
                                            for k, v in _LEG_DEFAULTS.items()})
-    if not isinstance(data, dict):
-        data = {}
-        st.session_state["alerts"] = data
-    for key, default in _LEG_DEFAULTS.items():
-        data.setdefault(key, dict(default))
+    # Ett nytt larmben (som 👀 Övervakning) fylls i med sina standardvärden
+    # — det är ingen osparad ändring förrän du själv ändrar något.
+    data = storage.session_normalize(
+        "alerts", data, lambda d: storage.fill_defaults(d, _LEG_DEFAULTS))
 
     storage_ui.save_bar("alerts", "Schemalagda larm")
     st.markdown(
@@ -524,21 +523,26 @@ def _render_scheduled_settings(send_fn) -> None:
         if (enabled != bool(cfg.get("enabled", True))
                 or channels != cfg.get("channels", ["discord"])):
             cfg["enabled"], cfg["channels"] = enabled, channels
+        # Skriv bara när du ändrat det som visas: en saknad ribba eller
+        # regellista betyder redan standardvärdet för alert_rules.
         if threshold is not None:
             t_key, t_label, t_min, t_max, t_default = threshold
+            shown = int(cfg.get(t_key) or t_default)
             value = c1.number_input(
                 t_label, min_value=t_min, max_value=t_max,
-                value=int(cfg.get(t_key) or t_default), step=1,
+                value=shown, step=1,
                 key=f"sched_{key}_{t_key}")
-            if value != cfg.get(t_key):
+            if value != shown:
                 cfg[t_key] = int(value)
         if key == "fiat":
             from fiat_debasement.config import FIAT_ALERT_RULES
-            current_rules = cfg.get("rules") or list(FIAT_ALERT_RULES)
+            # som alert_rules.fiat_alerts: saknad = alla regler, [] = inga
+            current_rules = cfg.get("rules") if cfg.get("rules") is not None else list(FIAT_ALERT_RULES)
+            shown_rules = [r for r in current_rules if r in FIAT_ALERT_RULES]
             picked = st.multiselect("Aktiva regler — 🐺 Fiat Debasement", list(FIAT_ALERT_RULES),
-                                    default=[r for r in current_rules if r in FIAT_ALERT_RULES],
+                                    default=shown_rules,
                                     format_func=lambda r: FIAT_ALERT_RULES[r][0], key="sched_fiat_rules")
-            if picked != cfg.get("rules"):
+            if picked != shown_rules:
                 cfg["rules"] = picked
         st.caption(desc)
         if enabled and not channels:
