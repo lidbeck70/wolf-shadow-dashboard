@@ -759,8 +759,9 @@ _BUILD_PARTS = {"themes": ("rule", "durrett", "tiggre"), "arc": ("wolf", "viking
 # valhall_board.json bär flera strategiers listor, och en del kan falla utan felfält (valhall_scan): Long Screenern
 # som kastar sparas som long = None (då står Long Screener still), och ett ark, håvarna eller Quality Contrarian som
 # inte gick att läsa syns bara som en lucka i sources. Då står Rick Rules, Durretts och Tiggres par på brädans rader
-# (KÖP/BEVAKA) still, och brädans stämpel gör inte deras lista färsk. Håvarnas TRÄFF-rader för samma strategier går
-# som vanligt.
+# (KÖP/BEVAKA) still, och brädans stämpel gör inte deras lista färsk. Ett par som stod på håvens TRÄFF-rad för samma
+# strategier prövas i stället mot håvens egen körning (screens.json: stämpeln och håvens felfält, _screen_part) —
+# oberoende av brädan, så att en färsk men tom håv är 'föll ur listan' även i en panel utan Durrett-arket.
 # Arken som strategins rader på brädan byggs ur (valhall.picks): Rick Rules producenter ur producentarket; Durretts
 # bolag ur Durrett-arket, och 15-BAGGER och topp 5 ur Poängmodellen (scoring); Tiggres kandidater ur tiggararket, med
 # temat ur Durrett-arket, producentarket och Poängmodellen (_commodity_lookup). Ett ark som brädan lästes ur någon
@@ -832,6 +833,12 @@ def _board_gap(strategy: str) -> str:
     return f"{strategy}@brädan"
 
 
+def _screen_part(strategy: str) -> str:
+    """fresh-nyckeln 'durrett@håven': strategins håv i screens.json är färsk och felfri (watch_fresh). Ett par som stod
+    på håvens TRÄFF-rad prövas mot den i stället för mot brädan (watch_alerts)."""
+    return f"{strategy}@håven"
+
+
 def _on_board(state: Optional[dict]) -> bool:
     """Parets läge kommer ur brädans rader: Rick Rule, Durrett och Tiggre har KÖP/BEVAKA bara där (håvarna: TRÄFF)."""
     from thor import candidates as tc
@@ -889,7 +896,8 @@ def watch_fresh(blobs: Optional[dict], today=None) -> dict:
     KÖP/BEVAKA, Viking Nine bara GOLDEN/READY/DEVELOPING). En lista utan användbar stämpel räknas inte som färsk,
     inte heller en del av Valhalls bräda som inte lästes eller inte går att pröva (_board_read, Long Screener i
     _source_ok; ett tappat ark tar watch_alerts bort): utan färska rader står strategins par då still, som när
-    körningen saknas."""
+    körningen saknas. Rick Rules, Durretts och Tiggres håvar får dessutom en egen nyckel ('durrett@håven',
+    _screen_part) när håven finns i screens.json, är felfri och screens.json är färsk — oberoende av brädan."""
     from datetime import date
     t0 = date.fromisoformat(str(today)[:10]) if today else date.today()
     b = _dict(blobs)
@@ -900,6 +908,12 @@ def watch_fresh(blobs: Optional[dict], today=None) -> dict:
         stamps = [x for k in keys if k not in _NOT_LISTS for x in _stamps(k, b.get(k), s)]
         if stamps and all(_recent(x, t0) for x in stamps):
             out[s] = max(str(x)[:10] for x in stamps)
+    scr = b.get("screens")
+    for s in _BOARD_DEPS:                                # en håv som saknas i körningen är ingen tom lista
+        if isinstance(_dict(_dict(scr).get("screens")).get(s), dict) and _source_ok("screens", scr, s):
+            stamp = _stamps("screens", scr, s)[0]
+            if _recent(stamp, t0):
+                out[_screen_part(s)] = str(stamp)[:10]
     return out
 
 
@@ -984,12 +998,15 @@ def watch_alerts(watch_data: Optional[dict], rows: Optional[list], prev: Optiona
     och ett par vars egen rad är gammal behåller förra läget — en körning som inte gick är ingen övergång; likaså ett
     par på brädans rader när strategins del av Valhalls bräda inte lästes ('strategi@brädan' i frozen) eller byggdes
     utan ett ark den beror av (sheets = watch_sheets(blobs) mot minnet, _sheet_gaps) — då är brädan inte heller
-    färsk för strategin. En färsk lista utan aktien är däremot 'föll ur listan', även när listan är tom.
+    färsk för strategin. Ett par som stod på håvens TRÄFF-rad (Rick Rule, Durrett, Tiggre) och inte står på brädan
+    i dag prövas i stället mot håvens egen körning ('durrett@håven' i fresh, eller en färsk TRÄFF-rad), oberoende av
+    brädan. En färsk lista utan aktien är däremot 'föll ur listan', även när listan är tom.
     Tillståndet: {"items": {"TICKER|strategi": {"id", "in_list", "class", "status"}}, "sheets": {ark: senast läst}};
     "sheets" saknas tills brädans ark gått att pröva en gång."""
     if rows is None or not isinstance(watch_data, dict):
         return [], (prev if isinstance(prev, dict) else {"items": {}})
     import watchlist as wl
+    from thor import candidates as tc
     first = not isinstance(prev, dict)
     seen = _dict(_dict(prev).get("items"))
     known = _dict(prev).get("sheets")
@@ -999,6 +1016,8 @@ def watch_alerts(watch_data: Optional[dict], rows: Optional[list], prev: Optiona
     raw_ids = {str(r.get("id")) for r in raw if isinstance(r, dict) and r.get("id")}   # lagrade id (inte påhittade)
     asof: dict = {s: d for s, d in (fresh or {}).items() if s not in gaps}
     ran = set(asof) | {c.strategy for c in rows if not c.stale}
+    ran |= {_screen_part(c.strategy) for c in rows                 # en färsk TRÄFF-rad: håven körde
+            if c.strategy in _BOARD_DEPS and c.status_class == tc.TRAFF and not c.stale}
     for c in rows:
         asof[c.strategy] = max(asof.get(c.strategy, ""), c.asof or "")
     items, alerts = {}, []
@@ -1013,14 +1032,17 @@ def watch_alerts(watch_data: Optional[dict], rows: Optional[list], prev: Optiona
                "class": st["status_class"], "status": st["status"] if st["in_list"] else ""}
         # ett nytt par en luckdag får sin baslinje först när brädan är hel (första körningen larmar ändå inte)
         gap = s in gaps and ((before is None and not first) or _on_board(before) or _on_board(now))
-        if s in frozen or k in frozen or s not in ran or st["stale"] or gap:
+        # håvparet (stod på TRÄFF-raden, står inte på brädan i dag) går på håvens körning; brädans par som förut
+        run = _screen_part(s) if (s in _BOARD_DEPS and before is not None and before.get("in_list")
+                                  and not _on_board(before) and not _on_board(now)) else s
+        if s in frozen or k in frozen or run not in ran or st["stale"] or gap:
             if before is not None:
                 items[k] = before
             continue
         items[k] = now
         if first or before is None or not it["alert"]:
             continue
-        a = _watch_alert(it, before, now, st, asof.get(s, ""))
+        a = _watch_alert(it, before, now, st, asof.get(run, ""))
         if a:
             alerts.append(a)
     known = _sheets_seen(known, sheets)
