@@ -84,8 +84,11 @@ def segment_top(api, nordic: list, global_: list, table, save=None, no_save: boo
     except Exception as exc:
         log.warning("Segmentens största gick inte att räkna: %s — registret är sparat ändå.", exc)
         return {}
-    for line in ust.describe(payload):
-        log.info("Störst: %s", line)
+    try:
+        for line in ust.describe(payload):
+            log.info("Störst: %s", line)
+    except Exception as exc:                      # bara loggen — registret och listan påverkas inte
+        log.warning("Segmentens största gick inte att beskriva: %s", exc)
     if no_save:
         return {}
     try:
