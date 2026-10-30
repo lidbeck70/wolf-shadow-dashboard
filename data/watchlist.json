@@ -1,0 +1,27 @@
+{
+  "items": [
+    {
+      "added": "2026-10-30",
+      "alert": true,
+      "at_add": {
+        "asof": "2026-10-30",
+        "class": "KÖP",
+        "entry": 0.81,
+        "status": "rad 3 · setup A · GUL regim",
+        "stop": 0.73,
+        "target": null
+      },
+      "id": "305821ab19",
+      "levels": {
+        "entry": null,
+        "stop": null,
+        "target": null
+      },
+      "name": "Enorama Pharma",
+      "note": "",
+      "source": "thor",
+      "strategy": "momentum",
+      "ticker": "ERMA.ST"
+    }
+  ]
+}
