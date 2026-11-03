@@ -101,12 +101,19 @@ def test_spec_is_registered_and_matches_the_code():
 
 
 def test_signals_use_the_live_ratio_specs_and_the_engines_confirmation():
+    """S0 är regeln före 2026-11-03 — den som övriga kvoter fortfarande har i buy_support — och S3 är regeln
+    som ägaren valde för GLD/GDX och GLD/GDXJ: samma kvotnycklar, gruv-ETF:er och tröskel som panelen läser.
+    (Förr låste testet S0 mot motorns egen villkorsrad; motorn läser nu buy_support.evaluate.)"""
+    from alpha_regime import buy_support as bs
     for miner, key in ms.MINERS:
         spec = ms.live_spec(key)
         assert (spec.primary_num, spec.primary_den, spec.cheap_direction) == ("GLD", miner, "high")
     engine = open(os.path.join(ROOT, "alpha_regime", "engine.py"), encoding="utf-8").read()
-    assert '_ratio.status == "RUBBER_BAND_STRETCHED"' in engine and ms.STRETCHED == "RUBBER_BAND_STRETCHED"
-    assert 'in ("DENOMINATOR_CHEAP", "BOTH")' in engine and ms.S0_DRIVERS == ("DENOMINATOR_CHEAP", "BOTH")
+    assert "_bs.evaluate(_rk, _ratio, result.miner_margins)" in engine
+    assert bs.STRETCHED == ms.STRETCHED == "RUBBER_BAND_STRETCHED"
+    assert bs.ENGINE_DRIVERS == ms.S0_DRIVERS == ("DENOMINATOR_CHEAP", "BOTH")
+    assert bs.MARGIN_RULE == {key: miner for miner, key in ms.MINERS}
+    assert bs.MARGIN_MAX_PCT == ms.S3_M_MAX == 30.0 and bs.SPEC == ms.SPEC
 
 
 def test_no_rule_or_panel_code_reads_the_study():

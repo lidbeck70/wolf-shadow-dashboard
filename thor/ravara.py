@@ -291,19 +291,44 @@ def _ratios(st, theme: str, note) -> None:
                                          row.get("position") or "") if x)
             items.append((f"Guld/{pair['label'].lower()}", f"{row['current']:,.4g}", CYAN, sub))
     keys = ratio_keys(theme)
+    gold_rule = False
     if keys:
+        from alpha_regime import buy_support as bs
         from alpha_regime.commodity_ratios import fetch_all_ratios
         allr = fetch_all_ratios() or {}
-        for k in keys:
-            rr = allr.get(k)
-            if rr is None or rr.error:
-                continue
+        shown = [k for k in keys if allr.get(k) is not None and not allr[k].error]
+        margins = bs.compute_margins(shown)          # bara GLD/GDX och GLD/GDXJ — cachat 6 h, {} annars
+        for k in shown:
+            rr = allr[k]
+            if bs.uses_margin(k):
+                gold_rule = True
+                rule = margin_rule_text(bs.evaluate(k, rr, margins))
+            else:
+                rule = rr.driver.replace('_', ' ').lower()
             items.append((rr.label, f"{rr.current:,.4g}", RATIO_COLOR.get(rr.status, GREY),
-                          f"P{rr.percentile:.0f} · {rr.status.replace('_', ' ').lower()} · {rr.driver.replace('_', ' ').lower()}"))
+                          f"P{rr.percentile:.0f} · {rr.status.replace('_', ' ').lower()} · {rule}"))
     if not items:
         note(f"Inga kvoter för {label(theme).lower()}.")
         return
     st.markdown(cards.kpi_row(items), unsafe_allow_html=True)
+    gold_txt = (" För GLD/GDX och GLD/GDXJ visar raden panelens köpstöd sedan 2026-11-03: kvoten ≥ 90:e percentilen "
+                "och gruvornas marginalmätare ≤ 30:e." if gold_rule else "")
     st.markdown(f"<div style='color:{DIM};font-size:0.72rem;'>Guld/silver och guld/råvara: hög kvot = ett uns guld "
                 f"köper mycket av råvaran. Gummibanden: percentil i tio års historik — stretched = nämnaren billig "
-                f"relativt täljaren. Neutralt underlag, ingen signal.</div>", unsafe_allow_html=True)
+                f"relativt täljaren. Neutralt underlag, ingen signal.{gold_txt}</div>", unsafe_allow_html=True)
+
+
+def margin_rule_text(support) -> str:
+    """Kort utfall av köpstödsregeln för GLD/GDX och GLD/GDXJ (alpha_regime.buy_support) till KPI-raden —
+    i stället för drivaren, som inte avgör för de två kvoterna sedan 2026-11-03."""
+    from alpha_regime import buy_support as bs
+    d = support.details
+    mp, lim = d.get("margin_pct"), d.get("margin_max", bs.MARGIN_MAX_PCT)
+    marg = f"marginal P{bs.pct_text(mp, lim, at_most=True)}" if mp is not None else "marginalen saknas"
+    if support.reason == bs.MARGIN_CHEAP:
+        return f"köpstöd · {marg} ≤ {lim:.0f}"
+    if support.reason == bs.MARGIN_NOT_CHEAP:
+        return f"inget köpstöd · {marg} > {lim:.0f}"
+    if support.reason == bs.NOT_STRETCHED:
+        return f"inget köpstöd · kvoten inte fullt sträckt · {marg}"
+    return f"inget köpstöd · {marg}"

@@ -1,9 +1,10 @@
 """
-Gruvorna mot marginalen — GDX och GDXJ mot guldpris minus branschens AISC (kontext).
+Gruvorna mot marginalen — GDX och GDXJ mot guldpris minus branschens AISC.
 
 M = gruv-ETF:ns kurs / (guldpris − AISC). Låg percentil = gruvorna billiga per dollar marginal.
-Mätaren är BARA kontext: den får aldrig nå _compute_ratio_summary ('Gummisnoddar: …'), motorns +1
-eller någon annan signal. Inget nätverk — fejkade kursserier och fejkade AISC-rader.
+Sedan 2026-11-03 (ägarens beslut A efter backtestet) är M:s percentil en del av köpstödet för GLD/GDX och
+GLD/GDXJ, tillsammans med kvoten — men bara via alpha_regime/buy_support.py (regeln prövas i
+test_kopstod_gruvor.py). Ensam är mätaren ingen signal. Inget nätverk — fejkade kursserier och fejkade AISC-rader.
 """
 import inspect
 import math
@@ -431,7 +432,7 @@ def test_miners_follow_the_shown_ratio_keys():
         assert aui._margin_miners(keys) == []
 
 
-# ── Aldrig en signal ─────────────────────────────────────────────────────────
+# ── Bara via köpstödsregeln — ensam aldrig en signal ─────────────────────────
 def _ratio(key, **kw):
     spec = next(s for s in cr._RATIO_SPECS if s.key == key)
     base = dict(key=key, label=spec.label, denominator_label=spec.denominator_label,
@@ -450,41 +451,57 @@ def _gold_miner_ratios():
     return ratios
 
 
-def test_gauge_is_not_a_ratio_and_not_in_the_summary():
+def test_gauge_is_not_a_ratio_and_reaches_the_summary_only_through_the_rule():
+    """Förr: mätaren fick aldrig nå sammanräkningen. Sedan 2026-11-03 når den 'Gummisnoddar: …' bara genom
+    buy_support.evaluate — GLD/GDX sträckt på 96:e pct räknas med marginalen på 22:a, inte på 45:e eller utan."""
+    from alpha_regime import buy_support as bs
     assert cr.EXPOSURE_TO_RATIO["gold_miner"] == GOLD_MINER_KEYS
     assert cr.EXPOSURE_TO_RATIO["junior_miner"] == ["gdxj_gdx", "gold_gdxj"]
     assert all("margin" not in s.key for s in cr._RATIO_SPECS)
     assert all("margin" not in k for keys in cr.EXPOSURE_TO_RATIO.values() for k in keys)
     src = inspect.getsource(aui._compute_ratio_summary)
-    assert "margin" not in src.lower() and "_mm" not in src
-    assert aui._compute_ratio_summary(_gold_miner_ratios(), GOLD_MINER_KEYS) == "Gummisnoddar: 1 KÖP-STÖD, 3 NEUTRAL"
+    assert "_bs.evaluate(" in src and "_mm" not in src and "percentile" not in src
+    ratios = _gold_miner_ratios()
+    assert aui._compute_ratio_summary(ratios, GOLD_MINER_KEYS, {"GDX": _margin("GDX", 22.0)}) == (
+        "Gummisnoddar: 1 KÖP-STÖD, 3 NEUTRAL")
+    for margins in ({"GDX": _margin("GDX", 45.0)}, {"GDX": mm.MarginResult(miner="GDX", error="x")}, {}, None):
+        assert aui._compute_ratio_summary(ratios, GOLD_MINER_KEYS, margins) == "Gummisnoddar: 4 NEUTRAL"
+    assert bs.MARGIN_RULE == {"metal_miners": "GDX", "gold_gdxj": "GDXJ"} and bs.MARGIN_MAX_PCT == 30.0
 
 
-def test_engine_never_imports_the_gauge():
-    for name in ("engine.py", "commodity_ratios.py", "contrarian_signals.py"):
+def test_engine_reaches_the_gauge_only_through_the_rule():
+    """Motorn importerar inte mätaren själv — bara via buy_support.compute_margins; kvoterna och
+    kontrarianstegen läser den aldrig."""
+    for name in ("commodity_ratios.py", "contrarian_signals.py"):
         src = open(os.path.join(ROOT, "alpha_regime", name), encoding="utf-8").read()
         assert "miner_margin" not in src and "margin_ratio" not in src, name
+    eng = open(os.path.join(ROOT, "alpha_regime", "engine.py"), encoding="utf-8").read()
+    assert "import miner_margin" not in eng and "margin_ratio" not in eng and "_mm." not in eng
+    assert "_bs.compute_margins(result.detected_exposure)" in eng
 
 
-def test_engine_run_never_calls_the_gauge_and_keeps_one_confirmation(monkeypatch):
+def test_engine_run_computes_each_gauge_once_and_keeps_one_confirmation(monkeypatch):
+    """Förr: motorn anropade aldrig mätaren. Nu en gång per gruv-ETF som visas (GDX och GDXJ för guldgruvor),
+    resultaten följer med på RegimeResult.miner_margins, och det blir fortfarande högst en bekräftelse."""
     from alpha_regime import engine as eng
     idx = pd.bdate_range(end="2026-10-30", periods=300)
     c = np.linspace(100.0, 80.0, 300)
     df = pd.DataFrame({"Open": c, "High": c * 1.01, "Low": c * 0.99, "Close": c, "Volume": 1e5}, index=idx)
     calls = []
+
+    def compute(miner="GDX"):
+        calls.append(miner)
+        return _margin(miner, 22.0)
     monkeypatch.setattr(eng, "_fetch_price", lambda t, period="2y": df)
     monkeypatch.setattr(eng, "_fetch_fundamentals", lambda t: {"branch_name": "Gold Miners"})
     monkeypatch.setattr(eng, "_fetch_ratios", _gold_miner_ratios)
     monkeypatch.setattr(eng, "_fetch_context_gauges", lambda: {})
-    monkeypatch.setattr(mm, "compute", lambda *a, **k: calls.append(("compute", a)))
-    monkeypatch.setattr(mm, "_compute_cached", lambda *a, **k: calls.append(("_compute_cached", a)))
-    monkeypatch.setattr(mm, "build_result", lambda *a, **k: calls.append(("build_result", a)))
+    monkeypatch.setattr(mm, "compute", compute)
     r = eng.run_regime_analysis("NEM", mode="contrarian", market_ticker="SPY", with_sentiment=False)
-    assert calls == []
-    assert r.detected_exposure == GOLD_MINER_KEYS
+    assert calls == ["GDX", "GDXJ"]
+    assert r.detected_exposure == GOLD_MINER_KEYS and sorted(r.miner_margins) == ["GDX", "GDXJ"]
     assert [x for x in r.contrarian.rationale if x.startswith("Rubber Band:")] == [
-        "Rubber Band: Gold ETF / Gold Miners at 96th percentile — Gold Miners historically stretched cheap"]
-    assert not any("marginal" in x.lower() for x in r.contrarian.rationale)
+        "Rubber Band: GLD/GDX at 96th percentile — GDX cheap vs margin (22nd pct ≤ 30)"]
 
 
 # ── AppTest (inget nätverk) ──────────────────────────────────────────────────
@@ -527,7 +544,7 @@ def test_apptest_gauge_renders_from_fake_prices(monkeypatch):
     monkeypatch.setattr(mm, "is_stale", lambda newest, today=None: False)
     at = _run_margin(GOLD_MINER_KEYS)
     html = _texts(at)
-    assert "Gruvorna mot marginalen (kontext)" in html
+    assert "Gruvorna mot marginalen</p>" in html and "(kontext)" not in html
     for miner in ("GDX", "GDXJ"):
         res = mm.build_result(miner, prices[miner], prices["GC=F"])
         assert res.status == "OK"
@@ -536,7 +553,12 @@ def test_apptest_gauge_renders_from_fake_prices(monkeypatch):
     assert f"Guld 4{NB}010 − AISC 1{NB}785 (2026Q1, World Gold Council/Metals Focus) = 2{NB}225 USD/uns" in html
     assert "← BILLIGT MOT MARGINALEN" in html and "flex-wrap" in html
     caption = " ".join(c.value for c in at.caption)
-    assert "Bara kontext — ingår aldrig i signalerna" in caption
+    # Förr 'Bara kontext — ingår aldrig i signalerna'. Sedan 2026-11-03: del av köpstödet med kvoten, ensam ingen signal
+    assert "Bara kontext" not in caption and "ingår aldrig" not in caption
+    assert ("Sedan 2026-11-03 (ägarens beslut efter backtestet) är marginalen en del av köpstödet för GLD/GDX och "
+            "GLD/GDXJ, tillsammans med kvoten") in caption
+    assert "kvoten står vid ≥ 90:e percentilen och marginalmätaren vid ≤ 30:e" in caption
+    assert "Mätaren ensam är ingen signal — den hypotesen (H2) föll i backtestet." in caption
     assert "GDXJ räknas mot samma bransch-AISC" in caption
     # källraden läses ur raderna fönstret använder — 2016–2019 är helårstal, inte WGC/MF-kvartal
     start = mm.build_result("GDX", prices["GDX"], prices["GC=F"]).history_start
@@ -545,8 +567,9 @@ def test_apptest_gauge_renders_from_fake_prices(monkeypatch):
             "2019 (gäller 2019Q1–2020Q1)") in caption
     assert "AISC är branschsnittet per kvartal (World Gold Council/Metals Focus), senaste" not in caption
     assert not at.warning                                  # färsk tabell, data finns
-    for word in ("KÖP-STÖD", "SÄLJ-STÖD", "köpstöd"):
-        assert word not in html
+    cards = " ".join(m.value for m in at.markdown)         # korten själva gör inget köpstödsbesked …
+    assert "SÄLJ-STÖD" not in cards and "räknar det som köpstöd" not in cards
+    assert "köpstödets gräns 30" in cards and "left:30%" in cards     # … men visar regelns gräns på stapeln
 
 
 def test_apptest_stale_table_warns_once(monkeypatch):
@@ -588,9 +611,13 @@ def _regime(ratios):
                         commodity_ratios=ratios, detected_exposure=list(GOLD_MINER_KEYS))
 
 
-@pytest.mark.parametrize("pct", [3.0, 97.0])
-def test_apptest_contrarian_mode_places_the_gauge_and_keeps_the_summary(monkeypatch, pct):
-    """Billiga eller dyra gruvor mot marginalen — banderollens 'Gummisnoddar: …' och checklistan är desamma."""
+@pytest.mark.parametrize("pct,summary_text", [
+    (3.0, "Gummisnoddar: 1 KÖP-STÖD, 3 NEUTRAL"),
+    (97.0, "Gummisnoddar: 4 NEUTRAL"),
+])
+def test_apptest_contrarian_mode_places_the_gauge_and_counts_it_for_gld_gdx(monkeypatch, pct, summary_text):
+    """Förr var banderollen densamma för billiga och dyra gruvor mot marginalen. Sedan 2026-11-03 räknas
+    GLD/GDX (sträckt, 96:e pct) som KÖP-STÖD bara när GDX marginalmätare står ≤ 30 — checklistan är orörd."""
     from streamlit.testing.v1 import AppTest
     monkeypatch.setattr(aui, "_cached_deep_rows", lambda: ([], ""))
     monkeypatch.setattr(mm, "compute", lambda miner="GDX": _margin(miner, pct, newest_period="2026Q1"))
@@ -600,11 +627,11 @@ def test_apptest_contrarian_mode_places_the_gauge_and_keeps_the_summary(monkeypa
     assert not at.exception, at.exception
     md = [m.value for m in at.markdown]
     summary = [v for v in md if "Gummisnoddar:" in v]
-    assert len(summary) == 1 and "Gummisnoddar: 1 KÖP-STÖD, 3 NEUTRAL</div>" in summary[0]
+    assert len(summary) == 1 and f"{summary_text}</div>" in summary[0]
     # ordningen: snoddarna → marginalmätaren → checklistan
     i_band = next(i for i, v in enumerate(md) if "Rubber Band Gauges" in v)
     i_last_ratio = max(i for i, v in enumerate(md) if "GDX / SPY (Miners/Market)" in v)
-    i_margin = next(i for i, v in enumerate(md) if "Gruvorna mot marginalen (kontext)" in v)
+    i_margin = next(i for i, v in enumerate(md) if "Gruvorna mot marginalen</p>" in v)
     i_check = next(i for i, v in enumerate(md) if "Checklist" in v)
     assert i_band < i_last_ratio < i_margin < i_check
     assert "- Kontrollrad" in md and not any("marginal" in v.lower() for v in md[i_check:])

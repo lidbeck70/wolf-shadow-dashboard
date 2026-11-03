@@ -11,9 +11,10 @@ baslinjer, en moving-block-bootstrap och domarna H1–H3.
 
 De rena funktionerna (signaler, episoder, utfall, bootstrap, domar, rapport) står först. run()/main() hämtar
 kurserna (market_prices, "max") och sparar miner_margin_study.json i Gisten. Körs manuellt i Actions
-(miner-margin-study.yml). Ändrar inga regler: mätaren är fortfarande bara kontext i panelen. Avslutas med 0 även
-när hypoteserna faller, och med 1 bara när kurser saknas. Env: GITHUB_TOKEN (Gisten), BORSDATA_API_KEY
-(market_prices provar Börsdata först).
+(miner-margin-study.yml). Studien själv ändrar inga regler. Efter första körningen beslöt ägaren (2026-11-03, A)
+att S3 är köpstödet för GLD/GDX och GLD/GDXJ (alpha_regime/buy_support.py); S0 är regeln före 2026-11-03, som
+fortfarande gäller övriga kvoter. Avslutas med 0 även när hypoteserna faller, och med 1 bara när kurser saknas.
+Env: GITHUB_TOKEN (Gisten), BORSDATA_API_KEY (market_prices provar Börsdata först).
 """
 
 from __future__ import annotations
@@ -59,7 +60,7 @@ GOLD = mm.GOLD_TICKER                                     # "GC=F"
 MINERS = (("GDX", "metal_miners"), ("GDXJ", "gold_gdxj"))  # gruv-ETF och panelens kvotnyckel
 TICKERS = (GOLD_ETF, "GDX", "GDXJ", GOLD)
 STRETCHED = "RUBBER_BAND_STRETCHED"
-S0_DRIVERS = ("DENOMINATOR_CHEAP", "BOTH")                # motorns +1 ACCUMULATE (alpha_regime/engine.py)
+S0_DRIVERS = ("DENOMINATOR_CHEAP", "BOTH")                # S0 = regeln före 2026-11-03 (motorns +1 då)
 SIGNALS = (("S0", "nuvarande regel"), ("S1", "bara kvoten"), ("S2", "bara marginalen"),
            ("S3", "föreslagen ersättare"))
 
