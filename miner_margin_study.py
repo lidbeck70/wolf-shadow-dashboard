@@ -207,12 +207,13 @@ def worst_drawdown(miner, h: int = DD_DAYS) -> np.ndarray:
     return out
 
 
-def outcome_arrays(fr: pd.DataFrame) -> dict:
-    """{"tot_63": …, "rel_63": …, …, "dd_252": …} per position i ramen."""
+def outcome_arrays(fr: pd.DataFrame, asset: str = "miner", bench: str = "gld") -> dict:
+    """{"tot_63": …, "rel_63": …, …, "dd_252": …} per position i ramen. asset/bench är kolumnerna (här gruv-ETF:n
+    och GLD; pgm_band_study läser samma funktion med metall-ETF:n eller gruvan mot GLD)."""
     out = {}
     for h in HORIZONS:
-        out[f"tot_{h}"], out[f"rel_{h}"] = forward_returns(fr["miner"], fr["gld"], h)
-    out[f"dd_{DD_DAYS}"] = worst_drawdown(fr["miner"], DD_DAYS)
+        out[f"tot_{h}"], out[f"rel_{h}"] = forward_returns(fr[asset], fr[bench], h)
+    out[f"dd_{DD_DAYS}"] = worst_drawdown(fr[asset], DD_DAYS)
     return out
 
 
@@ -461,18 +462,19 @@ def proposals(miner: str, ratio: str, hyp: dict) -> list:
 
 
 # ── Data och AISC-tabellen (beskrivning) ─────────────────────────────────────
-def data_info(series: dict) -> dict:
+def data_info(series: dict, tickers=TICKERS) -> dict:
+    """{ticker: första/sista dag och antal dagskurser} för tickers (förval: den här studiens)."""
     out = {}
-    for t in TICKERS:
+    for t in tickers:
         s = _clean(series.get(t))
         out[t] = ({"first": _d(s.index[0]), "last": _d(s.index[-1]), "days": int(len(s))} if len(s)
                   else {"first": None, "last": None, "days": 0})
     return out
 
 
-def missing(series: dict) -> list:
-    """Tickers utan kurser (eller med färre än tre års dagskurser)."""
-    return [t for t in TICKERS if len(_clean(series.get(t))) < MIN_DAYS]
+def missing(series: dict, tickers=TICKERS) -> list:
+    """Tickers utan kurser (eller med färre än tre års dagskurser), bland tickers (förval: den här studiens)."""
+    return [t for t in tickers if len(_clean(series.get(t))) < MIN_DAYS]
 
 
 def aisc_info(rows=None, used: Optional[pd.Series] = None, today=None) -> dict:
@@ -651,12 +653,13 @@ def report_lines(res: dict) -> list:
 
 
 # ── I/O ──────────────────────────────────────────────────────────────────────
-def load(getter=None) -> dict:
-    """{ticker: dagsstängningar} för GLD, GDX, GDXJ och GC=F, längsta historiken (market_prices, "max")."""
+def load(getter=None, tickers=TICKERS) -> dict:
+    """{ticker: dagsstängningar} för tickers (förval GLD, GDX, GDXJ och GC=F), längsta historiken
+    (market_prices, "max")."""
     if getter is None:
         def getter(ticker):
             return cr._download_close(ticker, PERIOD)
-    return {t: getter(t) for t in TICKERS}
+    return {t: getter(t) for t in tickers}
 
 
 def run(getter=None, save=None, no_save=False, rows=None, n_boot: int = N_BOOT, today=None) -> dict:
