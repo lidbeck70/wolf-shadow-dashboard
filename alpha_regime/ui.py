@@ -55,6 +55,14 @@ try:
 except ImportError:
     pass
 
+# ── Optional: Gruvorna mot marginalen (CONTEXT ONLY) ─────────────────────────
+_MM_OK = False
+try:
+    from alpha_regime import miner_margin as _mm
+    _MM_OK = True
+except ImportError:
+    pass
+
 logger = logging.getLogger(__name__)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -1332,6 +1340,206 @@ def _render_context_gauges(r: RegimeResult) -> None:
             )
 
 
+# ── Gruvorna mot marginalen (CONTEXT ONLY) ────────────────────────────────────
+# M = miner ETF price / (gold − industry AISC); low percentile = miners cheap per dollar of margin.
+# Presentation only: nothing here feeds _classify, _classify_driver, the engine's +1 confirmation or
+# the 'Gummisnoddar' count in _compute_ratio_summary.
+
+_MM_MINERS = (("metal_miners", "GDX"), ("gold_gdxj", "GDXJ"))   # shown ratio key → miner ETF
+_MM_CHEAP_PCT = 25   # lowest quartile of M = 'billigt mot marginalen' (the bar's cheap zone, left)
+_MM_DEAR_PCT = 75    # highest quartile = 'dyrt mot marginalen'
+_MM_STALE_TEXT = "AISC-tabellen är äldre än två kvartal — uppdatera alpha_regime/miner_margin.py"
+
+
+def _margin_miners(keys) -> list:
+    """GDX when GLD/GDX is shown, GDXJ when GLD/GDXJ is shown (gold_miner / junior_miner exposures)."""
+    shown = keys or []
+    return [miner for key, miner in _MM_MINERS if key in shown]
+
+
+def _margin_word(pct) -> tuple:
+    """(word, color) for M's percentile — from the same rounded number as the ordinal on the card."""
+    p = int(round(float(pct)))
+    if p <= _MM_CHEAP_PCT:
+        return "billigt mot marginalen", "#00E5FF"
+    if p >= _MM_DEAR_PCT:
+        return "dyrt mot marginalen", "#c9a84c"
+    return "normalt mot marginalen", "#8899aa"
+
+
+def _margin_value_text(res) -> Optional[str]:
+    """'GDX kostar 0,031 per dollar marginal per uns — 22:a percentilen sedan 2016 (median 0,045):
+    billigt mot marginalen'. None when M or its percentile is missing or not finite."""
+    cur = _finite_pos(getattr(res, "current", None))
+    pct = getattr(res, "percentile", None)
+    if cur is None or pct is None or not math.isfinite(float(pct)):
+        return None
+    med = _finite_pos(getattr(res, "median", None))
+    year = (getattr(res, "history_start", "") or "")[:4]
+    since = f" sedan {year}" if year.isdigit() else ""
+    med_txt = f" (median {_sv_num(med, _sig_decimals(med, 2))})" if med is not None else ""
+    return (f"{res.miner} kostar {_sv_num(cur, _sig_decimals(cur, 2))} per dollar marginal per uns — "
+            f"{_sv_ord(pct)} percentilen{since}{med_txt}: {_margin_word(pct)[0]}")
+
+
+def _margin_line_text(res) -> Optional[str]:
+    """'Guld 4 010 − AISC 1 785 (2026Q1, World Gold Council/Metals Focus) = 2 225 USD/uns'.
+    The margin is the difference of the two rounded numbers, so the line always adds up."""
+    gold = _finite_pos(getattr(res, "gold_price", None))
+    aisc = _finite_pos(getattr(res, "aisc", None))
+    if gold is None or aisc is None:
+        return None
+    g, a = int(round(gold)), int(round(aisc))
+    src = ", ".join(x for x in (getattr(res, "aisc_period", ""), getattr(res, "aisc_source", "")) if x)
+    src_txt = f" ({src})" if src else ""
+    return f"Guld {_sv_num(g, 0)} − AISC {_sv_num(a, 0)}{src_txt} = {_sv_num(g - a, 0)} USD/uns"
+
+
+def _span_text(span) -> str:
+    """'S&P Global helår 2016 (gäller 2016Q4–2017Q4)' · 'Refinitiv GFMS helår 2018' — one AISC row and the
+    quarters of the window it covers (named only when that differs from its own period)."""
+    period, publisher, _series, first, last = span
+    year = period[:4]
+    own = (period, period) if "Q" in period else (f"{year}Q1", f"{year}Q4")
+    kind = "" if "Q" in period else "helår "
+    covers = "" if (first, last) == own else f" (gäller {first}{'' if first == last else '–' + last})"
+    return f"{publisher} {kind}{period}{covers}"
+
+
+def _margin_source_text(results) -> str:
+    """Where the window's AISC comes from, read from the rows the result really used (the window moves and
+    the table grows), e.g. 'AISC är mest branschsnittet per kvartal (World Gold Council/Metals Focus), men
+    en del av fönstret (sedan 2016-11-03) bygger på helårstal eller andra källor och metoder: S&P Global
+    helår 2016 (gäller 2016Q4–2017Q4), Refinitiv GFMS helår 2018 och Metals Focus helår 2019 (gäller
+    2019Q1–2020Q1) — där är M mindre jämförbart.'"""
+    main = f"branschsnittet per kvartal ({_mm.MAIN_PUBLISHER})"
+    ok = [r for r in results if getattr(r, "status", "") == "OK" and getattr(r, "aisc_spans", None)]
+    if not ok:
+        return f"AISC är mest {main}; äldre år är helårstal, delvis från andra källor och metoder."
+    res = min(ok, key=lambda r: getattr(r, "history_start", "") or "9999")
+    others = [_span_text(s) for s in res.aisc_spans if s[2] != _mm.MAIN_SERIES]
+    if not others:
+        return f"AISC är {main}."
+    listed = others[0] if len(others) == 1 else ", ".join(others[:-1]) + " och " + others[-1]
+    since = f" (sedan {res.history_start})" if res.history_start else ""
+    return (f"AISC är mest {main}, men en del av fönstret{since} bygger på helårstal eller andra källor "
+            f"och metoder: {listed} — där är M mindre jämförbart.")
+
+
+def _render_margin_card(res, idx: int) -> None:
+    """One miner: header + percentile badge, the M line, a bar with the cheap zone on the LEFT, the
+    margin line and a weekly sparkline. Same mobile patterns as the ratio card (flex-wrap, no-break
+    spaces in numbers, full-width chart)."""
+    value_txt = _margin_value_text(res) if res.status == "OK" else None
+    if value_txt is None:
+        st.warning(f"DATA_GAP — {res.miner} mot marginalen: {res.error or 'data saknas'}")
+        return
+
+    pct = max(0.0, min(100.0, float(res.percentile)))
+    _, color = _margin_word(res.percentile)
+    fg = "#0D1117" if color in ("#00E5FF", "#c9a84c") else "#FFFFFF"
+    st.markdown(
+        f'<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:4px 0 2px;">'
+        f'<span style="font-weight:700;color:#e8e4dc;">{res.miner} mot marginalen</span>'
+        f'{_css_badge(f"{_sv_ord(res.percentile)} pct", color, fg)}</div>'
+        f'<div style="font-size:0.8rem;color:#aabbcc;margin:2px 0 6px;">{value_txt}</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f"""<div style="margin:4px 0 2px;">
+          <div style="position:relative;background:#1a2030;border-radius:6px;height:24px;overflow:hidden;">
+            <div style="position:absolute;left:0;width:{_MM_CHEAP_PCT}%;top:0;bottom:0;background:rgba(0,229,255,0.28);"></div>
+            <div style="position:absolute;left:0;width:{pct:.1f}%;top:0;bottom:0;
+                background:linear-gradient(to right,#2a3545,{color}55);pointer-events:none;"></div>
+            <div style="position:absolute;left:{pct:.1f}%;top:2px;bottom:2px;width:3px;
+                background:#ffffff;border-radius:2px;transform:translateX(-50%);pointer-events:none;"></div>
+            <span style="position:absolute;left:4px;top:50%;transform:translateY(-50%);
+                font-size:0.6rem;color:#6677aa;">0</span>
+            <span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+                font-size:0.6rem;color:#6677aa;pointer-events:none;">50</span>
+            <span style="position:absolute;right:4px;top:50%;transform:translateY(-50%);
+                font-size:0.6rem;color:#6677aa;">100</span>
+          </div>
+          <div style="font-size:0.6rem;color:#00E5FF;text-align:left;margin-top:2px;">← BILLIGT MOT MARGINALEN</div>
+        </div>""",
+        unsafe_allow_html=True,
+    )
+    margin_txt = _margin_line_text(res)
+    if margin_txt:
+        st.markdown(
+            f'<div style="font-size:0.78rem;color:#aabbcc;margin:2px 0 6px;">⛏️ {margin_txt}</div>',
+            unsafe_allow_html=True,
+        )
+
+    if res.sparkline_dates and res.sparkline_values:
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=res.sparkline_dates,
+            y=res.sparkline_values,
+            mode="lines",
+            line=dict(color="#00E5FF", width=1.2),
+            fill="tozeroy",
+            fillcolor="rgba(0,229,255,0.05)",
+            name=f"{res.miner} / marginal",
+        ))
+        fig.add_hline(
+            y=res.current,
+            line_dash="dot", line_color="#c9a84c", line_width=1,
+            annotation_text=f"  {_sv_num(res.current, _sig_decimals(res.current, 2))}",
+            annotation_font_color="#c9a84c",
+            annotation_font_size=9,
+        )
+        if _finite_pos(res.median) is not None:
+            fig.add_hline(y=res.median, line_dash="dash", line_color="#607080", line_width=1)
+        fig.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="#0D1117",
+            font=dict(color="#aabbcc", size=9),
+            xaxis=dict(gridcolor="rgba(138,133,120,0.08)", title=""),
+            yaxis=dict(gridcolor="rgba(138,133,120,0.08)", title=""),
+            margin=dict(l=36, r=16, t=4, b=24),
+            height=110,
+            showlegend=False,
+        )
+        st.plotly_chart(fig, use_container_width=True, key=f"mm_spark_{res.miner}_{idx}")
+
+
+def _render_miner_margin(keys) -> None:
+    """'Gruvorna mot marginalen (kontext)' under the rubber band gauges when GLD/GDX or GLD/GDXJ is
+    shown. CONTEXT ONLY — never part of the signals, the count or the confirmation."""
+    miners = _margin_miners(keys)
+    if not miners or not _MM_OK:
+        return
+    results = []
+    for miner in miners:
+        try:
+            results.append(_mm.compute(miner))
+        except Exception as exc:
+            logger.debug("miner_margin(%s): %s", miner, exc)
+            results.append(_mm.MarginResult(miner=miner, error="beräkningen misslyckades"))
+
+    st.markdown(
+        '<p style="color:#607080;font-weight:600;font-size:0.9rem;margin:20px 0 4px;">'
+        'Gruvorna mot marginalen (kontext)</p>',
+        unsafe_allow_html=True,
+    )
+    caption = ("Bara kontext — ingår aldrig i signalerna, i Gummisnoddar-räkningen eller i panelens "
+               "bekräftelse. M = ETF-kursen ÷ (guldpriset − branschens AISC per uns); låg percentil i M:s "
+               f"egen historik = gruvorna billiga per dollar marginal. {_margin_source_text(results)} "
+               "Senaste kända AISC gäller tills nästa kvartal läggs in.")
+    if "GDXJ" in miners:
+        caption += (" GDXJ räknas mot samma bransch-AISC som GDX — en approximation, juniorbolagens egna "
+                    "kostnader finns inte i tabellen.")
+    st.caption(caption)
+    if any(getattr(res, "stale", False) for res in results):
+        st.warning(_MM_STALE_TEXT)
+
+    for i, res in enumerate(results):
+        _render_margin_card(res, idx=i)
+        if i < len(results) - 1:
+            st.markdown('<hr style="border-color:#2a3040;margin:8px 0;">', unsafe_allow_html=True)
+
+
 # ── Mode renderers ────────────────────────────────────────────────────────────
 
 def _render_quality_mode(r: RegimeResult) -> None:
@@ -1396,6 +1604,8 @@ def _render_contrarian_mode(r: RegimeResult, exposure_override=None) -> None:
 
     # 3. Rubber band gauge + custom builder
     _render_rubber_band_gauge(r, exposure_override)
+    # 3b. Gruvorna mot marginalen — CONTEXT ONLY, outside the 'Gummisnoddar' count and the engine's +1
+    _render_miner_margin(_display_keys)
     _render_custom_ratio_builder()
 
     # 4. Gold context gauges (currency-driven move detection — CONTEXT ONLY)
