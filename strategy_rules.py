@@ -667,7 +667,8 @@ DEEP_CONTRARIAN = Playbook(
          "PORTFÖLJ → Positioner: Deep Contrarian-innehav har fältet "
          "'Tranches deployed' (0/3–3/3) som visar var du är.", True),
         ("Bekräftelse: gummisnodde ≥ 90:e percentilen — plus ett villkor till",
-         "T.ex. Gold/Silver-ratio historiskt sträckt = råvaran max-billig vs motvikten. Kvoten räcker inte "
+         "T.ex. Gold/Silver-, Gold/Platinum- eller Gold/Palladium-ratio historiskt sträckt = råvaran "
+         "max-billig vs motvikten. Kvoten räcker inte "
          "ensam. För guldgruvorna (GLD/GDX, GLD/GDXJ) ska dessutom marginalmätaren stå på ≤ 30:e percentilen: "
          "gruvornas kurs per dollar marginal (guldpriset minus branschens AISC) bland de lägsta 30 % i sin "
          "egen historik (sedan 2026-11-03, ägarens beslut efter backtestet). För övriga kvoter ska det "

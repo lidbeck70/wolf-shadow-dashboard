@@ -224,7 +224,8 @@ _MARGIN_SETS = (None, {}, {"GDX": _margin("GDX", 5.0), "GDXJ": _margin("GDXJ", 5
 def test_other_ratios_keep_the_old_rule_for_every_driver_status_and_percentile(key):
     """Alla kvoter utom GLD/GDX och GLD/GDXJ: motorns villkor och sammanräkningen ger exakt samma utfall som
     koden före 2026-11-03, för varje drivare × status × percentil — vad marginalmätaren än säger."""
-    assert key in ("gold_silver", "gold_oil", "silver_miners", "copper_gold", "gdxj_gdx", "silver_juniors", "gdx_spy")
+    assert key in ("gold_silver", "gold_oil", "silver_miners", "copper_gold", "gdxj_gdx", "silver_juniors", "gdx_spy",
+                   "gold_platinum", "gold_palladium")
     for status, driver, pct in itertools.product(STATUSES, DRIVERS, PCTS):
         r = _ratio(key, status=status, percentile=pct, driver=driver)
         old_engine, old_summary = _old_engine_confirms(r), _old_summary({key: r}, [key])

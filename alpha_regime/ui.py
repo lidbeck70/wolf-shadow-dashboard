@@ -31,6 +31,7 @@ def _cached_deep_rows():
 
 # ── Optional: direct commodity ratio helpers for custom builder ───────────────
 _CR_OK = False
+_CR_EXPOSURE_TO_RATIO: dict = {}
 try:
     from alpha_regime.commodity_ratios import (
         _download_close  as _cr_download_close,
@@ -39,6 +40,7 @@ try:
         _classify_driver as _cr_classify_driver,
         _window_info as _cr_window_info,
         RatioResult      as _CRRatioResult,
+        EXPOSURE_TO_RATIO as _CR_EXPOSURE_TO_RATIO,
     )
     _CR_OK = True
 except ImportError:
@@ -80,6 +82,29 @@ _MARKET_OPTIONS = {
     "GLD — Gold":                      "GLD",
     "SLV — Silver":                    "SLV",
 }
+
+# Deep Contrarian 'Commodity exposure' picker: option → exposure key in commodity_ratios.EXPOSURE_TO_RATIO
+# (the ratio lists are read from there, never copied). "Auto" = auto-detect, "None" = no gauges.
+_EXPOSURE_PICKER: dict = {
+    "Gold Miners": "gold_miner",
+    "Junior Miners": "junior_miner",
+    "Silver": "silver",
+    "Platinum": "platinum",
+    "Palladium": "palladium",
+    "Oil": "oil",
+    "Copper": "copper",
+}
+_EXP_OPTIONS = ["Auto", *_EXPOSURE_PICKER, "None"]
+
+
+def _exposure_override(option: str):
+    """The picker's choice as the override the contrarian view reads: None (Auto → auto-detect), [] ("None")
+    or a copy of the exposure's ratio keys from commodity_ratios.EXPOSURE_TO_RATIO."""
+    if option == "None":
+        return []
+    exp = _EXPOSURE_PICKER.get(option)
+    return None if exp is None else list(_CR_EXPOSURE_TO_RATIO.get(exp, []))
+
 
 _VERDICT_COLORS = {
     "BUY":   "#1aaa5a",
@@ -1811,23 +1836,13 @@ def render_alpha_regime() -> None:
     if mode == "contrarian":
         _exp_col, _ = st.columns([2, 5])
         with _exp_col:
-            _EXP_OPTIONS = ["Auto", "Gold Miners", "Junior Miners", "Silver", "Oil", "Copper", "None"]
-            _EXP_TO_KEY: dict[str, object] = {
-                "Auto":          None,
-                "Gold Miners":   ["metal_miners", "gdxj_gdx", "gold_gdxj", "gdx_spy"],
-                "Junior Miners": ["gdxj_gdx", "gold_gdxj"],
-                "Silver":        ["gold_silver", "silver_juniors"],
-                "Oil":           ["gold_oil"],
-                "Copper":        ["copper_gold"],
-                "None":          [],
-            }
             _exp_sel = st.selectbox(
                 "Commodity exposure",
                 options=_EXP_OPTIONS,
                 key="ar_exposure",
                 help="Override auto-detected commodity sector for the rubber band gauges",
             )
-            exposure_override = _EXP_TO_KEY.get(_exp_sel)
+            exposure_override = _exposure_override(_exp_sel)
 
     # ── State management ──────────────────────────────────────────────────────
     cache_key = f"ar_result_{ticker}_{mode}_{market_ticker}"

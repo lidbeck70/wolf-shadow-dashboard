@@ -172,6 +172,8 @@ _THEMES: list[ThemeSpec] = [
 # Rubber-band ratio keys per theme (for cross-linking in the UI)
 THEME_RATIO_KEYS: dict[str, list[str]] = {
     "silver":   ["gold_silver", "silver_juniors"],
+    "platina": ["gold_platinum", "gold_palladium"],
+    "palladium": ["gold_palladium", "gold_platinum"],
     "guld":     ["metal_miners", "gdxj_gdx", "gold_gdxj", "gdx_spy"],
     "koppar":   ["copper_gold"],
     "olja":     ["gold_oil"],
