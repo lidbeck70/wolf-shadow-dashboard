@@ -89,7 +89,10 @@ signals täckning.
   täckning, från första dagen 2012-01-01 eller senare då S1 kan räknas. Bara hela horisonter räknas.
 * **Sekundärt, bara beskrivande och utan dom**:
   * **Gruvorna**: samma episoders 252-dagarsavkastning mot GLD för IMPUY och SBSW, där kurser finns. Köpet sker
-    första dagen efter t då både gruvan och GLD har en stängning. Gruvans baslinje redovisas bredvid.
+    första dagen efter t då både gruvan och GLD har en stängning. Det kräver att de båda också har en stängning
+    på t eller tidigare. En episod som börjar före gruvans första notering får därför inget utfall, och köpet
+    flyttas inte fram till noteringsdagen. Samma sak gäller ETF:erna, i huvudutfallen och korsvis. Gruvans
+    baslinje redovisas bredvid.
   * **Korsvis**: palladiums utfall (PALL) på Gold/Platinum-episoderna och platinans utfall (PPLT) på
     Gold/Palladium-episoderna. Panelens exponeringslistor (`EXPOSURE_TO_RATIO`) visar nämligen också den andra
     metallens snodd.
@@ -176,3 +179,4 @@ kurser som krävs saknas, och då sparas inget.
 | Version | Datum | Ändring |
 |---|---|---|
 | 1 | 2026-11-04 | Första versionen, före första körningen. |
+| 1 | 2026-11-04 | Förtydligat före första körningen, efter verifieringen. Under *Sekundärt* står nu att en episod som börjar före gruvans (eller ETF:ens) första notering inte får något utfall. Den gamla meningen kunde läsas som att köpet flyttas fram till noteringsdagen, kanske flera år efter t. Det stämde inte med den förregistrerade designen, som mäter samma episoders utfall där kurser finns. Studien räknade redan så, så beräkningarna är oförändrade. |

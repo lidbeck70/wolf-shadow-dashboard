@@ -366,6 +366,44 @@ def test_entry_is_the_first_outcome_day_after_the_signal_day_and_only_complete_h
     assert all(np.isnan(v).all() for v in empty["arrays"].values()) and pg.entry_date(empty, 5) is None
 
 
+def test_an_episode_before_the_first_quote_gets_no_outcome_and_the_buy_is_not_moved_to_the_listing_day():
+    """Verifieringen: en episod före gruvans (eller ETF:ens) första notering får inget utfall. Köpet flyttas inte
+    fram till noteringsdagen, inte ens när den är dagen efter t. Specen säger detsamma."""
+    text = open(os.path.join(ROOT, pg.SPEC), encoding="utf-8").read()
+    for w in ("En episod som börjar före gruvans första notering får därför inget utfall",
+              "flyttas inte fram till noteringsdagen", "Samma sak gäller ETF:erna, i huvudutfallen och korsvis",
+              "på t eller tidigare"):
+        assert w in text, w
+    listing = pd.Timestamp("2017-02-13")                                   # en måndag, som SBSW i fejkdatan
+    out_idx = pd.bdate_range("2004-11-18", "2020-12-31")
+    rng = np.random.default_rng(21)
+    gld = pd.Series(np.exp(np.cumsum(rng.normal(0, 0.01, len(out_idx)))), index=out_idx)
+    miner = pd.Series(np.exp(np.cumsum(rng.normal(0, 0.03, len(out_idx)))), index=out_idx)[out_idx >= listing]
+    sig_idx = pd.DatetimeIndex(["2012-03-01", "2016-06-01", "2017-02-10", "2017-02-11", listing, "2017-02-14"])
+    out = pg.outcomes_on(sig_idx, miner, gld)
+    a = out["arrays"]
+    for i in range(4):                       # år före noteringen, fredagen före och lördagen före: inget utfall
+        assert pg.entry_date(out, i) is None, sig_idx[i]
+        assert all(np.isnan(v[i]) for v in a.values()), sig_idx[i]
+        assert out["pos"][i] == -1
+    m = miner[miner.index > listing]
+    assert pg.entry_date(out, 4) == "2017-02-14" and pg.entry_date(out, 5) == "2017-02-15"
+    g = gld[gld.index > listing]
+    assert a["rel_252"][4] == pytest.approx(m.iloc[252] / m.iloc[0] - g.iloc[252] / g.iloc[0])
+    # genom analyze: gruvans utfall saknas på episoderna före noteringen men inte efter, och baslinjen likaså
+    idx = pd.bdate_range("2012-01-02", "2020-12-31")
+    fr = _fake_frame([idx.get_loc(pd.Timestamp(d)) for d in ("2016-06-01", "2017-02-10", "2018-03-01")],
+                     n=len(idx), first="2012-01-02")
+    res = pg.analyze(fr, gld, gld, miners={"SBSW": miner}, n_boot=20)
+    eps = res["signals"]["S1"]["episodes"]
+    assert [e["start"] for e in eps] == ["2016-06-01", "2017-02-10", "2018-03-01"]
+    assert [e["miners_rel_252"]["SBSW"] is None for e in eps] == [True, True, False]
+    assert res["miners"]["SBSW"]["signals"]["S1"]["n_252"] == 1
+    base = res["miners"]["SBSW"]["baseline"]["n_252"]
+    assert base == int(np.isfinite(pg.outcomes_on(idx, miner, gld)["arrays"]["rel_252"]).sum())
+    assert base == len(miner) - 1 - 252          # bara signaldagar från noteringen: köp dagen efter, 252 dagar till
+
+
 def test_episode_outcomes_are_the_metal_etf_against_gld(frames, result):
     for name, key in pg.BANDS:
         fr = frames[key]
