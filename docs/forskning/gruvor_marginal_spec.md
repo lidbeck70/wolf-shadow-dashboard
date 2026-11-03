@@ -86,8 +86,12 @@ approximation för juniorerna. Varje hypotes avgörs för sig per gruv-ETF.
 
 * **H1 S3 är en bättre bekräftelse än S0**: S3 hittar fler köpstödsepisoder än S0, och snittet för S3:s 252-dagars
   avkastning mot GLD är > 0 och ≥ S0:s. S0 och S3 jämförs över S3:s täckning, alltså episoder som börjar i
-  marginalperioden. Har S0 ingen episod med hel 252-dagarshorisont räknas det som "ingen signal", och då räcker
-  det att S3:s snitt är > 0.
+  marginalperioden. I H1 räknas S0:s episoder **på samma dagar som S3:s**: en dag där S3 inte kan räknas (ingen
+  M) räknas som "ingen signal" också för S0. En S0-period som redan pågick när marginalperioden började öppnar
+  därför en episod den första dagen, precis som S3. Annars skulle S3, men inte S0, kunna få en extra episod vid
+  periodens början, och med några få episoder kan en enda avgöra H1. S0:s rad i signaltabellen räknas över hela
+  kvotperioden och kan därför ha en episod mindre i marginalperioden än H1:s räkning. Har S0 ingen episod med hel
+  252-dagarshorisont räknas det som "ingen signal", och då räcker det att S3:s snitt är > 0.
 * **H2 S2 ensam slår baslinjen**: snittet för S2:s 252-dagars avkastning mot GLD är > baslinjens snitt, och
   95 %-intervallet från en **moving-block-bootstrap med cirkulära block** (block om 63 handelsdagar, 5 000
   dragningar, frö 20261103) har en nedre gräns > baslinjens snitt. Baslinjen är köp varje handelsdag i S2:s
@@ -108,8 +112,8 @@ episodstart räknas inte, men antalet redovisas. Baslinjens snitt hålls fast.
 * **Golv**: alla tre hypoteserna kräver **minst 3 episoder med hel 252-dagarshorisont**. För H3 står golvet i själva
   hypotesen. För H1 och H2 gäller samma golv, eftersom en enda episod annars kan avgöra (med en episod blir
   bootstrapintervallet en punkt).
-* **H1 godkänd**: S3 har fler episoder än S0 i marginalperioden, alla episoder medräknade. S3 har minst 3 hela
-  episoder. S3:s snitt är > 0. Och S3:s snitt är ≥ S0:s, eller så har S0 ingen hel episod.
+* **H1 godkänd**: S3 har fler episoder än S0 i marginalperioden, alla episoder medräknade och S0 räknad på S3:s
+  dagar (se H1). S3 har minst 3 hela episoder. S3:s snitt är > 0. Och S3:s snitt är ≥ S0:s, eller så har S0 ingen hel episod.
 * **H2 godkänd**: S2 har minst 3 hela episoder. S2:s snitt är > baslinjens snitt, och 95 %-intervallets nedre gräns
   är > baslinjens snitt.
 * **H3 godkänd**: S1 har minst 3 hela episoder från 2012-01-01, och S1:s snitt är > 0.
@@ -163,4 +167,4 @@ när kurser saknas, och då sparas inget.
 
 | Version | Datum | Ändring |
 |---|---|---|
-| 1 | 2026-11-03 | Första versionen, före första körningen. |
+| 1 | 2026-11-03 | Första versionen, före första körningen. Rättad samma dag, också före första körningen: i H1 räknas S0:s episoder på S3:s dagar, så att S3 inte får en extra episod vid marginalperiodens början. |

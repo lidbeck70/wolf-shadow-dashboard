@@ -246,6 +246,21 @@ def coverage(fr: pd.DataFrame, sig: str, start=START) -> Optional[dict]:
     return {"first": _d(fr.index[first]), "last": _d(fr.index[-1]), "pos": first, "days": int(len(fr) - first)}
 
 
+def h1_starts(fr: pd.DataFrame, start=START) -> dict:
+    """Episodstarterna som H1 jämför, S3 och S0 räknade på samma dagar.
+
+    S3 kan bara räknas där M finns (ok_S3), så dagarna före marginalperioden är "ingen signal" för S3. S0:s episoder
+    räknas här på samma sätt, på S0 och ok_S3: en S0-period som redan pågick när marginalperioden började öppnar då
+    en episod den första dagen, precis som S3. Annars fick S3 en extra episod vid periodens början som S0 inte fick.
+    Bara starter från S3:s täckning (≥ start) räknas. S0:s rad i signaltabellen räknas över hela kvotperioden."""
+    c = coverage(fr, "S3", start)
+    if c is None:
+        return {"S3": [], "S0": []}
+    ok = fr["ok_S3"].to_numpy(dtype=bool)
+    return {sig: [i for i in episode_starts(fr[sig].to_numpy(dtype=bool) & ok) if i >= c["pos"]]
+            for sig in ("S3", "S0")}
+
+
 def episode_rows(fr: pd.DataFrame, arrays: dict, positions) -> list:
     """En rad per episod: datum, percentilerna på signaldagen och utfallen."""
     rows = []
@@ -327,8 +342,11 @@ def analyze(fr: pd.DataFrame, start=START, seed: int = SEED, n_boot: int = N_BOO
                           "alla dagar": summarize(arrays, range(c["pos"], len(fr))),
                           "var 63:e dag": summarize(arrays, range(c["pos"], len(fr), BASE_STEP))}
 
-    hyp = {"H1": _h1(arrays, starts, cov), "H2": _h2(arrays, starts, cov, seed, n_boot),
+    h1 = h1_starts(fr, start)
+    hyp = {"H1": _h1(arrays, h1, cov), "H2": _h2(arrays, starts, cov, seed, n_boot),
            "H3": _h3(arrays, starts, cov)}
+    if cov["S3"] is not None:
+        hyp["H1"].update({f"{s}_dates": [_d(fr.index[i]) for i in h1[s]] for s in ("S3", "S0")})
     for k in hyp:
         hyp[k]["horizon"] = h
     return {"coverage": {k: _public(v) for k, v in cov.items()}, "signals": signals, "baseline": baseline,
@@ -345,7 +363,8 @@ def _complete(arrays: dict, positions) -> list:
 
 
 def _h1(arrays, starts, cov) -> dict:
-    """S3 mot S0 över S3:s täckning (episoder som börjar i marginalperioden)."""
+    """S3 mot S0 över S3:s täckning (episoder som börjar i marginalperioden). starts ur h1_starts, så att S0:s
+    episoder räknas på samma dagar som S3:s."""
     c = cov["S3"]
     out = {"pass": False, "period_from": c["first"] if c else None}
     if c is None:
@@ -580,6 +599,9 @@ def _hyp_lines(hyp: dict) -> list:
         out.append(f"  H1 S3 mot S0 från {h1['period_from']}: S3 {h1['S3_episodes']} ep. (hela: {h1['S3_complete']}, "
                    f"snitt mot GLD 252 {_pct(h1['S3_mean'])}) · S0 {h1['S0_episodes']} ep. (hela: "
                    f"{h1['S0_complete']}, {s0}) → {_verdict(h1)}")
+        if "S3_dates" in h1:
+            out.append(f"    H1:s episoder (S0 räknad på S3:s dagar): S3 {', '.join(h1['S3_dates']) or 'inga'} · "
+                       f"S0 {', '.join(h1['S0_dates']) or 'inga'}")
     else:
         out.append(f"  H1 → {_verdict(h1)}")
     if h2.get("period_from"):

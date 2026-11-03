@@ -90,7 +90,8 @@ def test_spec_is_registered_and_matches_the_code():
               "**63, 126 och 252 handelsdagar**", "P_M ≤ 20", "P_M ≤ 30", "5 000", "frö 20261103",
               "block om 63 handelsdagar", "cirkulära block", "minst 3 episoder med hel 252-dagarshorisont",
               "ägarens beslut", "aisc_series(point_in_time=True)", "2015-11-12", "Överlevnadsbias",
-              "miner-margin-study.yml", "miner_margin_study.json"):
+              "miner-margin-study.yml", "miner_margin_study.json",
+              "I H1 räknas S0:s episoder **på samma dagar som S3:s**", "S0 räknad på S3:s"):
         assert w in text, w
     assert (ms.START, ms.PERIOD, ms.WINDOW_YEARS, ms.MIN_YEARS) == ("2012-01-01", "max", 10, 3)
     assert (ms.GAP, ms.HORIZONS, ms.DD_DAYS, ms.BASE_STEP) == (63, (63, 126, 252), 252, 63)
@@ -335,6 +336,55 @@ def test_h1_more_episodes_positive_and_at_least_s0():
     h = ms._h1(_arrays(rel), {"S3": [100, 300, 500], "S0": [200, 400, 600]}, cov)
     assert not h["pass"] and "S3 har inte fler episoder än S0" in h["why"]
     assert not ms._h1(_arrays(rel), {"S3": [], "S0": []}, {"S3": None})["pass"]
+
+
+def _boundary_frame(s0, s3, margin_from, n=1400):
+    """Fejkad signalram från 2012: S0 (= S1) på dagarna i s0, S3 på dagarna i s3, M från margin_from."""
+    pos = np.arange(n)
+    ok3 = pos >= margin_from
+    fr = pd.DataFrame(index=pd.bdate_range("2012-01-02", periods=n))
+    fr["miner"], fr["gld"] = 10.0 * 1.001 ** pos, 100.0
+    for c in ("p_ratio", "p_gld", "p_miner", "p_m"):
+        fr[c] = 50.0
+    fr["driver"] = "BOTH"
+    on0 = np.isin(pos, list(s0))
+    fr["S0"], fr["S1"], fr["S2"], fr["S3"] = on0, on0, False, np.isin(pos, list(s3)) & ok3
+    fr["ok_S0"], fr["ok_S1"], fr["ok_S2"], fr["ok_S3"] = True, True, ok3, ok3
+    return fr
+
+
+def test_h1_counts_s0_on_the_same_days_as_s3_at_the_start_of_the_margin_period():
+    """En S0-period som redan pågår när marginalperioden börjar öppnar en episod för S0 också, precis som S3:s
+    första signaldag — annars fick S3 en extra episod som kunde avgöra H1."""
+    run = range(400, 701)
+    fr = _boundary_frame(run, run, 500)
+    assert ms.h1_starts(fr) == {"S3": [500], "S0": [500]}
+    res = ms.analyze(fr, n_boot=50)
+    h1 = res["hypotheses"]["H1"]
+    assert (h1["S3_episodes"], h1["S0_episodes"]) == (1, 1) and "S3 har inte fler episoder än S0" in h1["why"]
+    assert h1["S3_mean"] == h1["S0_mean"] and h1["S3_dates"] == h1["S0_dates"] == [str(fr.index[500].date())]
+    assert [e["start"] for e in res["signals"]["S0"]["episodes"]] == [str(fr.index[400].date())]   # tabellen: hela
+    text = "\n".join(ms._hyp_lines(res["hypotheses"]))
+    assert f"H1:s episoder (S0 räknad på S3:s dagar): S3 {fr.index[500].date()} · S0 {fr.index[500].date()}" in text
+    # S3 slår till senare i samma S0-period: S0 öppnar ändå på periodens första dag
+    assert ms.h1_starts(_boundary_frame(run, range(600, 701), 500)) == {"S3": [600], "S0": [500]}
+    # en S0-period som tog slut före marginalperioden räknas inte, och glappet mäts på samma dagar för båda
+    assert ms.h1_starts(_boundary_frame(range(300, 450), [], 500)) == {"S3": [], "S0": []}
+    both = list(range(400, 521)) + list(range(560, 600)) + list(range(700, 720))
+    assert ms.h1_starts(_boundary_frame(both, both, 500)) == {"S3": [500, 700], "S0": [500, 700]}
+    assert ms.h1_starts(_boundary_frame(run, run, 1400)) == {"S3": [], "S0": []}            # ingen marginal
+
+
+def test_h1_starts_on_the_real_table_follow_the_definition(gdx_frame):
+    fr = ms.signal_frame(SERIES["GLD"], SERIES["GDX"], SERIES["GC=F"])      # riktiga AISC_TABLE
+    pos = ms.coverage(fr, "S3")["pos"]
+    h1 = ms.h1_starts(fr)
+    ok = fr["ok_S3"].to_numpy(dtype=bool)
+    assert not (fr["S3"].to_numpy(dtype=bool) & ~ok).any()           # S3 finns bara där M finns
+    assert h1["S3"] == [i for i in ms.episode_starts(fr["S3"].to_numpy()) if i >= pos]
+    assert h1["S0"] == [i for i in ms.episode_starts(fr["S0"].to_numpy(dtype=bool) & ok) if i >= pos]
+    res = ms.analyze(fr, n_boot=50)["hypotheses"]["H1"]
+    assert (res["S3_episodes"], res["S0_episodes"]) == (len(h1["S3"]), len(h1["S0"]))
 
 
 def test_h2_needs_mean_and_lower_bound_above_the_baseline():
