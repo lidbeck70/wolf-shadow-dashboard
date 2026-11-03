@@ -288,6 +288,8 @@ EXPOSURE_TO_RATIO: dict[str, list[str]] = {
 # Bolidens "Gruvor" gold_miner, och "Förnybar energi" olja. Platina och
 # palladium står före de generiska guld-/gruvorden — annars blev "Platinum
 # Group Metals" gold_miner (via "metals"); namn utan PGM-ord routas som förut.
+# Ett namn med både ett guld-/oljeord och ett PGM-ord blir PGM ("Gold, Platinum &
+# Palladium", "Oil & PGM") — inget av Börsdatas branschnamn innehåller ett PGM-ord.
 _KEYWORD_EXPOSURE: list[tuple[list[str], str]] = [
     (["junior miner", "junior mine", "juniormine", "gdxj"],   "junior_miner"),
     (["silver miner", "silver mine", "silvr", "silber"],       "silver"),

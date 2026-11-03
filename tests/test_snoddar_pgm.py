@@ -468,3 +468,106 @@ def test_thor_ravara_shows_the_pgm_bands(monkeypatch):
         assert "Gold / Platinum" in html and "P94 · rubber band stretched · denominator cheap" in html
         assert "Gold / Palladium" in html and "P50 · neutral · mixed" in html
         assert "köpstöd" not in html and "Inga kvoter" not in html
+
+
+# ── Rättelser efter verifieringen ────────────────────────────────────────────
+def _borsdata_names():
+    from contrarian_alpha.necessity import BORSDATA_BRANCH_MAP, BORSDATA_SECTOR_MAP
+    return [e.label for m in (BORSDATA_BRANCH_MAP, BORSDATA_SECTOR_MAP) for e in m.values()]
+
+
+def test_why_now_counts_the_band_for_pgm_like_silver():
+    """Ändrad poäng (avsiktligt, ägaren informeras): Why Now räknar nu gummibandet för platina och palladium på
+    exakt samma sätt som för silver — poäng efter status, och täckningen stiger. Utan ratio_exposure (som före
+    2026-11-03) saknades komponenten."""
+    import dataclasses
+    from confidence import commodities as com
+    from confidence import config as ccfg
+    from confidence.why_now import signals_from_sources, why_now
+    assert ccfg.WHY_NOW_RATIO == {"RUBBER_BAND_STRETCHED": 15, "TENSION_BUILDING": 10, "NEUTRAL": 5}
+    for status, pts in ccfg.WHY_NOW_RATIO.items():
+        for metal, key in (("silver", "gold_silver"), ("platinum", "gold_platinum"), ("palladium", "gold_palladium")):
+            c = com.get(metal)
+            w = why_now(c, signals_from_sources(c, ratio_results={key: {"status": status}}))
+            assert w.components["Gummiband"] == pts and "ratio_status" not in w.missing, (metal, status)
+            old = dataclasses.replace(c, ratio_exposure=None)              # registret före 2026-11-03
+            w_old = why_now(old, signals_from_sources(old, ratio_results={key: {"status": status}}))
+            assert "Gummiband" not in w_old.components and "ratio_status" in w_old.missing
+            if metal != "silver":
+                assert w.coverage > w_old.coverage
+    # DATA_GAP i den egna kvoten: den andra PGM-kvoten tar över (som silver_juniors för silvret)
+    gap = {"gold_palladium": {"status": "DATA_GAP"}, "gold_platinum": {"status": "RUBBER_BAND_STRETCHED"},
+           "gold_silver": {"status": "DATA_GAP"}, "silver_juniors": {"status": "TENSION_BUILDING"}}
+    s = signals_from_sources(com.get("palladium"), ratio_results=gap)
+    assert (s.ratio_status, s.ratio_key) == ("RUBBER_BAND_STRETCHED", "gold_platinum")
+    s = signals_from_sources(com.get("silver"), ratio_results=gap)
+    assert (s.ratio_status, s.ratio_key) == ("TENSION_BUILDING", "silver_juniors")
+
+
+def test_auto_never_reaches_pgm_from_a_borsdata_branch_and_the_help_says_so():
+    """Auto läser bara Börsdatas branschnamn — inget av dem innehåller ett PGM-ord, så de routas exakt som förut
+    (Sibanyes 'Gruv - Guld & Silver' är silver). PGM-snoddarna nås via väljaren; hjälptexten säger det."""
+    names = _borsdata_names()
+    assert "Gruv - Guld & Silver" in names and len(names) > 90
+    for name in names:
+        assert cr.detect_exposure(name) == _old_detect(name), name
+        assert cr.detect_exposure(name) not in ("platinum", "palladium"), name
+    assert cr.detect_exposure("Gruv - Guld & Silver") == "silver"
+    for part in ("Auto reads the Börsdata branch", "no platinum or palladium branch", "Platinum or Palladium"):
+        assert part in aui._EXPOSURE_HELP, part
+
+
+@pytest.mark.parametrize("name,exp,before", [("Gold, Platinum & Palladium", "platinum", "gold_miner"),
+                                             ("Gold & Palladium", "palladium", "gold_miner"),
+                                             ("Oil & PGM", "platinum", "oil")])
+def test_mixed_names_route_to_pgm_as_specified(name, exp, before):
+    """Enligt specen (PGM-orden före de generiska guld-/gruvorden): ett namn med både guld/olja och ett PGM-ord blir
+    PGM. Ägarbeslut om det ska ändras — inget Börsdata-branschnamn träffas (testet ovan)."""
+    assert cr.detect_exposure(name) == exp and _old_detect(name) == before
+
+
+@pytest.mark.parametrize("own,other", [("gold_palladium", "gold_platinum"), ("gold_platinum", "gold_palladium")])
+def test_cross_metal_confirmation_is_the_specified_behaviour(monkeypatch, own, other):
+    """Enligt specen (PGM-gruvorna bryter båda metallerna): den andra metallens kvot kan ge +1 när bara den metallen
+    är billig — raden namnger då den kvoten och den metallen, aldrig den egna. Ägarbeslut om det ska ändras."""
+    branch = {"gold_palladium": "Palladium One", "gold_platinum": "Impala Platinum"}[own]
+    ratios = {own: _ratio(own, status="NEUTRAL", driver="MIXED"), other: _ratio(other, driver="DENOMINATOR_CHEAP")}
+    r, rb, _calls = _run_engine(monkeypatch, branch, ratios, {})
+    assert r.detected_exposure == [own, other]
+    assert rb == [f"Rubber Band: {_spec(other).label} at 94th percentile — {_spec(other).denominator_label} "
+                  f"historically stretched cheap"]
+
+
+def test_picker_without_the_module_returns_a_non_empty_list(monkeypatch):
+    monkeypatch.setattr(aui, "_CR_EXPOSURE_TO_RATIO", None)
+    assert aui._exposure_override("None") == [] and aui._exposure_override("Auto") is None
+    assert aui._exposure_override("okänt") is None
+    ratio_keys = {s.key for s in cr._RATIO_SPECS}
+    for option, exp in aui._EXPOSURE_PICKER.items():                # exponeringsnyckeln — aldrig en kvotnyckel
+        assert aui._exposure_override(option) == [exp] and exp not in ratio_keys, option
+
+
+def _run_panel(monkeypatch, result, option):
+    from streamlit.testing.v1 import AppTest
+    monkeypatch.setattr(aui, "run_regime_analysis", lambda **_kw: result)
+    monkeypatch.setattr(aui, "_cached_deep_rows", lambda: ([], ""))
+    monkeypatch.setattr(mm, "compute", lambda miner="GDX": pytest.fail("mätaren lästes"))
+    at = AppTest.from_function(_panel_app, default_timeout=60)
+    at.session_state["ar_mode"] = "contrarian"
+    at.run()
+    assert not at.exception, at.exception
+    at.selectbox(key="ar_exposure").select(option).run()
+    assert not at.exception, at.exception
+    return at, " ".join(c.value for c in at.caption)
+
+
+@pytest.mark.parametrize("option", ["Platinum", "Silver", "Gold Miners"])
+def test_apptest_module_not_loaded_caption_survives_the_picker(monkeypatch, option):
+    """Utan commodity_ratios (motorn har då inga kvoter): ett manuellt val visar raden 'module not loaded' som
+    förut i stället för att tyst läsas som "None"."""
+    monkeypatch.setattr(aui, "_CR_EXPOSURE_TO_RATIO", None)
+    at, caption = _run_panel(monkeypatch, _regime({}, [], {}), option)
+    assert "Commodity ratio data unavailable (module not loaded)." in caption
+    assert at.selectbox(key="ar_exposure").help == aui._EXPOSURE_HELP
+    _at, caption = _run_panel(monkeypatch, _regime({}, [], {}), "None")
+    assert "module not loaded" not in caption and "not detected" not in caption

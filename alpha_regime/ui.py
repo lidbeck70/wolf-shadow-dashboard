@@ -31,7 +31,6 @@ def _cached_deep_rows():
 
 # ── Optional: direct commodity ratio helpers for custom builder ───────────────
 _CR_OK = False
-_CR_EXPOSURE_TO_RATIO: dict = {}
 try:
     from alpha_regime.commodity_ratios import (
         _download_close  as _cr_download_close,
@@ -40,9 +39,16 @@ try:
         _classify_driver as _cr_classify_driver,
         _window_info as _cr_window_info,
         RatioResult      as _CRRatioResult,
-        EXPOSURE_TO_RATIO as _CR_EXPOSURE_TO_RATIO,
     )
     _CR_OK = True
+except ImportError:
+    pass
+
+# The exposure picker's ratio lists (public registry, imported on its own so the picker does not depend on the
+# custom builder's private helpers). None = commodity_ratios not loaded.
+_CR_EXPOSURE_TO_RATIO: Optional[dict] = None
+try:
+    from alpha_regime.commodity_ratios import EXPOSURE_TO_RATIO as _CR_EXPOSURE_TO_RATIO
 except ImportError:
     pass
 
@@ -95,15 +101,28 @@ _EXPOSURE_PICKER: dict = {
     "Copper": "copper",
 }
 _EXP_OPTIONS = ["Auto", *_EXPOSURE_PICKER, "None"]
+# Auto reads only the Börsdata branch name, and no Börsdata branch names platinum or palladium (PGM producers sit
+# in e.g. 'Gruv - Guld & Silver') — the PGM bands are reached through this picker (or Thor's Råvara tab).
+_EXPOSURE_HELP = (
+    "Override auto-detected commodity sector for the rubber band gauges. Auto reads the Börsdata branch, "
+    "which has no platinum or palladium branch — for PGM stocks (e.g. Sibanye-Stillwater, Impala Platinum) "
+    "choose Platinum or Palladium."
+)
 
 
 def _exposure_override(option: str):
     """The picker's choice as the override the contrarian view reads: None (Auto → auto-detect), [] ("None")
-    or a copy of the exposure's ratio keys from commodity_ratios.EXPOSURE_TO_RATIO."""
+    or a copy of the exposure's ratio keys from commodity_ratios.EXPOSURE_TO_RATIO. Without the module the
+    exposure key itself is returned (no ratio key) — a non-empty list, so the gauge section shows its
+    'module not loaded' caption instead of reading the choice as "None"."""
     if option == "None":
         return []
     exp = _EXPOSURE_PICKER.get(option)
-    return None if exp is None else list(_CR_EXPOSURE_TO_RATIO.get(exp, []))
+    if exp is None:
+        return None
+    if _CR_EXPOSURE_TO_RATIO is None:
+        return [exp]
+    return list(_CR_EXPOSURE_TO_RATIO.get(exp, []))
 
 
 _VERDICT_COLORS = {
@@ -1840,7 +1859,7 @@ def render_alpha_regime() -> None:
                 "Commodity exposure",
                 options=_EXP_OPTIONS,
                 key="ar_exposure",
-                help="Override auto-detected commodity sector for the rubber band gauges",
+                help=_EXPOSURE_HELP,
             )
             exposure_override = _exposure_override(_exp_sel)
 
