@@ -252,27 +252,27 @@ def _ratio_verdict(ratio) -> tuple:
     if d == "high":
         if pct >= _GAUGE_STRETCHED_PCT:
             return ("🟢 KÖP-STÖD",      "#1aaa5a",
-                    f"{lbl} vid {pct:.0f}:e percentilen — {den} historiskt max-billig")
+                    f"{lbl} vid {_sv_ord(pct)} percentilen — {den} historiskt max-billig")
         if pct >= _GAUGE_TENSION_PCT:
             return ("⚡ SPÄNNING BYGGS", "#c9a84c",
-                    f"{lbl} vid {pct:.0f}:e percentilen — {den} närmar sig billighetszonen")
+                    f"{lbl} vid {_sv_ord(pct)} percentilen — {den} närmar sig billighetszonen")
         if pct <= 10.0:
             return ("🔴 SÄLJ-STÖD",      "#cc3333",
-                    f"{lbl} vid {pct:.0f}:e percentilen — {den} historiskt max-dyr")
+                    f"{lbl} vid {_sv_ord(pct)} percentilen — {den} historiskt max-dyr")
         return ("⚪ NEUTRAL", "#607080",
-                f"{lbl} vid {pct:.0f}:e percentilen — ingen extrem")
+                f"{lbl} vid {_sv_ord(pct)} percentilen — ingen extrem")
     else:  # "low" direction (copper_gold, gdx_spy)
         if pct <= _GAUGE_CHEAP_LOW_MAX:
             return ("🟢 KÖP-STÖD",      "#1aaa5a",
-                    f"{lbl} vid {pct:.0f}:e percentilen — {den} historiskt max-billig vs motvikten")
+                    f"{lbl} vid {_sv_ord(pct)} percentilen — {den} historiskt max-billig vs motvikten")
         if pct <= _GAUGE_CHEAP_LOW_TENS:
             return ("⚡ SPÄNNING BYGGS", "#c9a84c",
-                    f"{lbl} vid {pct:.0f}:e percentilen — {den} närmar sig billighetszonen")
+                    f"{lbl} vid {_sv_ord(pct)} percentilen — {den} närmar sig billighetszonen")
         if pct >= 90.0:
             return ("🔴 SÄLJ-STÖD",      "#cc3333",
-                    f"{lbl} vid {pct:.0f}:e percentilen — {den} historiskt max-dyr vs motvikten")
+                    f"{lbl} vid {_sv_ord(pct)} percentilen — {den} historiskt max-dyr vs motvikten")
         return ("⚪ NEUTRAL", "#607080",
-                f"{lbl} vid {pct:.0f}:e percentilen — ingen extrem")
+                f"{lbl} vid {_sv_ord(pct)} percentilen — ingen extrem")
 
 
 def _compute_ratio_summary(commodity_ratios: dict, keys: list) -> str:
@@ -390,8 +390,11 @@ def _render_next_trigger(r: RegimeResult, c) -> None:
     )
 
 
-def _render_single_ratio(ratio, idx: int) -> None:
-    """Render one ratio gauge row: verdict badge, percentile bar, sparkline."""
+def _render_single_ratio(ratio, idx: int, counted: bool = True) -> None:
+    """Render one ratio gauge row: verdict badge, percentile bar, sparkline.
+
+    counted=False for the custom ratios: they never enter the engine's +1 confirmation or the
+    'Gummisnoddar' count, so their driver line must not say the panel counts them."""
     if ratio.status == "DATA_GAP":
         st.warning(f"DATA_GAP — {ratio.label}: {ratio.error or 'data unavailable'}")
         return
@@ -458,7 +461,7 @@ def _render_single_ratio(ratio, idx: int) -> None:
     )
 
     # Per-leg percentile breakdown + driver verdict
-    _render_leg_breakdown(ratio)
+    _render_leg_breakdown(ratio, counted=counted)
 
     # The cheap leg priced in the other leg, against the median of the same window
     terms = _cheap_terms_text(ratio)
@@ -541,7 +544,7 @@ def _render_rubber_band_gauge(r: RegimeResult, exposure_override) -> None:
 # Everything here is wording: _classify, _classify_driver, the engine's +1
 # confirmation and the KÖP-STÖD demotion in _compute_ratio_summary are untouched.
 
-_DRIVER_ZONE_STATUSES = ("TENSION_BUILDING", "RUBBER_BAND_STRETCHED")
+_NBSP = "\u00a0"   # no-break space: '34 %' and '1 235' must not wrap apart on a phone
 
 # Neutral tones: a price position is neither good nor bad — the ends are only highlighted.
 _LEG_WORD_COLORS = {
@@ -552,10 +555,14 @@ _LEG_WORD_COLORS = {
     "nära botten": "#c9a84c",
 }
 
+_DRIVER_CLASSES = ("DENOMINATOR_CHEAP", "NUMERATOR_EXPENSIVE", "BOTH", "MIXED")
+_NOT_COUNTED_CUSTOM = "egen kvot — räknas inte i panelens bekräftelse."
+
 
 def _leg_pctile_label(pct: float) -> str:
-    """Price-position words for a leg's own percentile. The ends use the driver rule's own
-    cut-offs (≥ 80 / ≤ 20), so the words never contradict the driver line."""
+    """Price-position words for a leg's own percentile (bucket only). The ends use the driver
+    rule's cut-offs (≥ 80 / ≤ 20); the card itself goes through _leg_words, which lets
+    ratio.driver decide the ends at a rounding edge."""
     if pct >= 80:
         return "nära toppen"
     if pct >= 60:
@@ -569,6 +576,32 @@ def _leg_pctile_label(pct: float) -> str:
 
 def _leg_pctile_color(pct: float) -> str:
     return _LEG_WORD_COLORS[_leg_pctile_label(pct)]
+
+
+def _leg_words(ratio) -> tuple:
+    """(numerator word, denominator word) for the leg rows.
+
+    The middle words come from the stored (rounded) percentiles. The two ends the driver rule
+    decides — 'nära botten' for the cheap leg and 'nära toppen' for the other leg — come from
+    ratio.driver itself, which _classify_driver set on the UNROUNDED percentiles: a cheap leg at
+    20.04 (stored 20.0) reads 'nedre delen' when the driver says it is not cheap. So a row can
+    never contradict the driver line. Unknown driver → plain buckets."""
+    num_w = _leg_pctile_label(ratio.numerator_pctile)
+    den_w = _leg_pctile_label(ratio.denominator_pctile)
+    d = getattr(ratio, "driver", "UNKNOWN")
+    if d not in _DRIVER_CLASSES:
+        return num_w, den_w
+    high = getattr(ratio, "cheap_direction", "high") == "high"
+    cheap_w, other_w = (den_w, num_w) if high else (num_w, den_w)
+    if d in ("DENOMINATOR_CHEAP", "BOTH"):
+        cheap_w = "nära botten"
+    elif cheap_w == "nära botten":
+        cheap_w = "nedre delen"
+    if d in ("NUMERATOR_EXPENSIVE", "BOTH"):
+        other_w = "nära toppen"
+    elif other_w == "nära toppen":
+        other_w = "övre delen"
+    return (other_w, cheap_w) if high else (cheap_w, other_w)
 
 
 def _leg_window_text(ratio) -> str:
@@ -591,50 +624,79 @@ def _cheap_and_other(ratio) -> tuple:
             ratio.denominator_pctile or 0.0)
 
 
+def _band_zone(ratio) -> str:
+    """'buy' | 'tension' | 'sell' | 'neutral' — read off the same badge as the card header and
+    the 'Gummisnoddar' count (_ratio_verdict on the stored percentile), so the driver line can
+    never say 'inte spänd' next to a ⚡ SPÄNNING BYGGS / 🟢 KÖP-STÖD badge at a rounding edge."""
+    badge = _ratio_verdict(ratio)[0]
+    if "KÖP-STÖD" in badge:
+        return "buy"
+    if "SPÄNNING" in badge:
+        return "tension"
+    if "SÄLJ-STÖD" in badge:
+        return "sell"
+    return "neutral"
+
+
 def _driver_applies(ratio) -> bool:
     """The driver only explains something when the band is actually tense or stretched
-    (status per its cheap_direction)."""
-    return getattr(ratio, "status", "") in _DRIVER_ZONE_STATUSES
+    (the badge's zone for its cheap_direction)."""
+    return _band_zone(ratio) in ("buy", "tension")
 
 
 def _is_sell_extreme(ratio) -> bool:
     """The opposite extreme — the same zone that gives the 🔴 SÄLJ-STÖD badge."""
-    return "SÄLJ-STÖD" in _ratio_verdict(ratio)[0]
+    return _band_zone(ratio) == "sell"
 
 
-def _driver_verdict_text(ratio) -> tuple:
+def _driver_verdict_text(ratio, counted: bool = True) -> tuple:
     """Return (icon, Swedish explanation) for the driver line.
 
     The driver claim is shown only in the tension/stretched zone; otherwise a neutral line
-    (at the opposite extreme: the cheap leg is dear vs the other). Wording only."""
+    (at the opposite extreme: the cheap leg is dear vs the other). counted=False (custom
+    ratios) never says the panel counts it. Wording only."""
     cheap_name, other_name, cheap_pct, other_pct = _cheap_and_other(ratio)
-    if not _driver_applies(ratio):
-        if _is_sell_extreme(ratio):
+    zone = _band_zone(ratio)
+    if zone not in ("buy", "tension"):
+        if zone == "sell":
             return ("🔴", f"Snodden är spänd åt andra hållet — {cheap_name} är historiskt dyr mot {other_name}.")
         return ("⚪", "Snodden är inte spänd — benens prisläge förklarar inget köpläge.")
 
     d = ratio.driver
-    cheap_low = f"{cheap_name} står nära botten av sitt eget prisspann ({cheap_pct:.0f}:e pct)"
-    if ratio.status == "RUBBER_BAND_STRETCHED":
-        counts = f"panelens regel räknar det som köpstöd i {cheap_name}."
+    cheap_low = f"{cheap_name} står nära botten av sitt eget prisspann ({_sv_ord(cheap_pct)} pct)"
+    if not counted:
+        counts = not_counted = _NOT_COUNTED_CUSTOM
     else:
-        counts = f"panelens regel räknar det som köpstöd i {cheap_name} först när snodden är fullt sträckt."
-    not_counted = f"panelens regel räknar det inte som köpstöd i {cheap_name}."
+        if zone == "buy":
+            counts = f"panelens regel räknar det som köpstöd i {cheap_name}."
+        else:
+            counts = f"panelens regel räknar det som köpstöd i {cheap_name} först när snodden är fullt sträckt."
+        not_counted = f"panelens regel räknar det inte som köpstöd i {cheap_name}."
     if d == "DENOMINATOR_CHEAP":
         return ("🟢", f"{cheap_low} — {counts}")
     if d == "NUMERATOR_EXPENSIVE":
-        text = (f"{other_name} står nära toppen av sitt eget prisspann ({other_pct:.0f}:e pct), "
-                f"{cheap_name} står inte nära botten av sitt ({cheap_pct:.0f}:e pct) — {not_counted}")
+        text = (f"{other_name} står nära toppen av sitt eget prisspann ({_sv_ord(other_pct)} pct), "
+                f"{cheap_name} står inte nära botten av sitt ({_sv_ord(cheap_pct)} pct) — {not_counted}")
         return ("⚠️", text)
     if d == "BOTH":
-        text = (f"{cheap_low} och {other_name} nära toppen av sitt ({other_pct:.0f}:e pct) "
+        text = (f"{cheap_low} och {other_name} nära toppen av sitt ({_sv_ord(other_pct)} pct) "
                 f"— båda sträcker snodden; {counts}")
         return ("🟢⚡", text)
     if d == "MIXED":
-        text = (f"Blandad signal — varken {cheap_name} nära botten ({cheap_pct:.0f}:e pct) eller "
-                f"{other_name} nära toppen ({other_pct:.0f}:e pct) av sitt eget prisspann; {not_counted}")
+        text = (f"Blandad signal — varken {cheap_name} nära botten ({_sv_ord(cheap_pct)} pct) eller "
+                f"{other_name} nära toppen ({_sv_ord(other_pct)} pct) av sitt eget prisspann; {not_counted}")
         return ("⚪", text)
     return ("⚪", "Driver okänd — otillräcklig bendata.")
+
+
+def _sv_ord(v) -> str:
+    """Swedish ordinal of a rounded number: 1:a, 2:a, 3:e … 11:e, 12:e … 21:a, 22:a, 95:e."""
+    try:
+        n = int(round(float(v)))
+    except (TypeError, ValueError, OverflowError):
+        return f"{v}:e"
+    last2 = abs(n) % 100
+    return f"{n}:{'a' if last2 % 10 in (1, 2) and last2 not in (11, 12) else 'e'}"
 
 
 def _sig_decimals(v: float, sig: int = 3) -> int:
@@ -645,37 +707,50 @@ def _sig_decimals(v: float, sig: int = 3) -> int:
 
 
 def _sv_num(v: float, decimals: int) -> str:
-    """Swedish number: decimal comma, space as thousands separator."""
-    return f"{v:,.{decimals}f}".replace(",", " ").replace(".", ",")
+    """Swedish number: decimal comma, no-break space as thousands separator."""
+    return f"{v:,.{decimals}f}".replace(",", _NBSP).replace(".", ",")
+
+
+def _finite_pos(v) -> Optional[float]:
+    """v as a float when it is finite and > 0, else None (bad bar: a zero close gives inf/NaN)."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if math.isfinite(f) and f > 0 else None
 
 
 def _cheap_terms_text(ratio) -> Optional[str]:
     """The cheap leg priced in the other leg, against the median of the same window, e.g.
     'I GLD: 1 GDX = 0,214 GLD — 34 % mer än medianen sedan 2016 (0,160), alltså dyrare i GLD
     än normalt.' 'high': cheap = denominator, price = 1/ratio; 'low': cheap = numerator,
-    price = ratio. Informational only — no rule, count or confirmation reads it."""
-    cur = float(getattr(ratio, "current", 0.0) or 0.0)
-    med = getattr(ratio, "median", None)
+    price = ratio. None when current or median is missing, zero, inf or NaN. Informational
+    only — no rule, count or confirmation reads it."""
+    cur = _finite_pos(getattr(ratio, "current", None))
+    med = _finite_pos(getattr(ratio, "median", None))
     num, den = ratio.numerator_label, ratio.denominator_leg_label
-    if not med or med <= 0 or cur <= 0 or not num or not den:
+    if cur is None or med is None or not num or not den:
         return None
     if getattr(ratio, "cheap_direction", "high") == "high":
         cheap, other, val, ref = den, num, 1.0 / cur, 1.0 / med
     else:
         cheap, other, val, ref = num, den, cur, med
-    dec = _sig_decimals(val)
+    rel = val / ref - 1.0 if val > 0 and ref > 0 else math.nan
+    if not (math.isfinite(val) and math.isfinite(ref) and math.isfinite(rel)):
+        return None
     year = (getattr(ratio, "history_start", "") or "")[:4]
     since = f" sedan {year}" if year.isdigit() else ""
-    head = f"I {other}: 1 {cheap} = {_sv_num(val, dec)} {other}"
-    diff = round(abs(val / ref - 1.0) * 100.0)
+    head = f"I {other}: 1 {cheap} = {_sv_num(val, _sig_decimals(val))} {other}"
+    ref_txt = _sv_num(ref, _sig_decimals(ref))
+    diff = round(abs(rel) * 100.0)
     if diff == 0:
-        return f"{head} — i nivå med medianen{since} ({_sv_num(ref, dec)}), alltså normalt prissatt i {other}."
-    more = val > ref
-    return (f"{head} — {diff} % {'mer' if more else 'mindre'} än medianen{since} ({_sv_num(ref, dec)}), "
+        return f"{head} — i nivå med medianen{since} ({ref_txt}), alltså normalt prissatt i {other}."
+    more = rel > 0
+    return (f"{head} — {_sv_num(diff, 0)}{_NBSP}% {'mer' if more else 'mindre'} än medianen{since} ({ref_txt}), "
             f"alltså {'dyrare' if more else 'billigare'} i {other} än normalt.")
 
 
-def _render_leg_breakdown(ratio) -> None:
+def _render_leg_breakdown(ratio, counted: bool = True) -> None:
     """Two-row per-leg price position + one-line driver verdict below the gauge bar."""
     num_pct = ratio.numerator_pctile
     den_pct = ratio.denominator_pctile
@@ -685,12 +760,13 @@ def _render_leg_breakdown(ratio) -> None:
     num_name  = ratio.numerator_label       or "Täljare"
     den_name  = ratio.denominator_leg_label or "Nämnare"
     window = _leg_window_text(ratio)
-    num_lbl = f"{_leg_pctile_label(num_pct)} av {window}"
-    den_lbl = f"{_leg_pctile_label(den_pct)} av {window}"
-    num_color = _leg_pctile_color(num_pct)
-    den_color = _leg_pctile_color(den_pct)
+    num_word, den_word = _leg_words(ratio)
+    num_lbl = f"{num_word} av {window}"
+    den_lbl = f"{den_word} av {window}"
+    num_color = _LEG_WORD_COLORS[num_word]
+    den_color = _LEG_WORD_COLORS[den_word]
 
-    icon, verdict_text = _driver_verdict_text(ratio)
+    icon, verdict_text = _driver_verdict_text(ratio, counted=counted)
     verdict_color = {
         "DENOMINATOR_CHEAP":   "#1aaa5a",
         "NUMERATOR_EXPENSIVE": "#e8a020",
@@ -706,11 +782,11 @@ def _render_leg_breakdown(ratio) -> None:
           <div style="display:flex;flex-wrap:wrap;gap:20px;margin-bottom:5px;font-size:0.8rem;">
             <span>
               <span style="color:#607080;">Täljare ({num_name}):</span>&nbsp;
-              <span style="color:{num_color};font-weight:700;">{num_pct:.0f}:e pct — {num_lbl}</span>
+              <span style="color:{num_color};font-weight:700;">{_sv_ord(num_pct)} pct — {num_lbl}</span>
             </span>
             <span>
               <span style="color:#607080;">Nämnare ({den_name}):</span>&nbsp;
-              <span style="color:{den_color};font-weight:700;">{den_pct:.0f}:e pct — {den_lbl}</span>
+              <span style="color:{den_color};font-weight:700;">{_sv_ord(den_pct)} pct — {den_lbl}</span>
             </span>
           </div>
           <div style="color:{verdict_color};font-size:0.78rem;">{icon} {verdict_text}</div>
@@ -812,7 +888,7 @@ def _render_custom_ratio_builder() -> None:
                 unsafe_allow_html=True,
             )
             for i, cr in enumerate(saved):
-                _render_single_ratio(cr, idx=1000 + i)
+                _render_single_ratio(cr, idx=1000 + i, counted=False)
                 if i < len(saved) - 1:
                     st.markdown(
                         '<hr style="border-color:#2a3040;margin:8px 0;">',
