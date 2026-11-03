@@ -1,6 +1,7 @@
 """
 alpha_regime/miner_margin.py
-Gruvorna mot marginalen — gruv-ETF:ns pris per dollar marginal per uns. KONTEXT, ingen signal.
+Gruvorna mot marginalen — gruv-ETF:ns pris per dollar marginal per uns. Del av köpstödet för GLD/GDX och GLD/GDXJ
+sedan 2026-11-03 (tillsammans med kvoten); ensam ingen signal.
 
 GLD/GDX-kvoten bortser från marginalerna. Gruvorna tjänar (guldpris − AISC) per uns, och med guldet
 långt över branschens AISC är marginalen per uns flera gånger 2015–2019 års nivå. Måttet:
@@ -10,8 +11,11 @@ långt över branschens AISC är marginalen per uns flera gånger 2015–2019 å
 Låg percentil av M i sin egen historik = gruvorna billiga per dollar marginal. GDXJ räknas mot samma
 bransch-AISC som GDX (en approximation — juniorbolagens egna kostnader finns inte i tabellen).
 
-CONTEXT ONLY — never feeds any signal, count or confirmation: not the engine's +1 ACCUMULATE
-confirmation, not _classify / _classify_driver, not the 'Gummisnoddar' count in the UI.
+Since 2026-11-03 (owner decision A after the pre-registered backtest docs/forskning/gruvor_marginal_spec.md) M's
+percentile is part of the buy support for GLD/GDX (GDX) and GLD/GDXJ (GDXJ): the ratio RUBBER_BAND_STRETCHED and
+M ≤ 30th percentile. The rule lives in alpha_regime/buy_support.py, the only reader of this module's result for a
+rule — the engine's +1, the 'Gummisnoddar' count, the card and Thor all go through it. The gauge ALONE is never a
+signal (H2 failed), and _classify / _classify_driver never read it.
 
 Lägga in ett nytt kvartal (gör det varje kvartal)
 -------------------------------------------------
@@ -513,7 +517,8 @@ def compute(miner: str = "GDX") -> MarginResult:
     """GDX or GDXJ against the industry AISC, on the 10-year closes the ratio cards use. Cached 6h — but a
     missing download is a DATA_GAP that is NOT cached, so the next render retries.
 
-    CONTEXT ONLY — never feeds any signal, count or confirmation."""
+    Read for a rule only through alpha_regime/buy_support.py (GLD/GDX and GLD/GDXJ buy support since 2026-11-03);
+    a DATA_GAP there means no buy support."""
     miner = (miner or "GDX").strip().upper()
     try:
         return _compute_cached(miner)

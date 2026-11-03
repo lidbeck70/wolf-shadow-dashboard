@@ -10,6 +10,10 @@ Snoddarnas kort ska vara ärliga.
 
 Allt är ordval: _classify, _classify_driver och KÖP-STÖD-degraderingen ska ge exakt samma
 utfall som förut (låses nedan). Inget nätverk — fejkade kursserier.
+
+Sedan 2026-11-03 avgör marginalmätaren, inte drivaren, köpstödet för GLD/GDX och GLD/GDXJ
+(alpha_regime/buy_support.py, prövas i test_kopstod_gruvor.py). Drivarens ordval och
+KÖP-STÖD-degraderingen prövas därför här på SLV/SIL (_slv_sil), där drivaren fortfarande gäller.
 """
 import os
 
@@ -30,6 +34,17 @@ def _gld_gdx(**kw):
     base = dict(key="metal_miners", label="Gold ETF / Gold Miners", denominator_label="Gold Miners",
                 cheap_direction="high", current=4.672, percentile=35.0, zscore=-0.4, status="NEUTRAL",
                 numerator_label="GLD", denominator_leg_label="GDX", numerator_pctile=95.0,
+                denominator_pctile=30.0, driver="NUMERATOR_EXPENSIVE", history_start="2016-11-03",
+                history_years=10.0, median=6.25)
+    base.update(kw)
+    return cr.RatioResult(**base)
+
+
+def _slv_sil(**kw):
+    """Samma tal som _gld_gdx men SLV/SIL (silver_miners) — en kvot där drivaren fortfarande avgör köpstödet."""
+    base = dict(key="silver_miners", label="Silver ETF / Silver Miners", denominator_label="Silver Miners",
+                cheap_direction="high", current=4.672, percentile=35.0, zscore=-0.4, status="NEUTRAL",
+                numerator_label="SLV", denominator_leg_label="SIL", numerator_pctile=95.0,
                 denominator_pctile=30.0, driver="NUMERATOR_EXPENSIVE", history_start="2016-11-03",
                 history_years=10.0, median=6.25)
     base.update(kw)
@@ -63,29 +78,29 @@ def test_owner_screenshot_case_no_longer_claims_a_driver():
 
 def test_tension_and_stretched_show_the_driver():
     for status, pct in (("TENSION_BUILDING", 85.0), ("RUBBER_BAND_STRETCHED", 95.0)):
-        icon, text = aui._driver_verdict_text(_gld_gdx(status=status, percentile=pct))
+        icon, text = aui._driver_verdict_text(_slv_sil(status=status, percentile=pct))
         assert icon == "⚠️"
-        assert text == ("GLD står nära toppen av sitt eget prisspann (95:e pct), GDX står inte nära botten "
-                        "av sitt (30:e pct) — panelens regel räknar det inte som köpstöd i GDX.")
+        assert text == ("SLV står nära toppen av sitt eget prisspann (95:e pct), SIL står inte nära botten "
+                        "av sitt (30:e pct) — panelens regel räknar det inte som köpstöd i SIL.")
 
 
 def test_genuine_cheap_leg_wording_follows_what_the_rule_counts():
-    stretched = _gld_gdx(status="RUBBER_BAND_STRETCHED", percentile=95.0, driver="DENOMINATOR_CHEAP",
+    stretched = _slv_sil(status="RUBBER_BAND_STRETCHED", percentile=95.0, driver="DENOMINATOR_CHEAP",
                          numerator_pctile=50.0, denominator_pctile=12.0)
     icon, text = aui._driver_verdict_text(stretched)
     assert icon == "🟢"
-    assert text == "GDX står nära botten av sitt eget prisspann (12:e pct) — panelens regel räknar det som köpstöd i GDX."
+    assert text == "SIL står nära botten av sitt eget prisspann (12:e pct) — panelens regel räknar det som köpstöd i SIL."
     # Spänning räknas inte som KÖP-STÖD av panelen förrän snodden är fullt sträckt
-    tension = _gld_gdx(status="TENSION_BUILDING", percentile=85.0, driver="DENOMINATOR_CHEAP",
+    tension = _slv_sil(status="TENSION_BUILDING", percentile=85.0, driver="DENOMINATOR_CHEAP",
                        numerator_pctile=50.0, denominator_pctile=12.0)
-    assert aui._driver_verdict_text(tension)[1].endswith("köpstöd i GDX först när snodden är fullt sträckt.")
-    both = _gld_gdx(status="RUBBER_BAND_STRETCHED", percentile=95.0, driver="BOTH", denominator_pctile=12.0)
+    assert aui._driver_verdict_text(tension)[1].endswith("köpstöd i SIL först när snodden är fullt sträckt.")
+    both = _slv_sil(status="RUBBER_BAND_STRETCHED", percentile=95.0, driver="BOTH", denominator_pctile=12.0)
     icon, text = aui._driver_verdict_text(both)
-    assert icon == "🟢⚡" and "GDX står nära botten" in text and "GLD nära toppen av sitt (95:e pct)" in text
-    assert text.endswith("panelens regel räknar det som köpstöd i GDX.") and "Starkt" not in text
-    mixed = _gld_gdx(status="RUBBER_BAND_STRETCHED", percentile=95.0, driver="MIXED", numerator_pctile=60.0)
-    assert aui._driver_verdict_text(mixed)[1].startswith("Blandad signal — varken GDX nära botten (30:e pct)")
-    assert aui._driver_verdict_text(mixed)[1].endswith("räknar det inte som köpstöd i GDX.")
+    assert icon == "🟢⚡" and "SIL står nära botten" in text and "SLV nära toppen av sitt (95:e pct)" in text
+    assert text.endswith("panelens regel räknar det som köpstöd i SIL.") and "Starkt" not in text
+    mixed = _slv_sil(status="RUBBER_BAND_STRETCHED", percentile=95.0, driver="MIXED", numerator_pctile=60.0)
+    assert aui._driver_verdict_text(mixed)[1].startswith("Blandad signal — varken SIL nära botten (30:e pct)")
+    assert aui._driver_verdict_text(mixed)[1].endswith("räknar det inte som köpstöd i SIL.")
 
 
 def test_low_direction_driver_names_the_numerator_as_cheap_leg():
@@ -211,25 +226,29 @@ def test_rule_functions_keep_their_exact_behaviour():
         "RUBBER_BAND_STRETCHED", "TENSION_BUILDING", "TENSION_BUILDING", "NEUTRAL"]
     assert [cr._classify(p, "low") for p in (10.0, 10.1, 20.0, 20.1)] == [
         "RUBBER_BAND_STRETCHED", "TENSION_BUILDING", "TENSION_BUILDING", "NEUTRAL"]
-    # KÖP-STÖD räknas bara när det billiga benet driver (UNKNOWN släpps igenom som förut)
+    # KÖP-STÖD räknas bara när det billiga benet driver (UNKNOWN släpps igenom som förut) — för alla kvoter
+    # utom GLD/GDX och GLD/GDXJ, där marginalmätaren avgör sedan 2026-11-03 (test_kopstod_gruvor.py)
     ratios = {
-        "a": _gld_gdx(status="RUBBER_BAND_STRETCHED", percentile=95.0, driver="NUMERATOR_EXPENSIVE"),
-        "b": _gld_gdx(status="RUBBER_BAND_STRETCHED", percentile=95.0, driver="DENOMINATOR_CHEAP"),
-        "c": _gld_gdx(status="RUBBER_BAND_STRETCHED", percentile=95.0, driver="MIXED"),
-        "d": _gld_gdx(status="RUBBER_BAND_STRETCHED", percentile=95.0, driver="UNKNOWN"),
-        "e": _gld_gdx(status="TENSION_BUILDING", percentile=85.0, driver="DENOMINATOR_CHEAP"),
+        "a": _slv_sil(status="RUBBER_BAND_STRETCHED", percentile=95.0, driver="NUMERATOR_EXPENSIVE"),
+        "b": _slv_sil(status="RUBBER_BAND_STRETCHED", percentile=95.0, driver="DENOMINATOR_CHEAP"),
+        "c": _slv_sil(status="RUBBER_BAND_STRETCHED", percentile=95.0, driver="MIXED"),
+        "d": _slv_sil(status="RUBBER_BAND_STRETCHED", percentile=95.0, driver="UNKNOWN"),
+        "e": _slv_sil(status="TENSION_BUILDING", percentile=85.0, driver="DENOMINATOR_CHEAP"),
     }
     assert aui._compute_ratio_summary(ratios, list(ratios)) == "Gummisnoddar: 2 KÖP-STÖD, 1 SPÄNNING, 2 NEUTRAL"
 
 
-def test_engine_confirmation_is_untouched():
-    """+1 ACCUMULATE kräver fortfarande RUBBER_BAND_STRETCHED och DENOMINATOR_CHEAP/BOTH — och läser
-    aldrig de nya informationsfälten."""
+def test_engine_confirmation_goes_through_the_shared_rule():
+    """+1 ACCUMULATE läser regeln i alpha_regime/buy_support.py, som för övriga kvoter fortfarande kräver
+    RUBBER_BAND_STRETCHED och DENOMINATOR_CHEAP/BOTH — och varken motorn eller regeln läser de nya
+    informationsfälten."""
+    from alpha_regime import buy_support as bs
     src = open(os.path.join(ROOT, "alpha_regime", "engine.py"), encoding="utf-8").read()
-    assert '_ratio.status == "RUBBER_BAND_STRETCHED"' in src
-    assert 'in ("DENOMINATOR_CHEAP", "BOTH")' in src
+    rule = open(os.path.join(ROOT, "alpha_regime", "buy_support.py"), encoding="utf-8").read()
+    assert "_bs.evaluate(_rk, _ratio, result.miner_margins)" in src
+    assert bs.STRETCHED == "RUBBER_BAND_STRETCHED" and bs.ENGINE_DRIVERS == ("DENOMINATOR_CHEAP", "BOTH")
     for field in ("history_start", "history_years", ".median"):
-        assert field not in src
+        assert field not in src and field not in rule
 
 
 # ── AppTest: kortet renderas (inget nätverk) ─────────────────────────────────
@@ -244,8 +263,10 @@ def _card_app():
               denominator_pctile=30.0, driver="NUMERATOR_EXPENSIVE", history_start="2016-11-03",
               history_years=10.0, median=6.25, sparkline_dates=["2026-10-23", "2026-10-30"],
               sparkline_values=[4.70, 4.672])
-    if case == "stretched":
-        kw.update(current=8.4, percentile=96.0, status="RUBBER_BAND_STRETCHED", driver="DENOMINATOR_CHEAP",
+    if case == "stretched":   # SLV/SIL: drivaren avgör där (för GLD/GDX marginalen, test_kopstod_gruvor.py)
+        kw.update(key="silver_miners", label="Silver ETF / Silver Miners", denominator_label="Silver Miners",
+                  numerator_label="SLV", denominator_leg_label="SIL",
+                  current=8.4, percentile=96.0, status="RUBBER_BAND_STRETCHED", driver="DENOMINATOR_CHEAP",
                   numerator_pctile=55.0, denominator_pctile=9.0)
     u._render_single_ratio(c.RatioResult(**kw), idx=0)
 
@@ -276,10 +297,10 @@ def test_apptest_stretched_card_shows_the_driver():
     assert not at.exception, at.exception
     html = _html(at)
     assert "🟢 KÖP-STÖD" in html
-    assert "GDX står nära botten av sitt eget prisspann (9:e pct) — panelens regel räknar det som köpstöd i GDX." in html
+    assert "SIL står nära botten av sitt eget prisspann (9:e pct) — panelens regel räknar det som köpstöd i SIL." in html
     assert "9:e pct — nära botten av sitt eget prisspann sedan 2016" in html
-    assert f"I GLD: 1 GDX = 0,119 GLD — 26{NB}% mindre än medianen sedan 2016 (0,160), alltså billigare i GLD än normalt." in html
-    assert NEUTRAL_LINE not in html
+    assert f"I SLV: 1 SIL = 0,119 SLV — 26{NB}% mindre än medianen sedan 2016 (0,160), alltså billigare i SLV än normalt." in html
+    assert NEUTRAL_LINE not in html and "Benens prisläge är bara information" not in html
 
 
 def _builder_app():
@@ -398,16 +419,17 @@ def test_ratio_just_under_80_follows_the_tension_badge(monkeypatch):
 
 def test_ratio_just_under_90_with_cheap_leg_says_counted_like_the_badge(monkeypatch):
     """Råpercentil 2264/2516 = 89,98 → status TENSION_BUILDING (motorns +1 orörd), lagrad 90,0 →
-    🟢 KÖP-STÖD och '1 KÖP-STÖD'. Raden får inte säga 'först när snodden är fullt sträckt'."""
+    🟢 KÖP-STÖD och '1 KÖP-STÖD'. Raden får inte säga 'först när snodden är fullt sträckt'.
+    SLV/SIL, där drivaren avgör (GLD/GDX vid samma kant: test_kopstod_gruvor.py)."""
     n = 2516
     ratio = _ranked(n, 2264, 4)
-    den = _ranked(n, 200, 5, 20, 40)                                      # GDX på 7,9:e pct i eget spann
-    r = _run_spec(monkeypatch, "metal_miners", ratio * den, den)
+    den = _ranked(n, 200, 5, 20, 40)                                      # SIL på 7,9:e pct i eget spann
+    r = _run_spec(monkeypatch, "silver_miners", ratio * den, den)
     assert r.status == "TENSION_BUILDING" and r.percentile == 90.0 and r.driver == "DENOMINATOR_CHEAP"
     assert aui._ratio_verdict(r)[0] == "🟢 KÖP-STÖD"
     assert aui._compute_ratio_summary({"m": r}, ["m"]) == "Gummisnoddar: 1 KÖP-STÖD"
     icon, text = aui._driver_verdict_text(r)
-    assert icon == "🟢" and text.endswith("panelens regel räknar det som köpstöd i GDX.")
+    assert icon == "🟢" and text.endswith("panelens regel räknar det som köpstöd i SIL.")
     assert "först när" not in text
 
 
@@ -454,15 +476,15 @@ def test_cheap_leg_at_20_04_reads_lower_part_not_near_bottom(monkeypatch):
 
 
 def test_other_leg_at_79_96_reads_upper_part_not_near_top(monkeypatch):
-    """GLD-benet på råa 1999/2500 = 79,96 lagras 80,0 — regeln kallar det inte dyrt."""
+    """SLV-benet på råa 1999/2500 = 79,96 lagras 80,0 — regeln kallar det inte dyrt (SLV/SIL: drivarens rad)."""
     n = 2500
     num = _ranked(n, 1999, 9, 100, 200)
     ratio = _ranked(n, 2450, 10)
-    r = _run_spec(monkeypatch, "metal_miners", num, num / ratio)
+    r = _run_spec(monkeypatch, "silver_miners", num, num / ratio)
     assert r.numerator_pctile == 80.0 and r.status == "RUBBER_BAND_STRETCHED"
     assert r.driver not in ("NUMERATOR_EXPENSIVE", "BOTH")
     assert aui._leg_words(r)[0] == "övre delen"
-    assert "GLD står nära toppen" not in aui._driver_verdict_text(r)[1]
+    assert "SLV står nära toppen" not in aui._driver_verdict_text(r)[1]
 
 
 @pytest.mark.parametrize("direction", ["high", "low"])
@@ -537,10 +559,10 @@ def test_sv_ord_never_raises_on_bad_values():
 
 
 def test_card_texts_use_swedish_ordinals():
-    cheap = _gld_gdx(status="RUBBER_BAND_STRETCHED", percentile=95.0, driver="DENOMINATOR_CHEAP",
+    cheap = _slv_sil(status="RUBBER_BAND_STRETCHED", percentile=95.0, driver="DENOMINATOR_CHEAP",
                      numerator_pctile=50.0, denominator_pctile=1.0)
     assert "(1:a pct)" in aui._driver_verdict_text(cheap)[1]
-    dear = _gld_gdx(status="RUBBER_BAND_STRETCHED", percentile=95.0, numerator_pctile=81.0, denominator_pctile=22.0)
+    dear = _slv_sil(status="RUBBER_BAND_STRETCHED", percentile=95.0, numerator_pctile=81.0, denominator_pctile=22.0)
     text = aui._driver_verdict_text(dear)[1]
     assert "(81:a pct)" in text and "(22:a pct)" in text and ":e pct" not in text
     assert aui._ratio_verdict(_gld_gdx(percentile=31.0))[2].endswith("vid 31:a percentilen — ingen extrem")

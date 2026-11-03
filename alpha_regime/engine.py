@@ -54,6 +54,7 @@ from alpha_regime.contrarian_signals import (
     get_contrarian_stage,
     ContrairianStageResult,
 )
+from alpha_regime import buy_support as _bs
 
 # ── Commodity ratios (optional) ───────────────────────────────────────────────
 _COMMODITY_OK = False
@@ -103,6 +104,9 @@ class RegimeResult:
     branch_name: Optional[str] = None         # Börsdata branch/sector name
     price_3m_low: Optional[float] = None      # ticker's 3-month low (for next-trigger box)
     price_6m_low: Optional[float] = None      # ticker's 3–6 month low
+    # {miner: MarginResult} for GDX/GDXJ when GLD/GDX or GLD/GDXJ is in detected_exposure. Since 2026-11-03 the
+    # margin gauge is part of those two ratios' buy support (alpha_regime/buy_support.py); the UI reuses these.
+    miner_margins: dict = field(default_factory=dict)
 
     # CONTEXT ONLY — never feeds the ACCUMULATE/DISTRIBUTE confirmation count.
     # Currency (SEK/NOK) trends lack mean reversion and must never act as contrarian buy signals.
@@ -286,6 +290,27 @@ def _fetch_sentiment(ticker: str) -> Optional[float]:
         return None
 
 
+def _en_ord(v: float) -> str:
+    """English ordinal of a rounded number: 1st, 2nd, 3rd, 11th, 22nd, 94th."""
+    n = int(round(float(v)))
+    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
+def _rubber_band_rationale(ratio, support) -> str:
+    """The checklist line for the +1 ACCUMULATE confirmation (buy_support.evaluate said supported).
+    For the gold keys the margin is stated as a number against the rule's limit, never as 'cheap': the margin
+    card's word 'billigt mot marginalen' covers only ≤ 25, while the rule counts up to 30."""
+    if support.details.get("rule") == "margin":
+        d = support.details
+        pair = (f"{ratio.numerator_label}/{ratio.denominator_leg_label}"
+                if ratio.numerator_label and ratio.denominator_leg_label else ratio.label)
+        return (f"Rubber Band: {pair} at {ratio.percentile:.0f}th percentile"
+                f" — {d['miner']} margin gauge at {_en_ord(d['margin_pct'])} pct (≤ {d['margin_max']:.0f})")
+    return (f"Rubber Band: {ratio.label} at {ratio.percentile:.0f}th percentile"
+            f" — {ratio.denominator_label} historically stretched cheap")
+
+
 def _classify_trend_phase(price: float, ema50: float, ema200: float) -> str:
     if any(v != v for v in (price, ema50, ema200)):
         return "Neutral"
@@ -424,19 +449,19 @@ def run_regime_analysis(
                 # detected_exposure is now a list of ratio keys (or None)
                 result.detected_exposure = _EXPOSURE_TO_RATIO.get(raw_exp) if raw_exp else None
                 if result.detected_exposure:
-                    # Append rationale for the first STRETCHED ratio found (max +1 confirmation)
+                    # GLD/GDX and GLD/GDXJ: the margin gauge is part of their buy support — computed once here
+                    # (cached 6h) and kept on the result so the UI shows the same objects.
+                    result.miner_margins = _bs.compute_margins(result.detected_exposure)
+                    # Append rationale for the first ratio with buy support (max +1 confirmation). The rule is
+                    # buy_support.evaluate: GLD/GDX and GLD/GDXJ need RUBBER_BAND_STRETCHED and the margin gauge
+                    # ≤ 30 (missing margin → no support); every other ratio RUBBER_BAND_STRETCHED and the driver
+                    # DENOMINATOR_CHEAP/BOTH. UNKNOWN is NOT a valid confirmation there: only an explicit cheap-leg
+                    # driver may confirm, otherwise a missing driver would produce a false contrarian buy claim.
                     for _rk in result.detected_exposure:
                         _ratio = result.commodity_ratios.get(_rk)
-                        # Only append if the cheap asset is genuinely cheap (not just expensive numerator).
-                        # UNKNOWN is NOT a valid confirmation: only an explicit cheap-leg driver may confirm,
-                        # otherwise an unclassified/missing driver would produce a false contrarian buy claim.
-                        if (_ratio and _ratio.status == "RUBBER_BAND_STRETCHED"
-                                and getattr(_ratio, "driver", "UNKNOWN")
-                                in ("DENOMINATOR_CHEAP", "BOTH")):
-                            result.contrarian.rationale.append(
-                                f"Rubber Band: {_ratio.label} at {_ratio.percentile:.0f}th percentile"
-                                f" — {_ratio.denominator_label} historically stretched cheap"
-                            )
+                        _support = _bs.evaluate(_rk, _ratio, result.miner_margins)
+                        if _support.supported:
+                            result.contrarian.rationale.append(_rubber_band_rationale(_ratio, _support))
                             break  # max +1 ACCUMULATE confirmation
             except Exception as exc:
                 logger.debug("commodity_ratios: %s", exc)

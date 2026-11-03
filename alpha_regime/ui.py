@@ -14,6 +14,7 @@ from typing import Optional
 import plotly.graph_objects as go
 import streamlit as st
 
+from alpha_regime import buy_support as _bs
 from alpha_regime.engine import RegimeResult, run_regime_analysis
 from alpha_regime.quality_signals import SignalResult
 from alpha_regime.contrarian_signals import (
@@ -55,7 +56,7 @@ try:
 except ImportError:
     pass
 
-# ── Optional: Gruvorna mot marginalen (CONTEXT ONLY) ─────────────────────────
+# ── Optional: Gruvorna mot marginalen (part of GLD/GDX and GLD/GDXJ buy support since 2026-11-03) ─────
 _MM_OK = False
 try:
     from alpha_regime import miner_margin as _mm
@@ -283,8 +284,12 @@ def _ratio_verdict(ratio) -> tuple:
                 f"{lbl} vid {_sv_ord(pct)} percentilen — ingen extrem")
 
 
-def _compute_ratio_summary(commodity_ratios: dict, keys: list) -> str:
-    """Return e.g. 'Gummisnoddar: 2 KÖP-STÖD, 1 NEUTRAL' for the exposure's ratio list."""
+def _compute_ratio_summary(commodity_ratios: dict, keys: list, margins: Optional[dict] = None) -> str:
+    """Return e.g. 'Gummisnoddar: 2 KÖP-STÖD, 1 NEUTRAL' for the exposure's ratio list.
+
+    A 🟢 KÖP-STÖD badge counts as KÖP-STÖD only when buy_support.evaluate confirms it, else it is demoted to
+    NEUTRAL: GLD/GDX and GLD/GDXJ need the margin gauge ≤ 30 (margins = {miner: MarginResult}; missing → not
+    counted), every other ratio the cheap-leg driver (DENOMINATOR_CHEAP/BOTH, UNKNOWN let through as before)."""
     counts: dict[str, int] = {"KÖP-STÖD": 0, "SÄLJ-STÖD": 0, "SPÄNNING": 0, "NEUTRAL": 0, "DATA_GAP": 0}
     for key in keys:
         r = commodity_ratios.get(key)
@@ -293,11 +298,11 @@ def _compute_ratio_summary(commodity_ratios: dict, keys: list) -> str:
             continue
         badge, _, _ = _ratio_verdict(r)
         if "KÖP-STÖD" in badge:
-            # Only genuine buy signal when driver confirms cheap asset, not expensive other leg
-            if getattr(r, "driver", "UNKNOWN") in ("DENOMINATOR_CHEAP", "BOTH", "UNKNOWN"):
+            # The badge is the gate (as before); the shared rule decides whether it is genuine buy support
+            if _bs.evaluate(key, r, margins, stretched=True, drivers=_bs.SUMMARY_DRIVERS).supported:
                 counts["KÖP-STÖD"] += 1
             else:
-                counts["NEUTRAL"] += 1   # NUMERATOR_EXPENSIVE/MIXED demoted
+                counts["NEUTRAL"] += 1   # driver NUMERATOR_EXPENSIVE/MIXED, or gold margin > 30/missing: demoted
         elif "SÄLJ-STÖD" in badge:
             counts["SÄLJ-STÖD"] += 1
         elif "SPÄNNING" in badge:
@@ -398,11 +403,12 @@ def _render_next_trigger(r: RegimeResult, c) -> None:
     )
 
 
-def _render_single_ratio(ratio, idx: int, counted: bool = True) -> None:
+def _render_single_ratio(ratio, idx: int, counted: bool = True, margins: Optional[dict] = None) -> None:
     """Render one ratio gauge row: verdict badge, percentile bar, sparkline.
 
     counted=False for the custom ratios: they never enter the engine's +1 confirmation or the
-    'Gummisnoddar' count, so their driver line must not say the panel counts them."""
+    'Gummisnoddar' count, so their driver line must not say the panel counts them.
+    margins: {miner: MarginResult} — GLD/GDX and GLD/GDXJ read their buy support from it (missing → none)."""
     if ratio.status == "DATA_GAP":
         st.warning(f"DATA_GAP — {ratio.label}: {ratio.error or 'data unavailable'}")
         return
@@ -468,8 +474,8 @@ def _render_single_ratio(ratio, idx: int, counted: bool = True) -> None:
         unsafe_allow_html=True,
     )
 
-    # Per-leg percentile breakdown + driver verdict
-    _render_leg_breakdown(ratio, counted=counted)
+    # Per-leg percentile breakdown + verdict line (driver; for GLD/GDX and GLD/GDXJ the margin rule)
+    _render_leg_breakdown(ratio, counted=counted, margins=margins)
 
     # The cheap leg priced in the other leg, against the median of the same window
     terms = _cheap_terms_text(ratio)
@@ -511,8 +517,9 @@ def _render_single_ratio(ratio, idx: int, counted: bool = True) -> None:
         st.plotly_chart(fig, use_container_width=True, key=f"rb_spark_{ratio.key}_{idx}")
 
 
-def _render_rubber_band_gauge(r: RegimeResult, exposure_override) -> None:
-    """Render all commodity ratio gauges for the current exposure, stacked vertically."""
+def _render_rubber_band_gauge(r: RegimeResult, exposure_override, margins: Optional[dict] = None) -> None:
+    """Render all commodity ratio gauges for the current exposure, stacked vertically.
+    margins: {miner: MarginResult} for the GLD/GDX and GLD/GDXJ cards (see _render_single_ratio)."""
     # Resolve which list of ratio keys to show
     if exposure_override is None:          # Auto
         keys = r.detected_exposure or []
@@ -541,7 +548,7 @@ def _render_rubber_band_gauge(r: RegimeResult, exposure_override) -> None:
         if ratio is None:
             st.caption(f"No data for ratio key: {key}")
             continue
-        _render_single_ratio(ratio, idx=i)
+        _render_single_ratio(ratio, idx=i, margins=margins)
         if i < len(keys) - 1:
             st.markdown('<hr style="border-color:#2a3040;margin:8px 0;">', unsafe_allow_html=True)
 
@@ -549,8 +556,9 @@ def _render_rubber_band_gauge(r: RegimeResult, exposure_override) -> None:
 # ── Per-leg breakdown helpers ─────────────────────────────────────────────────
 # A leg's own percentile is only where its PRICE sits in its own history window
 # (the same aligned window as the ratio) — a price position, not a valuation.
-# Everything here is wording: _classify, _classify_driver, the engine's +1
-# confirmation and the KÖP-STÖD demotion in _compute_ratio_summary are untouched.
+# Everything here is wording: no count, confirmation or demotion reads it. The buy
+# support rule itself (the engine's +1 and the KÖP-STÖD demotion in
+# _compute_ratio_summary) lives in alpha_regime/buy_support.py.
 
 _NBSP = "\u00a0"   # no-break space: '34 %' and '1 235' must not wrap apart on a phone
 
@@ -657,18 +665,65 @@ def _is_sell_extreme(ratio) -> bool:
     return _band_zone(ratio) == "sell"
 
 
-def _driver_verdict_text(ratio, counted: bool = True) -> tuple:
-    """Return (icon, Swedish explanation) for the driver line.
+def _uses_margin_rule(ratio, counted: bool = True) -> bool:
+    """GLD/GDX and GLD/GDXJ as the panel's own ratios: their verdict line is the margin rule, not the driver."""
+    return counted and _bs.uses_margin(getattr(ratio, "key", ""))
 
-    The driver claim is shown only in the tension/stretched zone; otherwise a neutral line
-    (at the opposite extreme: the cheap leg is dear vs the other). counted=False (custom
-    ratios) never says the panel counts it. Wording only."""
+
+def _margin_rule_support(ratio, margins: Optional[dict] = None):
+    """buy_support.evaluate for a gold card, 'stretched' read off the same badge as the header and the
+    'Gummisnoddar' count (so the line can never disagree with them at a rounding edge)."""
+    return _bs.evaluate(getattr(ratio, "key", ""), ratio, margins, stretched=_band_zone(ratio) == "buy")
+
+
+def _rule_ord(p: float, limit: float, at_most: bool) -> str:
+    """Swedish ordinal that never contradicts the rule: '22:a', but '30,4:e' against ≤ 30 and '89,9:e'
+    against ≥ 90 where the whole number would cross the limit (buy_support.pct_text)."""
+    txt = _bs.pct_text(p, limit, at_most)
+    return f"{txt}:e" if "," in txt else _sv_ord(int(txt))
+
+
+def _margin_rule_text(ratio, margins: Optional[dict] = None) -> tuple:
+    """(icon, Swedish line) for GLD/GDX and GLD/GDXJ in the tension/stretched zone: the rule since 2026-11-03 —
+    the ratio ≥ 90:e percentilen AND the miner's margin gauge ≤ 30:e (buy_support). Wording only."""
+    sup = _margin_rule_support(ratio, margins)
+    d = sup.details
+    miner, lim = d["miner"], d["margin_max"]
+    mp = d.get("margin_pct")
+    r_ord = _rule_ord(ratio.percentile, _GAUGE_STRETCHED_PCT, at_most=False)
+    m_ord = _rule_ord(mp, lim, at_most=True) if mp is not None else None
+    if sup.reason == _bs.MARGIN_CHEAP:
+        text = (f"Kvoten vid {r_ord} percentilen och marginalmätaren för {miner} vid {m_ord} "
+                f"(≤ {lim:.0f}:e) — panelens regel räknar det som köpstöd i {miner}.")
+        return ("🟢", text)
+    if sup.reason == _bs.MARGIN_NOT_CHEAP:
+        text = (f"Kvoten vid {r_ord} percentilen, men marginalmätaren för {miner} står vid {m_ord} "
+                f"(köpstöd kräver ≤ {lim:.0f}:e) — inget köpstöd i {miner}.")
+        return ("⚠️", text)
+    if sup.reason == _bs.MARGIN_MISSING:
+        return ("⚪", f"Kvoten vid {r_ord} percentilen, men marginalen för {miner} saknas — inget köpstöd i {miner}.")
+    now = (f"nu kvoten vid {r_ord} och marginalmätaren vid {m_ord}." if m_ord is not None
+           else f"nu kvoten vid {r_ord}, och marginalen saknas.")
+    text = (f"Köpstöd i {miner} kräver kvoten ≥ {_GAUGE_STRETCHED_PCT:.0f}:e percentilen och marginalmätaren "
+            f"≤ {lim:.0f}:e — {now}")
+    return ("⚡", text)
+
+
+def _driver_verdict_text(ratio, counted: bool = True, margins: Optional[dict] = None) -> tuple:
+    """Return (icon, Swedish explanation) for the card's verdict line.
+
+    The claim is shown only in the tension/stretched zone; otherwise a neutral line
+    (at the opposite extreme: the cheap leg is dear vs the other). For GLD/GDX and GLD/GDXJ
+    the line describes the margin rule (since 2026-11-03, _margin_rule_text), for every other
+    ratio the driver. counted=False (custom ratios) never says the panel counts it. Wording only."""
     cheap_name, other_name, cheap_pct, other_pct = _cheap_and_other(ratio)
     zone = _band_zone(ratio)
     if zone not in ("buy", "tension"):
         if zone == "sell":
             return ("🔴", f"Snodden är spänd åt andra hållet — {cheap_name} är historiskt dyr mot {other_name}.")
         return ("⚪", "Snodden är inte spänd — benens prisläge förklarar inget köpläge.")
+    if _uses_margin_rule(ratio, counted):
+        return _margin_rule_text(ratio, margins)
 
     d = ratio.driver
     cheap_low = f"{cheap_name} står nära botten av sitt eget prisspann ({_sv_ord(cheap_pct)} pct)"
@@ -758,8 +813,30 @@ def _cheap_terms_text(ratio) -> Optional[str]:
             f"alltså {'dyrare' if more else 'billigare'} i {other} än normalt.")
 
 
-def _render_leg_breakdown(ratio, counted: bool = True) -> None:
-    """Two-row per-leg price position + one-line driver verdict below the gauge bar."""
+_MARGIN_RULE_COLORS = {
+    _bs.MARGIN_CHEAP: "#1aaa5a",
+    _bs.MARGIN_NOT_CHEAP: "#e8a020",
+    _bs.MARGIN_MISSING: "#607080",
+    _bs.NOT_STRETCHED: "#c9a84c",   # tension zone: what the rule still needs
+}
+_DRIVER_COLORS = {
+    "DENOMINATOR_CHEAP": "#1aaa5a",
+    "NUMERATOR_EXPENSIVE": "#e8a020",
+    "BOTH": "#c9a84c",
+    "MIXED": "#607080",
+}
+
+
+def _legs_info_text(ratio) -> str:
+    """GLD/GDX and GLD/GDXJ: the legs' price position is information only — the margin gauge decides."""
+    miner = _bs.MARGIN_RULE.get(getattr(ratio, "key", ""), ratio.denominator_leg_label or "gruvorna")
+    return (f"Benens prisläge är bara information — sedan {_bs.DECIDED} avgör marginalmätaren köpstödet för "
+            f"den här kvoten, inte {miner}:s eget prisläge.")
+
+
+def _render_leg_breakdown(ratio, counted: bool = True, margins: Optional[dict] = None) -> None:
+    """Two-row per-leg price position + one-line verdict below the gauge bar (the driver; for GLD/GDX and
+    GLD/GDXJ the margin rule, with a note that the legs are information only)."""
     num_pct = ratio.numerator_pctile
     den_pct = ratio.denominator_pctile
     if num_pct is None or den_pct is None:
@@ -774,15 +851,16 @@ def _render_leg_breakdown(ratio, counted: bool = True) -> None:
     num_color = _LEG_WORD_COLORS[num_word]
     den_color = _LEG_WORD_COLORS[den_word]
 
-    icon, verdict_text = _driver_verdict_text(ratio, counted=counted)
-    verdict_color = {
-        "DENOMINATOR_CHEAP":   "#1aaa5a",
-        "NUMERATOR_EXPENSIVE": "#e8a020",
-        "BOTH":                "#c9a84c",
-        "MIXED":               "#607080",
-    }.get(ratio.driver, "#607080")
+    icon, verdict_text = _driver_verdict_text(ratio, counted=counted, margins=margins)
+    margin_rule = _uses_margin_rule(ratio, counted)
+    if margin_rule:
+        verdict_color = _MARGIN_RULE_COLORS.get(_margin_rule_support(ratio, margins).reason, "#607080")
+    else:
+        verdict_color = _DRIVER_COLORS.get(ratio.driver, "#607080")
     if not _driver_applies(ratio):
         verdict_color = "#cc3333" if _is_sell_extreme(ratio) else "#607080"
+    legs_note = (f'<div style="color:#607080;font-size:0.72rem;margin-bottom:4px;">{_legs_info_text(ratio)}</div>'
+                 if margin_rule else "")
 
     st.markdown(
         f"""<div style="background:#0d1117;border:1px solid #2a3040;border-radius:5px;
@@ -797,7 +875,7 @@ def _render_leg_breakdown(ratio, counted: bool = True) -> None:
               <span style="color:{den_color};font-weight:700;">{_sv_ord(den_pct)} pct — {den_lbl}</span>
             </span>
           </div>
-          <div style="color:{verdict_color};font-size:0.78rem;">{icon} {verdict_text}</div>
+          {legs_note}<div style="color:{verdict_color};font-size:0.78rem;">{icon} {verdict_text}</div>
         </div>""",
         unsafe_allow_html=True,
     )
@@ -1340,21 +1418,23 @@ def _render_context_gauges(r: RegimeResult) -> None:
             )
 
 
-# ── Gruvorna mot marginalen (CONTEXT ONLY) ────────────────────────────────────
+# ── Gruvorna mot marginalen ───────────────────────────────────────────────────
 # M = miner ETF price / (gold − industry AISC); low percentile = miners cheap per dollar of margin.
-# Presentation only: nothing here feeds _classify, _classify_driver, the engine's +1 confirmation or
-# the 'Gummisnoddar' count in _compute_ratio_summary.
+# Since 2026-11-03 (owner decision A after the backtest) M's percentile is part of the buy support for GLD/GDX
+# and GLD/GDXJ together with the ratio — the rule lives in alpha_regime/buy_support.py, not here. This section
+# is presentation; the gauge ALONE is never a signal (H2 failed).
 
-_MM_MINERS = (("metal_miners", "GDX"), ("gold_gdxj", "GDXJ"))   # shown ratio key → miner ETF
+# Display zones only (the card's word and the bar's cyan zone). The buy support rule's limit is
+# buy_support.MARGIN_MAX_PCT (30, the dashed line); at 26–30 the card says 'normalt mot marginalen' plus that limit.
 _MM_CHEAP_PCT = 25   # lowest quartile of M = 'billigt mot marginalen' (the bar's cheap zone, left)
 _MM_DEAR_PCT = 75    # highest quartile = 'dyrt mot marginalen'
 _MM_STALE_TEXT = "AISC-tabellen är äldre än två kvartal — uppdatera alpha_regime/miner_margin.py"
 
 
 def _margin_miners(keys) -> list:
-    """GDX when GLD/GDX is shown, GDXJ when GLD/GDXJ is shown (gold_miner / junior_miner exposures)."""
-    shown = keys or []
-    return [miner for key, miner in _MM_MINERS if key in shown]
+    """GDX when GLD/GDX is shown, GDXJ when GLD/GDXJ is shown (gold_miner / junior_miner exposures) — the
+    rule's own mapping, buy_support.MARGIN_RULE."""
+    return _bs.margin_miners(keys)
 
 
 def _margin_word(pct) -> tuple:
@@ -1367,9 +1447,26 @@ def _margin_word(pct) -> tuple:
     return "normalt mot marginalen", "#8899aa"
 
 
+def _margin_ord(pct) -> str:
+    """M's percentile as an ordinal that never contradicts the rule's limit: '22:a', but '30,4:e' (not '30:e')
+    when the whole number would read as ≤ 30 though the rule says > 30 (buy_support.pct_text)."""
+    return _rule_ord(pct, _bs.MARGIN_MAX_PCT, at_most=True)
+
+
+def _margin_limit_note(pct) -> str:
+    """', men inom köpstödets gräns (≤ 30:e, med kvoten ≥ 90)' for 25 < M ≤ 30: the card's word there is
+    'normalt mot marginalen' (the cheap word is display only, ≤ 25), but the rule (buy_support, unrounded
+    percentile) counts it — so the card says so instead of seeming to contradict the ratio card. '' otherwise."""
+    if _margin_word(pct)[0] != "normalt mot marginalen" or float(pct) > _bs.MARGIN_MAX_PCT:
+        return ""
+    return (f", men inom köpstödets gräns (≤ {_bs.MARGIN_MAX_PCT:.0f}:e, med kvoten "
+            f"≥ {_GAUGE_STRETCHED_PCT:.0f})")
+
+
 def _margin_value_text(res) -> Optional[str]:
     """'GDX kostar 0,031 per dollar marginal per uns — 22:a percentilen sedan 2016 (median 0,045):
-    billigt mot marginalen'. None when M or its percentile is missing or not finite."""
+    billigt mot marginalen'. At 26–30 the word is 'normalt mot marginalen' plus the rule's limit
+    (_margin_limit_note). None when M or its percentile is missing or not finite."""
     cur = _finite_pos(getattr(res, "current", None))
     pct = getattr(res, "percentile", None)
     if cur is None or pct is None or not math.isfinite(float(pct)):
@@ -1379,7 +1476,7 @@ def _margin_value_text(res) -> Optional[str]:
     since = f" sedan {year}" if year.isdigit() else ""
     med_txt = f" (median {_sv_num(med, _sig_decimals(med, 2))})" if med is not None else ""
     return (f"{res.miner} kostar {_sv_num(cur, _sig_decimals(cur, 2))} per dollar marginal per uns — "
-            f"{_sv_ord(pct)} percentilen{since}{med_txt}: {_margin_word(pct)[0]}")
+            f"{_margin_ord(pct)} percentilen{since}{med_txt}: {_margin_word(pct)[0]}{_margin_limit_note(pct)}")
 
 
 def _margin_line_text(res) -> Optional[str]:
@@ -1441,7 +1538,7 @@ def _render_margin_card(res, idx: int) -> None:
     st.markdown(
         f'<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:4px 0 2px;">'
         f'<span style="font-weight:700;color:#e8e4dc;">{res.miner} mot marginalen</span>'
-        f'{_css_badge(f"{_sv_ord(res.percentile)} pct", color, fg)}</div>'
+        f'{_css_badge(f"{_margin_ord(res.percentile)} pct", color, fg)}</div>'
         f'<div style="font-size:0.8rem;color:#aabbcc;margin:2px 0 6px;">{value_txt}</div>',
         unsafe_allow_html=True,
     )
@@ -1449,6 +1546,8 @@ def _render_margin_card(res, idx: int) -> None:
         f"""<div style="margin:4px 0 2px;">
           <div style="position:relative;background:#1a2030;border-radius:6px;height:24px;overflow:hidden;">
             <div style="position:absolute;left:0;width:{_MM_CHEAP_PCT}%;top:0;bottom:0;background:rgba(0,229,255,0.28);"></div>
+            <div style="position:absolute;left:{_bs.MARGIN_MAX_PCT:.0f}%;top:0;bottom:0;width:0;
+                border-left:2px dashed #1aaa5a;pointer-events:none;"></div>
             <div style="position:absolute;left:0;width:{pct:.1f}%;top:0;bottom:0;
                 background:linear-gradient(to right,#2a3545,{color}55);pointer-events:none;"></div>
             <div style="position:absolute;left:{pct:.1f}%;top:2px;bottom:2px;width:3px;
@@ -1460,7 +1559,10 @@ def _render_margin_card(res, idx: int) -> None:
             <span style="position:absolute;right:4px;top:50%;transform:translateY(-50%);
                 font-size:0.6rem;color:#6677aa;">100</span>
           </div>
-          <div style="font-size:0.6rem;color:#00E5FF;text-align:left;margin-top:2px;">← BILLIGT MOT MARGINALEN</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px 12px;font-size:0.6rem;margin-top:2px;">
+            <span style="color:#00E5FF;">← BILLIGT MOT MARGINALEN</span>
+            <span style="color:#1aaa5a;">┆ streckat = köpstödets gräns {_bs.MARGIN_MAX_PCT:.0f} (med kvoten ≥ 90)</span>
+          </div>
         </div>""",
         unsafe_allow_html=True,
     )
@@ -1504,27 +1606,31 @@ def _render_margin_card(res, idx: int) -> None:
         st.plotly_chart(fig, use_container_width=True, key=f"mm_spark_{res.miner}_{idx}")
 
 
-def _render_miner_margin(keys) -> None:
-    """'Gruvorna mot marginalen (kontext)' under the rubber band gauges when GLD/GDX or GLD/GDXJ is
-    shown. CONTEXT ONLY — never part of the signals, the count or the confirmation."""
+_MM_RULE_TEXT = (
+    f"Sedan {_bs.DECIDED} (ägarens beslut efter backtestet) är marginalen en del av köpstödet för GLD/GDX och "
+    f"GLD/GDXJ, tillsammans med kvoten: 🟢 KÖP-STÖD i Gummisnoddar-räkningen och panelens bekräftelse kräver att "
+    f"kvoten står vid ≥ 90:e percentilen och marginalmätaren vid ≤ {_bs.MARGIN_MAX_PCT:.0f}:e. Saknas marginalen "
+    f"blir det inget köpstöd. Mätaren ensam är ingen signal — den hypotesen (H2) föll i backtestet."
+)
+
+
+def _render_miner_margin(keys, margins: Optional[dict] = None) -> None:
+    """'Gruvorna mot marginalen' under the rubber band gauges when GLD/GDX or GLD/GDXJ is shown. Part of those
+    two ratios' buy support since 2026-11-03 (buy_support.py); the gauge alone is no signal. margins: the
+    {miner: MarginResult} already computed (RegimeResult.miner_margins) — reused, never computed twice."""
     miners = _margin_miners(keys)
     if not miners or not _MM_OK:
         return
-    results = []
-    for miner in miners:
-        try:
-            results.append(_mm.compute(miner))
-        except Exception as exc:
-            logger.debug("miner_margin(%s): %s", miner, exc)
-            results.append(_mm.MarginResult(miner=miner, error="beräkningen misslyckades"))
+    have = _bs.compute_margins(keys, margins)
+    results = [have.get(miner) or _mm.MarginResult(miner=miner, error="beräkningen misslyckades")
+               for miner in miners]
 
     st.markdown(
         '<p style="color:#607080;font-weight:600;font-size:0.9rem;margin:20px 0 4px;">'
-        'Gruvorna mot marginalen (kontext)</p>',
+        'Gruvorna mot marginalen</p>',
         unsafe_allow_html=True,
     )
-    caption = ("Bara kontext — ingår aldrig i signalerna, i Gummisnoddar-räkningen eller i panelens "
-               "bekräftelse. M = ETF-kursen ÷ (guldpriset − branschens AISC per uns); låg percentil i M:s "
+    caption = (f"{_MM_RULE_TEXT} M = ETF-kursen ÷ (guldpriset − branschens AISC per uns); låg percentil i M:s "
                f"egen historik = gruvorna billiga per dollar marginal. {_margin_source_text(results)} "
                "Senaste kända AISC gäller tills nästa kvartal läggs in.")
     if "GDXJ" in miners:
@@ -1595,17 +1701,21 @@ def _render_contrarian_mode(r: RegimeResult, exposure_override=None) -> None:
     if c.stage.startswith("ACCUMULATE"):
         _render_tactical_entry(r)
 
+    # Margin gauges for GLD/GDX and GLD/GDXJ: the engine's (r.miner_margins) reused, a ratio chosen by hand
+    # computed once here (cached) — the summary, the cards and the margin section all read the same objects.
+    _margins = _bs.compute_margins(_display_keys, getattr(r, "miner_margins", None))
+
     # 1. Verdict banner (with ratio summary)
-    _ratio_sum = _compute_ratio_summary(r.commodity_ratios, _display_keys)
+    _ratio_sum = _compute_ratio_summary(r.commodity_ratios, _display_keys, _margins)
     _render_verdict_banner_contrarian(r, c, ratio_summary=_ratio_sum)
 
     # 2. Next trigger box
     _render_next_trigger(r, c)
 
     # 3. Rubber band gauge + custom builder
-    _render_rubber_band_gauge(r, exposure_override)
-    # 3b. Gruvorna mot marginalen — CONTEXT ONLY, outside the 'Gummisnoddar' count and the engine's +1
-    _render_miner_margin(_display_keys)
+    _render_rubber_band_gauge(r, exposure_override, margins=_margins)
+    # 3b. Gruvorna mot marginalen — part of GLD/GDX and GLD/GDXJ buy support (with the ratio) since 2026-11-03
+    _render_miner_margin(_display_keys, margins=_margins)
     _render_custom_ratio_builder()
 
     # 4. Gold context gauges (currency-driven move detection — CONTEXT ONLY)

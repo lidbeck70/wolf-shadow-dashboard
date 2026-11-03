@@ -197,7 +197,10 @@ def _guide_contrarian() -> None:
                     "<b>ACCUMULATE 3/3</b> — Marknadsfas: HOPE. Kurs nära 200-dagars MA (–5% till +5%). "
                     "Sista chansen att ackumulera billigt.",
                     "<b>Bekräftelse:</b> Gummisnodde ≥ 90:e percentilen (t.ex. Gold/Silver) = "
-                    "råvaran historiskt max-billig vs motvikten → stärker köpfallet.",
+                    "råvaran historiskt max-billig vs motvikten → stärker köpfallet. Kvoten räcker inte ensam: "
+                    "för guldgruvorna (GLD/GDX, GLD/GDXJ) ska dessutom marginalmätaren stå på ≤ 30:e "
+                    "percentilen (gruvornas kurs per dollar marginal, sedan 2026-11-03); för övriga kvoter ska "
+                    "det billiga benet stå nära botten av sitt eget prisspann.",
                     "<b>Sentiment-overlay:</b> Retail sentiment < 30/100 = extrem rädsla → "
                     "HIGH confidence-signal.",
                 ], _TEXT),
@@ -235,7 +238,9 @@ def _guide_contrarian() -> None:
                 _ul([
                     "<b>Hitta fas:</b> MER → Motorsidor → välj Deep Contrarian → tryck ANALYSERA.",
                     "<b>Gummisnodde-bekräftelse:</b> Välj 'Commodity exposure' i Alpha Regime för att se "
-                    "om råvaruratios är historiskt sträckta (≥ 90:e percentilen).",
+                    "om råvaruratios är historiskt sträckta (≥ 90:e percentilen). För GLD/GDX och GLD/GDXJ "
+                    "visar 'Gruvorna mot marginalen' det andra villkoret (marginalmätaren ≤ 30:e percentilen); "
+                    "för övriga kvoter visar kortet om det billiga benet står nära botten av sitt prisspann.",
                     "<b>Hitta kandidater:</b> THOR → Deep Contrarian "
                     "(bara råvarubolag · Hat Score + Necessity).",
                     "<b>Sentiment:</b> ODIN → Makro → Sentiment.",

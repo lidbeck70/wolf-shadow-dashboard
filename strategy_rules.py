@@ -666,10 +666,14 @@ DEEP_CONTRARIAN = Playbook(
          "Aldrig allt på en gång. Det är så du får ner snittkursen när det faller mer.",
          "PORTFÖLJ → Positioner: Deep Contrarian-innehav har fältet "
          "'Tranches deployed' (0/3–3/3) som visar var du är.", True),
-        ("Bekräftelse: gummisnodde ≥ 90:e percentilen",
-         "T.ex. Gold/Silver-ratio historiskt sträckt = råvaran max-billig vs motvikten.",
+        ("Bekräftelse: gummisnodde ≥ 90:e percentilen — plus ett villkor till",
+         "T.ex. Gold/Silver-ratio historiskt sträckt = råvaran max-billig vs motvikten. Kvoten räcker inte "
+         "ensam. För guldgruvorna (GLD/GDX, GLD/GDXJ) ska dessutom marginalmätaren stå på ≤ 30:e percentilen: "
+         "gruvornas kurs per dollar marginal (guldpriset minus branschens AISC) bland de lägsta 30 % i sin "
+         "egen historik (sedan 2026-11-03, ägarens beslut efter backtestet). För övriga kvoter ska det "
+         "billiga benet stå nära botten av sitt eget prisspann.",
          "MER → Motorsidor: välj 'Commodity exposure' för att se om ratios är "
-         "historiskt sträckta."),
+         "historiskt sträckta. 'Gruvorna mot marginalen' visar marginalmätaren för GDX/GDXJ."),
         ("Sentiment-overlay: retail sentiment < 30/100",
          "Extrem rädsla ger HIGH confidence på köpsignalen.",
          "ODIN → Makro → Sentiment: sentiment-score."),
@@ -710,7 +714,8 @@ DEEP_CONTRARIAN = Playbook(
         ("Sälj 1/3", "THRILL"),
         ("Sälj 2/3", "EUPHORIA · COMPLACENCY"),
         ("Sälj 3/3", "ANXIETY · DENIAL"),
-        ("Bekräftelse", "Gummisnodde ≥ 90:e percentilen"),
+        ("Bekräftelse", "Gummisnodde ≥ 90:e percentilen + guldgruvor: marginalmätaren ≤ 30:e · "
+                        "övriga: billiga benet nära botten av sitt prisspann"),
         ("Sentiment", "<30 = köp · >70 = sälj"),
         ("Max per kategori", "~25 %"),
         ("Uthållighet", "Måste klara 50 % nedgång utan panik"),

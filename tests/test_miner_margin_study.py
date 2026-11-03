@@ -101,12 +101,19 @@ def test_spec_is_registered_and_matches_the_code():
 
 
 def test_signals_use_the_live_ratio_specs_and_the_engines_confirmation():
+    """S0 är regeln före 2026-11-03 — den som övriga kvoter fortfarande har i buy_support — och S3 är regeln
+    som ägaren valde för GLD/GDX och GLD/GDXJ: samma kvotnycklar, gruv-ETF:er och tröskel som panelen läser.
+    (Förr låste testet S0 mot motorns egen villkorsrad; motorn läser nu buy_support.evaluate.)"""
+    from alpha_regime import buy_support as bs
     for miner, key in ms.MINERS:
         spec = ms.live_spec(key)
         assert (spec.primary_num, spec.primary_den, spec.cheap_direction) == ("GLD", miner, "high")
     engine = open(os.path.join(ROOT, "alpha_regime", "engine.py"), encoding="utf-8").read()
-    assert '_ratio.status == "RUBBER_BAND_STRETCHED"' in engine and ms.STRETCHED == "RUBBER_BAND_STRETCHED"
-    assert 'in ("DENOMINATOR_CHEAP", "BOTH")' in engine and ms.S0_DRIVERS == ("DENOMINATOR_CHEAP", "BOTH")
+    assert "_bs.evaluate(_rk, _ratio, result.miner_margins)" in engine
+    assert bs.STRETCHED == ms.STRETCHED == "RUBBER_BAND_STRETCHED"
+    assert bs.ENGINE_DRIVERS == ms.S0_DRIVERS == ("DENOMINATOR_CHEAP", "BOTH")
+    assert bs.MARGIN_RULE == {key: miner for miner, key in ms.MINERS}
+    assert bs.MARGIN_MAX_PCT == ms.S3_M_MAX == 30.0 and bs.SPEC == ms.SPEC
 
 
 def test_no_rule_or_panel_code_reads_the_study():
@@ -459,6 +466,13 @@ def test_report_runs_without_network_and_saves_one_json_blob():
               "bas alla dagar, marginal", "Episoder", "H1 S3 mot S0", "H2 S2 mot baslinjen", "H3 S1 utan drivaren",
               "AISC-tabellen: 35 rader", "Förslag enligt specen", "ändrar inga regler"):
         assert w in text, w
+    # Efter ägarens beslut A (2026-11-03): S0 är regeln före beslutet, och mätaren är inte längre 'bara kontext'.
+    # Bara text — signalernas nycklar och beräkningarna är desamma.
+    assert [s for s, _ in ms.SIGNALS] == ["S0", "S1", "S2", "S3"]
+    assert all(m["signals"]["S0"]["label"] == "regeln före 2026-11-03" for m in res["miners"].values())
+    assert "S0 regeln före 2026-11-03" in text and "nuvarande regel" not in text and "bara kontext" not in text
+    assert ("Sedan 2026-11-03 (ägarens beslut A efter första körningen) är S3 panelens köpstöd för GLD/GDX och "
+            "GLD/GDXJ; S0 är regeln före dess.") in text
 
 
 def test_report_runs_when_the_margin_signals_cannot_be_computed():

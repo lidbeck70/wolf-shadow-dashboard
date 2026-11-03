@@ -168,3 +168,69 @@ när kurser saknas, och då sparas inget.
 | Version | Datum | Ändring |
 |---|---|---|
 | 1 | 2026-11-03 | Första versionen, före första körningen. Rättad samma dag, också före första körningen: i H1 räknas S0:s episoder på S3:s dagar, så att S3 inte får en extra episod vid marginalperiodens början. |
+| 1 | 2026-11-03 | Efter första körningen: avsnitten *Resultat (körning 2026-11-03)* och *Beslut (2026-11-03)* tillagda sist. Förregistreringens avsnitt ovan är oförändrade, så specen är fortfarande version 1. |
+| 1 | 2026-11-03 | Efter beslutet: studiens utskrift kallar S0 "regeln före 2026-11-03" (förr "nuvarande regel"), och rapportens rad om att mätaren är "bara kontext" säger nu beslutet. Bara text — studiens beräkningar och förregistreringen ovan är oförändrade. |
+
+## Resultat (körning 2026-11-03)
+
+Körd i Actions (`miner-margin-study.yml`) den 2026-11-03 med version 1 av specen. Hela utfallet, med alla
+horisonter, baslinjer och episoder, finns i loggen och i Gisten (`miner_margin_study.json`). Tabellerna visar
+antalet episoder, snittet av 252-dagarsavkastningen mot GLD och träffsäkerheten (andel episoder med utfall > 0).
+
+### GDX (GLD/GDX)
+
+| Signal | Episoder | Mot GLD, 252 dagar | Träff |
+|---|---|---|---|
+| S0 (regeln före 2026-11-03) | 3 | +17,7 % | 67 % |
+| S1 bara kvoten | 5 | +39,2 % | 80 % |
+| S2 bara marginalen | 3 | +1,5 % | 33 % |
+| S3 kvoten och P_M ≤ 30 | 4 | +43,1 % | 100 % |
+| Baslinje | – | +3,6 % | – |
+
+* **H1 godkänd.** S3 har 4 episoder med snittet +43,1 % mot GLD. S0, räknad på S3:s dagar från 2018-11-12, har 2
+  episoder med +28,6 %.
+* **H2 ej godkänd.** S2:s snitt +1,5 % ligger under baslinjen i S2:s täckning, +8,3 %. 95 %-intervallet är
+  [−7,0 %; +14,2 %].
+* **H3 godkänd.**
+
+### GDXJ (GLD/GDXJ)
+
+| Signal | Episoder | Mot GLD, 252 dagar | Träff |
+|---|---|---|---|
+| S0 (regeln före 2026-11-03) | 4 | +12,0 % | 50 % |
+| S1 bara kvoten | 7 | +23,8 % | 57 % |
+| S2 bara marginalen | 2 | +9,6 % | – |
+| S3 kvoten och P_M ≤ 30 | 5 | +47,8 % | 80 % |
+| Baslinje | – | +6,2 % | – |
+
+* **H1 ej godkänd.** S3:s snitt +47,8 % är lägre än S0:s +57,6 %. S0 har där bara 2 episoder.
+* **H2 ej godkänd.** S2 har bara 2 episoder, och golvet är 3.
+* **H3 godkänd.**
+
+### Episoderna som skiljer reglerna åt
+
+* S0 missade 2024-12-18: GDX +94,9 % mot GLD och GDXJ +113,2 %.
+* S0 gav signal 2013-03 (GDX −10,1 %) och för GDXJ 2012-11 (−30,7 %) och 2014-09 (−36,6 %).
+
+## Beslut (2026-11-03)
+
+Ägaren valde **A: S3 för båda kvoterna.** Från 2026-11-03 gäller för GLD/GDX och GLD/GDXJ att 🟢 KÖP-STÖD i
+"Gummisnoddar: …" och motorns +1 ACCUMULATE kräver två saker. Kvoten ska vara `RUBBER_BAND_STRETCHED`, alltså på
+90:e percentilen eller högre. Och gruv-ETF:ns marginalmätare ska stå på 30:e percentilen eller lägre. Det ersätter
+drivarens prisvillkor (gruv-ETF:ns eget prisläge ≤ 20) för de två kvoterna.
+
+* **GDX** följer specens förslag. H1 håller, så marginalvillkoret ersätter drivarens prisvillkor. H3 höll också och
+  redovisas som alternativ.
+* **GDXJ** avviker från specens bokstavliga förslag. Där höll H3 men inte H1, och då föreslog specen att bara ta
+  bort drivarens nedgradering, så att kvoten ≥ 90 räcker. Ägaren valde S3 även här, med motiveringen att "bara
+  kvoten" gav förlusterna 2012 och 2014. S3 behåller ett filter, och S3:s snitt (+47,8 %) är högre än S1:s
+  (+23,8 %). Beslutet vilar på svagare grund för GDXJ: H1 föll där, och branschens AISC är bara en approximation
+  för juniorerna.
+* Saknas marginalen (DATA_GAP: inget guldpris, ingen gruvkurs eller en marginal på 50 USD/uns eller mindre) blir det
+  inget köpstöd för de två kvoterna. En inaktuell AISC-tabell blockerar inte, men kortet fortsätter att varna.
+* Marginalmätaren ensam är ingen signal, eftersom H2 föll för båda. Inledningens mening om att mätaren är "bara
+  kontext" gällde före beslutet.
+* Alla andra kvoter behåller regeln från före 2026-11-03: sträckt kvot och det billiga benet nära botten av sitt
+  eget prisspann.
+* Regeln finns på ett enda ställe, `alpha_regime/buy_support.py`, som motorn, panelens sammanräkning och kort och
+  Thor läser. Inga andra regler, trösklar, grindar eller positionsstorlekar ändrades.
