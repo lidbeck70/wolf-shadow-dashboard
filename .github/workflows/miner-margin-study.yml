@@ -1,0 +1,32 @@
+name: Gruvorna mot marginalen
+
+# Manuell: hade marginalmätaren (GDX/GDXJ mot guldpris minus branschens AISC) varit en bättre bekräftelse av
+# gruvornas köpstöd än drivarens prisvillkor? Förregistrerat i docs/forskning/gruvor_marginal_spec.md.
+# Resultatet i loggen och i Gisten (miner_margin_study.json). Ändrar inga regler.
+on:
+  workflow_dispatch:
+
+jobs:
+  miner-margin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Gruvorna mot marginalen
+        env:
+          BORSDATA_API_KEY: ${{ secrets.BORSDATA_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+        run: python miner_margin_study.py
