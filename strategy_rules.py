@@ -668,9 +668,10 @@ DEEP_CONTRARIAN = Playbook(
          "'Tranches deployed' (0/3–3/3) som visar var du är.", True),
         ("Bekräftelse: gummisnodde ≥ 90:e percentilen — plus ett villkor till",
          "T.ex. Gold/Silver-ratio historiskt sträckt = råvaran max-billig vs motvikten. Kvoten räcker inte "
-         "ensam. För guldgruvorna (GLD/GDX, GLD/GDXJ) ska gruvorna dessutom vara billiga mot marginalen: "
-         "marginalmätaren ≤ 30:e percentilen (sedan 2026-11-03, ägarens beslut efter backtestet). För övriga "
-         "kvoter ska det billiga benet stå nära botten av sitt eget prisspann.",
+         "ensam. För guldgruvorna (GLD/GDX, GLD/GDXJ) ska dessutom marginalmätaren stå på ≤ 30:e percentilen: "
+         "gruvornas kurs per dollar marginal (guldpriset minus branschens AISC) bland de lägsta 30 % i sin "
+         "egen historik (sedan 2026-11-03, ägarens beslut efter backtestet). För övriga kvoter ska det "
+         "billiga benet stå nära botten av sitt eget prisspann.",
          "MER → Motorsidor: välj 'Commodity exposure' för att se om ratios är "
          "historiskt sträckta. 'Gruvorna mot marginalen' visar marginalmätaren för GDX/GDXJ."),
         ("Sentiment-overlay: retail sentiment < 30/100",

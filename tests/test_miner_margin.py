@@ -360,8 +360,9 @@ def test_margin_words(pct, word):
 
 
 def test_word_follows_the_ordinal_on_the_card():
+    # kortets ordningstal är _margin_ord (heltal, en decimal bara vid köpstödets gräns 30 — se test_kopstod_gruvor)
     for p in np.arange(0.0, 100.01, 0.1):
-        shown = int(aui._sv_ord(p).split(":")[0])
+        shown = float(aui._margin_ord(p).split(":")[0].replace(",", "."))
         word = aui._margin_word(p)[0]
         assert (word == "billigt mot marginalen") == (shown <= 25), p
         assert (word == "dyrt mot marginalen") == (shown >= 75), p
@@ -501,7 +502,7 @@ def test_engine_run_computes_each_gauge_once_and_keeps_one_confirmation(monkeypa
     assert calls == ["GDX", "GDXJ"]
     assert r.detected_exposure == GOLD_MINER_KEYS and sorted(r.miner_margins) == ["GDX", "GDXJ"]
     assert [x for x in r.contrarian.rationale if x.startswith("Rubber Band:")] == [
-        "Rubber Band: GLD/GDX at 96th percentile — GDX cheap vs margin (22nd pct ≤ 30)"]
+        "Rubber Band: GLD/GDX at 96th percentile — GDX margin gauge at 22nd pct (≤ 30)"]
 
 
 # ── AppTest (inget nätverk) ──────────────────────────────────────────────────

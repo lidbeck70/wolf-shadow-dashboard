@@ -298,13 +298,15 @@ def _en_ord(v: float) -> str:
 
 
 def _rubber_band_rationale(ratio, support) -> str:
-    """The checklist line for the +1 ACCUMULATE confirmation (buy_support.evaluate said supported)."""
+    """The checklist line for the +1 ACCUMULATE confirmation (buy_support.evaluate said supported).
+    For the gold keys the margin is stated as a number against the rule's limit, never as 'cheap': the margin
+    card's word 'billigt mot marginalen' covers only ≤ 25, while the rule counts up to 30."""
     if support.details.get("rule") == "margin":
         d = support.details
         pair = (f"{ratio.numerator_label}/{ratio.denominator_leg_label}"
                 if ratio.numerator_label and ratio.denominator_leg_label else ratio.label)
         return (f"Rubber Band: {pair} at {ratio.percentile:.0f}th percentile"
-                f" — {d['miner']} cheap vs margin ({_en_ord(d['margin_pct'])} pct ≤ {d['margin_max']:.0f})")
+                f" — {d['miner']} margin gauge at {_en_ord(d['margin_pct'])} pct (≤ {d['margin_max']:.0f})")
     return (f"Rubber Band: {ratio.label} at {ratio.percentile:.0f}th percentile"
             f" — {ratio.denominator_label} historically stretched cheap")
 

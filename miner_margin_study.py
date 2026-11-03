@@ -61,7 +61,7 @@ MINERS = (("GDX", "metal_miners"), ("GDXJ", "gold_gdxj"))  # gruv-ETF och panele
 TICKERS = (GOLD_ETF, "GDX", "GDXJ", GOLD)
 STRETCHED = "RUBBER_BAND_STRETCHED"
 S0_DRIVERS = ("DENOMINATOR_CHEAP", "BOTH")                # S0 = regeln före 2026-11-03 (motorns +1 då)
-SIGNALS = (("S0", "nuvarande regel"), ("S1", "bara kvoten"), ("S2", "bara marginalen"),
+SIGNALS = (("S0", "regeln före 2026-11-03"), ("S1", "bara kvoten"), ("S2", "bara marginalen"),
            ("S3", "föreslagen ersättare"))
 
 
@@ -625,7 +625,8 @@ def _hyp_lines(hyp: dict) -> list:
 def report_lines(res: dict) -> list:
     """Kompakt svensk rapport för loggen."""
     lines = [f"GRUVORNA MOT MARGINALEN — spec version {res.get('spec_version', SPEC_VERSION)} ({SPEC})",
-             "Forskning: ändrar inga regler. Marginalmätaren i panelen är fortfarande bara kontext."]
+             "Forskning: ändrar inga regler. Sedan 2026-11-03 (ägarens beslut A efter första körningen) är S3 "
+             "panelens köpstöd för GLD/GDX och GLD/GDXJ; S0 är regeln före dess."]
     data = res.get("data") or {}
     if data:
         lines.append("Kurser: " + " · ".join(

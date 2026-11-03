@@ -117,7 +117,7 @@ def _exposure_ratios(branch, **override):
 def test_engine_plus_one_when_stretched_and_margin_22_even_with_numerator_expensive(monkeypatch, key, miner, branch):
     ratios = _exposure_ratios(branch, **{key: _ratio(key, driver="NUMERATOR_EXPENSIVE")})
     r, rb, calls = _run_engine(monkeypatch, branch, ratios, {miner: _margin(miner, 22.0)})
-    assert rb == [f"Rubber Band: GLD/{miner} at 94th percentile — {miner} cheap vs margin (22nd pct ≤ 30)"]
+    assert rb == [f"Rubber Band: GLD/{miner} at 94th percentile — {miner} margin gauge at 22nd pct (≤ 30)"]
     assert r.miner_margins[miner].percentile == 22.0 and calls.count(miner) == 1
 
 
@@ -144,7 +144,7 @@ def test_engine_gold_gdxj_reads_the_gdxj_margin_not_gdx(monkeypatch):
     assert rb == [] and calls == ["GDX", "GDXJ"]
     _r, rb, _calls = _run_engine(monkeypatch, "Gold Miners", ratios,
                                  {"GDX": _margin("GDX", 95.0), "GDXJ": _margin("GDXJ", 30.0)})
-    assert rb == ["Rubber Band: GLD/GDXJ at 94th percentile — GDXJ cheap vs margin (30th pct ≤ 30)"]
+    assert rb == ["Rubber Band: GLD/GDXJ at 94th percentile — GDXJ margin gauge at 30th pct (≤ 30)"]
 
 
 def test_engine_only_computes_the_gauges_it_needs(monkeypatch):
@@ -160,7 +160,7 @@ def test_engine_keeps_max_one_confirmation(monkeypatch):
                               gold_gdxj=_ratio("gold_gdxj"))
     _r, rb, _calls = _run_engine(monkeypatch, "Gold Miners", ratios,
                                  {"GDX": _margin("GDX", 10.0), "GDXJ": _margin("GDXJ", 10.0)})
-    assert rb == ["Rubber Band: GLD/GDX at 94th percentile — GDX cheap vs margin (10th pct ≤ 30)"]
+    assert rb == ["Rubber Band: GLD/GDX at 94th percentile — GDX margin gauge at 10th pct (≤ 30)"]
     # GLD/GDX utan köpstöd → nästa kvot i listan (GDXJ/GDX, drivaren som förut) får sin rad
     _r, rb, _calls = _run_engine(monkeypatch, "Gold Miners", ratios,
                                  {"GDX": _margin("GDX", 60.0), "GDXJ": _margin("GDXJ", 10.0)})
@@ -173,7 +173,7 @@ def test_stale_aisc_table_does_not_block(monkeypatch):
     assert bs.evaluate("metal_miners", _ratio("metal_miners"), {"GDX": stale}).supported
     ratios = _exposure_ratios("Gold Miners", metal_miners=_ratio("metal_miners"))
     _r, rb, _calls = _run_engine(monkeypatch, "Gold Miners", ratios, {"GDX": stale})
-    assert rb == ["Rubber Band: GLD/GDX at 94th percentile — GDX cheap vs margin (22nd pct ≤ 30)"]
+    assert rb == ["Rubber Band: GLD/GDX at 94th percentile — GDX margin gauge at 22nd pct (≤ 30)"]
     assert aui._compute_ratio_summary(ratios, list(ratios), {"GDX": stale}) == "Gummisnoddar: 1 KÖP-STÖD, 3 NEUTRAL"
     # det verkliga flaggfallet: gammal tabell i build_result → stale, men OK och räknas
     close, gold = _closes()
@@ -529,11 +529,16 @@ def test_rule_docs_state_the_confirmation_precisely():
     for text in (entry, cheat):
         assert "≥ 90:e percentilen" in text and "≤ 30:e" in text
     assert "GLD/GDX, GLD/GDXJ" in entry and "nära botten av sitt eget prisspann" in entry
-    assert "marginalmätaren ≤ 30:e percentilen" in entry
+    assert "För guldgruvorna (GLD/GDX, GLD/GDXJ) ska dessutom marginalmätaren stå på ≤ 30:e percentilen" in entry
+    assert "bland de lägsta 30 % i sin egen historik (sedan 2026-11-03" in entry
     page = open(os.path.join(ROOT, "ovtlyr", "ui", "rules_page.py"), encoding="utf-8").read()
-    assert "guldgruvorna (GLD/GDX, GLD/GDXJ) ska gruvorna dessutom vara billiga mot marginalen" in page
-    assert "(marginalmätaren ≤ 30:e percentilen, sedan 2026-11-03)" in page
-    assert "benet stå nära botten av sitt eget prisspann" in page
+    assert "för guldgruvorna (GLD/GDX, GLD/GDXJ) ska dessutom marginalmätaren stå på ≤ 30:e" in page
+    assert "percentilen (gruvornas kurs per dollar marginal, sedan 2026-11-03)" in page
+    assert "det billiga benet stå nära botten av sitt eget prisspann" in page
+    # Rättelse efter verifieringen: 'billiga mot marginalen' sade kortets ord, som bara gäller ≤ 25 (visning),
+    # om hela regelns band ≤ 30 — 26–30 heter 'normalt mot marginalen' på kortet. Reglerna säger talet i stället.
+    for text in (entry, cheat, page):
+        assert "billiga mot marginalen" not in text and "billigt mot marginalen" not in text
 
 
 def test_spec_records_the_result_and_the_decision_after_the_registered_sections():
@@ -546,3 +551,68 @@ def test_spec_records_the_result_and_the_decision_after_the_registered_sections(
               "kvoten\" gav förlusterna 2012 och 2014", "`alpha_regime/buy_support.py`"):
         assert w in text[res:], w
     assert "Marginalmätaren i panelen\när fortfarande **bara kontext**" in text[:log]        # förregistreringen orörd
+    assert 'studiens utskrift kallar S0 "regeln före 2026-11-03"' in text[log:res]           # ändringsloggen
+
+
+# ── Rättelser efter verifieringen ────────────────────────────────────────────
+# Kortet 'Gruvorna mot marginalen' kallar M 'billigt mot marginalen' bara till 25 (visningens zon, oförändrad),
+# men regeln räknar till 30. Ingen text får därför kalla bandet 26–30 billigt, och kortet säger själv när ett
+# 'normalt' läge ändå ligger inom köpstödets gräns.
+@pytest.mark.parametrize("key,miner,branch", GOLD)
+@pytest.mark.parametrize("pct", [25.6, 28.0, 30.0])
+def test_engine_rationale_states_the_number_not_cheap(monkeypatch, key, miner, branch, pct):
+    ratios = _exposure_ratios(branch, **{key: _ratio(key)})
+    _r, rb, _calls = _run_engine(monkeypatch, branch, ratios, {miner: _margin(miner, pct)})
+    assert rb == [f"Rubber Band: GLD/{miner} at 94th percentile — {miner} margin gauge at {eng._en_ord(pct)} pct (≤ 30)"]
+    assert "cheap" not in rb[0]
+
+
+@pytest.mark.parametrize("pct,word,note", [(22.0, "billigt", False), (25.4, "billigt", False),
+                                           (25.6, "normalt", True), (28.0, "normalt", True), (30.0, "normalt", True),
+                                           (30.4, "normalt", False), (45.0, "normalt", False), (80.0, "dyrt", False)])
+def test_margin_card_says_when_a_normal_margin_is_within_the_rules_limit(pct, word, note):
+    text = aui._margin_value_text(_margin("GDX", pct))
+    assert text.split(": ")[-1].startswith(f"{word} mot marginalen")
+    assert (", men inom köpstödets gräns (≤ 30:e, med kvoten ≥ 90)" in text) == note
+    assert aui._MM_CHEAP_PCT == 25                          # visningens zon är oförändrad (en ändring kräver ägaren)
+
+
+def test_margin_card_never_reads_plain_normal_when_the_rule_counts_it():
+    """Hela skalan i steg om 0,05: kortet säger 'billigt' eller 'inom köpstödets gräns' exakt när regeln räknar
+    marginalen (med en sträckt kvot) — aldrig ett rent 'normalt' som ger köpstöd, aldrig gränsen när den inte gör det."""
+    stretched = _ratio("metal_miners")
+    for p in np.round(np.arange(0.0, 100.001, 0.05), 2):
+        res = _margin("GDX", float(p))
+        text = aui._margin_value_text(res)
+        counts = bs.evaluate("metal_miners", stretched, {"GDX": res}).supported
+        assert ("billigt mot marginalen" in text or "inom köpstödets gräns" in text) == counts, (p, text)
+
+
+def test_margin_card_ordinal_never_contradicts_the_limit():
+    assert aui._margin_ord(22.0) == "22:a" and aui._margin_ord(30.0) == "30:e"
+    assert aui._margin_ord(30.4) == "30,4:e" and aui._margin_ord(29.6) == "30:e"     # 29,6 räknas: '30:e' stämmer
+    assert "— 30,4:e percentilen sedan 2016" in aui._margin_value_text(_margin("GDX", 30.4))
+
+
+def _margin_card_app():
+    import streamlit as st
+    from alpha_regime import ui as u
+    u._render_margin_card(st.session_state["_res"], idx=0)
+
+
+def _render_margin_card(res):
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_function(_margin_card_app, default_timeout=60)
+    at.session_state["_res"] = res
+    at.run()
+    assert not at.exception, at.exception
+    return " ".join(m.value for m in at.markdown)
+
+
+def test_apptest_margin_card_badge_and_limit_note():
+    html = _render_margin_card(_margin("GDX", 28.0))
+    assert ">28:e pct<" in html and "normalt mot marginalen, men inom köpstödets gräns (≤ 30:e, med kvoten ≥ 90)" in html
+    html = _render_margin_card(_margin("GDX", 30.4))
+    assert ">30,4:e pct<" in html and "30,4:e percentilen" in html and "inom köpstödets gräns" not in html
+    html = _render_margin_card(_margin("GDX", 22.0))
+    assert ">22:a pct<" in html and "billigt mot marginalen" in html and "inom köpstödets gräns" not in html

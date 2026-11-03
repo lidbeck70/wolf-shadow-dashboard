@@ -169,6 +169,7 @@ när kurser saknas, och då sparas inget.
 |---|---|---|
 | 1 | 2026-11-03 | Första versionen, före första körningen. Rättad samma dag, också före första körningen: i H1 räknas S0:s episoder på S3:s dagar, så att S3 inte får en extra episod vid marginalperiodens början. |
 | 1 | 2026-11-03 | Efter första körningen: avsnitten *Resultat (körning 2026-11-03)* och *Beslut (2026-11-03)* tillagda sist. Förregistreringens avsnitt ovan är oförändrade, så specen är fortfarande version 1. |
+| 1 | 2026-11-03 | Efter beslutet: studiens utskrift kallar S0 "regeln före 2026-11-03" (förr "nuvarande regel"), och rapportens rad om att mätaren är "bara kontext" säger nu beslutet. Bara text — studiens beräkningar och förregistreringen ovan är oförändrade. |
 
 ## Resultat (körning 2026-11-03)
 

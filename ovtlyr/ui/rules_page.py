@@ -198,9 +198,9 @@ def _guide_contrarian() -> None:
                     "Sista chansen att ackumulera billigt.",
                     "<b>Bekräftelse:</b> Gummisnodde ≥ 90:e percentilen (t.ex. Gold/Silver) = "
                     "råvaran historiskt max-billig vs motvikten → stärker köpfallet. Kvoten räcker inte ensam: "
-                    "för guldgruvorna (GLD/GDX, GLD/GDXJ) ska gruvorna dessutom vara billiga mot marginalen "
-                    "(marginalmätaren ≤ 30:e percentilen, sedan 2026-11-03); för övriga kvoter ska det billiga "
-                    "benet stå nära botten av sitt eget prisspann.",
+                    "för guldgruvorna (GLD/GDX, GLD/GDXJ) ska dessutom marginalmätaren stå på ≤ 30:e "
+                    "percentilen (gruvornas kurs per dollar marginal, sedan 2026-11-03); för övriga kvoter ska "
+                    "det billiga benet stå nära botten av sitt eget prisspann.",
                     "<b>Sentiment-overlay:</b> Retail sentiment < 30/100 = extrem rädsla → "
                     "HIGH confidence-signal.",
                 ], _TEXT),

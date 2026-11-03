@@ -556,8 +556,9 @@ def _render_rubber_band_gauge(r: RegimeResult, exposure_override, margins: Optio
 # ── Per-leg breakdown helpers ─────────────────────────────────────────────────
 # A leg's own percentile is only where its PRICE sits in its own history window
 # (the same aligned window as the ratio) — a price position, not a valuation.
-# Everything here is wording: _classify, _classify_driver, the engine's +1
-# confirmation and the KÖP-STÖD demotion in _compute_ratio_summary are untouched.
+# Everything here is wording: no count, confirmation or demotion reads it. The buy
+# support rule itself (the engine's +1 and the KÖP-STÖD demotion in
+# _compute_ratio_summary) lives in alpha_regime/buy_support.py.
 
 _NBSP = "\u00a0"   # no-break space: '34 %' and '1 235' must not wrap apart on a phone
 
@@ -1423,6 +1424,8 @@ def _render_context_gauges(r: RegimeResult) -> None:
 # and GLD/GDXJ together with the ratio — the rule lives in alpha_regime/buy_support.py, not here. This section
 # is presentation; the gauge ALONE is never a signal (H2 failed).
 
+# Display zones only (the card's word and the bar's cyan zone). The buy support rule's limit is
+# buy_support.MARGIN_MAX_PCT (30, the dashed line); at 26–30 the card says 'normalt mot marginalen' plus that limit.
 _MM_CHEAP_PCT = 25   # lowest quartile of M = 'billigt mot marginalen' (the bar's cheap zone, left)
 _MM_DEAR_PCT = 75    # highest quartile = 'dyrt mot marginalen'
 _MM_STALE_TEXT = "AISC-tabellen är äldre än två kvartal — uppdatera alpha_regime/miner_margin.py"
@@ -1444,9 +1447,26 @@ def _margin_word(pct) -> tuple:
     return "normalt mot marginalen", "#8899aa"
 
 
+def _margin_ord(pct) -> str:
+    """M's percentile as an ordinal that never contradicts the rule's limit: '22:a', but '30,4:e' (not '30:e')
+    when the whole number would read as ≤ 30 though the rule says > 30 (buy_support.pct_text)."""
+    return _rule_ord(pct, _bs.MARGIN_MAX_PCT, at_most=True)
+
+
+def _margin_limit_note(pct) -> str:
+    """', men inom köpstödets gräns (≤ 30:e, med kvoten ≥ 90)' for 25 < M ≤ 30: the card's word there is
+    'normalt mot marginalen' (the cheap word is display only, ≤ 25), but the rule (buy_support, unrounded
+    percentile) counts it — so the card says so instead of seeming to contradict the ratio card. '' otherwise."""
+    if _margin_word(pct)[0] != "normalt mot marginalen" or float(pct) > _bs.MARGIN_MAX_PCT:
+        return ""
+    return (f", men inom köpstödets gräns (≤ {_bs.MARGIN_MAX_PCT:.0f}:e, med kvoten "
+            f"≥ {_GAUGE_STRETCHED_PCT:.0f})")
+
+
 def _margin_value_text(res) -> Optional[str]:
     """'GDX kostar 0,031 per dollar marginal per uns — 22:a percentilen sedan 2016 (median 0,045):
-    billigt mot marginalen'. None when M or its percentile is missing or not finite."""
+    billigt mot marginalen'. At 26–30 the word is 'normalt mot marginalen' plus the rule's limit
+    (_margin_limit_note). None when M or its percentile is missing or not finite."""
     cur = _finite_pos(getattr(res, "current", None))
     pct = getattr(res, "percentile", None)
     if cur is None or pct is None or not math.isfinite(float(pct)):
@@ -1456,7 +1476,7 @@ def _margin_value_text(res) -> Optional[str]:
     since = f" sedan {year}" if year.isdigit() else ""
     med_txt = f" (median {_sv_num(med, _sig_decimals(med, 2))})" if med is not None else ""
     return (f"{res.miner} kostar {_sv_num(cur, _sig_decimals(cur, 2))} per dollar marginal per uns — "
-            f"{_sv_ord(pct)} percentilen{since}{med_txt}: {_margin_word(pct)[0]}")
+            f"{_margin_ord(pct)} percentilen{since}{med_txt}: {_margin_word(pct)[0]}{_margin_limit_note(pct)}")
 
 
 def _margin_line_text(res) -> Optional[str]:
@@ -1518,7 +1538,7 @@ def _render_margin_card(res, idx: int) -> None:
     st.markdown(
         f'<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:4px 0 2px;">'
         f'<span style="font-weight:700;color:#e8e4dc;">{res.miner} mot marginalen</span>'
-        f'{_css_badge(f"{_sv_ord(res.percentile)} pct", color, fg)}</div>'
+        f'{_css_badge(f"{_margin_ord(res.percentile)} pct", color, fg)}</div>'
         f'<div style="font-size:0.8rem;color:#aabbcc;margin:2px 0 6px;">{value_txt}</div>',
         unsafe_allow_html=True,
     )

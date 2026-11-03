@@ -466,6 +466,13 @@ def test_report_runs_without_network_and_saves_one_json_blob():
               "bas alla dagar, marginal", "Episoder", "H1 S3 mot S0", "H2 S2 mot baslinjen", "H3 S1 utan drivaren",
               "AISC-tabellen: 35 rader", "Förslag enligt specen", "ändrar inga regler"):
         assert w in text, w
+    # Efter ägarens beslut A (2026-11-03): S0 är regeln före beslutet, och mätaren är inte längre 'bara kontext'.
+    # Bara text — signalernas nycklar och beräkningarna är desamma.
+    assert [s for s, _ in ms.SIGNALS] == ["S0", "S1", "S2", "S3"]
+    assert all(m["signals"]["S0"]["label"] == "regeln före 2026-11-03" for m in res["miners"].values())
+    assert "S0 regeln före 2026-11-03" in text and "nuvarande regel" not in text and "bara kontext" not in text
+    assert ("Sedan 2026-11-03 (ägarens beslut A efter första körningen) är S3 panelens köpstöd för GLD/GDX och "
+            "GLD/GDXJ; S0 är regeln före dess.") in text
 
 
 def test_report_runs_when_the_margin_signals_cannot_be_computed():
