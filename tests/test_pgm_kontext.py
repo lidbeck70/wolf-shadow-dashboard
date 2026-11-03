@@ -515,3 +515,69 @@ def test_spec_records_the_result_and_the_decision_after_the_registered_sections(
     # förregistreringen är orörd
     assert "Gold/Palladium går genom samma regel som i dag tills ägaren beslutar något annat." in text[:log]
     assert "| **S0 nuvarande regel** |" in text[:log] and "version 1, 2026-11-04" in text[:log]
+
+
+# ── Rättelser efter verifieringen ────────────────────────────────────────────
+def _thor_items(monkeypatch, theme, ratios, margins=None):
+    """Thors KPI-rad för temat som {etikett: (färg, underrad)} — kpi_row fångad, inget nätverk. margins (för
+    GLD/GDX och GLD/GDXJ) ersätter compute_margins; utan dem får mätaren inte läsas alls."""
+    from fiat_debasement import ui as fu
+    from gold_ratios import ui as gu
+    from thor import ravara as rv
+    monkeypatch.setattr(cr, "fetch_all_ratios", lambda: ratios)
+    monkeypatch.setattr(gu, "_load", lambda: {})
+    monkeypatch.setattr(fu, "gs_ratio", lambda asset_loader=None: (None, []))
+    monkeypatch.setattr(mm, "compute", lambda miner="GDX": pytest.fail("mätaren lästes"))
+    if margins is not None:
+        monkeypatch.setattr(bs, "compute_margins", lambda keys: margins)
+    seen = []
+    monkeypatch.setattr(rv.cards, "kpi_row", lambda items: seen.extend(items) or "")
+    rv._ratios(_St(), theme, lambda text: None)
+    return {label: (color, sub) for label, _value, color, sub in seen}
+
+
+@pytest.mark.parametrize("status", ("RUBBER_BAND_STRETCHED", "TENSION_BUILDING", "NEUTRAL"))
+def test_thor_value_colour_is_neutral_grey_for_the_pgm_rows_in_every_state(monkeypatch, status):
+    """Fynd 1: en sträckt PGM-kvot fick förr samma gröna tal som en sträckt kvot med köpstöd. Nu är talet grått
+    (CONTEXT_COLOR) i varje läge och med varje drivare; undertexten är oförändrad."""
+    from thor import ravara as rv
+    from ui.tokens import GREEN
+    assert rv.CONTEXT_COLOR == rv.GREY and rv.CONTEXT_COLOR != GREEN
+    for driver in DRIVERS:
+        ratios = {k: _ratio(k, status=status, driver=driver, denominator_pctile=9.0) for k in PGM_KEYS}
+        for theme in ("platina", "palladium"):
+            items = _thor_items(monkeypatch, theme, ratios)
+            for key in PGM_KEYS:
+                color, sub = items[ratios[key].label]
+                assert color == rv.GREY, (theme, key, status, driver)
+                assert sub == rv.context_text(ratios[key])
+
+
+def test_thor_value_colour_for_every_other_ratio_is_unchanged(monkeypatch):
+    """Fynd 1: bara PGM-raderna blir grå — alla andra kvoter färgas som förut efter läget (RATIO_COLOR)."""
+    from thor import ravara as rv
+    from ui.tokens import AMBER, GREEN
+    assert rv.RATIO_COLOR == {"RUBBER_BAND_STRETCHED": GREEN, "TENSION_BUILDING": AMBER, "NEUTRAL": rv.GREY}
+    for theme in ("guld", "silver", "koppar", "olja", "platina", "palladium"):
+        keys = [k for k in rv.ratio_keys(theme) if not bs.context_only(k)]
+        for status in ("RUBBER_BAND_STRETCHED", "TENSION_BUILDING", "NEUTRAL"):
+            ratios = {k: _ratio(k, status=status, driver="DENOMINATOR_CHEAP") for k in keys}
+            items = _thor_items(monkeypatch, theme, ratios, margins={"GDX": _margin("GDX"),
+                                                                     "GDXJ": _margin("GDXJ")})
+            assert len(items) == len(keys)
+            for key in keys:
+                assert items[ratios[key].label][0] == rv.RATIO_COLOR[status], (theme, key, status)
+
+
+def test_spec_explains_the_pre_registration_date_in_the_result_section_only():
+    """Fynd 4: förregistreringens 2026-11-04 är ett skrivfel för registreringsdagen. Det förklaras med en mening i
+    Resultat; förregistreringens rubrik och ändringsloggens rader står kvar som de var."""
+    text = open(os.path.join(ROOT, bs.CONTEXT_SPEC), encoding="utf-8").read()
+    log, res, dec = (text.index(h) for h in ("## Ändringslogg", "## Resultat (körning 2026-11-03)",
+                                             "## Beslut (2026-11-03)"))
+    note = ("Datumet 2026-11-04 i förregistreringens rubrik och i ändringsloggens två första rader är ett skrivfel "
+            "för registreringsdagen: specen checkades in 2026-11-03 (#301), och körningen gjordes samma dag, efter det.")
+    assert note in " ".join(text[res:dec].split())
+    assert "skrivfel" not in text[:res] and "skrivfel" not in text[dec:]
+    assert text.startswith("# PGM-snoddarna — förregistrering (version 1, 2026-11-04)\n")
+    assert text[log:res].count("| 1 | 2026-11-04 |") == 2

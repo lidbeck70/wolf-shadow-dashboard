@@ -189,6 +189,9 @@ horisonter, baslinjer, bootstrapintervall och episoder, finns i loggen och i Gis
 Tabellerna visar antalet episoder, snittet av 252-dagarsavkastningen mot GLD och träffsäkerheten (andel episoder
 med utfall > 0).
 
+Datumet 2026-11-04 i förregistreringens rubrik och i ändringsloggens två första rader är ett skrivfel för
+registreringsdagen: specen checkades in 2026-11-03 (#301), och körningen gjordes samma dag, efter det.
+
 ### Platina (PPLT mot GLD, 252 dagar)
 
 | Signal | Episoder | Mot GLD, 252 dagar | Träff |

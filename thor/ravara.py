@@ -31,8 +31,10 @@ PRECIOUS = ("guld", "silver")
 BASE_YEAR = 2010                   # fast penningvärde — samma standard som 🐺 Fiat Debasement
 CYKEL_COLOR = {"TIDIG": GREEN, "MITTEN": CYAN, "SEN": AMBER, "TOPP": RED}
 RATIO_COLOR = {"RUBBER_BAND_STRETCHED": GREEN, "TENSION_BUILDING": AMBER, "NEUTRAL": GREY}
-# Gold/Platinum och Gold/Palladium (bara kontext sedan 2026-11-03): läget i KPI-raden, aldrig drivaren
+# Gold/Platinum och Gold/Palladium (bara kontext sedan 2026-11-03): läget i KPI-raden, aldrig drivaren — och
+# värdet i neutral grått i varje läge, så att ett grönt tal (RATIO_COLOR för sträckt) aldrig läses som ett köptips
 CONTEXT_STATUS = {"RUBBER_BAND_STRETCHED": "sträckt", "TENSION_BUILDING": "spänning", "NEUTRAL": "neutral"}
+CONTEXT_COLOR = GREY
 
 
 # ── Ordförråden ─────────────────────────────────────────────────────────────
@@ -302,8 +304,10 @@ def _ratios(st, theme: str, note) -> None:
         margins = bs.compute_margins(shown)          # bara GLD/GDX och GLD/GDXJ — cachat 6 h, {} annars
         for k in shown:
             rr = allr[k]
+            color = RATIO_COLOR.get(rr.status, GREY)
             if bs.context_only(k):                   # Gold/Platinum, Gold/Palladium: bara kontext sedan 2026-11-03
                 context = True
+                color = CONTEXT_COLOR
                 sub = context_text(rr)
             else:
                 if bs.uses_margin(k):
@@ -312,7 +316,7 @@ def _ratios(st, theme: str, note) -> None:
                 else:
                     rule = rr.driver.replace('_', ' ').lower()
                 sub = f"P{rr.percentile:.0f} · {rr.status.replace('_', ' ').lower()} · {rule}"
-            items.append((rr.label, f"{rr.current:,.4g}", RATIO_COLOR.get(rr.status, GREY), sub))
+            items.append((rr.label, f"{rr.current:,.4g}", color, sub))
     if not items:
         note(f"Inga kvoter för {label(theme).lower()}.")
         return
