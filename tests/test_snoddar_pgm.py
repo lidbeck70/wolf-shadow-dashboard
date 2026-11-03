@@ -161,6 +161,17 @@ def test_detect_exposure_representative_names(name, exp):
     assert cr.detect_exposure(name) == exp
 
 
+@pytest.mark.parametrize("name,exp", [
+    ("Restaurang & Café", None), ("Toiletries", None), ("Turmoil Holdings", None), ("Uranium Royalty", "uranium"),
+    ("Urangruvor", "uranium"), ("Guldgruvor", "gold_miner"), ("Kopparproducent", "copper"), ("Oil & Gas", "oil"),
+    ("Petrochemicals", "oil"), ("LNG shipping", "gas"), ("Gruv - Guld & Silver", "silver"),
+])
+def test_keywords_must_start_a_word(name, exp):
+    """Förr räckte det att nyckelordet stod någonstans i namnet: 'Restaurang & Café' blev uran (och fick URA som
+    sektor-ETF i relativstyrkan). Nu ska ordet börja ett ord; svenska sammansättningar börjar med råvaran."""
+    assert cr.detect_exposure(name) == exp
+
+
 def test_names_without_a_pgm_word_route_exactly_as_before():
     names = ["Gold Miners", "Silver Mining", "Copper Mining", "Sibanye Stillwater", "Gruvor & metaller", "Uranium",
              "Natural gas", "Lithium mining", "Förnybar energi", "Oil & Gas E&P", "Junior Miners", "Silver", "Oil",
@@ -509,7 +520,11 @@ def test_auto_never_reaches_pgm_from_a_borsdata_branch_and_the_help_says_so():
     (Sibanyes 'Gruv - Guld & Silver' är silver). PGM-snoddarna nås via väljaren; hjälptexten säger det."""
     names = _borsdata_names()
     assert "Gruv - Guld & Silver" in names and len(names) > 90
+    fixed = {"Restaurang & Café": ("uranium", None)}      # 'uran' mitt i ordet — nyckelorden börjar nu ett ord
     for name in names:
+        if name in fixed:
+            assert (_old_detect(name), cr.detect_exposure(name)) == fixed[name], name
+            continue
         assert cr.detect_exposure(name) == _old_detect(name), name
         assert cr.detect_exposure(name) not in ("platinum", "palladium"), name
     assert cr.detect_exposure("Gruv - Guld & Silver") == "silver"

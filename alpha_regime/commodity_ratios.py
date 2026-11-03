@@ -10,6 +10,7 @@ Low  percentile (≤10) = numerator  stretched cheap (low-direction: copper_gold
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -316,7 +317,9 @@ def detect_exposure(branch_name: Optional[str]) -> Optional[str]:
         return None
     text = branch_name.lower()
     for keywords, exposure in _KEYWORD_EXPOSURE:
-        if any(kw in text for kw in keywords):
+        # Nyckelordet ska börja ett ord: 'uran' i 'Restaurang & Café' gav förr uran (och URA som sektor-ETF).
+        # Svenska sammansättningar börjar med råvaran (Guldgruvor, Kopparproducent), så prefixet räcker.
+        if any(re.search(r"\b" + re.escape(kw), text) for kw in keywords):
             return exposure
     return None
 
