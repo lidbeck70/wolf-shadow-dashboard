@@ -8,6 +8,7 @@ Modes: Quality (Buffett/KAP) · Deep Contrarian (Rule/Sprott)
 from __future__ import annotations
 
 import logging
+import math
 from typing import Optional
 
 import plotly.graph_objects as go
@@ -35,6 +36,7 @@ try:
         _percentile_of   as _cr_percentile_of,
         _classify        as _cr_classify,
         _classify_driver as _cr_classify_driver,
+        _window_info as _cr_window_info,
         RatioResult      as _CRRatioResult,
     )
     _CR_OK = True
@@ -458,6 +460,14 @@ def _render_single_ratio(ratio, idx: int) -> None:
     # Per-leg percentile breakdown + driver verdict
     _render_leg_breakdown(ratio)
 
+    # The cheap leg priced in the other leg, against the median of the same window
+    terms = _cheap_terms_text(ratio)
+    if terms:
+        st.markdown(
+            f'<div style="font-size:0.78rem;color:#aabbcc;margin:0 0 6px;">⚖️ {terms}</div>',
+            unsafe_allow_html=True,
+        )
+
     # 10y sparkline
     if ratio.sparkline_dates and ratio.sparkline_values:
         fig = go.Figure()
@@ -526,60 +536,147 @@ def _render_rubber_band_gauge(r: RegimeResult, exposure_override) -> None:
 
 
 # ── Per-leg breakdown helpers ─────────────────────────────────────────────────
+# A leg's own percentile is only where its PRICE sits in its own history window
+# (the same aligned window as the ratio) — a price position, not a valuation.
+# Everything here is wording: _classify, _classify_driver, the engine's +1
+# confirmation and the KÖP-STÖD demotion in _compute_ratio_summary are untouched.
+
+_DRIVER_ZONE_STATUSES = ("TENSION_BUILDING", "RUBBER_BAND_STRETCHED")
+
+# Neutral tones: a price position is neither good nor bad — the ends are only highlighted.
+_LEG_WORD_COLORS = {
+    "nära toppen": "#c9a84c",
+    "övre delen": "#aabbcc",
+    "mitten": "#8899aa",
+    "nedre delen": "#aabbcc",
+    "nära botten": "#c9a84c",
+}
+
 
 def _leg_pctile_label(pct: float) -> str:
-    if pct >= 80: return "DYRT"
-    if pct >= 60: return "HÖGT"
-    if pct >= 40: return "NEUTRALT"
-    if pct >= 20: return "LÅGT"
-    return "BILLIGT"
+    """Price-position words for a leg's own percentile. The ends use the driver rule's own
+    cut-offs (≥ 80 / ≤ 20), so the words never contradict the driver line."""
+    if pct >= 80:
+        return "nära toppen"
+    if pct >= 60:
+        return "övre delen"
+    if pct >= 40:
+        return "mitten"
+    if pct > 20:
+        return "nedre delen"
+    return "nära botten"
 
 
 def _leg_pctile_color(pct: float) -> str:
-    if pct >= 80: return "#cc3333"
-    if pct >= 60: return "#c9a84c"
-    if pct <= 20: return "#1aaa5a"
-    if pct <= 40: return "#607080"
-    return "#8899aa"
+    return _LEG_WORD_COLORS[_leg_pctile_label(pct)]
+
+
+def _leg_window_text(ratio) -> str:
+    """'sitt eget prisspann sedan 2016' — the window both legs' percentiles are measured in."""
+    year = (getattr(ratio, "history_start", "") or "")[:4]
+    return f"sitt eget prisspann sedan {year}" if year.isdigit() else "sitt eget prisspann"
+
+
+def _cheap_and_other(ratio) -> tuple:
+    """(cheap_name, other_name, cheap_pct, other_pct). The cheap leg is the denominator for
+    'high' ratios and the numerator for 'low' ones (same mapping as _classify_driver)."""
+    if getattr(ratio, "cheap_direction", "high") == "high":
+        return (ratio.denominator_leg_label or ratio.denominator_label,
+                ratio.numerator_label or "Täljare",
+                ratio.denominator_pctile or 0.0,
+                ratio.numerator_pctile or 0.0)
+    return (ratio.numerator_label or "Täljare",
+            ratio.denominator_leg_label or ratio.denominator_label,
+            ratio.numerator_pctile or 0.0,
+            ratio.denominator_pctile or 0.0)
+
+
+def _driver_applies(ratio) -> bool:
+    """The driver only explains something when the band is actually tense or stretched
+    (status per its cheap_direction)."""
+    return getattr(ratio, "status", "") in _DRIVER_ZONE_STATUSES
+
+
+def _is_sell_extreme(ratio) -> bool:
+    """The opposite extreme — the same zone that gives the 🔴 SÄLJ-STÖD badge."""
+    return "SÄLJ-STÖD" in _ratio_verdict(ratio)[0]
 
 
 def _driver_verdict_text(ratio) -> tuple:
-    """Return (icon, Swedish explanation) for the driver classification."""
-    d  = ratio.driver
-    cd = getattr(ratio, "cheap_direction", "high")
+    """Return (icon, Swedish explanation) for the driver line.
 
-    # Identify which leg is the "cheap asset" the user might want to buy
-    if cd == "high":
-        cheap_name = ratio.denominator_leg_label or ratio.denominator_label
-        other_name = ratio.numerator_label or "Täljare"
-        cheap_pct  = ratio.denominator_pctile or 0.0
-        other_pct  = ratio.numerator_pctile   or 0.0
+    The driver claim is shown only in the tension/stretched zone; otherwise a neutral line
+    (at the opposite extreme: the cheap leg is dear vs the other). Wording only."""
+    cheap_name, other_name, cheap_pct, other_pct = _cheap_and_other(ratio)
+    if not _driver_applies(ratio):
+        if _is_sell_extreme(ratio):
+            return ("🔴", f"Snodden är spänd åt andra hållet — {cheap_name} är historiskt dyr mot {other_name}.")
+        return ("⚪", "Snodden är inte spänd — benens prisläge förklarar inget köpläge.")
+
+    d = ratio.driver
+    cheap_low = f"{cheap_name} står nära botten av sitt eget prisspann ({cheap_pct:.0f}:e pct)"
+    if ratio.status == "RUBBER_BAND_STRETCHED":
+        counts = f"panelens regel räknar det som köpstöd i {cheap_name}."
     else:
-        cheap_name = ratio.numerator_label or "Täljare"
-        other_name = ratio.denominator_leg_label or ratio.denominator_label
-        cheap_pct  = ratio.numerator_pctile   or 0.0
-        other_pct  = ratio.denominator_pctile or 0.0
-
+        counts = f"panelens regel räknar det som köpstöd i {cheap_name} först när snodden är fullt sträckt."
+    not_counted = f"panelens regel räknar det inte som köpstöd i {cheap_name}."
     if d == "DENOMINATOR_CHEAP":
-        return ("🟢",
-                f"{cheap_name} är genuint billig ({cheap_pct:.0f}:e pct i eget historiskt spann) "
-                f"— äkta köpstöd i {cheap_name}.")
+        return ("🟢", f"{cheap_low} — {counts}")
     if d == "NUMERATOR_EXPENSIVE":
-        return ("⚠️",
-                f"Snodden är spänd för att {other_name} är dyr ({other_pct:.0f}:e pct) "
-                f"— inte för att {cheap_name} är billig. "
-                f"Inte ett äkta köpläge i {cheap_name}.")
+        text = (f"{other_name} står nära toppen av sitt eget prisspann ({other_pct:.0f}:e pct), "
+                f"{cheap_name} står inte nära botten av sitt ({cheap_pct:.0f}:e pct) — {not_counted}")
+        return ("⚠️", text)
     if d == "BOTH":
-        return ("🟢⚡",
-                f"{cheap_name} genuint billig ({cheap_pct:.0f}:e pct) OCH {other_name} "
-                f"dyr ({other_pct:.0f}:e pct) — båda sträcker snodden. Starkt köpstöd.")
+        text = (f"{cheap_low} och {other_name} nära toppen av sitt ({other_pct:.0f}:e pct) "
+                f"— båda sträcker snodden; {counts}")
+        return ("🟢⚡", text)
     if d == "MIXED":
-        return ("⚪", "Blandad signal — ingen tydlig billig/dyr-slutsats på bennivå.")
+        text = (f"Blandad signal — varken {cheap_name} nära botten ({cheap_pct:.0f}:e pct) eller "
+                f"{other_name} nära toppen ({other_pct:.0f}:e pct) av sitt eget prisspann; {not_counted}")
+        return ("⚪", text)
     return ("⚪", "Driver okänd — otillräcklig bendata.")
 
 
+def _sig_decimals(v: float, sig: int = 3) -> int:
+    """Decimals that give `sig` significant digits: 0,214 · 0,0998 · 4,67 · 1 235."""
+    if not v or not math.isfinite(v):
+        return 0
+    return max(0, sig - 1 - math.floor(math.log10(abs(v))))
+
+
+def _sv_num(v: float, decimals: int) -> str:
+    """Swedish number: decimal comma, space as thousands separator."""
+    return f"{v:,.{decimals}f}".replace(",", " ").replace(".", ",")
+
+
+def _cheap_terms_text(ratio) -> Optional[str]:
+    """The cheap leg priced in the other leg, against the median of the same window, e.g.
+    'I GLD: 1 GDX = 0,214 GLD — 34 % mer än medianen sedan 2016 (0,160), alltså dyrare i GLD
+    än normalt.' 'high': cheap = denominator, price = 1/ratio; 'low': cheap = numerator,
+    price = ratio. Informational only — no rule, count or confirmation reads it."""
+    cur = float(getattr(ratio, "current", 0.0) or 0.0)
+    med = getattr(ratio, "median", None)
+    num, den = ratio.numerator_label, ratio.denominator_leg_label
+    if not med or med <= 0 or cur <= 0 or not num or not den:
+        return None
+    if getattr(ratio, "cheap_direction", "high") == "high":
+        cheap, other, val, ref = den, num, 1.0 / cur, 1.0 / med
+    else:
+        cheap, other, val, ref = num, den, cur, med
+    dec = _sig_decimals(val)
+    year = (getattr(ratio, "history_start", "") or "")[:4]
+    since = f" sedan {year}" if year.isdigit() else ""
+    head = f"I {other}: 1 {cheap} = {_sv_num(val, dec)} {other}"
+    diff = round(abs(val / ref - 1.0) * 100.0)
+    if diff == 0:
+        return f"{head} — i nivå med medianen{since} ({_sv_num(ref, dec)}), alltså normalt prissatt i {other}."
+    more = val > ref
+    return (f"{head} — {diff} % {'mer' if more else 'mindre'} än medianen{since} ({_sv_num(ref, dec)}), "
+            f"alltså {'dyrare' if more else 'billigare'} i {other} än normalt.")
+
+
 def _render_leg_breakdown(ratio) -> None:
-    """Two-row per-leg percentile + one-line driver verdict below the gauge bar."""
+    """Two-row per-leg price position + one-line driver verdict below the gauge bar."""
     num_pct = ratio.numerator_pctile
     den_pct = ratio.denominator_pctile
     if num_pct is None or den_pct is None:
@@ -587,8 +684,9 @@ def _render_leg_breakdown(ratio) -> None:
 
     num_name  = ratio.numerator_label       or "Täljare"
     den_name  = ratio.denominator_leg_label or "Nämnare"
-    num_lbl   = _leg_pctile_label(num_pct)
-    den_lbl   = _leg_pctile_label(den_pct)
+    window = _leg_window_text(ratio)
+    num_lbl = f"{_leg_pctile_label(num_pct)} av {window}"
+    den_lbl = f"{_leg_pctile_label(den_pct)} av {window}"
     num_color = _leg_pctile_color(num_pct)
     den_color = _leg_pctile_color(den_pct)
 
@@ -599,6 +697,8 @@ def _render_leg_breakdown(ratio) -> None:
         "BOTH":                "#c9a84c",
         "MIXED":               "#607080",
     }.get(ratio.driver, "#607080")
+    if not _driver_applies(ratio):
+        verdict_color = "#cc3333" if _is_sell_extreme(ratio) else "#607080"
 
     st.markdown(
         f"""<div style="background:#0d1117;border:1px solid #2a3040;border-radius:5px;
@@ -677,6 +777,7 @@ def _render_custom_ratio_builder() -> None:
                                 den_leg_arr = aligned["d"].values.astype(float)
                                 num_leg_pct = _cr_percentile_of(num_leg_arr, float(num_leg_arr[-1]))
                                 den_leg_pct = _cr_percentile_of(den_leg_arr, float(den_leg_arr[-1]))
+                                hist_start, hist_years, hist_median = _cr_window_info(aligned.index, arr)
                                 cr = _CRRatioResult(
                                     key=f"custom_{num_t}_{den_t}",
                                     label=f"{num_t} / {den_t}",
@@ -693,6 +794,9 @@ def _render_custom_ratio_builder() -> None:
                                     numerator_pctile=round(num_leg_pct, 1),
                                     denominator_pctile=round(den_leg_pct, 1),
                                     driver=_cr_classify_driver(num_leg_pct, den_leg_pct, "high"),
+                                    history_start=hist_start,
+                                    history_years=hist_years,
+                                    median=hist_median,
                                 )
                                 saved = [x for x in saved if x.label != cr.label]
                                 saved = [cr] + saved
