@@ -28,7 +28,10 @@ STATUSES = ("RUBBER_BAND_STRETCHED", "TENSION_BUILDING", "NEUTRAL", "DATA_GAP")
 PCTS = (3.0, 10.0, 15.0, 50.0, 85.0, 89.9, 90.0, 97.0)
 GOLD = (("metal_miners", "GDX", "Gold Miners"), ("gold_gdxj", "GDXJ", "Junior Miners"))
 GOLD_KEYS = tuple(k for k, _m, _b in GOLD)
-OTHER_KEYS = tuple(s.key for s in cr._RATIO_SPECS if s.key not in GOLD_KEYS)
+# Gold/Platinum och Gold/Palladium är bara kontext sedan 2026-11-03 (buy_support.CONTEXT_ONLY) — de behåller inte
+# drivarregeln och prövas i tests/test_pgm_kontext.py.
+CONTEXT_KEYS = ("gold_platinum", "gold_palladium")
+OTHER_KEYS = tuple(s.key for s in cr._RATIO_SPECS if s.key not in GOLD_KEYS + CONTEXT_KEYS)
 NEUTRAL_LINE = "Snodden är inte spänd — benens prisläge förklarar inget köpläge."
 
 
@@ -222,10 +225,11 @@ _MARGIN_SETS = (None, {}, {"GDX": _margin("GDX", 5.0), "GDXJ": _margin("GDXJ", 5
 
 @pytest.mark.parametrize("key", OTHER_KEYS)
 def test_other_ratios_keep_the_old_rule_for_every_driver_status_and_percentile(key):
-    """Alla kvoter utom GLD/GDX och GLD/GDXJ: motorns villkor och sammanräkningen ger exakt samma utfall som
-    koden före 2026-11-03, för varje drivare × status × percentil — vad marginalmätaren än säger."""
-    assert key in ("gold_silver", "gold_oil", "silver_miners", "copper_gold", "gdxj_gdx", "silver_juniors", "gdx_spy",
-                   "gold_platinum", "gold_palladium")
+    """Alla kvoter utom GLD/GDX och GLD/GDXJ (och PGM-kvoterna, bara kontext sedan 2026-11-03): motorns villkor och
+    sammanräkningen ger exakt samma utfall som koden före 2026-11-03, för varje drivare × status × percentil — vad
+    marginalmätaren än säger. (#300 lade till PGM-kvoterna här; beslutet tog bort dem ur drivarregeln.)"""
+    assert set(CONTEXT_KEYS) == set(bs.CONTEXT_ONLY)
+    assert key in ("gold_silver", "gold_oil", "silver_miners", "copper_gold", "gdxj_gdx", "silver_juniors", "gdx_spy")
     for status, driver, pct in itertools.product(STATUSES, DRIVERS, PCTS):
         r = _ratio(key, status=status, percentile=pct, driver=driver)
         old_engine, old_summary = _old_engine_confirms(r), _old_summary({key: r}, [key])

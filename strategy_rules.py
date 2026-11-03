@@ -667,12 +667,13 @@ DEEP_CONTRARIAN = Playbook(
          "PORTFÖLJ → Positioner: Deep Contrarian-innehav har fältet "
          "'Tranches deployed' (0/3–3/3) som visar var du är.", True),
         ("Bekräftelse: gummisnodde ≥ 90:e percentilen — plus ett villkor till",
-         "T.ex. Gold/Silver-, Gold/Platinum- eller Gold/Palladium-ratio historiskt sträckt = råvaran "
-         "max-billig vs motvikten. Kvoten räcker inte "
+         "T.ex. Gold/Silver-ratio historiskt sträckt = råvaran max-billig vs motvikten. Kvoten räcker inte "
          "ensam. För guldgruvorna (GLD/GDX, GLD/GDXJ) ska dessutom marginalmätaren stå på ≤ 30:e percentilen: "
          "gruvornas kurs per dollar marginal (guldpriset minus branschens AISC) bland de lägsta 30 % i sin "
          "egen historik (sedan 2026-11-03, ägarens beslut efter backtestet). För övriga kvoter ska det "
-         "billiga benet stå nära botten av sitt eget prisspann.",
+         "billiga benet stå nära botten av sitt eget prisspann. Gold/Platinum och Gold/Palladium är bara "
+         "kontext, aldrig bekräftelse (sedan 2026-11-03, ägarens beslut efter backtestet: en sträckt kvot "
+         "följdes av att metallen gick sämre än guld).",
          "MER → Motorsidor: välj 'Commodity exposure' för att se om ratios är "
          "historiskt sträckta. 'Gruvorna mot marginalen' visar marginalmätaren för GDX/GDXJ."),
         ("Sentiment-overlay: retail sentiment < 30/100",
@@ -716,7 +717,8 @@ DEEP_CONTRARIAN = Playbook(
         ("Sälj 2/3", "EUPHORIA · COMPLACENCY"),
         ("Sälj 3/3", "ANXIETY · DENIAL"),
         ("Bekräftelse", "Gummisnodde ≥ 90:e percentilen + guldgruvor: marginalmätaren ≤ 30:e · "
-                        "övriga: billiga benet nära botten av sitt prisspann"),
+                        "övriga: billiga benet nära botten av sitt prisspann · "
+                        "Gold/Platinum, Gold/Palladium: bara kontext"),
         ("Sentiment", "<30 = köp · >70 = sälj"),
         ("Max per kategori", "~25 %"),
         ("Uthållighet", "Måste klara 50 % nedgång utan panik"),

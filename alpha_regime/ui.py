@@ -296,7 +296,19 @@ _GAUGE_CHEAP_LOW_TENS = 20.0
 
 
 def _ratio_verdict(ratio) -> tuple:
-    """Return (badge_text, color, explanation) for a RatioResult."""
+    """Return (badge_text, color, explanation) for a RatioResult — the card header's badge.
+
+    Gold/Platinum and Gold/Palladium are context only since 2026-11-03 (buy_support.CONTEXT_ONLY): their badge is a
+    neutral '⚪ KONTEXT · <band state>' (never 🟢 KÖP-STÖD or 🔴 SÄLJ-STÖD); the explanation is unchanged."""
+    badge, color, explanation = _band_verdict(ratio)
+    if _bs.context_only(getattr(ratio, "key", "")):
+        return _context_badge(_zone_of_badge(badge)), _CONTEXT_COLOR, explanation
+    return badge, color, explanation
+
+
+def _band_verdict(ratio) -> tuple:
+    """(badge_text, color, explanation) from the stored percentile alone — the band's zone for every ratio
+    (_band_zone reads it; _ratio_verdict shows it, except for the context-only ratios)."""
     pct = ratio.percentile
     d   = ratio.cheap_direction
     lbl = ratio.label
@@ -333,12 +345,18 @@ def _compute_ratio_summary(commodity_ratios: dict, keys: list, margins: Optional
 
     A 🟢 KÖP-STÖD badge counts as KÖP-STÖD only when buy_support.evaluate confirms it, else it is demoted to
     NEUTRAL: GLD/GDX and GLD/GDXJ need the margin gauge ≤ 30 (margins = {miner: MarginResult}; missing → not
-    counted), every other ratio the cheap-leg driver (DENOMINATOR_CHEAP/BOTH, UNKNOWN let through as before)."""
-    counts: dict[str, int] = {"KÖP-STÖD": 0, "SÄLJ-STÖD": 0, "SPÄNNING": 0, "NEUTRAL": 0, "DATA_GAP": 0}
+    counted), every other ratio the cheap-leg driver (DENOMINATOR_CHEAP/BOTH, UNKNOWN let through as before).
+    Gold/Platinum and Gold/Palladium (context only since 2026-11-03, buy_support.CONTEXT_ONLY) are counted as
+    'KONTEXT' whatever their band state — never KÖP-STÖD; DATA_GAP stays DATA_GAP."""
+    counts: dict[str, int] = {"KÖP-STÖD": 0, "SÄLJ-STÖD": 0, "SPÄNNING": 0, "NEUTRAL": 0, "KONTEXT": 0,
+                              "DATA_GAP": 0}
     for key in keys:
         r = commodity_ratios.get(key)
         if r is None or r.status == "DATA_GAP":
             counts["DATA_GAP"] += 1
+            continue
+        if _bs.context_only(getattr(r, "key", None) or key):
+            counts["KONTEXT"] += 1
             continue
         badge, _, _ = _ratio_verdict(r)
         if "KÖP-STÖD" in badge:
@@ -356,7 +374,7 @@ def _compute_ratio_summary(commodity_ratios: dict, keys: list, margins: Optional
 
     parts = []
     for label, key in [("KÖP-STÖD", "KÖP-STÖD"), ("SÄLJ-STÖD", "SÄLJ-STÖD"),
-                        ("SPÄNNING", "SPÄNNING"), ("NEUTRAL", "NEUTRAL")]:
+                       ("SPÄNNING", "SPÄNNING"), ("NEUTRAL", "NEUTRAL"), ("KONTEXT", "KONTEXT")]:
         if counts[key] > 0:
             parts.append(f"{counts[key]} {label}")
     if counts["DATA_GAP"] > 0:
@@ -618,6 +636,32 @@ _LEG_WORD_COLORS = {
 _DRIVER_CLASSES = ("DENOMINATOR_CHEAP", "NUMERATOR_EXPENSIVE", "BOTH", "MIXED")
 _NOT_COUNTED_CUSTOM = "egen kvot — räknas inte i panelens bekräftelse."
 
+# Gold/Platinum and Gold/Palladium: context only since 2026-11-03 (buy_support.CONTEXT_ONLY — the owner's decision
+# after the pre-registered backtest docs/forskning/pgm_snoddar_spec.md). The card keeps the band state, the legs'
+# price position and the terms row as information; the badge is a neutral KONTEXT label and the verdict line says
+# why the band never counts as buy support. Wording only — the rule lives in buy_support.
+_CONTEXT_COLOR = "#607080"
+_CONTEXT_ZONE_WORDS = {"buy": "sträckt", "tension": "spänning", "sell": "dyr", "neutral": "neutral"}
+_CONTEXT_RESULTS = {
+    "gold_platinum": (f"platina: den tidigare regeln gav 3 köplägen, snitt −16,9{_NBSP}% mot GLD på ett år, "
+                      f"0{_NBSP}% träffar"),
+    "gold_palladium": f"palladium: för få köplägen, de två liknande gav −36{_NBSP}% och −31{_NBSP}% mot GLD",
+}
+
+
+def _context_badge(zone: str) -> str:
+    """'⚪ KONTEXT · sträckt' — the band state with a neutral label, never a buy (or sell) claim."""
+    return f"⚪ KONTEXT · {_CONTEXT_ZONE_WORDS.get(zone, 'neutral')}"
+
+
+def _context_text(key: str) -> str:
+    """The verdict line of a context-only card: the decision, its date and the backtest's result for the metal."""
+    decided = _bs.CONTEXT_ONLY.get(key, {}).get("decided", _bs.CONTEXT_DECIDED)
+    res = _CONTEXT_RESULTS.get(key)
+    why = f" ({res})" if res else ""
+    return (f"Bara kontext sedan {decided} — backtestet visade att en sträckt kvot följdes av att metallen gick "
+            f"sämre än guld{why}; räknas inte som köpstöd.")
+
 
 def _leg_pctile_label(pct: float) -> str:
     """Price-position words for a leg's own percentile (bucket only). The ends use the driver
@@ -686,9 +730,13 @@ def _cheap_and_other(ratio) -> tuple:
 
 def _band_zone(ratio) -> str:
     """'buy' | 'tension' | 'sell' | 'neutral' — read off the same badge as the card header and
-    the 'Gummisnoddar' count (_ratio_verdict on the stored percentile), so the driver line can
+    the 'Gummisnoddar' count (_band_verdict on the stored percentile), so the driver line can
     never say 'inte spänd' next to a ⚡ SPÄNNING BYGGS / 🟢 KÖP-STÖD badge at a rounding edge."""
-    badge = _ratio_verdict(ratio)[0]
+    return _zone_of_badge(_band_verdict(ratio)[0])
+
+
+def _zone_of_badge(badge: str) -> str:
+    """The zone ('buy' | 'tension' | 'sell' | 'neutral') a _band_verdict badge stands for."""
     if "KÖP-STÖD" in badge:
         return "buy"
     if "SPÄNNING" in badge:
@@ -759,7 +807,10 @@ def _driver_verdict_text(ratio, counted: bool = True, margins: Optional[dict] = 
     The claim is shown only in the tension/stretched zone; otherwise a neutral line
     (at the opposite extreme: the cheap leg is dear vs the other). For GLD/GDX and GLD/GDXJ
     the line describes the margin rule (since 2026-11-03, _margin_rule_text), for every other
-    ratio the driver. counted=False (custom ratios) never says the panel counts it. Wording only."""
+    ratio the driver. counted=False (custom ratios) never says the panel counts it. Gold/Platinum and
+    Gold/Palladium (context only since 2026-11-03) say so in every zone. Wording only."""
+    if _bs.context_only(getattr(ratio, "key", "")):
+        return ("⚪", _context_text(ratio.key))
     cheap_name, other_name, cheap_pct, other_pct = _cheap_and_other(ratio)
     zone = _band_zone(ratio)
     if zone not in ("buy", "tension"):
@@ -903,6 +954,8 @@ def _render_leg_breakdown(ratio, counted: bool = True, margins: Optional[dict] =
         verdict_color = _DRIVER_COLORS.get(ratio.driver, "#607080")
     if not _driver_applies(ratio):
         verdict_color = "#cc3333" if _is_sell_extreme(ratio) else "#607080"
+    if _bs.context_only(getattr(ratio, "key", "")):
+        verdict_color = _CONTEXT_COLOR                      # context only: neutral in every zone
     legs_note = (f'<div style="color:#607080;font-size:0.72rem;margin-bottom:4px;">{_legs_info_text(ratio)}</div>'
                  if margin_rule else "")
 

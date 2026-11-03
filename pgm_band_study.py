@@ -6,10 +6,12 @@ Förregistrerat backtest av köpstödet i Gold/Platinum (GC=F/PL=F) och Gold/Pal
 fungerat, med platinans långa fall och sidledes period 2015–2024 (risken: köpstöd för tidigt, en fallande kniv)?
 
 Signalerna räknas point-in-time varje handelsdag på terminerna med panelens egna funktioner (_percentile_of,
-_classify, _classify_driver och buy_support.ENGINE_DRIVERS): S0 nuvarande regel, S1 bara kvoten, S2 kvoten och
-metallterminen över MA200. Utfallen räknas på de fysiskt backade ETF:erna (PPLT, PALL) mot GLD, med köp första dagen
-efter signaldagen. Därefter episoder, utfall på 63/126/252 dagar, baslinjer, bootstrapintervall (beskrivande),
-domarna H1–H3 per metall, gruvorna (IMPUY, SBSW) och korsutfallen (beskrivande) och förslagen.
+_classify, _classify_driver och buy_support.ENGINE_DRIVERS): S0 nuvarande regel (specens namn för drivarregeln som
+gällde när testet registrerades — sedan ägarens beslut 2026-11-03 är båda PGM-snoddarna bara kontext,
+buy_support.CONTEXT_ONLY), S1 bara kvoten, S2 kvoten och metallterminen över MA200. Utfallen räknas på de fysiskt
+backade ETF:erna (PPLT, PALL) mot GLD, med köp första dagen efter signaldagen. Därefter episoder, utfall på
+63/126/252 dagar, baslinjer, bootstrapintervall (beskrivande), domarna H1–H3 per metall, gruvorna (IMPUY, SBSW)
+och korsutfallen (beskrivande) och förslagen.
 
 Percentiler, episoder, utfall, sammanfattningar och bootstrap är miner_margin_study:s funktioner (samma metod som
 gruvornas test). De rena funktionerna står först; run()/main() hämtar kurserna (market_prices, "max") och sparar
@@ -63,7 +65,7 @@ MINERS = ("IMPUY", "SBSW")                                                # seku
 REQUIRED = ("GC=F", "PL=F", "PA=F", GOLD_ETF, "PPLT", "PALL")
 TICKERS = REQUIRED + MINERS
 STRETCHED = bs.STRETCHED                  # "RUBBER_BAND_STRETCHED"
-S0_DRIVERS = bs.ENGINE_DRIVERS            # motorns +1 för snoddarna med drivarregeln (DENOMINATOR_CHEAP, BOTH)
+S0_DRIVERS = bs.ENGINE_DRIVERS            # drivarregeln (DENOMINATOR_CHEAP, BOTH): PGM-snoddarnas +1 till 2026-11-03
 SIGNALS = (("S0", "nuvarande regel"), ("S1", "bara kvoten"), ("S2", "kvoten och trenden"))
 HYPOTHESES = (("H1", "S0"), ("H2", "S1"), ("H3", "S2"))
 PASS, FAIL, TOO_FEW = "GODKÄND", "EJ GODKÄND", "FÖR FÅ EPISODER"

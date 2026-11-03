@@ -1,14 +1,16 @@
 """
 PGM-snoddarna — förregistrerat backtest (pgm_band_study.py, docs/forskning/pgm_snoddar_spec.md).
 
-Signalerna S0–S2 ska vara panelens egna funktioner räknade point-in-time: S0 är motorns +1 i dag
-(buy_support.evaluate med ENGINE_DRIVERS), S1 kvoten ≥ 90 och S2 kvoten och metallterminen över MA200. Ingen
+Signalerna S0–S2 ska vara panelens egna funktioner räknade point-in-time: S0 är drivarregeln (motorns +1 för
+PGM-snoddarna fram till ägarens beslut 2026-11-03, buy_support.evaluate med ENGINE_DRIVERS — sedan dess är de bara
+kontext), S1 kvoten ≥ 90 och S2 kvoten och metallterminen över MA200. Ingen
 framåtblick (data efter t ändrar aldrig signalen eller MA200-flaggan på t), episoder skilda med 63 dagar, köp
 första utfallsdagen efter signaldagen, hela horisonter, en bootstrap som ger samma svar med samma frö, gruvorna och
 korsutfallen som beskrivande tabeller och en rapport som går utan nätverk. Studien läser miner_margin_study:s
 funktioner, och gruvornas studie räknar som förut. Inget nätverk och ingen skrivning till repot eller Gisten —
 fejkade kursserier.
 """
+import dataclasses
 import json
 import os
 import socket
@@ -200,9 +202,14 @@ def test_signal_definitions_match_the_live_functions(monkeypatch, frames, name, 
         assert live.status == row["status"] and live.driver == row["driver"], t
         assert live.percentile == round(row["p_ratio"], 1), t
         assert (live.numerator_pctile, live.denominator_pctile) == (round(row["p_gc"], 1), round(row["p_metal"], 1))
-        engine = bs.evaluate(key, live)                  # motorns +1 i dag: sträckt och ENGINE_DRIVERS
-        assert engine.details["rule"] == "driver"
-        assert bool(row["S0"]) == engine.supported, t
+        # S0 är drivarregeln (sträckt och ENGINE_DRIVERS) — motorns +1 för PGM fram till beslutet 2026-11-03. Sedan
+        # dess är PGM-kvoterna bara kontext, så S0 jämförs med samma regel på en kvot som fortfarande har den.
+        now = bs.evaluate(key, live)
+        assert (now.supported, now.reason, now.details["rule"]) == (False, bs.CONTEXT, "context")
+        rule = bs.evaluate(None, dataclasses.replace(live, key="gold_silver"))
+        assert rule.details["rule"] == "driver"
+        driver_rule = live.status == bs.STRETCHED and live.driver in bs.ENGINE_DRIVERS
+        assert bool(row["S0"]) == rule.supported == driver_rule, t
         assert bool(row["S1"]) == (live.status == "RUBBER_BAND_STRETCHED") == (row["p_ratio"] >= 90), t
         own = SERIES[den][:t].iloc[-200:]                # terminens egna 200 senaste stängningar till och med t
         assert row["ma200"] == pytest.approx(own.mean(), rel=1e-9)

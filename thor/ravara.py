@@ -31,6 +31,10 @@ PRECIOUS = ("guld", "silver")
 BASE_YEAR = 2010                   # fast penningvärde — samma standard som 🐺 Fiat Debasement
 CYKEL_COLOR = {"TIDIG": GREEN, "MITTEN": CYAN, "SEN": AMBER, "TOPP": RED}
 RATIO_COLOR = {"RUBBER_BAND_STRETCHED": GREEN, "TENSION_BUILDING": AMBER, "NEUTRAL": GREY}
+# Gold/Platinum och Gold/Palladium (bara kontext sedan 2026-11-03): läget i KPI-raden, aldrig drivaren — och
+# värdet i neutral grått i varje läge, så att ett grönt tal (RATIO_COLOR för sträckt) aldrig läses som ett köptips
+CONTEXT_STATUS = {"RUBBER_BAND_STRETCHED": "sträckt", "TENSION_BUILDING": "spänning", "NEUTRAL": "neutral"}
+CONTEXT_COLOR = GREY
 
 
 # ── Ordförråden ─────────────────────────────────────────────────────────────
@@ -291,7 +295,7 @@ def _ratios(st, theme: str, note) -> None:
                                          row.get("position") or "") if x)
             items.append((f"Guld/{pair['label'].lower()}", f"{row['current']:,.4g}", CYAN, sub))
     keys = ratio_keys(theme)
-    gold_rule = False
+    gold_rule = context = False
     if keys:
         from alpha_regime import buy_support as bs
         from alpha_regime.commodity_ratios import fetch_all_ratios
@@ -300,22 +304,38 @@ def _ratios(st, theme: str, note) -> None:
         margins = bs.compute_margins(shown)          # bara GLD/GDX och GLD/GDXJ — cachat 6 h, {} annars
         for k in shown:
             rr = allr[k]
-            if bs.uses_margin(k):
-                gold_rule = True
-                rule = margin_rule_text(bs.evaluate(k, rr, margins))
+            color = RATIO_COLOR.get(rr.status, GREY)
+            if bs.context_only(k):                   # Gold/Platinum, Gold/Palladium: bara kontext sedan 2026-11-03
+                context = True
+                color = CONTEXT_COLOR
+                sub = context_text(rr)
             else:
-                rule = rr.driver.replace('_', ' ').lower()
-            items.append((rr.label, f"{rr.current:,.4g}", RATIO_COLOR.get(rr.status, GREY),
-                          f"P{rr.percentile:.0f} · {rr.status.replace('_', ' ').lower()} · {rule}"))
+                if bs.uses_margin(k):
+                    gold_rule = True
+                    rule = margin_rule_text(bs.evaluate(k, rr, margins))
+                else:
+                    rule = rr.driver.replace('_', ' ').lower()
+                sub = f"P{rr.percentile:.0f} · {rr.status.replace('_', ' ').lower()} · {rule}"
+            items.append((rr.label, f"{rr.current:,.4g}", color, sub))
     if not items:
         note(f"Inga kvoter för {label(theme).lower()}.")
         return
     st.markdown(cards.kpi_row(items), unsafe_allow_html=True)
     gold_txt = (" För GLD/GDX och GLD/GDXJ visar raden panelens köpstöd sedan 2026-11-03: kvoten ≥ 90:e percentilen "
                 "och gruvornas marginalmätare ≤ 30:e." if gold_rule else "")
+    context_txt = (" Gold/Platinum och Gold/Palladium är bara kontext sedan 2026-11-03 (ägarens beslut efter "
+                   "backtestet): de räknas aldrig som köpstöd." if context else "")
     st.markdown(f"<div style='color:{DIM};font-size:0.72rem;'>Guld/silver och guld/råvara: hög kvot = ett uns guld "
                 f"köper mycket av råvaran. Gummibanden: percentil i tio års historik — stretched = nämnaren billig "
-                f"relativt täljaren. Neutralt underlag, ingen signal.{gold_txt}</div>", unsafe_allow_html=True)
+                f"relativt täljaren. Neutralt underlag, ingen signal.{gold_txt}{context_txt}</div>",
+                unsafe_allow_html=True)
+
+
+def context_text(ratio) -> str:
+    """KPI-radens undertext för en kvot som bara är kontext (Gold/Platinum, Gold/Palladium sedan 2026-11-03):
+    'kontext · P93 · sträckt' — läget, aldrig drivaren eller ett köpstöd."""
+    status = CONTEXT_STATUS.get(ratio.status, str(ratio.status or "").replace("_", " ").lower())
+    return f"kontext · P{ratio.percentile:.0f} · {status}"
 
 
 def margin_rule_text(support) -> str:

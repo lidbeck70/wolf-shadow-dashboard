@@ -454,9 +454,11 @@ def run_regime_analysis(
                     result.miner_margins = _bs.compute_margins(result.detected_exposure)
                     # Append rationale for the first ratio with buy support (max +1 confirmation). The rule is
                     # buy_support.evaluate: GLD/GDX and GLD/GDXJ need RUBBER_BAND_STRETCHED and the margin gauge
-                    # ≤ 30 (missing margin → no support); every other ratio RUBBER_BAND_STRETCHED and the driver
-                    # DENOMINATOR_CHEAP/BOTH. UNKNOWN is NOT a valid confirmation there: only an explicit cheap-leg
-                    # driver may confirm, otherwise a missing driver would produce a false contrarian buy claim.
+                    # ≤ 30 (missing margin → no support); Gold/Platinum and Gold/Palladium are context only since
+                    # 2026-11-03 (never support — the loop moves on to the next ratio); every other ratio
+                    # RUBBER_BAND_STRETCHED and the driver DENOMINATOR_CHEAP/BOTH. UNKNOWN is NOT a valid confirmation
+                    # there: only an explicit cheap-leg driver may confirm, otherwise a missing driver would produce
+                    # a false contrarian buy claim.
                     for _rk in result.detected_exposure:
                         _ratio = result.commodity_ratios.get(_rk)
                         _support = _bs.evaluate(_rk, _ratio, result.miner_margins)
