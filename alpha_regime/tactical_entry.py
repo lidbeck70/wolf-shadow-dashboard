@@ -44,6 +44,9 @@ _EXPOSURE_TO_ETF: dict[str, str] = {
     "gold_miner":   "GDX",
     "junior_miner": "GDXJ",     # juniorerna mäts mot juniorindexet, inte GDX
     "silver":       "SIL",
+    # Ingen PGM-gruv-ETF finns — metall-ETF:en (platina PPLT, palladium PALL) är närmaste sektorproxy.
+    "platinum": "PPLT",
+    "palladium": "PALL",
     "oil":          "XLE",
     "copper":       "COPX",
     "uranium":      "URA",
@@ -457,6 +460,8 @@ def resolve_sector_etf(detected_exposure: Optional[list]) -> str:
         "gold_silver":  "silver",
         "silver_juniors": "silver",
         "silver_miners": "silver",
+        "gold_platinum": "platinum",
+        "gold_palladium": "palladium",
         "gold_oil":     "oil",
         "copper_gold":  "copper",
     }

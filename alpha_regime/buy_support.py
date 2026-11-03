@@ -15,9 +15,9 @@ Det ersätter drivarens prisvillkor (det billiga benets eget prisläge) för jus
 (DATA_GAP: inget guldpris, ingen gruvkurs, marginal ≤ 50 USD/uns) blir det inget köpstöd. En inaktuell AISC-tabell
 (stale) blockerar inte — kortet fortsätter att varna. Marginalmätaren ENSAM är ingen signal (H2 föll).
 
-Alla andra kvoter (gold_silver, gold_oil, silver_miners, copper_gold, gdxj_gdx, silver_juniors, gdx_spy, egna)
-behåller regeln från före 2026-11-03: sträckt kvot och drivaren DENOMINATOR_CHEAP/BOTH (motorn,
-ENGINE_DRIVERS). Panelens sammanräkning släpper dessutom igenom UNKNOWN som förut (SUMMARY_DRIVERS) — två
+Alla andra kvoter (gold_silver, gold_oil, silver_miners, copper_gold, gdxj_gdx, silver_juniors, gdx_spy,
+gold_platinum, gold_palladium, egna) behåller regeln från före 2026-11-03: sträckt kvot och drivaren
+DENOMINATOR_CHEAP/BOTH (motorn, ENGINE_DRIVERS). Panelens sammanräkning släpper dessutom igenom UNKNOWN som förut (SUMMARY_DRIVERS) — två
 befintliga betydelser som behålls exakt; vad som räknas som "sträckt" anger anroparen (motorn: status,
 panelen: märket 🟢 KÖP-STÖD).
 """

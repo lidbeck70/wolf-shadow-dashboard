@@ -25,8 +25,8 @@ from ui.tokens import AMBER, CYAN, DIM, GOLD, GREEN, GREY, RED, TEXT
 ROTATION_ALIAS = {"naturgas": "gas", "naturgas_eu": "gas", "zink_nickel": "zink"}
 BLINDSPOT_ALIAS = {"agri_korg": "agri"}      # fas 8: varje BERSERK-tema har en egen plats på brädan
 FIAT_ASSET = {"guld": "gold", "silver": "silver", "koppar": "copper", "olja": "oil"}
-EXPOSURE = {"guld": "gold_miner", "silver": "silver", "olja": "oil", "koppar": "copper", "uran": "uranium",
-            "litium": "lithium", "naturgas": "gas", "naturgas_eu": "gas"}
+EXPOSURE = {"guld": "gold_miner", "silver": "silver", "platina": "platinum", "palladium": "palladium", "olja": "oil",
+            "koppar": "copper", "uran": "uranium", "litium": "lithium", "naturgas": "gas", "naturgas_eu": "gas"}
 PRECIOUS = ("guld", "silver")
 BASE_YEAR = 2010                   # fast penningvärde — samma standard som 🐺 Fiat Debasement
 CYKEL_COLOR = {"TIDIG": GREEN, "MITTEN": CYAN, "SEN": AMBER, "TOPP": RED}

@@ -2,13 +2,15 @@
 alpha_regime/commodity_ratios.py
 Commodity ratio "rubber band" engine for Deep Contrarian mode.
 
-Five cross-asset ratios at 10-year daily history, cached 6h.
+Cross-asset ratios (_RATIO_SPECS: the original five, the miner benchmarks and the
+platinum-group metals vs gold) at 10-year daily history, cached 6h.
 High percentile (≥90) = denominator stretched cheap (high-direction ratios).
-Low  percentile (≤10) = numerator  stretched cheap (copper_gold only).
+Low  percentile (≤10) = numerator  stretched cheap (low-direction: copper_gold, gdx_spy).
 """
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -65,6 +67,9 @@ _RATIO_SPECS: list[RatioSpec] = [
     RatioSpec("gold_gdxj",       "GLD / GDXJ (Metal/Juniors)",  "Junior Miners",   "GLD",  "GDXJ",  "GLD",  "GDXJ", "high"),
     RatioSpec("silver_juniors",  "SLV / SILJ (Silver Juniors)", "Silver Juniors",  "SLV",  "SILJ",  "",     "",     "high", min_years=5),
     RatioSpec("gdx_spy",         "GDX / SPY (Miners/Market)",   "Gold Miners",     "GDX",  "SPY",   "GDX",  "SPY",  "low"),
+    # ── Platinum-group metals vs gold (high ratio = the PGM metal cheap vs gold) ──
+    RatioSpec("gold_platinum", "Gold / Platinum", "Platinum", "GC=F", "PL=F", "GLD", "PPLT", "high"),
+    RatioSpec("gold_palladium", "Gold / Palladium", "Palladium", "GC=F", "PA=F", "GLD", "PALL", "high"),
 ]
 
 
@@ -257,7 +262,7 @@ def _compute_ratio(spec: RatioSpec) -> RatioResult:
 
 @_cache_6h
 def fetch_all_ratios() -> dict:
-    """Fetch and compute all 5 commodity ratios. Result cached 6h."""
+    """Fetch and compute every commodity ratio in _RATIO_SPECS. Result cached 6h."""
     return {spec.key: _compute_ratio(spec) for spec in _RATIO_SPECS}
 
 
@@ -267,6 +272,9 @@ EXPOSURE_TO_RATIO: dict[str, list[str]] = {
     "gold_miner":   ["metal_miners", "gdxj_gdx", "gold_gdxj", "gdx_spy"],
     "junior_miner": ["gdxj_gdx", "gold_gdxj"],
     "silver":       ["gold_silver", "silver_juniors"],
+    # PGM-gruvorna bryter både platina och palladium — den egna metallens kvot först.
+    "platinum": ["gold_platinum", "gold_palladium"],
+    "palladium": ["gold_palladium", "gold_platinum"],
     "oil":          ["gold_oil"],
     "copper":       ["copper_gold"],
     # Ingen egen kvot ännu — exponeringen finns så att sektor-ETF:en (URA,
@@ -278,7 +286,11 @@ EXPOSURE_TO_RATIO: dict[str, list[str]] = {
 
 # Ordered: most specific patterns first. Koppar, uran, gas och litium står
 # FÖRE de generiska "mining"/"energi" — annars blev "Copper Mining" och
-# Bolidens "Gruvor" gold_miner, och "Förnybar energi" olja.
+# Bolidens "Gruvor" gold_miner, och "Förnybar energi" olja. Platina och
+# palladium står före de generiska guld-/gruvorden — annars blev "Platinum
+# Group Metals" gold_miner (via "metals"); namn utan PGM-ord routas som förut.
+# Ett namn med både ett guld-/oljeord och ett PGM-ord blir PGM ("Gold, Platinum &
+# Palladium", "Oil & PGM") — inget av Börsdatas branschnamn innehåller ett PGM-ord.
 _KEYWORD_EXPOSURE: list[tuple[list[str], str]] = [
     (["junior miner", "junior mine", "juniormine", "gdxj"],   "junior_miner"),
     (["silver miner", "silver mine", "silvr", "silber"],       "silver"),
@@ -288,6 +300,8 @@ _KEYWORD_EXPOSURE: list[tuple[list[str], str]] = [
     (["natural gas", "naturgas", "lng"],                       "gas"),
     (["copper", "koppar"],                                     "copper"),
     (["silver"],                                               "silver"),
+    (["platinum group", "platinum", "platina", "pgm"], "platinum"),
+    (["palladium"], "palladium"),
     (["gold", "guld", "gld"],                                  "gold_miner"),
     (["mining", "gruv", "metals"],                             "gold_miner"),
     (["oil", "olja", "petroleum", "petro", "crude"],           "oil"),
@@ -303,7 +317,9 @@ def detect_exposure(branch_name: Optional[str]) -> Optional[str]:
         return None
     text = branch_name.lower()
     for keywords, exposure in _KEYWORD_EXPOSURE:
-        if any(kw in text for kw in keywords):
+        # Nyckelordet ska börja ett ord: 'uran' i 'Restaurang & Café' gav förr uran (och URA som sektor-ETF).
+        # Svenska sammansättningar börjar med råvaran (Guldgruvor, Kopparproducent), så prefixet räcker.
+        if any(re.search(r"\b" + re.escape(kw), text) for kw in keywords):
             return exposure
     return None
 

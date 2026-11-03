@@ -196,7 +196,8 @@ def _guide_contrarian() -> None:
                     "Tvivel och ilska. Kursen fortfarande under 200-dagars MA. Köp andra tredjedelen.",
                     "<b>ACCUMULATE 3/3</b> — Marknadsfas: HOPE. Kurs nära 200-dagars MA (–5% till +5%). "
                     "Sista chansen att ackumulera billigt.",
-                    "<b>Bekräftelse:</b> Gummisnodde ≥ 90:e percentilen (t.ex. Gold/Silver) = "
+                    "<b>Bekräftelse:</b> Gummisnodde ≥ 90:e percentilen (t.ex. Gold/Silver, Gold/Platinum "
+                    "eller Gold/Palladium) = "
                     "råvaran historiskt max-billig vs motvikten → stärker köpfallet. Kvoten räcker inte ensam: "
                     "för guldgruvorna (GLD/GDX, GLD/GDXJ) ska dessutom marginalmätaren stå på ≤ 30:e "
                     "percentilen (gruvornas kurs per dollar marginal, sedan 2026-11-03); för övriga kvoter ska "

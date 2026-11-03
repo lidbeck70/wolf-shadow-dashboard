@@ -44,6 +44,14 @@ try:
 except ImportError:
     pass
 
+# The exposure picker's ratio lists (public registry, imported on its own so the picker does not depend on the
+# custom builder's private helpers). None = commodity_ratios not loaded.
+_CR_EXPOSURE_TO_RATIO: Optional[dict] = None
+try:
+    from alpha_regime.commodity_ratios import EXPOSURE_TO_RATIO as _CR_EXPOSURE_TO_RATIO
+except ImportError:
+    pass
+
 # ── Optional: tactical entry module ──────────────────────────────────────────
 _TE_OK = False
 try:
@@ -80,6 +88,42 @@ _MARKET_OPTIONS = {
     "GLD — Gold":                      "GLD",
     "SLV — Silver":                    "SLV",
 }
+
+# Deep Contrarian 'Commodity exposure' picker: option → exposure key in commodity_ratios.EXPOSURE_TO_RATIO
+# (the ratio lists are read from there, never copied). "Auto" = auto-detect, "None" = no gauges.
+_EXPOSURE_PICKER: dict = {
+    "Gold Miners": "gold_miner",
+    "Junior Miners": "junior_miner",
+    "Silver": "silver",
+    "Platinum": "platinum",
+    "Palladium": "palladium",
+    "Oil": "oil",
+    "Copper": "copper",
+}
+_EXP_OPTIONS = ["Auto", *_EXPOSURE_PICKER, "None"]
+# Auto reads only the Börsdata branch name, and no Börsdata branch names platinum or palladium (PGM producers sit
+# in e.g. 'Gruv - Guld & Silver') — the PGM bands are reached through this picker (or Thor's Råvara tab).
+_EXPOSURE_HELP = (
+    "Override auto-detected commodity sector for the rubber band gauges. Auto reads the Börsdata branch, "
+    "which has no platinum or palladium branch — for PGM stocks (e.g. Sibanye-Stillwater, Impala Platinum) "
+    "choose Platinum or Palladium."
+)
+
+
+def _exposure_override(option: str):
+    """The picker's choice as the override the contrarian view reads: None (Auto → auto-detect), [] ("None")
+    or a copy of the exposure's ratio keys from commodity_ratios.EXPOSURE_TO_RATIO. Without the module the
+    exposure key itself is returned (no ratio key) — a non-empty list, so the gauge section shows its
+    'module not loaded' caption instead of reading the choice as "None"."""
+    if option == "None":
+        return []
+    exp = _EXPOSURE_PICKER.get(option)
+    if exp is None:
+        return None
+    if _CR_EXPOSURE_TO_RATIO is None:
+        return [exp]
+    return list(_CR_EXPOSURE_TO_RATIO.get(exp, []))
+
 
 _VERDICT_COLORS = {
     "BUY":   "#1aaa5a",
@@ -1811,23 +1855,13 @@ def render_alpha_regime() -> None:
     if mode == "contrarian":
         _exp_col, _ = st.columns([2, 5])
         with _exp_col:
-            _EXP_OPTIONS = ["Auto", "Gold Miners", "Junior Miners", "Silver", "Oil", "Copper", "None"]
-            _EXP_TO_KEY: dict[str, object] = {
-                "Auto":          None,
-                "Gold Miners":   ["metal_miners", "gdxj_gdx", "gold_gdxj", "gdx_spy"],
-                "Junior Miners": ["gdxj_gdx", "gold_gdxj"],
-                "Silver":        ["gold_silver", "silver_juniors"],
-                "Oil":           ["gold_oil"],
-                "Copper":        ["copper_gold"],
-                "None":          [],
-            }
             _exp_sel = st.selectbox(
                 "Commodity exposure",
                 options=_EXP_OPTIONS,
                 key="ar_exposure",
-                help="Override auto-detected commodity sector for the rubber band gauges",
+                help=_EXPOSURE_HELP,
             )
-            exposure_override = _EXP_TO_KEY.get(_exp_sel)
+            exposure_override = _exposure_override(_exp_sel)
 
     # ── State management ──────────────────────────────────────────────────────
     cache_key = f"ar_result_{ticker}_{mode}_{market_ticker}"
