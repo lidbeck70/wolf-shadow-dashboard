@@ -88,6 +88,11 @@ class RatioResult:
     numerator_pctile:      Optional[float] = None
     denominator_pctile:    Optional[float] = None
     driver: str = "UNKNOWN"  # DENOMINATOR_CHEAP | NUMERATOR_EXPENSIVE | BOTH | MIXED | UNKNOWN
+    # Informational only (the card's text) — never read by _classify, _classify_driver or the engine.
+    # The window both the ratio's and the legs' percentiles are measured in, and the ratio's median there.
+    history_start: str = ""              # first date of the aligned series, "YYYY-MM-DD"
+    history_years: float = 0.0           # length of that window in years
+    median: Optional[float] = None       # median of the ratio over the same aligned series
 
 
 # ── Fetch helpers ─────────────────────────────────────────────────────────────
@@ -111,6 +116,17 @@ def _percentile_of(arr: np.ndarray, val: float) -> float:
     if len(arr) == 0:
         return 50.0
     return float(np.searchsorted(np.sort(arr), val, side="right") / len(arr) * 100)
+
+
+def _window_info(index: pd.Index, arr: np.ndarray) -> tuple:
+    """(start "YYYY-MM-DD", years, median) of an aligned ratio series — the window the card's
+    percentiles are measured in. Informational only: no rule, count or confirmation reads it."""
+    if len(arr) == 0 or len(index) == 0:
+        return "", 0.0, None
+    start, end = pd.Timestamp(index[0]), pd.Timestamp(index[-1])
+    med = float(np.median(arr))
+    return (str(start.date()), round((end - start).days / 365.25, 1),
+            float(f"{med:.6g}") if np.isfinite(med) and med > 0 else None)
 
 
 def _leg_label(pct: float) -> str:
@@ -227,6 +243,7 @@ def _compute_ratio(spec: RatioSpec) -> RatioResult:
             base.numerator_pctile      = round(num_leg_pct, 1)
             base.denominator_pctile    = round(den_leg_pct, 1)
             base.driver                = _classify_driver(num_leg_pct, den_leg_pct, spec.cheap_direction)
+            base.history_start, base.history_years, base.median = _window_info(aligned.index, arr)
             return base
 
         except Exception as exc:
