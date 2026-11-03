@@ -90,13 +90,13 @@ REGISTRY: dict = {c.key: c for c in (
        ratio_exposure="gold_miner", ember_complex="adelmetaller", proxies=("GLD", "GDX")),
     _c("silver", "Silver", "USD/oz", ("ag", "silver"), 82.0, rotation_key="silver", theme_key="silver",
        ratio_exposure="silver", ember_complex="adelmetaller", proxies=("SLV", "SIL")),
-    # ratio_exposure sedan 2026-11-03: Why Now räknar gummibandet för platina/palladium (som silver) — den egna
-    # metallens kvot, och den andra PGM-kvoten när den egna är DATA_GAP.
+    # Inget ratio_exposure för platina/palladium (som före #300): PGM-snoddarna Gold/Platinum och Gold/Palladium är
+    # bara kontext sedan 2026-11-03 (ägarens beslut A efter backtestet docs/forskning/pgm_snoddar_spec.md, se
+    # alpha_regime/buy_support.CONTEXT_ONLY) — Why Now ger dem inga gummibandspoäng, komponenten saknas som förut.
     _c("platinum", "Platina", "USD/oz", ("platina", "pt", "pgm", "platinum"), 80.0,
-       rotation_key="platina", theme_key="platina", ratio_exposure="platinum", ember_complex="adelmetaller",
-       proxies=("PPLT",)),
+       rotation_key="platina", theme_key="platina", ember_complex="adelmetaller", proxies=("PPLT",)),
     _c("palladium", "Palladium", "USD/oz", ("pd", "palladium"), 80.0, rotation_key="palladium",
-       theme_key="palladium", ratio_exposure="palladium", ember_complex="adelmetaller", proxies=("PALL",)),
+       theme_key="palladium", ember_complex="adelmetaller", proxies=("PALL",)),
     _c("oil_gas", "Olja & gas", "USD/boe", ("olja", "oil", "oil & gas", "oil_gas", "crude", "energy",
        "petroleum"), 80.0, rotation_key="olja", theme_key="olja", ratio_exposure="oil",
        ember_complex="energi", proxies=("XLE", "USO")),

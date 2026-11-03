@@ -2,10 +2,12 @@
 Snoddarna för platina och palladium — Gold/Platinum (GC=F/PL=F, reserv GLD/PPLT) och Gold/Palladium
 (GC=F/PA=F, reserv GLD/PALL), riktning 'high' (hög kvot = PGM-metallen billig mot guld).
 
-De nya kvoterna går genom EXAKT samma generiska regel som Gold/Silver (alpha_regime/buy_support.py: inte i
-MARGIN_RULE → drivarregeln; motorn ENGINE_DRIVERS, sammanräkningen SUMMARY_DRIVERS) — gruvornas marginalregel
-och alla befintliga kvoter är orörda. Varje register som listar silvrets kvoter/exponering listar nu också
-platina och palladium (prövas med en genomsökning av källkoden). Inget nätverk — fejkade kursserier.
+Sedan ägarens beslut A (2026-11-03, efter backtestet docs/forskning/pgm_snoddar_spec.md) är de två kvoterna BARA
+KONTEXT (alpha_regime/buy_support.CONTEXT_ONLY): de visas (kort, Thor, temabordet, väljaren) men ger aldrig köpstöd —
+inget +1, ingen KÖP-STÖD-räkning, ingen Why Now-poäng. Testerna här som förr låste drivarregeln för PGM säger nu
+det (varje ändring förklaras i testet); de breda tabellerna finns i tests/test_pgm_kontext.py. Gruvornas
+marginalregel och alla befintliga kvoter är orörda. Varje register som listar silvrets kvoter/exponering listar
+också platina och palladium (prövas med en genomsökning av källkoden). Inget nätverk — fejkade kursserier.
 """
 import ast
 import os
@@ -239,15 +241,16 @@ def test_exposure_picker_reads_the_registry():
         assert exp in cr.EXPOSURE_TO_RATIO, option
 
 
-def test_confidence_registry_connects_the_ratios():
+def test_confidence_registry_does_not_connect_the_pgm_ratios():
+    """Förr (#300) kopplade registret platina/palladium till sina kvoter (ratio_exposure). Sedan ägarens beslut
+    2026-11-03 är PGM-snoddarna bara kontext: ratio_exposure är tomt som före #300, så Why Now läser dem inte."""
     from confidence import commodities as com
     from confidence.why_now import signals_from_sources
-    assert com.get("platinum").ratio_exposure == "platinum" and com.get("palladium").ratio_exposure == "palladium"
+    assert com.get("platinum").ratio_exposure == "" and com.get("palladium").ratio_exposure == ""
     ratios = {"gold_platinum": {"status": "RUBBER_BAND_STRETCHED"}, "gold_palladium": {"status": "NEUTRAL"}}
-    s = signals_from_sources(com.get("platinum"), ratio_results=ratios)
-    assert (s.ratio_status, s.ratio_key) == ("RUBBER_BAND_STRETCHED", "gold_platinum")
-    s = signals_from_sources(com.get("palladium"), ratio_results=ratios)
-    assert (s.ratio_status, s.ratio_key) == ("NEUTRAL", "gold_palladium")       # den egna metallens kvot först
+    for metal in ("platinum", "palladium"):
+        s = signals_from_sources(com.get(metal), ratio_results=ratios)
+        assert (s.ratio_status, s.ratio_key) == (None, ""), metal
 
 
 def _literals(path):
@@ -286,15 +289,15 @@ def test_every_registry_that_lists_silver_also_lists_platinum_and_palladium():
             "confidence/commodities.py", "thor/ravara.py"} <= set(exp_regs)
     for path, lits in exp_regs.items():
         assert {"platinum", "palladium"} <= lits, path
-    # buy_support: kvoterna som behåller drivarregeln står uppräknade i modulens docstring
+    # buy_support: kvoterna står uppräknade i modulens docstring (PGM-kvoterna som bara kontext sedan 2026-11-03)
     assert "gold_silver" in bs.__doc__ and "gold_platinum" in bs.__doc__ and "gold_palladium" in bs.__doc__
-    # regeldokumenten räknar upp exemplen där Gold/Silver står
+    # regeldokumenten nämner dem där Gold/Silver står — sedan 2026-11-03 som bara kontext (tests/test_pgm_kontext.py)
     for rel in ("strategy_rules.py", os.path.join("ovtlyr", "ui", "rules_page.py")):
         text = open(os.path.join(ROOT, rel), encoding="utf-8").read()
         assert "Gold/Silver" in text and "Gold/Platinum" in text and "Gold/Palladium" in text, rel
 
 
-# ── Regeln: den generiska, exakt som Gold/Silver ─────────────────────────────
+# ── Regeln: bara kontext sedan 2026-11-03 (förr den generiska, som Gold/Silver) ──
 def test_the_gold_miner_margin_rule_is_untouched():
     assert bs.MARGIN_RULE == {"metal_miners": "GDX", "gold_gdxj": "GDXJ"} and bs.MARGIN_MAX_PCT == 30.0
     assert bs.ENGINE_DRIVERS == ("DENOMINATOR_CHEAP", "BOTH")
@@ -308,8 +311,9 @@ def test_the_gold_miner_margin_rule_is_untouched():
 
 
 @pytest.mark.parametrize("key", PGM_KEYS)
-def test_rule_and_summary_equal_gold_silver_for_every_status_driver_and_percentile(key):
-    """Samma utfall som Gold/Silver (och koden före 2026-11-03) — vad marginalmätaren än säger."""
+def test_rule_and_summary_never_support_pgm_for_any_status_driver_and_percentile(key):
+    """Förr: samma utfall som Gold/Silver (drivarregeln). Sedan 2026-11-03 bara kontext: aldrig köpstöd och aldrig
+    KÖP-STÖD i sammanräkningen, där Gold/Silver med samma läge fortfarande följer drivarregeln."""
     margins = {"GDX": _margin("GDX", 5.0), "GDXJ": _margin("GDXJ", 5.0)}
     for status in STATUSES:
         for driver in DRIVERS:
@@ -317,83 +321,81 @@ def test_rule_and_summary_equal_gold_silver_for_every_status_driver_and_percenti
                 r, silver = _ratio(key, status=status, percentile=pct, driver=driver), _ratio(
                     "gold_silver", status=status, percentile=pct, driver=driver)
                 sup = bs.evaluate(key, r, margins)
-                assert sup.supported == bs.evaluate("gold_silver", silver, margins).supported == _old_engine_confirms(r)
-                assert sup.details["rule"] == "driver" and "margin_pct" not in sup.details
-                assert aui._compute_ratio_summary({key: r}, [key], margins) == _old_summary({key: r}, [key])
+                assert (sup.supported, sup.reason, sup.details["rule"]) == (False, bs.CONTEXT, "context")
+                assert "margin_pct" not in sup.details
+                assert bs.evaluate("gold_silver", silver, margins).supported == _old_engine_confirms(silver)
+                want = "Gummisnoddar: 1 DATA_GAP" if status == "DATA_GAP" else "Gummisnoddar: 1 KONTEXT"
+                assert aui._compute_ratio_summary({key: r}, [key], margins) == want
 
 
 @pytest.mark.parametrize("branch,first,second", [("Platinum Group Metals", "gold_platinum", "gold_palladium"),
                                                  ("Palladium", "gold_palladium", "gold_platinum")])
-def test_engine_plus_one_follows_the_driver_rule(monkeypatch, branch, first, second):
+def test_engine_never_gives_plus_one_for_pgm(monkeypatch, branch, first, second):
+    """Förr gav den egna metallens kvot (eller den andra) +1 med en billig drivare. Sedan 2026-11-03: aldrig —
+    och marginalmätaren läses fortfarande aldrig för PGM."""
     margins = {"GDX": _margin("GDX", 5.0), "GDXJ": _margin("GDXJ", 5.0)}
-    label = _spec(first).label
-    metal = _spec(first).denominator_label
-    for driver, ok in (("DENOMINATOR_CHEAP", True), ("BOTH", True), ("NUMERATOR_EXPENSIVE", False),
-                       ("MIXED", False), ("UNKNOWN", False)):
+    for driver in DRIVERS:
         ratios = {first: _ratio(first, driver=driver, denominator_pctile=9.0),
-                  second: _ratio(second, status="NEUTRAL", driver="MIXED")}
+                  second: _ratio(second, driver=driver, denominator_pctile=9.0)}
         r, rb, calls = _run_engine(monkeypatch, branch, ratios, margins)
         assert r.detected_exposure == [first, second]
-        assert rb == ([f"Rubber Band: {label} at 94th percentile — {metal} historically stretched cheap"] if ok else [])
+        assert rb == [], driver
         assert calls == [] and r.miner_margins == {}               # marginalmätaren läses aldrig för PGM
-    # den andra metallens kvot får raden när den egna inte bekräftar (max +1 som förut)
-    ratios = {first: _ratio(first, status="TENSION_BUILDING", driver="DENOMINATOR_CHEAP"),
-              second: _ratio(second, driver="DENOMINATOR_CHEAP")}
-    _r, rb, _calls = _run_engine(monkeypatch, branch, ratios, margins)
-    assert rb == [f"Rubber Band: {_spec(second).label} at 94th percentile — {_spec(second).denominator_label} "
-                  f"historically stretched cheap"]
-    ratios = {first: _ratio(first, driver="BOTH"), second: _ratio(second, driver="BOTH")}
-    _r, rb, _calls = _run_engine(monkeypatch, branch, ratios, margins)
-    assert len(rb) == 1 and label in rb[0]
 
 
 @pytest.mark.parametrize("branch", ["Platinum Group Metals", "Palladium"])
-def test_engine_table_matches_the_old_rule(monkeypatch, branch):
+def test_engine_table_never_confirms_pgm(monkeypatch, branch):
+    """Förr: samma rad som den gamla drivarregeln gav. Nu: ingen rad i någon status × drivare."""
     keys = cr.EXPOSURE_TO_RATIO[cr.detect_exposure(branch)]
     for status in STATUSES:
         for driver in DRIVERS:
             ratios = {k: _ratio(k, status=status, driver=driver) for k in keys}
             _r, rb, _calls = _run_engine(monkeypatch, branch, ratios, {})
-            first = next((ratios[k] for k in keys if _old_engine_confirms(ratios[k])), None)
-            old = [] if first is None else [f"Rubber Band: {first.label} at {first.percentile:.0f}th percentile"
-                                            f" — {first.denominator_label} historically stretched cheap"]
-            assert rb == old, (branch, status, driver)
+            assert rb == [], (branch, status, driver)
 
 
 def test_engine_from_fake_price_series(monkeypatch):
-    """Hela vägen: fejkade kurser → _compute_ratio → motorn. Billig platina ger +1, dyrt guld ger inget."""
+    """Hela vägen: fejkade kurser → _compute_ratio → motorn. Förr gav billig platina +1; sedan 2026-11-03 ger
+    varken billig platina eller dyrt guld någon rad — kvoten är fortfarande sträckt och visas som kontext."""
     from alpha_regime import engine as eng
     cheap = _compute(monkeypatch, "gold_platinum", _cheap_pgm())
     pall = _compute(monkeypatch, "gold_palladium", _dear_gold())
-    _r, rb, _calls = _run_engine(monkeypatch, "Impala Platinum", {"gold_platinum": cheap, "gold_palladium": pall}, {})
-    assert rb == [f"Rubber Band: Gold / Platinum at {cheap.percentile:.0f}th percentile — Platinum historically "
-                  f"stretched cheap"]
-    _r, rb, _calls = _run_engine(monkeypatch, "Palladium One", {"gold_platinum": cheap, "gold_palladium": pall}, {})
-    assert rb == [f"Rubber Band: Gold / Platinum at {cheap.percentile:.0f}th percentile — Platinum historically "
-                  f"stretched cheap"]                               # palladium: dyrt guld → nästa kvot i listan
+    assert cheap.status == "RUBBER_BAND_STRETCHED" and cheap.driver == "DENOMINATOR_CHEAP"
+    for branch in ("Impala Platinum", "Palladium One"):
+        _r, rb, _calls = _run_engine(monkeypatch, branch, {"gold_platinum": cheap, "gold_palladium": pall}, {})
+        assert rb == [], branch
     _r, rb, _calls = _run_engine(monkeypatch, "Palladium One", {"gold_palladium": pall}, {})
     assert rb == [] and eng._bs is bs
 
 
-# ── Kortet (steg 1: ärliga ord, terms-raden, drivaren bara när snodden är spänd) ──
+# ── Kortet (steg 1: ärliga ord och terms-raden; sedan 2026-11-03 bara kontext) ──
+PLATINUM_LINE = ("Bara kontext sedan 2026-11-03 — backtestet visade att en sträckt kvot följdes av att metallen gick "
+                 f"sämre än guld (platina: den tidigare regeln gav 3 köplägen, snitt −16,9{NB}% mot GLD på ett år, "
+                 f"0{NB}% träffar); räknas inte som köpstöd.")
+PALLADIUM_LINE = ("Bara kontext sedan 2026-11-03 — backtestet visade att en sträckt kvot följdes av att metallen gick "
+                  f"sämre än guld (palladium: för få köplägen, de två liknande gav −36{NB}% och −31{NB}% mot GLD); "
+                  "räknas inte som köpstöd.")
+
+
 def test_card_texts_for_gold_platinum():
+    """Förr: märket 🟢 KÖP-STÖD och drivarens rad ('panelens regel räknar det som köpstöd i PL=F'), 🔴 SÄLJ-STÖD i
+    säljzonen. Sedan 2026-11-03: märket KONTEXT med snoddens läge och beslutets rad i varje zon; terms-raden och
+    benens ord (steg 1) är kvar som information."""
     r = _ratio("gold_platinum", driver="DENOMINATOR_CHEAP", numerator_pctile=55.0, denominator_pctile=9.0,
                current=2.5, median=1.6)
-    assert aui._ratio_verdict(r)[0] == "🟢 KÖP-STÖD"
-    assert aui._driver_verdict_text(r) == (
-        "🟢", "PL=F står nära botten av sitt eget prisspann (9:e pct) — panelens regel räknar det som köpstöd i PL=F.")
+    assert aui._ratio_verdict(r)[:2] == ("⚪ KONTEXT · sträckt", "#607080")
+    assert aui._driver_verdict_text(r) == ("⚪", PLATINUM_LINE)
     assert aui._cheap_terms_text(r) == (f"I GC=F: 1 PL=F = 0,400 GC=F — 36{NB}% mindre än medianen sedan 2016 "
                                         f"(0,625), alltså billigare i GC=F än normalt.")
+    assert aui._leg_words(r) == ("mitten", "nära botten")
     dear = _ratio("gold_platinum", driver="NUMERATOR_EXPENSIVE", numerator_pctile=95.0, denominator_pctile=50.0)
-    assert aui._driver_verdict_text(dear) == (
-        "⚠️", "GC=F står nära toppen av sitt eget prisspann (95:e pct), PL=F står inte nära botten av sitt (50:e pct) "
-              "— panelens regel räknar det inte som köpstöd i PL=F.")
-    for driver in DRIVERS:                                          # neutral: ingen drivarförklaring
+    assert aui._driver_verdict_text(dear) == ("⚪", PLATINUM_LINE)
+    for driver in DRIVERS:
         assert aui._driver_verdict_text(_ratio("gold_platinum", status="NEUTRAL", driver=driver)) == (
-            "⚪", NEUTRAL_LINE)
+            "⚪", PLATINUM_LINE)
     sell = _ratio("gold_palladium", status="NEUTRAL", percentile=5.0)
-    assert aui._ratio_verdict(sell)[0] == "🔴 SÄLJ-STÖD"
-    assert aui._driver_verdict_text(sell) == ("🔴", "Snodden är spänd åt andra hållet — PA=F är historiskt dyr mot GC=F.")
+    assert aui._ratio_verdict(sell)[0] == "⚪ KONTEXT · dyr"
+    assert aui._driver_verdict_text(sell) == ("⚪", PALLADIUM_LINE)
 
 
 def _card_app():
@@ -413,25 +415,30 @@ def _render_card(ratio, margins=None):
 
 
 def test_apptest_gold_platinum_card_renders():
+    """Förr: 🟢 KÖP-STÖD och drivarens köpstödsrad. Sedan 2026-11-03: KONTEXT-märket och beslutets rad — benens
+    rader och terms-raden (steg 1) visas som förut."""
     r = _ratio("gold_platinum", driver="DENOMINATOR_CHEAP", numerator_pctile=55.0, denominator_pctile=9.0,
                current=2.5, median=1.6, sparkline_dates=["2026-10-23", "2026-10-30"], sparkline_values=[2.45, 2.5])
     html = _render_card(r, {"GDX": _margin("GDX", 45.0)})
-    for part in ("Gold / Platinum", "🟢 KÖP-STÖD", "Gold / Platinum vid 94:e percentilen — Platinum historiskt max-billig",
+    for part in ("Gold / Platinum", "⚪ KONTEXT · sträckt",
+                 "Gold / Platinum vid 94:e percentilen — Platinum historiskt max-billig",
                  "Täljare (GC=F):", "55:e pct — mitten av sitt eget prisspann sedan 2016",
                  "Nämnare (PL=F):", "9:e pct — nära botten av sitt eget prisspann sedan 2016",
-                 "PL=F står nära botten av sitt eget prisspann (9:e pct) — panelens regel räknar det som köpstöd i PL=F.",
+                 f"⚪ {PLATINUM_LINE}",
                  f"I GC=F: 1 PL=F = 0,400 GC=F — 36{NB}% mindre än medianen sedan 2016 (0,625)"):
         assert part in html, part
+    assert "KÖP-STÖD" not in html and "🟢" not in html and "panelens regel räknar" not in html
     assert "Benens prisläge är bara information" not in html and "marginalmätaren" not in html
     neutral = _render_card(_ratio("gold_platinum", status="NEUTRAL", driver="DENOMINATOR_CHEAP"))
-    assert "⚪ NEUTRAL" in neutral and NEUTRAL_LINE in neutral and "panelens regel räknar" not in neutral
+    assert "⚪ KONTEXT · neutral" in neutral and PLATINUM_LINE in neutral and NEUTRAL_LINE not in neutral
 
 
 def test_apptest_fallback_card_names_the_etfs(monkeypatch):
+    """Reservparet: benen och terms-raden namnger ETF:erna som förut; köpstödsraden ('köpstöd i PALL.') är borta."""
     r = _compute(monkeypatch, "gold_palladium", _cheap_pgm(), "fallback")
     html = _render_card(r)
     assert "Täljare (GLD):" in html and "Nämnare (PALL):" in html and "I GLD: 1 PALL = " in html
-    assert "PALL står nära botten av sitt eget prisspann" in html and "köpstöd i PALL." in html
+    assert PALLADIUM_LINE in html and "köpstöd i PALL." not in html and "⚪ KONTEXT · sträckt" in html
 
 
 # ── Panelen och Thor ─────────────────────────────────────────────────────────
@@ -458,7 +465,8 @@ def test_apptest_picker_shows_the_pgm_gauges(monkeypatch):
     assert not at.exception, at.exception
     html = " ".join(m.value for m in at.markdown)
     assert html.index(">Gold / Platinum<") < html.index(">Gold / Palladium<") and ">Gold / Silver<" not in html
-    assert "Gummisnoddar: 1 KÖP-STÖD, 1 NEUTRAL" in html
+    assert "Gummisnoddar: 2 KONTEXT" in html          # förr '1 KÖP-STÖD, 1 NEUTRAL' — bara kontext sedan 2026-11-03
+    assert "KÖP-STÖD" not in html
     at.selectbox(key="ar_exposure").select("Palladium").run()
     html = " ".join(m.value for m in at.markdown)
     assert html.index(">Gold / Palladium<") < html.index(">Gold / Platinum<")
@@ -476,9 +484,12 @@ def test_thor_ravara_shows_the_pgm_bands(monkeypatch):
         st = _St()
         rv._ratios(st, theme, lambda text: st.md.append(text))
         html = " ".join(st.md)
-        assert "Gold / Platinum" in html and "P94 · rubber band stretched · denominator cheap" in html
-        assert "Gold / Palladium" in html and "P50 · neutral · mixed" in html
-        assert "köpstöd" not in html and "Inga kvoter" not in html
+        # förr 'P94 · rubber band stretched · denominator cheap' — sedan 2026-11-03 läget som kontext, ingen drivare
+        assert "Gold / Platinum" in html and "kontext · P94 · sträckt" in html
+        assert "Gold / Palladium" in html and "kontext · P50 · neutral" in html
+        assert "denominator cheap" not in html and "mixed" not in html and "Inga kvoter" not in html
+        assert "köpstöd ·" not in html and "· köpstöd" not in html
+        assert "Gold/Platinum och Gold/Palladium är bara kontext sedan 2026-11-03" in html
 
 
 # ── Rättelser efter verifieringen ────────────────────────────────────────────
@@ -487,30 +498,31 @@ def _borsdata_names():
     return [e.label for m in (BORSDATA_BRANCH_MAP, BORSDATA_SECTOR_MAP) for e in m.values()]
 
 
-def test_why_now_counts_the_band_for_pgm_like_silver():
-    """Ändrad poäng (avsiktligt, ägaren informeras): Why Now räknar nu gummibandet för platina och palladium på
-    exakt samma sätt som för silver — poäng efter status, och täckningen stiger. Utan ratio_exposure (som före
-    2026-11-03) saknades komponenten."""
+def test_why_now_has_no_band_for_pgm_and_silver_is_unchanged():
+    """Förr (#300) räknade Why Now gummibandet för platina och palladium som för silver (15/10/5 poäng, högre
+    täckning). Sedan ägarens beslut 2026-11-03 är PGM-snoddarna bara kontext: komponenten saknas för platina och
+    palladium som före #300, och silvret räknas exakt som förut."""
     import dataclasses
     from confidence import commodities as com
     from confidence import config as ccfg
     from confidence.why_now import signals_from_sources, why_now
     assert ccfg.WHY_NOW_RATIO == {"RUBBER_BAND_STRETCHED": 15, "TENSION_BUILDING": 10, "NEUTRAL": 5}
     for status, pts in ccfg.WHY_NOW_RATIO.items():
-        for metal, key in (("silver", "gold_silver"), ("platinum", "gold_platinum"), ("palladium", "gold_palladium")):
+        ratios = {k: {"status": status} for k in ("gold_silver", "silver_juniors", "gold_platinum", "gold_palladium")}
+        c = com.get("silver")
+        w = why_now(c, signals_from_sources(c, ratio_results=ratios))
+        assert w.components["Gummiband"] == pts and "ratio_status" not in w.missing, status
+        for metal in ("platinum", "palladium"):
             c = com.get(metal)
-            w = why_now(c, signals_from_sources(c, ratio_results={key: {"status": status}}))
-            assert w.components["Gummiband"] == pts and "ratio_status" not in w.missing, (metal, status)
-            old = dataclasses.replace(c, ratio_exposure=None)              # registret före 2026-11-03
-            w_old = why_now(old, signals_from_sources(old, ratio_results={key: {"status": status}}))
-            assert "Gummiband" not in w_old.components and "ratio_status" in w_old.missing
-            if metal != "silver":
-                assert w.coverage > w_old.coverage
-    # DATA_GAP i den egna kvoten: den andra PGM-kvoten tar över (som silver_juniors för silvret)
+            w = why_now(c, signals_from_sources(c, ratio_results=ratios))
+            assert "Gummiband" not in w.components and "ratio_status" in w.missing, (metal, status)
+            before = dataclasses.replace(c, ratio_exposure="")             # registret före #300
+            assert w == why_now(before, signals_from_sources(before, ratio_results=ratios))
+    # silvret: DATA_GAP i den egna kvoten → silver_juniors tar över som förut
     gap = {"gold_palladium": {"status": "DATA_GAP"}, "gold_platinum": {"status": "RUBBER_BAND_STRETCHED"},
            "gold_silver": {"status": "DATA_GAP"}, "silver_juniors": {"status": "TENSION_BUILDING"}}
     s = signals_from_sources(com.get("palladium"), ratio_results=gap)
-    assert (s.ratio_status, s.ratio_key) == ("RUBBER_BAND_STRETCHED", "gold_platinum")
+    assert (s.ratio_status, s.ratio_key) == (None, "")
     s = signals_from_sources(com.get("silver"), ratio_results=gap)
     assert (s.ratio_status, s.ratio_key) == ("TENSION_BUILDING", "silver_juniors")
 
@@ -542,15 +554,14 @@ def test_mixed_names_route_to_pgm_as_specified(name, exp, before):
 
 
 @pytest.mark.parametrize("own,other", [("gold_palladium", "gold_platinum"), ("gold_platinum", "gold_palladium")])
-def test_cross_metal_confirmation_is_the_specified_behaviour(monkeypatch, own, other):
-    """Enligt specen (PGM-gruvorna bryter båda metallerna): den andra metallens kvot kan ge +1 när bara den metallen
-    är billig — raden namnger då den kvoten och den metallen, aldrig den egna. Ägarbeslut om det ska ändras."""
+def test_no_cross_metal_confirmation(monkeypatch, own, other):
+    """Förr (enligt #300:s spec) kunde den andra metallens kvot ge +1 när bara den metallen var billig. Sedan
+    2026-11-03 är båda bara kontext: ingen korsbekräftelse — exponeringslistan visar fortfarande båda."""
     branch = {"gold_palladium": "Palladium One", "gold_platinum": "Impala Platinum"}[own]
     ratios = {own: _ratio(own, status="NEUTRAL", driver="MIXED"), other: _ratio(other, driver="DENOMINATOR_CHEAP")}
     r, rb, _calls = _run_engine(monkeypatch, branch, ratios, {})
     assert r.detected_exposure == [own, other]
-    assert rb == [f"Rubber Band: {_spec(other).label} at 94th percentile — {_spec(other).denominator_label} "
-                  f"historically stretched cheap"]
+    assert rb == []
 
 
 def test_picker_without_the_module_returns_a_non_empty_list(monkeypatch):

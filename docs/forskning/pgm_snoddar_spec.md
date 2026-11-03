@@ -180,3 +180,65 @@ kurser som krävs saknas, och då sparas inget.
 |---|---|---|
 | 1 | 2026-11-04 | Första versionen, före första körningen. |
 | 1 | 2026-11-04 | Förtydligat före första körningen, efter verifieringen. Under *Sekundärt* står nu att en episod som börjar före gruvans (eller ETF:ens) första notering inte får något utfall. Den gamla meningen kunde läsas som att köpet flyttas fram till noteringsdagen, kanske flera år efter t. Det stämde inte med den förregistrerade designen, som mäter samma episoders utfall där kurser finns. Studien räknade redan så, så beräkningarna är oförändrade. |
+| 1 | 2026-11-03 | Efter första körningen: avsnitten *Resultat (körning 2026-11-03)* och *Beslut (2026-11-03)* tillagda sist. Förregistreringens avsnitt ovan är oförändrade, så specen är fortfarande version 1. |
+
+## Resultat (körning 2026-11-03)
+
+Körd i Actions (`pgm-band-study.yml`) den 2026-11-03 med version 1 av specen. Hela utfallet, med alla
+horisonter, baslinjer, bootstrapintervall och episoder, finns i loggen och i Gisten (`pgm_band_study.json`).
+Tabellerna visar antalet episoder, snittet av 252-dagarsavkastningen mot GLD och träffsäkerheten (andel episoder
+med utfall > 0).
+
+### Platina (PPLT mot GLD, 252 dagar)
+
+| Signal | Episoder | Mot GLD, 252 dagar | Träff |
+|---|---|---|---|
+| S0 nuvarande regel | 3 | −16,9 % | 0 % |
+| S1 bara kvoten | 5 (3 hela) | −14,5 % | 0 % |
+| S2 kvoten och trenden | 8 | −7,1 % | 25 % |
+| Baslinje | – | −4,9 % | 31 % |
+
+* **H1 ej godkänd.** S0:s snitt −16,9 % ligger under noll och under baslinjen, −4,9 %.
+* **H2 ej godkänd.** S1:s snitt −14,5 % ligger under noll och under baslinjen.
+* **H3 ej godkänd.** S2:s snitt −7,1 % ligger under noll och under baslinjen.
+* S1 gav signal 2 371 av 3 729 dagar (64 %). Kvoten var alltså sträckt nästan jämt. Platinarallyt 2025 startade
+  inget nytt köpläge, eftersom kvoten hade varit sträckt utan avbrott sedan 2023.
+
+### Palladium (PALL mot GLD, 252 dagar)
+
+| Signal | Episoder med hel horisont | Mot GLD, 252 dagar |
+|---|---|---|
+| S0 nuvarande regel | 0 (1 episod, 2026-11-02) | – |
+| S1 bara kvoten | 1 | −36,5 % |
+| S2 kvoten och trenden | 1 | −31,1 % |
+| Baslinje | – | +1,3 % |
+
+* S0 gav signal bara 2 dagar: en episod som började 2026-11-02 och ännu inte har någon hel horisont. Den
+  nuvarande regeln slog alltså till för palladium den 2 november 2026, dagen före körningen.
+* **H1, H2 och H3: för få episoder.** Ingen signal når golvet, 3 hela episoder.
+
+### Korsvis och gruvorna (bara beskrivande)
+
+* PALL på platinans S0-episoder: −44,9 % mot GLD.
+* Gruvorna på platinans S0-episoder: IMPUY −34,6 % och SBSW −14,0 % mot GLD.
+
+## Beslut (2026-11-03)
+
+Ägaren valde **A: båda PGM-snoddarna blir bara kontext.** Från 2026-11-03 ger Gold/Platinum (`gold_platinum`)
+och Gold/Palladium (`gold_palladium`) aldrig köpstöd: inget +1 ACCUMULATE i motorn, ingen KÖP-STÖD-räkning i
+"Gummisnoddar: …" och inga gummibandspoäng i Why Now. Snoddarna syns kvar som kontext: på kvotkorten (märket
+"KONTEXT" med snoddens läge), i Thors Råvara-flik, i temabordets länkar och i exponeringsväljaren.
+
+* **Platina** följer specens förslag (fall 4). Inget håller, och alla tre domarna nådde golvet.
+* **Palladium** avviker från specens bokstavliga förslag. Där blev alla domar "för få episoder" (fall 5), och
+  då föreslog specen att snodden behålls som den är, med en varning. Ägaren valde bara kontext även här, med
+  motiveringen att samma mönster syns som för platina, att de två liknande köplägena (S1:s och S2:s hela
+  episoder) förlorade över 30 % mot GLD, och att ett oprövat köpstöd var aktivt just nu (S0 slog till
+  2026-11-02).
+* Regeln finns på ett enda ställe, `alpha_regime/buy_support.py` (`CONTEXT_ONLY`), som motorn, panelens
+  sammanräkning och kort och Thor läser. Why Now läser inte längre PGM-snoddarna: `ratio_exposure` för platina och
+  palladium är borttaget, som före #300.
+* Gruvornas marginalregel (GLD/GDX, GLD/GDXJ) och drivarregeln för alla andra kvoter är oförändrade. Inga andra
+  regler, trösklar, grindar eller positionsstorlekar ändrades.
+* Inledningens mening om att snoddarna går genom samma regel som i dag tills ägaren beslutar något annat gällde
+  före beslutet.

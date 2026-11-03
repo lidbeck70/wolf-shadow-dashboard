@@ -15,11 +15,16 @@ Det ersätter drivarens prisvillkor (det billiga benets eget prisläge) för jus
 (DATA_GAP: inget guldpris, ingen gruvkurs, marginal ≤ 50 USD/uns) blir det inget köpstöd. En inaktuell AISC-tabell
 (stale) blockerar inte — kortet fortsätter att varna. Marginalmätaren ENSAM är ingen signal (H2 föll).
 
-Alla andra kvoter (gold_silver, gold_oil, silver_miners, copper_gold, gdxj_gdx, silver_juniors, gdx_spy,
-gold_platinum, gold_palladium, egna) behåller regeln från före 2026-11-03: sträckt kvot och drivaren
-DENOMINATOR_CHEAP/BOTH (motorn, ENGINE_DRIVERS). Panelens sammanräkning släpper dessutom igenom UNKNOWN som förut (SUMMARY_DRIVERS) — två
-befintliga betydelser som behålls exakt; vad som räknas som "sträckt" anger anroparen (motorn: status,
-panelen: märket 🟢 KÖP-STÖD).
+PGM-snoddarna gold_platinum (Gold/Platinum) och gold_palladium (Gold/Palladium) är BARA KONTEXT (ägarens beslut A,
+2026-11-03, efter det förregistrerade backtestet docs/forskning/pgm_snoddar_spec.md): de visas (kort, Thors
+Råvara-flik, temabordet, exponeringsväljaren) men ger aldrig köpstöd — evaluate svarar CONTEXT_ONLY vad status,
+drivare och marginaler än säger, så motorns +1 ACCUMULATE och KÖP-STÖD i 'Gummisnoddar' räknar dem aldrig.
+Backtestet: en sträckt kvot följdes av att metallen gick sämre än guld.
+
+Alla andra kvoter (gold_silver, gold_oil, silver_miners, copper_gold, gdxj_gdx, silver_juniors, gdx_spy, egna)
+behåller regeln från före 2026-11-03: sträckt kvot och drivaren DENOMINATOR_CHEAP/BOTH (motorn, ENGINE_DRIVERS).
+Panelens sammanräkning släpper dessutom igenom UNKNOWN som förut (SUMMARY_DRIVERS) — två befintliga betydelser som
+behålls exakt; vad som räknas som "sträckt" anger anroparen (motorn: status, panelen: märket 🟢 KÖP-STÖD).
 """
 from __future__ import annotations
 
@@ -38,7 +43,16 @@ STRETCHED = "RUBBER_BAND_STRETCHED"
 ENGINE_DRIVERS = ("DENOMINATOR_CHEAP", "BOTH")              # motorns +1 för övriga kvoter (oförändrat)
 SUMMARY_DRIVERS = ("DENOMINATOR_CHEAP", "BOTH", "UNKNOWN")  # 'Gummisnoddar'-räkningen för övriga kvoter (oförändrat)
 
+# Bara kontext: kvotnyckel → beslutet (datum och specen med backtestet). Visas men ger aldrig köpstöd.
+CONTEXT_DECIDED = "2026-11-03"    # ägarens beslut (A) efter PGM-backtestet
+CONTEXT_SPEC = "docs/forskning/pgm_snoddar_spec.md"
+CONTEXT_ONLY: dict = {
+    "gold_platinum": {"decided": CONTEXT_DECIDED, "spec": CONTEXT_SPEC},
+    "gold_palladium": {"decided": CONTEXT_DECIDED, "spec": CONTEXT_SPEC},
+}
+
 # Reason codes
+CONTEXT = "CONTEXT_ONLY"                 # bara kontext (CONTEXT_ONLY): aldrig köpstöd, vad kvoten än säger
 MARGIN_CHEAP = "MARGIN_CHEAP"            # guldkvot: sträckt och marginalmätaren ≤ 30 → köpstöd
 MARGIN_NOT_CHEAP = "MARGIN_NOT_CHEAP"    # guldkvot: sträckt men marginalmätaren > 30
 MARGIN_MISSING = "MARGIN_MISSING"        # guldkvot: sträckt men marginalen saknas (DATA_GAP)
@@ -58,6 +72,11 @@ class BuySupport(NamedTuple):
 def uses_margin(key) -> bool:
     """True för GLD/GDX och GLD/GDXJ, där marginalmätaren avgör i stället för drivaren."""
     return key in MARGIN_RULE
+
+
+def context_only(key) -> bool:
+    """True för Gold/Platinum och Gold/Palladium: bara kontext sedan 2026-11-03 — aldrig köpstöd."""
+    return key in CONTEXT_ONLY
 
 
 def margin_miners(keys) -> list:
@@ -87,8 +106,18 @@ def evaluate(key, ratio, margins: Optional[dict] = None, *, stretched: Optional[
     stretched anroparens "fullt sträckt": None = ratio.status == RUBBER_BAND_STRETCHED (motorn och Thor);
               panelens sammanräkning och kort skickar märket 🟢 KÖP-STÖD (den lagrade percentilen), som förut.
     drivers   för övriga kvoter: drivarna som bekräftar (motorn ENGINE_DRIVERS, sammanräkningen SUMMARY_DRIVERS).
+
+    Kvoterna i CONTEXT_ONLY (Gold/Platinum, Gold/Palladium) ger alltid (False, CONTEXT, …), vad status, drivare,
+    stretched och margins än säger; details bär kvotens läge (status, percentil, drivare) för texterna.
     """
     key = getattr(ratio, "key", None) or key
+    if context_only(key):
+        det = {"key": key, "rule": "context", "stretched": False, **CONTEXT_ONLY[key]}
+        if ratio is not None and getattr(ratio, "status", "DATA_GAP") != "DATA_GAP":
+            det.update(stretched=(ratio.status == STRETCHED) if stretched is None else bool(stretched),
+                       ratio_pct=getattr(ratio, "percentile", None), status=ratio.status,
+                       driver=getattr(ratio, "driver", "UNKNOWN"))
+        return BuySupport(False, CONTEXT, det)
     rule = "margin" if uses_margin(key) else "driver"
     det: dict = {"key": key, "rule": rule, "stretched": False}
     if rule == "margin":
