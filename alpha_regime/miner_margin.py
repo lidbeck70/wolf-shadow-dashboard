@@ -18,9 +18,9 @@ Lägga in ett nytt kvartal (gör det varje kvartal)
 World Gold Council publicerar kvartal Q:s AISC ungefär ett kvartal senare: i nästa Gold Demand Trends
 (supply-avsnittet) eller i en Gold Focus-artikel 3–5 månader efter kvartalets slut.
 
-1. Lägg en rad SIST i AISC_TABLE, t.ex.
-       AiscRow("2026Q2", 1840, "2026-10-29", "MF_Q", "World Gold Council/Metals Focus",
-               "WGC Gold Demand Trends Q3 2026, supply section", "https://www.gold.org/...", "+3 % k/k."),
+1. Lägg en rad SIST i AISC_TABLE enligt mallen (platshållare — fyll i de publicerade värdena):
+       AiscRow("YYYYQn", <USD/uns>, "YYYY-MM-DD", "MF_Q", "World Gold Council/Metals Focus",
+               "<källa: rapport och avsnitt>", "<url>", "<not: förändring k/k, å/å, osäkerhet>"),
    - period: "YYYYQn" för ett kvartal, "YYYY" för ett helår.
    - aisc: USD/uns, som det FÖRST publicerades.
    - published: dagen siffran först publicerades (backtestet ser värdet först då). Vet du bara
@@ -72,6 +72,8 @@ class AiscRow:
 
 
 _WGC_MF = "World Gold Council/Metals Focus"
+MAIN_SERIES = "MF_Q"          # the quarterly main series; every other series is named on the card's caption
+MAIN_PUBLISHER = _WGC_MF
 _GF_2022_03 = ("https://www.gold.org/goldhub/gold-focus/2022/03/"
                "gold-mining-aisc-remained-flat-q421-significantly-higher-2021")
 _GF_2023_04 = ("https://www.gold.org/goldhub/gold-focus/2023/04/"
@@ -193,7 +195,9 @@ AISC_TABLE: list[AiscRow] = [
             "WGC Gold Demand Trends Q2 2024, supply section",
             _GDT + "gold-demand-trends-q2-2024/supply",
             "LÅG–MEDEL säkerhet: från en enda sökningssammanfattning, ej bekräftad. Senare tryck antyder "
-            "~1 374–1 384 efter revision."),
+            "~1 374–1 384 efter revision (2024Q2 = 1 388 var +1 % k/k, 2025Q1 = 1 536 var +11 % å/å). "
+            "Ägaren: kontrollera mot supply-avsnittet i GDT Q2 2024 och rätta till första trycket om det "
+            "skiljer — gissa inte ett tal."),
     AiscRow("2024Q2", 1388, "2024-10-31", "MF_Q", _WGC_MF,
             "WGC Gold Focus (Metals Focus): 'Gold cost drivers: a veritable pick and mix'",
             "https://www.gold.org/goldhub/gold-focus/2024/10/gold-cost-drivers-veritable-pick-and-mix",
@@ -351,11 +355,37 @@ def aisc_series(index, point_in_time: bool = False, rows: Optional[Iterable[Aisc
 
 def margin_ratio(miner_close: pd.Series, gold_close: pd.Series, aisc) -> pd.Series:
     """M = miner ETF price / (gold − AISC). A margin ≤ MIN_MARGIN_USD (50 USD/oz) is NaN — a thin or
-    negative margin makes M explode or flip sign — and so is a bad bar (miner ≤ 0, inf, NaN)."""
+    negative margin makes M explode or flip sign — and so is a bad bar (miner ≤ 0, inf, NaN; gold or AISC
+    inf/NaN: an infinite margin would otherwise give M = 0 and count as history)."""
     margin = gold_close - aisc
-    m = miner_close / margin.where(margin > MIN_MARGIN_USD)
+    m = miner_close / margin.where(np.isfinite(margin) & (margin > MIN_MARGIN_USD))
     m = m.where(miner_close > 0)
     return m.replace([np.inf, -np.inf], np.nan).rename("M")
+
+
+def _quarter_label(ts) -> str:
+    return f"{ts.year}Q{ts.quarter}"
+
+
+def _aisc_spans(dates, applied) -> list:
+    """Runs of the same AISC row over `dates`, in order: [(period, publisher, series, first quarter, last
+    quarter)], e.g. ('2016', 'S&P Global', 'SP_A', '2016Q4', '2017Q4') — which source the window really
+    uses, so the card's caption can name the years that are not the quarterly main series."""
+    spans: list = []
+    for d, row in zip(dates, applied):
+        if row is None:
+            continue
+        q = _quarter_label(d)
+        if spans and spans[-1][0] == row.period:
+            spans[-1][4] = q
+        else:
+            spans.append([row.period, row.publisher, row.series, q, q])
+    return [tuple(s) for s in spans]
+
+
+def _sv_int(v: float) -> str:
+    """Whole number the Swedish way: '−1 285' (minus sign, no-break space)."""
+    return f"{v:,.0f}".replace(",", " ").replace("-", "−")
 
 
 # ── Result ───────────────────────────────────────────────────────────────────
@@ -378,6 +408,7 @@ class MarginResult:
     history_years: float = 0.0
     stale: bool = False                  # newest AISC period > 2 quarters before today
     newest_period: str = ""
+    aisc_spans: list = field(default_factory=list)   # AISC rows used over the valid window (_aisc_spans)
     sparkline_dates: list = field(default_factory=list)
     sparkline_values: list = field(default_factory=list)
 
@@ -423,11 +454,13 @@ def build_result(miner: str, miner_close: Optional[pd.Series], gold_close: Optio
     if last_row is None or not _finite(cur):
         if last_row is None:
             res.error = f"Ingen AISC för {aligned.index[-1].date()}."
+        elif not (_finite(gold_now) and gold_now > 0):
+            res.error = f"Sista stängningen för guldet ({GOLD_TICKER}) är trasig."
         elif gold_now - float(last_row.aisc) <= MIN_MARGIN_USD:
-            res.error = (f"Marginalen är bara {gold_now - float(last_row.aisc):.0f} USD/uns "
-                         f"(≤ {MIN_MARGIN_USD:.0f}) — måttet säger inget då.")
+            res.error = (f"Marginalen är bara {_sv_int(gold_now - float(last_row.aisc))} USD/uns "
+                         f"(≤ {_sv_int(MIN_MARGIN_USD)}) — måttet säger inget då.")
         else:
-            res.error = f"Sista stängningen för {miner} är trasig ({miner_now})."
+            res.error = f"Sista stängningen för {miner} är trasig."
         return res
 
     arr = valid.to_numpy(dtype=float)
@@ -445,6 +478,8 @@ def build_result(miner: str, miner_close: Optional[pd.Series], gold_close: Optio
     start, end = valid.index[0], valid.index[-1]
     res.history_start = str(start.date())
     res.history_years = round((end - start).days / 365.25, 1)
+    ok = m.notna().to_numpy()
+    res.aisc_spans = _aisc_spans(aligned.index[ok], [row for row, keep in zip(applied, ok) if keep])
     weekly = valid.resample("W").last().dropna()
     res.sparkline_dates = [str(d.date()) for d in weekly.index]
     res.sparkline_values = [round(float(v), 6) for v in weekly.values]
@@ -452,13 +487,35 @@ def build_result(miner: str, miner_close: Optional[pd.Series], gold_close: Optio
     return res
 
 
+class _NoPrices(Exception):
+    """Gold or the miner download came back empty. Raised INSIDE the cached function so a transient failure
+    (e.g. Yahoo's 'Too Many Requests') is never cached for six hours — the next render tries again (the same
+    pattern as market_prices._NoData). Carries the DATA_GAP result to show meanwhile."""
+
+    def __init__(self, result: MarginResult):
+        super().__init__(result.error)
+        self.result = result
+
+
 @_cache_6h
+def _compute_cached(miner: str) -> MarginResult:
+    """Download and compute; only a result built from real closes reaches the 6h cache."""
+    gold = _download_close(GOLD_TICKER)
+    if gold.dropna().empty:
+        raise _NoPrices(build_result(miner, None, gold))
+    close = _download_close(miner)
+    if close.dropna().empty:
+        raise _NoPrices(build_result(miner, close, gold))
+    return build_result(miner, close, gold)
+
+
 def compute(miner: str = "GDX") -> MarginResult:
-    """GDX or GDXJ against the industry AISC, on the 10-year closes the ratio cards use. Cached 6h.
+    """GDX or GDXJ against the industry AISC, on the 10-year closes the ratio cards use. Cached 6h — but a
+    missing download is a DATA_GAP that is NOT cached, so the next render retries.
 
     CONTEXT ONLY — never feeds any signal, count or confirmation."""
     miner = (miner or "GDX").strip().upper()
-    gold = _download_close(GOLD_TICKER)
-    if gold.empty:
-        return build_result(miner, None, gold)
-    return build_result(miner, _download_close(miner), gold)
+    try:
+        return _compute_cached(miner)
+    except _NoPrices as gap:
+        return gap.result

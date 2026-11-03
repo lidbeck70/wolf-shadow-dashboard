@@ -8,6 +8,7 @@ eller någon annan signal. Inget nätverk — fejkade kursserier och fejkade AIS
 import inspect
 import math
 import os
+import re
 
 import numpy as np
 import pandas as pd
@@ -25,8 +26,8 @@ GOLD_MINER_KEYS = ["metal_miners", "gdxj_gdx", "gold_gdxj", "gdx_spy"]
 
 @pytest.fixture(autouse=True)
 def _fresh_cache():
-    """compute() är cachad 6 h — testerna får aldrig se varandras fejkade serier."""
-    clear = getattr(mm.compute, "clear", lambda: None)
+    """compute() läser en 6 h-cache — testerna får aldrig se varandras fejkade serier."""
+    clear = getattr(mm._compute_cached, "clear", lambda: None)
     clear()
     yield
     clear()
@@ -53,6 +54,14 @@ def test_table_rows_are_auditable_and_never_published_before_their_period_ends()
         pub = pd.Timestamp(row.published)
         period_end = pd.Period(f"{y}Q{q or 4}", "Q").end_time
         assert pub > period_end, f"{row.period} publicerad {row.published} innan perioden tog slut"
+
+
+def test_docstring_example_is_a_template_not_data():
+    """Exemplet i instruktionen får inte se ut som en riktig rad som ägaren kan kopiera."""
+    doc = mm.__doc__
+    assert 'AiscRow("YYYYQn", <USD/uns>, "YYYY-MM-DD", "MF_Q"' in doc
+    assert not re.search(r'AiscRow\("\d{4}', doc)
+    assert "1840" not in doc
 
 
 def test_table_holds_the_researched_first_prints():
@@ -135,6 +144,17 @@ def test_margin_at_or_below_50_usd_is_masked():
     assert m.iloc[[1, 2, 4, 5, 6]].isna().all()          # marginal 0, 50, −100; trasig kurs 0 och inf
     aisc = pd.Series(1000.0, index=idx)
     pd.testing.assert_series_equal(mm.margin_ratio(miner, gold, aisc), m)
+
+
+def test_non_finite_gold_or_aisc_is_masked_never_m_zero():
+    """Guld = inf gav marginal inf > 50 och M = 0,0 som räknades som historik."""
+    idx = pd.bdate_range("2026-01-05", periods=5)
+    gold = pd.Series([2000.0, np.inf, np.nan, 2000.0, 2000.0], index=idx)
+    aisc = pd.Series([1000.0, 1000.0, 1000.0, -np.inf, np.nan], index=idx)
+    m = mm.margin_ratio(pd.Series(20.0, index=idx), gold, aisc)
+    assert m.iloc[0] == pytest.approx(0.02)
+    assert m.iloc[1:].isna().all()
+    assert not (m == 0.0).any()
 
 
 # ── build_result: percentil, median, fönster ─────────────────────────────────
@@ -244,6 +264,71 @@ def test_other_data_gaps():
     assert res.status == "DATA_GAP" and res.error.startswith("Marginalen är bara 15 USD/uns")
 
 
+def test_broken_last_bar_names_the_right_leg_without_raw_floats():
+    gold, gdx = _series(np.full(300, 3000.0)), _series(np.full(300, 50.0))
+    broken_gold = gold.copy()
+    broken_gold.iloc[-1] = np.inf
+    res = mm.build_result("GDX", gdx, broken_gold)
+    assert res.status == "DATA_GAP" and res.error == "Sista stängningen för guldet (GC=F) är trasig."
+    for bad in (0.0, -1.0, np.inf):
+        broken = gdx.copy()
+        broken.iloc[-1] = bad
+        res = mm.build_result("GDX", broken, gold)
+        assert res.status == "DATA_GAP" and res.error == "Sista stängningen för GDX är trasig.", bad
+    # tidigare 'trasig (0.0)': aldrig en rå Python-float med decimalpunkt i texten
+    neg = gold.copy()
+    neg.iloc[-1] = 500.0                                 # 500 − 1 785 = −1 285 USD/uns
+    res = mm.build_result("GDX", gdx, neg)
+    assert res.error == f"Marginalen är bara −1{NB}285 USD/uns (≤ 50) — måttet säger inget då."
+
+
+def test_inf_gold_bar_inside_the_window_is_not_history():
+    gold, gdx = _series(np.full(300, 3000.0)), _series(np.linspace(40.0, 60.0, 300))
+    gold.iloc[100] = np.inf
+    res = mm.build_result("GDX", gdx, gold, rows=_FLAT)
+    valid = (gdx / (gold - 1000.0)).drop(gold.index[100])
+    assert res.status == "OK"
+    assert res.median == pytest.approx(float(np.median(valid.values)), rel=1e-5)
+    assert min(res.sparkline_values) > 0
+
+
+# ── compute(): ett tillfälligt fel cachas inte ───────────────────────────────
+def _flaky(fail: dict, calls: list):
+    """Fejkad nedladdning: tickern i `fail` ger tom serie så många gånger som anges, sedan data."""
+    def fake(ticker, period="10y"):
+        calls.append(ticker)
+        if fail.get(ticker, 0) > 0:
+            fail[ticker] -= 1
+            return pd.Series(dtype=float)
+        return _series(np.full(300, 3000.0 if ticker == "GC=F" else 50.0))
+    return fake
+
+
+@pytest.mark.parametrize("ticker,error", [("GC=F", "Guldpriset (GC=F) saknas"), ("GDX", "Kursen för GDX saknas.")])
+def test_transient_download_failure_is_retried_on_the_next_render(monkeypatch, ticker, error):
+    """Ett tomt svar (t.ex. Yahoos strypning) fick förut kortet att visa DATA_GAP i sex timmar."""
+    calls = []
+    monkeypatch.setattr(mm, "_download_close", _flaky({ticker: 1}, calls))
+    first = mm.compute("GDX")
+    assert first.status == "DATA_GAP" and error in first.error
+    second = mm.compute("GDX")                          # ingen cacheclear emellan
+    assert second.status == "OK" and second.error is None
+    n = len(calls)
+    assert mm.compute("GDX").status == "OK" and len(calls) == n     # ett lyckat resultat cachas
+
+
+def test_compute_caches_a_deterministic_data_gap(monkeypatch):
+    """Riktiga kurser som ger för kort historik är inget nätverksfel — det får ligga i cachen."""
+    calls = []
+
+    def fake(ticker, period="10y"):
+        calls.append(ticker)
+        return _series(np.full(50, 3000.0 if ticker == "GC=F" else 50.0))
+    monkeypatch.setattr(mm, "_download_close", fake)
+    assert mm.compute("GDX").error.startswith("För kort historik")
+    assert mm.compute("GDX").error.startswith("För kort historik") and calls == ["GC=F", "GDX"]
+
+
 # ── Kortets texter ───────────────────────────────────────────────────────────
 def _margin(miner="GDX", pct=22.0, **kw):
     base = dict(miner=miner, status="OK", current=0.031, percentile=pct, median=0.045, miner_price=75.0,
@@ -285,6 +370,57 @@ def test_word_follows_the_ordinal_on_the_card():
                                 dict(current=float("inf")), dict(percentile=None), dict(percentile=float("nan"))])
 def test_value_line_rejects_missing_values(kw):
     assert aui._margin_value_text(_margin(**kw)) is None
+
+
+_ANNUAL_SPANS = [("2016", "S&P Global", "SP_A", "2016Q4", "2017Q4"),
+                 ("2018", "Refinitiv GFMS", "GFMS_A", "2018Q1", "2018Q4"),
+                 ("2019", "Metals Focus", "MF_A", "2019Q1", "2020Q1")]
+_SOURCE_10Y = ("AISC är mest branschsnittet per kvartal (World Gold Council/Metals Focus), men en del av fönstret "
+               "(sedan 2016-11-03) bygger på helårstal eller andra källor och metoder: S&P Global helår 2016 "
+               "(gäller 2016Q4–2017Q4), Refinitiv GFMS helår 2018 och Metals Focus helår 2019 (gäller "
+               "2019Q1–2020Q1) — där är M mindre jämförbart.")
+
+
+def test_result_records_which_aisc_rows_the_window_uses():
+    idx = pd.bdate_range("2016-11-03", "2026-10-30")
+    gold = pd.Series(np.linspace(1250.0, 4010.0, len(idx)), index=idx)
+    gdx = pd.Series(np.linspace(22.0, 75.0, len(idx)), index=idx)
+    res = mm.build_result("GDX", gdx, gold, today="2026-11-03")
+    assert res.aisc_spans[:3] == _ANNUAL_SPANS
+    assert res.aisc_spans[3] == ("2020Q2", WGC_MF, "MF_Q", "2020Q2", "2020Q2")
+    assert all(s[2] == "MF_Q" for s in res.aisc_spans[3:])
+    assert res.aisc_spans[-1] == ("2026Q1", WGC_MF, "MF_Q", "2026Q1", "2026Q4")     # framåtfyllt
+    assert aui._margin_source_text([res]) == _SOURCE_10Y
+
+
+def test_source_text_never_claims_all_quarterly_when_it_is_not():
+    """Förr: 'AISC är branschsnittet per kvartal (World Gold Council/Metals Focus)' även för 2016–2019."""
+    spans = _ANNUAL_SPANS + [("2020Q2", WGC_MF, "MF_Q", "2020Q2", "2026Q4")]
+    assert aui._margin_source_text([_margin(aisc_spans=spans, history_start="2016-11-03")]) == _SOURCE_10Y
+    # bara huvudserien i fönstret → då stämmer den korta meningen
+    only_q = [("2020Q2", WGC_MF, "MF_Q", "2020Q2", "2020Q2"), ("2020Q3", WGC_MF, "MF_Q", "2020Q3", "2026Q4")]
+    assert aui._margin_source_text([_margin(aisc_spans=only_q)]) == (
+        "AISC är branschsnittet per kvartal (World Gold Council/Metals Focus).")
+    # inget resultat med data → en mening som gäller hela tabellen
+    gap = mm.MarginResult(miner="GDX", error="x")
+    assert aui._margin_source_text([gap]) == (
+        "AISC är mest branschsnittet per kvartal (World Gold Council/Metals Focus); äldre år är helårstal, "
+        "delvis från andra källor och metoder.")
+    # det längsta fönstret avgör när GDX och GDXJ skiljer sig
+    short = _margin("GDXJ", aisc_spans=spans[2:], history_start="2019-03-01")
+    long_ = _margin("GDX", aisc_spans=spans, history_start="2016-11-03")
+    assert aui._margin_source_text([short, long_]) == _SOURCE_10Y
+
+
+@pytest.mark.parametrize("span,text", [
+    (("2018", "Refinitiv GFMS", "GFMS_A", "2018Q1", "2018Q4"), "Refinitiv GFMS helår 2018"),
+    (("2016", "S&P Global", "SP_A", "2017Q1", "2017Q4"), "S&P Global helår 2016 (gäller 2017Q1–2017Q4)"),
+    (("2015Q4", "World Gold Council", "WGC_GDT_EARLY", "2015Q4", "2015Q4"), "World Gold Council 2015Q4"),
+    (("2015Q4", "World Gold Council", "WGC_GDT_EARLY", "2016Q1", "2016Q1"),
+     "World Gold Council 2015Q4 (gäller 2016Q1)"),
+])
+def test_span_text(span, text):
+    assert aui._span_text(span) == text
 
 
 def test_miners_follow_the_shown_ratio_keys():
@@ -341,6 +477,7 @@ def test_engine_run_never_calls_the_gauge_and_keeps_one_confirmation(monkeypatch
     monkeypatch.setattr(eng, "_fetch_ratios", _gold_miner_ratios)
     monkeypatch.setattr(eng, "_fetch_context_gauges", lambda: {})
     monkeypatch.setattr(mm, "compute", lambda *a, **k: calls.append(("compute", a)))
+    monkeypatch.setattr(mm, "_compute_cached", lambda *a, **k: calls.append(("_compute_cached", a)))
     monkeypatch.setattr(mm, "build_result", lambda *a, **k: calls.append(("build_result", a)))
     r = eng.run_regime_analysis("NEM", mode="contrarian", market_ticker="SPY", with_sentiment=False)
     assert calls == []
@@ -401,6 +538,12 @@ def test_apptest_gauge_renders_from_fake_prices(monkeypatch):
     caption = " ".join(c.value for c in at.caption)
     assert "Bara kontext — ingår aldrig i signalerna" in caption
     assert "GDXJ räknas mot samma bransch-AISC" in caption
+    # källraden läses ur raderna fönstret använder — 2016–2019 är helårstal, inte WGC/MF-kvartal
+    start = mm.build_result("GDX", prices["GDX"], prices["GC=F"]).history_start
+    assert f"en del av fönstret (sedan {start}) bygger på helårstal" in caption
+    assert ("S&P Global helår 2016 (gäller 2016Q4–2017Q4), Refinitiv GFMS helår 2018 och Metals Focus helår "
+            "2019 (gäller 2019Q1–2020Q1)") in caption
+    assert "AISC är branschsnittet per kvartal (World Gold Council/Metals Focus), senaste" not in caption
     assert not at.warning                                  # färsk tabell, data finns
     for word in ("KÖP-STÖD", "SÄLJ-STÖD", "köpstöd"):
         assert word not in html

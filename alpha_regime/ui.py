@@ -1395,6 +1395,37 @@ def _margin_line_text(res) -> Optional[str]:
     return f"Guld {_sv_num(g, 0)} − AISC {_sv_num(a, 0)}{src_txt} = {_sv_num(g - a, 0)} USD/uns"
 
 
+def _span_text(span) -> str:
+    """'S&P Global helår 2016 (gäller 2016Q4–2017Q4)' · 'Refinitiv GFMS helår 2018' — one AISC row and the
+    quarters of the window it covers (named only when that differs from its own period)."""
+    period, publisher, _series, first, last = span
+    year = period[:4]
+    own = (period, period) if "Q" in period else (f"{year}Q1", f"{year}Q4")
+    kind = "" if "Q" in period else "helår "
+    covers = "" if (first, last) == own else f" (gäller {first}{'' if first == last else '–' + last})"
+    return f"{publisher} {kind}{period}{covers}"
+
+
+def _margin_source_text(results) -> str:
+    """Where the window's AISC comes from, read from the rows the result really used (the window moves and
+    the table grows), e.g. 'AISC är mest branschsnittet per kvartal (World Gold Council/Metals Focus), men
+    en del av fönstret (sedan 2016-11-03) bygger på helårstal eller andra källor och metoder: S&P Global
+    helår 2016 (gäller 2016Q4–2017Q4), Refinitiv GFMS helår 2018 och Metals Focus helår 2019 (gäller
+    2019Q1–2020Q1) — där är M mindre jämförbart.'"""
+    main = f"branschsnittet per kvartal ({_mm.MAIN_PUBLISHER})"
+    ok = [r for r in results if getattr(r, "status", "") == "OK" and getattr(r, "aisc_spans", None)]
+    if not ok:
+        return f"AISC är mest {main}; äldre år är helårstal, delvis från andra källor och metoder."
+    res = min(ok, key=lambda r: getattr(r, "history_start", "") or "9999")
+    others = [_span_text(s) for s in res.aisc_spans if s[2] != _mm.MAIN_SERIES]
+    if not others:
+        return f"AISC är {main}."
+    listed = others[0] if len(others) == 1 else ", ".join(others[:-1]) + " och " + others[-1]
+    since = f" (sedan {res.history_start})" if res.history_start else ""
+    return (f"AISC är mest {main}, men en del av fönstret{since} bygger på helårstal eller andra källor "
+            f"och metoder: {listed} — där är M mindre jämförbart.")
+
+
 def _render_margin_card(res, idx: int) -> None:
     """One miner: header + percentile badge, the M line, a bar with the cheap zone on the LEFT, the
     margin line and a weekly sparkline. Same mobile patterns as the ratio card (flex-wrap, no-break
@@ -1494,8 +1525,8 @@ def _render_miner_margin(keys) -> None:
     )
     caption = ("Bara kontext — ingår aldrig i signalerna, i Gummisnoddar-räkningen eller i panelens "
                "bekräftelse. M = ETF-kursen ÷ (guldpriset − branschens AISC per uns); låg percentil i M:s "
-               "egen historik = gruvorna billiga per dollar marginal. AISC är branschsnittet per kvartal "
-               "(World Gold Council/Metals Focus), senaste kända värdet gäller tills nästa kvartal läggs in.")
+               f"egen historik = gruvorna billiga per dollar marginal. {_margin_source_text(results)} "
+               "Senaste kända AISC gäller tills nästa kvartal läggs in.")
     if "GDXJ" in miners:
         caption += (" GDXJ räknas mot samma bransch-AISC som GDX — en approximation, juniorbolagens egna "
                     "kostnader finns inte i tabellen.")
