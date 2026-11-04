@@ -1,25 +1,4 @@
 {
-  "cash": 21000.0,
-  "closed": [],
-  "long": [
-    {
-      "entry_date": "2026-10-21",
-      "entry_price": 32.53,
-      "extras": {},
-      "id": "e5365eb7",
-      "name": "",
-      "notes": "",
-      "sector": "Sällanköpsvaror ",
-      "shares": 70,
-      "source": "holdings",
-      "stop": null,
-      "strategy": "Quality",
-      "target": null,
-      "ticker": "HUSQ-B.ST"
-    }
-  ],
-  "momentum": [],
-  "ovtlyr": [],
-  "swing": [],
-  "tiggre": []
+  "_encrypted": "fernet-scrypt-v1",
+  "data": "gAAAAABq65Tmo1Z9umEVCrA-rahFkZAIZOWHLa92QXgfcquuHBzQifdAHAVabx0nL4uc6_EY00ID5PgXzMS72Eyg9rz5l5KuWO-S1Mz21CBmzu4Sd5UKQRhSk2s3aRPZ-wFTi0ceC5Sawklsb7209ZRMZ1AzB2KLnb9z8C5cr5mP-JVjb0gC_xjpHUs4gQinUt_W5gimzmZ1O2vkx3KkbjZOT3XbZqSeuGJJowpahFuUOVhc2DOs2E0CkDtrwYYAgI88QKv_iKI8FdR7VdWD4SIp3apfGl7eOztcwIoVnFDqJYGaEN_-Ajxak8Z_DTjPYDVOztF5ypJcfL22ifmeeC-eGyujNBUECIYEtYLzukkN88UoCWaNGbFLEi5AA6G0coc5wAI1kdALtt43zgmm-Rc3PkbfnR4HvxcH8TQ2QnFoEUM_G0uJm22QZaDaQPMAXOU-LLAvt6_v1-kJdEPfHNiu3Yz-MZVpi0TIRNcjeCU-D4EUXaMKPXUqsbJnAQxf0TbXLvXo30kMvYaH2PlCnZ2VHCU0wlAHhQ=="
 }
