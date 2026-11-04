@@ -191,6 +191,8 @@ UNKNOWN = "OKÄND"
 REGIME_COLOR = {"GRÖN": GREEN, "GUL": AMBER, "RÖD": RED, UNKNOWN: GREY}
 HEALTHY, DYING = 55, 45                  # bredd i %, samma gränser som texten i bredd-rutan
 CHART_KEY = "wolf_regime_history_chart"
+MISSING_STUB, MISSING_OPACITY = 2.0, 0.6  # dag utan bredd: låg stump i regimens färg, inte ett mätvärde
+LABEL_MARGIN = 54                        # px till höger om staplarna för 'friskt 55 %' / 'dör 45 %'
 NBSP = "\u00a0"
 _SV_MONTHS = ("jan", "feb", "mar", "apr", "maj", "jun", "jul", "aug", "sep", "okt", "nov", "dec")
 _CHIP_BD, _CHIP_BG = "#2a2f37", "#11161d"
@@ -361,6 +363,11 @@ def _chip(inner: str, border: str = _CHIP_BD, bg: str = _CHIP_BG) -> str:
             f"line-height:1.35;'>{inner}</span>")
 
 
+def _nowrap(inner: str) -> str:
+    """Håller ihop en bit (ruta + regim + tal) så att radbrytningen bara sker mellan bitarna."""
+    return f"<span style='white-space:nowrap;'>{inner}</span>"
+
+
 def _overview_html(s: dict) -> str:
     parts = overview_parts(s)
     if not parts:
@@ -369,7 +376,7 @@ def _overview_html(s: dict) -> str:
     now = parts[0].replace(f" {s['regime']} ", f" <b>{s['regime']}</b> ", 1)
     chips = [_chip(f"{_swatch(col)}{now}", border=col, bg=f"{col}22")]
     window = parts[1].split(": ", 1)[0]
-    counts = " · ".join(f"{_swatch(REGIME_COLOR[k])}{k} {v}" for k, v in _count_items(s))
+    counts = " · ".join(_nowrap(f"{_swatch(REGIME_COLOR[k])}{k} {v}") for k, v in _count_items(s))
     chips.append(_chip(f"{window}: {counts}"))
     chips += [_chip(p) for p in parts[2:]]
     return (f"<div style='display:flex;flex-wrap:wrap;gap:6px;margin:0 0 4px;'>"
@@ -380,8 +387,7 @@ def _periods_html(periods: list) -> str:
     parts = period_parts(periods)
     if not parts:
         return ""
-    items = [f"<span style='white-space:nowrap;'>{_swatch(REGIME_COLOR.get(p['regime'], GREY))}{t}</span>"
-             for p, t in zip(periods, parts)]
+    items = [_nowrap(f"{_swatch(REGIME_COLOR.get(p['regime'], GREY))}{t}") for p, t in zip(periods, parts)]
     return (f"<div style='color:{TEXT};font-size:0.8rem;line-height:1.7;margin:2px 0 4px;'>"
             f"<span style='color:{DIM};'>Perioder:</span> {' → '.join(items)}</div>")
 
@@ -400,26 +406,30 @@ def _tick_indices(n: int, max_ticks: int = 5) -> list:
 
 
 def history_figure(hist, go=None):
-    """Stapeldiagram: en stapel per handelsdag, höjd = bredd i %, färg = regimen den dagen."""
+    """Stapeldiagram: en stapel per handelsdag, höjd = bredd i %, färg = regimen den dagen.
+
+    Dag utan bredd: en låg, halvgenomskinlig stump i regimens färg (hover 'Bredd: saknas'),
+    så att dagens regim syns. Etiketterna för 55 % och 45 % står i högermarginalen och
+    täcker aldrig någon stapel.
+    """
     if go is None:
         import plotly.graph_objects as go
     rows = clean_history(hist)
     x = [r["date"] for r in rows]
-    y = [None if r["breadth"] is None else round(r["breadth"] * 100, 1) for r in rows]
+    y = [MISSING_STUB if r["breadth"] is None else round(r["breadth"] * 100, 1) for r in rows]
     fig = go.Figure(go.Bar(
         x=x, y=y, name="Bredd",
-        marker=dict(color=[REGIME_COLOR.get(r["regime"], GREY) for r in rows], line=dict(width=0)),
+        marker=dict(color=[REGIME_COLOR.get(r["regime"], GREY) for r in rows], line=dict(width=0),
+                    opacity=[MISSING_OPACITY if r["breadth"] is None else 1.0 for r in rows]),
         hovertext=[_hover(r) for r in rows],
         hoverinfo="text",                                    # bara svensk text, ingen ISO-etikett på x-axeln
     ))
-    for level, label, pos in ((HEALTHY, f"friskt {HEALTHY}{NBSP}%", "top left"),
-                              (DYING, f"dör {DYING}{NBSP}%", "bottom left")):
+    for level, label in ((HEALTHY, f"friskt {HEALTHY}{NBSP}%"), (DYING, f"dör {DYING}{NBSP}%")):
         fig.add_hline(y=level, line_dash="dash", line_width=1, line_color="rgba(232,228,220,0.55)",
-                      annotation_text=label, annotation_position=pos,
-                      annotation_font=dict(size=10, color=TEXT),
-                      annotation_bgcolor="rgba(13,17,23,0.75)")
-    top = max([v for v in y if v is not None], default=0)
-    top = int(min(100, max(70, -(-(top + 8) // 10) * 10)))  # nollbaslinje, båda linjerna syns
+                      annotation_text=label, annotation_position="right",   # i högermarginalen, utanför staplarna
+                      annotation=dict(xshift=3), annotation_font=dict(size=9, color=TEXT))
+    real = [round(r["breadth"] * 100, 1) for r in rows if r["breadth"] is not None]
+    top = int(min(100, max(70, -(-(max(real, default=0) + 8) // 10) * 10)))  # nollbaslinje, båda linjerna syns
     ticks = _tick_indices(len(x))
     fig.update_xaxes(type="category", tickmode="array", tickvals=[x[i] for i in ticks],
                      ticktext=[_sv_date(x[i]) for i in ticks], tickangle=0, showgrid=False,
@@ -427,7 +437,7 @@ def history_figure(hist, go=None):
     fig.update_yaxes(range=[0, top], dtick=25, ticksuffix=f"{NBSP}%", gridcolor=_GRID,
                      zeroline=False, fixedrange=True, automargin=False, ticklabelstandoff=4, title="")
     fig.update_layout(                                       # fasta marginaler: staplarna får bredden på 390 px
-        height=220, margin=dict(l=44, r=16, t=8, b=24, pad=0),
+        height=220, margin=dict(l=38, r=LABEL_MARGIN, t=8, b=24, pad=0),
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor=_PLOT_BG,
         font=dict(color=DIM, size=10), showlegend=False,
         bargap=0.25, barcornerradius=2, hovermode="x", dragmode=False,
@@ -449,12 +459,14 @@ def _box_grid_html(rows: list) -> str:
     cells = ""
     for r in rows:
         col = REGIME_COLOR.get(r["regime"], GREY)
-        fill = 0 if r["breadth"] is None else r["breadth"] * 100
+        missing = r["breadth"] is None
+        fill = MISSING_STUB if missing else r["breadth"] * 100
         tip = (f"{_sv_date(r['date'], year=True)}: {r['regime']}, bredd {_sv_pct(r['breadth'], 1)}, "
                f"{_sv_int(r['qualifying'])} kvalande")
         cells += (f"<div title=\"{tip}\" style='flex:1 1 0;min-width:2px;height:100%;background:#1a1f25;"
                   f"border-radius:2px;display:flex;flex-direction:column;justify-content:flex-end;'>"
-                  f"<div style='height:{fill:.0f}%;background:{col};border-radius:2px 2px 0 0;'></div></div>")
+                  f"<div style='height:{fill:.0f}%;background:{col};border-radius:2px 2px 0 0;"
+                  f"opacity:{MISSING_OPACITY if missing else 1};'></div></div>")
     return f"<div style='display:flex;gap:2px;height:64px;margin:6px 0;'>{cells}</div>"
 
 

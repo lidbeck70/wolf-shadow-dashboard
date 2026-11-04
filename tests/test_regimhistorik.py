@@ -116,6 +116,19 @@ def test_overview_text_edge_cases():
     assert single[1].startswith("Senaste dagen:")
 
 
+def test_count_items_never_break_inside_on_mobile():
+    """Fynd 2: 'OKÄND 6' bröts mitt i på 390 px — varje '{ruta}{regim} {antal}' hålls ihop."""
+    hist = [{"date": d, "regime": r, "breadth": 0.4} for d, r in zip(
+        _bdays(15), ["GRÖN"] + ["GUL"] * 6 + ["RÖD"] * 2 + ["BLÅ"] * 6)]
+    html = w._overview_html(w.history_summary(hist))
+    for k, n in (("GRÖN", 1), ("GUL", 6), ("RÖD", 2), ("OKÄND", 6)):
+        assert f"<span style='white-space:nowrap;'>{w._swatch(w.REGIME_COLOR[k])}{k} {n}</span>" in html
+    assert "Senaste 15 dagar: <span style='white-space:nowrap;'>" in html    # brytning bara mellan bitarna
+    assert html.count("white-space:nowrap") == 4
+    periods = w._periods_html(w.regime_periods(hist))
+    assert periods.count("white-space:nowrap") == 4
+
+
 def test_period_text():
     raw = [{"date": d, "regime": r} for d, r in (
         ("2026-09-12", "GRÖN"), ("2026-10-02", "GRÖN"), ("2026-10-03", "GUL"), ("2026-10-05", "GUL"),
@@ -149,10 +162,33 @@ def test_figure_has_one_bar_per_day_in_regime_colours_with_breadth_heights():
     colors = list(b.marker.color)
     assert colors[:6] == [w.GREEN] * 6 and colors[6:20] == [w.AMBER] * 14
     assert colors[20] == w.RED and colors[21] == w.GREY
-    assert b.y[0] == 52.0 and b.y[19] == 38.0 and b.y[20] == 52.3 and b.y[21] is None
+    assert b.y[0] == 52.0 and b.y[19] == 38.0 and b.y[20] == 52.3
     assert b.hovertext[20] == f"2 nov 2026<br>Regim: RÖD<br>Bredd: 52,3{NB}%<br>Kvalande bolag: 250"
     assert "Bredd: saknas" in b.hovertext[21] and "Regim: OKÄND" in b.hovertext[21]
     assert b.hoverinfo == "text"
+
+
+def test_day_without_breadth_is_a_faint_stub_in_regime_colour_not_a_gap():
+    """Fynd 3: saknad bredd gav y=None → tom plats utan regimfärg och utan hover."""
+    hist = _hist()
+    for i in (1, 7, 19):
+        del hist[i]["breadth"]
+    b = w.history_figure(hist).data[0]
+    assert None not in b.y and len(b.y) == 20                              # varje dag har en stapel
+    assert [b.y[i] for i in (1, 7, 19)] == [w.MISSING_STUB] * 3
+    assert 0 < w.MISSING_STUB <= 3                                          # låg: läses inte som ett mätvärde
+    op = list(b.marker.opacity)
+    assert [op[i] for i in (1, 7, 19)] == [w.MISSING_OPACITY] * 3 and w.MISSING_OPACITY < 1
+    assert op.count(1.0) == 17
+    assert b.marker.color[1] == w.GREEN and b.marker.color[7] == w.AMBER    # dagens regim syns
+    assert "Bredd: saknas" in b.hovertext[7] and "Regim: GUL" in b.hovertext[7]
+    assert b.y[0] == 52.0 and b.y[18] == round((0.52 - 0.14 * 18 / 19) * 100, 1)
+    blank = w.history_figure([{"date": "2026-10-01", "regime": "RÖD"}, {"date": "2026-10-02", "regime": "GUL"}])
+    assert list(blank.data[0].y) == [w.MISSING_STUB] * 2 and blank.layout.yaxis.range[1] == 70
+    s = w.history_summary(hist)                                             # överblicken räknar bara riktiga värden
+    assert s["breadth_points"] == 17 and s["breadth_last"] == round(0.52 - 0.14 * 18 / 19, 4)
+    grid = w._box_grid_html(w.clean_history(hist))
+    assert grid.count(f"opacity:{w.MISSING_OPACITY};") == 3 and grid.count("height:2%") == 3
 
 
 def test_figure_threshold_lines_axis_and_styling():
@@ -169,6 +205,18 @@ def test_figure_threshold_lines_axis_and_styling():
     assert fig.layout.xaxis.fixedrange and fig.layout.yaxis.fixedrange
     tall = w.history_figure([{"date": "2026-10-01", "regime": "GRÖN", "breadth": 0.97}])
     assert tall.layout.yaxis.range[1] == 100
+
+
+@pytest.mark.parametrize("breadth", [0.40, 0.62])
+def test_threshold_labels_sit_in_the_right_margin_and_cover_no_bar(breadth):
+    """Fynd 1: 'dör 45 %' (och 'friskt 55 %' vid hög bredd) låg med mörk bakgrund över de första staplarna."""
+    fig = w.history_figure([{"date": f"2026-10-{d:02d}", "regime": "GRÖN", "breadth": breadth} for d in range(1, 21)])
+    for a in fig.layout.annotations:
+        assert a.xref == "x domain" and a.x == 1 and a.xanchor == "left"     # till höger om ritytan
+        assert a.yanchor == "middle" and a.y in (w.HEALTHY, w.DYING)
+        assert a.bgcolor is None                                              # ingen ruta som skymmer något
+    assert fig.layout.margin.r == w.LABEL_MARGIN >= 50                       # plats för 'friskt 55 %' (size 9)
+    assert {a.font.size for a in fig.layout.annotations} == {9}
 
 
 def test_figure_handles_unsorted_duplicate_and_empty_input():
@@ -226,6 +274,7 @@ def test_page_shows_overview_chart_and_periods(page_data):
     spec = json.loads(charts[0].proto.spec)
     assert len(spec["data"]) == 1 and spec["data"][0]["type"] == "bar" and len(spec["data"][0]["x"]) == 20
     assert {a["text"].replace(NB, " ") for a in spec["layout"]["annotations"]} == {"friskt 55 %", "dör 45 %"}
+    assert all(a["x"] == 1 and a["xanchor"] == "left" and "bgcolor" not in a for a in spec["layout"]["annotations"])
     assert json.loads(charts[0].proto.config).get("displayModeBar") is False
     assert w.CHART_KEY in charts[0].proto.id
     assert "fyllnad" not in text                                          # gamla rutnätets text är borta
@@ -244,6 +293,24 @@ def test_history_falls_back_to_bright_box_grid_without_plotly(monkeypatch):
     assert f"background:{w.GREEN};" in text and f"background:{w.AMBER};" in text
     assert "#12351f" not in text and "#3a2a10" not in text                # de mörka tonerna är borta
     assert "Stapelns höjd = bredd" in text
+
+
+def test_history_with_unknown_regime_and_missing_breadth_renders_stubs_and_whole_count_items():
+    from streamlit.testing.v1 import AppTest
+    hist = _hist()
+    hist[-1]["regime"] = "BLÅ"
+    for i in (2, 10):
+        hist[i].pop("breadth")
+    at = AppTest.from_function(_history_script)
+    at.session_state["_hist"] = hist
+    at.run(timeout=60)
+    assert not at.exception, at.exception
+    spec = json.loads(at.get("plotly_chart")[0].proto.spec)
+    bar = spec["data"][0]
+    assert len(bar["x"]) == 20 and None not in bar["y"] and bar["y"][2] == bar["y"][10] == w.MISSING_STUB
+    assert bar["marker"]["opacity"][2] == w.MISSING_OPACITY and bar["marker"]["color"][-1] == w.GREY
+    text = _text(at)
+    assert "<span style='white-space:nowrap;'>" in text and "OKÄND 1</span>" in text
 
 
 @pytest.mark.parametrize("hist", [[], None, [{"regime": "GRÖN"}, "skräp", {"date": "fel"}]])
