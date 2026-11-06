@@ -80,7 +80,7 @@ class Result:
     ignored: list = field(default_factory=list)      # [(rad, nyckel, text)] — hoppade över med flit
     same: int = 0                                    # värden som redan stod i arket
     same_keys: list = field(default_factory=list)    # [SheetField] — de som redan stod (kvittot per ark)
-    blank: list = field(default_factory=list)        # [(rad, nyckel)] — rader ChatGPT lämnade tomma
+    blank: list = field(default_factory=list)        # [SheetField] — fält ChatGPT skulle fylla som står tomma
 
     def signature(self) -> str:
         """Kort fingeravtryck av ändringarna — nytt svar, ny tabell (kryssen följer inte med till ett annat svar)."""
@@ -134,9 +134,33 @@ def known_path(sheet: str, path: str) -> bool:
     return path in seen
 
 
-def resolve(key: str, fields: dict) -> tuple:
+def target_key(f: cat.SheetField) -> tuple:
+    """Var värdet hamnar: (arkets rad, sökväg). Durrett 10-steg och Wolf Asymmetry delar bolagsraden — samma fält
+    i båda är ett och samma värde."""
+    return ("confidence" if f.sheet in cat.CONFIDENCE_SHEETS else f.sheet), f.path
+
+
+def _bare(k: str, fields: dict) -> list:
+    """Träffarna för en nyckel utan arkprefix: sökvägen eller 'fields.<nyckel>', annars extraktionens alias med
+    samma tal (faktor 1). Durrett/Wolf Asymmetry räknas en gång — de skriver samma värde."""
+    def _hits(name):
+        return [f for f in fields.values() if f.path == name or f.path == f"fields.{name}"]
+    hits = _hits(k)
+    for other, factor in xp.ALIASES.get(k, ()):
+        if hits:
+            break
+        if factor == 1.0:
+            hits = _hits(other)
+    return list({target_key(f): f for f in hits}.values())
+
+
+def resolve(key: str, fields: dict, rows: Optional[dict] = None, own: Optional[set] = None) -> tuple:
     """(SheetField, '') för fältnyckeln, eller (None, skäl). Utan arkprefix ('unit_cost') räcker en entydig träff;
-    extraktionens alias (AISC = unit_cost …) gäller bara där talet är detsamma (faktor 1 — inget räknas om)."""
+    extraktionens alias (AISC = unit_cost …) gäller bara där talet är detsamma (faktor 1 — inget räknas om).
+
+    Med routningen (rows = källraderna, own = kortets egna ark) prövas en nyckel utan prefix i tur och ordning mot
+    kortets egna ark, arken bolaget finns i och sist alla — en tom mall för ett ark där bolaget saknas gör aldrig
+    en nyckel som förr var entydig i kortet tvetydig."""
     k = str(key or "").strip()
     if not k:
         return None, "fältnyckel saknas"
@@ -157,26 +181,19 @@ def resolve(key: str, fields: dict) -> tuple:
             if known_path(sheet, path):
                 return None, "fältet visas inte i det här kortet just nu (t.ex. AQS/CSM under positionsgränsen)"
         return None, "okänd fältnyckel"
-
-    def _hits(name):
-        return [f for f in fields.values() if f.path == name or f.path == f"fields.{name}"]
-    hits = _hits(k)
-    for other, factor in xp.ALIASES.get(k, ()):
-        if hits:
-            break
-        if factor == 1.0:
-            hits = _hits(other)
-    if len(hits) == 1:
-        return hits[0], ""
-    if len(hits) > 1:
-        return None, "fältnyckeln finns i flera ark — skriv den med arkprefix (t.ex. rule:unit_cost)"
+    pools = []
+    if own:
+        pools.append({x: f for x, f in fields.items() if f.sheet in own})
+    if rows is not None:
+        pools.append({x: f for x, f in fields.items() if rows.get(f.sheet) is not None})
+    pools.append(fields)
+    for pool in pools:
+        hits = _bare(k, pool)
+        if len(hits) == 1:
+            return hits[0], ""
+        if len(hits) > 1:
+            return None, "fältnyckeln finns i flera ark — skriv den med arkprefix (t.ex. rule:unit_cost)"
     return None, "okänd fältnyckel"
-
-
-def target_key(f: cat.SheetField) -> tuple:
-    """Var värdet hamnar: (arkets rad, sökväg). Durrett 10-steg och Wolf Asymmetry delar bolagsraden — samma fält
-    i båda är ett och samma värde."""
-    return ("confidence" if f.sheet in cat.CONFIDENCE_SHEETS else f.sheet), f.path
 
 
 def check(answers: list, exp, writable: Optional[set] = None, blocked: Optional[dict] = None) -> Result:
@@ -190,16 +207,20 @@ def check(answers: list, exp, writable: Optional[set] = None, blocked: Optional[
     want = _forms(getattr(exp, "ticker", ""), smap)
     label = {s: cat.SHEETS[s].label for s in cat.SHEETS}
     blocked = blocked or {}
+    own = getattr(exp, "own_sheets", None)
     resolved, siblings = [], {}
     for a in answers or []:
         if blank(a.value):
-            if str(a.key or "").strip():
-                res.blank.append((a.line, str(a.key).strip()))
+            f = resolve(a.key, fields, rows, own)[0] if str(a.key or "").strip() else None
+            row = rows.get(f.sheet) if f is not None else None
+            if (f is not None and row is not None and f.who in (cat.CHATGPT, cat.BEDOMNING)
+                    and cat.is_empty(cat.get_value(row, f.path))):
+                res.blank.append(f)                # ett fält ChatGPT skulle fylla och som fortfarande är tomt
             continue
         if a.ticker and want and not (_forms(a.ticker, smap) & want):
             res.issues.append((a.line, a.key, f"annan ticker ({a.ticker}) — underlaget gäller {exp.ticker}"))
             continue
-        f, why = resolve(a.key, fields)
+        f, why = resolve(a.key, fields, rows, own)
         if f is None:
             (res.ignored if why.startswith(("hör till", "fältet visas inte")) else res.issues).append(
                 (a.line, a.key, why))
@@ -207,12 +228,12 @@ def check(answers: list, exp, writable: Optional[set] = None, blocked: Optional[
         if f.who == cat.BARA_DU:
             res.ignored.append((a.line, f.key, "Bara du — beslutas av dig, fylls aldrig i av ChatGPT"))
             continue
+        if f.sheet in blocked:
+            res.issues.append((a.line, f.key, blocked[f.sheet]))
+            continue
         if rows.get(f.sheet) is None:
             res.issues.append((a.line, f.key, f"bolaget finns inte i {label.get(f.sheet, f.sheet)} än — lägg in "
                                               f"det i arket först"))
-            continue
-        if f.sheet in blocked:
-            res.issues.append((a.line, f.key, blocked[f.sheet]))
             continue
         if writable is not None and f.sheet not in writable:
             res.ignored.append((a.line, f.key, f"hör till {label.get(f.sheet, f.sheet)} — läs in svaret där"))

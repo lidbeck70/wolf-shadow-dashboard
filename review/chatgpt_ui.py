@@ -42,6 +42,28 @@ def session_stores() -> dict:
     return out
 
 
+def registry_sheet_map() -> Optional[dict]:
+    """Registrets tickerkarta för arkens bara nordiska former ('BOL' → 'BOL.ST'; 'TEL' är TE Connectivity, inte
+    Telenor) — samma som Thor läser. Thors redan lästa karta återanvänds; annars läses registret en gång per session.
+    None när det inte går att läsa (då skriver importen inte i bara arkrader för en nordisk notering)."""
+    hit = st.session_state.get("rv_sheet_map")
+    if isinstance(hit, dict):
+        return hit or None
+    found = None
+    td = st.session_state.get("thor_data")
+    if isinstance(td, dict) and isinstance(td.get("sheet_map"), dict) and td["sheet_map"]:
+        found = td["sheet_map"]
+    if found is None:
+        try:
+            from universe import registry as ur
+            reg_ = ur.load(None)
+            found = reg_.sheet_map() if reg_ is not None else {}
+        except Exception:
+            found = {}
+    st.session_state["rv_sheet_map"] = dict(found or {})
+    return dict(found) if found else None
+
+
 def _blob() -> Optional[dict]:
     try:
         import refresh_ui
@@ -164,7 +186,7 @@ def _apply(changes: list, plan, k: str, gen: int, on_apply: Optional[Callable]) 
         stores = session_stores()
     except Exception:
         stores = None
-    missing = rt.missing_now(plan.exp, {s: live.get(s) for s in by_sheet}, stores)
+    missing = rt.missing_now(plan.exp, {s: live.get(s) for s in by_sheet}, stores, plan.own)
     st.session_state[f"rv_imp_receipt_{k}"] = {
         "n": n, "sheets": [(_sheet_label(s), rows) for s, rows in by_sheet.items()],
         "missing": [(_sheet_label(s), names) for s, names in missing.items()],
@@ -254,7 +276,7 @@ def _summary(res, n_answers: int) -> str:
     parts = [f"{_sheet_label(s)} {n}" for s, n in per.items()]
     head = (f"{len(res.changes)} att skriva in → " + " · ".join(parts)) if parts else "Inget nytt att skriva in"
     tail = [f"{res.same} stod redan i arken" if res.same else "",
-            f"{len(res.blank)} lämnade tomma av ChatGPT" if res.blank else "",
+            f"{len(res.blank)} fält ChatGPT skulle fylla står tomma" if res.blank else "",
             f"{len(res.issues)} kunde inte läsas in" if res.issues else "",
             f"{len(res.ignored)} hoppades över" if res.ignored else ""]
     return f"{_rows(n_answers)} i svaret. " + head + "".join(f" · {t}" for t in tail if t) + "."
@@ -293,14 +315,19 @@ def render_import(exp, targets: dict, k: str, reset: tuple = (), on_apply: Optio
         stores = session_stores()
     except Exception:
         stores = None
-    plan = rt.plan(exp, targets, reset, stores, storage.load_failed)
+    smap = None if getattr(exp, "sheet_map", None) or stores is None else registry_sheet_map()
+    plan = rt.plan(exp, targets, reset, stores, storage.load_failed, smap)
     res = im.check(answers, plan.exp, plan.writable, plan.blocked)
     st.caption(_summary(res, len(answers)))
     _list(f"{_rows(len(res.issues))} kunde inte läsas in:", res.issues, warn=True)
     _list(f"{_rows(len(res.ignored))} hoppades över:", res.ignored, warn=False)
     if res.blank:
-        with st.expander(f"{len(res.blank)} fält lämnade ChatGPT tomma", expanded=False):
-            st.caption(" · ".join(key for _line, key in res.blank))
+        per: dict = {}
+        for f in res.blank:
+            per.setdefault(_sheet_label(f.sheet), []).append(f.label)
+        with st.expander(f"{len(res.blank)} fält ChatGPT skulle fylla står fortfarande tomma", expanded=False):
+            for lbl, names in per.items():
+                st.caption(f"**{lbl}** · {len(names)}: " + " · ".join(names))
     if not res.changes:
         st.info("Inga ändringar att skriva in — svaret stämmer med arken eller innehöll inga godkända värden.")
         return

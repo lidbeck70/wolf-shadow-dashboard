@@ -75,7 +75,7 @@ def test_check_routes_and_explains_every_row():
     assert why["tiggre:screen.fs"].startswith("bolaget finns inte i Tiggre")
     assert "rule:nonsense" in why and why["rule:nonsense"] == "okänd fältnyckel"
     assert not any("läs in svaret där" in t for _l, _k, t in res.issues + res.ignored)
-    assert res.blank == [(6, "rule:mine_life")]
+    assert [f.key for f in res.blank] == ["rule:mine_life"]                  # ett ChatGPT-fält som står tomt
     n = im.apply(res.changes, rt.resolved_targets(p, ["rule", "insider"]))
     assert n == 2 and stores["producers"]["producers"][0]["unit_cost"] == 30.0
     assert stores["insider"]["signals"][0]["insiders"] == 2
@@ -161,3 +161,107 @@ def test_the_exported_xlsx_still_round_trips():
     got = answers.read_file(data, "underlag.xlsx")
     assert {a.key for a in got} >= {"insider:insiders"}
     assert copy.deepcopy(got)                                                   # rena dataobjekt
+
+
+# ── Granskningens fynd ───────────────────────────────────────────────────────
+def test_the_row_compared_is_the_row_written_with_two_signals_for_one_ticker():
+    """Fynd 1/6: Scorecardet läser arkets senaste signal — jämförelsen och skrivningen gäller samma rad, inte den
+    första signalen med samma ticker."""
+    stores = _stores()
+    old = {"id": "s_old", "ticker": "VAR.OL", "name": "Vår Energi", "insiders": 2, "comment": ""}
+    new = {"id": "s_new", "ticker": "VAR.OL", "name": "Vår Energi", "comment": ""}
+    stores["insider"]["signals"] = [old, new]
+    card = {"strategy": "insider"}
+    exp = ex.build("VAR.OL", stores, ["insider", "scorecard"], rows={"insider": new, "scorecard": card})
+    p = rt.plan(exp, {"scorecard": lambda: card}, (), stores)
+    assert p.targets["insider"] is new and p.exp.source_rows["insider"] is new
+    res = im.check(answers.read_text("\n".join([HEAD, "VAR.OL;insider:insiders;3;;Insyn;primary;2026-10-02;high;"])),
+                   p.exp, p.writable, p.blocked)
+    (c,) = res.changes
+    assert c.old is None and c.default_use
+    im.apply(res.changes, rt.resolved_targets(p, ["insider"]))
+    assert new["insiders"] == 3 and old["insiders"] == 2
+
+
+def test_without_the_registry_map_a_bare_row_of_maybe_another_company_is_not_written():
+    """Fynd 2/12: Telenor TEL.OL och en Insider-rad 'TEL' (TE Connectivity i USA). Utan karta skrivs inget dit;
+    med registrets karta ('TEL' finns inte i den — TE Connectivity) räknas raden inte som Telenor alls."""
+    stores = _stores()
+    stores["insider"]["signals"] = [{"id": "s1", "ticker": "TEL", "name": "TE Connectivity", "comment": ""}]
+    stores["producers"]["producers"] = [{"id": "p1", "ticker": "TEL.OL", "name": "Telenor"}]
+    row = stores["producers"]["producers"][0]
+    exp = ex.build("TEL.OL", {"producers": stores["producers"]}, ["rule"], rows={"rule": row})
+    p = rt.plan(exp, {"rule": row}, (), stores)
+    assert "insider" in p.blocked and "tickerkarta" in p.blocked["insider"] and "insider" not in p.writable
+    p2 = rt.plan(exp, {"rule": row}, (), stores, sheet_map={"BOL": "BOL.ST"})
+    assert p2.exp.source_rows["insider"] is None and "insider" not in p2.targets
+
+
+def test_a_bare_card_ticker_finds_the_suffixed_rows_with_the_registry_map():
+    """Fynd 3/11: Rick Rule-raden står som 'BOL', Insider-signalen som 'BOL.ST' — med registrets karta hittar
+    importen i Rick Rule-kortet signalen i stället för att säga att bolaget saknas."""
+    stores = _stores()
+    stores["producers"]["producers"] = [{"id": "p1", "ticker": "BOL", "name": "Boliden"}]
+    stores["insider"]["signals"] = [{"id": "s1", "ticker": "BOL.ST", "name": "Boliden", "comment": ""}]
+    row = stores["producers"]["producers"][0]
+    exp = ex.build("BOL", {"producers": stores["producers"]}, ["rule"], rows={"rule": row})
+    p = rt.plan(exp, {"rule": row}, (), stores, sheet_map={"BOL": "BOL.ST"})
+    assert p.targets["insider"] is stores["insider"]["signals"][0]
+    res = im.check(answers.read_text("\n".join([HEAD, "BOL.ST;insider:insiders;2;;Insyn;primary;2026-10-02;high;",
+                                                "BOL;rule:mine_life;9;år;43-101;primary;2025-01-01;high;"])),
+                   p.exp, p.writable, p.blocked)
+    assert {c.key for c in res.changes} == {"insider:insiders", "rule:mine_life"} and not res.issues
+
+
+@pytest.mark.parametrize("key, want", [("aisc", "rule:unit_cost"), ("nav_musd", "rule:nav_musd"),
+                                       ("unit_cost", "rule:unit_cost"), ("ds_runway", "rule:ds_runway")])
+def test_bare_keys_resolve_in_the_card_first(key, want):
+    """Fynd 5/7/10: nycklar utan arkprefix (extraktionens JSON) prövas först mot kortets eget ark — en tom mall
+    för ett ark där bolaget saknas gör dem inte tvetydiga."""
+    stores = _stores()
+    stores["insider"]["signals"] = []
+    row = stores["producers"]["producers"][0]
+    exp = ex.build("VAR.OL", {"producers": stores["producers"]}, ["rule"], rows={"rule": row})
+    p = rt.plan(exp, {"rule": row}, (), stores)
+    f, why = im.resolve(key, p.exp.fields, p.exp.source_rows, p.exp.own_sheets)
+    assert f is not None and f.key == want, why
+
+
+def test_missing_after_import_follows_the_sheets_own_position():
+    """Fynd 9: kvittots 'saknas fortfarande' räknas som arket själv räknar — Rick Rule-kortets position 8 %, inte
+    Scorecardets 1 % — när importen körs i ett ark."""
+    from review import missing as mis
+    stores = _stores()
+    row = stores["producers"]["producers"][0]
+    row["position_pct"] = 8.0
+    stores["scorecard"]["cards"] = {"vår energi|VAR.OL": {"strategy": "producenter", "position_pct_total": 1.0}}
+    exp, _t = _card(stores)
+    p = rt.plan(exp, _t, (), stores)
+    got = rt.missing_now(p.exp, {"rule": row}, stores, p.own)["rule"]
+    want = list(dict.fromkeys(it.label for it in mis.missing_for("rule", row)))
+    assert got == want
+
+
+def test_a_store_that_failed_to_load_says_reload_not_add_the_company():
+    """Fynd 13: ett lager som inte gick att läsa står tomt i sessionen — beskedet är 'ladda om', aldrig 'lägg in
+    bolaget i arket' (det finns i GitHub)."""
+    stores = _stores()
+    stores["producers"] = {"producers": [], "royalty": []}                     # standardformen efter läsfelet
+    exp, targets = _card(stores)
+    p = rt.plan(exp, targets, (), stores, lambda name: "HTTP 500" if name == "producers" else None)
+    res = im.check(answers.read_text("\n".join([HEAD, "VAR.OL;rule:unit_cost;30;USD/boe;Q3;primary;2026-10-01;high;"])),
+                   p.exp, p.writable, p.blocked)
+    ((_l, _k, why),) = res.issues
+    assert "kunde inte läsas i den här sessionen (HTTP 500)" in why and "lägg in" not in why
+
+
+def test_blank_counts_only_fields_chatgpt_should_fill_that_are_still_empty():
+    """Fynd 14: 'Bara du', Börsdata-rader och fält som redan har ett värde räknas inte som tomma svar."""
+    stores = _stores()
+    stores["producers"]["producers"][0]["mine_life"] = 12.0
+    exp, targets = _card(stores)
+    p = rt.plan(exp, targets, (), stores)
+    text = "\n".join([HEAD, "VAR.OL;rule:position_pct;;;;;;;", "VAR.OL;rule:price;;;;;;;",
+                      "VAR.OL;rule:mine_life;;;;;;;", "VAR.OL;rule:unit_cost;;;;;;;", "VAR.OL;tiggre:screen.fs;;;;;;;"])
+    res = im.check(answers.read_text(text), p.exp, p.writable, p.blocked)
+    assert [f.key for f in res.blank] == ["rule:unit_cost"]

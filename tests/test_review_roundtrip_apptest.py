@@ -413,7 +413,7 @@ def test_insider_card_writes_rick_rule_rows_into_rick_rule(page, monkeypatch):
     assert not at.exception, at.exception
     caps = " ".join(c.value for c in at.caption)
     assert "hör till Rick Rule" not in caps
-    assert "4 att skriva in → Rick Rule 2 · Insiderbevakaren 2" in caps and "1 lämnade tomma av ChatGPT" in caps
+    assert "4 att skriva in → Rick Rule 2 · Insiderbevakaren 2" in caps and "1 fält ChatGPT skulle fylla står tomma" in caps
     warns = " ".join(w.value for w in at.warning)
     assert "bolaget finns inte i Tiggre-arket än — lägg in det i arket först" in warns
     assert "Bara du" in caps                                                  # köpgrinden rörs aldrig
