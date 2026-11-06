@@ -79,6 +79,8 @@ class Result:
     issues: list = field(default_factory=list)       # [(rad, nyckel, text)] — avvisade
     ignored: list = field(default_factory=list)      # [(rad, nyckel, text)] — hoppade över med flit
     same: int = 0                                    # värden som redan stod i arket
+    same_keys: list = field(default_factory=list)    # [SheetField] — de som redan stod (kvittot per ark)
+    blank: list = field(default_factory=list)        # [(rad, nyckel)] — rader ChatGPT lämnade tomma
 
     def signature(self) -> str:
         """Kort fingeravtryck av ändringarna — nytt svar, ny tabell (kryssen följer inte med till ett annat svar)."""
@@ -171,18 +173,28 @@ def resolve(key: str, fields: dict) -> tuple:
     return None, "okänd fältnyckel"
 
 
-def check(answers: list, exp, writable: Optional[set] = None) -> Result:
+def target_key(f: cat.SheetField) -> tuple:
+    """Var värdet hamnar: (arkets rad, sökväg). Durrett 10-steg och Wolf Asymmetry delar bolagsraden — samma fält
+    i båda är ett och samma värde."""
+    return ("confidence" if f.sheet in cat.CONFIDENCE_SHEETS else f.sheet), f.path
+
+
+def check(answers: list, exp, writable: Optional[set] = None, blocked: Optional[dict] = None) -> Result:
     """Svaret mot underlaget exp (review.export.Export med fields och source_rows). writable = arken svaret får
-    skriva i härifrån (None = alla i underlaget); ett annat arks rader hoppas över med en hänvisning dit."""
+    skriva i härifrån (None = alla i underlaget); ett annat arks rader hoppas över med en hänvisning dit.
+    blocked = {ark: skäl} för ark där bolaget finns men som inte tar emot svar (review.routing.Plan.blocked)."""
     res = Result()
     fields = getattr(exp, "fields", None) or {}
     rows = getattr(exp, "source_rows", None) or {}
     smap = getattr(exp, "sheet_map", None)
     want = _forms(getattr(exp, "ticker", ""), smap)
     label = {s: cat.SHEETS[s].label for s in cat.SHEETS}
+    blocked = blocked or {}
     resolved, siblings = [], {}
     for a in answers or []:
         if blank(a.value):
+            if str(a.key or "").strip():
+                res.blank.append((a.line, str(a.key).strip()))
             continue
         if a.ticker and want and not (_forms(a.ticker, smap) & want):
             res.issues.append((a.line, a.key, f"annan ticker ({a.ticker}) — underlaget gäller {exp.ticker}"))
@@ -195,12 +207,15 @@ def check(answers: list, exp, writable: Optional[set] = None) -> Result:
         if f.who == cat.BARA_DU:
             res.ignored.append((a.line, f.key, "Bara du — beslutas av dig, fylls aldrig i av ChatGPT"))
             continue
-        if writable is not None and f.sheet not in writable:
-            res.ignored.append((a.line, f.key, f"hör till {label.get(f.sheet, f.sheet)} — läs in svaret där"))
-            continue
         if rows.get(f.sheet) is None:
             res.issues.append((a.line, f.key, f"bolaget finns inte i {label.get(f.sheet, f.sheet)} än — lägg in "
                                               f"det i arket först"))
+            continue
+        if f.sheet in blocked:
+            res.issues.append((a.line, f.key, blocked[f.sheet]))
+            continue
+        if writable is not None and f.sheet not in writable:
+            res.ignored.append((a.line, f.key, f"hör till {label.get(f.sheet, f.sheet)} — läs in svaret där"))
             continue
         resolved.append((a, f))
         siblings[f.key] = str(a.unit or "").strip()
@@ -236,14 +251,16 @@ def check(answers: list, exp, writable: Optional[set] = None) -> Result:
         old = cat.get_value(row, f.path)
         if cat.same_value(old, new):              # står redan i arket
             res.same += 1
+            res.same_keys.append(f)
             continue
         if not cat.is_empty(old):
             notes.append(OVERWRITE)
-        if f.key in picked:
+        tk = target_key(f)
+        if tk in picked:
             res.ignored.append((a.line, f.key, "dubbel rad — den sista gäller"))
-        picked[f.key] = Change(f, old, new, unit=unit, source=source, source_type=stype, date=when,
-                               confidence=_confidence(a.confidence), comment=str(a.comment or "").strip()[:1000],
-                               warnings=notes)
+        picked[tk] = Change(f, old, new, unit=unit, source=source, source_type=stype, date=when,
+                            confidence=_confidence(a.confidence), comment=str(a.comment or "").strip()[:1000],
+                            warnings=notes)
     res.changes = list(picked.values())
     return res
 

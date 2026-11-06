@@ -119,7 +119,7 @@ def test_pasted_answer_shows_the_diff_and_writes_only_after_the_button(page):
     assert row["sources"]["unit_cost"]["source"] == "ChatGPT: Q2-rapporten s. 12 · 2026-08-01"
     assert at.number_input(key="pr_c_p1").value == 1250.5               # widgeten ritades om med nya värdet
     assert at.checkbox(key="pr_ch_p1_kapitaldisciplin").value is True
-    assert any("3 ändringar inskrivna i arket" in s.value for s in at.success)
+    assert any("3 ändringar inskrivna i Rick Rule" in s.value for s in at.success)
     assert at.text_area(key="rv_imp_txt_rule_p1_1").value == ""         # importen är tömd
     import producers
     assert producers.producer_score(row) is not None                    # grindarna räknar på det inlästa som förut
@@ -343,7 +343,9 @@ def test_durrett_sheet_import_writes_datapoints_with_chatgpt_source(monkeypatch)
     assert at.text_input(key=f"ds_{t}_aisc").value == "1350"                  # Arket ritades om
 
 
-def test_scorecard_reads_only_its_own_fields_and_creates_the_card_then(page):
+def test_scorecard_routes_each_row_to_its_sheet_and_creates_the_card_then(page):
+    """Ett svar, alla ark: kortets egna fält i Scorecardet, Rick Rule-raden i Rick Rule-arket (samma rad som arket
+    ritar), 'Bara du' hoppas över. Kortet skapas först när svaret skrivs in."""
     at = page("scorecard", "render_scorecard_page", {})
     key = "boliden|BOL.ST"
     assert at.session_state["scorecard"]["cards"] == {}                        # orört kort skrivs inte
@@ -352,13 +354,18 @@ def test_scorecard_reads_only_its_own_fields_and_creates_the_card_then(page):
                         "BOL.ST;scorecard:sell_rule;Stopp −20 %;;;;;high;"])
     at.text_area(key=f"rv_imp_txt_scorecard_{key}_0").set_value(answer).run()
     caps = " ".join(c.value for c in at.caption)
-    assert "hör till Rick Rule — läs in svaret där" in caps and "Bara du" in caps
+    assert "hör till Rick Rule" not in caps and "Bara du" in caps
+    assert "2 att skriva in → Scorecard 1 · Rick Rule 1" in caps or "2 att skriva in → Rick Rule 1 · Scorecard 1" in caps
+    table = at.dataframe[0].value
+    assert set(table["Ark"]) == {"Scorecard", "Rick Rule"}                     # flera ark → kolumnen Ark
     at.button(key=f"rv_imp_go_scorecard_{key}").click().run()
     assert not at.exception, at.exception
     card = at.session_state["scorecard"]["cards"][key]
     assert card["valuation"] == "P/NAV 0,4" and card["strategy"] == "producenter" and "sell_rule" not in card
-    assert at.session_state["producers"]["producers"][0].get("mine_life") is None
+    rule = at.session_state["producers"]["producers"][0]
+    assert rule["mine_life"] == 14.0 and rule["sources"]["mine_life"]["source"] == "ChatGPT: 43-101 · 2025-03-01"
     assert at.text_input(key=f"sc_val_{key}").value == "P/NAV 0,4"
+    assert any("2 ändringar inskrivna i" in s.value for s in at.success)
 
 
 def test_thor_arken_tab_has_no_import(monkeypatch):
@@ -373,3 +380,96 @@ def test_thor_arken_tab_has_no_import(monkeypatch):
     assert not at.exception, at.exception
     assert not at.get("file_uploader") and not [t for t in at.text_area if str(t.key).startswith("rv_imp_")]
     assert any("Svaret läses tillbaka i arket" in c.value for c in at.caption)
+
+
+# ── Ett svar, alla ark (routningen) ──────────────────────────────────────────
+ROUTED_ANSWER = "\n".join([
+    HEAD,
+    "BOL.ST;rule:unit_cost;1 250,5;USD/oz;Q2-rapporten s. 12;primary;2026-08-01;high;",
+    "BOL.ST;rule:mine_life;14;år;43-101 2025;primary;2025-03-01;high;",
+    "BOL.ST;insider:insiders;3;st;Insynsregistret;primary;2026-09-02;high;",
+    "BOL.ST;insider:amount;2,5;MSEK;Insynsregistret;primary;2026-09-02;high;",
+    "BOL.ST;tiggre:screen.fs;Ja;;DFS 2025;primary;2025-11-01;high;",
+    "BOL.ST;rule:rp_ratio;;;;;;;",
+    "BOL.ST;insider:gate;Ja;;;;;;"])
+
+
+def _with_insider(state: dict) -> dict:
+    state = copy.deepcopy(state)
+    state["insider"] = {"signals": [{"id": "s1", "ticker": "BOL.ST", "name": "Boliden", "date": "2026-09-01",
+                                     "comment": ""}]}
+    return state
+
+
+def test_insider_card_writes_rick_rule_rows_into_rick_rule(page, monkeypatch):
+    """Ägarens fall: Thors underlag (Rick Rule + Insider) fyllt av ChatGPT och inläst i Insider-kortet. Förr hoppades
+    Rick Rule-raderna över ('hör till Rick Rule — läs in svaret där'); nu skrivs varje rad i sitt ark, Tiggre-raden
+    säger att bolaget inte finns där, och kvittot visar vad som hamnade var och vad som saknas."""
+    stores = _with_insider(STORES)
+    monkeypatch.setattr(storage, "session_load", lambda name, default=None, legacy_file=None:
+                        streamlit.session_state.setdefault(name, copy.deepcopy(stores.get(name, default))))
+    at = page("insider", "render_insider_page", {})
+    at.text_area(key="rv_imp_txt_insider_s1_0").set_value(ROUTED_ANSWER).run()
+    assert not at.exception, at.exception
+    caps = " ".join(c.value for c in at.caption)
+    assert "hör till Rick Rule" not in caps
+    assert "4 att skriva in → Rick Rule 2 · Insiderbevakaren 2" in caps and "1 lämnade tomma av ChatGPT" in caps
+    warns = " ".join(w.value for w in at.warning)
+    assert "bolaget finns inte i Tiggre-arket än — lägg in det i arket först" in warns
+    assert "Bara du" in caps                                                  # köpgrinden rörs aldrig
+    table = at.dataframe[0].value
+    assert list(table["Ark"]) == ["Rick Rule", "Rick Rule", "Insiderbevakaren", "Insiderbevakaren"]
+    at.button(key="rv_imp_go_insider_s1").click().run()
+    assert not at.exception, at.exception
+    rule = at.session_state["producers"]["producers"][0]
+    sig = at.session_state["insider"]["signals"][0]
+    assert rule["unit_cost"] == 1250.5 and rule["mine_life"] == 14.0
+    assert rule["sources"]["unit_cost"]["source"] == "ChatGPT: Q2-rapporten s. 12 · 2026-08-01"
+    assert sig["insiders"] == 3 and sig["amount"] == 2.5 and sig.get("gate") is None
+    assert at.session_state["tiggre"]["candidates"][0]["screen"] == {}       # LOB rörs inte
+    assert at.number_input(key="ins_n_s1").value == 3                        # Insider-kortet ritades om
+    ok = " ".join(s.value for s in at.success)
+    assert "4 ändringar inskrivna i Rick Rule och Insiderbevakaren" in ok
+    caps = " ".join(c.value for c in at.caption)
+    assert "**Rick Rule** · 2 inskrivna:" in caps and "**Insiderbevakaren** · 2 inskrivna:" in caps
+    assert "Saknas fortfarande för köpbeslut" in caps or "Inget saknas längre för köpbeslut" in caps
+    assert at.text_area(key="rv_imp_txt_insider_s1_1").value == ""            # importen är tömd
+    at.button(key="rv_imp_close_insider_s1").click().run()
+    assert not at.exception, at.exception
+    assert not [s for s in at.success if "inskrivna" in s.value]             # kvittot stängt
+
+
+def test_one_save_button_saves_every_sheet_that_got_answers(page, monkeypatch):
+    """Kvittots 💾 sparar lagren som fick svar — och bara dem — med samma sparning som arkens sparrad."""
+    stores = _with_insider(STORES)
+    monkeypatch.setattr(storage, "session_load", lambda name, default=None, legacy_file=None:
+                        streamlit.session_state.setdefault(name, copy.deepcopy(stores.get(name, default))))
+    saved = []
+    monkeypatch.setattr(storage, "is_dirty", lambda name: name in ("producers", "insider") and name not in saved)
+    monkeypatch.setattr(storage, "save_session", lambda name: saved.append(name))
+    at = page("insider", "render_insider_page", {})
+    at.text_area(key="rv_imp_txt_insider_s1_0").set_value(ROUTED_ANSWER).run()
+    assert saved == []                                                       # inget sparas av importen själv
+    at.button(key="rv_imp_go_insider_s1").click().run()
+    assert saved == []
+    btn = at.button(key="rv_imp_save_insider_s1")
+    assert btn.label == "💾 Spara Granskningsarken, Insiderbevakaren"
+    btn.click().run()
+    assert not at.exception, at.exception
+    assert saved == ["producers", "insider"]
+    assert any("Sparat: Granskningsarken, Insiderbevakaren" in s.value for s in at.success)
+
+
+def test_a_sheet_that_failed_to_load_takes_no_answers(page, monkeypatch):
+    """Ett lager som inte gick att läsa i sessionen tar inte emot svar — en 💾 där skulle skriva över GitHub."""
+    stores = _with_insider(STORES)
+    monkeypatch.setattr(storage, "session_load", lambda name, default=None, legacy_file=None:
+                        streamlit.session_state.setdefault(name, copy.deepcopy(stores.get(name, default))))
+    monkeypatch.setattr(storage, "load_failed", lambda name: "HTTP 500" if name == "producers" else None)
+    at = page("insider", "render_insider_page", {})
+    at.text_area(key="rv_imp_txt_insider_s1_0").set_value(ROUTED_ANSWER).run()
+    assert not at.exception, at.exception
+    warns = " ".join(w.value for w in at.warning)
+    assert "Rick Rule kunde inte läsas i den här sessionen (HTTP 500)" in warns
+    table = at.dataframe[0].value
+    assert "Ark" not in table.columns and len(table) == 2                     # bara Insider-raderna

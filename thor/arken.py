@@ -11,7 +11,8 @@ thor/arken.py — Arken-fliken i Thors analysblock: vad arken säger om bolaget,
                    Excel/CSV med prompten (review.chatgpt_ui) — det som saknas för köpbeslut först
 "Finns inte i arket → lägg in" med knappar till arken. Knapparna öppnar arket med bolaget i fokus (review.focus) —
 Durrett och Sprott på rätt modell i Poängmodellen, och 🧭 Durrett (10-stegsarket) som egen knapp. Ingenting skrivs;
-samma data som arken själva visar, och ChatGPT-svaret läses tillbaka i arket, inte här.
+samma data som arken själva visar, och ChatGPT-svaret läses tillbaka i ett ark, inte här — en import där skriver
+varje rad i sitt ark (review.routing).
 """
 
 from __future__ import annotations
