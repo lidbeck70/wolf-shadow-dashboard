@@ -208,12 +208,15 @@ def check(answers: list, exp, writable: Optional[set] = None, blocked: Optional[
     label = {s: cat.SHEETS[s].label for s in cat.SHEETS}
     blocked = blocked or {}
     own = getattr(exp, "own_sheets", None)
+    shown_who = getattr(exp, "shown_who", None) or {r.get("key"): r.get("who")
+                                                     for r in getattr(exp, "rows", None) or [] if isinstance(r, dict)}
     resolved, siblings = [], {}
     for a in answers or []:
         if blank(a.value):
             f = resolve(a.key, fields, rows, own)[0] if str(a.key or "").strip() else None
             row = rows.get(f.sheet) if f is not None else None
-            if (f is not None and row is not None and f.who in (cat.CHATGPT, cat.BEDOMNING)
+            who = shown_who.get(f.key, f.who) if f is not None else None     # som underlaget visade raden
+            if (f is not None and row is not None and who in (cat.CHATGPT, cat.BEDOMNING)
                     and cat.is_empty(cat.get_value(row, f.path))):
                 res.blank.append(f)                # ett fält ChatGPT skulle fylla och som fortfarande är tomt
             continue
@@ -221,6 +224,12 @@ def check(answers: list, exp, writable: Optional[set] = None, blocked: Optional[
             res.issues.append((a.line, a.key, f"annan ticker ({a.ticker}) — underlaget gäller {exp.ticker}"))
             continue
         f, why = resolve(a.key, fields, rows, own)
+        if f is None and ":" in str(a.key or "") and blocked:
+            sheet, path = str(a.key).strip().split(":", 1)
+            bsheet = "confidence" if sheet in cat.CONFIDENCE_SHEETS and "confidence" in blocked else sheet
+            if bsheet in blocked and bsheet in cat.SHEETS and known_path(bsheet, path):
+                res.issues.append((a.line, a.key, blocked[bsheet]))   # t.ex. lagret gick inte att läsa: ladda om
+                continue
         if f is None:
             (res.ignored if why.startswith(("hör till", "fältet visas inte")) else res.issues).append(
                 (a.line, a.key, why))

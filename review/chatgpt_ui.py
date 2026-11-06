@@ -42,26 +42,56 @@ def session_stores() -> dict:
     return out
 
 
+RETRY_S = 60     # ett misslyckat läsförsök av registret prövas igen tidigast efter så här många sekunder
+
+
+def _universe_unreadable() -> bool:
+    """Står någon av registrets filer som oläslig just nu (gist_storage.UNREADABLE_NAMES)?"""
+    try:
+        import gist_storage as gs
+        return any(str(n).startswith("universe") for n in gs.UNREADABLE_NAMES)
+    except Exception:
+        return True
+
+
 def registry_sheet_map() -> Optional[dict]:
     """Registrets tickerkarta för arkens bara nordiska former ('BOL' → 'BOL.ST'; 'TEL' är TE Connectivity, inte
-    Telenor) — samma som Thor läser. Thors redan lästa karta återanvänds; annars läses registret en gång per session.
-    None när det inte går att läsa (då skriver importen inte i bara arkrader för en nordisk notering)."""
-    hit = st.session_state.get("rv_sheet_map")
-    if isinstance(hit, dict):
-        return hit or None
-    found = None
+    Telenor) — samma som Thor läser. Bara en karta ur ett HELT läst register gäller: saknas USA-delen tror kartan
+    att 'TEL' är Telenor. Thors redan lästa karta tas när ingen av registrets filer står som oläslig; annars läses
+    registret och sparas i sessionen först när alla filer gick att läsa. Ett misslyckat försök sparas inte — det
+    prövas igen efter RETRY_S sekunder. None utan säker karta (då skriver importen inte i bara arkrader för en
+    nordisk notering)."""
+    import time
     td = st.session_state.get("thor_data")
-    if isinstance(td, dict) and isinstance(td.get("sheet_map"), dict) and td["sheet_map"]:
-        found = td["sheet_map"]
-    if found is None:
-        try:
-            from universe import registry as ur
-            reg_ = ur.load(None)
-            found = reg_.sheet_map() if reg_ is not None else {}
-        except Exception:
-            found = {}
-    st.session_state["rv_sheet_map"] = dict(found or {})
-    return dict(found) if found else None
+    thor_map = td.get("sheet_map") if isinstance(td, dict) else None
+    if isinstance(thor_map, dict) and thor_map and not _universe_unreadable():
+        return dict(thor_map)
+    hit = st.session_state.get("rv_sheet_map")
+    if isinstance(hit, dict) and hit:
+        return dict(hit)
+    if time.time() - float(st.session_state.get("rv_sheet_map_failed") or 0) < RETRY_S:
+        return None
+    found, bad = {}, []
+    try:
+        import gist_storage as gs
+        from universe import registry as ur
+
+        inner = ur.default_loader()                     # Gisten (testerna byter ut den)
+
+        def _load(name, fallback):
+            v = inner(name, fallback)
+            if name in gs.UNREADABLE_NAMES:
+                bad.append(name)
+            return v
+        reg_ = ur.load(None, _load)
+        found = reg_.sheet_map() if reg_ is not None and not bad else {}
+    except Exception:
+        found = {}
+    if not found:
+        st.session_state["rv_sheet_map_failed"] = time.time()
+        return None
+    st.session_state["rv_sheet_map"] = dict(found)
+    return dict(found)
 
 
 def _blob() -> Optional[dict]:

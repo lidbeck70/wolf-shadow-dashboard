@@ -71,8 +71,7 @@ def live_row(sheet: str, ticker: str, stores: dict, sheet_map: Optional[dict] = 
             return None
         return next((comps[f] for f in forms if isinstance(comps.get(f), dict)), None)
     if sheet == "scorecard":
-        from review import export as ex
-        key, _shown, _entry = ex.card_for(ticker, stores, sheet_map)
+        key, _shown, _entry = card_key(ticker, stores, sheet_map)
         cards = data.get("cards")
         return cards.get(key) if key and isinstance(cards, dict) and isinstance(cards.get(key), dict) else None
     rows = data.get(cat.SHEETS[sheet].bucket)
@@ -88,11 +87,10 @@ def live_row(sheet: str, ticker: str, stores: dict, sheet_map: Optional[dict] = 
 def scorecard_row(ticker: str, stores: dict, sheet_map: Optional[dict] = None) -> Optional[dict]:
     """Scorecardkortet att skriva i — skapas först när ett svar skrivs in (som i Scorecardet: ett orört kort skrivs
     aldrig), med strategin kortet visas med. None utan kandidat eller kort."""
-    from review import export as ex
     data = (stores or {}).get(cat.SHEETS["scorecard"].store)
     if not isinstance(data, dict):
         return None
-    key, shown, _entry = ex.card_for(ticker, stores, sheet_map)
+    key, shown, _entry = card_key(ticker, stores, sheet_map)
     if not key:
         return None
     cards = data.get("cards")
@@ -110,8 +108,7 @@ def _reset_for(sheet: str, ticker: str, row, stores: dict, sheet_map: Optional[d
         t = str(cat._as_row(row).get("ticker") or ticker).strip()
         return (), (f"cf_{t}_", f"ds_{t}_")
     if sheet == "scorecard":
-        from review import export as ex
-        key = ex.card_for(ticker, stores, sheet_map)[0]
+        key = card_key(ticker, stores, sheet_map)[0]
         return ([key] if key else []), ()
     rid = cat._as_row(row).get("id")
     return ([str(rid)] if rid else []), ()
@@ -140,6 +137,22 @@ def ambiguous(row_ticker, ticker: str, sheet_map: Optional[dict]) -> bool:
             and " " not in r)
 
 
+def card_key(ticker: str, stores: dict, sheet_map: Optional[dict] = None) -> tuple:
+    """(kortnyckel, kortet som det visas, kandidatraden) — som export.card_for (samma kort som Thors underlag), men
+    när det kortet står på en bar form som kan vara ett annat bolag (ambiguous) tas kandidaten med exakt ticker
+    ('telenor|TEL.OL' före 'TEL', som sorteras först)."""
+    import scorecard as sc
+    from review import export as ex
+    key, shown, found = ex.card_for(ticker, stores, sheet_map)
+    if found and ambiguous(found.get("ticker"), ticker, sheet_map):
+        data = (stores or {}).get(cat.SHEETS["scorecard"].store)
+        cards = data.get("cards") if isinstance(data, dict) and isinstance(data.get("cards"), dict) else {}
+        for k, e in sc.entries_for([str(ticker or "").strip().upper()], stores or {}).items():
+            c = cards.get(k)
+            return k, sc._shown(c if isinstance(c, dict) else {}, e), e
+    return key, shown, found
+
+
 def plan(exp, targets: dict, reset: tuple, stores: Optional[dict], load_failed: Optional[Callable] = None,
          sheet_map: Optional[dict] = None) -> Plan:
     """Routningen för kortets underlag exp (review.export.Export). targets = kortets egna mål {ark: rad/funktion},
@@ -162,17 +175,31 @@ def plan(exp, targets: dict, reset: tuple, stores: Optional[dict], load_failed: 
     ticker = ur.nordic_form(card_ticker, smap) or card_ticker          # 'BOL' i arket → BOL.ST med kartan
     rows = {s: r for s, r in (getattr(exp, "source_rows", None) or {}).items() if r is not None}
     own_sheets = set(getattr(exp, "sheets", None) or []) | set(own)
+    name = getattr(exp, "name", "")
     entry = getattr(exp, "entry", None) if "scorecard" in own_sheets else None   # annars hela lagrens kandidat
+    if "scorecard" not in own_sheets:
+        _k, shown, found = card_key(ticker, stores, smap)
+        if found is not None:                           # samma kort som Scorecardet skrivs i (exakt ticker först)
+            entry = found
+            rows.setdefault("scorecard", shown)
+    sc_store = cat.SHEETS["scorecard"].store
     try:
-        full = ex.build(ticker, stores, list(ROUTED), None, None, getattr(exp, "name", ""), rows, entry, smap)
+        # Fälten i två synvinklar: köpgrindens position (Scorecardets — som Thors underlag) och arkets egen (som
+        # arkets kort). Ett fält som någon av dem visar går att läsa in; kvittot räknar som arket (missing_now).
+        full = ex.build(ticker, stores, list(ROUTED), None, None, name, rows, entry, smap)
+        bare = {k: v for k, v in stores.items() if k != sc_store}
+        own_view = ex.build(ticker, bare, [s for s in ROUTED if s != "scorecard"], None, None, name,
+                            {s: r for s, r in rows.items() if s != "scorecard"}, None, smap)
     except Exception:                                   # routningen får aldrig fälla kortets egen import
         return Plan(exp, dict(own), {s: own_reset for s in own}, own=set(own))
-    fields = dict(full.fields)
+    fields = dict(own_view.fields)
+    fields.update(full.fields)
     fields.update(getattr(exp, "fields", None) or {})                  # kortets egna fält först
     source_rows = dict(full.source_rows)
     source_rows.update(rows)
-    merged = SimpleNamespace(ticker=ticker, name=getattr(exp, "name", ""), fields=fields, source_rows=source_rows,
-                             entry=full.entry, sheet_map=smap, own_sheets=set(own),
+    shown_who = {r.get("key"): r.get("who") for r in getattr(exp, "rows", None) or [] if isinstance(r, dict)}
+    merged = SimpleNamespace(ticker=ticker, name=name, fields=fields, source_rows=source_rows,
+                             entry=full.entry, sheet_map=smap, own_sheets=set(own), shown_who=shown_who,
                              sheets=list(dict.fromkeys(list(getattr(exp, "sheets", None) or []) + list(full.sheets))))
     p = Plan(merged, dict(own), {s: own_reset for s in own}, own=set(own))
     for sheet in ROUTED:
@@ -189,7 +216,7 @@ def plan(exp, targets: dict, reset: tuple, stores: Optional[dict], load_failed: 
         if src is None:
             continue                                    # bolaget finns inte i arket — importen säger det per rad
         if sheet == "scorecard":
-            key, _shown, found = ex.card_for(ticker, stores, smap)
+            key, _shown, found = card_key(ticker, stores, smap)
             if found and ambiguous(found.get("ticker"), ticker, smap):
                 p.targets[sheet] = None
                 p.blocked[sheet] = (f"{label}: kortet står på '{found.get('ticker')}' och registrets tickerkarta "
@@ -201,9 +228,9 @@ def plan(exp, targets: dict, reset: tuple, stores: Optional[dict], load_failed: 
         row = src if _in_store(sheet, src, stores) else live_row(sheet, ticker, stores, smap)
         if row is None:
             p.targets[sheet] = None
-            p.blocked[sheet] = (f"{label}: bolaget står bara som position i registret — positioner tar inte emot "
-                                f"svar. Ska det granskas: lägg in det som kandidat i Tiggre-arket och läs in svaret "
-                                f"där, annars fyll i positionen för hand" if sheet == "tiggre" else
+            p.blocked[sheet] = (f"{label}: bolaget står bara som position i registret — positionen har inga fält "
+                                f"för de här raderna, så de sparas inte. Ska det granskas: lägg in det som kandidat "
+                                f"i Tiggre-arket och läs in svaret där" if sheet == "tiggre" else
                                 f"{label}: raden hittades inte i arket")
             continue
         if ambiguous(cat._as_row(row).get("ticker"), ticker, smap):
@@ -260,9 +287,13 @@ def missing_now(exp, rows: dict, stores: Optional[dict], own=()) -> dict:
     try:
         if flat:
             base = stores if in_scorecard else {k: v for k, v in stores.items() if k != sc_store}
-            e = ex.build(ticker, base, flat, None, None, name,
-                         {s: copy.deepcopy(cat._as_row(live[s])) for s in flat}, entry if in_scorecard else None,
-                         smap)
+            frows = {s: copy.deepcopy(cat._as_row(live[s])) for s in flat}
+            if in_scorecard:                            # kortet importen kördes i — dess position och strategi
+                card = dict((getattr(exp, "source_rows", None) or {}).get("scorecard") or {})
+                card.update(cat._as_row(live.get("scorecard")) if live.get("scorecard") is not None else {})
+                if card:
+                    frows["scorecard"] = copy.deepcopy(card)   # läses bara för position/strategi — inte ett ark här
+            e = ex.build(ticker, base, flat, None, None, name, frows, entry if in_scorecard else None, smap)
             _collect(e, live, out)
         if "scorecard" in live:
             e = ex.build(ticker, stores, ["scorecard"], None, None, name,

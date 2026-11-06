@@ -265,3 +265,167 @@ def test_blank_counts_only_fields_chatgpt_should_fill_that_are_still_empty():
                       "VAR.OL;rule:mine_life;;;;;;;", "VAR.OL;rule:unit_cost;;;;;;;", "VAR.OL;tiggre:screen.fs;;;;;;;"])
     res = im.check(answers.read_text(text), p.exp, p.writable, p.blocked)
     assert [f.key for f in res.blank] == ["rule:unit_cost"]
+
+
+# ── Andra granskningsrundan ──────────────────────────────────────────────────
+def test_a_field_the_sheet_shows_at_its_own_position_is_imported_from_another_card():
+    """Rond 2 fynd 1: Rick Rule-raden 8 % visar AQS, Scorecardet står på 1 %. Importen i Insider-kortet tar emot
+    rule:aqs_capex (arket visar fältet) och kvittot listar det inte som saknat efteråt."""
+    stores = _stores()
+    row = stores["producers"]["producers"][0]
+    row["position_pct"] = 8.0
+    stores["scorecard"]["cards"] = {"vår energi|VAR.OL": {"strategy": "producenter", "position_pct_total": 1.0}}
+    exp, targets = _card(stores)
+    p = rt.plan(exp, targets, (), stores)
+    text = "\n".join([HEAD, "VAR.OL;rule:aqs_capex;2;;43-101;primary;2026-10-01;high;"])
+    res = im.check(answers.read_text(text), p.exp, p.writable, p.blocked)
+    assert [c.key for c in res.changes] == ["rule:aqs_capex"] and not res.ignored
+    im.apply(res.changes, rt.resolved_targets(p, ["rule"]))
+    miss = rt.missing_now(p.exp, {"rule": row}, stores, p.own)["rule"]
+    assert not any(m.startswith("AQS · Capex") for m in miss)
+
+
+def test_the_receipt_in_the_scorecard_uses_the_card_it_ran_in():
+    """Rond 2 fynd 2/9: två kandidater för Boliden ('BOL' i Sprott, 'BOL.ST' i Rick Rule). Kvittot i kortet
+    'boliden|BOL.ST' (8 %) räknar Rick Rule efter just det kortets position — inte det andra kortets."""
+    import scorecard as sc
+    stores = _stores()
+    stores["producers"]["producers"] = [{"id": "p1", "ticker": "BOL.ST", "name": "Boliden", "position_pct": 1.0}]
+    stores["scoring"]["sprott"] = [{"id": "q1", "ticker": "BOL", "name": "Boliden"}]
+    stores["scorecard"]["cards"] = {"boliden|BOL.ST": {"strategy": "producenter", "position_pct_total": 8.0},
+                                    "boliden|BOL": {"strategy": "sprott", "position_pct_total": 1.0}}
+    entry = sc.entries_for(["BOL.ST"], stores)["boliden|BOL.ST"]
+    card = sc._shown(stores["scorecard"]["cards"]["boliden|BOL.ST"], entry)
+    rule = stores["producers"]["producers"][0]
+    exp = ex.build("BOL.ST", stores, ["rule", "scorecard"], rows={"rule": rule, "scorecard": card}, entry=entry)
+    p = rt.plan(exp, {"scorecard": lambda: stores["scorecard"]["cards"]["boliden|BOL.ST"]}, (), stores)
+    miss = rt.missing_now(p.exp, {"rule": rule}, stores, p.own)["rule"]
+    assert any(m.startswith("AQS") for m in miss)                              # köpgrindens 8 % kräver AQS
+
+
+def test_a_failed_store_explains_reload_also_for_position_dependent_fields():
+    """Rond 2 fynd 3: AQS/CSM-fält i ett lager som inte gick att läsa får 'ladda om', inte 'visas inte just nu'."""
+    stores = _stores()
+    stores["producers"] = {"producers": [], "royalty": []}
+    exp, targets = _card(stores)
+    p = rt.plan(exp, targets, (), stores, lambda name: "HTTP 500" if name == "producers" else None)
+    text = "\n".join([HEAD, "VAR.OL;rule:aqs_capex;2;;x;primary;2026-10-01;high;",
+                      "VAR.OL;rule:csm.Bear.price;60;USD/bbl;x;primary;2026-10-01;high;",
+                      "VAR.OL;rule:påhittad;1;;x;primary;2026-10-01;high;"])
+    res = im.check(answers.read_text(text), p.exp, p.writable, p.blocked)
+    why = {k: t for _l, k, t in res.issues + res.ignored}
+    assert "ladda om" in why["rule:aqs_capex"] and "ladda om" in why["rule:csm.Bear.price"]
+    assert why["rule:påhittad"] == "okänd fältnyckel"
+
+
+def test_without_a_map_the_exact_scorecard_card_is_used_not_the_bare_one():
+    """Rond 2 fynd 5/10: utan karta sorteras 'TEL' (TE Connectivity) före 'TEL.OL' — importen skriver i Telenors
+    eget kort, och Insider-raden 'TEL' förblir spärrad."""
+    stores = _stores()
+    stores["producers"]["producers"] = [{"id": "p1", "ticker": "TEL.OL", "name": "Telenor"}]
+    stores["insider"]["signals"] = [{"id": "s1", "ticker": "TEL", "name": "TE Connectivity", "comment": ""}]
+    stores["scorecard"]["cards"] = {"telenor|TEL.OL": {"strategy": "producenter"}}
+    row = stores["producers"]["producers"][0]
+    exp = ex.build("TEL.OL", {"producers": stores["producers"]}, ["rule"], rows={"rule": row})
+    p = rt.plan(exp, {"rule": row}, (), stores)
+    assert "scorecard" not in p.blocked and "insider" in p.blocked
+    text = "\n".join([HEAD, "TEL.OL;scorecard:valuation;P/E 9;;Analys;secondary;2026-10-01;high;"])
+    res = im.check(answers.read_text(text), p.exp, p.writable, p.blocked)
+    im.apply(res.changes, rt.resolved_targets(p, ["scorecard"]))
+    assert stores["scorecard"]["cards"]["telenor|TEL.OL"]["valuation"] == "P/E 9"
+    assert set(stores["scorecard"]["cards"]) == {"telenor|TEL.OL"}
+
+
+def test_blank_follows_who_the_export_showed():
+    """Rond 2 fynd 6: ett Börsdata-fält utan tal visades som ChatGPT i underlaget — lämnas det tomt räknas det."""
+    stores = _stores()
+    row = stores["producers"]["producers"][0]
+    exp = ex.build("VAR.OL", {"producers": stores["producers"]}, ["rule"], rows={"rule": row}, blob={})
+    assert {r["key"]: r["who"] for r in exp.rows}["rule:ev_musd"] == "ChatGPT"
+    p = rt.plan(exp, {"rule": row}, (), stores)
+    res = im.check(answers.read_text("\n".join([HEAD, "VAR.OL;rule:ev_musd;;;;;;;"])), p.exp, p.writable, p.blocked)
+    assert [f.key for f in res.blank] == ["rule:ev_musd"]
+
+
+def test_the_tiggre_position_message_promises_nothing_impossible():
+    stores = _stores()
+    stores["insider"]["signals"][0]["ticker"] = "LOB"
+    sig = stores["insider"]["signals"][0]
+    exp = ex.build("LOB", {"insider": stores["insider"]}, ["insider"], rows={"insider": sig})
+    msg = rt.plan(exp, {"insider": sig}, (), stores).blocked["tiggre"]
+    assert "för hand" not in msg and "sparas inte" in msg
+
+
+def _map_app():
+    import streamlit as st
+    from review import chatgpt_ui
+    st.session_state["got"] = chatgpt_ui.registry_sheet_map()
+
+
+def test_registry_map_is_trusted_only_when_complete_and_retried_after_failure(monkeypatch):
+    """Rond 2 fynd 4/8/11/12: ett misslyckat eller ofullständigt register sparas inte — då kunde 'TEL' tas för
+    Telenor — och prövas igen; Thors karta används när registrets filer gick att läsa."""
+    from streamlit.testing.v1 import AppTest
+    import gist_storage as gs
+    from universe import registry as ur
+    calls = []
+
+    def _broken(name, fallback):
+        calls.append(name)
+        if name == "universe_usa.json":
+            gs.UNREADABLE_NAMES.add(name)
+            return fallback
+        return fallback
+    monkeypatch.setattr(ur, "default_loader", lambda: _broken)
+    monkeypatch.setattr(gs, "UNREADABLE_NAMES", set())
+    at = AppTest.from_function(_map_app)
+    at.run()
+    assert not at.exception, at.exception
+    assert at.session_state["got"] is None and "rv_sheet_map" not in at.session_state
+    assert at.session_state["rv_sheet_map_failed"] > 0
+    n = len(calls)
+    at.run()
+    assert len(calls) == n                                                    # inget nytt försök inom en minut
+    at.session_state["rv_sheet_map_failed"] = 0.0                            # en minut senare: nytt försök
+    at.run()
+    assert len(calls) > n
+    gs.UNREADABLE_NAMES.clear()
+    at.session_state["thor_data"] = {"sheet_map": {"BOL": "BOL.ST"}}
+    at.run()
+    assert at.session_state["got"] == {"BOL": "BOL.ST"}
+
+
+def test_a_partly_read_registry_gives_no_map(monkeypatch):
+    """Registret lästes men USA-delen gick inte att läsa: kartan skulle tro att 'TEL' är Telenor. Den används inte,
+    sparas inte — och Thors karta används inte heller medan registrets filer står som oläsliga."""
+    from streamlit.testing.v1 import AppTest
+    import gist_storage as gs
+    from universe import registry as ur
+
+    class _Partial:
+        def sheet_map(self):
+            return {"TEL": "TEL.OL"}
+
+    def _load(markets=None, loader=None):
+        loader("universe_norden.json", None)
+        loader("universe_usa.json", None)
+        return _Partial()
+
+    def _loader(name, fallback):
+        if name == "universe_usa.json":
+            gs.UNREADABLE_NAMES.add(name)
+        return fallback
+    monkeypatch.setattr(gs, "UNREADABLE_NAMES", {"universe_usa.json"})     # Thors läsning av USA-delen fallerade
+    monkeypatch.setattr(ur, "default_loader", lambda: _loader)
+    monkeypatch.setattr(ur, "load", _load)
+    at = AppTest.from_function(_map_app)
+    at.session_state["thor_data"] = {"sheet_map": {"TEL": "TEL.OL"}}
+    at.run()
+    assert not at.exception, at.exception
+    assert at.session_state["got"] is None and "rv_sheet_map" not in at.session_state
+    gs.UNREADABLE_NAMES.clear()                                              # allt läst: kartan gäller och sparas
+    monkeypatch.setattr(ur, "load", lambda markets=None, loader=None: _Partial())
+    at.session_state["rv_sheet_map_failed"] = 0.0
+    del at.session_state["thor_data"]
+    at.run()
+    assert at.session_state["got"] == {"TEL": "TEL.OL"} and at.session_state["rv_sheet_map"] == {"TEL": "TEL.OL"}
