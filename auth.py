@@ -1,6 +1,73 @@
 import os
 import base64
+import hashlib
+import hmac
+import time
+from typing import Optional
+
 import streamlit as st
+
+# ── Kom ihåg inloggningen ────────────────────────────────────────────────────
+# Inloggningen bodde bara i session_state. När mobilen lägger fliken i bakgrunden
+# bryts anslutningen, Streamlit startar en ny session och lösenordet krävdes igen.
+# Nu får webbläsaren en signerad kaka vid inloggning. En ny session släpps in om
+# kakan är giltig. Kakan innehåller bara utgångstid + HMAC, aldrig lösenordet.
+# Byts lösenordet blir alla gamla kakor ogiltiga. Kakan förnyas vid varje ny
+# session, så den löper ut först efter REMEMBER_DAYS utan besök.
+COOKIE_NAME = "wolf_auth"
+REMEMBER_DAYS = 30
+
+
+def _password() -> str:
+    try:
+        return st.secrets.get("SWEWOLF_PASSWORD", "wolf2026")
+    except Exception:
+        return "wolf2026"
+
+
+def _sign_key(password: str) -> bytes:
+    return hashlib.sha256(("wolf-login-v1:" + password).encode("utf-8")).digest()
+
+
+def make_token(password: str, now: Optional[float] = None, days: int = REMEMBER_DAYS) -> str:
+    """'utgång.signatur' — utgången i Unix-sekunder, signaturen HMAC-SHA256 med en nyckel ur lösenordet."""
+    exp = int((time.time() if now is None else now) + days * 86400)
+    sig = hmac.new(_sign_key(password), str(exp).encode("ascii"), hashlib.sha256).hexdigest()
+    return f"{exp}.{sig}"
+
+
+def token_valid(token, password: str, now: Optional[float] = None) -> bool:
+    """Sant om kakan är signerad med det här lösenordet och inte har gått ut. Allt annat (tomt, trasigt,
+    fel lösenord, utgånget) är falskt, aldrig ett fel."""
+    try:
+        exp_s, sig = str(token or "").split(".", 1)
+        exp = int(exp_s)
+    except (ValueError, TypeError):
+        return False
+    if exp < (time.time() if now is None else now):
+        return False
+    want = hmac.new(_sign_key(password), exp_s.encode("ascii"), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(sig, want)
+
+
+def _cookie_token() -> str:
+    try:
+        return str(st.context.cookies.get(COOKIE_NAME) or "")
+    except Exception:
+        return ""
+
+
+def _set_cookie(token: str) -> None:
+    """Skriver kakan i webbläsaren (JavaScript i sidan; Streamlit kan bara läsa kakor). Secure på https."""
+    js = (
+        "<script>(function(){var s=location.protocol==='https:'?'; Secure':'';"
+        f"document.cookie='{COOKIE_NAME}={token}; Max-Age={REMEMBER_DAYS * 86400}; Path=/; SameSite=Lax'+s;"
+        "})();</script>"
+    )
+    try:
+        st.html(js, unsafe_allow_javascript=True)
+    except Exception:
+        pass
 
 
 def render_login_gate() -> bool:
@@ -8,7 +75,13 @@ def render_login_gate() -> bool:
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
 
+    if not st.session_state.authenticated and token_valid(_cookie_token(), _password()):
+        st.session_state.authenticated = True             # sparad inloggning från en tidigare session
+        st.session_state["_auth_cookie_pending"] = True    # förnya kakan, så att 30 dagar räknas från nu
+
     if st.session_state.authenticated:
+        if st.session_state.pop("_auth_cookie_pending", False):
+            _set_cookie(make_token(_password()))
         return True
 
     # Arc Systems login page styling
@@ -91,13 +164,9 @@ def render_login_gate() -> bool:
         password = st.text_input("", type="password", key="login_pw",
                                   placeholder="Enter access code...")
         if st.button("ACCESS SYSTEM", use_container_width=True, key="login_btn"):
-            try:
-                correct_pw = st.secrets.get("SWEWOLF_PASSWORD", "wolf2026")
-            except Exception:
-                correct_pw = "wolf2026"
-
-            if password == correct_pw:
+            if password == _password():
                 st.session_state.authenticated = True
+                st.session_state["_auth_cookie_pending"] = True   # kakan skrivs i nästa körning
                 st.rerun()
             else:
                 st.error("Access denied")
