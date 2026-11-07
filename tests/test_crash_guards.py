@@ -27,8 +27,12 @@ def sheet(monkeypatch):
     import refresh_ui
     import storage
 
-    def make(page: str, blob: dict, stores: dict = None):
-        """stores = lagren som 'GitHub' har — de läses med storage.session_load som i drift (ren baslinje)."""
+    import lukacs_ui
+
+    def make(page: str, blob: dict, stores: dict = None, live: dict = None):
+        """stores = lagren som 'GitHub' har — de läses med storage.session_load som i drift (ren baslinje).
+        live = dagens växelkurser {valuta: (USD per enhet, datum)} — utan dem gäller den fasta tabellen."""
+        monkeypatch.setattr(lukacs_ui, "_live_fx", lambda ccy: (live or {}).get(str(ccy).strip().upper()))
         monkeypatch.setattr(gist_storage, "load_blob",
                             lambda name, default=None: blob if name == "sheets_refresh.json" else default)
         monkeypatch.setattr(refresh_ui, "load_refresh", lambda: blob)     # annars cachad mellan testerna
@@ -483,3 +487,98 @@ def test_a_currency_outside_the_table_is_not_converted(sheet):
     assert not at.exception, at.exception
     assert "ser ut att stå i JPY" in _price_warn(at) and "Skriv kursen i USD" in _price_warn(at)
     assert not [b for b in at.button if b.label == "Använd USD" or b.key == "rf_producers_r1_aktuell_kurs"]
+
+
+def test_a_sub_ore_refresh_price_does_not_take_down_the_sheet(sheet):
+    """Granskningen: 0,0004 SEK × 0,095 avrundades till 0 USD och log(p/0) fällde hela Rick Rule-sidan."""
+    for blob_row in ({"ticker": "PENNY.ST", "price": 0.0004, "currency": "SEK", "source": "borsdata"},
+                     {"ticker": "PENNY.ST", "price": 0.0004, "currency": None, "source": "yfinance"},
+                     {"ticker": "PENNY.L", "price": 0.003, "currency": None, "source": "yfinance"}):
+        at = sheet("Rick Rule", {"rows": {"producers:r1": blob_row}},
+                   {"producers": {"producers": [_var_row(ticker=blob_row["ticker"], aktuell_kurs=0.02)],
+                                  "royalty": []}})
+        at.run()
+        assert not at.exception, (blob_row, at.exception)
+        assert not [b for b in at.button if b.label == "Använd USD"]          # 0,0000 USD erbjuds inte
+
+
+def _sek_blob():
+    return {"rows": {"producers:r1": {"ticker": "BOL.ST", "price": 400.0, "currency": "SEK", "source": "borsdata",
+                                      "asof": "2026-11-06"}}}
+
+
+def test_the_rough_table_rate_does_not_replace_a_usd_price_already_typed(sheet):
+    """Tabellen (SEK 0,095) ligger under dagens kurs — ett klick skulle sänka kursen och höja marginalen. En USD-kurs
+    i rutan nära den omräknade får bara upplysningsraden, utan knapp."""
+    at = sheet("Rick Rule", _sek_blob(), {"producers": {"producers": [_var_row(ticker="BOL.ST", aktuell_kurs=42.0)],
+                                                        "royalty": []}})
+    at.run()
+    assert not at.exception, at.exception
+    line = " ".join(m.value for m in at.markdown if "kurs 400,00 SEK" in m.value)
+    assert "≈ 38,00 USD (grov tabellkurs 1 SEK = 0,0950 USD — kan avvika flera procent" in line
+    assert not [b for b in at.button if b.label == "Använd USD"] and not _price_warn(at)
+    # En tom ruta och en SEK-kurs får fortfarande knappen — där är alternativet ett tiodubbelt fel
+    for p in (None, 400.0):
+        at = sheet("Rick Rule", _sek_blob(), {"producers": {"producers": [_var_row(ticker="BOL.ST", aktuell_kurs=p)],
+                                                            "royalty": []}})
+        at.run()
+        assert [b for b in at.button if b.label == "Använd USD"], p
+
+
+def test_todays_fx_rate_is_used_for_the_usd_price(sheet):
+    at = sheet("Rick Rule", _sek_blob(), {"producers": {"producers": [_var_row(ticker="BOL.ST", aktuell_kurs=400.0)],
+                                                        "royalty": []}},
+               live={"SEK": (0.105, "2026-11-06")})
+    at.run()
+    assert not at.exception, at.exception
+    line = " ".join(m.value for m in at.markdown if "kurs 400,00 SEK" in m.value)
+    assert "≈ 42,00 USD (1 SEK = 0,1050 USD, växelkurs 2026-11-06)" in line and "grov" not in line
+    assert "Kursen 400,00 ser ut att stå i SEK" in _price_warn(at)
+    [b for b in at.button if b.label == "Använd USD"][0].click().run()
+    assert at.session_state["producers"]["producers"][0]["aktuell_kurs"] == pytest.approx(42.0)
+    assert not _price_warn(at)
+
+
+def test_the_usd_button_shows_fcf_typed_in_the_listing_currency(sheet):
+    """FCF i MSEK och kursen i SEK var en konsekvent rad — efter 'Använd USD' blir den fel. Varningen för FCF:en
+    syns före och efter klicket."""
+    row = _var_row(ticker="BOL.ST", aktuell_kurs=330.0, framtida_antal_aktier=273.5,
+                   fv={"Base": {"forward_fcf_musd": 9000.0, "target_yield": 12.0},
+                       "Bear": {"forward_fcf_musd": 4000.0, "target_yield": 14.0},
+                       "Bull": {"forward_fcf_musd": 15000.0, "target_yield": 10.0}},
+                   csm={"Base": {"fcf_musd": 855.0, "price": 95.0}, "Bear": {"fcf_musd": 380.0, "price": 70.0},
+                        "Bull": {"fcf_musd": 1425.0, "price": 115.0}})
+    from tests.test_lukacs import producer_refresh_row
+    blob = {"rows": {"producers:r1": producer_refresh_row("SEK", 330.0, market_cap=90000.0, ev=100000.0)}}
+    at = sheet("Rick Rule", blob, {"producers": {"producers": [row], "royalty": []}})
+    at.run()
+    assert not at.exception, at.exception
+    msek = "Står talet i miljoner SEK?"
+    assert msek in " ".join(w.value for w in at.warning)
+    [b for b in at.button if b.label == "Använd USD"][0].click().run()
+    assert msek in " ".join(w.value for w in at.warning)
+
+
+def test_live_fx_reads_the_price_layer_and_falls_back_quietly(monkeypatch):
+    """Dagens växelkurs ur kurslagret (Yahoo '{CCY}USD=X', cachad) — pence delas med 100, fel ger None (tabellen)."""
+    import pandas as pd
+    import market_prices
+    import lukacs_ui
+    seen = []
+
+    def close(ticker, period="1y"):
+        seen.append((ticker, period))
+        if ticker == "SEKUSD=X":
+            return pd.Series([0.104, 0.105], index=pd.to_datetime(["2026-11-05", "2026-11-06"]))
+        if ticker == "GBPUSD=X":
+            return pd.Series([1.33], index=pd.to_datetime(["2026-11-06"]))
+        if ticker == "NOKUSD=X":
+            raise RuntimeError("Yahoo nere")
+        return pd.Series(dtype=float)
+    monkeypatch.setattr(market_prices, "close", close)
+    assert lukacs_ui._live_fx("SEK") == (0.105, "2026-11-06")
+    assert lukacs_ui._live_fx("GBX")[0] == pytest.approx(0.0133)
+    assert lukacs_ui._live_fx("GBP")[0] == pytest.approx(1.33)
+    assert lukacs_ui._live_fx("NOK") is None and lukacs_ui._live_fx("ZAR") is None
+    assert lukacs_ui._live_fx("USD") is None and lukacs_ui._live_fx("") is None
+    assert ("SEKUSD=X", "1mo") in seen and not any(t.startswith("USD") for t, _ in seen)

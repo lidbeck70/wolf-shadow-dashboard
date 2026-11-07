@@ -376,7 +376,7 @@ def test_fcf_typed_in_thousands_is_flagged_against_the_company_size():
     kusd = _var_energi(csm={}, ev_musd=None, fv={s: {"forward_fcf_musd": f, "target_yield": y} for s, f, y in
                                                  (("Base", 3550000, 12), ("Bear", 2781000, 14), ("Bull", 4165000, 10))})
     w = fv.fcf_unit_warnings(kusd, ref)
-    assert len(w) == 3 and "Base: forward FCF 3 550 000 MUSD är över 5× EV 15 051 MUSD" in " ".join(w)
+    assert len(w) == 3 and "Base: forward FCF 3 550 000 MUSD är över 2× EV 15 051 MUSD" in " ".join(w)
     good = dict(kusd, fv={s: {"forward_fcf_musd": f, "target_yield": y} for s, f, y in
                           (("Base", 3550, 12), ("Bear", 2781, 14), ("Bull", 4165, 10))})
     assert fv.fcf_unit_warnings(good, ref) == []
@@ -386,3 +386,84 @@ def test_fcf_typed_in_thousands_is_flagged_against_the_company_size():
     # Uppdateringens MUSD-tal för en valuta utanför tabellen står i fel enhet — de används inte
     assert fv.fcf_unit_warnings({"fv": {"Base": {"forward_fcf_musd": 12.0}}},
                                 {"currency": "JPY", "ev_musd": 900000.0}) == []
+
+
+# ── Andra granskningens fynd ────────────────────────────────────────────────
+def test_a_sub_ore_price_does_not_crash_the_check():
+    """0,0004 SEK × 0,095 avrundas till 0 USD — jämförelsen görs mot den oavrundade kursen (ingen division med 0)."""
+    for local, ccy, p in ((0.0004, "SEK", 0.02), (0.0005, "SEK", 1.0), (0.0039, "GBX", 1.0), (0.0002, "NOK", 0.5)):
+        c = fv.price_currency(p, {"price": local, "currency": ccy})
+        assert c is not None and c["usd"] == 0.0 and isinstance(c["stored_is_local"], bool)
+
+
+def test_todays_fx_is_preferred_and_a_wild_one_is_rejected():
+    ref = {"price": 400.0, "currency": "SEK"}
+    live = fv.price_currency(42.0, ref, (0.105, "2026-11-06"))
+    assert live["usd"] == pytest.approx(42.0) and live["fx_src"] == "live" and live["fx_asof"] == "2026-11-06"
+    assert not live["stored_is_local"]
+    rough = fv.price_currency(42.0, ref)
+    assert rough["usd"] == pytest.approx(38.0) and rough["fx_src"] == "tabell"
+    wild = fv.price_currency(42.0, ref, (9.5, "2026-11-06"))        # inverterad kurs — datafel, tabellen gäller
+    assert wild["fx_src"] == "tabell" and wild["usd"] == pytest.approx(38.0)
+    jpy = fv.price_currency(None, {"price": 1500.0, "currency": "JPY"}, (0.0067, "2026-11-06"))
+    assert jpy["usd"] == pytest.approx(10.05) and jpy["fx_src"] == "live"     # dagens kurs finns även utanför tabellen
+    assert fv.fx_pair("NOK") == ("NOKUSD=X", 1.0) and fv.fx_pair("GBX") == ("GBPUSD=X", 100.0)
+    assert fv.fx_pair("USD") is None and fv.fx_pair("") is None
+
+
+def _kusd(fcf=(3550, 2781, 4165), csm=(3550, 2781, 4165), k_fv=1, k_csm=1):
+    return {"fv": {s: {"forward_fcf_musd": f * k_fv, "target_yield": 12} for s, f in zip(("Base", "Bear", "Bull"), fcf)},
+            "csm": {s: {"fcf_musd": c * k_csm} for s, c in zip(("Base", "Bear", "Bull"), csm)}}
+
+
+def test_csm_in_thousands_is_not_trusted_as_the_reference():
+    """CSM:s FCF skrivs också för hand: KUSD i både CSM och FV gav ingen varning, och omvänt pekade varningen på den
+    rätta FV-siffran."""
+    ref = producer_refresh_row()                                     # EV 15 051, börsvärde 11 590 MUSD
+    both = fv.fcf_unit_warnings(_kusd(k_fv=1000, k_csm=1000), ref)
+    assert len(both) == 6
+    assert "Base: CSM:s Base-FCF 3 550 000 MUSD är över 2× EV 15 051 MUSD" in " ".join(both)
+    assert "Base: forward FCF 3 550 000 MUSD är över 2× EV 15 051 MUSD" in " ".join(both)
+    only_csm = fv.fcf_unit_warnings(_kusd(k_csm=1000), ref)
+    assert len(only_csm) == 3 and all("CSM:s" in w and "är över 2×" in w for w in only_csm)
+    only_fv = fv.fcf_unit_warnings(_kusd(k_fv=1000), ref)
+    assert len(only_fv) == 3 and all("mot CSM:s" in w for w in only_fv)
+    assert fv.fcf_unit_warnings(_kusd(), ref) == []
+
+
+def test_fcf_in_millions_of_the_listing_currency_is_flagged():
+    """MSEK/MNOK i MUSD-rutan (≈10× för stort) — samma valutaförväxling som kursen. Med CSM i MUSD syns det."""
+    sek = producer_refresh_row("SEK", 330.0, market_cap=90000.0, ev=100000.0)     # 8 550 / 9 500 MUSD
+    row = _kusd(fcf=(9000, 4000, 15000), csm=(855, 380, 1425))
+    w = fv.fcf_unit_warnings(row, sek)
+    assert len(w) == 3 and "Base: forward FCF 9 000 MUSD är 10,5× CSM:s Base-FCF 855 MUSD" in " ".join(w)
+    assert "omräknat från SEK stämmer det. Står talet i miljoner SEK?" in w[0]
+    assert fv.fcf_unit_warnings(_kusd(fcf=(855, 380, 1425), csm=(855, 380, 1425)), sek) == []
+    # EUR (1,08) ligger för nära USD för att skilja från ett annat scenario — ingen sådan varning
+    eur = dict(sek, currency="EUR")
+    assert fv.fcf_unit_warnings(_kusd(fcf=(950, 420, 1500), csm=(855, 380, 1425)), eur) == []
+
+
+def test_pence_rows_sizes_are_not_trusted():
+    """Nattjobbet räknar om GBX med 1,0 (valutan saknas i dess tabell) — EV och börsvärde står i fel enhet."""
+    gbx = producer_refresh_row("GBX", 250.0, market_cap=250000.0, ev=280000.0)
+    assert fv.fcf_unit_warnings({"fv": {"Base": {"forward_fcf_musd": 350.0}}}, gbx) == []
+    gbp = producer_refresh_row("GBP", 2.5, market_cap=2500.0, ev=2800.0)            # 3 175 / 3 556 MUSD
+    kusd = {"fv": {"Base": {"forward_fcf_musd": 350000.0}}}
+    assert "är över 2× EV 3 556 MUSD" in fv.fcf_unit_warnings(kusd, gbp)[0]
+
+
+def test_a_bear_case_near_break_even_is_not_a_unit_error():
+    usd = {"currency": "USD", "ev_musd": 1300.0, "mcap_musd": 1200.0}
+    near = {"fv": {"Bear": {"forward_fcf_musd": 30.0}, "Base": {"forward_fcf_musd": 150.0}},
+            "csm": {"Bear": {"fcf_musd": 0.5}, "Base": {"fcf_musd": 150.0}}}
+    assert fv.fcf_unit_warnings(near, usd) == []
+    assert fv.fcf_unit_warnings({"fv": {"Bear": {"forward_fcf_musd": 2.0}}, "csm": {"Bear": {"fcf_musd": -5.0}}},
+                                usd) == []
+    assert fv.fcf_unit_warnings(_var_energi(csm={}, fv={"Bear": {"forward_fcf_musd": 25.0}})) == []
+    # Base och Bull i fel enhet fångas fortfarande, och Bear i tusental mot storleken
+    wrong = _kusd(fcf=(150, 30, 260), csm=(150, 0.5, 260), k_fv=1000)
+    assert {w.split(":")[0] for w in fv.fcf_unit_warnings(wrong, usd)} == {"Base", "Bear", "Bull"}
+    # Utan storlek: en positiv referens visas aldrig som 0 MUSD
+    w = fv.fcf_unit_warnings({"fv": {"Bear": {"forward_fcf_musd": 30.0}}, "csm": {"Bear": {"fcf_musd": 0.5}}})
+    assert w and "CSM:s Bear-FCF 0,5 MUSD" in w[0]

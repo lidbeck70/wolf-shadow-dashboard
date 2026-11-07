@@ -45,40 +45,70 @@ def _refresh_row(sheet: str, key: str):
         return None
 
 
+def _live_fx(ccy: str):
+    """Dagens växelkurs till USD (USD per enhet, datum) ur panelens kurslager (Yahoo '{CCY}USD=X', cachad 6 h) —
+    None när den inte går att hämta. Pence (GBX) = GBP/100."""
+    pair = fv.fx_pair(ccy)
+    if not pair:
+        return None
+    try:
+        import market_prices
+        s = market_prices.close(pair[0], "1mo")
+        if s is None or s.empty:
+            return None
+        rate = float(s.iloc[-1]) / pair[1]
+        return (rate, str(s.index[-1])[:10]) if rate > 0 else None
+    except Exception:
+        return None
+
+
 def _use_usd(row: dict, value: float, widget_key: str) -> None:
     """on_click: kursen i USD in i raden och rutan (samma mönster som refresh_ui._apply)."""
     row["aktuell_kurs"] = value
     st.session_state[widget_key] = value
 
 
+ROUGH_NEAR = 0.15   # med den grova tabellkursen: en USD-kurs i rutan inom ±15 % ersätts inte med ett klick
+
+
 def _usd_price(price, cur: dict, ref: dict, row: dict, widget_key: str) -> None:
     """Uppdateringens kurs i en annan valuta än USD: förslaget omräknat till USD (forward FCF räknas i MUSD), och en
     varning när kursen i rutan ser ut att stå i den lokala valutan — då jämför säkerhetsmarginalen olika valutor.
-    price = rutans värde i den här körningen (inte radens förra), så varningen följer det man just skrivit."""
-    def _sv(v, d=2):
+    price = rutans värde i den här körningen (inte radens förra), så varningen följer det man just skrivit.
+    Omräkningen sker med dagens växelkurs; utan den med den grova fasta tabellen, som kan ligga flera procent fel —
+    då erbjuds den inte i stället för en USD-kurs man redan skrivit (felet går åt det optimistiska hållet)."""
+    def _sv(v, d=None):
+        d = (4 if abs(v) < 1 else 2) if d is None else d
         return f"{v:,.{d}f}".replace(",", " ").replace(".", ",")
     src = "Yahoo" if ref.get("source") == "yfinance" else "Börsdata"
     ccy, usd = cur["currency"], cur["usd"]
     if cur["stored_is_local"]:
         st.warning(f"Kursen {_sv(price)} ser ut att stå i {ccy} ({src}s kurs: {_sv(cur['local'])} {ccy}), men "
                    f"forward FCF räknas i USD (MUSD) — säkerhetsmarginalen jämför då olika valutor. "
-                   + ("Använd kursen i USD." if usd is not None else "Skriv kursen i USD."))
+                   + ("Använd kursen i USD." if usd else "Skriv kursen i USD."))
     now = fv.num(price)
     asof = str(ref.get("asof") or "")[:10]
-    if usd is None:                                     # valutan finns inte i den fasta tabellen — ingen omräkning
+    head = f"<span style='color:{DIM};font-size:0.78rem;'>🤖 {src} {asof}: kurs {_sv(cur['local'])} {ccy}"
+    if usd is None:                                     # ingen växelkurs alls — ingen omräkning
         if now is None:
-            st.markdown(f"<span style='color:{DIM};font-size:0.78rem;'>🤖 {src} {asof}: kurs {_sv(cur['local'])} "
-                        f"{ccy} — valutan finns inte i den fasta omräkningstabellen; skriv kursen i USD.</span>",
-                        unsafe_allow_html=True)
+            st.markdown(f"{head} — valutan finns varken i dagens växelkurser eller den fasta tabellen; skriv kursen "
+                        f"i USD.</span>", unsafe_allow_html=True)
         return
-    if now is not None and abs(now - usd) < 1e-6:
+    if usd <= 0 or (now is not None and abs(now - usd) < 1e-6):
         return
-    fx_txt = f"{cur['fx']:g}".replace(".", ",")
+    rate = f"1 {ccy} = {_sv(cur['fx'], 4 if cur['fx'] >= 0.01 else 6)} USD"
+    if cur["fx_src"] == "live":
+        note = f"{rate}, växelkurs {cur['fx_asof'] or 'i dag'}"
+        offer = True
+    else:
+        note = f"grov tabellkurs {rate} — kan avvika flera procent från dagens; skriv kursen i USD om du har den"
+        offer = not (now and not cur["stored_is_local"] and abs(now / usd - 1.0) <= ROUGH_NEAR)
+    if not offer:
+        st.markdown(f"{head} ≈ {_sv(usd)} USD ({note})</span>", unsafe_allow_html=True)
+        return
     c1, c2 = st.columns([3, 1])
-    c1.markdown(f"<span style='color:{DIM};font-size:0.78rem;'>🤖 {src} {asof}: kurs {_sv(cur['local'])} {ccy} ≈ "
-                f"{_sv(usd, 4 if usd < 1 else 2)} USD (fast omräkning {fx_txt} — skriv en exakt kurs om du vill)"
-                f"</span>", unsafe_allow_html=True)
-    c2.button("Använd USD", key=f"{widget_key}_usd", on_click=_use_usd, args=(row, round(usd, 4), widget_key))
+    c1.markdown(f"{head} ≈ {_sv(usd)} USD ({note})</span>", unsafe_allow_html=True)
+    c2.button("Använd USD", key=f"{widget_key}_usd", on_click=_use_usd, args=(row, usd, widget_key))
 
 
 def render_fv(row: dict, key: str, prefix: str = "fv", sheet: str = "") -> bool:
@@ -123,7 +153,7 @@ def render_fv(row: dict, key: str, prefix: str = "fv", sheet: str = "") -> bool:
         help="I USD — samma valuta som forward FCF (MUSD ÷ miljoner aktier = USD per aktie). Börsdatas kurs i NOK, "
              "SEK … räknas om i förslaget nedanför.")
     ref = _refresh_row(sheet, key)
-    cur = fv.price_currency(price, ref)
+    cur = fv.price_currency(price, ref, _live_fx(str((ref or {}).get("currency") or "")) if ref else None)
     if cur is not None:                                 # uppdateringens kurs är i NOK/SEK … — förslaget i USD
         _usd_price(price, cur, ref, row, f"{prefix}_{key}_price")
     elif sheet:                                         # kursen är i USD (eller valutan okänd): det vanliga förslaget
