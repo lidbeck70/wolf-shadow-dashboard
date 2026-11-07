@@ -539,32 +539,72 @@ def test_todays_fx_rate_is_used_for_the_usd_price(sheet):
     assert not _price_warn(at)
 
 
+def _bol_blob():
+    from tests.test_lukacs import producer_refresh_row
+    return {"rows": {"producers:r1": producer_refresh_row("SEK", 350.0, market_cap=95700.0, ev=110000.0)}}
+
+
+_MSEK = {"Base": 8000.0, "Bear": 2500.0, "Bull": 15000.0}
+_MUSD = {"Base": 760.0, "Bear": 237.5, "Bull": 1425.0}
+
+
+def _bol_row(price, fcf=None, csm_fcf=None):
+    return _var_row(ticker="BOL.ST", aktuell_kurs=price, framtida_antal_aktier=273.5, ev_musd=None,
+                    csm={s: dict({"price": p}, **({"fcf_musd": csm_fcf[s]} if csm_fcf else {}))
+                         for s, p in (("Base", 95.0), ("Bear", 70.0), ("Bull", 115.0))},
+                    fv={s: {"forward_fcf_musd": (fcf or {}).get(s), "target_yield": y}
+                        for s, y in (("Base", 12.0), ("Bear", 14.0), ("Bull", 10.0))})
+
+
 def test_the_usd_button_is_withheld_when_fcf_is_in_the_listing_currency_too(sheet):
     """FCF i MSEK och kursen i SEK är en konsekvent rad — att bara byta kursen till USD gör marginalen ~10× för god
-    (tredje granskningen: −44 % → +85 %, grinden öppnas). Panelen ber om båda, FCF först, och erbjuder ingen knapp."""
-    from tests.test_lukacs import producer_refresh_row
-    blob = {"rows": {"producers:r1": producer_refresh_row("SEK", 350.0, market_cap=95700.0, ev=110000.0)}}
-    for csm in ({"Base": {"fcf_musd": 8000.0, "price": 95.0}, "Bear": {"fcf_musd": 2500.0, "price": 70.0},
-                 "Bull": {"fcf_musd": 15000.0, "price": 115.0}},                   # CSM också i MSEK
-                {"Base": {"price": 95.0}, "Bear": {"price": 70.0}, "Bull": {"price": 115.0}}):  # CSM utan FCF
-        row = _var_row(ticker="BOL.ST", aktuell_kurs=350.0, framtida_antal_aktier=273.5, csm=csm, ev_musd=None,
-                       fv={"Base": {"forward_fcf_musd": 8000.0, "target_yield": 12.0},
-                           "Bear": {"forward_fcf_musd": 2500.0, "target_yield": 14.0},
-                           "Bull": {"forward_fcf_musd": 15000.0, "target_yield": 10.0}})
-        at = sheet("Rick Rule", blob, {"producers": {"producers": [row], "royalty": []}}, live={"SEK": (0.105, "2026-11-06")})
+    (tredje granskningen: −44 % → +85 %, grinden öppnas). Panelen ber om båda, FCF först, visar växelkursen och
+    erbjuder ingen knapp. Allt i samma körning som talet skrivs (fjärde granskningen: inte ett varv för sent)."""
+    for csm_fcf in (_MSEK, None):                       # CSM också i MSEK, eller utan FCF
+        at = sheet("Rick Rule", _bol_blob(), {"producers": {"producers": [_bol_row(350.0, _MSEK, csm_fcf)],
+                                                            "royalty": []}}, live={"SEK": (0.105, "2026-11-06")})
         at.run()
         assert not at.exception, at.exception
         warns = " ".join(w.value for w in at.warning)
-        assert "Base: forward FCF 8 000 MUSD är 77 % av EV 10 450 MUSD — omräknat från SEK 7 %. Står talet i miljoner SEK?" in warns
-        assert "Räkna om båda till USD: FCF först, sedan kursen." in warns
+        assert ("Base: forward FCF 8 000 MUSD är 77 % av EV 10 450 MUSD — omräknat från SEK 7 %. Står talet i "
+                "miljoner SEK?") in warns
+        assert ("Räkna om båda till USD (1 SEK = 0,1050 USD, växelkurs 2026-11-06): FCF först, sedan kursen."
+                in warns)
         assert not [b for b in at.button if b.label == "Använd USD"]
-        # FCF:en räknas om till MUSD → nu är det bara kursen kvar, och knappen kommer tillbaka
-        for s_, v in (("Base", 760.0), ("Bear", 237.5), ("Bull", 1425.0)):
+        # FCF:en räknas om till MUSD → nu är det bara kursen kvar, och knappen kommer tillbaka direkt
+        for s_, v in _MUSD.items():
             at.number_input(key=f"fv_r1_{s_}_fcf").set_value(v)
         at.run()
-        at.run()
-        assert "miljoner SEK" not in " ".join(w.value for w in at.warning)
+        warns = " ".join(w.value for w in at.warning)
+        assert "miljoner SEK" not in warns and "Använd kursen i USD." in warns
         assert [b for b in at.button if b.label == "Använd USD"]
+
+
+def test_typing_fcf_in_msek_withholds_the_button_in_the_same_run(sheet):
+    """Bear och sedan Base skrivs in i MSEK, en körning per ruta: på körningen efter Base finns ingen knapp."""
+    at = sheet("Rick Rule", _bol_blob(), {"producers": {"producers": [_bol_row(350.0)], "royalty": []}},
+               live={"SEK": (0.105, "2026-11-06")})
+    at.run()
+    assert [b for b in at.button if b.label == "Använd USD"]
+    at.number_input(key="fv_r1_Bear_fcf").set_value(2500.0).run()
+    at.number_input(key="fv_r1_Base_fcf").set_value(8000.0).run()
+    assert not at.exception, at.exception
+    assert "Räkna om båda till USD" in " ".join(w.value for w in at.warning)
+    assert not [b for b in at.button if b.label == "Använd USD"]
+
+
+def test_an_empty_price_box_gets_no_usd_price_next_to_msek_fcf(sheet):
+    """En ny kandidat (tom kursruta) med FCF i MSEK: ett klick på 'Använd USD' gav MoS ≈ 85 % och öppen grind."""
+    at = sheet("Rick Rule", _bol_blob(), {"producers": {"producers": [_bol_row(None, _MSEK)], "royalty": []}})
+    at.run()
+    assert not at.exception, at.exception
+    warns = " ".join(w.value for w in at.warning)
+    assert ("Forward FCF ser ut att stå i miljoner SEK (se varningen under scenarierna). Räkna om den till USD "
+            "(1 SEK = 0,0950 USD, grov tabellkurs) först — sedan föreslås kursen i USD.") in warns
+    assert not [b for b in at.button if b.label == "Använd USD"]
+    at = sheet("Rick Rule", _bol_blob(), {"producers": {"producers": [_bol_row(None, _MUSD)], "royalty": []}})
+    at.run()
+    assert [b for b in at.button if b.label == "Använd USD"]
 
 
 def test_live_fx_reads_the_price_layer_and_falls_back_quietly(monkeypatch):

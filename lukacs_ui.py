@@ -91,16 +91,25 @@ def _usd_price(price, cur: dict, ref: dict, row: dict, widget_key: str) -> None:
         return f"{v:,.{d}f}".replace(",", " ").replace(".", ",")
     src = "Yahoo" if ref.get("source") == "yfinance" else "Börsdata"
     ccy, usd = cur["currency"], cur["usd"]
-    if cur["stored_is_local"] and fv.fcf_in_local_currency(row, ref) == ccy:
-        # Kurs och FCF står båda i lokal valuta: raden hänger ihop. Att bara byta kursen gör marginalen ~10× för god.
-        st.warning(f"Kursen {_sv(price)} ser ut att stå i {ccy} — och forward FCF ser ut att stå i miljoner {ccy} "
-                   f"(se varningen under scenarierna). Räkna om båda till USD: FCF först, sedan kursen.")
+    now = fv.num(price)
+    if (cur["stored_is_local"] or not now) and fv.fcf_in_local_currency(row, ref) == ccy:
+        # FCF i miljoner lokal valuta: en USD-kurs bredvid den (bytt eller ny i en tom ruta) gör marginalen ~10× för
+        # god. Ingen knapp förrän FCF:en räknats om — men växelkursen visas, den behövs för omräkningen.
+        fx_note = ""
+        if cur["fx"]:
+            fx_note = (f" (1 {ccy} = {_sv(cur['fx'], 4 if cur['fx'] >= 0.01 else 6)} USD, "
+                       + (f"växelkurs {cur['fx_asof'] or 'i dag'})" if cur["fx_src"] == "live" else "grov tabellkurs)"))
+        if cur["stored_is_local"]:
+            st.warning(f"Kursen {_sv(price)} ser ut att stå i {ccy} — och forward FCF ser ut att stå i miljoner {ccy} "
+                       f"(se varningen under scenarierna). Räkna om båda till USD{fx_note}: FCF först, sedan kursen.")
+        else:
+            st.warning(f"Forward FCF ser ut att stå i miljoner {ccy} (se varningen under scenarierna). Räkna om den "
+                       f"till USD{fx_note} först — sedan föreslås kursen i USD.")
         return
     if cur["stored_is_local"]:
         st.warning(f"Kursen {_sv(price)} ser ut att stå i {ccy} ({src}s kurs: {_sv(cur['local'])} {ccy}), men "
                    f"forward FCF räknas i USD (MUSD) — säkerhetsmarginalen jämför då olika valutor. "
                    + ("Använd kursen i USD." if usd else "Skriv kursen i USD."))
-    now = fv.num(price)
     asof = str(ref.get("asof") or "")[:10]
     head = f"<span style='color:{DIM};font-size:0.78rem;'>🤖 {src} {asof}: kurs {_sv(cur['local'])} {ccy}"
     if usd is None:                                     # ingen växelkurs alls — ingen omräkning
@@ -168,8 +177,9 @@ def render_fv(row: dict, key: str, prefix: str = "fv", sheet: str = "") -> bool:
              "SEK … räknas om i förslaget nedanför.")
     ref = _refresh_row(sheet, key)
     cur = fv.price_currency(price, ref, _live_fx(str((ref or {}).get("currency") or "")) if ref else None)
-    if cur is not None:                                 # uppdateringens kurs är i NOK/SEK … — förslaget i USD
-        _usd_price(price, cur, ref, row, f"{prefix}_{key}_price")
+    usd_slot = None
+    if cur is not None:     # kursen är i NOK/SEK …: förslaget i USD får sin plats här, men ritas efter scenarierna —
+        usd_slot = st.container()   # det läser FCF:en, och den ska vara den här körningens (inte förra)
     elif sheet:                                         # kursen är i USD (eller valutan okänd): det vanliga förslaget
         try:
             import refresh_ui
@@ -228,6 +238,9 @@ def render_fv(row: dict, key: str, prefix: str = "fv", sheet: str = "") -> bool:
 
     st.caption("Kolumner: scenario · forward FCF (MUSD, normaliserat pris) · "
                "target-yield % · fair value per aktie · uppsida mot kurs.")
+    if usd_slot is not None:
+        with usd_slot:
+            _usd_price(price, cur, ref, row, f"{prefix}_{key}_price")
     for w in fv.fcf_unit_warnings(row, ref):           # rimlighetskontroll — ändrar ingen räkning
         st.warning(w)
 

@@ -443,6 +443,7 @@ FCF_LOCAL_BAND = 0.30       # forward FCF × växelkursen inom ±30 % av referen
 FCF_LOCAL_FX_MIN = 5.0      # … bara för valutor minst 5× från USD (NOK, SEK, DKK) — PLN:s 4× ligger inom vanliga modellgap
 FCF_LOCAL_REF_MIN = 0.02    # … och bara mot en referens på minst 2 % av storleken: nära noll är en kvot på 10× ingen enhet
 FCF_LOCAL_YIELD = 0.40      # Base-FCF över 40 % av storleken men under 40 % omräknad från NOK/SEK/DKK = lokal valuta
+FCF_LOCAL_EBITDA = 1.5      # … och (när Börsdatas EV/EBITDA finns) över 1,5× EBITDA: en äkta hög yield ligger under EBITDA
 PENCE = ("GBX", "GBp")      # London i pence: GBP/100
 
 
@@ -536,7 +537,9 @@ def _fcf_scan(row: dict, ref: Optional[dict] = None) -> list:
     fv_in, csm = r.get("fv") or {}, r.get("csm") or {}
     rf = ref if _ref_sizes_ok(ref) else {}
     bd_fcf = _pos(rf.get("fcf_musd"))
-    ev = _pos(r.get("ev_musd")) or _pos(rf.get("ev_musd"))
+    ev = _pos(rf.get("ev_musd")) or _pos(r.get("ev_musd"))     # Börsdatas EV först — rutan skrivs för hand (MSEK?)
+    ev_eb = _pos(rf.get("ev_ebitda"))
+    ebitda = _pos(rf.get("ev_musd")) / ev_eb if ev_eb and _pos(rf.get("ev_musd")) else None
     mcap, mcap_lbl = _pos(rf.get("mcap_musd")), "börsvärdet"
     shares = _pos(r.get("framtida_antal_aktier"))
     if mcap is None and shares is not None:             # inget betrott börsvärde (pence, Yahoo, ny rad): aktier × kurs i USD
@@ -564,6 +567,9 @@ def _fcf_scan(row: dict, ref: Optional[dict] = None) -> list:
 
     def big(v):
         return size is not None and v > FCF_SIZE_MAX * size
+
+    def over_ebitda(v):                                 # enhetsfritt stöd: FCF i lokal valuta ligger ~10× över EBITDA
+        return ebitda is None or v > FCF_LOCAL_EBITDA * ebitda
     too_big = f"över {FCF_SIZE_MAX:g}× {size_lbl} {_m(size) if size else ''} MUSD — står talet i miljoner USD (inte tusental)?"
     for s in FV_SCENARIOS:
         f = _num((fv_in.get(s) or {}).get("forward_fcf_musd") if isinstance(fv_in.get(s), dict) else None)
@@ -587,10 +593,14 @@ def _fcf_scan(row: dict, ref: Optional[dict] = None) -> list:
             out.append((s, "local", f"{s}: forward FCF {_f(f)} MUSD är {f / base:.1f}× {src} {_ref(base)} MUSD"
                         .replace(".", ",") + f" — omräknat från {C} stämmer det. Står talet i miljoner {C}?"))
         elif (s == ctl.BASE and fx_l is not None and size is not None
-              and f >= FCF_LOCAL_YIELD * size and f * fx_l <= FCF_LOCAL_YIELD * size):
+              and f >= FCF_LOCAL_YIELD * size and f * fx_l <= FCF_LOCAL_YIELD * size and over_ebitda(f)):
             out.append((s, "local", f"{s}: forward FCF {_f(f)} MUSD är {100 * f / size:.0f} % av {size_lbl} "
                                     f"{_m(size)} MUSD — omräknat från {C} {100 * f * fx_l / size:.0f} %. Står talet i "
                                     f"miljoner {C}?"))
+        elif big(f) and fx_l is not None and not big(f * fx_l) and over_ebitda(f):
+            out.append((s, "local", f"{s}: forward FCF {_f(f)} MUSD är över {FCF_SIZE_MAX:g}× {size_lbl} {_m(size)} "
+                                    f"MUSD — omräknat från {C} {100 * f * fx_l / size:.0f} %. Står talet i miljoner "
+                                    f"{C}?"))
         elif big(f):
             out.append((s, "size", f"{s}: forward FCF {_f(f)} MUSD är {too_big}"))
         elif base is None and s != ctl.BEAR and ev is not None and f < FCF_EV_MIN * ev:
@@ -605,8 +615,11 @@ def fcf_unit_warnings(row: dict, ref: Optional[dict] = None) -> list:
     Varje scenario prövas mot CSM:s FCF för samma scenario, annars Börsdatas FCF (12 mån): under 2 % eller över 50×
     referensen (tusental, miljarder, en yield i fel ruta). För ett bolag noterat i NOK/SEK/DKK (valutor minst 5× från
     USD) också miljoner i den valutan: inom ±30 % av en referens på minst 2 % av storleken omräknat, eller — när CSM
-    står i samma enhet eller saknas — en Base-FCF över 40 % av storleken som omräknad blir en vanlig yield.
-    Bolagets storlek (EV eller börsvärde, det större; utan betrott börsvärde aktier × kurs i USD) är ett tak för båda
+    står i samma enhet eller saknas — en Base-FCF över 40 % av storleken som omräknad blir en vanlig yield; när
+    Börsdatas EV/EBITDA finns krävs också en FCF över 1,5× EBITDA (ett riktigt billigt bolag har hög yield men FCF
+    under EBITDA). En FCF över 2× storleken som omräknad blir rimlig (och ligger över EBITDA) räknas också som
+    lokal valuta, inte tusental. Bolagets storlek (Börsdatas EV före kortets handskrivna, eller börsvärde, det större; utan betrott
+    börsvärde aktier × kurs i USD) är ett tak för båda
     talen: CSM:s FCF skrivs också för hand, så en referens över 2× storleken varnas själv och används inte, och en
     referens under 0,2 % av storleken (break-even) säger inget om enheten. Utan referens: över 2× storleken, eller
     under 0,2 % av EV — utom i Bear, som får ligga nära noll."""

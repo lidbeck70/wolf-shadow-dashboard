@@ -526,3 +526,32 @@ def test_a_net_cash_producer_without_a_trusted_market_cap_is_not_flagged():
         assert "över 2× börsvärdet (aktier × kurs)" in fv.fcf_unit_warnings(kusd, ref)[0]
     # Utan antal aktier finns ingen uppskattning — som förut mot EV
     assert fv.fcf_unit_warnings({"fv": {"Base": {"forward_fcf_musd": 60.0}}, "ev_musd": 10.0}) != []
+
+
+# ── Fjärde granskningens fynd ───────────────────────────────────────────────
+def test_a_hand_typed_msek_ev_does_not_hide_msek_fcf():
+    """Kortets EV-ruta skrivs för hand: ett EV i MSEK (10× för stort) tystade alla MSEK-kontroller. Börsdatas EV
+    går först."""
+    sek = producer_refresh_row("SEK", 350.0, market_cap=95700.0, ev=110000.0)
+    row = dict(_sek_row((8000, 2500, 15000), csm=(760, 237.5, 1425)), ev_musd=110000.0)
+    assert len([w for w in fv.fcf_unit_warnings(row, sek) if "miljoner SEK" in w]) == 3
+    assert fv.fcf_in_local_currency(row, sek) == "SEK"
+    assert fv.fcf_in_local_currency(dict(_sek_row((8000, 2500, 15000)), ev_musd=110000.0), sek) == "SEK"
+    ok = dict(_sek_row((760, 237.5, 1425), csm=(760, 237.5, 1425)), ev_musd=12000.0)
+    assert fv.fcf_unit_warnings(ok, sek) == []
+    # Utan Börsdatas EV (pence, Yahoo, ingen rad) gäller rutan som förut
+    assert "under 0,2 % av EV 15 051 MUSD" in " ".join(fv.fcf_unit_warnings(_var_energi(csm={})))
+
+
+def test_a_genuinely_cheap_nordic_producer_is_not_told_to_divide_its_fcf():
+    """OKEA-likt: P/FCF ≈ 2,5 — Base-FCF 45 % av EV i MUSD, men under EBITDA. Börsdatas EV/EBITDA skiljer det från
+    MNOK (≈10× över EBITDA)."""
+    ref = dict(producer_refresh_row("NOK", 20.0, market_cap=2000.0, ev=3300.0), ev_ebitda=1.2)   # EBITDA ≈ 261 MUSD
+    cheap = _sek_row((140, 60, 260), csm=(140, 60, 260), shares=100.0, price=20.0)
+    assert fv.fcf_unit_warnings(cheap, ref) == [] and fv.fcf_in_local_currency(cheap, ref) is None
+    mnok = _sek_row((1474, 632, 2737), shares=100.0, price=20.0)                                  # samma i MNOK
+    assert fv.fcf_in_local_currency(mnok, ref) == "NOK"
+    # Utan EV/EBITDA gäller yield-testet ensamt (som innan)
+    assert fv.fcf_in_local_currency(cheap, dict(ref, ev_ebitda=None)) == "NOK"
+    bol = dict(producer_refresh_row("SEK", 350.0, market_cap=95700.0, ev=110000.0), ev_ebitda=5.5)
+    assert fv.fcf_in_local_currency(_sek_row((8000, 2500, 15000)), bol) == "SEK"
