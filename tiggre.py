@@ -612,7 +612,8 @@ def _candidate_card(data: dict, cand: dict, expanded: bool = False) -> None:
                               value=shown["nav"],
                               step=10.0, key=f"tg_nav_{cand['id']}",
                               help="Alltid after-tax — pre-tax är 30–40 % för högt.")
-        down = m3.number_input("Nedsida (%)", value=float(_num(cand.get("downside"), -40.0) or -40.0),
+        down_shown = float(_num(cand.get("downside"), -40.0) or -40.0)
+        down = m3.number_input("Nedsida (%)", value=down_shown,
                                step=5.0, key=f"tg_down_{cand['id']}",
                                help="Värsta rimliga scenariot: utspädning, byggförsening.")
         neg = [f"{lbl} {_num(cand.get(k)):g}".replace(".", ",") for k, lbl in (("mcap", "börsvärde"), ("nav", "NAV"))
@@ -620,7 +621,7 @@ def _candidate_card(data: dict, cand: dict, expanded: bool = False) -> None:
         if neg:
             st.caption("Sparat men negativt — visas inte i rutan (golvet 0): " + " · ".join(neg) + ". Skriv in rätt tal.")
         for field, new, was in (("mcap", mcap, shown["mcap"]), ("nav", nav, shown["nav"]),
-                                ("downside", down, cand.get("downside"))):
+                                ("downside", down, down_shown)):
             if storage.differs(new, was):               # bara fältet du ändrat — att titta skriver inget
                 cand[field] = new
                 changed = True

@@ -219,8 +219,8 @@ def producer_verdict(score: Optional[int],
 
 
 def ev_nav(ev, nav) -> Optional[float]:
-    """EV / NAV efter skatt. None när något saknas eller NAV ≤ 0."""
-    e, n = _num(ev), _num(nav)
+    """EV / NAV efter skatt. None när något saknas, EV är negativt (rutan har golvet 0) eller NAV ≤ 0."""
+    e, n = _nonneg(ev), _num(nav)
     if e is None or n is None or n <= 0:
         return None
     return round(e / n, 4)
@@ -261,8 +261,9 @@ def discount_vs_bottom(now, bottom) -> Optional[float]:
 
 
 def vs_median(now, median) -> Optional[float]:
-    """EV/EBITDA mot egen median, i procent. Negativt = billigare än vanligt."""
-    n, m = _num(now), _num(median)
+    """EV/EBITDA mot egen median, i procent. Negativt = billigare än vanligt. En negativ multipel (negativt EBITDA)
+    är en lucka, som i rutan — inte ett 'billigare än vanligt'."""
+    n, m = _nonneg(now), _nonneg(median)
     if n is None or m is None or m == 0:
         return None
     return round((n / m - 1) * 100, 6)

@@ -268,3 +268,61 @@ def test_the_extractor_does_not_offer_a_negative_number(sheet):
     keys = {b.key for b in at.button}
     assert "xt_sprott_q1_use_burn" not in keys and "xt_sprott_q1_use_cash" in keys
     assert any("negativt — rutan tar ≥ 0" in c.value for c in at.caption)
+
+
+# ── Domen räknar som rutan visar (sista granskningen) ────────────────────────
+def test_a_negative_profit_or_burn_is_a_gap_in_the_verdict():
+    """En sparad negativ framtida vinst gav Kärninnehav (−4× < 10×), en negativ burn gav Passa (runway −2,4 år).
+    Rutan visar dem som tomma — domen räknar dem nu också som luckor. Positiva tal ger samma dom som förut."""
+    import scoring as sc
+    nine = {"balans": 2, "vardering": 2, "tillvaxt": 2, "agare": 2, "havstang": 1}
+    assert sc.gated_verdict(sc.DURRETT, {"factors": nine, "mcap": 200, "profit": -50})[0] == sc.WATCH
+    assert sc.gated_verdict(sc.DURRETT, {"factors": nine, "mcap": 200, "profit": 50})[0] == sc.CORE      # 4× < 10×
+    assert sc.gated_verdict(sc.SPROTT, {"factors": nine, "cash": 30, "burn": -12.4})[0] == sc.CORE      # runway okänd
+    assert sc.gated_verdict(sc.SPROTT, {"factors": nine, "cash": 30, "burn": 30})[0] == sc.PASS         # 12 mån < 18
+    assert sc.runway_years(30, 12) == 2.5 and sc.mcap_per_earnings(200, 50) == 4.0 and sc.mcap_per_oz(200, 2) == 100
+
+
+def test_a_negative_ev_multiple_is_a_gap_in_the_royalty_signal():
+    """En negativ EV/EBITDA (negativt EBITDA) är inte 'billigare än vanligt'. Positiva tal räknas som förut."""
+    import producers as pr
+    assert pr.vs_median(-3.2, 12.0) is None and pr.vs_median(9.0, 12.0) == -25.0
+    assert pr.ev_nav(-35, 400) is None and pr.ev_nav(200, 400) == 0.5
+
+
+def test_opening_the_durrett_view_writes_no_target_and_no_downside(sheet):
+    """Durretts målpris (3000 som förval) och Tiggres nedsida (−40 som förval) skrevs in när arket bara öppnades."""
+    import scoring
+    import storage
+    stores = {"scoring": {"sprott": [], "durrett": [{"id": "d1", "ticker": "DDD", "commodity": "Guld",
+                                                     "factors": {}, "profit": -50.0}]}}
+    at = sheet("Sprott", {}, stores)
+    at.session_state[scoring.WHICH_KEY] = scoring.WHICH_FOR[scoring.DURRETT]
+    at.run()
+    at.run()
+    assert not at.exception, at.exception
+    assert at.session_state["scoring"] == stores["scoring"]
+    assert storage._fingerprint(at.session_state["scoring"]) == at.session_state[storage._clean_key("scoring")]
+    tstores = {"tiggre": {"candidates": [{"id": "c1", "ticker": "CAND", "screen": {}, "factors": {}, "catalysts": []}],
+                          "positions": [], "closed": [], "parked": []}}
+    at2 = sheet("Tiggre", {}, tstores)
+    at2.run()
+    at2.run()
+    assert not at2.exception, at2.exception
+    assert at2.session_state["tiggre"] == tstores["tiggre"]
+
+
+def test_the_helpers_profit_sticks(sheet):
+    """'Använd som framtida vinst' skriver vinsten i raden och rutan — nästa omritning tar inte tillbaka den."""
+    import scoring
+    stores = {"scoring": {"sprott": [], "durrett": [{"id": "d1", "ticker": "DDD", "commodity": "Guld", "factors": {},
+                                                     "profit": 40.0, "prod": 100.0, "target": 3000.0,
+                                                     "aisc": 1500.0}]}}
+    at = sheet("Sprott", {}, stores)
+    at.session_state[scoring.WHICH_KEY] = scoring.WHICH_FOR[scoring.DURRETT]
+    at.run()
+    [b for b in at.button if b.key == "sc_use_d1"][0].click().run()
+    at.run()
+    assert not at.exception, at.exception
+    assert at.session_state["scoring"]["durrett"][0]["profit"] == 150.0                    # 100 koz × 1500 $/oz
+    assert [n.value for n in at.number_input if n.key == "sc_profit_d1"] == [150.0]
