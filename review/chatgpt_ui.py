@@ -45,27 +45,14 @@ def session_stores() -> dict:
 RETRY_S = 60     # ett misslyckat läsförsök av registret prövas igen tidigast efter så här många sekunder
 
 
-def _universe_unreadable() -> bool:
-    """Står någon av registrets filer som oläslig just nu (gist_storage.UNREADABLE_NAMES)?"""
-    try:
-        import gist_storage as gs
-        return any(str(n).startswith("universe") for n in gs.UNREADABLE_NAMES)
-    except Exception:
-        return True
-
-
 def registry_sheet_map() -> Optional[dict]:
     """Registrets tickerkarta för arkens bara nordiska former ('BOL' → 'BOL.ST'; 'TEL' är TE Connectivity, inte
-    Telenor) — samma som Thor läser. Bara en karta ur ett HELT läst register gäller: saknas USA-delen tror kartan
-    att 'TEL' är Telenor. Thors redan lästa karta tas när ingen av registrets filer står som oläslig; annars läses
-    registret och sparas i sessionen först när alla filer gick att läsa. Ett misslyckat försök sparas inte — det
+    Telenor) — samma som Thor bygger. Bara en karta ur ett HELT läst register gäller: saknas USA-delen tror kartan
+    att 'TEL' är Telenor. Registret läses här (Thors karta återanvänds inte — den bär inget besked om att registret
+    var helt läst) och sparas i sessionen först när alla filer gick att läsa. Ett misslyckat försök sparas inte — det
     prövas igen efter RETRY_S sekunder. None utan säker karta (då skriver importen inte i bara arkrader för en
     nordisk notering)."""
     import time
-    td = st.session_state.get("thor_data")
-    thor_map = td.get("sheet_map") if isinstance(td, dict) else None
-    if isinstance(thor_map, dict) and thor_map and not _universe_unreadable():
-        return dict(thor_map)
     hit = st.session_state.get("rv_sheet_map")
     if isinstance(hit, dict) and hit:
         return dict(hit)
@@ -75,12 +62,11 @@ def registry_sheet_map() -> Optional[dict]:
     try:
         import gist_storage as gs
         from universe import registry as ur
-
         inner = ur.default_loader()                     # Gisten (testerna byter ut den)
 
         def _load(name, fallback):
             v = inner(name, fallback)
-            if name in gs.UNREADABLE_NAMES:
+            if name in gs.UNREADABLE_NAMES:             # just den här läsningen fallerade
                 bad.append(name)
             return v
         reg_ = ur.load(None, _load)
@@ -199,7 +185,8 @@ def _apply(changes: list, plan, k: str, gen: int, on_apply: Optional[Callable]) 
     sheets = list(dict.fromkeys(c.sheet for c in changes))
     live = rt.resolved_targets(plan, sheets)
     done = [c for c in changes if isinstance(live.get(c.sheet), dict)]
-    n = im.apply(done, live)
+    paths: dict = {}
+    n = im.apply(done, live, paths)
     tokens, prefixes = [], []
     for sheet in sheets:
         t, p = plan.reset.get(sheet, ((), ()))
@@ -210,7 +197,10 @@ def _apply(changes: list, plan, k: str, gen: int, on_apply: Optional[Callable]) 
     st.session_state[f"rv_imp_gen_{k}"] = gen + 1
     by_sheet: dict = {}
     for c in done:
-        by_sheet.setdefault(c.sheet, []).append((c.field.label, _fmt(c.new)))
+        final = paths.get(id(c), c.path)
+        if final is None:                               # en tom katalysatorplats som togs bort
+            continue
+        by_sheet.setdefault(c.sheet, []).append((_final_label(c, final), _fmt(c.new)))
     stores = None
     try:
         stores = session_stores()
@@ -226,6 +216,16 @@ def _apply(changes: list, plan, k: str, gen: int, on_apply: Optional[Callable]) 
     st.session_state.pop(f"rv_imp_saved_{k}", None)
     if on_apply:
         on_apply()
+
+
+def _final_label(change, final: str) -> str:
+    """Fältets namn där värdet hamnade: en Tiggre-katalysator som flyttades upp i listan (svaret skrev plats 2 i en
+    tom lista) heter efter sin plats nu, inte svarets."""
+    import re
+    m = re.match(r"^catalysts\.(\d+)\.", final or "")
+    if change.sheet == "tiggre" and m and final != change.path:
+        return re.sub(r"Katalysator \d+", f"Katalysator {int(m.group(1)) + 1}", change.field.label)
+    return change.field.label
 
 
 def _save_stores(stores: list, k: str) -> None:

@@ -215,7 +215,8 @@ def check(answers: list, exp, writable: Optional[set] = None, blocked: Optional[
         if blank(a.value):
             f = resolve(a.key, fields, rows, own)[0] if str(a.key or "").strip() else None
             row = rows.get(f.sheet) if f is not None else None
-            who = shown_who.get(f.key, f.who) if f is not None else None     # som underlaget visade raden
+            who = (str(getattr(a, "who", "") or "").strip() or shown_who.get(f.key, f.who)) if f is not None else None
+            # 'Vem fyller' ur filen (underlaget ChatGPT fick), annars som kortets underlag visade raden
             if (f is not None and row is not None and who in (cat.CHATGPT, cat.BEDOMNING)
                     and cat.is_empty(cat.get_value(row, f.path))):
                 res.blank.append(f)                # ett fält ChatGPT skulle fylla och som fortfarande är tomt
@@ -279,13 +280,16 @@ def check(answers: list, exp, writable: Optional[set] = None, blocked: Optional[
         if not source:
             notes.append("källa saknas")
         old = cat.get_value(row, f.path)
+        tk = target_key(f)
         if cat.same_value(old, new):              # står redan i arket
+            if tk in picked:                      # svarets sista rad bekräftar arkets värde — den gäller
+                picked.pop(tk)
+                res.ignored.append((a.line, f.key, "dubbel rad — den sista gäller"))
             res.same += 1
             res.same_keys.append(f)
             continue
         if not cat.is_empty(old):
             notes.append(OVERWRITE)
-        tk = target_key(f)
         if tk in picked:
             res.ignored.append((a.line, f.key, "dubbel rad — den sista gäller"))
         picked[tk] = Change(f, old, new, unit=unit, source=source, source_type=stype, date=when,
@@ -344,7 +348,7 @@ def _moved(path: str, moved: Optional[dict]) -> Optional[str]:
     return f"catalysts.{moved[int(parts[1])]}.{parts[2]}"
 
 
-def apply(changes: list, rows: dict) -> int:
+def apply(changes: list, rows: dict, paths: Optional[dict] = None) -> int:
     """Skriver ändringarna i raderna {ark: rad} (samma objekt som sessionen håller). Returnerar antalet.
 
     Källan skrivs sist: först när Tiggres katalysatorer fått id och listan dragits ihop, så att den hamnar på
@@ -366,6 +370,8 @@ def apply(changes: list, rows: dict) -> int:
         moved = _finish_catalysts(tg)
     for row, ch in sourced:
         path = _moved(ch.path, moved if ch.sheet == "tiggre" else None)
+        if paths is not None:
+            paths[id(ch)] = path                          # platsen värdet hamnade på (kvittot)
         if path is not None:
             cat.set_source(row, path, ch.new, provenance(ch))
     for row in {id(r): r for r, _ch in sourced}.values():

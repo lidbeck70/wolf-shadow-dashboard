@@ -390,9 +390,10 @@ def test_registry_map_is_trusted_only_when_complete_and_retried_after_failure(mo
     at.run()
     assert len(calls) > n
     gs.UNREADABLE_NAMES.clear()
-    at.session_state["thor_data"] = {"sheet_map": {"BOL": "BOL.ST"}}
+    at.session_state["thor_data"] = {"sheet_map": {"BOL": "BOL.ST"}}       # Thors karta bär inget besked om
+    at.session_state["rv_sheet_map_failed"] = 0.0                            # att registret var helt läst
     at.run()
-    assert at.session_state["got"] == {"BOL": "BOL.ST"}
+    assert at.session_state["got"] is None                                   # — den används aldrig
 
 
 def test_a_partly_read_registry_gives_no_map(monkeypatch):
@@ -429,3 +430,85 @@ def test_a_partly_read_registry_gives_no_map(monkeypatch):
     del at.session_state["thor_data"]
     at.run()
     assert at.session_state["got"] == {"TEL": "TEL.OL"} and at.session_state["rv_sheet_map"] == {"TEL": "TEL.OL"}
+
+
+# ── Tredje granskningsrundan ─────────────────────────────────────────────────
+def test_a_stale_thor_map_is_never_used_even_after_the_unreadable_flag_clears(monkeypatch):
+    """Rond 3 fynd 1/3: Thors karta byggdes medan USA-delen var oläslig ('TEL' → Telenor). Importens egen hela
+    läsning gäller hela sessionen — också på nästa omritning, när flaggan för den oläsliga filen har släppt."""
+    from streamlit.testing.v1 import AppTest
+    import gist_storage as gs
+    from universe import registry as ur
+
+    class _Complete:
+        def sheet_map(self):
+            return {"BOL": "BOL.ST"}
+    monkeypatch.setattr(gs, "UNREADABLE_NAMES", {"universe_usa.json"})
+    monkeypatch.setattr(ur, "default_loader", lambda: (lambda name, fb: (gs.UNREADABLE_NAMES.discard(name), fb)[1]))
+    monkeypatch.setattr(ur, "load", lambda markets=None, loader=None: (loader("universe_usa.json", None), _Complete())[1])
+    at = AppTest.from_function(_map_app)
+    at.session_state["thor_data"] = {"sheet_map": {"BOL": "BOL.ST", "TEL": "TEL.OL"}}
+    at.run()
+    assert at.session_state["got"] == {"BOL": "BOL.ST"}
+    assert not gs.UNREADABLE_NAMES                                           # flaggan har släppt
+    at.run()
+    assert at.session_state["got"] == {"BOL": "BOL.ST"}                      # fortfarande den hela kartan
+
+
+def test_the_scorecard_receipt_uses_the_strategy_the_card_shows():
+    """Rond 3 fynd 2: kortet sparades med strategin Sprott, men bolaget finns inte längre där — Scorecardet visar
+    och grindar kortet som producent. Kvittot gör likadant."""
+    import scorecard as sc
+    stores = _stores()
+    stores["producers"]["producers"] = [{"id": "p1", "ticker": "BOL.ST", "name": "Boliden", "position_pct": 1.0}]
+    stores["scorecard"]["cards"] = {"boliden|BOL.ST": {"strategy": "sprott", "position_pct_total": 8.0}}
+    entry = sc.entries_for(["BOL.ST"], stores)["boliden|BOL.ST"]
+    raw = stores["scorecard"]["cards"]["boliden|BOL.ST"]
+    rule = stores["producers"]["producers"][0]
+    exp = ex.build("BOL.ST", stores, ["rule", "scorecard"], rows={"rule": rule, "scorecard": sc._shown(raw, entry)},
+                   entry=entry)
+    p = rt.plan(exp, {"scorecard": lambda: raw}, (), stores)
+    miss = rt.missing_now(p.exp, {"rule": rule, "scorecard": raw}, stores, p.own)["rule"]
+    assert any(m.startswith("AQS") for m in miss)
+
+
+def test_a_bare_card_without_the_map_does_not_say_add_the_company():
+    """Rond 3 fynd 5: Rick Rule 'BOL', Insider 'BOL.ST', ingen karta — beskedet är att raden kan vara ett annat
+    bolag, inte 'lägg in det i arket' (då blev det en dubblett)."""
+    stores = _stores()
+    stores["producers"]["producers"] = [{"id": "p1", "ticker": "BOL", "name": "Boliden"}]
+    stores["insider"]["signals"] = [{"id": "s1", "ticker": "BOL.ST", "name": "Boliden", "comment": ""}]
+    row = stores["producers"]["producers"][0]
+    exp = ex.build("BOL", {"producers": stores["producers"]}, ["rule"], rows={"rule": row})
+    p = rt.plan(exp, {"rule": row}, (), stores)
+    res = im.check(answers.read_text("\n".join([HEAD, "BOL.ST;insider:insiders;2;;Insyn;primary;2026-10-02;high;"])),
+                   p.exp, p.writable, p.blocked)
+    ((_l, _k, why),) = res.issues
+    assert "tickerkarta" in why and "lägg in" not in why
+
+
+def test_blank_uses_who_from_the_answer_file():
+    """Rond 3 fynd 6: Thors underlag (utan sifferuppdatering) sade Börsdata — läses filen in i ett kort som visar
+    raden som ChatGPT räknas den ändå inte som tom."""
+    stores = _stores()
+    row = stores["producers"]["producers"][0]
+    thor = ex.build("VAR.OL", stores, ["rule"], blob=None)
+    got = answers.read_file(ex.to_csv(thor.rows), "underlag.csv")
+    card = ex.build("VAR.OL", {"producers": stores["producers"]}, ["rule"], rows={"rule": row}, blob={})
+    p = rt.plan(card, {"rule": row}, (), stores)
+    res = im.check(got, p.exp, p.writable, p.blocked)
+    whos = {r["key"]: r["who"] for r in thor.rows}
+    assert res.blank and all(whos[f.key] in ("ChatGPT", "Bedömning") for f in res.blank)
+    assert "rule:ev_musd" not in {f.key for f in res.blank}                  # Börsdata i Thors fil
+
+
+def test_a_last_row_equal_to_the_sheet_cancels_the_earlier_duplicate():
+    """Rond 3 fynd 7: svarets sista rad bekräftar arkets 1200 — den tidigare 1300 erbjuds inte."""
+    stores = _stores()
+    stores["producers"]["producers"][0]["unit_cost"] = 1200.0
+    exp, targets = _card(stores)
+    p = rt.plan(exp, targets, (), stores)
+    text = "\n".join([HEAD, "VAR.OL;rule:unit_cost;1300;USD/oz;A;primary;2026-10-01;high;",
+                      "VAR.OL;rule:unit_cost;1200;USD/oz;B;primary;2026-10-02;high;"])
+    res = im.check(answers.read_text(text), p.exp, p.writable, p.blocked)
+    assert not res.changes and res.same == 1 and any("dubbel rad" in t for _l, _k, t in res.ignored)

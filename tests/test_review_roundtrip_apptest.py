@@ -254,6 +254,8 @@ def test_a_catalyst_answer_into_an_empty_list_leaves_one_row_and_nothing_is_writ
     assert not at.exception, at.exception
     (cat,) = at.session_state["tiggre"]["candidates"][0]["catalysts"]
     assert cat["date"] == "2027-03" and cat["id"] and cat["status"] == tiggre.CAT_WAITING
+    caps = " ".join(c.value for c in at.caption)
+    assert "Katalysator 1 — när = 2027-03" in caps and "Katalysator 2 — när = " not in caps   # platsen den hamnade på
     before = copy.deepcopy(at.session_state["tiggre"])
     at.run()
     assert not at.exception, at.exception

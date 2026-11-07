@@ -42,6 +42,7 @@ class Answer:
     date: str = ""
     confidence: str = ""
     comment: str = ""
+    who: str = ""                                    # 'Vem fyller' ur hela underlaget — tomt i det korta svaret
 
 
 # ── Rubrikraden ──────────────────────────────────────────────────────────────
@@ -54,7 +55,7 @@ _ANSWER_COLS = {
     "kommentar": "comment", "kommentar/citat": "comment", "comment": "comment", "citat": "comment", "quote": "comment",
 }
 _META_COLS = {"ticker": "ticker", "fältnyckel": "key", "faltnyckel": "key", "field key": "key", "fieldkey": "key",
-              "key": "key", "nyckel": "key"}
+              "key": "key", "nyckel": "key", "vem fyller": "who"}
 _FILL = "fyll i:"
 _HEAD = re.compile(r"(?i)f[äa]ltnyckel|\bkey\b")
 

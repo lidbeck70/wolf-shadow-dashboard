@@ -137,6 +137,30 @@ def ambiguous(row_ticker, ticker: str, sheet_map: Optional[dict]) -> bool:
             and " " not in r)
 
 
+def _suffixed_twin(sheet: str, ticker: str, stores: dict, sheet_map: Optional[dict]) -> str:
+    """Utan karta: en nordisk rad med börssuffix vars former innehåller kortets bara ticker ('BOL.ST' för 'BOL')
+    — kanske samma bolag, kanske inte. Tom sträng när kartan finns, tickern har suffix eller ingen sådan rad finns."""
+    t = str(ticker or "").strip().upper()
+    if sheet_map or not t or "." in t or sheet not in cat.SHEETS or sheet == "scorecard":
+        return ""
+    from thor import candidates as tc
+    from thor.dossier import sheet_forms
+    data = (stores or {}).get(cat.SHEETS[sheet].store)
+    if not isinstance(data, dict):
+        return ""
+    if sheet in cat.CONFIDENCE_SHEETS:
+        comps = data.get("companies")
+        tickers = [str(k) for k in comps] if isinstance(comps, dict) else []
+    else:
+        rows = data.get(cat.SHEETS[sheet].bucket)
+        tickers = [str(r.get("ticker") or "") for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
+    for rt_ in tickers:
+        u = rt_.strip().upper()
+        if "." in u and tc.is_nordic(u) and t in {f.upper() for f in sheet_forms(u, None)}:
+            return u
+    return ""
+
+
 def card_key(ticker: str, stores: dict, sheet_map: Optional[dict] = None) -> tuple:
     """(kortnyckel, kortet som det visas, kandidatraden) — som export.card_for (samma kort som Thors underlag), men
     när det kortet står på en bar form som kan vara ett annat bolag (ambiguous) tas kandidaten med exakt ticker
@@ -214,6 +238,11 @@ def plan(exp, targets: dict, reset: tuple, stores: Optional[dict], load_failed: 
             continue
         src = source_rows.get(sheet)
         if src is None:
+            other = _suffixed_twin(sheet, card_ticker, stores, smap)
+            if other:                                   # 'BOL' i kortet, 'BOL.ST' här — utan karta inte säkert
+                p.targets[sheet] = None
+                p.blocked[sheet] = (f"{label}: raden står på '{other}' och registrets tickerkarta kunde inte "
+                                    f"läsas — det kan vara ett annat bolag; läs in svaret i det arket")
             continue                                    # bolaget finns inte i arket — importen säger det per rad
         if sheet == "scorecard":
             key, _shown, found = card_key(ticker, stores, smap)
@@ -291,6 +320,9 @@ def missing_now(exp, rows: dict, stores: Optional[dict], own=()) -> dict:
             if in_scorecard:                            # kortet importen kördes i — dess position och strategi
                 card = dict((getattr(exp, "source_rows", None) or {}).get("scorecard") or {})
                 card.update(cat._as_row(live.get("scorecard")) if live.get("scorecard") is not None else {})
+                if card and entry:                      # strategin som kortet visas och grindas med
+                    import scorecard as sc
+                    card = sc._shown(card, entry)
                 if card:
                     frows["scorecard"] = copy.deepcopy(card)   # läses bara för position/strategi — inte ett ark här
             e = ex.build(ticker, base, flat, None, None, name, frows, entry if in_scorecard else None, smap)
