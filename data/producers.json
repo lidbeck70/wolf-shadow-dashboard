@@ -47,14 +47,15 @@
       "unit_cost": 2175.0
     },
     {
-      "aqs_capex": 1,
+      "aktuell_kurs": 49.53,
+      "aqs_capex": 2,
       "aqs_expansion": 0,
-      "aqs_infrastruktur": 1,
+      "aqs_infrastruktur": 2,
       "aqs_jurisdiktion": 2,
-      "aqs_kostnad": 0,
+      "aqs_kostnad": 2,
       "aqs_livslangd": 1,
       "aqs_management": 2,
-      "aqs_metallurgi": 0,
+      "aqs_metallurgi": 2,
       "commodity": "Olja",
       "csm": {
         "Base": {
@@ -68,7 +69,8 @@
         "Bull": {
           "fcf_musd": 4165.0,
           "price": 115.0
-        }
+        },
+        "bear_survival": true
       },
       "date": "2026-08-20",
       "ds_aktier_3ar": 0,
@@ -76,7 +78,8 @@
       "ds_historik": 1,
       "ds_runway": 0,
       "ds_warrants": 1,
-      "ev_ebitda": 4.0,
+      "ev_ebitda": 1.6555089950561523,
+      "ev_musd": 15051.4,
       "fcf_kvalitet": "C",
       "fin_catalyst_text": "Ingen ytterligare finansieringskatalysator identifierad – huvudsaklig finansiering är redan säkrad. Vår Energi emitterade USD 2,5 md senior notes under Q3 2026 och rapporterade USD 7,501 md tillgänglig likviditet per 30.09.2026. BlueNord-fusionen kräver NOK 1,964 md kontantvederlag plus 248,4m nya Vår Energi-aktier; transaktionen uppges inte vara beroende av ytterligare finansiering. Följ i stället closing och slutlig kontant-/utdelningsjustering.",
       "forvantad_utspadning": 0.0,
@@ -107,9 +110,9 @@
       "nav_musd": 17300.0,
       "nav_price": 79.0,
       "nav_source": "Vår Energi Q3 2026, Note 12 impairment assumptions + egen förenklad DCF-proxy",
-      "nd_ebitda": 0.4,
-      "position_pct": 25.0,
-      "price": 95.0,
+      "nd_ebitda": 0.33403369784355164,
+      "position_pct": 10.0,
+      "price": 89.94,
       "prob_deviation": true,
       "probs": {
         "Base": 12.0,
@@ -117,6 +120,7 @@
         "Bull": 10.0
       },
       "rp_ratio": 17.3,
+      "secured_cash": true,
       "sources": {
         "aqs_capex": {
           "source": "ChatGPT: https://financialfilings.com/filings/var-energi-asa/interim-quarterly-report/2026/74365730/ (Operational review, pp. 6–8) · 2026-11-07",
