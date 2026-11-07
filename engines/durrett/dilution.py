@@ -25,7 +25,7 @@ def fd_shares(basic, options=None, warrants=None, convertibles=None, other=None)
 
 
 def dilution_pct(now: Optional[float], then: Optional[float]) -> Optional[float]:
-    if now is None or then is None or then <= 0:
+    if now is None or now <= 0 or then is None or then <= 0:   # aktieantal 0 = saknat, som ett historiskt
         return None
     return (now / then - 1.0) * 100.0
 

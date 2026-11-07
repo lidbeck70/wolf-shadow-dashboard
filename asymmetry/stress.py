@@ -49,7 +49,7 @@ class BreakEven:
 
 def break_even_margin(inp: Inputs) -> BreakEven:
     b = CFG["break_even"]
-    if inp.price is None or inp.be is None:
+    if not inp.price or inp.be is None:                # råvarupris 0 = saknat (marginalen delas med priset)
         return BreakEven(inp.price, inp.be, None, "DATA_MISSING",
                          ["DATA_MISSING: råvarupris eller break-even/AISC saknas"])
     margin = round((inp.price - inp.be) / inp.price * 100, 6)

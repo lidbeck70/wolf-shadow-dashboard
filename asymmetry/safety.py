@@ -59,7 +59,7 @@ def _fmt(v) -> str:
 def price_margin(inp: Inputs) -> Component:
     m = CFG["margin_of_safety"]
     c = Component("price", "Prismarginal mot break-even", None, m["max_per_component"])
-    if inp.price is None or inp.be is None:
+    if not inp.price or inp.be is None:                # råvarupris 0 = saknat (marginalen delas med priset)
         c.steps.append("DATA_MISSING: råvarupris eller break-even/AISC saknas")
         return c
     margin = (inp.price - inp.be) / inp.price * 100

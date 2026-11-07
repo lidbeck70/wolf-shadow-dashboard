@@ -194,7 +194,8 @@ def _producer_paths(inp, price, prod, aisc, mult, debt, cash, mcap, royalty, mar
     paths = []
     for k in cfg.MULTIPLIER_TARGETS:
         mp = MultiplierPath(k)
-        if mcap is None or price is None or prod is None or (aisc is None and not royalty):
+        # pris, produktion och EV/EBITDA-multipel 0 räknas som saknade (de delas med) — aldrig ett division-fel
+        if mcap is None or not price or not prod or not mult or (aisc is None and not royalty):
             mp.steps.append("DATA_MISSING: börsvärde, pris, produktion eller AISC saknas")
             paths.append(mp)
             continue
@@ -302,6 +303,10 @@ def _developer_paths(inp, npv, price, slope, pnav, debt, cash, mcap) -> list:
         mp.required_p_nav = eq_req / npv
         mp.steps.append(f"{k:g}× börsvärde {mcap:,.0f} = {eq_req:,.0f} MUSD → enbart omvärdering kräver "
                         f"P/NAV {mp.required_p_nav:.2f}× på dagens NAV")
+        if not pnav:                                    # P/NAV vid omvärdering 0 — inget NAV-krav att räkna
+            mp.steps.append("DATA_MISSING: P/NAV vid omvärdering är 0 — inget NAV-krav går att räkna")
+            paths.append(mp)
+            continue
         nav_req = (eq_req - cash + debt) / pnav
         mp.steps.append(f"vid P/NAV {pnav:g}: NAV måste bli {nav_req:,.0f} MUSD")
         if slope and price:

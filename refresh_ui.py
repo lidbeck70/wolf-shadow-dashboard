@@ -55,11 +55,12 @@ def _apply(row: dict, field: str, value: float, widget_key: Optional[str],
 def suggest(sheet: str, row: dict, field: str, source_field: str, label: str,
             widget_key: Optional[str] = None, on_apply: Optional[Callable] = None,
             fmt: str = "{:g}", with_currency: bool = False, row_id=None,
-            unit_field: Optional[str] = None) -> None:
-    """Rita förslaget om det finns och skiljer sig från fältets värde."""
+            unit_field: Optional[str] = None, lo: Optional[float] = None) -> None:
+    """Rita förslaget om det finns och skiljer sig från fältets värde. lo = fältets golv: ett förslag under det
+    (Börsdatas negativa EV/EBITDA vid negativt EBITDA) erbjuds inte — rutan skulle inte kunna visa det."""
     sug = suggestion(load_refresh(), sheet, row, source_field, row_id=row_id,
                      unit_field=unit_field)
-    if sug is None:
+    if sug is None or (lo is not None and sug[0] < lo):
         return
     val, asof, ccy = sug
     with_currency = with_currency or bool(unit_field)

@@ -39,7 +39,7 @@ def score(ctx: Ctx, company_type: str, ss: dict) -> Score:
         aisc = ctx.num("aisc")                                  # kärnfält för producenter — bokförs som saknat
         m = margin_per_unit(price, aisc)
         r = aisc_to_price(price, aisc)
-        if m is not None:
+        if m is not None and price:                     # pris 0 = saknat (marginalen i % delas med priset)
             ctx.metric("operating_margin_per_unit", m, ctx.price_unit, f"pris {price:g} − AISC {aisc:g}")
             ctx.metric("aisc_to_price", r, "×")
             pct = m / price * 100
@@ -85,7 +85,7 @@ def score(ctx: Ctx, company_type: str, ss: dict) -> Score:
         parts.append(f"payback {pb:g} år")
     comps["margin"] = (round(sum(vals) / len(vals), 1) if vals else None, ", ".join(parts) or "IRR/NPV/CapEx/payback saknas")
     be = ctx.num("breakeven_price", required=False)
-    if be is not None and price:
+    if be and price:                                    # break-even 0 = saknat (priset delas med det)
         cover = price / be
         comps["cost_position"] = (steps_ge(cover, ((1.6, 100), (1.4, 85), (1.25, 70), (1.15, 55), (1.05, 35)), 15),
                                   f"pris/break-even {cover:.2f}×")

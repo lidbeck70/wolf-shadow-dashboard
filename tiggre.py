@@ -884,7 +884,7 @@ def _positions(data: dict) -> None:
                   help=(f"Slutsälj i etapper vid {NAV_EXIT_LO:g}–{NAV_EXIT_HI:g}× NAV eller "
                         f"produktionsstart. "
                         + (f"Räknat på färskt börsvärde {mc_now:,.0f} MUSD "
-                           f"({f.get('asof', '')[:10]})." if mc_now else
+                           f"({str(f.get('asof') or '')[:10] or 'datum saknas'})." if mc_now else
                            "Räknat på arkets sparade börsvärde — ingen färsk siffra ännu.")))
         eq = equity_at_risk(new_entry, new_cur, p.get("shares", 0), p.get("half_sold"))
         c5.metric("Kapital i risk", "0 kr" if eq == 0 else (_fmt(eq, 0) if eq else "–"),

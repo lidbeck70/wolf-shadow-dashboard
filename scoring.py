@@ -114,6 +114,13 @@ POSITION_NOTE = {
 
 
 # ── Rena beräkningar ─────────────────────────────────────────────────────────
+def _nonneg(value) -> Optional[float]:
+    """Värdet för ett fält som inte kan vara negativt (kassa, burn, börsvärde …): ett negativt tal visas som tomt —
+    en lucka att fylla i — i stället för att fälla arket (rutan har golvet 0)."""
+    v = _num(value)
+    return None if v is not None and v < 0 else v
+
+
 def _num(value, default: Optional[float] = None) -> Optional[float]:
     if value is None or value == "":
         return default
@@ -477,10 +484,10 @@ def _sprott_math(data: dict, row: dict) -> None:
                 unsafe_allow_html=True)
     c1, c2, c3 = st.columns(3)
     cash = c1.number_input("Kassa (MUSD)", min_value=0.0, step=1.0,
-                           value=_num(row.get("cash")),
+                           value=_nonneg(row.get("cash")),
                            key=f"sc_cash_{row['id']}")
     burn = c2.number_input("Burn/år (MUSD)", min_value=0.0, step=1.0,
-                           value=_num(row.get("burn")),
+                           value=_nonneg(row.get("burn")),
                            key=f"sc_burn_{row['id']}")
     rw = runway_years(cash, burn)
     c3.metric("Runway", f"{rw:.1f} år" if rw is not None else "–",
@@ -523,13 +530,13 @@ def _durrett_math(data: dict, row: dict) -> None:
                 unsafe_allow_html=True)
     c1, c2, c3 = st.columns(3)
     mcap = c1.number_input("Börsvärde (MUSD)", min_value=0.0, step=10.0,
-                           value=_num(row.get("mcap")),
+                           value=_nonneg(row.get("mcap")),
                            key=f"sc_mcap_{row['id']}")
     moz = c2.number_input("Uns (Moz AuEq)", min_value=0.0, step=0.1,
-                          value=_num(row.get("moz")),
+                          value=_nonneg(row.get("moz")),
                           key=f"sc_moz_{row['id']}")
     profit = c3.number_input("Framtida vinst/år (MUSD)", min_value=0.0, step=5.0,
-                             value=_num(row.get("profit")),
+                             value=_nonneg(row.get("profit")),
                              key=f"sc_profit_{row['id']}")
     if (storage.differs(mcap, row.get("mcap"))
             or storage.differs(moz, row.get("moz"))
@@ -569,13 +576,13 @@ def _durrett_math(data: dict, row: dict) -> None:
     with st.expander("🧮 Hjälpräknare — framtida vinst", expanded=False):
         h1, h2, h3 = st.columns(3)
         prod = h1.number_input("Produktion (koz/år)", min_value=0.0, step=10.0,
-                               value=_num(row.get("prod")),
+                               value=_nonneg(row.get("prod")),
                                key=f"sc_prod_{row['id']}")
         tp = h2.number_input("Målpris ($/oz)", min_value=0.0, step=50.0,
                              value=float(_num(row.get("target"), 3000.0) or 3000.0),
                              key=f"sc_tp_{row['id']}")
         aisc = h3.number_input("AISC ($/oz)", min_value=0.0, step=50.0,
-                               value=_num(row.get("aisc")),
+                               value=_nonneg(row.get("aisc")),
                                key=f"sc_aisc_{row['id']}")
         fp = future_profit(prod, tp, aisc)
         if fp is not None:
@@ -583,7 +590,9 @@ def _durrett_math(data: dict, row: dict) -> None:
             musd = fp / 1000.0
             st.caption(f"{prod:,.0f} koz × (${tp:,.0f} − ${aisc:,.0f}) = "
                        f"{musd:,.0f} MUSD per år.")
-            if st.button("Använd som framtida vinst", key=f"sc_use_{row['id']}"):
+            if musd < 0:
+                st.caption("Målpriset ligger under AISC — ingen vinst att använda.")
+            elif st.button("Använd som framtida vinst", key=f"sc_use_{row['id']}"):
                 row["profit"] = round(musd, 1)
                 _save(data)
                 st.rerun()

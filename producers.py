@@ -372,6 +372,13 @@ def _extract_section(data: dict, row: dict, sheet: str, widget_keys: dict) -> No
                                 on_apply=lambda: _save(data))
 
 
+def _nonneg(value) -> Optional[float]:
+    """Värdet för en ruta med golvet 0: ett negativt tal (Börsdatas EV/EBITDA vid negativt EBITDA) visas som tomt —
+    en lucka — i stället för att fälla arket."""
+    v = _num(value)
+    return None if v is not None and v < 0 else v
+
+
 def _suggest(*args, **kw) -> None:
     """Börsdata-förslag bredvid ett fält (sheets_refresh.py). Tyst utan blob."""
     try:
@@ -544,7 +551,7 @@ def _producers(data: dict) -> None:
             changed = False
             v1, v2, v3, v4 = st.columns(4)
             ev = v1.number_input("EV/EBITDA", min_value=0.0, step=0.5,
-                                 value=_num(row.get("ev_ebitda")),
+                                 value=_nonneg(row.get("ev_ebitda")),
                                  key=f"pr_ev_{row['id']}")
             nd = v2.number_input("Nettoskuld/EBITDA", step=0.1,
                                  value=_num(row.get("nd_ebitda")),
@@ -558,7 +565,7 @@ def _producers(data: dict) -> None:
                                     value=_num(row.get("price")),
                                     key=f"pr_p_{row['id']}")
             _suggest("producers", row, "ev_ebitda", "ev_ebitda", "EV/EBITDA",
-                     f"pr_ev_{row['id']}", lambda: _save(data), fmt="{:.1f}")
+                     f"pr_ev_{row['id']}", lambda: _save(data), fmt="{:.1f}", lo=0.0)
             _suggest("producers", row, "nd_ebitda", "nd_ebitda", "nettoskuld/EBITDA",
                      f"pr_nd_{row['id']}", lambda: _save(data), fmt="{:.2f}")
             # Råvarupriset ur sifferuppdateringen (Yahoo-terminer, USD per
@@ -685,6 +692,10 @@ def _fetch_ev(row: dict, widget_key: str) -> None:
         st.session_state[f"{widget_key}_msg"] = f"Börsdata svarade inte: {exc}"
         return
     ev = (s_ or {}).get("ev_musd")
+    if ev is not None and ev < 0:                      # rutan har golvet 0 — ett negativt EV skrivs inte in
+        st.session_state[f"{widget_key}_msg"] = (f"Börsdata ger negativt EV ({ev:,.0f} MUSD — mer nettokassa än "
+                                                 f"börsvärde) — fältet tar bara ≥ 0, så inget skrevs in.")
+        return
     if ev is None:
         st.session_state[f"{widget_key}_msg"] = (f"Börsdata har ingen EV för {row.get('ticker', '?')} — "
                                                  f"skriv den själv (börsvärde + nettoskuld, MUSD).")
@@ -702,7 +713,7 @@ def _ev_nav_section(data: dict, row: dict) -> bool:
                 f"(utanför poängen)</span></div>", unsafe_allow_html=True)
     k_ev, k_nav, k_np = f"pr_evm_{rid}", f"pr_nav_{rid}", f"pr_navp_{rid}"
     n1, n2, n3 = st.columns(3)
-    ev = n1.number_input("EV (MUSD)", min_value=0.0, step=10.0, value=_num(row.get("ev_musd")), key=k_ev,
+    ev = n1.number_input("EV (MUSD)", min_value=0.0, step=10.0, value=_nonneg(row.get("ev_musd")), key=k_ev,
                          help="Börsvärde + nettoskuld i miljoner USD. Hämtas ur Börsdata.")
     nav = n2.number_input("NAV efter skatt (MUSD)", min_value=0.0, step=10.0, value=_num(row.get("nav_musd")),
                           key=k_nav, help="Summan av gruvornas NPV efter skatt (tekniska rapporter eller "
@@ -715,7 +726,7 @@ def _ev_nav_section(data: dict, row: dict) -> bool:
     b1.button("Hämta EV nu", key=f"pr_evget_{rid}", on_click=_fetch_ev, args=(row, k_ev))
     if st.session_state.get(f"{k_ev}_msg"):
         b2.caption(st.session_state[f"{k_ev}_msg"])
-    _suggest("producers", row, "ev_musd", "ev_musd", "EV (MUSD)", k_ev, lambda: _save(data), fmt="{:,.0f}")
+    _suggest("producers", row, "ev_musd", "ev_musd", "EV (MUSD)", k_ev, lambda: _save(data), fmt="{:,.0f}", lo=0.0)
     changed = False
     if (storage.differs(ev, row.get("ev_musd")) or storage.differs(nav, row.get("nav_musd"))
             or storage.differs(np_, row.get("nav_price"))):
@@ -814,16 +825,16 @@ def _royalty(data: dict) -> None:
 
             e1, e2, e3 = st.columns(3)
             en = e1.number_input("EV/EBITDA nu", min_value=0.0, step=0.5,
-                                 value=_num(row.get("ev_now")),
+                                 value=_nonneg(row.get("ev_now")),
                                  key=f"ro_en_{row['id']}")
             em = e2.number_input("EV/EBITDA median", min_value=0.0, step=0.5,
-                                 value=_num(row.get("ev_median")),
+                                 value=_nonneg(row.get("ev_median")),
                                  key=f"ro_em_{row['id']}")
             med = vs_median(en, em)
             e3.metric("Mot median", f"{med:+.1f} %" if med is not None else "–",
                       help="Negativt = billigare än bolaget brukar vara.")
             _suggest("producers", row, "ev_now", "ev_ebitda", "EV/EBITDA nu",
-                     f"ro_en_{row['id']}", lambda: _save(data), fmt="{:.1f}")
+                     f"ro_en_{row['id']}", lambda: _save(data), fmt="{:.1f}", lo=0.0)
             _suggest("producers", row, "ev_median", "ev_ebitda_median", "EV/EBITDA median (10 år)",
                      f"ro_em_{row['id']}", lambda: _save(data), fmt="{:.1f}")
 
