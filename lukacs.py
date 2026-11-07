@@ -429,6 +429,62 @@ def gate_gaps(row: dict, position_pct=None, strategy: str = "") -> list:
     return gaps
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+#  Rimlighetskontroller — bara varningar, de ändrar ingen beräkning eller grind
+# ═════════════════════════════════════════════════════════════════════════════
+PRICE_MATCH = 0.03          # sparad kurs inom 3 % av Börsdatas = samma tal, i Börsdatas valuta
+FCF_TOO_SMALL = 0.02        # forward FCF under 2 % av referens-FCF:en — troligen fel enhet
+FCF_TOO_LARGE = 50.0        # … eller över 50× den
+FCF_EV_MIN = 0.002          # utan referens-FCF: under 0,2 % av EV
+
+
+def price_currency(price, ref: Optional[dict]) -> Optional[dict]:
+    """Kursens valuta mot forward FCF:ens (USD — MUSD ÷ miljoner aktier ger USD per aktie).
+
+    ref = sifferuppdateringens rad för bolaget (price, currency, fx_to_usd). None när Börsdatas kurs redan är i USD
+    eller valutan inte är känd. Annars {currency, local, usd, fx, stored_is_local}: Börsdatas kurs i sin valuta,
+    omräknad till USD med sifferuppdateringens fasta tabell, och om den sparade kursen är just Börsdatas (inom 3 %)
+    — då jämför säkerhetsmarginalen USD mot en annan valuta."""
+    if not isinstance(ref, dict):
+        return None
+    ccy = str(ref.get("currency") or "").strip().upper()
+    local, fx = _pos(ref.get("price")), _pos(ref.get("fx_to_usd"))
+    if not ccy or ccy == "USD" or local is None or fx is None:
+        return None
+    p = _num(price)
+    return {"currency": ccy, "local": local, "usd": round(local * fx, 4), "fx": fx,
+            "stored_is_local": p is not None and abs(p - local) / local <= PRICE_MATCH}
+
+
+def fcf_unit_warnings(row: dict, ref: Optional[dict] = None) -> list:
+    """Varningar när forward FCF ser ut att stå i fel enhet (MUSD = miljoner USD). Varje scenario prövas mot CSM:s
+    FCF för samma scenario, annars Börsdatas FCF (12 mån), annars EV: under 2 % eller över 50× referensen, eller
+    under 0,2 % av EV, är troligen tusentals/miljarder eller en yield i fel ruta. Bara text — räkningen är orörd."""
+    r = row or {}
+    fv_in, csm = r.get("fv") or {}, r.get("csm") or {}
+    bd_fcf = _pos((ref or {}).get("fcf_musd")) if isinstance(ref, dict) else None
+    ev = _pos(r.get("ev_musd")) or (_pos((ref or {}).get("ev_musd")) if isinstance(ref, dict) else None)
+    out = []
+
+    def _m(v):
+        return f"{v:,.0f}".replace(",", " ")
+    for s in FV_SCENARIOS:
+        f = _num((fv_in.get(s) or {}).get("forward_fcf_musd") if isinstance(fv_in.get(s), dict) else None)
+        if f is None or f <= 0:
+            continue
+        sc = csm.get(s) if isinstance(csm, dict) else None
+        base = _pos(sc.get("fcf_musd")) if isinstance(sc, dict) else None
+        src = f"CSM:s {s}-FCF"
+        if base is None and bd_fcf is not None:
+            base, src = bd_fcf, "Börsdatas FCF (12 mån)"
+        if base is not None:
+            if f < FCF_TOO_SMALL * base or f > FCF_TOO_LARGE * base:
+                out.append(f"{s}: forward FCF {f:g} MUSD mot {src} {_m(base)} MUSD — står talet i miljoner USD?")
+        elif ev is not None and f < FCF_EV_MIN * ev:
+            out.append(f"{s}: forward FCF {f:g} MUSD är under 0,2 % av EV {_m(ev)} MUSD — står talet i miljoner USD?")
+    return out
+
+
 def gate_ok(row: dict, position_pct=None, strategy: str = "") -> bool:
     """Steg 5 mekaniskt: MoS >= 25 % OCH 'what must go right' ifyllt."""
     return not gate_gaps(row, position_pct, strategy)

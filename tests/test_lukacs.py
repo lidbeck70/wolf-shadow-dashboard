@@ -1,5 +1,6 @@
 """Lukacs FV-modulen mot Masterguiden 4.1, kapitlet Kontrollsystemen."""
 
+import pytest
 import controls as ctl
 import lukacs as fv
 
@@ -262,3 +263,48 @@ def test_the_scorecard_gate_survives_fv_without_a_price():
     state = sc.gate_state({"strategy": "producenter", "position_pct_total": 5.0}, entry)
     assert not state["ready"] and any("Aktuell kurs saknas" in g for g in sc.valuation_gaps(entry, {
         "strategy": "producenter", "position_pct_total": 5.0}))
+
+
+# ── Rimlighetskontrollerna (Vår Energi: FCF 12 MUSD, kurs i NOK) ─────────────
+def _var_energi(**kw):
+    row = {"fcf_kvalitet": "C", "framtida_antal_aktier": 2744.8, "aktuell_kurs": 49.53, "what_must_go_right": "x",
+           "ev_musd": 15051.4,
+           "fv": {"Base": {"forward_fcf_musd": 12.0, "target_yield": 12.0},
+                  "Bear": {"forward_fcf_musd": 14.0, "target_yield": 14.0},
+                  "Bull": {"forward_fcf_musd": 10.0, "target_yield": 10.0}},
+           "csm": {"Base": {"fcf_musd": 3550.0}, "Bear": {"fcf_musd": 2781.0}, "Bull": {"fcf_musd": 4165.0}}}
+    row.update(kw)
+    return row
+
+
+def test_fcf_in_the_wrong_unit_is_flagged_against_csm():
+    w = fv.fcf_unit_warnings(_var_energi())
+    assert len(w) == 3 and "Base: forward FCF 12 MUSD mot CSM:s Base-FCF 3 550 MUSD" in " ".join(w)
+    ok = _var_energi(fv={s: {"forward_fcf_musd": f, "target_yield": y} for s, f, y in
+                          (("Base", 3550, 12), ("Bear", 2781, 14), ("Bull", 4165, 10))})
+    assert fv.fcf_unit_warnings(ok) == []
+
+
+def test_fcf_unit_falls_back_to_borsdata_fcf_and_then_ev():
+    row = _var_energi(csm={})
+    assert "Börsdatas FCF (12 mån) 3 000 MUSD" in fv.fcf_unit_warnings(row, {"fcf_musd": 3000.0})[0]
+    assert "under 0,2 % av EV 15 051 MUSD" in fv.fcf_unit_warnings(row)[0]
+    assert fv.fcf_unit_warnings({"fv": {"Base": {"forward_fcf_musd": 12}}}) == []        # ingen referens — tyst
+
+
+def test_a_local_currency_price_is_flagged_and_converted():
+    ref = {"price": 49.53, "currency": "NOK", "fx_to_usd": 0.095}
+    c = fv.price_currency(49.53, ref)
+    assert c["currency"] == "NOK" and c["usd"] == pytest.approx(4.7054) and c["stored_is_local"]
+    assert not fv.price_currency(4.7, ref)["stored_is_local"]
+    assert fv.price_currency(49.53, {"price": 49.53, "currency": "USD", "fx_to_usd": 1.0}) is None
+    assert fv.price_currency(49.53, None) is None
+
+
+def test_the_checks_change_no_calculation():
+    """Varningarna är bara text: fair value, marginal och grind räknas som förut."""
+    row = _var_energi()
+    before = fv.evaluate(row)
+    fv.fcf_unit_warnings(row)
+    fv.price_currency(row["aktuell_kurs"], {"price": 49.53, "currency": "NOK", "fx_to_usd": 0.095})
+    assert fv.evaluate(row) == before

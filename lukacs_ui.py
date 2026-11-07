@@ -24,6 +24,42 @@ def _class_label(q) -> str:
     return f"{q.code} — {q.desc} Target-yield {band}"
 
 
+def _refresh_row(sheet: str, key: str):
+    """Sifferuppdateringens rad för bolaget (kurs, valuta, FX, FCF, EV) — None utan blob."""
+    if not sheet:
+        return None
+    try:
+        import refresh_ui
+        r = ((refresh_ui.load_refresh() or {}).get("rows") or {}).get(f"{sheet}:{key}")
+        return r if isinstance(r, dict) else None
+    except Exception:
+        return None
+
+
+def _use_usd(row: dict, value: float, widget_key: str) -> None:
+    """on_click: kursen i USD in i raden och rutan (samma mönster som refresh_ui._apply)."""
+    row["aktuell_kurs"] = value
+    st.session_state[widget_key] = value
+
+
+def _usd_price(row: dict, cur: dict, ref: dict, widget_key: str) -> None:
+    """Börsdatas kurs i en annan valuta än USD: förslaget omräknat till USD (forward FCF räknas i MUSD), och en
+    varning när den sparade kursen är Börsdatas lokala — då jämför säkerhetsmarginalen olika valutor."""
+    def _sv(v, d=2):
+        return f"{v:,.{d}f}".replace(",", " ").replace(".", ",")
+    if cur["stored_is_local"]:
+        st.warning(f"Kursen {_sv(cur['local'])} är Börsdatas kurs i {cur['currency']}, men forward FCF räknas i USD "
+                   f"(MUSD) — säkerhetsmarginalen jämför då olika valutor. Använd kursen i USD.")
+    now = fv.num(row.get("aktuell_kurs"))
+    if now is not None and abs(now - cur["usd"]) < 1e-6:
+        return
+    c1, c2 = st.columns([3, 1])
+    c1.markdown(f"<span style='color:{DIM};font-size:0.78rem;'>🤖 Börsdata {str(ref.get('asof') or '')[:10]}: kurs "
+                f"{_sv(cur['local'])} {cur['currency']} ≈ {_sv(cur['usd'])} USD (fast omräkning "
+                f"{str(cur['fx']).replace('.', ',')} — skriv en exakt kurs om du vill)</span>", unsafe_allow_html=True)
+    c2.button("Använd USD", key=f"{widget_key}_usd", on_click=_use_usd, args=(row, round(cur["usd"], 4), widget_key))
+
+
 def render_fv(row: dict, key: str, prefix: str = "fv", sheet: str = "") -> bool:
     """Lukacs FV-modulen för ett kandidatkort. sheet ("producers", …) gör
     att aktuell kurs kan föreslås ur sifferuppdateringen."""
@@ -63,8 +99,13 @@ def render_fv(row: dict, key: str, prefix: str = "fv", sheet: str = "") -> bool:
         "Aktuell kurs", min_value=0.0, step=0.1,
         value=fv.num(row.get("aktuell_kurs")),
         key=f"{prefix}_{key}_price",
-        help="Samma valuta som forward FCF anges i.")
-    if sheet:
+        help="I USD — samma valuta som forward FCF (MUSD ÷ miljoner aktier = USD per aktie). Börsdatas kurs i NOK, "
+             "SEK … räknas om i förslaget nedanför.")
+    ref = _refresh_row(sheet, key)
+    cur = fv.price_currency(row.get("aktuell_kurs"), ref)
+    if cur is not None:                                 # Börsdatas kurs är i NOK/SEK … — förslaget i USD
+        _usd_price(row, cur, ref, f"{prefix}_{key}_price")
+    elif sheet:
         try:
             import refresh_ui
             refresh_ui.suggest(sheet, row, "aktuell_kurs", "price", "kurs",
@@ -122,6 +163,8 @@ def render_fv(row: dict, key: str, prefix: str = "fv", sheet: str = "") -> bool:
 
     st.caption("Kolumner: scenario · forward FCF (MUSD, normaliserat pris) · "
                "target-yield % · fair value per aktie · uppsida mot kurs.")
+    for w in fv.fcf_unit_warnings(row, ref):           # rimlighetskontroll — ändrar ingen räkning
+        st.warning(w)
 
     # ── Sannolikheter ────────────────────────────────────────────────────────
     dev = st.checkbox(

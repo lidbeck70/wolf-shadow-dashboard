@@ -381,3 +381,29 @@ def test_every_floor_zero_field_is_a_gap_in_its_rule_and_in_the_missing_list():
     roy = {"level": 2, "pnav_now": -1.0, "pnav_bottom": 0.9, "geo_now": -0.1, "geo_3y": 0.1}
     got = keys("royalty", roy)
     assert "Sparat negativt" in got.get("pnav_now", "") and "Sparat negativt" in got.get("geo_now", "")
+
+
+def test_the_lukacs_panel_warns_about_fcf_units_and_offers_the_price_in_usd(sheet):
+    """Vår Energi-fallet: forward FCF 12/14/10 MUSD (yielden i fel ruta) och kursen 49,53 i NOK. Panelen varnar för
+    båda, och 'Använd USD' skriver Börsdatas kurs omräknad till USD i raden och rutan."""
+    row = {"id": "r1", "ticker": "VAR.OL", "commodity": "Olja", "price": 90.0, "unit_cost": 10.0,
+           "position_pct": 10.0, "csm_kind": "producer", "fcf_kvalitet": "C", "framtida_antal_aktier": 2744.8,
+           "aktuell_kurs": 49.53, "ev_musd": 15051.4, "what_must_go_right": "x",
+           "fv": {"Base": {"forward_fcf_musd": 12.0, "target_yield": 12.0},
+                  "Bear": {"forward_fcf_musd": 14.0, "target_yield": 14.0},
+                  "Bull": {"forward_fcf_musd": 10.0, "target_yield": 10.0}},
+           "csm": {"Base": {"fcf_musd": 3550.0, "price": 95.0}, "Bear": {"fcf_musd": 2781.0, "price": 70.0},
+                   "Bull": {"fcf_musd": 4165.0, "price": 115.0}}}
+    blob = {"rows": {"producers:r1": {"price": 49.53, "currency": "NOK", "fx_to_usd": 0.095, "asof": "2026-11-07"}}}
+    at = sheet("Rick Rule", blob, {"producers": {"producers": [row], "royalty": []}})
+    at.run()
+    assert not at.exception, at.exception
+    warns = " ".join(w.value for w in at.warning)
+    assert "Base: forward FCF 12 MUSD mot CSM:s Base-FCF 3 550 MUSD" in warns
+    assert "Kursen 49,53 är Börsdatas kurs i NOK" in warns
+    btn = [b for b in at.button if b.label == "Använd USD"]
+    assert btn
+    btn[0].click().run()
+    assert not at.exception, at.exception
+    assert at.session_state["producers"]["producers"][0]["aktuell_kurs"] == pytest.approx(4.7054)
+    assert "Kursen 49,53 är Börsdatas kurs i NOK" not in " ".join(w.value for w in at.warning)
