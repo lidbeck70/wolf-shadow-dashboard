@@ -169,6 +169,12 @@ def cards_for(ticker: str, stores: dict, sheet_map: Optional[dict] = None) -> li
     return [k for k in sc.entries_for(_forms(ticker, sheet_map), stores or {}) if isinstance(cards.get(k), dict)]
 
 
+def card_on(key, found: Optional[dict] = None) -> str:
+    """Tickern kortet står på: kandidatradens, annars kortnyckelns sista led ('te connectivity|TEL' → 'TEL') — ett
+    kvarglömt kort utan kandidat har bara nyckeln."""
+    return str((found or {}).get("ticker") or (str(key).rsplit("|", 1)[-1] if key else "")).strip().upper()
+
+
 def card_key(ticker: str, stores: dict, sheet_map: Optional[dict] = None) -> tuple:
     """(kortnyckel, kortet som det visas, kandidatraden) — som export.card_for (samma kort som Thors underlag), men
     när det kortet står på en bar form som kan vara ett annat bolag (ambiguous) tas kandidaten med exakt ticker
@@ -176,7 +182,7 @@ def card_key(ticker: str, stores: dict, sheet_map: Optional[dict] = None) -> tup
     import scorecard as sc
     from review import export as ex
     key, shown, found = ex.card_for(ticker, stores, sheet_map)
-    if found and ambiguous(found.get("ticker"), ticker, sheet_map):
+    if key and ambiguous(card_on(key, found), ticker, sheet_map):
         data = (stores or {}).get(cat.SHEETS["scorecard"].store)
         cards = data.get("cards") if isinstance(data, dict) and isinstance(data.get("cards"), dict) else {}
         exact = list(sc.entries_for([str(ticker or "").strip().upper()], stores or {}).items())
@@ -184,6 +190,7 @@ def card_key(ticker: str, stores: dict, sheet_map: Optional[dict] = None) -> tup
         for k, e in exact:
             c = cards.get(k)
             return k, sc._shown(c if isinstance(c, dict) else {}, e), e
+        return None, None, None                         # bara ett kort som kan vara ett annat bolags
     return key, shown, found
 
 
@@ -280,10 +287,12 @@ def plan(exp, targets: dict, reset: tuple, stores: Optional[dict], load_failed: 
                 p.blocked[sheet] = (f"{label}: {len(several)} kort för {ticker} ({', '.join(several)}) — läs in "
                                     f"svaret i Scorecardet, på rätt kort")
                 continue
-            if found and ambiguous(found.get("ticker"), ticker, smap):
-                p.targets[sheet] = None
-                p.blocked[sheet] = (f"{label}: kortet står på '{found.get('ticker')}' och registrets tickerkarta "
-                                    f"kunde inte läsas — det kan vara ett annat bolag; läs in svaret i Scorecardet")
+            raw_key, _raw, raw_found = ex.card_for(ticker, stores, smap)
+            if not key or ambiguous(card_on(key, found), ticker, smap):
+                p.targets[sheet] = None                 # kortet som finns står på en bar form — kanske ett annat bolag
+                p.blocked[sheet] = (f"{label}: kortet står på '{card_on(raw_key, raw_found) or '?'}' och "
+                                    f"registrets tickerkarta kunde inte läsas — det kan vara ett annat bolag; läs in "
+                                    f"svaret i Scorecardet")
                 continue
             p.targets[sheet] = (lambda t=ticker, m=smap: scorecard_row(t, stores, m))
             p.reset[sheet] = ([key] if key else []), ()

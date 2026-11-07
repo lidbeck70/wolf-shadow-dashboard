@@ -630,3 +630,21 @@ def test_blank_rows_of_a_blocked_sheet_show_the_reason_not_gaps():
     text = "\n".join([HEAD, "TEL.OL;insider:insiders;;;;;;;", "TEL.OL;insider:amount;;;;;;;"])
     res = im.check(answers.read_text(text), p.exp, p.writable, p.blocked)
     assert res.blank == [] and len(res.issues) == 1 and "annat bolag" in res.issues[0][2]
+
+
+def test_a_leftover_bare_card_is_not_written_without_a_trusted_map():
+    """Sista granskningen: TE Connectivitys kort 'te connectivity|TEL' finns kvar, men TE står inte i något ark.
+    Utan säker karta hittar reservregeln kortet för TEL.OL — importen skriver inte där, den förklarar varför."""
+    stores = _stores()
+    stores["producers"]["producers"] = []
+    stores["insider"]["signals"] = []
+    stores["scorecard"]["cards"] = {"te connectivity|TEL": {"strategy": "insider"}}
+    thor = ex.build("TEL.OL", stores, ["scorecard"], blob=None)
+    assert thor.source_rows["scorecard"] == {"strategy": "insider"}         # Thors reservregel tar kortet
+    p = rt.plan(thor, {}, (), stores, sheet_map=None, view=set(thor.sheets))
+    assert "scorecard" in p.blocked and "'TEL'" in p.blocked["scorecard"]
+    res = im.check(answers.read_text("\n".join([HEAD, "TEL.OL;scorecard:valuation;EV/EBITDA 6;;Q3;primary;2026-10-20;high;"])),
+                   p.exp, p.writable, p.blocked)
+    assert not res.changes and stores["scorecard"]["cards"] == {"te connectivity|TEL": {"strategy": "insider"}}
+    p2 = rt.plan(thor, {}, (), stores, sheet_map={"BOL": "BOL.ST"}, view=set(thor.sheets))  # säker karta: inte TEL.OL:s
+    assert "scorecard" not in p2.writable
