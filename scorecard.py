@@ -644,8 +644,8 @@ def _rule_position(data: dict, cards: dict, entry: dict, strategy: str, pos_tota
 
 
 def _chatgpt(entry: dict, card: dict, data: Optional[dict] = None) -> None:
-    """📋 Underlag till ChatGPT för hela köpbeslutet: kandidatens ark plus kortet. Svaret läses in här bara i
-    kortets egna fält (värdering, trigger) — arkens rader läses in i respektive ark, där 💾 sparar dem.
+    """📋 Underlag till ChatGPT för hela köpbeslutet: kandidatens ark plus kortet. Svaret läses in här i kortets
+    egna fält (värdering, trigger) och i arkens rader (review.routing) — kvittot har 💾 för alla berörda ark.
 
     Sifferuppdateringen läses inte här (blob=None) — Börsdata-förslagen med "Använd" finns i respektive ark.
     """

@@ -42,6 +42,7 @@ class Answer:
     date: str = ""
     confidence: str = ""
     comment: str = ""
+    who: str = ""                                    # 'Vem fyller' ur hela underlaget — tomt i det korta svaret
 
 
 # ── Rubrikraden ──────────────────────────────────────────────────────────────
@@ -54,7 +55,7 @@ _ANSWER_COLS = {
     "kommentar": "comment", "kommentar/citat": "comment", "comment": "comment", "citat": "comment", "quote": "comment",
 }
 _META_COLS = {"ticker": "ticker", "fältnyckel": "key", "faltnyckel": "key", "field key": "key", "fieldkey": "key",
-              "key": "key", "nyckel": "key"}
+              "key": "key", "nyckel": "key", "vem fyller": "who"}
 _FILL = "fyll i:"
 _HEAD = re.compile(r"(?i)f[äa]ltnyckel|\bkey\b")
 
@@ -159,9 +160,33 @@ def read_text(text: str) -> list:
     return _answers(list(csv.reader(io.StringIO(body), delimiter=delim)))
 
 
+EMPTY_FILE = ("{name} är tom (0 byte) — filen kom inte med hela. Ladda ner arket från ChatGPT igen (på iPhone: "
+              "öppna filen och välj Spara i Filer, vänta tills den laddats ner helt) eller klistra in CSV-svaret i "
+              "rutan bredvid.")
+
+
+def _sheet_rows(wb) -> list:
+    """Raderna ur fliken med svaret: 'Fyll i' först, sedan den aktiva fliken och därefter övriga — den första som
+    har en rubrikrad med Fältnyckel. ChatGPT byter ibland namn på fliken eller lägger Instruktion först."""
+    from review.export import SHEET_FILL
+    order = ([wb[SHEET_FILL]] if SHEET_FILL in wb.sheetnames else []) + [wb.active] + list(wb.worksheets)
+    seen, first = set(), None
+    for ws in order:
+        if ws is None or id(ws) in seen:
+            continue
+        seen.add(id(ws))
+        rows = [list(r) for r in ws.iter_rows(values_only=True)]
+        first = rows if first is None else first
+        if any("key" in _columns(r).values() for r in rows[:50]):
+            return rows
+    return first or []
+
+
 def read_file(data: bytes, name: str = "") -> list:
     """Den uppladdade filen: Excel känns igen på zip-signaturen, allt annat läses som text (UTF-8, annars cp1252)."""
     data = bytes(data or b"")
+    if not data.strip():
+        raise ImportFormatError(EMPTY_FILE.format(name=name or "Filen"))
     if data[:2] == b"PK":
         try:
             from openpyxl import load_workbook
@@ -171,9 +196,7 @@ def read_file(data: bytes, name: str = "") -> list:
             wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
         except Exception as exc:
             raise ImportFormatError(f"Excel-filen gick inte att öppna: {exc}") from None
-        from review.export import SHEET_FILL
-        ws = wb[SHEET_FILL] if SHEET_FILL in wb.sheetnames else wb.active
-        return _answers([list(r) for r in ws.iter_rows(values_only=True)])
+        return _answers(_sheet_rows(wb))
     for enc in ("utf-8-sig", "cp1252"):
         try:
             return read_text(data.decode(enc))

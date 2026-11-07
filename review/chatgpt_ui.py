@@ -7,9 +7,12 @@ prompten byggs först när de behövs — Excel och CSV när knappen trycks (dow
 
 In (render_import, samma expander): det ifyllda arket eller det inklistrade svaret läses (review.answers),
 kontrolleras (review.importer) och visas som en skillnadstabell med "Använd" per rad — förkryssad för säkerhet
-high/medium med källa, utan varning och utan att skriva över ett värde som redan står i arket. "Skriv in N
-ändringar" skriver i arkets rad i sessionen (on_click, och kortets widgets släpps så att de ritas om med de nya
-värdena). Ingenting skrivs till GitHub — 💾 Spara som vanligt. Thors Arken-flik är bara läsning och har ingen import.
+high/medium med källa, utan varning och utan att skriva över ett värde som redan står i arket. Varje rad går till
+det ark Fältnyckeln pekar på (review.routing): kortets eget ark och alla andra ark bolaget finns i, så ett svar på
+Thors underlag (Rick Rule + Insider + Scorecard …) läses in i ett enda kort. "Skriv in N ändringar" skriver i
+arkens rader i sessionen (on_click; arkens widgets släpps så att de ritas om med de nya värdena) och lägger ett
+kvitto: inskrivet per ark, det som fortfarande saknas för köpbeslut och 💾 för alla berörda ark — inget sparas
+till GitHub förrän du trycker där eller på arkets sida. Thors Arken-flik är bara läsning och har ingen import.
 """
 
 from __future__ import annotations
@@ -37,6 +40,44 @@ def session_stores() -> dict:
         except Exception:
             out[name] = None
     return out
+
+
+RETRY_S = 60     # ett misslyckat läsförsök av registret prövas igen tidigast efter så här många sekunder
+
+
+def registry_sheet_map() -> Optional[dict]:
+    """Registrets tickerkarta för arkens bara nordiska former ('BOL' → 'BOL.ST'; 'TEL' är TE Connectivity, inte
+    Telenor) — samma som Thor bygger. Bara en karta ur ett HELT läst register gäller: saknas USA-delen tror kartan
+    att 'TEL' är Telenor. Registret läses här (Thors karta återanvänds inte — den bär inget besked om att registret
+    var helt läst) och sparas i sessionen först när alla filer gick att läsa. Ett misslyckat försök sparas inte — det
+    prövas igen efter RETRY_S sekunder. None utan säker karta (då skriver importen inte i bara arkrader för en
+    nordisk notering)."""
+    import time
+    hit = st.session_state.get("rv_sheet_map")
+    if isinstance(hit, dict) and hit:
+        return dict(hit)
+    if time.time() - float(st.session_state.get("rv_sheet_map_failed") or 0) < RETRY_S:
+        return None
+    found, bad = {}, []
+    try:
+        import gist_storage as gs
+        from universe import registry as ur
+        inner = ur.default_loader()                     # Gisten (testerna byter ut den)
+
+        def _load(name, fallback):
+            v = inner(name, fallback)
+            if name in gs.UNREADABLE_NAMES:             # just den här läsningen fallerade
+                bad.append(name)
+            return v
+        reg_ = ur.load(None, _load)
+        found = reg_.sheet_map() if reg_ is not None and not bad else {}
+    except Exception:
+        found = {}
+    if not found:
+        st.session_state["rv_sheet_map_failed"] = time.time()
+        return None
+    st.session_state["rv_sheet_map"] = dict(found)
+    return dict(found)
 
 
 def _blob() -> Optional[dict]:
@@ -110,7 +151,8 @@ def render_export(ticker: str, stores: Optional[dict] = None, sheets=None, key: 
                 reset = ([str(r.get("id")) for r in (rows or {}).values() if isinstance(r, dict) and r.get("id")], ())
             render_import(exp, live, k, reset, on_apply)
         else:
-            st.caption("Svaret läses tillbaka i arket — knapparna nedan öppnar det på bolaget.")
+            st.caption("Svaret läses tillbaka i arket — i valfritt ark bolaget finns i: varje rad hamnar i sitt "
+                       "ark, så en import räcker. Knapparna nedan öppnar arken på bolaget.")
 
 
 # ── Importen ─────────────────────────────────────────────────────────────────
@@ -128,23 +170,120 @@ def _fmt(v) -> str:
     return str(v)
 
 
-def _apply(changes: list, targets: dict, k: str, gen: int, reset: tuple, on_apply: Optional[Callable]) -> None:
-    """on_click: skriv de valda ändringarna i raderna, släpp kortets widgets (de ritas om med nya värden) och töm
-    importen. Bara sessionen — 💾 Spara skriver till GitHub."""
+def _sheet_label(sheet: str) -> str:
+    from review import catalog as cat
+    return cat.SHEETS[sheet].label if sheet in cat.SHEETS else sheet
+
+
+def _apply(changes: list, plan, k: str, gen: int, on_apply: Optional[Callable]) -> None:
+    """on_click: skriv de valda ändringarna i varje arks rad (routning.Plan — kortets egen rad eller raden i
+    sessionens lager), släpp arkens widgets (de ritas om med nya värden), töm importen och lägg ett kvitto:
+    vad som skrevs in per ark och vad som fortfarande saknas för köpbeslut. Bara sessionen — 💾 i kvittot (eller
+    på arkets sida) skriver till GitHub."""
     from review import importer as im
-    live = {}
-    for sheet in {c.sheet for c in changes}:
-        t = targets.get(sheet)
-        live[sheet] = t() if callable(t) else t
-    n = im.apply(changes, live)
-    tokens, prefixes = (tuple(reset) + ((), ()))[:2]
+    from review import routing as rt
+    sheets = list(dict.fromkeys(c.sheet for c in changes))
+    live = rt.resolved_targets(plan, sheets)
+    done = [c for c in changes if isinstance(live.get(c.sheet), dict)]
+    paths: dict = {}
+    n = im.apply(done, live, paths)
+    tokens, prefixes = [], []
+    for sheet in sheets:
+        t, p = plan.reset.get(sheet, ((), ()))
+        tokens += list(t or ())
+        prefixes += list(p or ())
     for wk in im.widget_keys(list(st.session_state.keys()), tokens, prefixes):
         st.session_state.pop(wk, None)
     st.session_state[f"rv_imp_gen_{k}"] = gen + 1
-    st.session_state[f"rv_imp_msg_{k}"] = (f"{n} ändring inskriven" if n == 1 else f"{n} ändringar inskrivna") + \
-        " i arket — granska kortet och spara med 💾."
+    by_sheet: dict = {}
+    for c in done:
+        final = paths.get(id(c), c.path)
+        if final is None:                               # en tom katalysatorplats som togs bort
+            continue
+        by_sheet.setdefault(c.sheet, []).append((_final_label(c, final), _fmt(c.new)))
+    stores = None
+    try:
+        stores = session_stores()
+    except Exception:
+        stores = None
+    missing = rt.missing_now(plan.exp, {s: live.get(s) for s in by_sheet}, stores, plan.own)
+    st.session_state[f"rv_imp_receipt_{k}"] = {
+        "n": n, "sheets": [(_sheet_label(s), rows) for s, rows in by_sheet.items()],
+        "missing": [(_sheet_label(s), names) for s, names in missing.items()],
+        "stores": list(dict.fromkeys(plan.store_of(s) for s in by_sheet if plan.store_of(s))),
+        "skipped": [_sheet_label(s) for s in sheets if s not in by_sheet],
+    }
+    st.session_state.pop(f"rv_imp_saved_{k}", None)
     if on_apply:
         on_apply()
+
+
+def _final_label(change, final: str) -> str:
+    """Fältets namn där värdet hamnade: en Tiggre-katalysator som flyttades upp i listan (svaret skrev plats 2 i en
+    tom lista) heter efter sin plats nu, inte svarets."""
+    import re
+    m = re.match(r"^catalysts\.(\d+)\.", final or "")
+    if change.sheet == "tiggre" and m and final != change.path:
+        return re.sub(r"Katalysator \d+", f"Katalysator {int(m.group(1)) + 1}", change.field.label)
+    return change.field.label
+
+
+def _save_stores(stores: list, k: str) -> None:
+    """on_click: 💾 för arken som fick svar — samma sparning som sparraden på varje arks sida."""
+    import storage
+    done, failed = [], []
+    for name in stores:
+        try:
+            if storage.is_dirty(name):
+                storage.save_session(name)
+            done.append(name)
+        except Exception as exc:                        # storage.StorageError och nätfel — visas, sväljs inte
+            failed.append(f"{name}: {exc}")
+    st.session_state[f"rv_imp_saved_{k}"] = (done, failed)
+
+
+def _close_receipt(k: str) -> None:
+    st.session_state.pop(f"rv_imp_receipt_{k}", None)
+    st.session_state.pop(f"rv_imp_saved_{k}", None)
+
+
+def _receipt(k: str) -> None:
+    """Kvittot efter "Skriv in": fälten per ark, det som fortfarande saknas för köpbeslut, och 💾 för alla berörda
+    lager på en gång."""
+    from review import routing as rt
+    r = st.session_state.get(f"rv_imp_receipt_{k}")
+    if not isinstance(r, dict):
+        return
+    import storage
+    n = int(r.get("n") or 0)
+    names = [lbl for lbl, _rows in r.get("sheets") or []]
+    where = names[0] if len(names) == 1 else (", ".join(names[:-1]) + " och " + names[-1] if names else "arket")
+    st.success((f"{n} ändring inskriven" if n == 1 else f"{n} ändringar inskrivna") + f" i {where}.")
+    for lbl, rows in r.get("sheets") or []:
+        st.caption(f"**{lbl}** · {len(rows)} inskrivna: " + " · ".join(f"{f} = {v}" for f, v in rows))
+    for lbl in r.get("skipped") or []:
+        st.warning(f"{lbl}: raden hittades inte när svaret skulle skrivas in — inget ändrat där.")
+    miss = [(lbl, m) for lbl, m in r.get("missing") or [] if m]
+    if miss:
+        st.caption("Saknas fortfarande för köpbeslut — " + " · ".join(
+            f"**{lbl}** {len(m)}: {', '.join(m[:8])}{' …' if len(m) > 8 else ''}" for lbl, m in miss))
+    elif names:
+        st.caption("Inget saknas längre för köpbeslut i " + where + ".")
+    stores = [s for s in r.get("stores") or [] if s]
+    saved = st.session_state.get(f"rv_imp_saved_{k}")
+    if saved:
+        done, failed = saved
+        if done:
+            st.success("Sparat: " + ", ".join(rt.STORE_LABEL.get(s, s) for s in done) + ".")
+        for line in failed:
+            st.error(f"SPARNINGEN MISSLYCKADES — {line}. Ändringarna finns kvar i sessionen men är INTE sparade.")
+    dirty = [s for s in stores if storage.is_dirty(s)]
+    c1, c2 = st.columns(2)
+    if dirty:
+        c1.button("💾 Spara " + ", ".join(rt.STORE_LABEL.get(s, s) for s in dirty), key=f"rv_imp_save_{k}",
+                  type="primary", on_click=_save_stores, args=(dirty, k),
+                  help="Sparar arken som fick svar till GitHub — samma som 💾 Spara på varje arks sida.")
+    c2.button("Stäng kvittot", key=f"rv_imp_close_{k}", on_click=_close_receipt, args=(k,))
 
 
 def _list(title: str, items: list, warn: bool) -> None:
@@ -155,44 +294,79 @@ def _list(title: str, items: list, warn: bool) -> None:
     (st.warning if warn else st.caption)(f"{title}\n\n" + "\n\n".join(lines) + more)
 
 
+def _rows(n: int) -> str:
+    return f"{n} rad" if n == 1 else f"{n} rader"
+
+
+def _summary(res, n_answers: int) -> str:
+    """En rad om vart svaret tar vägen: ändringar per ark, det som redan stod, tomma, avvisade och överhoppade."""
+    per: dict = {}
+    for c in res.changes:
+        per[c.sheet] = per.get(c.sheet, 0) + 1
+    parts = [f"{_sheet_label(s)} {n}" for s, n in per.items()]
+    head = (f"{len(res.changes)} att skriva in → " + " · ".join(parts)) if parts else "Inget nytt att skriva in"
+    tail = [f"{res.same} stod redan i arken" if res.same else "",
+            f"{len(res.blank)} fält ChatGPT skulle fylla står tomma" if res.blank else "",
+            f"{len(res.issues)} kunde inte läsas in" if res.issues else "",
+            f"{len(res.ignored)} hoppades över" if res.ignored else ""]
+    return f"{_rows(n_answers)} i svaret. " + head + "".join(f" · {t}" for t in tail if t) + "."
+
+
 def render_import(exp, targets: dict, k: str, reset: tuple = (), on_apply: Optional[Callable] = None) -> None:
-    """Uppladdning eller inklistring → kontroll → skillnadstabell med "Använd" → "Skriv in N ändringar"."""
+    """Uppladdning eller inklistring → kontroll → skillnadstabell med "Använd" → "Skriv in N ändringar".
+
+    Varje rad går till det ark Fältnyckeln pekar på (review.routing): kortets eget ark och alla andra ark bolaget
+    finns i — ett svar på Thors underlag läses in i ett enda kort."""
     import pandas as pd
+    import storage
     from review import export as ex
     from review import importer as im
-    writable = {s for s, t in (targets or {}).items() if t is not None}
+    from review import routing as rt
     st.markdown(f"**{IMPORT_TITLE}**")
-    msg = st.session_state.pop(f"rv_imp_msg_{k}", None)
-    if msg:
-        st.success(msg)
+    _receipt(k)
     gen = int(st.session_state.get(f"rv_imp_gen_{k}") or 0)
     c1, c2 = st.columns(2)
     up = c1.file_uploader("Det ifyllda arket", type=["xlsx", "csv", "txt", "json"], key=f"rv_imp_file_{k}_{gen}",
-                          help="Arket ChatGPT skickade tillbaka (.xlsx eller .csv), eller svaret sparat som text.")
+                          help="Arket ChatGPT skickade tillbaka (.xlsx eller .csv), eller svaret sparat som text. "
+                               "Raderna läses in i det ark Fältnyckeln pekar på — alla ark bolaget finns i.")
     txt = c2.text_area("… eller klistra in svaret", key=f"rv_imp_txt_{k}_{gen}", height=110,
                        placeholder=ex.ANSWER_HEADER,
                        help="CSV-kodblocket ChatGPT svarar med — enklast på mobilen.")
     if up is None and not str(txt or "").strip():
-        st.caption("Inget skrivs in förrän du granskat skillnaden och tryckt Skriv in — och inget sparas till "
-                   "GitHub förrän du trycker 💾 Spara.")
+        st.caption("Svaret läses in i alla ark bolaget finns i — Fältnyckeln avgör arket. Inget skrivs in förrän "
+                   "du granskat skillnaden och tryckt Skriv in, och inget sparas till GitHub förrän du trycker 💾.")
         return
     try:
         answers = im.read_file(up.getvalue(), up.name) if up is not None else im.read_text(txt)
     except im.ImportFormatError as exc:
         st.error(str(exc))
         return
-    res = im.check(answers, exp, writable)
-    _list(f"{len(res.issues)} rader kunde inte läsas in:", res.issues, warn=True)
-    _list(f"{len(res.ignored)} rader hoppades över:", res.ignored, warn=False)
-    if res.same:
-        st.caption(f"{res.same} värden stod redan i arket.")
+    try:
+        stores = session_stores()
+    except Exception:
+        stores = None
+    smap = None if getattr(exp, "sheet_map", None) or stores is None else registry_sheet_map()
+    plan = rt.plan(exp, targets, reset, stores, storage.load_failed, smap)
+    res = im.check(answers, plan.exp, plan.writable, plan.blocked)
+    st.caption(_summary(res, len(answers)))
+    _list(f"{_rows(len(res.issues))} kunde inte läsas in:", res.issues, warn=True)
+    _list(f"{_rows(len(res.ignored))} hoppades över:", res.ignored, warn=False)
+    if res.blank:
+        per: dict = {}
+        for f in res.blank:
+            per.setdefault(_sheet_label(f.sheet), []).append(f.label)
+        with st.expander(f"{len(res.blank)} fält ChatGPT skulle fylla står fortfarande tomma", expanded=False):
+            for lbl, names in per.items():
+                st.caption(f"**{lbl}** · {len(names)}: " + " · ".join(names))
     if not res.changes:
-        st.info("Inga ändringar att skriva in — svaret stämmer med arket eller innehöll inga godkända värden.")
+        st.info("Inga ändringar att skriva in — svaret stämmer med arken eller innehöll inga godkända värden.")
         return
+    many = len({c.sheet for c in res.changes}) > 1
     table = pd.DataFrame([{
-        "Använd": c.default_use, "Fält": c.field.label, "Nu": _fmt(c.old), "Nytt": _fmt(c.new),
-        "Enhet": c.unit or c.field.unit, "Källa": im.provenance(c).removeprefix("ChatGPT: "),
-        "Säkerhet": c.confidence or "–", "Varning": " · ".join(c.warnings), "Fältnyckel": c.field.key,
+        "Använd": c.default_use, **({"Ark": _sheet_label(c.sheet)} if many else {}), "Fält": c.field.label,
+        "Nu": _fmt(c.old), "Nytt": _fmt(c.new), "Enhet": c.unit or c.field.unit,
+        "Källa": im.provenance(c).removeprefix("ChatGPT: "), "Säkerhet": c.confidence or "–",
+        "Varning": " · ".join(c.warnings), "Fältnyckel": c.field.key,
     } for c in res.changes])
     edited = st.data_editor(
         table, key=f"rv_imp_tab_{k}_{gen}_{res.signature()}", hide_index=True, width="stretch",
@@ -203,6 +377,6 @@ def render_import(exp, targets: dict, k: str, reset: tuple = (), on_apply: Optio
     picked = [c for c, use in zip(res.changes, list(edited["Använd"])) if bool(use)]
     n = len(picked)
     st.button(f"Skriv in {n} ändring" if n == 1 else f"Skriv in {n} ändringar", key=f"rv_imp_go_{k}",
-              type="primary", disabled=not picked, on_click=_apply, args=(picked, targets, k, gen, reset, on_apply))
-    st.caption("Skriver bara i arket i sessionen — granska kortet och spara med 💾. Varningar om enhet eller valuta "
-               "räknas aldrig om: rätta talet i arket om enheten är fel.")
+              type="primary", disabled=not picked, on_click=_apply, args=(picked, plan, k, gen, on_apply))
+    st.caption("Skriver i arken i sessionen — kvittot visar vad som hamnade var och har 💾 för alla berörda ark. "
+               "Varningar om enhet eller valuta räknas aldrig om: rätta talet i arket om enheten är fel.")

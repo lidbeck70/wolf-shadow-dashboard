@@ -79,6 +79,8 @@ class Result:
     issues: list = field(default_factory=list)       # [(rad, nyckel, text)] — avvisade
     ignored: list = field(default_factory=list)      # [(rad, nyckel, text)] — hoppade över med flit
     same: int = 0                                    # värden som redan stod i arket
+    same_keys: list = field(default_factory=list)    # [SheetField] — de som redan stod (kvittot per ark)
+    blank: list = field(default_factory=list)        # [SheetField] — fält ChatGPT skulle fylla som står tomma
 
     def signature(self) -> str:
         """Kort fingeravtryck av ändringarna — nytt svar, ny tabell (kryssen följer inte med till ett annat svar)."""
@@ -132,9 +134,33 @@ def known_path(sheet: str, path: str) -> bool:
     return path in seen
 
 
-def resolve(key: str, fields: dict) -> tuple:
+def target_key(f: cat.SheetField) -> tuple:
+    """Var värdet hamnar: (arkets rad, sökväg). Durrett 10-steg och Wolf Asymmetry delar bolagsraden — samma fält
+    i båda är ett och samma värde."""
+    return ("confidence" if f.sheet in cat.CONFIDENCE_SHEETS else f.sheet), f.path
+
+
+def _bare(k: str, fields: dict) -> list:
+    """Träffarna för en nyckel utan arkprefix: sökvägen eller 'fields.<nyckel>', annars extraktionens alias med
+    samma tal (faktor 1). Durrett/Wolf Asymmetry räknas en gång — de skriver samma värde."""
+    def _hits(name):
+        return [f for f in fields.values() if f.path == name or f.path == f"fields.{name}"]
+    hits = _hits(k)
+    for other, factor in xp.ALIASES.get(k, ()):
+        if hits:
+            break
+        if factor == 1.0:
+            hits = _hits(other)
+    return list({target_key(f): f for f in hits}.values())
+
+
+def resolve(key: str, fields: dict, rows: Optional[dict] = None, own: Optional[set] = None) -> tuple:
     """(SheetField, '') för fältnyckeln, eller (None, skäl). Utan arkprefix ('unit_cost') räcker en entydig träff;
-    extraktionens alias (AISC = unit_cost …) gäller bara där talet är detsamma (faktor 1 — inget räknas om)."""
+    extraktionens alias (AISC = unit_cost …) gäller bara där talet är detsamma (faktor 1 — inget räknas om).
+
+    Med routningen (rows = källraderna, own = kortets egna ark) prövas en nyckel utan prefix i tur och ordning mot
+    kortets egna ark, arken bolaget finns i och sist alla — en tom mall för ett ark där bolaget saknas gör aldrig
+    en nyckel som förr var entydig i kortet tvetydig."""
     k = str(key or "").strip()
     if not k:
         return None, "fältnyckel saknas"
@@ -155,39 +181,60 @@ def resolve(key: str, fields: dict) -> tuple:
             if known_path(sheet, path):
                 return None, "fältet visas inte i det här kortet just nu (t.ex. AQS/CSM under positionsgränsen)"
         return None, "okänd fältnyckel"
-
-    def _hits(name):
-        return [f for f in fields.values() if f.path == name or f.path == f"fields.{name}"]
-    hits = _hits(k)
-    for other, factor in xp.ALIASES.get(k, ()):
-        if hits:
-            break
-        if factor == 1.0:
-            hits = _hits(other)
-    if len(hits) == 1:
-        return hits[0], ""
-    if len(hits) > 1:
-        return None, "fältnyckeln finns i flera ark — skriv den med arkprefix (t.ex. rule:unit_cost)"
+    pools = []
+    if own:
+        pools.append({x: f for x, f in fields.items() if f.sheet in own})
+    if rows is not None:
+        pools.append({x: f for x, f in fields.items() if rows.get(f.sheet) is not None})
+    pools.append(fields)
+    for pool in pools:
+        hits = _bare(k, pool)
+        if len(hits) == 1:
+            return hits[0], ""
+        if len(hits) > 1:
+            return None, "fältnyckeln finns i flera ark — skriv den med arkprefix (t.ex. rule:unit_cost)"
     return None, "okänd fältnyckel"
 
 
-def check(answers: list, exp, writable: Optional[set] = None) -> Result:
+def check(answers: list, exp, writable: Optional[set] = None, blocked: Optional[dict] = None) -> Result:
     """Svaret mot underlaget exp (review.export.Export med fields och source_rows). writable = arken svaret får
-    skriva i härifrån (None = alla i underlaget); ett annat arks rader hoppas över med en hänvisning dit."""
+    skriva i härifrån (None = alla i underlaget); ett annat arks rader hoppas över med en hänvisning dit.
+    blocked = {ark: skäl} för ark där bolaget finns men som inte tar emot svar (review.routing.Plan.blocked)."""
     res = Result()
     fields = getattr(exp, "fields", None) or {}
     rows = getattr(exp, "source_rows", None) or {}
     smap = getattr(exp, "sheet_map", None)
     want = _forms(getattr(exp, "ticker", ""), smap)
     label = {s: cat.SHEETS[s].label for s in cat.SHEETS}
+    blocked = blocked or {}
+    own = getattr(exp, "own_sheets", None)
+    shown_who = getattr(exp, "shown_who", None) or {r.get("key"): r.get("who")
+                                                     for r in getattr(exp, "rows", None) or [] if isinstance(r, dict)}
     resolved, siblings = [], {}
+    other_blank: list = []                           # tomma rader för ett annat bolag — räknas inte som luckor här
     for a in answers or []:
         if blank(a.value):
+            if a.ticker and want and not (_forms(a.ticker, smap) & want):
+                other_blank.append(a)
+                continue
+            f = resolve(a.key, fields, rows, own)[0] if str(a.key or "").strip() else None
+            row = rows.get(f.sheet) if f is not None else None
+            who = (str(getattr(a, "who", "") or "").strip() or shown_who.get(f.key, f.who)) if f is not None else None
+            # 'Vem fyller' ur filen (underlaget ChatGPT fick), annars som kortets underlag visade raden
+            if (f is not None and row is not None and who in (cat.CHATGPT, cat.BEDOMNING)
+                    and cat.is_empty(cat.get_value(row, f.path))):
+                res.blank.append(f)                # ett fält ChatGPT skulle fylla och som fortfarande är tomt
             continue
         if a.ticker and want and not (_forms(a.ticker, smap) & want):
             res.issues.append((a.line, a.key, f"annan ticker ({a.ticker}) — underlaget gäller {exp.ticker}"))
             continue
-        f, why = resolve(a.key, fields)
+        f, why = resolve(a.key, fields, rows, own)
+        if f is None and ":" in str(a.key or "") and blocked:
+            sheet, path = str(a.key).strip().split(":", 1)
+            bsheet = "confidence" if sheet in cat.CONFIDENCE_SHEETS and "confidence" in blocked else sheet
+            if bsheet in blocked and bsheet in cat.SHEETS and known_path(bsheet, path):
+                res.issues.append((a.line, a.key, blocked[bsheet]))   # t.ex. lagret gick inte att läsa: ladda om
+                continue
         if f is None:
             (res.ignored if why.startswith(("hör till", "fältet visas inte")) else res.issues).append(
                 (a.line, a.key, why))
@@ -195,17 +242,24 @@ def check(answers: list, exp, writable: Optional[set] = None) -> Result:
         if f.who == cat.BARA_DU:
             res.ignored.append((a.line, f.key, "Bara du — beslutas av dig, fylls aldrig i av ChatGPT"))
             continue
-        if writable is not None and f.sheet not in writable:
-            res.ignored.append((a.line, f.key, f"hör till {label.get(f.sheet, f.sheet)} — läs in svaret där"))
+        if f.sheet in blocked:
+            res.issues.append((a.line, f.key, blocked[f.sheet]))
             continue
         if rows.get(f.sheet) is None:
             res.issues.append((a.line, f.key, f"bolaget finns inte i {label.get(f.sheet, f.sheet)} än — lägg in "
                                               f"det i arket först"))
             continue
+        if writable is not None and f.sheet not in writable:
+            res.ignored.append((a.line, f.key, f"hör till {label.get(f.sheet, f.sheet)} — läs in svaret där"))
+            continue
         resolved.append((a, f))
         siblings[f.key] = str(a.unit or "").strip()
+    if other_blank and not any(t.startswith("annan ticker") for _l, _k, t in res.issues):
+        a0 = other_blank[0]
+        res.issues.append((a0.line, a0.key, f"annan ticker ({a0.ticker}) — underlaget gäller {exp.ticker}; "
+                                            f"{len(other_blank)} tomma rader för {a0.ticker} räknas inte"))
     classes = {f.sheet: coerce(f, a.value)[0] for a, f in resolved if f.path == "fcf_kvalitet"}
-    picked: dict = {}
+    picked: dict = {}                                 # {mål: (svarets rad, Change)}
     for a, f in resolved:
         new, err, unit_in_value, warn = coerce(f, a.value)
         if err:
@@ -234,17 +288,22 @@ def check(answers: list, exp, writable: Optional[set] = None) -> Result:
         if not source:
             notes.append("källa saknas")
         old = cat.get_value(row, f.path)
+        tk = target_key(f)
         if cat.same_value(old, new):              # står redan i arket
+            if tk in picked:                      # svarets sista rad bekräftar arkets värde — den gäller
+                prev, _ch = picked.pop(tk)
+                res.ignored.append((prev, f.key, f"dubbel rad — rad {a.line} gäller"))
             res.same += 1
+            res.same_keys.append(f)
             continue
         if not cat.is_empty(old):
             notes.append(OVERWRITE)
-        if f.key in picked:
-            res.ignored.append((a.line, f.key, "dubbel rad — den sista gäller"))
-        picked[f.key] = Change(f, old, new, unit=unit, source=source, source_type=stype, date=when,
-                               confidence=_confidence(a.confidence), comment=str(a.comment or "").strip()[:1000],
-                               warnings=notes)
-    res.changes = list(picked.values())
+        if tk in picked:                          # den tidigare raden faller bort — den sista gäller
+            res.ignored.append((picked[tk][0], f.key, f"dubbel rad — rad {a.line} gäller"))
+        picked[tk] = a.line, Change(f, old, new, unit=unit, source=source, source_type=stype, date=when,
+                            confidence=_confidence(a.confidence), comment=str(a.comment or "").strip()[:1000],
+                            warnings=notes)
+    res.changes = [ch for _line, ch in picked.values()]
     return res
 
 
@@ -297,7 +356,7 @@ def _moved(path: str, moved: Optional[dict]) -> Optional[str]:
     return f"catalysts.{moved[int(parts[1])]}.{parts[2]}"
 
 
-def apply(changes: list, rows: dict) -> int:
+def apply(changes: list, rows: dict, paths: Optional[dict] = None) -> int:
     """Skriver ändringarna i raderna {ark: rad} (samma objekt som sessionen håller). Returnerar antalet.
 
     Källan skrivs sist: först när Tiggres katalysatorer fått id och listan dragits ihop, så att den hamnar på
@@ -319,6 +378,8 @@ def apply(changes: list, rows: dict) -> int:
         moved = _finish_catalysts(tg)
     for row, ch in sourced:
         path = _moved(ch.path, moved if ch.sheet == "tiggre" else None)
+        if paths is not None:
+            paths[id(ch)] = path                          # platsen värdet hamnade på (kvittot)
         if path is not None:
             cat.set_source(row, path, ch.new, provenance(ch))
     for row in {id(r): r for r, _ch in sourced}.values():

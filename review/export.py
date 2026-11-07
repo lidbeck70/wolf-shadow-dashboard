@@ -66,6 +66,7 @@ class Export:
     fields: dict = field(default_factory=dict)       # {fältnyckel: SheetField} — importen läser svaret mot dem
     source_rows: dict = field(default_factory=dict)  # {ark: raden underlaget lästes ur} — None där aktien saknas
     sheet_map: dict = field(default_factory=dict)    # registrets karta raderna matchades med — importen tar samma
+    entry: Optional[dict] = None                     # Scorecardets kandidatrad — importens routning bygger samma kort
 
     @property
     def filled(self) -> int:
@@ -288,7 +289,7 @@ def build(ticker: str, stores: dict, sheets=None, stage: Optional[str] = None, b
         card = rows["scorecard"]
     card_pos = (card or {}).get("position_pct_total")
     card_sheet = cat.STRATEGY_SHEET.get((card or {}).get("strategy") or "")
-    exp = Export(t, name, sheet_map=dict(sheet_map or {}))
+    exp = Export(t, name, sheet_map=dict(sheet_map or {}), entry=entry)
     for sheet in wanted:
         row = (rows or {}).get(sheet)
         if row is None:
