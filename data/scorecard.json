@@ -11,6 +11,7 @@
       "position_pct_total": 5.0,
       "position_saljregel": true,
       "screener_kval": true,
+      "sell_rule": "Krasch ",
       "sources": {
         "trigger": {
           "source": "ChatGPT: https://varenergi.no/en/newsroom/stock-exchange-announcements/?release=DF4E57ADD9866580; https://varenergi.no/no/nyheter-og-media/borsmeldinger/?release=CEB24475FA386CA3 · 2026-11-07",
