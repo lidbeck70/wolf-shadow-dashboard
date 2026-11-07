@@ -326,3 +326,35 @@ def test_the_helpers_profit_sticks(sheet):
     assert not at.exception, at.exception
     assert at.session_state["scoring"]["durrett"][0]["profit"] == 150.0                    # 100 koz × 1500 $/oz
     assert [n.value for n in at.number_input if n.key == "sc_profit_d1"] == [150.0]
+
+
+def test_a_stored_negative_is_listed_as_missing_for_the_buy_decision():
+    """Den sista granskningen: grinden räknar ett sparat negativt tal som en lucka — då står det också i listan
+    'saknas för köpbeslut', med skälet. Ett tomt fält listas som förut, ett positivt inte alls."""
+    from review import missing as mis
+    nine = {"balans": 2, "vardering": 2, "tillvaxt": 2, "agare": 2, "havstang": 1}
+
+    def keys(sheet, row):
+        return {it.path: it.reason for it in mis.missing_for(sheet, row)}
+    neg = keys("sprott", {"factors": nine, "cash": 30, "burn": -12.4})
+    assert "burn" in neg and "Sparat negativt (-12.4)" in neg["burn"]
+    assert "burn" in keys("sprott", {"factors": nine, "cash": 30})
+    assert "burn" not in keys("sprott", {"factors": nine, "cash": 30, "burn": 12.4})
+    assert "Sparat negativt" in keys("durrett", {"factors": nine, "mcap": 200, "profit": -50}).get("profit", "")
+    assert "Sparat negativt" in keys("royalty", {"level": 2, "ev_now": -3.2, "ev_median": 12}).get("ev_now", "")
+
+
+def test_the_tiggre_downside_box_shows_what_is_stored(sheet):
+    """Rutan visar den sparade nedsidan — tom när den saknas (U/N-grinden säger då att den saknas) — och det du
+    skriver in, också −40, sparas."""
+    stores = {"tiggre": {"candidates": [{"id": "c1", "ticker": "CAND", "screen": {}, "factors": {}, "catalysts": [],
+                                         "mcap": 100.0, "nav": 650.0}],
+                         "positions": [], "closed": [], "parked": []}}
+    at = sheet("Tiggre", {}, stores)
+    at.run()
+    assert not at.exception, at.exception
+    box = [n for n in at.number_input if n.key == "tg_down_c1"][0]
+    assert box.value is None
+    box.set_value(-40.0).run()
+    assert not at.exception, at.exception
+    assert at.session_state["tiggre"]["candidates"][0]["downside"] == -40.0

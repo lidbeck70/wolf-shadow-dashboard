@@ -612,7 +612,7 @@ def _candidate_card(data: dict, cand: dict, expanded: bool = False) -> None:
                               value=shown["nav"],
                               step=10.0, key=f"tg_nav_{cand['id']}",
                               help="Alltid after-tax — pre-tax är 30–40 % för högt.")
-        down_shown = float(_num(cand.get("downside"), -40.0) or -40.0)
+        down_shown = _num(cand.get("downside"))           # det som står sparat — nya kandidater får −40 när de läggs in
         down = m3.number_input("Nedsida (%)", value=down_shown,
                                step=5.0, key=f"tg_down_{cand['id']}",
                                help="Värsta rimliga scenariot: utspädning, byggförsening.")
