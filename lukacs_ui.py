@@ -45,21 +45,30 @@ def _refresh_row(sheet: str, key: str):
         return None
 
 
+FX_MISS_RETRY_S = 900
+_FX_MISS: dict = {}     # {'SEKUSD=X': tid för senaste misslyckade hämtning} — inte en Yahoo-fråga per kort och omkörning
+
+
 def _live_fx(ccy: str):
-    """Dagens växelkurs till USD (USD per enhet, datum) ur panelens kurslager (Yahoo '{CCY}USD=X', cachad 6 h) —
-    None när den inte går att hämta. Pence (GBX) = GBP/100."""
+    """Dagens växelkurs till USD (USD per enhet, datum) ur panelens kurslager (Yahoo '{CCY}USD=X'; en träff cachas
+    6 h där) — None när den inte går att hämta, och då försöker vi inte igen på 15 min. Pence (GBX) = GBP/100."""
     pair = fv.fx_pair(ccy)
     if not pair:
+        return None
+    import time
+    if time.time() - _FX_MISS.get(pair[0], 0.0) < FX_MISS_RETRY_S:
         return None
     try:
         import market_prices
         s = market_prices.close(pair[0], "1mo")
-        if s is None or s.empty:
-            return None
-        rate = float(s.iloc[-1]) / pair[1]
-        return (rate, str(s.index[-1])[:10]) if rate > 0 else None
+        if s is not None and not s.empty:
+            rate = float(s.iloc[-1]) / pair[1]
+            if rate > 0:
+                return rate, str(s.index[-1])[:10]
     except Exception:
-        return None
+        pass
+    _FX_MISS[pair[0]] = time.time()
+    return None
 
 
 def _use_usd(row: dict, value: float, widget_key: str) -> None:
@@ -82,6 +91,11 @@ def _usd_price(price, cur: dict, ref: dict, row: dict, widget_key: str) -> None:
         return f"{v:,.{d}f}".replace(",", " ").replace(".", ",")
     src = "Yahoo" if ref.get("source") == "yfinance" else "Börsdata"
     ccy, usd = cur["currency"], cur["usd"]
+    if cur["stored_is_local"] and fv.fcf_in_local_currency(row, ref) == ccy:
+        # Kurs och FCF står båda i lokal valuta: raden hänger ihop. Att bara byta kursen gör marginalen ~10× för god.
+        st.warning(f"Kursen {_sv(price)} ser ut att stå i {ccy} — och forward FCF ser ut att stå i miljoner {ccy} "
+                   f"(se varningen under scenarierna). Räkna om båda till USD: FCF först, sedan kursen.")
+        return
     if cur["stored_is_local"]:
         st.warning(f"Kursen {_sv(price)} ser ut att stå i {ccy} ({src}s kurs: {_sv(cur['local'])} {ccy}), men "
                    f"forward FCF räknas i USD (MUSD) — säkerhetsmarginalen jämför då olika valutor. "

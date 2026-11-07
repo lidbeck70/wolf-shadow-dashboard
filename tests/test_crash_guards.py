@@ -539,24 +539,32 @@ def test_todays_fx_rate_is_used_for_the_usd_price(sheet):
     assert not _price_warn(at)
 
 
-def test_the_usd_button_shows_fcf_typed_in_the_listing_currency(sheet):
-    """FCF i MSEK och kursen i SEK var en konsekvent rad — efter 'Använd USD' blir den fel. Varningen för FCF:en
-    syns före och efter klicket."""
-    row = _var_row(ticker="BOL.ST", aktuell_kurs=330.0, framtida_antal_aktier=273.5,
-                   fv={"Base": {"forward_fcf_musd": 9000.0, "target_yield": 12.0},
-                       "Bear": {"forward_fcf_musd": 4000.0, "target_yield": 14.0},
-                       "Bull": {"forward_fcf_musd": 15000.0, "target_yield": 10.0}},
-                   csm={"Base": {"fcf_musd": 855.0, "price": 95.0}, "Bear": {"fcf_musd": 380.0, "price": 70.0},
-                        "Bull": {"fcf_musd": 1425.0, "price": 115.0}})
+def test_the_usd_button_is_withheld_when_fcf_is_in_the_listing_currency_too(sheet):
+    """FCF i MSEK och kursen i SEK är en konsekvent rad — att bara byta kursen till USD gör marginalen ~10× för god
+    (tredje granskningen: −44 % → +85 %, grinden öppnas). Panelen ber om båda, FCF först, och erbjuder ingen knapp."""
     from tests.test_lukacs import producer_refresh_row
-    blob = {"rows": {"producers:r1": producer_refresh_row("SEK", 330.0, market_cap=90000.0, ev=100000.0)}}
-    at = sheet("Rick Rule", blob, {"producers": {"producers": [row], "royalty": []}})
-    at.run()
-    assert not at.exception, at.exception
-    msek = "Står talet i miljoner SEK?"
-    assert msek in " ".join(w.value for w in at.warning)
-    [b for b in at.button if b.label == "Använd USD"][0].click().run()
-    assert msek in " ".join(w.value for w in at.warning)
+    blob = {"rows": {"producers:r1": producer_refresh_row("SEK", 350.0, market_cap=95700.0, ev=110000.0)}}
+    for csm in ({"Base": {"fcf_musd": 8000.0, "price": 95.0}, "Bear": {"fcf_musd": 2500.0, "price": 70.0},
+                 "Bull": {"fcf_musd": 15000.0, "price": 115.0}},                   # CSM också i MSEK
+                {"Base": {"price": 95.0}, "Bear": {"price": 70.0}, "Bull": {"price": 115.0}}):  # CSM utan FCF
+        row = _var_row(ticker="BOL.ST", aktuell_kurs=350.0, framtida_antal_aktier=273.5, csm=csm, ev_musd=None,
+                       fv={"Base": {"forward_fcf_musd": 8000.0, "target_yield": 12.0},
+                           "Bear": {"forward_fcf_musd": 2500.0, "target_yield": 14.0},
+                           "Bull": {"forward_fcf_musd": 15000.0, "target_yield": 10.0}})
+        at = sheet("Rick Rule", blob, {"producers": {"producers": [row], "royalty": []}}, live={"SEK": (0.105, "2026-11-06")})
+        at.run()
+        assert not at.exception, at.exception
+        warns = " ".join(w.value for w in at.warning)
+        assert "Base: forward FCF 8 000 MUSD är 77 % av EV 10 450 MUSD — omräknat från SEK 7 %. Står talet i miljoner SEK?" in warns
+        assert "Räkna om båda till USD: FCF först, sedan kursen." in warns
+        assert not [b for b in at.button if b.label == "Använd USD"]
+        # FCF:en räknas om till MUSD → nu är det bara kursen kvar, och knappen kommer tillbaka
+        for s_, v in (("Base", 760.0), ("Bear", 237.5), ("Bull", 1425.0)):
+            at.number_input(key=f"fv_r1_{s_}_fcf").set_value(v)
+        at.run()
+        at.run()
+        assert "miljoner SEK" not in " ".join(w.value for w in at.warning)
+        assert [b for b in at.button if b.label == "Använd USD"]
 
 
 def test_live_fx_reads_the_price_layer_and_falls_back_quietly(monkeypatch):
@@ -576,9 +584,17 @@ def test_live_fx_reads_the_price_layer_and_falls_back_quietly(monkeypatch):
             raise RuntimeError("Yahoo nere")
         return pd.Series(dtype=float)
     monkeypatch.setattr(market_prices, "close", close)
+    monkeypatch.setattr(lukacs_ui, "_FX_MISS", {})
     assert lukacs_ui._live_fx("SEK") == (0.105, "2026-11-06")
     assert lukacs_ui._live_fx("GBX")[0] == pytest.approx(0.0133)
     assert lukacs_ui._live_fx("GBP")[0] == pytest.approx(1.33)
     assert lukacs_ui._live_fx("NOK") is None and lukacs_ui._live_fx("ZAR") is None
     assert lukacs_ui._live_fx("USD") is None and lukacs_ui._live_fx("") is None
     assert ("SEKUSD=X", "1mo") in seen and not any(t.startswith("USD") for t, _ in seen)
+    # En misslyckad hämtning görs inte om på varje kort och omkörning (Yahoo nere/strypt) — först efter 15 min
+    n = len(seen)
+    assert lukacs_ui._live_fx("NOK") is None and lukacs_ui._live_fx("ZAR") is None and len(seen) == n
+    lukacs_ui._FX_MISS["NOKUSD=X"] -= lukacs_ui.FX_MISS_RETRY_S + 1
+    lukacs_ui._live_fx("NOK")
+    assert len(seen) == n + 1
+    assert lukacs_ui._live_fx("SEK") == (0.105, "2026-11-06") and len(seen) == n + 2     # träffar cachas i kurslagret

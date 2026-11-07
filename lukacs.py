@@ -440,6 +440,9 @@ FCF_TOO_LARGE = 50.0        # … eller över 50× den
 FCF_EV_MIN = 0.002          # utan referens-FCF: under 0,2 % av EV (och en referens under 0,2 % av storleken = break-even)
 FCF_SIZE_MAX = 2.0          # över 2× bolagets storlek (EV eller börsvärde, det större) — en FCF-yield över 200 %
 FCF_LOCAL_BAND = 0.30       # forward FCF × växelkursen inom ±30 % av referensen = talet står i lokal valuta
+FCF_LOCAL_FX_MIN = 5.0      # … bara för valutor minst 5× från USD (NOK, SEK, DKK) — PLN:s 4× ligger inom vanliga modellgap
+FCF_LOCAL_REF_MIN = 0.02    # … och bara mot en referens på minst 2 % av storleken: nära noll är en kvot på 10× ingen enhet
+FCF_LOCAL_YIELD = 0.40      # Base-FCF över 40 % av storleken men under 40 % omräknad från NOK/SEK/DKK = lokal valuta
 PENCE = ("GBX", "GBp")      # London i pence: GBP/100
 
 
@@ -526,28 +529,28 @@ def _ref_sizes_ok(ref: Optional[dict]) -> bool:
     return not raw or raw.upper() in _job_table()
 
 
-def fcf_unit_warnings(row: dict, ref: Optional[dict] = None) -> list:
-    """Varningar när forward FCF ser ut att stå i fel enhet (MUSD = miljoner USD). Bara text — räkningen är orörd.
-
-    Varje scenario prövas mot CSM:s FCF för samma scenario, annars Börsdatas FCF (12 mån): under 2 % eller över 50×
-    referensen (tusental, miljarder, en yield i fel ruta), eller — för ett bolag noterat i NOK/SEK/DKK — inom ±30 %
-    av referensen omräknat från den valutan (miljoner NOK i stället för MUSD). Bolagets storlek (EV eller
-    börsvärde, det större) är ett golv och ett tak för båda talen: CSM:s FCF skrivs också för hand, så en referens
-    över 2× storleken varnas själv och används inte, och en referens under 0,2 % av storleken (break-even) säger
-    inget om enheten. Utan referens: över 2× storleken, eller under 0,2 % av EV — utom i Bear, som får ligga nära
-    noll."""
+def _fcf_scan(row: dict, ref: Optional[dict] = None) -> list:
+    """[(scenario, sort, text)] — se fcf_unit_warnings. sort: 'unit' (tusental/miljarder/yield), 'local' (miljoner
+    NOK/SEK/DKK) eller 'size' (över 2× bolagets storlek)."""
     r = row or {}
     fv_in, csm = r.get("fv") or {}, r.get("csm") or {}
     rf = ref if _ref_sizes_ok(ref) else {}
     bd_fcf = _pos(rf.get("fcf_musd"))
     ev = _pos(r.get("ev_musd")) or _pos(rf.get("ev_musd"))
-    mcap = _pos(rf.get("mcap_musd"))
-    size, size_lbl = max(((v, lbl) for v, lbl in ((ev, "EV"), (mcap, "börsvärdet")) if v is not None),
+    mcap, mcap_lbl = _pos(rf.get("mcap_musd")), "börsvärdet"
+    shares = _pos(r.get("framtida_antal_aktier"))
+    if mcap is None and shares is not None:             # inget betrott börsvärde (pence, Yahoo, ny rad): aktier × kurs i USD
+        cur = price_currency(r.get("aktuell_kurs"), ref)
+        p = (cur["usd"] or None) if cur is not None else _pos(r.get("aktuell_kurs"))
+        if p:
+            mcap, mcap_lbl = shares * p, "börsvärdet (aktier × kurs)"
+    size, size_lbl = max(((v, lbl) for v, lbl in ((ev, "EV"), (mcap, mcap_lbl)) if v is not None),
                          default=(None, ""))
     ccy = str((ref or {}).get("currency") or "").strip() if isinstance(ref, dict) else ""
     fx_l = fx_to_usd(ccy) if ccy and not _is_pence(ccy) else None
-    if fx_l is not None and max(fx_l, 1.0 / fx_l) < FX_DISTINCT:
-        fx_l = None                                     # EUR/CAD/AUD … går inte att skilja från ett annat scenario
+    if fx_l is not None and max(fx_l, 1.0 / fx_l) < FCF_LOCAL_FX_MIN:
+        fx_l = None                                     # EUR/CAD/AUD/PLN … går inte att skilja från ett annat scenario
+    C = ccy.upper()
     out = []
 
     def _m(v):
@@ -570,22 +573,52 @@ def fcf_unit_warnings(row: dict, ref: Optional[dict] = None) -> list:
         base = _pos(sc.get("fcf_musd")) if isinstance(sc, dict) else None
         src = f"CSM:s {s}-FCF"
         if base is not None and big(base):             # CSM i fel enhet duger inte som referens
-            out.append(f"{s}: {src} {_f(base)} MUSD är {too_big}")
+            out.append((s, "size", f"{s}: {src} {_f(base)} MUSD är {too_big}"))
             base = None
         if base is not None and size is not None and base < FCF_EV_MIN * size:
             base = None                                 # break-even: en kvot mot nästan noll säger inget om enheten
         if base is None and bd_fcf is not None:
             base, src = bd_fcf, "Börsdatas FCF (12 mån)"
         if base is not None and (f < FCF_TOO_SMALL * base or f > FCF_TOO_LARGE * base):
-            out.append(f"{s}: forward FCF {_f(f)} MUSD mot {src} {_ref(base)} MUSD — står talet i miljoner USD?")
-        elif base is not None and fx_l is not None and abs(f * fx_l / base - 1.0) <= FCF_LOCAL_BAND:
-            out.append(f"{s}: forward FCF {_f(f)} MUSD är {f / base:.1f}× {src} {_ref(base)} MUSD".replace(".", ",")
-                       + f" — omräknat från {ccy.upper()} stämmer det. Står talet i miljoner {ccy.upper()}?")
+            out.append((s, "unit", f"{s}: forward FCF {_f(f)} MUSD mot {src} {_ref(base)} MUSD — står talet i "
+                                   f"miljoner USD?"))
+        elif (base is not None and fx_l is not None and (size is None or base >= FCF_LOCAL_REF_MIN * size)
+              and abs(f * fx_l / base - 1.0) <= FCF_LOCAL_BAND):
+            out.append((s, "local", f"{s}: forward FCF {_f(f)} MUSD är {f / base:.1f}× {src} {_ref(base)} MUSD"
+                        .replace(".", ",") + f" — omräknat från {C} stämmer det. Står talet i miljoner {C}?"))
+        elif (s == ctl.BASE and fx_l is not None and size is not None
+              and f >= FCF_LOCAL_YIELD * size and f * fx_l <= FCF_LOCAL_YIELD * size):
+            out.append((s, "local", f"{s}: forward FCF {_f(f)} MUSD är {100 * f / size:.0f} % av {size_lbl} "
+                                    f"{_m(size)} MUSD — omräknat från {C} {100 * f * fx_l / size:.0f} %. Står talet i "
+                                    f"miljoner {C}?"))
         elif big(f):
-            out.append(f"{s}: forward FCF {_f(f)} MUSD är {too_big}")
+            out.append((s, "size", f"{s}: forward FCF {_f(f)} MUSD är {too_big}"))
         elif base is None and s != ctl.BEAR and ev is not None and f < FCF_EV_MIN * ev:
-            out.append(f"{s}: forward FCF {_f(f)} MUSD är under 0,2 % av EV {_m(ev)} MUSD — står talet i miljoner USD?")
+            out.append((s, "unit", f"{s}: forward FCF {_f(f)} MUSD är under 0,2 % av EV {_m(ev)} MUSD — står talet "
+                                   f"i miljoner USD?"))
     return out
+
+
+def fcf_unit_warnings(row: dict, ref: Optional[dict] = None) -> list:
+    """Varningar när forward FCF ser ut att stå i fel enhet (MUSD = miljoner USD). Bara text — räkningen är orörd.
+
+    Varje scenario prövas mot CSM:s FCF för samma scenario, annars Börsdatas FCF (12 mån): under 2 % eller över 50×
+    referensen (tusental, miljarder, en yield i fel ruta). För ett bolag noterat i NOK/SEK/DKK (valutor minst 5× från
+    USD) också miljoner i den valutan: inom ±30 % av en referens på minst 2 % av storleken omräknat, eller — när CSM
+    står i samma enhet eller saknas — en Base-FCF över 40 % av storleken som omräknad blir en vanlig yield.
+    Bolagets storlek (EV eller börsvärde, det större; utan betrott börsvärde aktier × kurs i USD) är ett tak för båda
+    talen: CSM:s FCF skrivs också för hand, så en referens över 2× storleken varnas själv och används inte, och en
+    referens under 0,2 % av storleken (break-even) säger inget om enheten. Utan referens: över 2× storleken, eller
+    under 0,2 % av EV — utom i Bear, som får ligga nära noll."""
+    return [text for _, _, text in _fcf_scan(row, ref)]
+
+
+def fcf_in_local_currency(row: dict, ref: Optional[dict] = None) -> Optional[str]:
+    """Valutan ('SEK') när forward FCF ser ut att stå i miljoner av bolagets noteringsvaluta — då hör en kurs i samma
+    valuta ihop med den, och att bara byta kursen till USD gör raden fel åt det optimistiska hållet."""
+    if any(kind == "local" for _, kind, _ in _fcf_scan(row, ref)):
+        return str((ref or {}).get("currency") or "").strip().upper() or None
+    return None
 
 
 def gate_ok(row: dict, position_pct=None, strategy: str = "") -> bool:

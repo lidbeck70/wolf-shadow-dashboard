@@ -467,3 +467,62 @@ def test_a_bear_case_near_break_even_is_not_a_unit_error():
     # Utan storlek: en positiv referens visas aldrig som 0 MUSD
     w = fv.fcf_unit_warnings({"fv": {"Bear": {"forward_fcf_musd": 30.0}}, "csm": {"Bear": {"fcf_musd": 0.5}}})
     assert w and "CSM:s Bear-FCF 0,5 MUSD" in w[0]
+
+
+# ── Tredje granskningens fynd ───────────────────────────────────────────────
+def _sek_row(fcf, csm=None, shares=273.5, price=350.0):
+    row = {"framtida_antal_aktier": shares, "aktuell_kurs": price,
+           "fv": {s: {"forward_fcf_musd": f, "target_yield": 12} for s, f in zip(("Base", "Bear", "Bull"), fcf)}}
+    if csm is not None:
+        row["csm"] = {s: {"fcf_musd": c} for s, c in zip(("Base", "Bear", "Bull"), csm)}
+    return row
+
+
+def test_msek_fcf_is_seen_when_csm_is_in_msek_too_or_empty():
+    """CSM i samma enhet (eller tom) gav ingen referens — bolagets storlek ur Börsdata, som ingen skrivit för hand,
+    avslöjar en Base-FCF på 77 % av EV som omräknad från SEK blir 7 %."""
+    sek = producer_refresh_row("SEK", 350.0, market_cap=95700.0, ev=110000.0)    # 9 092 / 10 450 MUSD
+    for row in (_sek_row((8000, 2500, 15000), csm=(8000, 2500, 15000)), _sek_row((8000, 2500, 15000))):
+        w = fv.fcf_unit_warnings(row, sek)
+        assert any("Base: forward FCF 8 000 MUSD är 77 % av EV 10 450 MUSD — omräknat från SEK 7 %" in x for x in w), w
+        assert fv.fcf_in_local_currency(row, sek) == "SEK"
+    ok = _sek_row((760, 237.5, 1425), csm=(760, 237.5, 1425))
+    assert fv.fcf_unit_warnings(ok, sek) == [] and fv.fcf_in_local_currency(ok, sek) is None
+    nok = producer_refresh_row("NOK", 120.0, market_cap=240000.0, ev=260000.0)   # Hydro-likt: 22 800 / 24 700 MUSD
+    assert fv.fcf_in_local_currency(_sek_row((16000, 6000, 30000)), nok) == "NOK"
+    assert fv.fcf_in_local_currency(_sek_row((1520, 570, 2850)), nok) is None
+    eur = dict(sek, currency="EUR")
+    assert fv.fcf_in_local_currency(_sek_row((8000, 2500, 15000)), eur) is None
+
+
+def test_the_local_band_does_not_flag_ordinary_model_gaps():
+    """Ett ~10× gap mellan CSM (nuvarande, kapitaltungt år) och Lukacs (normaliserat) nära break-even är ingen enhet,
+    och PLN (4×) ligger mitt i vanliga modellgap."""
+    for c in ("SEK", "NOK"):
+        ref = {"currency": c, "ev_musd": 1300.0, "mcap_musd": 1200.0}
+        assert fv.fcf_unit_warnings({"fv": {"Bear": {"forward_fcf_musd": 30.0}}, "csm": {"Bear": {"fcf_musd": 3.0}}},
+                                    ref) == []
+    bol = {"currency": "SEK", "ev_musd": 10450.0, "mcap_musd": 9092.0}
+    assert fv.fcf_unit_warnings({"fv": {"Bear": {"forward_fcf_musd": 500.0}}, "csm": {"Bear": {"fcf_musd": 50.0}}},
+                                bol) == []
+    kghm = {"currency": "PLN", "ev_musd": 9000.0, "mcap_musd": 8000.0}
+    assert fv.fcf_unit_warnings(_kusd(fcf=(1500, 600, 2500), csm=(400, 150, 900)), kghm) == []
+    # Samma modell skriven i MSEK fångas fortfarande
+    sek = producer_refresh_row("SEK", 330.0, market_cap=90000.0, ev=100000.0)
+    assert len(fv.fcf_unit_warnings(_kusd(fcf=(9000, 4000, 15000), csm=(855, 380, 1425)), sek)) == 3
+
+
+def test_a_net_cash_producer_without_a_trusted_market_cap_is_not_flagged():
+    """Pence-, Yahoo- och nya rader har inget betrott börsvärde — det uppskattas som aktier × kurs i USD i stället
+    för att storleken blir bolagets lilla EV."""
+    row = {"ev_musd": 80.0, "framtida_antal_aktier": 115.0, "aktuell_kurs": 3.3,
+           "fv": {"Bull": {"forward_fcf_musd": 170.0}}, "csm": {"Bull": {"fcf_musd": 170.0}}}
+    gbx = producer_refresh_row("GBX", 260.0, market_cap=30000.0, ev=8000.0)
+    yahoo = {"ticker": "SLP.L", "price": 260.0, "currency": "GBX", "source": "yfinance"}
+    for ref in (None, gbx, yahoo):
+        assert fv.fcf_unit_warnings(row, ref) == [], ref
+    kusd = dict(row, fv={"Bull": {"forward_fcf_musd": 170000.0}}, csm={})
+    for ref in (None, gbx, yahoo):
+        assert "över 2× börsvärdet (aktier × kurs)" in fv.fcf_unit_warnings(kusd, ref)[0]
+    # Utan antal aktier finns ingen uppskattning — som förut mot EV
+    assert fv.fcf_unit_warnings({"fv": {"Base": {"forward_fcf_musd": 60.0}}, "ev_musd": 10.0}) != []
