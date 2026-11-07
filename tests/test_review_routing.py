@@ -512,3 +512,33 @@ def test_a_last_row_equal_to_the_sheet_cancels_the_earlier_duplicate():
                       "VAR.OL;rule:unit_cost;1200;USD/oz;B;primary;2026-10-02;high;"])
     res = im.check(answers.read_text(text), p.exp, p.writable, p.blocked)
     assert not res.changes and res.same == 1 and any("dubbel rad" in t for _l, _k, t in res.ignored)
+
+
+# ── Fjärde granskningsrundan ─────────────────────────────────────────────────
+@pytest.mark.parametrize("values, dropped, kept", [((1300, 1200), [2], None), ((1300, 1200, 1400), [2], 1400.0),
+                                                   ((1300, 1400), [2], 1400.0), ((1300, 1400, 1500), [2, 3], 1500.0)])
+def test_a_duplicate_names_the_row_that_was_dropped(values, dropped, kept):
+    """Rond 4 fynd 1: listan över överhoppade rader nämner raden som föll bort — inte raden som gäller."""
+    stores = _stores()
+    stores["producers"]["producers"][0]["unit_cost"] = 1200.0
+    exp, targets = _card(stores)
+    p = rt.plan(exp, targets, (), stores)
+    text = "\n".join([HEAD] + [f"VAR.OL;rule:unit_cost;{v};USD/oz;K{i};primary;2026-10-01;high;"
+                               for i, v in enumerate(values)])
+    res = im.check(answers.read_text(text), p.exp, p.writable, p.blocked)
+    assert [line for line, _k, t in res.ignored if "dubbel rad" in t] == dropped
+    assert [c.new for c in res.changes] == ([] if kept is None else [kept])
+
+
+def test_blank_rows_of_another_company_are_not_this_cards_gaps():
+    """Rond 4 fynd 2: fel fil (LUG.ST:s tomma underlag i VAR.OL-kortet) — inga luckor räknas, och importen säger
+    att filen gäller ett annat bolag."""
+    stores = _stores()
+    other = copy.deepcopy(stores["producers"])
+    other["producers"][0]["ticker"] = "LUG.ST"
+    lug = ex.build("LUG.ST", {"producers": other}, ["rule"], blob=None)
+    got = answers.read_file(ex.to_csv(lug.rows), "underlag_LUG.ST.csv")
+    exp, targets = _card(stores)
+    p = rt.plan(exp, targets, (), stores)
+    res = im.check(got, p.exp, p.writable, p.blocked)
+    assert res.blank == [] and any("annan ticker (LUG.ST)" in t for _l, _k, t in res.issues)

@@ -211,8 +211,12 @@ def check(answers: list, exp, writable: Optional[set] = None, blocked: Optional[
     shown_who = getattr(exp, "shown_who", None) or {r.get("key"): r.get("who")
                                                      for r in getattr(exp, "rows", None) or [] if isinstance(r, dict)}
     resolved, siblings = [], {}
+    other_blank: list = []                           # tomma rader för ett annat bolag — räknas inte som luckor här
     for a in answers or []:
         if blank(a.value):
+            if a.ticker and want and not (_forms(a.ticker, smap) & want):
+                other_blank.append(a)
+                continue
             f = resolve(a.key, fields, rows, own)[0] if str(a.key or "").strip() else None
             row = rows.get(f.sheet) if f is not None else None
             who = (str(getattr(a, "who", "") or "").strip() or shown_who.get(f.key, f.who)) if f is not None else None
@@ -250,8 +254,12 @@ def check(answers: list, exp, writable: Optional[set] = None, blocked: Optional[
             continue
         resolved.append((a, f))
         siblings[f.key] = str(a.unit or "").strip()
+    if other_blank and not any(t.startswith("annan ticker") for _l, _k, t in res.issues):
+        a0 = other_blank[0]
+        res.issues.append((a0.line, a0.key, f"annan ticker ({a0.ticker}) — underlaget gäller {exp.ticker}; "
+                                            f"{len(other_blank)} tomma rader för {a0.ticker} räknas inte"))
     classes = {f.sheet: coerce(f, a.value)[0] for a, f in resolved if f.path == "fcf_kvalitet"}
-    picked: dict = {}
+    picked: dict = {}                                 # {mål: (svarets rad, Change)}
     for a, f in resolved:
         new, err, unit_in_value, warn = coerce(f, a.value)
         if err:
@@ -283,19 +291,19 @@ def check(answers: list, exp, writable: Optional[set] = None, blocked: Optional[
         tk = target_key(f)
         if cat.same_value(old, new):              # står redan i arket
             if tk in picked:                      # svarets sista rad bekräftar arkets värde — den gäller
-                picked.pop(tk)
-                res.ignored.append((a.line, f.key, "dubbel rad — den sista gäller"))
+                prev, _ch = picked.pop(tk)
+                res.ignored.append((prev, f.key, f"dubbel rad — rad {a.line} gäller"))
             res.same += 1
             res.same_keys.append(f)
             continue
         if not cat.is_empty(old):
             notes.append(OVERWRITE)
-        if tk in picked:
-            res.ignored.append((a.line, f.key, "dubbel rad — den sista gäller"))
-        picked[tk] = Change(f, old, new, unit=unit, source=source, source_type=stype, date=when,
+        if tk in picked:                          # den tidigare raden faller bort — den sista gäller
+            res.ignored.append((picked[tk][0], f.key, f"dubbel rad — rad {a.line} gäller"))
+        picked[tk] = a.line, Change(f, old, new, unit=unit, source=source, source_type=stype, date=when,
                             confidence=_confidence(a.confidence), comment=str(a.comment or "").strip()[:1000],
                             warnings=notes)
-    res.changes = list(picked.values())
+    res.changes = [ch for _line, ch in picked.values()]
     return res
 
 
