@@ -52,13 +52,16 @@ def _apply_catalysts(row: dict, cats: list, on_apply: Optional[Callable],
 def render_extractor(sheet: str, row: dict, widget_keys: dict,
                      on_apply: Optional[Callable] = None,
                      nested: Optional[dict] = None,
-                     catalyst_status: Optional[str] = None) -> None:
+                     catalyst_status: Optional[str] = None,
+                     floor: Optional[float] = 0.0) -> None:
     """Expander med uppladdning, knapp och förslag.
 
     widget_keys: {fältnyckel: widget-key} för de fält som får skrivas in.
     nested: {fältnyckel: undernyckel} när fältet ligger i en dict i raden
     (Tiggres screen-flaggor: row["screen"][key]).
     catalyst_status: Tiggres CAT_WAITING — aktiverar katalysator-knappen.
+    floor: rutornas golv (arkens rutor tar ≥ 0) — ett tal under det erbjuds inte som "Använd" (ett negativt NPV
+    eller nettokostnad efter biprodukter skulle fälla rutan). None = inget golv.
     """
     from ai import openai_client as oc
 
@@ -133,7 +136,11 @@ def render_extractor(sheet: str, row: dict, widget_keys: dict,
                 f"<span style='color:{DIM};font-size:0.78rem;'>{page}"
                 + (f" · ”{p['quote']}”" if p["quote"] else "") + "</span>",
                 unsafe_allow_html=True)
-            if p["apply"] and p["key"] in widget_keys:
+            below = (floor is not None and p["kind"] == "number" and isinstance(p["value"], (int, float))
+                     and not isinstance(p["value"], bool) and p["value"] < floor)
+            if below and p["key"] in widget_keys:
+                b.caption(f"negativt — rutan tar ≥ {floor:g}")
+            elif p["apply"] and p["key"] in widget_keys:
                 current = (row.get(nested.get(p["key"]) if nested else None) or {}).get(p["key"]) \
                     if nested and p["key"] in nested else row.get(p["key"])
                 same = current == p["value"] or (

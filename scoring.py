@@ -114,6 +114,26 @@ POSITION_NOTE = {
 
 
 # ── Rena beräkningar ─────────────────────────────────────────────────────────
+def _write_changed(row: dict, pairs) -> bool:
+    """Skriv bara de fält vars ruta du ändrat: (fält, rutans värde, värdet rutan visades med). Ett sparat negativt
+    tal som rutan visar som tomt skrivs inte över när arket bara öppnas — inget blir osparat av att titta."""
+    hit = False
+    for field, new, shown in pairs:
+        if storage.differs(new, shown):
+            row[field] = new
+            hit = True
+    return hit
+
+
+def _neg_note(row: dict, labels: dict) -> None:
+    """En rad om sparade negativa tal som rutorna (golvet 0) inte kan visa — de står kvar tills du skriver om dem."""
+    neg = [f"{lbl} {_num(row.get(k)):g}".replace(".", ",") for k, lbl in labels.items()
+           if _num(row.get(k)) is not None and _num(row.get(k)) < 0]
+    if neg:
+        st.caption("Sparat men negativt — visas inte i rutan (golvet 0): " + " · ".join(neg)
+                   + ". Skriv in rätt tal.")
+
+
 def _nonneg(value) -> Optional[float]:
     """Värdet för ett fält som inte kan vara negativt (kassa, burn, börsvärde …): ett negativt tal visas som tomt —
     en lucka att fylla i — i stället för att fälla arket (rutan har golvet 0)."""
@@ -503,9 +523,8 @@ def _sprott_math(data: dict, row: dict) -> None:
                            f"sc_burn_{row['id']}", lambda: _save(data), fmt="{:,.1f}")
     except Exception:
         pass
-    if (storage.differs(cash, row.get("cash"))
-            or storage.differs(burn, row.get("burn"))):
-        row["cash"], row["burn"] = cash, burn
+    _neg_note(row, {"cash": "kassa", "burn": "burn"})
+    if _write_changed(row, (("cash", cash, _nonneg(row.get("cash"))), ("burn", burn, _nonneg(row.get("burn"))))):
         _save(data)
 
     ok = sprott_runway_ok(rw)
@@ -538,10 +557,9 @@ def _durrett_math(data: dict, row: dict) -> None:
     profit = c3.number_input("Framtida vinst/år (MUSD)", min_value=0.0, step=5.0,
                              value=_nonneg(row.get("profit")),
                              key=f"sc_profit_{row['id']}")
-    if (storage.differs(mcap, row.get("mcap"))
-            or storage.differs(moz, row.get("moz"))
-            or storage.differs(profit, row.get("profit"))):
-        row["mcap"], row["moz"], row["profit"] = mcap, moz, profit
+    _neg_note(row, {"mcap": "börsvärde", "moz": "uns", "profit": "framtida vinst"})
+    if _write_changed(row, (("mcap", mcap, _nonneg(row.get("mcap"))), ("moz", moz, _nonneg(row.get("moz"))),
+                            ("profit", profit, _nonneg(row.get("profit"))))):
         _save(data)
     try:
         import refresh_ui
@@ -596,10 +614,8 @@ def _durrett_math(data: dict, row: dict) -> None:
                 row["profit"] = round(musd, 1)
                 _save(data)
                 st.rerun()
-        if (storage.differs(prod, row.get("prod"))
-                or storage.differs(tp, row.get("target"))
-                or storage.differs(aisc, row.get("aisc"))):
-            row["prod"], row["target"], row["aisc"] = prod, tp, aisc
+        if _write_changed(row, (("prod", prod, _nonneg(row.get("prod"))), ("target", tp, row.get("target")),
+                                ("aisc", aisc, _nonneg(row.get("aisc"))))):
             _save(data)
 
 

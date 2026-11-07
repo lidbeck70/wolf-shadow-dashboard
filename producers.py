@@ -379,6 +379,26 @@ def _nonneg(value) -> Optional[float]:
     return None if v is not None and v < 0 else v
 
 
+def _write_changed(row: dict, pairs) -> bool:
+    """Skriv bara de fält vars ruta du ändrat: (fält, rutans värde, värdet rutan visades med). Ett sparat negativt
+    tal som rutan visar som tomt skrivs inte över när arket bara öppnas — inget blir osparat av att titta."""
+    hit = False
+    for field, new, shown in pairs:
+        if storage.differs(new, shown):
+            row[field] = new
+            hit = True
+    return hit
+
+
+def _neg_note(row: dict, labels: dict) -> None:
+    """En rad om sparade negativa tal som rutorna (golvet 0) inte kan visa — de står kvar tills du skriver om dem."""
+    neg = [f"{lbl} {_num(row.get(k)):g}".replace(".", ",") for k, lbl in labels.items()
+           if _num(row.get(k)) is not None and _num(row.get(k)) < 0]
+    if neg:
+        st.caption("Sparat men negativt — visas inte i rutan (golvet 0): " + " · ".join(neg)
+                   + ". Skriv in rätt tal.")
+
+
 def _suggest(*args, **kw) -> None:
     """Börsdata-förslag bredvid ett fält (sheets_refresh.py). Tyst utan blob."""
     try:
@@ -550,19 +570,20 @@ def _producers(data: dict) -> None:
             top = rc.slot() if rc else None
             changed = False
             v1, v2, v3, v4 = st.columns(4)
+            shown = {k: _nonneg(row.get(k)) for k in ("ev_ebitda", "unit_cost", "price")}
             ev = v1.number_input("EV/EBITDA", min_value=0.0, step=0.5,
-                                 value=_nonneg(row.get("ev_ebitda")),
+                                 value=shown["ev_ebitda"],
                                  key=f"pr_ev_{row['id']}")
             nd = v2.number_input("Nettoskuld/EBITDA", step=0.1,
                                  value=_num(row.get("nd_ebitda")),
                                  key=f"pr_nd_{row['id']}",
                                  help="Negativt = nettokassa.")
             cost = v3.number_input("Kostnad per enhet", min_value=0.0, step=10.0,
-                                   value=_num(row.get("unit_cost")),
+                                   value=shown["unit_cost"],
                                    key=f"pr_c_{row['id']}",
                                    help="AISC eller C1 — samma enhet som priset.")
             price = v4.number_input("Råvarupris nu", min_value=0.0, step=10.0,
-                                    value=_num(row.get("price")),
+                                    value=shown["price"],
                                     key=f"pr_p_{row['id']}")
             _suggest("producers", row, "ev_ebitda", "ev_ebitda", "EV/EBITDA",
                      f"pr_ev_{row['id']}", lambda: _save(data), fmt="{:.1f}", lo=0.0)
@@ -573,12 +594,9 @@ def _producers(data: dict) -> None:
             _suggest("producers", row, "price", "commodity_price", "råvarupris",
                      f"pr_p_{row['id']}", lambda: _save(data), fmt="{:,.2f}",
                      unit_field="commodity_unit")
-            if (storage.differs(ev, row.get("ev_ebitda"))
-                    or storage.differs(nd, row.get("nd_ebitda"))
-                    or storage.differs(cost, row.get("unit_cost"))
-                    or storage.differs(price, row.get("price"))):
-                row["ev_ebitda"], row["nd_ebitda"] = ev, nd
-                row["unit_cost"], row["price"] = cost, price
+            _neg_note(row, {"ev_ebitda": "EV/EBITDA", "unit_cost": "kostnad per enhet", "price": "råvarupris"})
+            if _write_changed(row, (("ev_ebitda", ev, shown["ev_ebitda"]), ("nd_ebitda", nd, row.get("nd_ebitda")),
+                                    ("unit_cost", cost, shown["unit_cost"]), ("price", price, shown["price"]))):
                 changed = True
 
             m = r["margin"]
@@ -713,12 +731,13 @@ def _ev_nav_section(data: dict, row: dict) -> bool:
                 f"(utanför poängen)</span></div>", unsafe_allow_html=True)
     k_ev, k_nav, k_np = f"pr_evm_{rid}", f"pr_nav_{rid}", f"pr_navp_{rid}"
     n1, n2, n3 = st.columns(3)
-    ev = n1.number_input("EV (MUSD)", min_value=0.0, step=10.0, value=_nonneg(row.get("ev_musd")), key=k_ev,
+    shown = {k: _nonneg(row.get(k)) for k in ("ev_musd", "nav_musd", "nav_price")}
+    ev = n1.number_input("EV (MUSD)", min_value=0.0, step=10.0, value=shown["ev_musd"], key=k_ev,
                          help="Börsvärde + nettoskuld i miljoner USD. Hämtas ur Börsdata.")
-    nav = n2.number_input("NAV efter skatt (MUSD)", min_value=0.0, step=10.0, value=_num(row.get("nav_musd")),
+    nav = n2.number_input("NAV efter skatt (MUSD)", min_value=0.0, step=10.0, value=shown["nav_musd"],
                           key=k_nav, help="Summan av gruvornas NPV efter skatt (tekniska rapporter eller "
                                           "analytikerkonsensus). Aldrig före skatt.")
-    np_ = n3.number_input("Metallpris i NAV", min_value=0.0, step=10.0, value=_num(row.get("nav_price")),
+    np_ = n3.number_input("Metallpris i NAV", min_value=0.0, step=10.0, value=shown["nav_price"],
                           key=k_np, help="Priset NAV:n är räknad på, i samma enhet som råvarupriset ovan.")
     src = st.text_input("NAV-källa", value=row.get("nav_source") or "", key=f"pr_navs_{rid}",
                         placeholder="t.ex. NI 43-101 2025, 5 % diskontering / analytikerkonsensus")
@@ -727,11 +746,9 @@ def _ev_nav_section(data: dict, row: dict) -> bool:
     if st.session_state.get(f"{k_ev}_msg"):
         b2.caption(st.session_state[f"{k_ev}_msg"])
     _suggest("producers", row, "ev_musd", "ev_musd", "EV (MUSD)", k_ev, lambda: _save(data), fmt="{:,.0f}", lo=0.0)
-    changed = False
-    if (storage.differs(ev, row.get("ev_musd")) or storage.differs(nav, row.get("nav_musd"))
-            or storage.differs(np_, row.get("nav_price"))):
-        row["ev_musd"], row["nav_musd"], row["nav_price"] = ev, nav, np_
-        changed = True
+    _neg_note(row, {"ev_musd": "EV", "nav_musd": "NAV efter skatt", "nav_price": "metallpris i NAV"})
+    changed = _write_changed(row, (("ev_musd", ev, shown["ev_musd"]), ("nav_musd", nav, shown["nav_musd"]),
+                                   ("nav_price", np_, shown["nav_price"])))
     if (src or "") != (row.get("nav_source") or ""):
         row["nav_source"] = src.strip()
         changed = True
@@ -812,11 +829,13 @@ def _royalty(data: dict) -> None:
             changed = _level(row)
 
             p1, p2, p3 = st.columns(3)
+            shown = {k: _nonneg(row.get(k)) for k in ("pnav_now", "pnav_bottom", "ev_now", "ev_median",
+                                                      "geo_now", "geo_3y")}
             pn = p1.number_input("P/NAV nu", min_value=0.0, step=0.05,
-                                 value=_num(row.get("pnav_now")),
+                                 value=shown["pnav_now"],
                                  key=f"ro_pn_{row['id']}")
             pb = p2.number_input("P/NAV historisk botten", min_value=0.0, step=0.05,
-                                 value=_num(row.get("pnav_bottom")),
+                                 value=shown["pnav_bottom"],
                                  key=f"ro_pb_{row['id']}")
             disc = discount_vs_bottom(pn, pb)
             p3.metric("Mot botten",
@@ -825,10 +844,10 @@ def _royalty(data: dict) -> None:
 
             e1, e2, e3 = st.columns(3)
             en = e1.number_input("EV/EBITDA nu", min_value=0.0, step=0.5,
-                                 value=_nonneg(row.get("ev_now")),
+                                 value=shown["ev_now"],
                                  key=f"ro_en_{row['id']}")
             em = e2.number_input("EV/EBITDA median", min_value=0.0, step=0.5,
-                                 value=_nonneg(row.get("ev_median")),
+                                 value=shown["ev_median"],
                                  key=f"ro_em_{row['id']}")
             med = vs_median(en, em)
             e3.metric("Mot median", f"{med:+.1f} %" if med is not None else "–",
@@ -841,11 +860,11 @@ def _royalty(data: dict) -> None:
             g1, g2, g3 = st.columns(3)
             gn = g1.number_input("GEO/aktie nu", min_value=0.0, step=0.01,
                                  format="%.4f",
-                                 value=_num(row.get("geo_now")),
+                                 value=shown["geo_now"],
                                  key=f"ro_gn_{row['id']}")
             g3y = g2.number_input("GEO/aktie för 3 år sedan", min_value=0.0,
                                   step=0.01, format="%.4f",
-                                  value=_num(row.get("geo_3y")),
+                                  value=shown["geo_3y"],
                                   key=f"ro_g3_{row['id']}")
             geo = geo_growth(gn, g3y)
             g3.metric("GEO-tillväxt", f"{geo:+.1f} %" if geo is not None else "–",
@@ -856,15 +875,11 @@ def _royalty(data: dict) -> None:
                              {"geo_now": f"ro_gn_{row['id']}", "geo_3y": f"ro_g3_{row['id']}",
                               "pnav_now": f"ro_pn_{row['id']}"})
 
-            if (storage.differs(pn, row.get("pnav_now"))
-                    or storage.differs(pb, row.get("pnav_bottom"))
-                    or storage.differs(en, row.get("ev_now"))
-                    or storage.differs(em, row.get("ev_median"))
-                    or storage.differs(gn, row.get("geo_now"))
-                    or storage.differs(g3y, row.get("geo_3y"))):
-                row["pnav_now"], row["pnav_bottom"] = pn, pb
-                row["ev_now"], row["ev_median"] = en, em
-                row["geo_now"], row["geo_3y"] = gn, g3y
+            _neg_note(row, {"pnav_now": "P/NAV nu", "pnav_bottom": "P/NAV botten", "ev_now": "EV/EBITDA nu",
+                            "ev_median": "EV/EBITDA median", "geo_now": "GEO nu", "geo_3y": "GEO 3 år"})
+            if _write_changed(row, (("pnav_now", pn, shown["pnav_now"]), ("pnav_bottom", pb, shown["pnav_bottom"]),
+                                    ("ev_now", en, shown["ev_now"]), ("ev_median", em, shown["ev_median"]),
+                                    ("geo_now", gn, shown["geo_now"]), ("geo_3y", g3y, shown["geo_3y"]))):
                 changed = True
 
             vd2 = royalty_signal(row)

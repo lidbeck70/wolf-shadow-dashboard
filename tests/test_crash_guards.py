@@ -27,11 +27,13 @@ def sheet(monkeypatch):
     import refresh_ui
     import storage
 
-    def make(page: str, blob: dict):
+    def make(page: str, blob: dict, stores: dict = None):
+        """stores = lagren som 'GitHub' har — de läses med storage.session_load som i drift (ren baslinje)."""
         monkeypatch.setattr(gist_storage, "load_blob",
                             lambda name, default=None: blob if name == "sheets_refresh.json" else default)
         monkeypatch.setattr(refresh_ui, "load_refresh", lambda: blob)     # annars cachad mellan testerna
-        monkeypatch.setattr(storage, "load_json", lambda name, default=None: default)
+        monkeypatch.setattr(storage, "load_json",
+                            lambda name, default=None: copy.deepcopy((stores or {}).get(name, default)))
         monkeypatch.setattr(storage, "legacy_gist", lambda f: None)
 
         def app(page, root):
@@ -221,3 +223,48 @@ def test_momentum_caption_shows_text_values():
     """Fynd 13: ett momentumfält med text ('n/a') formateras som text i Durretts 'Mer'-flik, inte med :g."""
     from confidence import ui as cui
     assert cui._fmt("n/a") == "n/a" and cui._fmt(12.5) == "12.5"
+
+
+# ── Att titta skriver inget (granskningen av rättelserna) ────────────────────
+NEG_RULE = {"id": "r1", "ticker": "AAA", "commodity": "Guld", "ev_ebitda": -8.4, "ev_musd": -35.0,
+            "unit_cost": -2.5, "nav_musd": -45.0}
+
+
+@pytest.mark.parametrize("page, stores, store", [
+    ("Rick Rule", {"producers": {"producers": [NEG_RULE], "royalty": []}}, "producers"),
+    ("Royalty C", {"producers": {"producers": [], "royalty": [{"id": "k1", "ticker": "RYL", "level": 2,
+                                                               "ev_now": -3.2, "ev_median": 12.0}]}}, "producers"),
+    ("Sprott", {"scoring": {"sprott": [{"id": "q1", "ticker": "AAA", "commodity": "Guld", "factors": {},
+                                        "cash": 30.0, "burn": -12.4, "profit": -50.0}], "durrett": []}}, "scoring"),
+    ("Tiggre", {"tiggre": {"candidates": [{"id": "c1", "ticker": "CAND", "screen": {}, "downside": -40.0,
+                                           "factors": {}, "catalysts": [], "nav": -30.0}],
+                           "positions": [], "closed": [], "parked": []}}, "tiggre"),
+])
+def test_opening_a_sheet_with_stored_negatives_changes_nothing(sheet, page, stores, store):
+    """Ett sparat negativt tal (från före golvet) fäller inte sidan, skrivs inte över när arket bara öppnas och gör
+    inte arket osparat — det står kvar med en notis tills du skriver in rätt tal."""
+    import storage
+    at = sheet(page, {}, stores)
+    at.run()
+    assert not at.exception, at.exception
+    at.run()                                                                   # en omritning till
+    assert not at.exception, at.exception
+    assert at.session_state[store] == stores[store]                           # raden orörd
+    fp = storage._fingerprint(at.session_state[store])
+    assert fp == at.session_state[storage._clean_key(store)]                  # inget osparat av att titta
+    assert any("Sparat men negativt" in c.value for c in at.caption)
+
+
+def test_the_extractor_does_not_offer_a_negative_number(sheet):
+    """Dokumentläsaren erbjuder inte 'Använd' för ett negativt tal (burn som negativt kassaflöde, ett negativt
+    NPV) — arkens rutor tar ≥ 0. Ett positivt förslag erbjuds som förut."""
+    at = sheet("Sprott", {}, {"scoring": {"sprott": [{"id": "q1", "ticker": "AAA", "commodity": "Guld",
+                                                      "factors": {}, "cash": 30.0}], "durrett": []}})
+    at.session_state["xt_doc:AAA"] = {"parsed": {"fields": {
+        "burn": {"value": "-12,4", "unit": "MUSD", "confidence": "medium"},
+        "cash": {"value": "40", "unit": "MUSD", "confidence": "high"}}}}
+    at.run()
+    assert not at.exception, at.exception
+    keys = {b.key for b in at.button}
+    assert "xt_sprott_q1_use_burn" not in keys and "xt_sprott_q1_use_cash" in keys
+    assert any("negativt — rutan tar ≥ 0" in c.value for c in at.caption)
