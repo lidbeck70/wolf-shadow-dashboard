@@ -78,7 +78,7 @@
       "ds_warrants": 1,
       "ev_ebitda": 4.0,
       "fcf_kvalitet": "C",
-      "fin_catalyst_text": "Ingen särskild finansieringskatalysator krävs enligt nuvarande DS-poäng i arket; följ BlueNord-fusionens kontantvederlag och finansiering.",
+      "fin_catalyst_text": "Ingen ytterligare finansieringskatalysator identifierad – huvudsaklig finansiering är redan säkrad. Vår Energi emitterade USD 2,5 md senior notes under Q3 2026 och rapporterade USD 7,501 md tillgänglig likviditet per 30.09.2026. BlueNord-fusionen kräver NOK 1,964 md kontantvederlag plus 248,4m nya Vår Energi-aktier; transaktionen uppges inte vara beroende av ytterligare finansiering. Följ i stället closing och slutlig kontant-/utdelningsjustering.",
       "forvantad_utspadning": 0.0,
       "framtida_antal_aktier": 2744.806246,
       "fully_diluted_shares": 2496406246.0,
@@ -104,8 +104,9 @@
       "kapitaldisciplin": true,
       "mine_life": 10.4,
       "name": "",
+      "nav_musd": 17300.0,
       "nav_price": 79.0,
-      "nav_source": "Vår Energi Q3 2026, Note 12 – impairment assumptions; ingen publicerad aggregerad NAV efter skatt",
+      "nav_source": "Vår Energi Q3 2026, Note 12 impairment assumptions + egen förenklad DCF-proxy",
       "nd_ebitda": 0.4,
       "position_pct": 25.0,
       "price": 95.0,
@@ -150,20 +151,24 @@
           "value": "C"
         },
         "fin_catalyst_text": {
-          "source": "ChatGPT: https://financialfilings.com/filings/var-energi-asa/interim-quarterly-report/2026/74365730/ (financial review, pp. 3–5); https://varenergi.no/en/newsroom/stock-exchange-announcements/?release=DF4E57ADD9866580 · 2026-11-07",
-          "value": "Ingen särskild finansieringskatalysator krävs enligt nuvarande DS-poäng i arket; följ BlueNord-fusionens kontantvederlag och finansiering."
+          "source": "ChatGPT: https://mb.cision.com/Public/21086/4413344/bd337e0a33ac44a2.pdf (pp. 3–4, 21–22); https://news.cision.com/var-energi-asa/r/var-energi-to-combine-with-bluenord--building-the-largest-independent-producer-of-oil-and-gas-in-eur%2Cc4376331 · 2026-11-07",
+          "value": "Ingen ytterligare finansieringskatalysator identifierad – huvudsaklig finansiering är redan säkrad. Vår Energi emitterade USD 2,5 md senior notes under Q3 2026 och rapporterade USD 7,501 md tillgänglig likviditet per 30.09.2026. BlueNord-fusionen kräver NOK 1,964 md kontantvederlag plus 248,4m nya Vår Energi-aktier; transaktionen uppges inte vara beroende av ytterligare finansiering. Följ i stället closing och slutlig kontant-/utdelningsjustering."
         },
         "framtida_antal_aktier": {
           "source": "ChatGPT: https://varenergi.no/en/newsroom/stock-exchange-announcements/?release=DF4E57ADD9866580; https://varenergi.no/no/nyheter-og-media/borsmeldinger/?release=CEB24475FA386CA3 · 2026-11-07",
           "value": 2744.806246
+        },
+        "nav_musd": {
+          "source": "ChatGPT: https://mb.cision.com/Public/21086/4413344/bd337e0a33ac44a2.pdf (pp. 3–5, 21–22, Note 12 pp. 40–41) · 2026-11-07",
+          "value": 17300.0
         },
         "nav_price": {
           "source": "ChatGPT: https://financialfilings.com/filings/var-energi-asa/interim-quarterly-report/2026/74365730/ (Note 12, impairment assumptions) · 2026-11-07",
           "value": 79.0
         },
         "nav_source": {
-          "source": "ChatGPT: https://financialfilings.com/filings/var-energi-asa/interim-quarterly-report/2026/74365730/ (Note 12) · 2026-11-07",
-          "value": "Vår Energi Q3 2026, Note 12 – impairment assumptions; ingen publicerad aggregerad NAV efter skatt"
+          "source": "ChatGPT: https://mb.cision.com/Public/21086/4413344/bd337e0a33ac44a2.pdf (pp. 40–41; operating cash flow pp. 3–5) · 2026-11-07",
+          "value": "Vår Energi Q3 2026, Note 12 impairment assumptions + egen förenklad DCF-proxy"
         },
         "what_must_go_right": {
           "source": "ChatGPT: https://financialfilings.com/filings/var-energi-asa/interim-quarterly-report/2026/74365730/ (pp. 5–9); https://varenergi.no/no/nyheter-og-media/borsmeldinger/?release=CEB24475FA386CA3; https://varenergi.no/en/newsroom/stock-exchange-announcements/?release=DF4E57ADD9866580 · 2026-11-07",
