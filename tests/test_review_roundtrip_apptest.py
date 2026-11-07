@@ -370,18 +370,58 @@ def test_scorecard_routes_each_row_to_its_sheet_and_creates_the_card_then(page):
     assert any("2 ändringar inskrivna i" in s.value for s in at.success)
 
 
-def test_thor_arken_tab_has_no_import(monkeypatch):
+def _thor_at(monkeypatch, state: dict):
     import streamlit as st
     from streamlit.testing.v1 import AppTest
     import test_review_chatgpt_ui as base
     monkeypatch.setattr(storage, "session_load", lambda name, default=None, legacy_file=None:
                         st.session_state.setdefault(name, copy.deepcopy(base.THOR_STORES.get(name, default))))
+
+    def _no_save(*a, **k):
+        raise AssertionError("importen får aldrig spara till GitHub")
+    monkeypatch.setattr(storage, "save_json", _no_save)
     at = AppTest.from_function(base._thor_script, default_timeout=120)
     at.session_state["_stores"], at.session_state["_strategy"] = copy.deepcopy(base.THOR_STORES), "rule"
+    for k, v in state.items():
+        at.session_state[k] = v
     at.run()
     assert not at.exception, at.exception
-    assert not at.get("file_uploader") and not [t for t in at.text_area if str(t.key).startswith("rv_imp_")]
-    assert any("Svaret läses tillbaka i arket" in c.value for c in at.caption)
+    return at
+
+
+THOR_ANSWER = "\n".join([HEAD, "BOL.ST;rule:rp_ratio;11;år;Reserve report 2025;primary;2025-12-31;high;",
+                         "BOL.ST;scorecard:valuation;P/NAV 0,5;;Analys 2026;secondary;2026-09-01;high;",
+                         "BOL.ST;scorecard:sell_rule;Stopp −20 %;;;;;high;"])
+
+
+def test_thor_arken_tab_reads_the_answer_back_into_every_sheet(monkeypatch):
+    """Thors Arken-flik: underlaget ut och svaret tillbaka på samma ställe. Rick Rule-raden ('BOL' — registrets
+    karta säger BOL.ST) och Scorecardkortet får sina rader, 'Bara du' hoppas över, inget sparas utan 💾."""
+    at = _thor_at(monkeypatch, {"rv_sheet_map": {"BOL": "BOL.ST"}})
+    at.text_area(key="rv_imp_txt_thor_BOL.ST_0").set_value(THOR_ANSWER).run()
+    assert not at.exception, at.exception
+    caps = " ".join(c.value for c in at.caption)
+    assert "2 att skriva in → Rick Rule 1 · Scorecard 1" in caps and "Bara du" in caps
+    at.button(key="rv_imp_go_thor_BOL.ST").click().run()
+    assert not at.exception, at.exception
+    assert at.session_state["producers"]["producers"][0]["rp_ratio"] == 11.0
+    card = at.session_state["scorecard"]["cards"]["boliden|BOL"]
+    assert card["valuation"] == "P/NAV 0,5" and "sell_rule" not in card
+    assert any("2 ändringar inskrivna i Rick Rule och Scorecard" in s.value for s in at.success)
+    assert at.text_area(key="rv_imp_txt_thor_BOL.ST_1").value == ""
+
+
+def test_thor_without_a_trusted_map_does_not_write_into_a_bare_row(monkeypatch):
+    """Utan säker tickerkarta (registret gick inte att läsa helt) skriver Thor inte i den bara raden 'BOL' — den kan
+    vara ett annat bolag. Importen säger varför, och Scorecardkortet på samma form spärras likadant."""
+    import time
+    at = _thor_at(monkeypatch, {"rv_sheet_map_failed": time.time()})
+    at.text_area(key="rv_imp_txt_thor_BOL.ST_0").set_value(THOR_ANSWER).run()
+    assert not at.exception, at.exception
+    warns = " ".join(w.value for w in at.warning)
+    assert "raden står på 'BOL'" in warns and "tickerkarta kunde inte läsas" in warns
+    assert at.session_state["producers"]["producers"][0].get("rp_ratio") is None
+
 
 
 # ── Ett svar, alla ark (routningen) ──────────────────────────────────────────

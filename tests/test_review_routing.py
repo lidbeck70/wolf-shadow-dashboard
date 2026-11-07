@@ -542,3 +542,20 @@ def test_blank_rows_of_another_company_are_not_this_cards_gaps():
     p = rt.plan(exp, targets, (), stores)
     res = im.check(got, p.exp, p.writable, p.blocked)
     assert res.blank == [] and any("annan ticker (LUG.ST)" in t for _l, _k, t in res.issues)
+
+
+# ── Thors Arken-flik ─────────────────────────────────────────────────────────
+def test_a_row_thor_matched_with_a_partial_map_is_not_written():
+    """Thors underlag matchade 'TEL' (TE Connectivity) som Telenor med en karta ur ett ofullständigt register.
+    Importen skriver med den säkra kartan, där 'TEL' inte är TEL.OL — raden spärras med förklaring."""
+    stores = _stores()
+    stores["producers"]["producers"] = [{"id": "p1", "ticker": "TEL.OL", "name": "Telenor"}]
+    stores["insider"]["signals"] = [{"id": "s1", "ticker": "TEL", "name": "TE Connectivity", "comment": ""}]
+    thor = ex.build("TEL.OL", stores, ["rule", "insider"], blob=None, sheet_map={"TEL": "TEL.OL"})
+    assert thor.source_rows["insider"]["ticker"] == "TEL"                    # Thors ofullständiga karta
+    p = rt.plan(thor, {}, (), stores, sheet_map={"BOL": "BOL.ST"}, view=set(thor.sheets))
+    assert "insider" in p.blocked and "annat bolag" in p.blocked["insider"]
+    assert p.targets["rule"] is stores["producers"]["producers"][0] and p.own == {"rule", "insider"}
+    res = im.check(answers.read_text("\n".join([HEAD, "TEL.OL;insider:insiders;3;;Insyn;primary;2026-10-02;high;"])),
+                   p.exp, p.writable, p.blocked)
+    assert not res.changes and stores["insider"]["signals"][0].get("insiders") is None

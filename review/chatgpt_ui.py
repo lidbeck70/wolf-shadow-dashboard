@@ -12,7 +12,8 @@ det ark Fältnyckeln pekar på (review.routing): kortets eget ark och alla andra
 Thors underlag (Rick Rule + Insider + Scorecard …) läses in i ett enda kort. "Skriv in N ändringar" skriver i
 arkens rader i sessionen (on_click; arkens widgets släpps så att de ritas om med de nya värdena) och lägger ett
 kvitto: inskrivet per ark, det som fortfarande saknas för köpbeslut och 💾 för alla berörda ark — inget sparas
-till GitHub förrän du trycker där eller på arkets sida. Thors Arken-flik är bara läsning och har ingen import.
+till GitHub förrän du trycker där eller på arkets sida. Thors Arken-flik har samma import, utan egna mål: där går
+varje rad till arket den hör till, och kvittot räknar som Thors underlag (köpgrindens position).
 """
 
 from __future__ import annotations
@@ -345,8 +346,9 @@ def render_import(exp, targets: dict, k: str, reset: tuple = (), on_apply: Optio
         stores = session_stores()
     except Exception:
         stores = None
-    smap = None if getattr(exp, "sheet_map", None) or stores is None else registry_sheet_map()
-    plan = rt.plan(exp, targets, reset, stores, storage.load_failed, smap)
+    smap = registry_sheet_map() if stores is not None else None        # bara en karta ur ett helt läst register
+    view = None if targets else set(getattr(exp, "sheets", None) or [])  # Thors Arken-flik: de exporterade arken
+    plan = rt.plan(exp, targets, reset, stores, storage.load_failed, smap, view)
     res = im.check(answers, plan.exp, plan.writable, plan.blocked)
     st.caption(_summary(res, len(answers)))
     _list(f"{_rows(len(res.issues))} kunde inte läsas in:", res.issues, warn=True)
