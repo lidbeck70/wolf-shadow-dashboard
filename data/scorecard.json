@@ -6,6 +6,11 @@
       "strategy": "tiggre"
     },
     "|VAR.OL": {
+      "granskning_klar": true,
+      "position_pct_strategy": 25.0,
+      "position_pct_total": 5.0,
+      "position_saljregel": true,
+      "screener_kval": true,
       "sources": {
         "trigger": {
           "source": "ChatGPT: https://varenergi.no/en/newsroom/stock-exchange-announcements/?release=DF4E57ADD9866580; https://varenergi.no/no/nyheter-og-media/borsmeldinger/?release=CEB24475FA386CA3 · 2026-11-07",
@@ -16,8 +21,10 @@
           "value": "Börsdata i arket anger EV/EBITDA 4,0× och nettoskuld/EBITDA 0,4×. Q3 2026: nettoskuld 3 110 MUSD, YTD FCF 2 628 MUSD, produktion 383 kboepd YTD och realiserat snittpris 93,5 USD/boe. EV/NAV kan inte räknas tillförlitligt eftersom bolaget inte publicerar ett aggregerat NAV efter skatt."
         }
       },
+      "strategi_aktiv": true,
       "strategy": "producenter",
       "trigger": "BlueNord-fusionen slutförs enligt plan omkring årsskiftet 2026, efter återstående partner- och myndighetsgodkännanden. Verifieringspunkter: bolagets börsmeddelande om closing samt Q4/FY 2026-rapporten 29 januari 2027.",
+      "trigger_definierad": true,
       "valuation": "Börsdata i arket anger EV/EBITDA 4,0× och nettoskuld/EBITDA 0,4×. Q3 2026: nettoskuld 3 110 MUSD, YTD FCF 2 628 MUSD, produktion 383 kboepd YTD och realiserat snittpris 93,5 USD/boe. EV/NAV kan inte räknas tillförlitligt eftersom bolaget inte publicerar ett aggregerat NAV efter skatt."
     }
   }
