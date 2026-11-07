@@ -161,6 +161,20 @@ def _suffixed_twin(sheet: str, ticker: str, stores: dict, sheet_map: Optional[di
     return ""
 
 
+def cards_for(ticker: str, stores: dict, sheet_map: Optional[dict] = None) -> list:
+    """Nycklarna till de sparade Scorecardkort som hör till noteringen (kandidaterna för tickerns former)."""
+    import scorecard as sc
+    data = (stores or {}).get(cat.SHEETS["scorecard"].store)
+    cards = data.get("cards") if isinstance(data, dict) and isinstance(data.get("cards"), dict) else {}
+    return [k for k in sc.entries_for(_forms(ticker, sheet_map), stores or {}) if isinstance(cards.get(k), dict)]
+
+
+def card_on(key, found: Optional[dict] = None) -> str:
+    """Tickern kortet står på: kandidatradens, annars kortnyckelns sista led ('te connectivity|TEL' → 'TEL') — ett
+    kvarglömt kort utan kandidat har bara nyckeln."""
+    return str((found or {}).get("ticker") or (str(key).rsplit("|", 1)[-1] if key else "")).strip().upper()
+
+
 def card_key(ticker: str, stores: dict, sheet_map: Optional[dict] = None) -> tuple:
     """(kortnyckel, kortet som det visas, kandidatraden) — som export.card_for (samma kort som Thors underlag), men
     när det kortet står på en bar form som kan vara ett annat bolag (ambiguous) tas kandidaten med exakt ticker
@@ -168,44 +182,65 @@ def card_key(ticker: str, stores: dict, sheet_map: Optional[dict] = None) -> tup
     import scorecard as sc
     from review import export as ex
     key, shown, found = ex.card_for(ticker, stores, sheet_map)
-    if found and ambiguous(found.get("ticker"), ticker, sheet_map):
+    if key and ambiguous(card_on(key, found), ticker, sheet_map):
         data = (stores or {}).get(cat.SHEETS["scorecard"].store)
         cards = data.get("cards") if isinstance(data, dict) and isinstance(data.get("cards"), dict) else {}
-        for k, e in sc.entries_for([str(ticker or "").strip().upper()], stores or {}).items():
+        exact = list(sc.entries_for([str(ticker or "").strip().upper()], stores or {}).items())
+        exact.sort(key=lambda kv: not isinstance(cards.get(kv[0]), dict))      # ett sparat kort först
+        for k, e in exact:
             c = cards.get(k)
             return k, sc._shown(c if isinstance(c, dict) else {}, e), e
+        return None, None, None                         # bara ett kort som kan vara ett annat bolags
     return key, shown, found
 
 
+def other_listing(row_ticker, ticker: str, sheet_map: Optional[dict]) -> bool:
+    """Med registrets karta: står raden på en form som INTE är den här noteringens (sheet_forms med kartan)? Då är
+    det ett annat bolag — t.ex. en rad som ett underlag matchade med en karta ur ett ofullständigt register."""
+    if not sheet_map:
+        return False
+    r = str(row_ticker or "").strip().upper()
+    return bool(r) and r not in {str(f).upper() for f in _forms(ticker, sheet_map)}
+
+
 def plan(exp, targets: dict, reset: tuple, stores: Optional[dict], load_failed: Optional[Callable] = None,
-         sheet_map: Optional[dict] = None) -> Plan:
+         sheet_map: Optional[dict] = None, view=None) -> Plan:
     """Routningen för kortets underlag exp (review.export.Export). targets = kortets egna mål {ark: rad/funktion},
     reset = kortets widgetnycklar. stores = sessionens lager (chatgpt_ui.session_stores) — None ger bara kortets
     egna ark, som förr. load_failed(lagernamn) → felet när lagret inte gick att läsa i sessionen: då skrivs inget
-    där (en 💾 skulle skriva över det som ligger i GitHub). sheet_map = registrets karta (som Thor läser): 'BOL' i
-    ett ark är BOL.ST, 'TEL' är inte Telenor — utan den skrivs inget i en bar arkrad för en nordisk notering.
+    där (en 💾 skulle skriva över det som ligger i GitHub). sheet_map = registrets karta ur ett helt läst register
+    (chatgpt_ui.registry_sheet_map): 'BOL' i ett ark är BOL.ST, 'TEL' är inte Telenor — utan den skrivs inget i en
+    bar arkrad för en nordisk notering. Underlagets egen karta (Thors) används inte för att skriva: den bär inget
+    besked om att registret var helt läst. view = arken importen "står i" när den saknar egna mål (Thors Arken-flik:
+    de exporterade arken) — nycklar utan arkprefix prövas där först, och kvittot räknar efter köpgrindens position
+    när Scorecardet är med.
 
     Raden jämförelsen läses ur är raden som skrivs: kortets låsta rad när den står i lagret (Scorecardets kandidat
     läser arkens senaste rad), annars bolagets rad i lagret — och källraden sätts till just den."""
     own = {s: t for s, t in (targets or {}).items()}
     tokens, prefixes = (tuple(reset or ()) + ((), ()))[:2]
     own_reset = (tuple(tokens or ()), tuple(prefixes or ()))
+    seen = set(own) or {s for s in (view or ()) if s in cat.SHEETS}
     if stores is None:
-        return Plan(exp, dict(own), {s: own_reset for s in own}, own=set(own))
+        return Plan(exp, dict(own), {s: own_reset for s in own}, own=seen)
     from review import export as ex
     from universe import registry as ur
     card_ticker = getattr(exp, "ticker", "")
-    smap = getattr(exp, "sheet_map", None) or sheet_map or None
+    smap = sheet_map or None
     ticker = ur.nordic_form(card_ticker, smap) or card_ticker          # 'BOL' i arket → BOL.ST med kartan
     rows = {s: r for s, r in (getattr(exp, "source_rows", None) or {}).items() if r is not None}
     own_sheets = set(getattr(exp, "sheets", None) or []) | set(own)
     name = getattr(exp, "name", "")
-    entry = getattr(exp, "entry", None) if "scorecard" in own_sheets else None   # annars hela lagrens kandidat
-    if "scorecard" not in own_sheets:
+    entry = getattr(exp, "entry", None) if "scorecard" in own else None   # Scorecardkortet: dess egen kandidat
+    if "scorecard" not in own:
+        # Jämförelsen och fälten följer kortet som skrivs: card_key med den säkra kartan — aldrig underlagets kort
+        # (Thors karta kan ha matchat ett annat bolags kort, 'TEL' för TEL.OL).
         _k, shown, found = card_key(ticker, stores, smap)
-        if found is not None:                           # samma kort som Scorecardet skrivs i (exakt ticker först)
-            entry = found
-            rows.setdefault("scorecard", shown)
+        entry = found
+        if shown is not None:
+            rows["scorecard"] = shown
+        else:
+            rows.pop("scorecard", None)
     sc_store = cat.SHEETS["scorecard"].store
     try:
         # Fälten i två synvinklar: köpgrindens position (Scorecardets — som Thors underlag) och arkets egen (som
@@ -215,7 +250,7 @@ def plan(exp, targets: dict, reset: tuple, stores: Optional[dict], load_failed: 
         own_view = ex.build(ticker, bare, [s for s in ROUTED if s != "scorecard"], None, None, name,
                             {s: r for s, r in rows.items() if s != "scorecard"}, None, smap)
     except Exception:                                   # routningen får aldrig fälla kortets egen import
-        return Plan(exp, dict(own), {s: own_reset for s in own}, own=set(own))
+        return Plan(exp, dict(own), {s: own_reset for s in own}, own=seen)
     fields = dict(own_view.fields)
     fields.update(full.fields)
     fields.update(getattr(exp, "fields", None) or {})                  # kortets egna fält först
@@ -223,9 +258,9 @@ def plan(exp, targets: dict, reset: tuple, stores: Optional[dict], load_failed: 
     source_rows.update(rows)
     shown_who = {r.get("key"): r.get("who") for r in getattr(exp, "rows", None) or [] if isinstance(r, dict)}
     merged = SimpleNamespace(ticker=ticker, name=name, fields=fields, source_rows=source_rows,
-                             entry=full.entry, sheet_map=smap, own_sheets=set(own), shown_who=shown_who,
+                             entry=full.entry, sheet_map=smap, own_sheets=seen, shown_who=shown_who,
                              sheets=list(dict.fromkeys(list(getattr(exp, "sheets", None) or []) + list(full.sheets))))
-    p = Plan(merged, dict(own), {s: own_reset for s in own}, own=set(own))
+    p = Plan(merged, dict(own), {s: own_reset for s in own}, own=seen)
     for sheet in ROUTED:
         if sheet in own:
             continue                                    # kortets eget ark — kortets mål, som förr
@@ -246,10 +281,18 @@ def plan(exp, targets: dict, reset: tuple, stores: Optional[dict], load_failed: 
             continue                                    # bolaget finns inte i arket — importen säger det per rad
         if sheet == "scorecard":
             key, _shown, found = card_key(ticker, stores, smap)
-            if found and ambiguous(found.get("ticker"), ticker, smap):
+            several = cards_for(ticker, stores, smap)
+            if len(several) > 1:                        # flera kort för noteringen — gissa inte vilket
                 p.targets[sheet] = None
-                p.blocked[sheet] = (f"{label}: kortet står på '{found.get('ticker')}' och registrets tickerkarta "
-                                    f"kunde inte läsas — det kan vara ett annat bolag; läs in svaret i Scorecardet")
+                p.blocked[sheet] = (f"{label}: {len(several)} kort för {ticker} ({', '.join(several)}) — läs in "
+                                    f"svaret i Scorecardet, på rätt kort")
+                continue
+            raw_key, _raw, raw_found = ex.card_for(ticker, stores, smap)
+            if not key or ambiguous(card_on(key, found), ticker, smap):
+                p.targets[sheet] = None                 # kortet som finns står på en bar form — kanske ett annat bolag
+                p.blocked[sheet] = (f"{label}: kortet står på '{card_on(raw_key, raw_found) or '?'}' och "
+                                    f"registrets tickerkarta kunde inte läsas — det kan vara ett annat bolag; läs in "
+                                    f"svaret i Scorecardet")
                 continue
             p.targets[sheet] = (lambda t=ticker, m=smap: scorecard_row(t, stores, m))
             p.reset[sheet] = ([key] if key else []), ()
@@ -261,6 +304,11 @@ def plan(exp, targets: dict, reset: tuple, stores: Optional[dict], load_failed: 
                                 f"för de här raderna, så de sparas inte. Ska det granskas: lägg in det som kandidat "
                                 f"i Tiggre-arket och läs in svaret där" if sheet == "tiggre" else
                                 f"{label}: raden hittades inte i arket")
+            continue
+        if other_listing(cat._as_row(row).get("ticker"), ticker, smap):
+            p.targets[sheet] = None
+            p.blocked[sheet] = (f"{label}: raden står på '{cat._as_row(row).get('ticker')}', som enligt registret "
+                                f"är ett annat bolag än {ticker} — inget skrivs där")
             continue
         if ambiguous(cat._as_row(row).get("ticker"), ticker, smap):
             p.targets[sheet] = None

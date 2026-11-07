@@ -8,11 +8,12 @@ thor/arken.py — Arken-fliken i Thors analysblock: vad arken säger om bolaget,
   Insiderklustret  dagens rad ur insider_scan (poäng, status, insiders, roll, kurs, stopp)
   Registret        öppna och stängda positioner, journalens affärer och Copilotens loggade anteckningar
   Underlaget       "📋 Underlag till ChatGPT": strategins ark, arken bolaget finns i, Durrett och scorecardet som
-                   Excel/CSV med prompten (review.chatgpt_ui) — det som saknas för köpbeslut först
+                   Excel/CSV med prompten (review.chatgpt_ui) — det som saknas för köpbeslut först — och svaret
+                   tillbaka: varje rad skrivs i arket den hör till (review.routing), efter granskning och "Skriv in";
+                   kvittot har 💾 för de berörda arken
 "Finns inte i arket → lägg in" med knappar till arken. Knapparna öppnar arket med bolaget i fokus (review.focus) —
-Durrett och Sprott på rätt modell i Poängmodellen, och 🧭 Durrett (10-stegsarket) som egen knapp. Ingenting skrivs;
-samma data som arken själva visar, och ChatGPT-svaret läses tillbaka i ett ark, inte här — en import där skriver
-varje rad i sitt ark (review.routing).
+Durrett och Sprott på rätt modell i Poängmodellen, och 🧭 Durrett (10-stegsarket) som egen knapp. Utöver importen
+skrivs ingenting här; samma data som arken själva visar.
 """
 
 from __future__ import annotations
@@ -100,7 +101,7 @@ def _export(st, ident: Ticker, sheets: dict, stores: Optional[dict], strategy: s
     from review import chatgpt_ui
     chatgpt_ui.render_export(ident.yf, stores, keys, key=f"thor_{ident.yf}", name=ident.name,
                              strategy=reg.label(strategy) if reg.get(strategy) else "",
-                             dom_text=_dom_text(st, ident, strategy, sheets), blob=None, importable=False,
+                             dom_text=_dom_text(st, ident, strategy, sheets), blob=None,
                              sheet_map=sheet_map)       # samma arkformer som dossiern ovan (T13)
 
 

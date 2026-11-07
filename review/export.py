@@ -113,6 +113,9 @@ def card_for(ticker: str, stores: dict, sheet_map: Optional[dict] = None) -> tup
     fs = _forms(ticker, sheet_map)
     cards = _store(stores, "scorecard").get("cards") or {}
     entries = sc.entries_for(fs, stores or {})
+    for k, entry in entries.items():                   # kandidaten med ett sparat kort först — kortet Thor visar
+        if isinstance(cards.get(k), dict):
+            return k, sc._shown(cards[k], entry), entry
     for k, entry in entries.items():
         c = cards.get(k)
         return k, sc._shown(c if isinstance(c, dict) else {}, entry), entry
