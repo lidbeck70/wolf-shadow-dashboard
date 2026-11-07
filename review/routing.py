@@ -161,6 +161,14 @@ def _suffixed_twin(sheet: str, ticker: str, stores: dict, sheet_map: Optional[di
     return ""
 
 
+def cards_for(ticker: str, stores: dict, sheet_map: Optional[dict] = None) -> list:
+    """Nycklarna till de sparade Scorecardkort som hör till noteringen (kandidaterna för tickerns former)."""
+    import scorecard as sc
+    data = (stores or {}).get(cat.SHEETS["scorecard"].store)
+    cards = data.get("cards") if isinstance(data, dict) and isinstance(data.get("cards"), dict) else {}
+    return [k for k in sc.entries_for(_forms(ticker, sheet_map), stores or {}) if isinstance(cards.get(k), dict)]
+
+
 def card_key(ticker: str, stores: dict, sheet_map: Optional[dict] = None) -> tuple:
     """(kortnyckel, kortet som det visas, kandidatraden) — som export.card_for (samma kort som Thors underlag), men
     när det kortet står på en bar form som kan vara ett annat bolag (ambiguous) tas kandidaten med exakt ticker
@@ -171,7 +179,9 @@ def card_key(ticker: str, stores: dict, sheet_map: Optional[dict] = None) -> tup
     if found and ambiguous(found.get("ticker"), ticker, sheet_map):
         data = (stores or {}).get(cat.SHEETS["scorecard"].store)
         cards = data.get("cards") if isinstance(data, dict) and isinstance(data.get("cards"), dict) else {}
-        for k, e in sc.entries_for([str(ticker or "").strip().upper()], stores or {}).items():
+        exact = list(sc.entries_for([str(ticker or "").strip().upper()], stores or {}).items())
+        exact.sort(key=lambda kv: not isinstance(cards.get(kv[0]), dict))      # ett sparat kort först
+        for k, e in exact:
             c = cards.get(k)
             return k, sc._shown(c if isinstance(c, dict) else {}, e), e
     return key, shown, found
@@ -214,12 +224,16 @@ def plan(exp, targets: dict, reset: tuple, stores: Optional[dict], load_failed: 
     rows = {s: r for s, r in (getattr(exp, "source_rows", None) or {}).items() if r is not None}
     own_sheets = set(getattr(exp, "sheets", None) or []) | set(own)
     name = getattr(exp, "name", "")
-    entry = getattr(exp, "entry", None) if "scorecard" in own_sheets else None   # annars hela lagrens kandidat
-    if "scorecard" not in own_sheets:
+    entry = getattr(exp, "entry", None) if "scorecard" in own else None   # Scorecardkortet: dess egen kandidat
+    if "scorecard" not in own:
+        # Jämförelsen och fälten följer kortet som skrivs: card_key med den säkra kartan — aldrig underlagets kort
+        # (Thors karta kan ha matchat ett annat bolags kort, 'TEL' för TEL.OL).
         _k, shown, found = card_key(ticker, stores, smap)
-        if found is not None:                           # samma kort som Scorecardet skrivs i (exakt ticker först)
-            entry = found
-            rows.setdefault("scorecard", shown)
+        entry = found
+        if shown is not None:
+            rows["scorecard"] = shown
+        else:
+            rows.pop("scorecard", None)
     sc_store = cat.SHEETS["scorecard"].store
     try:
         # Fälten i två synvinklar: köpgrindens position (Scorecardets — som Thors underlag) och arkets egen (som
@@ -260,6 +274,12 @@ def plan(exp, targets: dict, reset: tuple, stores: Optional[dict], load_failed: 
             continue                                    # bolaget finns inte i arket — importen säger det per rad
         if sheet == "scorecard":
             key, _shown, found = card_key(ticker, stores, smap)
+            several = cards_for(ticker, stores, smap)
+            if len(several) > 1:                        # flera kort för noteringen — gissa inte vilket
+                p.targets[sheet] = None
+                p.blocked[sheet] = (f"{label}: {len(several)} kort för {ticker} ({', '.join(several)}) — läs in "
+                                    f"svaret i Scorecardet, på rätt kort")
+                continue
             if found and ambiguous(found.get("ticker"), ticker, smap):
                 p.targets[sheet] = None
                 p.blocked[sheet] = (f"{label}: kortet står på '{found.get('ticker')}' och registrets tickerkarta "

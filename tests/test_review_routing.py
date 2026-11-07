@@ -559,3 +559,74 @@ def test_a_row_thor_matched_with_a_partial_map_is_not_written():
     res = im.check(answers.read_text("\n".join([HEAD, "TEL.OL;insider:insiders;3;;Insyn;primary;2026-10-02;high;"])),
                    p.exp, p.writable, p.blocked)
     assert not res.changes and stores["insider"]["signals"][0].get("insiders") is None
+
+
+def _tel_stores():
+    stores = _stores()
+    stores["producers"]["producers"] = [{"id": "p1", "ticker": "TEL.OL", "name": "Telenor"}]
+    stores["insider"]["signals"] = [{"id": "s1", "ticker": "TEL", "name": "TE Connectivity", "comment": ""}]
+    stores["scorecard"]["cards"] = {"te connectivity|TEL": {"strategy": "insider", "valuation": "P/E 20",
+                                                             "trigger": "Bryter 200d"}}
+    return stores
+
+
+@pytest.mark.parametrize("thor_map", [{}, {"TEL": "TEL.OL"}])
+def test_thor_scorecard_answer_is_compared_with_the_card_it_is_written_to(thor_map):
+    """Thor-granskningen fynd 1/3: Thors karta (tom eller ur ett ofullständigt register) gav TE Connectivitys kort
+    för TEL.OL. Jämförelsen följer nu kortet som skrivs — Telenors — så inget svar försvinner som 'stod redan'."""
+    stores = _tel_stores()
+    thor = ex.build("TEL.OL", stores, ["rule", "insider", "scorecard"], blob=None, sheet_map=thor_map)
+    assert thor.source_rows["scorecard"]["valuation"] == "P/E 20"            # Thors underlag: TE:s kort
+    p = rt.plan(thor, {}, (), stores, sheet_map={"BOL": "BOL.ST"}, view=set(thor.sheets))
+    text = "\n".join([HEAD, "TEL.OL;scorecard:valuation;P/E 20;;Analys;secondary;2026-09-01;high;",
+                      "TEL.OL;scorecard:trigger;Bryter 50d;;Analys;secondary;2026-09-01;high;"])
+    res = im.check(answers.read_text(text), p.exp, p.writable, p.blocked)
+    assert sorted(c.key for c in res.changes) == ["scorecard:trigger", "scorecard:valuation"]
+    assert all(c.old is None and c.default_use for c in res.changes)
+    im.apply(res.changes, rt.resolved_targets(p, ["scorecard"]))
+    cards = stores["scorecard"]["cards"]
+    assert cards["telenor|TEL.OL"]["valuation"] == "P/E 20" and cards["telenor|TEL.OL"]["trigger"] == "Bryter 50d"
+    assert cards["te connectivity|TEL"] == {"strategy": "insider", "valuation": "P/E 20", "trigger": "Bryter 200d"}
+
+
+def test_the_card_thor_shows_is_the_card_written_when_a_listing_has_two_candidates():
+    """Thor-granskningen fynd 2: Boliden i Rick Rule ('Boliden') och Insider ('Boliden AB') ger två kandidater; bara
+    'boliden ab|BOL.ST' har ett kort. Underlaget, jämförelsen och skrivningen gäller det kortet — inget nytt kort."""
+    stores = _stores()
+    stores["producers"]["producers"] = [{"id": "p1", "ticker": "BOL.ST", "name": "Boliden"}]
+    stores["insider"]["signals"] = [{"id": "s1", "ticker": "BOL.ST", "name": "Boliden AB", "comment": ""}]
+    stores["scorecard"]["cards"] = {"boliden ab|BOL.ST": {"strategy": "insider", "position_pct_total": 1.0,
+                                                          "valuation": "P/E 9"}}
+    thor = ex.build("BOL.ST", stores, ["rule", "insider", "scorecard"], blob=None)
+    assert thor.source_rows["scorecard"]["valuation"] == "P/E 9"
+    p = rt.plan(thor, {}, (), stores, sheet_map={"BOL": "BOL.ST"}, view=set(thor.sheets))
+    res = im.check(answers.read_text("\n".join([HEAD, "BOL.ST;scorecard:valuation;P/E 10;;A;secondary;2026-09-01;high;"])),
+                   p.exp, p.writable, p.blocked)
+    (c,) = res.changes
+    assert c.old == "P/E 9" and not c.default_use and im.OVERWRITE in c.warnings
+    im.apply(res.changes, rt.resolved_targets(p, ["scorecard"]))
+    assert set(stores["scorecard"]["cards"]) == {"boliden ab|BOL.ST"}
+    assert stores["scorecard"]["cards"]["boliden ab|BOL.ST"]["valuation"] == "P/E 10"
+
+
+def test_two_saved_cards_for_one_listing_are_not_guessed():
+    """Två sparade kort för samma notering: importen gissar inte — den hänvisar till Scorecardet."""
+    stores = _stores()
+    stores["producers"]["producers"] = [{"id": "p1", "ticker": "BOL.ST", "name": "Boliden"}]
+    stores["insider"]["signals"] = [{"id": "s1", "ticker": "BOL.ST", "name": "Boliden AB", "comment": ""}]
+    stores["scorecard"]["cards"] = {"boliden ab|BOL.ST": {"strategy": "insider"},
+                                    "boliden|BOL.ST": {"strategy": "producenter"}}
+    thor = ex.build("BOL.ST", stores, ["rule", "insider", "scorecard"], blob=None)
+    p = rt.plan(thor, {}, (), stores, sheet_map={"BOL": "BOL.ST"}, view=set(thor.sheets))
+    assert "scorecard" in p.blocked and "2 kort för BOL.ST" in p.blocked["scorecard"]
+
+
+def test_blank_rows_of_a_blocked_sheet_show_the_reason_not_gaps():
+    """Thor-granskningen fynd 4: Insider-raderna för TEL.OL är spärrade (raden 'TEL' är ett annat bolag) — de tomma
+    raderna räknas inte som Telenors luckor, och skälet står en gång bland de avvisade."""
+    stores = _tel_stores()
+    thor = ex.build("TEL.OL", stores, ["rule", "insider"], blob=None, sheet_map={"TEL": "TEL.OL"})
+    p = rt.plan(thor, {}, (), stores, sheet_map={"BOL": "BOL.ST"}, view=set(thor.sheets))
+    text = "\n".join([HEAD, "TEL.OL;insider:insiders;;;;;;;", "TEL.OL;insider:amount;;;;;;;"])
+    res = im.check(answers.read_text(text), p.exp, p.writable, p.blocked)
+    assert res.blank == [] and len(res.issues) == 1 and "annat bolag" in res.issues[0][2]

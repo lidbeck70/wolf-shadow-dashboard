@@ -212,12 +212,20 @@ def check(answers: list, exp, writable: Optional[set] = None, blocked: Optional[
                                                      for r in getattr(exp, "rows", None) or [] if isinstance(r, dict)}
     resolved, siblings = [], {}
     other_blank: list = []                           # tomma rader för ett annat bolag — räknas inte som luckor här
+    told: set = set()                                # spärrade ark vars skäl redan står bland de avvisade
     for a in answers or []:
         if blank(a.value):
             if a.ticker and want and not (_forms(a.ticker, smap) & want):
                 other_blank.append(a)
                 continue
             f = resolve(a.key, fields, rows, own)[0] if str(a.key or "").strip() else None
+            bsheet = ("confidence" if f is not None and f.sheet in cat.CONFIDENCE_SHEETS and "confidence" in blocked
+                      else f.sheet if f is not None else None)
+            if bsheet in blocked:                 # arket tar inte emot svar — inga luckor där, men skälet syns
+                if bsheet not in told:
+                    told.add(bsheet)
+                    res.issues.append((a.line, f.key, blocked[bsheet]))
+                continue
             row = rows.get(f.sheet) if f is not None else None
             who = (str(getattr(a, "who", "") or "").strip() or shown_who.get(f.key, f.who)) if f is not None else None
             # 'Vem fyller' ur filen (underlaget ChatGPT fick), annars som kortets underlag visade raden
