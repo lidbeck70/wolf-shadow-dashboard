@@ -606,6 +606,11 @@ def _fcf_scan(row: dict, ref: Optional[dict] = None) -> list:
         elif base is None and s != ctl.BEAR and ev is not None and f < FCF_EV_MIN * ev:
             out.append((s, "unit", f"{s}: forward FCF {_f(f)} MUSD är under 0,2 % av EV {_m(ev)} MUSD — står talet "
                                    f"i miljoner USD?"))
+        if (s == ctl.BASE and fx_l is not None and size is not None and not over_ebitda(f)
+                and f >= FCF_LOCAL_YIELD * size and f * fx_l <= FCF_LOCAL_YIELD * size):
+            # Under 1,5× EBITDA: ett riktigt billigt bolag — eller miljoner NOK hos en producent med låg konvertering
+            # (norsk E&P: FCF 5–15 % av EBITDA). EBITDA kan inte skilja dem åt: ingen varningstext, men inget klick.
+            out.append((s, "maybe_local", ""))
     return out
 
 
@@ -623,7 +628,16 @@ def fcf_unit_warnings(row: dict, ref: Optional[dict] = None) -> list:
     talen: CSM:s FCF skrivs också för hand, så en referens över 2× storleken varnas själv och används inte, och en
     referens under 0,2 % av storleken (break-even) säger inget om enheten. Utan referens: över 2× storleken, eller
     under 0,2 % av EV — utom i Bear, som får ligga nära noll."""
-    return [text for _, _, text in _fcf_scan(row, ref)]
+    return [text for _, kind, text in _fcf_scan(row, ref) if kind != "maybe_local"]
+
+
+def fcf_maybe_local(row: dict, ref: Optional[dict] = None) -> Optional[str]:
+    """Valutan när Base-FCF:en kan stå i miljoner av noteringsvalutan men inte går att skilja från ett riktigt billigt
+    bolag (över 40 % av storleken, under 1,5× EBITDA). Ingen varning om enheten — men ingen kurs i USD med ett
+    klick heller: det ena fallet öppnar grinden med en ~10× för god marginal."""
+    if any(kind == "maybe_local" for _, kind, _ in _fcf_scan(row, ref)):
+        return str((ref or {}).get("currency") or "").strip().upper() or None
+    return None
 
 
 def fcf_in_local_currency(row: dict, ref: Optional[dict] = None) -> Optional[str]:

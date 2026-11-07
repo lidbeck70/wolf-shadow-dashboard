@@ -92,19 +92,26 @@ def _usd_price(price, cur: dict, ref: dict, row: dict, widget_key: str) -> None:
     src = "Yahoo" if ref.get("source") == "yfinance" else "Börsdata"
     ccy, usd = cur["currency"], cur["usd"]
     now = fv.num(price)
+    fx_note = ""
+    if cur["fx"]:
+        fx_note = (f" (1 {ccy} = {_sv(cur['fx'], 4 if cur['fx'] >= 0.01 else 6)} USD, "
+                   + (f"växelkurs {cur['fx_asof'] or 'i dag'})" if cur["fx_src"] == "live" else "grov tabellkurs)"))
     if (cur["stored_is_local"] or not now) and fv.fcf_in_local_currency(row, ref) == ccy:
         # FCF i miljoner lokal valuta: en USD-kurs bredvid den (bytt eller ny i en tom ruta) gör marginalen ~10× för
         # god. Ingen knapp förrän FCF:en räknats om — men växelkursen visas, den behövs för omräkningen.
-        fx_note = ""
-        if cur["fx"]:
-            fx_note = (f" (1 {ccy} = {_sv(cur['fx'], 4 if cur['fx'] >= 0.01 else 6)} USD, "
-                       + (f"växelkurs {cur['fx_asof'] or 'i dag'})" if cur["fx_src"] == "live" else "grov tabellkurs)"))
         if cur["stored_is_local"]:
             st.warning(f"Kursen {_sv(price)} ser ut att stå i {ccy} — och forward FCF ser ut att stå i miljoner {ccy} "
                        f"(se varningen under scenarierna). Räkna om båda till USD{fx_note}: FCF först, sedan kursen.")
         else:
             st.warning(f"Forward FCF ser ut att stå i miljoner {ccy} (se varningen under scenarierna). Räkna om den "
                        f"till USD{fx_note} först — sedan föreslås kursen i USD.")
+        return
+    if (cur["stored_is_local"] or not now) and fv.fcf_maybe_local(row, ref) == ccy:
+        # Kan vara ett riktigt billigt bolag — eller FCF i miljoner {ccy}. Inget råd att ändra talen, men inget klick.
+        lead = f"Kursen {_sv(price)} ser ut att stå i {ccy}. " if cur["stored_is_local"] else ""
+        st.warning(f"{lead}Base-FCF:en är över 40 % av bolagets storlek men under 1,5× EBITDA — ett riktigt billigt "
+                   f"bolag, eller FCF i miljoner {ccy}. Kontrollera att forward FCF står i MUSD och skriv sedan kursen "
+                   f"i USD{fx_note}.")
         return
     if cur["stored_is_local"]:
         st.warning(f"Kursen {_sv(price)} ser ut att stå i {ccy} ({src}s kurs: {_sv(cur['local'])} {ccy}), men "

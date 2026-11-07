@@ -607,6 +607,32 @@ def test_an_empty_price_box_gets_no_usd_price_next_to_msek_fcf(sheet):
     assert [b for b in at.button if b.label == "Använd USD"]
 
 
+def test_low_conversion_mnok_fcf_gets_no_one_click_usd_price(sheet):
+    """Vår Energi-raden helt i NOK (FCF 6 842 MNOK, kurs 48,90 NOK): ett klick gav MoS −114 % → +81 % och öppen grind
+    utan varning. Nu: ingen knapp, och en varning som inte säger åt någon att ändra korrekta tal."""
+    from tests.test_lukacs import producer_refresh_row
+    blob = {"rows": {"producers:r1": producer_refresh_row("NOK", 48.9, market_cap=122000.0, ev=158436.0)}}
+
+    def row(price, fcf):
+        return _var_row(aktuell_kurs=price, framtida_antal_aktier=2496.0, ev_musd=None,
+                        csm={s_: {"price": p} for s_, p in (("Base", 95.0), ("Bear", 70.0), ("Bull", 115.0))},
+                        fv={s_: {"forward_fcf_musd": f, "target_yield": y}
+                            for s_, f, y in zip(("Base", "Bear", "Bull"), fcf, (12.0, 14.0, 10.0))})
+    for price in (48.9, None):
+        at = sheet("Rick Rule", blob, {"producers": {"producers": [row(price, (6842.0, 3158.0, 11579.0))],
+                                                     "royalty": []}}, live={"NOK": (0.099, "2026-11-06")})
+        at.run()
+        assert not at.exception, at.exception
+        warns = " ".join(w.value for w in at.warning)
+        assert ("ett riktigt billigt bolag, eller FCF i miljoner NOK. Kontrollera att forward FCF står i MUSD och "
+                "skriv sedan kursen i USD (1 NOK = 0,0990 USD, växelkurs 2026-11-06).") in warns, (price, warns)
+        assert not [b for b in at.button if b.label == "Använd USD"], price
+    at = sheet("Rick Rule", blob, {"producers": {"producers": [row(48.9, (650.0, 300.0, 1100.0))], "royalty": []}},
+               live={"NOK": (0.099, "2026-11-06")})
+    at.run()
+    assert [b for b in at.button if b.label == "Använd USD"]
+
+
 def test_live_fx_reads_the_price_layer_and_falls_back_quietly(monkeypatch):
     """Dagens växelkurs ur kurslagret (Yahoo '{CCY}USD=X', cachad) — pence delas med 100, fel ger None (tabellen)."""
     import pandas as pd

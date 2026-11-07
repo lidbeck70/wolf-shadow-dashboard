@@ -555,3 +555,21 @@ def test_a_genuinely_cheap_nordic_producer_is_not_told_to_divide_its_fcf():
     assert fv.fcf_in_local_currency(cheap, dict(ref, ev_ebitda=None)) == "NOK"
     bol = dict(producer_refresh_row("SEK", 350.0, market_cap=95700.0, ev=110000.0), ev_ebitda=5.5)
     assert fv.fcf_in_local_currency(_sek_row((8000, 2500, 15000)), bol) == "SEK"
+
+
+# ── Femte granskningens fynd ────────────────────────────────────────────────
+def test_mnok_fcf_at_low_conversion_still_withholds_the_one_click_price():
+    """EBITDA-spärren tystade MNOK hos norska E&P med låg konvertering (FCF 13 % av EBITDA) — 'Använd USD' öppnade
+    grinden. EBITDA kan inte skilja det från ett riktigt billigt bolag: ingen text om enheten, men inget klick."""
+    var = producer_refresh_row("NOK", 48.9, market_cap=122000.0, ev=158436.0)        # EV 15 051, EV/EBITDA 3,0
+    mnok = _sek_row((6842, 3158, 11579), shares=2496.0, price=48.9)
+    assert fv.fcf_in_local_currency(mnok, var) is None and fv.fcf_maybe_local(mnok, var) == "NOK"
+    assert not [w for w in fv.fcf_unit_warnings(mnok, var) if "miljoner NOK" in w]
+    musd = _sek_row((650, 300, 1100), shares=2496.0, price=48.9)
+    assert fv.fcf_maybe_local(musd, var) is None and fv.fcf_in_local_currency(musd, var) is None
+    okea = dict(producer_refresh_row("NOK", 20.0, market_cap=2000.0, ev=3300.0), ev_ebitda=1.2)
+    assert fv.fcf_maybe_local(_sek_row((274, 120, 500), shares=100.0, price=20.0), okea) == "NOK"
+    assert fv.fcf_maybe_local(_sek_row((26, 11, 47), shares=100.0, price=20.0), okea) is None
+    # Det riktigt billiga bolaget: ingen varning om enheten (inget råd att dela med 10) — knappen hålls bara inne
+    cheap = _sek_row((140, 60, 260), csm=(140, 60, 260), shares=100.0, price=20.0)
+    assert fv.fcf_unit_warnings(cheap, okea) == [] and fv.fcf_maybe_local(cheap, okea) == "NOK"
