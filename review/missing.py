@@ -61,11 +61,14 @@ def _num(v) -> Optional[float]:
     return ctl._num(v)
 
 
-def _need(out: _Out, keys, reason: str, gate: str, nonzero: tuple = ()) -> None:
-    """Grindens indata som är tomma (eller noll där kvoten delar med dem)."""
+def _need(out: _Out, keys, reason: str, gate: str, nonzero: tuple = (), negative: tuple = ()) -> None:
+    """Grindens indata som är tomma (eller noll där kvoten delar med dem). negative = fält vars ruta har golvet 0:
+    ett sparat negativt tal räknas som en lucka (som i grinden) och står med här, med skälet."""
     for k in keys:
         v = _num(cat.get_value(out.row, k))
-        if v is None or (k in nonzero and v == 0):
+        if v is not None and k in negative and v < 0:
+            out.add(k, f"{reason} Sparat negativt ({v:g}) — rutan har golvet 0, skriv in rätt tal.", gate)
+        elif v is None or (k in nonzero and v == 0):
             out.add(k, reason, gate)
 
 
@@ -129,7 +132,7 @@ def _rule(out: _Out, position_pct) -> None:
     row, g = out.row, "Rick Rule-poängen"
     if prod.producer_score(row) is None:
         _need(out, ("price", "unit_cost"), "Poängen går inte att räkna utan råvarupris och kostnad per enhet.", g,
-              nonzero=("price",))
+              nonzero=("price",), negative=("price", "unit_cost"))
     if prod.asset_dying(row) is None:
         out.add("mine_life", "Strykregeln (döende tillgång) kan inte prövas — fyll i gruvlivslängd, eller R/P för "
                              "olja och gas.", "Strykregeln", label="Gruvlivslängd (eller R/P-kvot)")
@@ -138,7 +141,7 @@ def _rule(out: _Out, position_pct) -> None:
             out.add(k, "Disciplinfrågan är obesvarad och räknas som 0 p.", g)
     if prod.ev_nav_verdict(row) is None:
         _need(out, ("ev_musd", "nav_musd"), "EV/NAV — Rules värdering bredvid poängen — går inte att räkna.",
-              "EV/NAV", nonzero=("nav_musd",))
+              "EV/NAV", nonzero=("nav_musd",), negative=("ev_musd", "nav_musd"))
     if position_pct is None and _num(row.get("position_pct")) is None:
         out.add("position_pct", f"Positionen avgör vilka kontroller som krävs — över {ctl.FULL_WORK_MIN_PCT:g} % "
                                 f"av totalen även AQS, CSM och Lukacs FV.", "Proportionalitetsregeln")
@@ -149,12 +152,13 @@ def _royalty(out: _Out, position_pct) -> None:
     row, g = out.row, "Royalty-signalen"
     if prod.discount_vs_bottom(row.get("pnav_now"), row.get("pnav_bottom")) is None:
         _need(out, ("pnav_now", "pnav_bottom"), "Avståndet till egen P/NAV-botten går inte att räkna.", g,
-              nonzero=("pnav_bottom",))
+              nonzero=("pnav_bottom",), negative=("pnav_now", "pnav_bottom"))
     if prod.vs_median(row.get("ev_now"), row.get("ev_median")) is None:
         _need(out, ("ev_now", "ev_median"), "EV/EBITDA mot egen median går inte att räkna.", g,
-              nonzero=("ev_median",))
+              nonzero=("ev_median",), negative=("ev_now", "ev_median"))
     if prod.geo_growth(row.get("geo_now"), row.get("geo_3y")) is None:
-        _need(out, ("geo_now", "geo_3y"), "GEO-tillväxten per aktie går inte att räkna.", g, nonzero=("geo_3y",))
+        _need(out, ("geo_now", "geo_3y"), "GEO-tillväxten per aktie går inte att räkna.", g, nonzero=("geo_3y",),
+              negative=("geo_now", "geo_3y"))
     _controls(out, position_pct)
 
 
@@ -173,10 +177,12 @@ def _scoring(out: _Out, position_pct) -> None:
     if out.sheet == "sprott":
         if sco.runway_years(row.get("cash"), row.get("burn")) is None:
             _need(out, ("cash", "burn"), f"Sprott-grinden (runway minst {sco.SPROTT_RUNWAY_MIN_MONTHS} mån) kan inte "
-                                         f"prövas.", "Runway-grinden", nonzero=("burn",))
+                                         f"prövas.", "Runway-grinden", nonzero=("burn",),
+                  negative=("cash", "burn"))
     elif sco.mcap_per_earnings(row.get("mcap"), row.get("profit")) is None:
         _need(out, ("mcap", "profit"), f"Köpregeln (under {sco.DURRETT_BUY_MAX:g}× framtida vinst) kan inte prövas — "
-                                       f"Kärninnehav kräver den.", "Köpregeln", nonzero=("profit",))
+                                       f"Kärninnehav kräver den.", "Köpregeln", nonzero=("profit",),
+              negative=("mcap", "profit"))
     _controls(out, position_pct)
 
 

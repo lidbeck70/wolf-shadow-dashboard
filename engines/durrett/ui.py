@@ -555,7 +555,7 @@ def _render_momentum_fetch(data: dict, company) -> None:
         for k in ("price_vs_ma200_pct", "momentum_6m_pct", "volume_trend"):
             p = company.get(k)
             if p is not None and not p.missing:
-                st.caption(f"· {k}: {p.value:g} ({p.kind}, {p.source}, {p.pub_date})")
+                st.caption(f"· {k}: {cui._fmt(p.value)} ({p.kind}, {p.source}, {p.pub_date})")
 
 
 def _render_catalysts(data: dict, company, a: DurrettAnalysis) -> None:

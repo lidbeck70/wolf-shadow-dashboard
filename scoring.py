@@ -114,6 +114,40 @@ POSITION_NOTE = {
 
 
 # ── Rena beräkningar ─────────────────────────────────────────────────────────
+def _use_profit(data: dict, row: dict, value: float) -> None:
+    """on_click: hjälpräknarens vinst in i raden OCH i rutan — annars skriver rutans gamla värde tillbaka den."""
+    row["profit"] = value
+    st.session_state[f"sc_profit_{row['id']}"] = value
+    _save(data)
+
+
+def _write_changed(row: dict, pairs) -> bool:
+    """Skriv bara de fält vars ruta du ändrat: (fält, rutans värde, värdet rutan visades med). Ett sparat negativt
+    tal som rutan visar som tomt skrivs inte över när arket bara öppnas — inget blir osparat av att titta."""
+    hit = False
+    for field, new, shown in pairs:
+        if storage.differs(new, shown):
+            row[field] = new
+            hit = True
+    return hit
+
+
+def _neg_note(row: dict, labels: dict) -> None:
+    """En rad om sparade negativa tal som rutorna (golvet 0) inte kan visa — de står kvar tills du skriver om dem."""
+    neg = [f"{lbl} {_num(row.get(k)):g}".replace(".", ",") for k, lbl in labels.items()
+           if _num(row.get(k)) is not None and _num(row.get(k)) < 0]
+    if neg:
+        st.caption("Sparat men negativt — visas inte i rutan (golvet 0): " + " · ".join(neg)
+                   + ". Skriv in rätt tal.")
+
+
+def _nonneg(value) -> Optional[float]:
+    """Värdet för ett fält som inte kan vara negativt (kassa, burn, börsvärde …): ett negativt tal visas som tomt —
+    en lucka att fylla i — i stället för att fälla arket (rutan har golvet 0)."""
+    v = _num(value)
+    return None if v is not None and v < 0 else v
+
+
 def _num(value, default: Optional[float] = None) -> Optional[float]:
     if value is None or value == "":
         return default
@@ -125,8 +159,9 @@ def _num(value, default: Optional[float] = None) -> Optional[float]:
 
 
 def runway_years(cash, burn) -> Optional[float]:
-    """Kassa ÷ årsburn. Arket: =IF(OR(D="",E="",E=0),"",D/E)."""
-    c, b = _num(cash), _num(burn)
+    """Kassa ÷ årsburn. Arket: =IF(OR(D="",E="",E=0),"",D/E). Ett negativt tal (rutorna har golvet 0) är en lucka,
+    som i rutan — en negativ burn är inget kassaflöde att räkna runway på."""
+    c, b = _nonneg(cash), _nonneg(burn)
     if c is None or b is None or b == 0:
         return None
     return c / b
@@ -143,24 +178,25 @@ def runway_points(years) -> Optional[int]:
 
 
 def mcap_per_oz(mcap, moz) -> Optional[float]:
-    """Börsvärde per uns guldekvivalent, i dollar. MUSD ÷ Moz = $/oz."""
-    m, o = _num(mcap), _num(moz)
+    """Börsvärde per uns guldekvivalent, i dollar. MUSD ÷ Moz = $/oz. Negativt = lucka (rutorna har golvet 0)."""
+    m, o = _nonneg(mcap), _nonneg(moz)
     if m is None or o is None or o == 0:
         return None
     return m / o
 
 
 def mcap_per_earnings(mcap, future_profit) -> Optional[float]:
-    """Durretts köpregel: under 10x framtida vinst."""
-    m, p = _num(mcap), _num(future_profit)
+    """Durretts köpregel: under 10x framtida vinst. En negativ vinst eller ett negativt börsvärde är en lucka (som i
+    rutan) — aldrig ett tal under 10× som släpper igenom köpet."""
+    m, p = _nonneg(mcap), _nonneg(future_profit)
     if m is None or p is None or p == 0:
         return None
     return m / p
 
 
 def future_profit(production, target_price, aisc) -> Optional[float]:
-    """Hjälpräknaren: produktion × (målpris − AISC)."""
-    prod, tp, cost = _num(production), _num(target_price), _num(aisc)
+    """Hjälpräknaren: produktion × (målpris − AISC). Negativa tal = luckor (rutorna har golvet 0)."""
+    prod, tp, cost = _nonneg(production), _nonneg(target_price), _nonneg(aisc)
     if prod is None or tp is None or cost is None:
         return None
     return prod * (tp - cost)
@@ -477,10 +513,10 @@ def _sprott_math(data: dict, row: dict) -> None:
                 unsafe_allow_html=True)
     c1, c2, c3 = st.columns(3)
     cash = c1.number_input("Kassa (MUSD)", min_value=0.0, step=1.0,
-                           value=_num(row.get("cash")),
+                           value=_nonneg(row.get("cash")),
                            key=f"sc_cash_{row['id']}")
     burn = c2.number_input("Burn/år (MUSD)", min_value=0.0, step=1.0,
-                           value=_num(row.get("burn")),
+                           value=_nonneg(row.get("burn")),
                            key=f"sc_burn_{row['id']}")
     rw = runway_years(cash, burn)
     c3.metric("Runway", f"{rw:.1f} år" if rw is not None else "–",
@@ -496,9 +532,8 @@ def _sprott_math(data: dict, row: dict) -> None:
                            f"sc_burn_{row['id']}", lambda: _save(data), fmt="{:,.1f}")
     except Exception:
         pass
-    if (storage.differs(cash, row.get("cash"))
-            or storage.differs(burn, row.get("burn"))):
-        row["cash"], row["burn"] = cash, burn
+    _neg_note(row, {"cash": "kassa", "burn": "burn"})
+    if _write_changed(row, (("cash", cash, _nonneg(row.get("cash"))), ("burn", burn, _nonneg(row.get("burn"))))):
         _save(data)
 
     ok = sprott_runway_ok(rw)
@@ -523,18 +558,17 @@ def _durrett_math(data: dict, row: dict) -> None:
                 unsafe_allow_html=True)
     c1, c2, c3 = st.columns(3)
     mcap = c1.number_input("Börsvärde (MUSD)", min_value=0.0, step=10.0,
-                           value=_num(row.get("mcap")),
+                           value=_nonneg(row.get("mcap")),
                            key=f"sc_mcap_{row['id']}")
     moz = c2.number_input("Uns (Moz AuEq)", min_value=0.0, step=0.1,
-                          value=_num(row.get("moz")),
+                          value=_nonneg(row.get("moz")),
                           key=f"sc_moz_{row['id']}")
     profit = c3.number_input("Framtida vinst/år (MUSD)", min_value=0.0, step=5.0,
-                             value=_num(row.get("profit")),
+                             value=_nonneg(row.get("profit")),
                              key=f"sc_profit_{row['id']}")
-    if (storage.differs(mcap, row.get("mcap"))
-            or storage.differs(moz, row.get("moz"))
-            or storage.differs(profit, row.get("profit"))):
-        row["mcap"], row["moz"], row["profit"] = mcap, moz, profit
+    _neg_note(row, {"mcap": "börsvärde", "moz": "uns", "profit": "framtida vinst"})
+    if _write_changed(row, (("mcap", mcap, _nonneg(row.get("mcap"))), ("moz", moz, _nonneg(row.get("moz"))),
+                            ("profit", profit, _nonneg(row.get("profit"))))):
         _save(data)
     try:
         import refresh_ui
@@ -569,13 +603,14 @@ def _durrett_math(data: dict, row: dict) -> None:
     with st.expander("🧮 Hjälpräknare — framtida vinst", expanded=False):
         h1, h2, h3 = st.columns(3)
         prod = h1.number_input("Produktion (koz/år)", min_value=0.0, step=10.0,
-                               value=_num(row.get("prod")),
+                               value=_nonneg(row.get("prod")),
                                key=f"sc_prod_{row['id']}")
+        tp_shown = float(_num(row.get("target"), 3000.0) or 3000.0)
         tp = h2.number_input("Målpris ($/oz)", min_value=0.0, step=50.0,
-                             value=float(_num(row.get("target"), 3000.0) or 3000.0),
+                             value=tp_shown,
                              key=f"sc_tp_{row['id']}")
         aisc = h3.number_input("AISC ($/oz)", min_value=0.0, step=50.0,
-                               value=_num(row.get("aisc")),
+                               value=_nonneg(row.get("aisc")),
                                key=f"sc_aisc_{row['id']}")
         fp = future_profit(prod, tp, aisc)
         if fp is not None:
@@ -583,14 +618,13 @@ def _durrett_math(data: dict, row: dict) -> None:
             musd = fp / 1000.0
             st.caption(f"{prod:,.0f} koz × (${tp:,.0f} − ${aisc:,.0f}) = "
                        f"{musd:,.0f} MUSD per år.")
-            if st.button("Använd som framtida vinst", key=f"sc_use_{row['id']}"):
-                row["profit"] = round(musd, 1)
-                _save(data)
-                st.rerun()
-        if (storage.differs(prod, row.get("prod"))
-                or storage.differs(tp, row.get("target"))
-                or storage.differs(aisc, row.get("aisc"))):
-            row["prod"], row["target"], row["aisc"] = prod, tp, aisc
+            if musd < 0:
+                st.caption("Målpriset ligger under AISC — ingen vinst att använda.")
+            else:
+                st.button("Använd som framtida vinst", key=f"sc_use_{row['id']}", on_click=_use_profit,
+                          args=(data, row, round(musd, 1)))
+        if _write_changed(row, (("prod", prod, _nonneg(row.get("prod"))), ("target", tp, tp_shown),
+                                ("aisc", aisc, _nonneg(row.get("aisc"))))):
             _save(data)
 
 

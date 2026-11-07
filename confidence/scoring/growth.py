@@ -34,7 +34,7 @@ def score(company: CompanyInput, today: Optional[date] = None) -> PillarScore:
         p.missing.append("first_cashflow_year")
         note(p, "Time-to-money", 0, p.max, "DATA_MISSING (första kassaflöde-år saknas)")
     else:
-        if company.has("first_cashflow_year"):
+        if company.num("first_cashflow_year") is not None:     # ett år i text ('Q3 2027') läses inte som år
             pt = company.get("first_cashflow_year")
             why = f"första kassaflöde {int(company.num('first_cashflow_year'))} ({pt.kind}" + \
                   (f", {pt.source}" if pt.source else "") + ")"

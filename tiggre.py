@@ -110,6 +110,13 @@ def _uid() -> str:
     return f"{int(time.time() * 1000):x}"
 
 
+def _nonneg(value) -> Optional[float]:
+    """Värdet för en ruta med golvet 0: ett negativt tal (t.ex. ett negativt NPV ur dokumentläsaren) visas som
+    tomt — en lucka — i stället för att fälla fliken."""
+    v = _num(value)
+    return None if v is not None and v < 0 else v
+
+
 def _num(value, default: Optional[float] = None) -> Optional[float]:
     if value is None or value == "":
         return default
@@ -593,25 +600,31 @@ def _candidate_card(data: dict, cand: dict, expanded: bool = False) -> None:
         st.markdown(f"<div style='height:8px;'></div><b style='color:{TEXT};'>"
                     f"Lobo-arket</b>", unsafe_allow_html=True)
         m1, m2, m3 = st.columns(3)
+        shown = {k: _nonneg(cand.get(k)) for k in ("mcap", "nav")}
         mcap = m1.number_input("Börsvärde (MUSD)", min_value=0.0,
-                               value=_num(cand.get("mcap")),
+                               value=shown["mcap"],
                                step=10.0, key=f"tg_mcap_{cand['id']}")
         # Sifferuppdateringen räknar redan börsvärdet för kandidaterna
         # (tiggre:<id>) — det visades bara för positionerna förut.
         _suggest("tiggre", cand, "mcap", "mcap_musd", "börsvärde MUSD",
                  f"tg_mcap_{cand['id']}", lambda: _save(data), fmt="{:,.0f}")
         nav = m2.number_input("NAV = NPV after tax (MUSD)", min_value=0.0,
-                              value=_num(cand.get("nav")),
+                              value=shown["nav"],
                               step=10.0, key=f"tg_nav_{cand['id']}",
                               help="Alltid after-tax — pre-tax är 30–40 % för högt.")
-        down = m3.number_input("Nedsida (%)", value=float(_num(cand.get("downside"), -40.0) or -40.0),
+        down_shown = _num(cand.get("downside"))           # det som står sparat — nya kandidater får −40 när de läggs in
+        down = m3.number_input("Nedsida (%)", value=down_shown,
                                step=5.0, key=f"tg_down_{cand['id']}",
                                help="Värsta rimliga scenariot: utspädning, byggförsening.")
-        if (storage.differs(mcap, cand.get("mcap"))
-                or storage.differs(nav, cand.get("nav"))
-                or storage.differs(down, cand.get("downside"))):
-            cand["mcap"], cand["nav"], cand["downside"] = mcap, nav, down
-            changed = True
+        neg = [f"{lbl} {_num(cand.get(k)):g}".replace(".", ",") for k, lbl in (("mcap", "börsvärde"), ("nav", "NAV"))
+               if _num(cand.get(k)) is not None and _num(cand.get(k)) < 0]
+        if neg:
+            st.caption("Sparat men negativt — visas inte i rutan (golvet 0): " + " · ".join(neg) + ". Skriv in rätt tal.")
+        for field, new, was in (("mcap", mcap, shown["mcap"]), ("nav", nav, shown["nav"]),
+                                ("downside", down, down_shown)):
+            if storage.differs(new, was):               # bara fältet du ändrat — att titta skriver inget
+                cand[field] = new
+                changed = True
 
         _extract_section(data, cand)
 
@@ -884,7 +897,7 @@ def _positions(data: dict) -> None:
                   help=(f"Slutsälj i etapper vid {NAV_EXIT_LO:g}–{NAV_EXIT_HI:g}× NAV eller "
                         f"produktionsstart. "
                         + (f"Räknat på färskt börsvärde {mc_now:,.0f} MUSD "
-                           f"({f.get('asof', '')[:10]})." if mc_now else
+                           f"({str(f.get('asof') or '')[:10] or 'datum saknas'})." if mc_now else
                            "Räknat på arkets sparade börsvärde — ingen färsk siffra ännu.")))
         eq = equity_at_risk(new_entry, new_cur, p.get("shares", 0), p.get("half_sold"))
         c5.metric("Kapital i risk", "0 kr" if eq == 0 else (_fmt(eq, 0) if eq else "–"),
