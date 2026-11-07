@@ -280,8 +280,8 @@ def _var_energi(**kw):
 def test_fcf_in_the_wrong_unit_is_flagged_against_csm():
     w = fv.fcf_unit_warnings(_var_energi())
     assert len(w) == 3 and "Base: forward FCF 12 MUSD mot CSM:s Base-FCF 3 550 MUSD" in " ".join(w)
-    ok = _var_energi(fv={s: {"forward_fcf_musd": f, "target_yield": y} for s, f, y in
-                          (("Base", 3550, 12), ("Bear", 2781, 14), ("Bull", 4165, 10))})
+    sane = (("Base", 3550, 12), ("Bear", 2781, 14), ("Bull", 4165, 10))
+    ok = _var_energi(fv={s: {"forward_fcf_musd": f, "target_yield": y} for s, f, y in sane})
     assert fv.fcf_unit_warnings(ok) == []
 
 
@@ -308,3 +308,81 @@ def test_the_checks_change_no_calculation():
     fv.fcf_unit_warnings(row)
     fv.price_currency(row["aktuell_kurs"], {"price": 49.53, "currency": "NOK", "fx_to_usd": 0.095})
     assert fv.evaluate(row) == before
+
+
+def producer_refresh_row(ccy: str = "NOK", price: float = 49.53, market_cap: float = 122000.0,
+                         ev: float = 158436.0) -> dict:
+    """Rick Rule-raden som det riktiga nattjobbet (sheets_refresh.refresh) bygger den — utan fx_to_usd och
+    fcf_musd, som bara Durrett-arkets rader får. Inget nätverk: Börsdata är testernas fejk."""
+    import sheets_refresh as sr
+    from tests.test_sheets_refresh import _API, _sheets
+
+    class _Api(_API):
+        def __init__(self):
+            super().__init__()
+            self.prices[40] = price
+            self.snaps[40] = {"ev_ebitda": 3.0, "net_debt_ebitda": 0.8, "market_cap": market_cap, "ev": ev}
+
+        def get_instruments(self):
+            return [dict(i, stockPriceCurrency=ccy, reportCurrency="USD") if i["insId"] == 40 else i
+                    for i in super().get_instruments()]
+
+    sheets = _sheets()
+    sheets["producers"]["producers"] = [{"id": "r1", "ticker": "BOL.ST", "nd_ebitda": 0.7}]
+    out = sr.refresh(_Api(), sheets)
+    assert out["error"] is None, out["error"]
+    return out["rows"]["producers:r1"]
+
+
+def test_the_price_check_works_on_the_row_the_nightly_job_writes():
+    """Granskningens fynd: producentraderna bär ingen fx_to_usd — växelkursen tas ur den fasta tabellen."""
+    ref = producer_refresh_row()
+    assert "fx_to_usd" not in ref and ref["currency"] == "NOK"
+    c = fv.price_currency(49.53, ref)
+    assert c is not None and c["usd"] == pytest.approx(4.7054) and c["fx"] == 0.095 and c["stored_is_local"]
+    assert not fv.price_currency(4.7054, ref)["stored_is_local"]
+    assert fv.price_currency(None, ref)["stored_is_local"] is False
+    sek = fv.price_currency(300.0, producer_refresh_row("SEK", 300.0))
+    assert sek["currency"] == "SEK" and sek["usd"] == pytest.approx(28.5)
+    assert fv.price_currency(8.0, producer_refresh_row("USD", 8.0)) is None
+
+
+def test_a_nok_price_that_has_moved_is_still_seen_as_nok():
+    """Kursen har rört sig mer än 3 % sedan den skrevs in — men en NOK-kurs ligger fortfarande närmare NOK än USD."""
+    ref = {"price": 49.53, "currency": "NOK"}
+    assert fv.price_currency(52.0, ref)["stored_is_local"]            # +5 % — fortfarande NOK
+    assert fv.price_currency(40.0, ref)["stored_is_local"]
+    assert not fv.price_currency(5.2, ref)["stored_is_local"]         # en USD-kurs som rört sig
+    assert not fv.price_currency(0.0, ref)["stored_is_local"]
+    # Valutor nära USD (EUR 1,08) går inte att skilja från kursrörelser: bara 3 %-bandet gäller
+    eur = {"price": 10.0, "currency": "EUR"}
+    assert fv.price_currency(10.2, eur)["stored_is_local"] and not fv.price_currency(11.0, eur)["stored_is_local"]
+
+
+def test_pence_and_unknown_currencies():
+    """London i pence räknas om via GBP/100; en valuta utanför tabellen räknas inte om som om den vore USD."""
+    gbx = fv.price_currency(1250.0, {"price": 1250.0, "currency": "GBX"})
+    assert gbx["currency"] == "GBX" and gbx["usd"] == pytest.approx(15.875) and gbx["stored_is_local"]
+    assert fv.price_currency(None, {"price": 1250.0, "currency": "GBp"})["currency"] == "GBX"
+    jpy = fv.price_currency(1500.0, {"price": 1500.0, "currency": "JPY", "fx_to_usd": 1.0})
+    assert jpy["usd"] is None and jpy["fx"] is None and jpy["stored_is_local"]     # tabellens 1,0-reserv litas inte på
+    assert not fv.price_currency(10.0, {"price": 1500.0, "currency": "JPY"})["stored_is_local"]
+    assert fv.fx_to_usd("nok") == 0.095 and fv.fx_to_usd("") is None and fv.fx_to_usd("XYZ") is None
+
+
+def test_fcf_typed_in_thousands_is_flagged_against_the_company_size():
+    """Utan CSM- eller Börsdata-FCF fångades bara för små tal; KUSD (1 000× för stort) syns mot EV/börsvärdet."""
+    ref = producer_refresh_row()                                     # EV 15 051, börsvärde 11 590 MUSD
+    kusd = _var_energi(csm={}, ev_musd=None, fv={s: {"forward_fcf_musd": f, "target_yield": y} for s, f, y in
+                                                 (("Base", 3550000, 12), ("Bear", 2781000, 14), ("Bull", 4165000, 10))})
+    w = fv.fcf_unit_warnings(kusd, ref)
+    assert len(w) == 3 and "Base: forward FCF 3 550 000 MUSD är över 5× EV 15 051 MUSD" in " ".join(w)
+    good = dict(kusd, fv={s: {"forward_fcf_musd": f, "target_yield": y} for s, f, y in
+                          (("Base", 3550, 12), ("Bear", 2781, 14), ("Bull", 4165, 10))})
+    assert fv.fcf_unit_warnings(good, ref) == []
+    # Ett nettokassabolag med litet EV: börsvärdet är storleken, så en rimlig FCF varnas inte
+    cash_rich = {"fv": {"Base": {"forward_fcf_musd": 60.0}}, "ev_musd": 10.0}
+    assert fv.fcf_unit_warnings(cash_rich, {"currency": "USD", "mcap_musd": 400.0}) == []
+    # Uppdateringens MUSD-tal för en valuta utanför tabellen står i fel enhet — de används inte
+    assert fv.fcf_unit_warnings({"fv": {"Base": {"forward_fcf_musd": 12.0}}},
+                                {"currency": "JPY", "ev_musd": 900000.0}) == []

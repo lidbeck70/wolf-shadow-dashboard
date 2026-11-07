@@ -383,9 +383,7 @@ def test_every_floor_zero_field_is_a_gap_in_its_rule_and_in_the_missing_list():
     assert "Sparat negativt" in got.get("pnav_now", "") and "Sparat negativt" in got.get("geo_now", "")
 
 
-def test_the_lukacs_panel_warns_about_fcf_units_and_offers_the_price_in_usd(sheet):
-    """Vår Energi-fallet: forward FCF 12/14/10 MUSD (yielden i fel ruta) och kursen 49,53 i NOK. Panelen varnar för
-    båda, och 'Använd USD' skriver Börsdatas kurs omräknad till USD i raden och rutan."""
+def _var_row(**kw) -> dict:
     row = {"id": "r1", "ticker": "VAR.OL", "commodity": "Olja", "price": 90.0, "unit_cost": 10.0,
            "position_pct": 10.0, "csm_kind": "producer", "fcf_kvalitet": "C", "framtida_antal_aktier": 2744.8,
            "aktuell_kurs": 49.53, "ev_musd": 15051.4, "what_must_go_right": "x",
@@ -394,16 +392,94 @@ def test_the_lukacs_panel_warns_about_fcf_units_and_offers_the_price_in_usd(shee
                   "Bull": {"forward_fcf_musd": 10.0, "target_yield": 10.0}},
            "csm": {"Base": {"fcf_musd": 3550.0, "price": 95.0}, "Bear": {"fcf_musd": 2781.0, "price": 70.0},
                    "Bull": {"fcf_musd": 4165.0, "price": 115.0}}}
-    blob = {"rows": {"producers:r1": {"price": 49.53, "currency": "NOK", "fx_to_usd": 0.095, "asof": "2026-11-07"}}}
-    at = sheet("Rick Rule", blob, {"producers": {"producers": [row], "royalty": []}})
+    row.update(kw)
+    return row
+
+
+def _job_blob() -> dict:
+    """Bloben som nattjobbet skriver den: Rick Rule-raden utan fx_to_usd (granskningens fynd — det handbyggda
+    testet med fx_to_usd dolde att förslaget aldrig visades)."""
+    from tests.test_lukacs import producer_refresh_row
+    ref = producer_refresh_row()
+    assert "fx_to_usd" not in ref
+    return {"rows": {"producers:r1": ref}}
+
+
+def _price_warn(at) -> str:
+    return " ".join(w.value for w in at.warning if "ser ut att stå i" in w.value)
+
+
+def test_the_lukacs_panel_warns_about_fcf_units_and_offers_the_price_in_usd(sheet):
+    """Vår Energi-fallet: forward FCF 12/14/10 MUSD (yielden i fel ruta) och kursen 49,53 i NOK. Panelen varnar för
+    båda, och 'Använd USD' skriver Börsdatas kurs omräknad till USD i raden och rutan."""
+    at = sheet("Rick Rule", _job_blob(), {"producers": {"producers": [_var_row()], "royalty": []}})
     at.run()
     assert not at.exception, at.exception
     warns = " ".join(w.value for w in at.warning)
     assert "Base: forward FCF 12 MUSD mot CSM:s Base-FCF 3 550 MUSD" in warns
-    assert "Kursen 49,53 är Börsdatas kurs i NOK" in warns
+    assert "Kursen 49,53 ser ut att stå i NOK (Börsdatas kurs: 49,53 NOK)" in _price_warn(at)
+    assert not [b for b in at.button if b.key == "rf_producers_r1_aktuell_kurs"]     # ingen NOK-kurs i USD-rutan
     btn = [b for b in at.button if b.label == "Använd USD"]
     assert btn
     btn[0].click().run()
     assert not at.exception, at.exception
     assert at.session_state["producers"]["producers"][0]["aktuell_kurs"] == pytest.approx(4.7054)
-    assert "Kursen 49,53 är Börsdatas kurs i NOK" not in " ".join(w.value for w in at.warning)
+    assert at.session_state["fv_r1_price"] == pytest.approx(4.7054)
+    assert not _price_warn(at) and not [b for b in at.button if b.label == "Använd USD"]
+
+
+def test_an_empty_price_box_is_offered_the_usd_price_not_the_nok_one(sheet):
+    at = sheet("Rick Rule", _job_blob(), {"producers": {"producers": [_var_row(aktuell_kurs=None)], "royalty": []}})
+    at.run()
+    assert not at.exception, at.exception
+    assert not [b for b in at.button if b.key == "rf_producers_r1_aktuell_kurs"]
+    assert any("kurs 49,53 NOK ≈ 4,71 USD" in m.value for m in at.markdown)
+    assert not _price_warn(at)
+    [b for b in at.button if b.label == "Använd USD"][0].click().run()
+    assert at.session_state["producers"]["producers"][0]["aktuell_kurs"] == pytest.approx(4.7054)
+
+
+def test_a_nok_price_typed_into_the_box_is_flagged_in_the_same_run(sheet):
+    """Varningen läser rutans värde i körningen, inte radens förra — den kommer inte ett varv för sent."""
+    at = sheet("Rick Rule", _job_blob(), {"producers": {"producers": [_var_row(aktuell_kurs=4.7054)],
+                                                        "royalty": []}})
+    at.run()
+    assert not at.exception and not _price_warn(at)
+    at.number_input(key="fv_r1_price").set_value(52.0).run()
+    assert not at.exception, at.exception
+    assert "Kursen 52,00 ser ut att stå i NOK" in _price_warn(at)
+    at.number_input(key="fv_r1_price").set_value(4.75).run()
+    assert not _price_warn(at)
+
+
+def test_a_yahoo_fallback_price_gets_its_currency_from_the_ticker(sheet):
+    """Utan Börsdata-träff tar nattjobbet Yahoos kurs utan valuta — VAR.OL är NOK, och förslaget räknas om."""
+    blob = {"rows": {"producers:r1": {"ticker": "VAR.OL", "price": 49.53, "asof": "2026-11-07", "currency": None,
+                                      "source": "yfinance"}}}
+    at = sheet("Rick Rule", blob, {"producers": {"producers": [_var_row()], "royalty": []}})
+    at.run()
+    assert not at.exception, at.exception
+    assert "Kursen 49,53 ser ut att stå i NOK (Yahoos kurs: 49,53 NOK)" in _price_warn(at)
+    assert not [b for b in at.button if b.key == "rf_producers_r1_aktuell_kurs"]
+    assert [b for b in at.button if b.label == "Använd USD"]
+
+
+def test_a_usd_listed_producer_keeps_the_plain_suggestion(sheet):
+    blob = {"rows": {"producers:r1": {"ticker": "NEM", "price": 52.0, "asof": "2026-11-07", "currency": "USD",
+                                      "source": "borsdata"}}}
+    at = sheet("Rick Rule", blob, {"producers": {"producers": [_var_row(ticker="NEM", aktuell_kurs=None)],
+                                                 "royalty": []}})
+    at.run()
+    assert not at.exception, at.exception
+    assert [b for b in at.button if b.key == "rf_producers_r1_aktuell_kurs"]
+    assert not [b for b in at.button if b.label == "Använd USD"] and not _price_warn(at)
+
+
+def test_a_currency_outside_the_table_is_not_converted(sheet):
+    blob = {"rows": {"producers:r1": {"ticker": "5711.T", "price": 1500.0, "asof": "2026-11-07", "currency": "JPY",
+                                      "source": "borsdata", "fx_to_usd": 1.0}}}
+    at = sheet("Rick Rule", blob, {"producers": {"producers": [_var_row(aktuell_kurs=1500.0)], "royalty": []}})
+    at.run()
+    assert not at.exception, at.exception
+    assert "ser ut att stå i JPY" in _price_warn(at) and "Skriv kursen i USD" in _price_warn(at)
+    assert not [b for b in at.button if b.label == "Använd USD" or b.key == "rf_producers_r1_aktuell_kurs"]

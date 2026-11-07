@@ -25,13 +25,22 @@ def _class_label(q) -> str:
 
 
 def _refresh_row(sheet: str, key: str):
-    """Sifferuppdateringens rad för bolaget (kurs, valuta, FX, FCF, EV) — None utan blob."""
+    """Sifferuppdateringens rad för bolaget (kurs, valuta, FCF, EV) — None utan blob. Yahoo-reservens rader saknar
+    valuta: den läses ur tickerns suffix (VAR.OL → NOK; London i pence), som i positionernas omräkning."""
     if not sheet:
         return None
     try:
         import refresh_ui
         r = ((refresh_ui.load_refresh() or {}).get("rows") or {}).get(f"{sheet}:{key}")
-        return r if isinstance(r, dict) else None
+        if not isinstance(r, dict):
+            return None
+        if not r.get("currency") and r.get("source") == "yfinance" and r.get("price") is not None:
+            import positions
+            t = str(r.get("ticker") or "").strip().upper()
+            ccy = "GBX" if t.endswith(".L") else positions.currency_for(t)
+            if ccy != "USD":
+                r = dict(r, currency=ccy)
+        return r
     except Exception:
         return None
 
@@ -42,22 +51,34 @@ def _use_usd(row: dict, value: float, widget_key: str) -> None:
     st.session_state[widget_key] = value
 
 
-def _usd_price(row: dict, cur: dict, ref: dict, widget_key: str) -> None:
-    """Börsdatas kurs i en annan valuta än USD: förslaget omräknat till USD (forward FCF räknas i MUSD), och en
-    varning när den sparade kursen är Börsdatas lokala — då jämför säkerhetsmarginalen olika valutor."""
+def _usd_price(price, cur: dict, ref: dict, row: dict, widget_key: str) -> None:
+    """Uppdateringens kurs i en annan valuta än USD: förslaget omräknat till USD (forward FCF räknas i MUSD), och en
+    varning när kursen i rutan ser ut att stå i den lokala valutan — då jämför säkerhetsmarginalen olika valutor.
+    price = rutans värde i den här körningen (inte radens förra), så varningen följer det man just skrivit."""
     def _sv(v, d=2):
         return f"{v:,.{d}f}".replace(",", " ").replace(".", ",")
+    src = "Yahoo" if ref.get("source") == "yfinance" else "Börsdata"
+    ccy, usd = cur["currency"], cur["usd"]
     if cur["stored_is_local"]:
-        st.warning(f"Kursen {_sv(cur['local'])} är Börsdatas kurs i {cur['currency']}, men forward FCF räknas i USD "
-                   f"(MUSD) — säkerhetsmarginalen jämför då olika valutor. Använd kursen i USD.")
-    now = fv.num(row.get("aktuell_kurs"))
-    if now is not None and abs(now - cur["usd"]) < 1e-6:
+        st.warning(f"Kursen {_sv(price)} ser ut att stå i {ccy} ({src}s kurs: {_sv(cur['local'])} {ccy}), men "
+                   f"forward FCF räknas i USD (MUSD) — säkerhetsmarginalen jämför då olika valutor. "
+                   + ("Använd kursen i USD." if usd is not None else "Skriv kursen i USD."))
+    now = fv.num(price)
+    asof = str(ref.get("asof") or "")[:10]
+    if usd is None:                                     # valutan finns inte i den fasta tabellen — ingen omräkning
+        if now is None:
+            st.markdown(f"<span style='color:{DIM};font-size:0.78rem;'>🤖 {src} {asof}: kurs {_sv(cur['local'])} "
+                        f"{ccy} — valutan finns inte i den fasta omräkningstabellen; skriv kursen i USD.</span>",
+                        unsafe_allow_html=True)
         return
+    if now is not None and abs(now - usd) < 1e-6:
+        return
+    fx_txt = f"{cur['fx']:g}".replace(".", ",")
     c1, c2 = st.columns([3, 1])
-    c1.markdown(f"<span style='color:{DIM};font-size:0.78rem;'>🤖 Börsdata {str(ref.get('asof') or '')[:10]}: kurs "
-                f"{_sv(cur['local'])} {cur['currency']} ≈ {_sv(cur['usd'])} USD (fast omräkning "
-                f"{str(cur['fx']).replace('.', ',')} — skriv en exakt kurs om du vill)</span>", unsafe_allow_html=True)
-    c2.button("Använd USD", key=f"{widget_key}_usd", on_click=_use_usd, args=(row, round(cur["usd"], 4), widget_key))
+    c1.markdown(f"<span style='color:{DIM};font-size:0.78rem;'>🤖 {src} {asof}: kurs {_sv(cur['local'])} {ccy} ≈ "
+                f"{_sv(usd, 4 if usd < 1 else 2)} USD (fast omräkning {fx_txt} — skriv en exakt kurs om du vill)"
+                f"</span>", unsafe_allow_html=True)
+    c2.button("Använd USD", key=f"{widget_key}_usd", on_click=_use_usd, args=(row, round(usd, 4), widget_key))
 
 
 def render_fv(row: dict, key: str, prefix: str = "fv", sheet: str = "") -> bool:
@@ -102,10 +123,10 @@ def render_fv(row: dict, key: str, prefix: str = "fv", sheet: str = "") -> bool:
         help="I USD — samma valuta som forward FCF (MUSD ÷ miljoner aktier = USD per aktie). Börsdatas kurs i NOK, "
              "SEK … räknas om i förslaget nedanför.")
     ref = _refresh_row(sheet, key)
-    cur = fv.price_currency(row.get("aktuell_kurs"), ref)
-    if cur is not None:                                 # Börsdatas kurs är i NOK/SEK … — förslaget i USD
-        _usd_price(row, cur, ref, f"{prefix}_{key}_price")
-    elif sheet:
+    cur = fv.price_currency(price, ref)
+    if cur is not None:                                 # uppdateringens kurs är i NOK/SEK … — förslaget i USD
+        _usd_price(price, cur, ref, row, f"{prefix}_{key}_price")
+    elif sheet:                                         # kursen är i USD (eller valutan okänd): det vanliga förslaget
         try:
             import refresh_ui
             refresh_ui.suggest(sheet, row, "aktuell_kurs", "price", "kurs",

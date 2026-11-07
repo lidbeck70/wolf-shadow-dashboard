@@ -433,41 +433,94 @@ def gate_gaps(row: dict, position_pct=None, strategy: str = "") -> list:
 #  Rimlighetskontroller — bara varningar, de ändrar ingen beräkning eller grind
 # ═════════════════════════════════════════════════════════════════════════════
 PRICE_MATCH = 0.03          # sparad kurs inom 3 % av Börsdatas = samma tal, i Börsdatas valuta
+FX_DISTINCT = 2.0           # valutor minst 2× från USD (NOK, SEK, DKK, pence): kursen hör till den valuta den ligger närmast
 FCF_TOO_SMALL = 0.02        # forward FCF under 2 % av referens-FCF:en — troligen fel enhet
 FCF_TOO_LARGE = 50.0        # … eller över 50× den
 FCF_EV_MIN = 0.002          # utan referens-FCF: under 0,2 % av EV
+FCF_SIZE_MAX = 5.0          # … eller över 5× bolagets storlek (EV eller börsvärde, det större)
+PENCE = ("GBX", "GBp")      # London i pence: GBP/100
+
+
+def fx_to_usd(currency) -> Optional[float]:
+    """USD per kursenhet ur sifferuppdateringens fasta tabell (sheets_refresh.FX_TO_USD — samma tal som raderna
+    räknats om med). London i pence (GBX/GBp) = GBP/100. None för en valuta tabellen inte har: den räknas inte
+    om som om den vore USD."""
+    raw = str(currency or "").strip()
+    if not raw:
+        return None
+    try:
+        from sheets_refresh import FX_TO_USD
+    except Exception:                   # pragma: no cover — tabellen är en ren modulkonstant
+        return None
+    if raw in PENCE or raw.upper() == "GBX":
+        return FX_TO_USD["GBP"] / 100.0
+    return FX_TO_USD.get(raw.upper())
+
+
+def _looks_local(p: Optional[float], local: float, usd: Optional[float], fx: Optional[float]) -> bool:
+    """Den sparade kursen är i Börsdatas valuta: inom 3 % av Börsdatas kurs — eller, när valutan ligger minst 2× från
+    USD, närmare den lokala kursen än den omräknade (kursen har rört sig sedan den skrevs in, men en NOK-kurs blir
+    inte en USD-kurs av det)."""
+    if p is None or p <= 0:
+        return False
+    if abs(p - local) / local <= PRICE_MATCH:
+        return True
+    if usd is None or not fx or max(fx, 1.0 / fx) < FX_DISTINCT:
+        return False
+    import math
+    return abs(math.log(p / local)) < abs(math.log(p / usd))
 
 
 def price_currency(price, ref: Optional[dict]) -> Optional[dict]:
     """Kursens valuta mot forward FCF:ens (USD — MUSD ÷ miljoner aktier ger USD per aktie).
 
-    ref = sifferuppdateringens rad för bolaget (price, currency, fx_to_usd). None när Börsdatas kurs redan är i USD
-    eller valutan inte är känd. Annars {currency, local, usd, fx, stored_is_local}: Börsdatas kurs i sin valuta,
-    omräknad till USD med sifferuppdateringens fasta tabell, och om den sparade kursen är just Börsdatas (inom 3 %)
-    — då jämför säkerhetsmarginalen USD mot en annan valuta."""
+    ref = sifferuppdateringens rad för bolaget (price, currency). None när Börsdatas kurs saknas eller redan är i
+    USD. Annars {currency, local, usd, fx, stored_is_local}: Börsdatas kurs i sin valuta, omräknad till USD med den
+    fasta tabellen (usd/fx None när valutan inte finns där), och om den sparade kursen ser ut att vara i Börsdatas
+    valuta — då jämför säkerhetsmarginalen USD mot en annan valuta. Växelkursen tas alltid ur tabellen: Rick
+    Rule-raderna bär ingen egen fx_to_usd, och de rader som gör det har den ur samma tabell."""
     if not isinstance(ref, dict):
         return None
-    ccy = str(ref.get("currency") or "").strip().upper()
-    local, fx = _pos(ref.get("price")), _pos(ref.get("fx_to_usd"))
-    if not ccy or ccy == "USD" or local is None or fx is None:
+    raw = str(ref.get("currency") or "").strip()
+    local = _pos(ref.get("price"))
+    if not raw or raw.upper() == "USD" or local is None:
         return None
-    p = _num(price)
-    return {"currency": ccy, "local": local, "usd": round(local * fx, 4), "fx": fx,
-            "stored_is_local": p is not None and abs(p - local) / local <= PRICE_MATCH}
+    fx = fx_to_usd(raw)
+    usd = round(local * fx, 4) if fx else None
+    ccy = "GBX" if (raw in PENCE or raw.upper() == "GBX") else raw.upper()
+    return {"currency": ccy, "local": local, "usd": usd, "fx": fx,
+            "stored_is_local": _looks_local(_num(price), local, usd, fx)}
+
+
+def _ref_sizes_ok(ref: Optional[dict]) -> bool:
+    """Sifferuppdateringens MUSD-tal går att lita på: kursvalutan är USD, saknas eller finns i den fasta tabellen.
+    För en okänd valuta har jobbet räknat om med 1,0 — talen står då i fel enhet."""
+    if not isinstance(ref, dict):
+        return False
+    raw = str(ref.get("currency") or "").strip()
+    return not raw or raw.upper() == "USD" or fx_to_usd(raw) is not None
 
 
 def fcf_unit_warnings(row: dict, ref: Optional[dict] = None) -> list:
     """Varningar när forward FCF ser ut att stå i fel enhet (MUSD = miljoner USD). Varje scenario prövas mot CSM:s
-    FCF för samma scenario, annars Börsdatas FCF (12 mån), annars EV: under 2 % eller över 50× referensen, eller
-    under 0,2 % av EV, är troligen tusentals/miljarder eller en yield i fel ruta. Bara text — räkningen är orörd."""
+    FCF för samma scenario, annars Börsdatas FCF (12 mån): under 2 % eller över 50× referensen. Utan referens-FCF
+    prövas det mot bolagets storlek: under 0,2 % av EV, eller över 5× EV/börsvärdet (det större). Det fångar
+    tusentals, miljarder och en yield i fel ruta. Bara text — räkningen är orörd."""
     r = row or {}
     fv_in, csm = r.get("fv") or {}, r.get("csm") or {}
-    bd_fcf = _pos((ref or {}).get("fcf_musd")) if isinstance(ref, dict) else None
-    ev = _pos(r.get("ev_musd")) or (_pos((ref or {}).get("ev_musd")) if isinstance(ref, dict) else None)
+    rf = ref if _ref_sizes_ok(ref) else {}
+    bd_fcf = _pos(rf.get("fcf_musd"))
+    ev = _pos(r.get("ev_musd")) or _pos(rf.get("ev_musd"))
+    mcap = _pos(rf.get("mcap_musd"))
+    size, size_lbl = max(((v, lbl) for v, lbl in ((ev, "EV"), (mcap, "börsvärdet")) if v is not None),
+                         default=(None, ""))
     out = []
 
     def _m(v):
         return f"{v:,.0f}".replace(",", " ")
+
+    def _f(v):                                          # det inskrivna talet som det står: 12 · 12,5 · 3 550 000
+        return f"{v:,.12g}".replace(",", " ").replace(".", ",")
     for s in FV_SCENARIOS:
         f = _num((fv_in.get(s) or {}).get("forward_fcf_musd") if isinstance(fv_in.get(s), dict) else None)
         if f is None or f <= 0:
@@ -479,9 +532,12 @@ def fcf_unit_warnings(row: dict, ref: Optional[dict] = None) -> list:
             base, src = bd_fcf, "Börsdatas FCF (12 mån)"
         if base is not None:
             if f < FCF_TOO_SMALL * base or f > FCF_TOO_LARGE * base:
-                out.append(f"{s}: forward FCF {f:g} MUSD mot {src} {_m(base)} MUSD — står talet i miljoner USD?")
+                out.append(f"{s}: forward FCF {_f(f)} MUSD mot {src} {_m(base)} MUSD — står talet i miljoner USD?")
         elif ev is not None and f < FCF_EV_MIN * ev:
-            out.append(f"{s}: forward FCF {f:g} MUSD är under 0,2 % av EV {_m(ev)} MUSD — står talet i miljoner USD?")
+            out.append(f"{s}: forward FCF {_f(f)} MUSD är under 0,2 % av EV {_m(ev)} MUSD — står talet i miljoner USD?")
+        elif size is not None and f > FCF_SIZE_MAX * size:
+            out.append(f"{s}: forward FCF {_f(f)} MUSD är över 5× {size_lbl} {_m(size)} MUSD — står talet i miljoner "
+                       f"USD (inte tusental)?")
     return out
 
 
