@@ -391,6 +391,10 @@ def evaluate(row: dict) -> dict:
     }
 
 
+MOS_NO_PRICE = "Aktuell kurs saknas — säkerhetsmarginalen mot fair value för Base kan inte räknas."
+MOS_NO_VALUE = "Fair value för Base är noll eller negativ — ingen säkerhetsmarginal att räkna."
+
+
 def gate_gaps(row: dict, position_pct=None, strategy: str = "") -> list:
     """Vad som hindrar köpgrindens steg 5 från att bli grönt.
 
@@ -411,7 +415,13 @@ def gate_gaps(row: dict, position_pct=None, strategy: str = "") -> list:
         gaps.append("Fair value för Base går inte att räkna — fyll i forward "
                     "FCF, target-yield, aktieantal och kurs.")
         return gaps
-    if not mos_passes_gate(ev["mos"]):
+    if ev["mos"] is None:
+        # Fair value finns men marginalen går inte att räkna: kursen saknas, eller Base-värdet är noll/negativt.
+        if _num(row.get("aktuell_kurs") if isinstance(row, dict) else None) is None:
+            gaps.append(MOS_NO_PRICE)
+        else:
+            gaps.append(MOS_NO_VALUE)
+    elif not mos_passes_gate(ev["mos"]):
         gaps.append(f"Säkerhetsmarginal {ev['mos']:.1f} % — kravet är "
                     f"{MOS_BUY_MIN:g} %.")
     if not ev["what_must_go_right"]:
