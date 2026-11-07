@@ -234,3 +234,31 @@ def test_the_deleveraging_gap_reaches_the_gate():
     assert any("År till låg skuld" in g for g in gaps)
     row["ar_till_lag_skuld"] = 2.0
     assert fv.gate_gaps(row, 5.0, "producenter") == []
+
+
+def test_a_missing_price_is_a_gap_not_a_crash():
+    """Fair value för Base finns men kursen saknas (t.ex. efter att ChatGPT-svaret fyllt FV men inte kursen):
+    grinden säger vad som fattas i stället för att formatera None — Scorecard-sidan föll på det."""
+    row = _eqx()
+    row.pop("aktuell_kurs", None)
+    assert fv.evaluate(row)["fv_base"] is not None and fv.evaluate(row)["mos"] is None
+    assert fv.gate_gaps(row, 5.0, "producenter") == [fv.MOS_NO_PRICE]
+    assert not fv.gate_ok(row, 5.0, "producenter")                      # grinden är fortfarande inte grön
+
+
+def test_a_non_positive_base_value_is_a_gap_not_a_crash():
+    row = _eqx()
+    row["fv"][ctl.BASE]["forward_fcf_musd"] = -50.0                    # negativt FCF → fair value under noll
+    gaps = fv.gate_gaps(row, 5.0, "producenter")
+    assert fv.MOS_NO_VALUE in gaps and not fv.gate_ok(row, 5.0, "producenter")
+
+
+def test_the_scorecard_gate_survives_fv_without_a_price():
+    """Samma väg som felet: scorecard.gate_state → valuation_gaps → lukacs.gate_gaps."""
+    import scorecard as sc
+    row = _eqx()
+    row.pop("aktuell_kurs", None)
+    entry = {"key": "x|X", "ticker": "X", "name": "X", "strategies": ["producenter"], "rows": {"producenter": row}}
+    state = sc.gate_state({"strategy": "producenter", "position_pct_total": 5.0}, entry)
+    assert not state["ready"] and any("Aktuell kurs saknas" in g for g in sc.valuation_gaps(entry, {
+        "strategy": "producenter", "position_pct_total": 5.0}))
