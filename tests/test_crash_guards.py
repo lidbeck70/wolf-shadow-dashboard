@@ -358,3 +358,26 @@ def test_the_tiggre_downside_box_shows_what_is_stored(sheet):
     box.set_value(-40.0).run()
     assert not at.exception, at.exception
     assert at.session_state["tiggre"]["candidates"][0]["downside"] == -40.0
+
+
+def test_every_floor_zero_field_is_a_gap_in_its_rule_and_in_the_missing_list():
+    """Genomgången av alla fält med golvet 0 i arken: regeln räknar ett sparat negativt tal som en lucka (som rutan),
+    och saknas-listan nämner det. Positiva tal räknas som förut."""
+    import producers as pr
+    import scoring as sc
+    from review import missing as mis
+    assert pr.margin_pct(2000, -500) is None and pr.margin_pct(-100, 50) is None and pr.margin_pct(2000, 1000) == 50.0
+    assert pr.producer_score({"price": 2000, "unit_cost": -500, "kapitaldisciplin": True}) is None
+    assert pr.discount_vs_bottom(-1.0, 0.9) is None and pr.discount_vs_bottom(1.0, 0.8) == 25.0
+    assert pr.geo_growth(-0.1, 0.1) is None and pr.geo_growth(1.2, 1.0) == pytest.approx(20.0)
+    assert sc.future_profit(100, 3000, -10) is None and sc.future_profit(100, 3000, 1500) == 150000
+
+    def keys(sheet, row):
+        return {it.path: it.reason for it in mis.missing_for(sheet, row)}
+    rule = {"price": 2000, "unit_cost": 1000, "mine_life": 15, "position_pct": 1, "ev_musd": 500, "nav_musd": -300,
+            "kapitaldisciplin": True, "jurisdiktion": True, "insiderägande": True}
+    assert "Sparat negativt (-300)" in keys("rule", rule).get("nav_musd", "")
+    assert "Sparat negativt (-500)" in keys("rule", {**rule, "nav_musd": 900, "unit_cost": -500}).get("unit_cost", "")
+    roy = {"level": 2, "pnav_now": -1.0, "pnav_bottom": 0.9, "geo_now": -0.1, "geo_3y": 0.1}
+    got = keys("royalty", roy)
+    assert "Sparat negativt" in got.get("pnav_now", "") and "Sparat negativt" in got.get("geo_now", "")

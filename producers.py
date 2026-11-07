@@ -131,8 +131,9 @@ def _num(value, default: Optional[float] = None) -> Optional[float]:
 
 
 def margin_pct(price, unit_cost) -> Optional[float]:
-    """(råvarupris − kostnad per enhet) / råvarupris, i procent."""
-    p, c = _num(price), _num(unit_cost)
+    """(råvarupris − kostnad per enhet) / råvarupris, i procent. Ett negativt pris eller en negativ kostnad (rutorna
+    har golvet 0) är en lucka, som i rutan — aldrig en marginal över 100 % som ger full poäng."""
+    p, c = _nonneg(price), _nonneg(unit_cost)
     if p is None or c is None or p == 0:
         return None
     return round((p - c) / p * 100, 6)
@@ -253,8 +254,8 @@ def ev_nav_verdict(row: dict) -> Optional[Verdict]:
 
 
 def discount_vs_bottom(now, bottom) -> Optional[float]:
-    """Hur många procent över sin egen P/NAV-botten bolaget handlas."""
-    n, b = _num(now), _num(bottom)
+    """Hur många procent över sin egen P/NAV-botten bolaget handlas. Negativt P/NAV = lucka (rutan har golvet 0)."""
+    n, b = _nonneg(now), _nonneg(bottom)
     if n is None or b is None or b == 0:
         return None
     return round((n / b - 1) * 100, 6)
@@ -270,8 +271,8 @@ def vs_median(now, median) -> Optional[float]:
 
 
 def geo_growth(now, three_years_ago) -> Optional[float]:
-    """GEO per aktie idag mot för tre år sedan, i procent."""
-    n, o = _num(now), _num(three_years_ago)
+    """GEO per aktie idag mot för tre år sedan, i procent. Negativ GEO = lucka (rutan har golvet 0)."""
+    n, o = _nonneg(now), _nonneg(three_years_ago)
     if n is None or o is None or o == 0:
         return None
     return round((n / o - 1) * 100, 6)

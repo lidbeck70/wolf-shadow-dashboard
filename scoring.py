@@ -195,8 +195,8 @@ def mcap_per_earnings(mcap, future_profit) -> Optional[float]:
 
 
 def future_profit(production, target_price, aisc) -> Optional[float]:
-    """Hjälpräknaren: produktion × (målpris − AISC)."""
-    prod, tp, cost = _num(production), _num(target_price), _num(aisc)
+    """Hjälpräknaren: produktion × (målpris − AISC). Negativa tal = luckor (rutorna har golvet 0)."""
+    prod, tp, cost = _nonneg(production), _nonneg(target_price), _nonneg(aisc)
     if prod is None or tp is None or cost is None:
         return None
     return prod * (tp - cost)
