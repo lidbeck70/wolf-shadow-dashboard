@@ -619,3 +619,118 @@ def test_the_price_hint_says_only_the_price_is_in_the_trading_currency():
     hint = ccfg.FIELD_BY_KEY["share_price"].hint
     assert "handelsvalutan" in hint and "MUSD-fält står i USD" in hint
     assert ccfg.FIELD_BY_KEY["market_currency"].label == "Handelsvaluta (aktiekursen)"
+
+
+def _conf_form_app(monkeypatch, company):
+    """Confidence-sidans Indata-formulär (samma _field_widgets/_point_from_widgets som 'Alla fält' och Asymmetry)."""
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+    import storage
+    from confidence import store as cs
+    data = cs.default()
+    cs.put(data, company)
+    monkeypatch.setattr(storage, "session_load",
+                        lambda name, default=None, legacy_file=None: st.session_state.setdefault(name, default))
+    for n in ("load_error", "load_failed", "last_saved"):
+        monkeypatch.setattr(storage, n, lambda name: None, raising=False)
+    monkeypatch.setattr(storage, "is_dirty", lambda name: False, raising=False)
+    monkeypatch.setattr(storage, "session_save", lambda *a, **k: True, raising=False)
+
+    def app():
+        import streamlit as st
+        from confidence import store as cs
+        from confidence import ui as cui
+        d = st.session_state["confidence"]
+        cui._render_inputs(d, cs.get(d, st.session_state["_t"]), tools=False, identity=False)
+
+    at = AppTest.from_function(app, default_timeout=120)
+    at.session_state["confidence"] = data
+    at.session_state["_t"] = company.ticker
+    at.run()
+    assert not at.exception, at.exception
+    return at
+
+
+def _submit(at, form):
+    for b in at.button:
+        if b.proto.form_id == form:
+            b.click()
+            at.run()
+            assert not at.exception, at.exception
+            return
+    raise KeyError(form)
+
+
+def test_the_manual_label_survives_the_next_save_of_the_same_form(monkeypatch):
+    """Granskningen (runda 2): Källa-rutan behåller texten efter spar, så nästa spar skrev tillbaka "Börsdata …" på
+    ett tal som fortfarande var skrivet för hand — och valutaupplysningen tappade det."""
+    from confidence import store as cs
+    from engines.durrett import ui as dui
+    bd = "Börsdata (sifferuppdatering 2026-11-06)"
+    c = CompanyInput(ticker="LUG.CO", name="Test Copper A/S", commodity="copper", stage="producer")
+    for k, v in (("market_cap_musd", 410.2), ("share_price", 61.5), ("basic_shares_m", 45.8), ("cash_musd", 38.4),
+                 ("debt_musd", 12.1)):
+        c.set(k, dp(v, kind="ACTUAL", source=bd, source_type="secondary", pub_date="2026-11-06"))
+    c.set("market_currency", dp("DKK", kind="ACTUAL", source=bd, source_type="secondary", pub_date="2026-11-06"))
+    at = _conf_form_app(monkeypatch, c)
+    t, form = "LUG.CO", "conf_form_LUG.CO_balance_sheet"
+
+    def stored(k):
+        p = cs.get(at.session_state["confidence"], t).get(k)
+        return p.value, p.source
+
+    at.text_input(key=f"cf_{t}_cash_musd_v").set_value("262")
+    _submit(at, form)
+    assert stored("cash_musd") == (262.0, f"Manuell (ersätter {bd})")
+    at.text_input(key=f"cf_{t}_debt_musd_v").set_value("12.4")             # nästa spar: bara skulden ändras
+    _submit(at, form)
+    assert stored("cash_musd") == (262.0, f"Manuell (ersätter {bd})")
+    assert stored("debt_musd") == (12.4, f"Manuell (ersätter {bd})")
+    _submit(at, form)                                                       # inget ändrat
+    assert stored("cash_musd")[1] == f"Manuell (ersätter {bd})" and stored("market_cap_musd") == (410.2, bd)
+    assert "Kassa" in dui.musd_currency_note(cs.get(at.session_state["confidence"], t))
+
+
+def test_big_numbers_are_shown_whole_and_keep_their_source_on_save(monkeypatch):
+    """Granskningen (runda 2): rutan visade 6 värdesiffror (2.34568e+06), så ett orört tal blev "Manuell" och
+    avrundades till 2 345 680 när formuläret sparades igen."""
+    from confidence import store as cs
+    from confidence import ui as cui
+    assert cui._fmt_edit(2345678.0) == "2345678" and cui._fmt_edit(2345678) == "2345678"
+    assert cui._fmt_edit(245.678912) == "245.678912" and cui._fmt_edit(0.73) == "0.73"
+    c = dcs.gold_producer()
+    c.ticker = "BIG"
+    c.set("resource_indicated", dp(2345678.0, kind="ACTUAL", source="PEA 2025 (Ausenco)"))
+    at = _conf_form_app(monkeypatch, c)
+    pillar = ccfg_pillar("resource_indicated")
+    assert at.text_input(key="cf_BIG_resource_indicated_v").value == "2345678"
+    for _ in range(2):
+        _submit(at, f"conf_form_BIG_{pillar}")
+        p = cs.get(at.session_state["confidence"], "BIG").get("resource_indicated")
+        assert p.value == 2345678.0 and p.source == "PEA 2025 (Ausenco)"
+
+
+def ccfg_pillar(key):
+    from confidence import config as ccfg
+    return ccfg.FIELD_BY_KEY[key].pillar
+
+
+def test_yahoo_london_prices_in_pence_become_pounds():
+    """Granskningen (runda 2): Yahoo ger .L-kurser i pence (GBp) men raden märktes GBP, så Durrett växlade en
+    kurs 100× för hög och FD-börsvärdet blev 100× börsvärdet."""
+    from asymmetry import fetch
+    from engines.durrett import refresh as dr
+    info = {"marketCap": 1.05e9, "currency": "GBp", "financialCurrency": "USD", "currentPrice": 51.6,
+            "sharesOutstanding": 2.03e9, "totalCash": 80e6, "totalDebt": 20e6}
+    row = fetch.yahoo_row("PAF", lambda s: info if s == "PAF.L" else {})
+    assert row["currency"] == "GBP" and row["price"] == pytest.approx(0.516)
+    assert row["mcap_musd"] == pytest.approx(round(1.05e9 * 1.27 / 1e6, 1)) and row["cash_musd"] == 80.0
+    c = dcs.gold_producer()
+    c.ticker = "PAF"
+    for k in ("market_cap_musd", "cash_musd", "debt_musd", "enterprise_value_musd", "basic_shares_m", "options_m",
+              "warrants_m", "convertible_shares_m", "other_dilutive_m", "market_currency", "fx_to_usd"):
+        c.fields.pop(k, None)
+    for fkey, point, _cur in dr.proposals({"generated": "2026-11-08", "rows": {"confidence:PAF": row}}, c):
+        c.set(fkey, point)
+    ss = dilution.share_structure(Ctx(c))
+    assert ss["fd_mcap_usd"] == pytest.approx(ss["mcap_usd"], rel=0.01)

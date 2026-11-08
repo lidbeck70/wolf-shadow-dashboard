@@ -87,6 +87,7 @@ def yahoo_row(ticker: str, info_getter=None) -> Optional[dict]:
     """Samma radform som Börsdata ur Yahoo: kurs, valuta, börsvärde, aktier,
     kassa, skuld i MUSD. Provar tickern som den är och med vanliga
     börssuffix. None när Yahoo inte har börsvärde för någon form."""
+    import lukacs as lk
     import sheets_refresh as sr
     from datetime import date as _date
 
@@ -106,7 +107,9 @@ def yahoo_row(ticker: str, info_getter=None) -> Optional[dict]:
         mc = info.get("marketCap")
         if not mc:
             continue
-        ccy = str(info.get("currency") or "USD").upper()
+        raw_ccy = str(info.get("currency") or "USD")
+        pence = lk._is_pence(raw_ccy)                 # London: kursen i pence (GBp/GBX), börsvärdet i GBP
+        ccy = "GBP" if pence else raw_ccy.upper()
         fx = sr.FX_TO_USD.get(ccy, 1.0)
         fccy = str(info.get("financialCurrency") or ccy).upper()
         ffx = sr.FX_TO_USD.get(fccy, 1.0)
@@ -118,6 +121,8 @@ def yahoo_row(ticker: str, info_getter=None) -> Optional[dict]:
                 return None
 
         price = info.get("currentPrice") or info.get("regularMarketPrice")
+        if pence and price is not None:
+            price = float(price) / 100.0               # pence → GBP, så att kurs, valuta och växelkurs stämmer
         shares = info.get("sharesOutstanding")
         return {"ticker": t, "yahoo": sym, "ins_id": None, "source": "yfinance",
                 "source_label": f"Yahoo Finance ({sym}, {_date.today().isoformat()})",

@@ -87,6 +87,18 @@ def _fmt(v) -> str:
     return str(v)
 
 
+def _fmt_edit(v) -> str:
+    """Talet i en inmatningsruta — förlustfritt, så att ett formulär som sparas igen inte avrundar 2 345 678 till
+    2 345 680 (_fmt visar 6 värdesiffror, bra för text men inte för en ruta som sparas tillbaka)."""
+    if isinstance(v, bool):
+        return _fmt(v)
+    if isinstance(v, int):
+        return str(v)
+    if isinstance(v, float):
+        return f"{v:.15g}"
+    return _fmt(v)
+
+
 def _signals_cache() -> dict:
     return st.session_state.setdefault(_SIG, {"rotation": None, "themes": None, "ratios": None,
                                               "complexes": None, "log": []})
@@ -387,7 +399,7 @@ def _field_widgets(company: CompanyInput, f: cfg.FieldSpec) -> dict:
         cur = str(p.value) if p and not p.missing and str(p.value) in f.choices else "—"
         w["value"] = c[0].selectbox(label, opts, index=opts.index(cur), key=f"{k}_v", help=f.hint or None)
     else:
-        w["value"] = c[0].text_input(label, value=_fmt(p.value) if p and not p.missing else "", key=f"{k}_v",
+        w["value"] = c[0].text_input(label, value=_fmt_edit(p.value) if p and not p.missing else "", key=f"{k}_v",
                                      help=f.hint or None)
     kinds = list(cfg.KINDS)
     w["kind"] = c[1].selectbox("Typ", kinds, index=kinds.index(p.kind) if p and p.kind in kinds else 1,
@@ -399,7 +411,8 @@ def _field_widgets(company: CompanyInput, f: cfg.FieldSpec) -> dict:
     w["pub_date"] = c[4].text_input("Datum", value=(p.pub_date or "") if p else "", key=f"{k}_d",
                                     placeholder="ÅÅÅÅ-MM-DD")
     # det rutorna visade från början — ett ändrat värde under orörd källa är en handändring (_point_from_widgets)
-    w["_shown"] = cur if f.kind in ("bool", "choice") else (_fmt(p.value) if p and not p.missing else "")
+    w["_shown"] = cur if f.kind in ("bool", "choice") else (_fmt_edit(p.value) if p and not p.missing else "")
+    w["_prev_value"] = p.value if p and not p.missing else None
     w["_prev_source"] = (p.source or "") if p else ""
     return w
 
@@ -436,14 +449,21 @@ def _edited_source(w: dict, f: cfg.FieldSpec) -> str:
     valutaupplysning ser att talet är skrivet för hand. Redan manuella källor och orörda värden behålls."""
     source = w["source"].strip()
     prev = str(w.get("_prev_source") or "").strip()
+    if prev.startswith(_MANUAL) and prev.endswith(")") and source == prev[len(_MANUAL):-1]:
+        return prev            # rutan visar fortfarande den ersatta källan (Streamlit behåller texten efter spar)
     if not prev or source != prev or "manuell" in prev.lower() or "_shown" not in w:
         return source
     now, shown = str(w["value"]).strip(), str(w["_shown"]).strip()
-    if f.kind in ("number", "int") and _num_or_none(now) is not None and _num_or_none(shown) is not None:
-        changed = abs(_num_or_none(now) - _num_or_none(shown)) > 1e-12
+    old = w.get("_prev_value")                 # det sparade talet (rutan kan visa det i annan form, t.ex. 18 / 18.0)
+    old = float(old) if isinstance(old, (int, float)) and not isinstance(old, bool) else _num_or_none(shown)
+    if f.kind in ("number", "int") and _num_or_none(now) is not None and old is not None:
+        changed = abs(_num_or_none(now) - old) > 1e-9 * max(1.0, abs(old))
     else:
         changed = now != shown
-    return f"Manuell (ersätter {prev})" if changed else source
+    return f"{_MANUAL}{prev})" if changed else source
+
+
+_MANUAL = "Manuell (ersätter "
 
 
 def _render_prefill(data: dict, company: CompanyInput, store: str = cs.STORE) -> None:
