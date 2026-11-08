@@ -377,15 +377,73 @@ def _sheet_summary(a: DurrettAnalysis) -> None:
 
 
 # ── Analys ───────────────────────────────────────────────────────────────────
-VALUATION_NEEDS = (("mcap_future_earnings", "MCap/framtida vinst kräver produktion, råvarupris och AISC (eller "
-                                            "break-even) samt börsvärde"),
-                   ("ev_per_resource_unit", "EV/resurs kräver resurs (enhet och mängd) samt börsvärde"),
-                   ("ev_npv", "EV/NPV kräver NPV (MUSD)"))
+def _valuation_needs(company: CompanyInput, a: DurrettAnalysis) -> list:
+    """Vad som hindrar varje värderingsmått — ur vad motorn faktiskt saknar, inte en fast lista: börsvärde eller
+    växelkurs, kassa/skuld för EV, enhet, produktion/pris/kostnad, eller en framtida vinst ≤ 0. EV/NPV bara för de
+    stadier motorn läser NPV för (explorer, utvecklare)."""
+    from confidence.data.validation import usable
+    from confidence.data.provenance import num as _pnum
+
+    def u(k):
+        return usable(company, k)
+    m = a.metrics or {}
+
+    def val(k):
+        return (m.get(k) or {}).get("value")
+    unit_missing = "resource_unit" in (a.missing_data or [])
+    cur = str(company.get("market_currency").value if company.has("market_currency") else "").strip().upper()
+    if a.market_cap_musd is None:
+        given = u("market_cap_musd") or (u("share_price") and (u("basic_shares_m") or u("shares_outstanding_m")))
+        mcap_need = (f"växelkurs → USD (valutan är {cur})" if given and cur and cur != "USD" and not u("fx_to_usd")
+                     else "börsvärde (eller kurs och antal aktier)")
+    else:
+        mcap_need = None
+    out = []
+    if val("mcap_future_earnings") is None:
+        fcf = val("future_fcf")
+        if mcap_need:
+            out.append(f"MCap/framtida vinst kräver {mcap_need}")
+        elif fcf is not None and fcf <= 0:
+            out.append("MCap/framtida vinst: framtida vinst ≤ 0 — kostnaden (AISC/break-even) ligger över råvarupriset")
+        else:
+            miss = []
+            if not any(u(k) for k in ("production_future", "production_current", "annual_production")):
+                miss.append("produktion")
+            elif unit_missing:
+                miss.append("enhet (resurs/produktion)")
+            if not u("commodity_price"):
+                miss.append("råvarupris")
+            if not (u("aisc") or u("breakeven_price")):
+                aisc_ok = company.stage in (ccfg.FIELD_BY_KEY["aisc"].stages or (company.stage,))
+                miss.append("AISC (eller break-even)" if aisc_ok else "break-even-pris")
+            if miss:
+                out.append("MCap/framtida vinst kräver " + ", ".join(miss))
+    ev_need = mcap_need or ("kassa eller skuld (eller enterprise value)" if a.enterprise_value_musd is None else None)
+    if val("ev_per_resource_unit") is None:
+        miss = [x for x in (ev_need, "enhet (resurs/produktion)" if unit_missing else None,
+                            "resurs (mängd)" if val("resource_total") is None and not unit_missing else None) if x]
+        if miss:
+            out.append("EV/resurs kräver " + " och ".join(miss))
+    npv_spec = ccfg.FIELD_BY_KEY.get("npv_musd")
+    if val("ev_npv") is None and npv_spec is not None and company.stage in (npv_spec.stages or (company.stage,)):
+        npv = _pnum(company.get("npv_musd")) if company.has("npv_musd") else None
+        if npv is not None and npv <= 0:
+            out.append("EV/NPV: NPV ≤ 0")
+        else:
+            miss = [x for x in ("NPV (MUSD)" if not u("npv_musd") else None, ev_need) if x]
+            if miss:
+                out.append("EV/NPV kräver " + " och ".join(miss))
+    seen, uniq = set(), []
+    for x in out:
+        if x not in seen:
+            seen.add(x)
+            uniq.append(x)
+    return uniq
 
 
 def _valuation_line(company: CompanyInput, a: DurrettAnalysis) -> None:
     """Värderingsraden ur motorns egna mått — samma text som Scorecardet föreslår under Värdering (strategin
-    confidence). Läses, skriver ingenting. Saknas ett mått står det vad som behövs för att räkna det."""
+    confidence). Läses, skriver ingenting. För ett mått som inte går att räkna står vad som faktiskt hindrar det."""
     try:
         import refresh_ui
         import scorecard
@@ -393,17 +451,17 @@ def _valuation_line(company: CompanyInput, a: DurrettAnalysis) -> None:
         ref = dr.refresh_row(refresh_ui.load_refresh(), company.ticker)
         text = scorecard.valuation_suggestion({"ticker": company.ticker}, scorecard.DURRETT_SHEET_STRATEGY, ref,
                                               a.metrics)
+        needs = _valuation_needs(company, a)
     except Exception:                                   # pragma: no cover — raden är en hjälp, aldrig ett hinder
         return
-    missing = [need for key, need in VALUATION_NEEDS if (a.metrics.get(key) or {}).get("value") is None]
     if text:
         st.markdown(f"<div style='color:{TEXT};font-size:0.85rem;margin-top:4px;'>💰 <b>Värdering:</b> "
                     f"{text.replace('$', '&#36;')}</div>"
                     f"<div style='color:{DIM};font-size:0.75rem;'>Samma rad som Scorecardet föreslår under "
                     f"Värdering (strategi confidence).</div>", unsafe_allow_html=True)
-    if missing:
+    if needs:
         st.caption(("💰 Värdering: inget att räkna ännu — " if not text else "Saknas för resten: ")
-                   + " · ".join(missing) + ".")
+                   + " · ".join(needs) + ".")
 
 
 def _render_analysis(a: DurrettAnalysis) -> None:

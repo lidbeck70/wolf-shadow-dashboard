@@ -499,6 +499,46 @@ def test_the_durrett_sheet_shows_the_same_valuation_line_and_what_is_missing(mon
     assert "💰 <b>Värdering:</b> MCap/framtida vinst" in lines and "efter skatt" in lines
     assert "EV/EBITDA 4,1× (Börsdata)" in lines
     caps = " ".join(c.value for c in at.caption)
-    assert ("💰 Värdering: inget att räkna ännu — MCap/framtida vinst kräver produktion, råvarupris och AISC "
-            "(eller break-even) samt börsvärde") in caps
+    assert ("💰 Värdering: inget att räkna ännu — MCap/framtida vinst kräver produktion, råvarupris, AISC "
+            "(eller break-even) · EV/resurs kräver kassa eller skuld (eller enterprise value) och resurs (mängd).") in caps
+    assert "NPV" not in caps                                       # producent: motorn läser inte NPV
     assert json.dumps(at.session_state["confidence"], sort_keys=True, default=str) == before
+
+
+def _needs(c):
+    from datetime import date
+    from engines.durrett.engine import analyze
+    from engines.durrett import ui as dui
+    return dui._valuation_needs(c, analyze(c, today=date.today()))
+
+
+def _company(stage, **fields):
+    from confidence.data.models import CompanyInput
+    from confidence.data.provenance import dp
+    c = CompanyInput(ticker="X", name="X", commodity="gold", stage=stage)
+    for k, v in fields.items():
+        c.set(k, dp(v, kind="ACTUAL", source="test"))
+    return c
+
+
+def test_the_missing_list_names_what_the_engine_really_lacks():
+    """Granskningen: den fasta listan bad om resurs/NPV fast EV (kassa/skuld) var det som saknades, bad producenter
+    om NPV som motorn aldrig läser, och påstod att fält saknades när framtida vinst var ≤ 0."""
+    dev = _company("developer", market_cap_musd=61.0, resource_unit="oz", npv_musd=300.0)
+    assert _needs(dev) == ["MCap/framtida vinst kräver produktion, råvarupris, break-even-pris",
+                           "EV/resurs kräver kassa eller skuld (eller enterprise value) och resurs (mängd)",
+                           "EV/NPV kräver kassa eller skuld (eller enterprise value)"]
+    from confidence.data.provenance import dp
+    dev.set("cash_musd", dp(5.0, kind="ACTUAL", source="t"))
+    assert "EV/NPV" not in " ".join(_needs(dev))                         # med kassa räknas EV/NPV
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import durrett_cases as dcs
+    gpr = dcs.gold_producer()
+    gpr.set("npv_musd", dp(900.0, kind="ACTUAL", source="t"))
+    assert _needs(gpr) == []                                             # producent: ingen NPV-rad som aldrig försvinner
+    gpr.set("aisc", dp(3100.0, kind="ACTUAL", source="t"))               # AISC över råvarupriset
+    assert _needs(gpr) == ["MCap/framtida vinst: framtida vinst ≤ 0 — kostnaden (AISC/break-even) ligger över "
+                           "råvarupriset"]
+    cad = _company("explorer", market_cap_musd=80.0, market_currency="CAD")
+    assert "MCap/framtida vinst kräver växelkurs → USD (valutan är CAD)" in _needs(cad)
+    assert "EV/NPV: NPV ≤ 0" in _needs(_company("developer", market_cap_musd=61.0, npv_musd=-20.0))
