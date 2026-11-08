@@ -256,6 +256,7 @@ def _render_sheet(data: dict, company: CompanyInput, a: DurrettAnalysis) -> None
             st.success(f"{changed} fält uppdaterade — spara med 💾 när du är klar.")
             st.rerun()
     _sheet_summary(a)
+    _valuation_line(company, a)
     _chatgpt(data, company)
 
 
@@ -376,6 +377,142 @@ def _sheet_summary(a: DurrettAnalysis) -> None:
 
 
 # ── Analys ───────────────────────────────────────────────────────────────────
+def _unit_conflict(company: CompanyInput) -> Optional[str]:
+    """Enheten för resurs/produktion går inte att räkna om till råvarans prisenhet (motorn räknar då inga mängder):
+    t.ex. kt mot USD/lb. Texten säger vilka val som passar, eller att inget val finns för prisenheten."""
+    from engines.durrett import _base as db
+    unit = str(company.get("resource_unit").value if company.has("resource_unit") else "").strip()
+    if not unit:
+        pu = str(company.get("production_unit").value if company.has("production_unit") else "").strip()
+        unit = pu if pu in db._UNIT_FACTOR else ""
+    reg = com.REGISTRY.get(company.commodity) if company.commodity else None
+    price_unit = reg.unit if reg else ""
+    base = db._PRICE_UNIT_BASE.get(price_unit, "")
+    if not unit or not base or unit not in db._UNIT_FACTOR or db._UNIT_FACTOR[unit][0] == base:
+        return None
+    fits = [k for k, (b, _) in db._UNIT_FACTOR.items() if b == base]
+    return (f"en enhet som passar råvarans pris i {price_unit} (välj {'/'.join(fits)} i stället för {unit})" if fits
+            else f"en enhet för råvarans pris i {price_unit} — arkets enhetsval ({unit}) går inte att räkna om")
+
+
+def _valuation_needs(company: CompanyInput, a: DurrettAnalysis) -> list:
+    """Vad som hindrar varje värderingsmått — ur vad motorn faktiskt saknar, inte en fast lista: börsvärde eller
+    växelkurs, kassa/skuld för EV, enhet, produktion/pris/kostnad, eller en framtida vinst ≤ 0. EV/NPV bara för de
+    stadier motorn läser NPV för (explorer, utvecklare)."""
+    from confidence.data.validation import usable
+    from confidence.data.provenance import num as _pnum
+
+    def u(k):
+        return usable(company, k)
+    m = a.metrics or {}
+
+    def val(k):
+        return (m.get(k) or {}).get("value")
+    unit_missing = "resource_unit" in (a.missing_data or [])
+    conflict = _unit_conflict(company)                  # t.ex. koppar i kt mot ett pris i USD/lb
+    cur = str(company.get("market_currency").value if company.has("market_currency") else "").strip().upper()
+    if a.market_cap_musd is None:
+        given = u("market_cap_musd") or (u("share_price") and (u("basic_shares_m") or u("shares_outstanding_m")))
+        mcap_need = (f"växelkurs → USD (valutan är {cur})" if given and cur and cur != "USD" and not u("fx_to_usd")
+                     else "börsvärde (eller kurs och antal aktier)")
+    else:
+        mcap_need = None
+    out = []
+    prod_keys = ("production_future", "production_current", "annual_production")
+    prod_used = next((_pnum(company.get(k)) for k in prod_keys if u(k)), None)   # motorns ordning
+    if val("mcap_future_earnings") is None:
+        fcf = val("future_fcf")
+        n_before = len(out)
+        if mcap_need:
+            out.append(f"MCap/framtida vinst kräver {mcap_need}")
+        elif prod_used is not None and conflict:
+            out.append(f"MCap/framtida vinst kräver {conflict}")
+        elif fcf is not None and fcf <= 0:
+            cost = _pnum(company.get("aisc")) if u("aisc") else (
+                _pnum(company.get("breakeven_price")) if u("breakeven_price") else None)
+            price = _pnum(company.get("commodity_price")) if u("commodity_price") else None
+            if prod_used == 0:
+                src = next((k for k in prod_keys if u(k)), None)          # fältet som ger nollan (motorns ordning)
+                if src == "production_current":
+                    out.append("MCap/framtida vinst: Produktion nu är 0 och läses före årsproduktionen — fyll i "
+                               "Produktion plan" + (" (eller töm Produktion nu så räknas årsproduktionen)"
+                                                    if u("annual_production") else
+                                                    " (eller töm Produktion nu och fyll i årsproduktion ur studien)"))
+                else:
+                    out.append("MCap/framtida vinst: produktionen som räknas är 0 — rätta Produktion plan/"
+                               "årsproduktion")
+            elif cost is not None and price is not None and cost >= price:
+                out.append("MCap/framtida vinst: framtida vinst ≤ 0 — kostnaden (AISC/break-even) ligger över "
+                           "råvarupriset")
+            else:
+                out.append("MCap/framtida vinst: framtida vinst ≤ 0")
+        else:
+            miss = []
+            if prod_used is None:
+                miss.append("produktion")
+            elif unit_missing:
+                miss.append("enhet (resurs/produktion)")
+            if not u("commodity_price"):
+                miss.append("råvarupris")
+            if not (u("aisc") or u("breakeven_price")):
+                aisc_ok = company.stage in (ccfg.FIELD_BY_KEY["aisc"].stages or (company.stage,))
+                miss.append("AISC (eller break-even)" if aisc_ok else "break-even-pris")
+            if miss:
+                out.append("MCap/framtida vinst kräver " + ", ".join(miss))
+        if len(out) == n_before:                        # måttet saknas men inget ovan förklarar det: säg det ändå
+            out.append("MCap/framtida vinst kan inte räknas med de här talen (se Analys → loggen)")
+    ev_need = mcap_need or ("kassa eller skuld (eller enterprise value)" if a.enterprise_value_musd is None else None)
+    if val("ev_per_resource_unit") is None:
+        mii_given = any(u(k) for k in ("resource_measured", "resource_indicated", "resource_inferred"))
+        qty_given = mii_given or any(u(k) for k in ("reserve_proven", "reserve_probable"))
+        # Enheten: unit_missing räcker — motorn löser varje angiven mängd (och faller tillbaka på produktionsenheten)
+        unit_need = conflict if qty_given and conflict else ("enhet (resurs/produktion)" if unit_missing else None)
+        res_need = (None if mii_given else
+                    "resurs Measured/Indicated/Inferred (reserver räknas inte i EV/resurs)" if qty_given
+                    else "resurs (mängd)")
+        miss = [x for x in (ev_need, unit_need, res_need) if x]
+        if miss:
+            out.append("EV/resurs kräver " + " och ".join(miss))
+    npv_spec = ccfg.FIELD_BY_KEY.get("npv_musd")
+    if val("ev_npv") is None and npv_spec is not None and company.stage in (npv_spec.stages or (company.stage,)):
+        npv = _pnum(company.get("npv_musd")) if company.has("npv_musd") else None
+        if npv is not None and npv <= 0:
+            out.append("EV/NPV: NPV ≤ 0")
+        else:
+            miss = [x for x in ("NPV (MUSD)" if not u("npv_musd") else None, ev_need) if x]
+            if miss:
+                out.append("EV/NPV kräver " + " och ".join(miss))
+    seen, uniq = set(), []
+    for x in out:
+        if x not in seen:
+            seen.add(x)
+            uniq.append(x)
+    return uniq
+
+
+def _valuation_line(company: CompanyInput, a: DurrettAnalysis) -> None:
+    """Värderingsraden ur motorns egna mått — samma text som Scorecardet föreslår under Värdering (strategin
+    confidence). Läses, skriver ingenting. För ett mått som inte går att räkna står vad som faktiskt hindrar det."""
+    try:
+        import refresh_ui
+        import scorecard
+        from engines.durrett import refresh as dr
+        ref = dr.refresh_row(refresh_ui.load_refresh(), company.ticker)
+        text = scorecard.valuation_suggestion({"ticker": company.ticker}, scorecard.DURRETT_SHEET_STRATEGY, ref,
+                                              a.metrics)
+        needs = _valuation_needs(company, a)
+    except Exception:                                   # pragma: no cover — raden är en hjälp, aldrig ett hinder
+        return
+    if text:
+        st.markdown(f"<div style='color:{TEXT};font-size:0.85rem;margin-top:4px;'>💰 <b>Värdering:</b> "
+                    f"{text.replace('$', '&#36;')}</div>"
+                    f"<div style='color:{DIM};font-size:0.75rem;'>Samma rad som Scorecardet föreslår under "
+                    f"Värdering (strategi confidence).</div>", unsafe_allow_html=True)
+    if needs:
+        st.caption(("💰 Värdering: inget att räkna ännu — " if not text else "Saknas för resten: ")
+                   + " · ".join(needs) + ".")
+
+
 def _render_analysis(a: DurrettAnalysis) -> None:
     cl = a.classification
     st.markdown(

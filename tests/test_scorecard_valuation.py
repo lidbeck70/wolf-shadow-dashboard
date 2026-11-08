@@ -455,3 +455,123 @@ def test_values_exactly_on_a_limit_show_the_cards_decimals_with_an_approx_sign()
     # Vanliga tal får inget '≈'
     assert "≈" not in scorecard.valuation_suggestion(_tg(), "tiggre")
     assert "≈" not in scorecard.valuation_suggestion(_sp(), "sprott")
+
+
+# ── ARKEN → 🧭 Durrett: samma värderingsrad i arket ──────────────────────────
+def test_the_durrett_sheet_shows_the_same_valuation_line_and_what_is_missing(monkeypatch):
+    """Arket visar raden under sammanfattningen — samma text som Scorecardet föreslår — och för ett bolag med bara
+    börsvärde (som i ägarens skärmbild) vad som saknas. Raden skriver ingenting."""
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+    import refresh_ui
+    import screens_ui
+    from confidence import store as cs
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import durrett_cases as dcs
+    from confidence.data.models import CompanyInput
+    from confidence.data.provenance import dp
+
+    data = cs.default()
+    cs.put(data, dcs.gold_producer())
+    thin = CompanyInput(ticker="THIN", name="Bara börsvärde", commodity="gold", stage="producer")
+    thin.set("market_cap_musd", dp(61.0, kind="ACTUAL", source="Arket"))
+    cs.put(data, thin)
+    before = json.dumps(data, sort_keys=True, default=str)
+    monkeypatch.setattr(storage, "session_load", lambda name, default=None, legacy_file=None:
+                        st.session_state.setdefault(name, {"confidence": data}.get(name, default)))
+    monkeypatch.setattr(storage, "load_error", lambda name: None)
+    monkeypatch.setattr(storage, "is_dirty", lambda name: False)
+    monkeypatch.setattr(storage, "last_saved", lambda name: None)
+    monkeypatch.setattr(refresh_ui, "load_refresh", lambda: {"rows": {"confidence:GPR": {"ev_ebitda": 4.1}}})
+    monkeypatch.setattr(screens_ui, "load_screens", lambda: {})
+
+    def app(root):
+        import sys as _s
+        _s.path.insert(0, root)
+        from engines.durrett.ui import render_durrett_page
+        render_durrett_page()
+    at = AppTest.from_function(app, args=(ROOT,), default_timeout=90)
+    at.session_state["durrett_row_sub_GPR"] = "Arket"
+    at.session_state["durrett_row_sub_THIN"] = "Arket"
+    at.run()
+    assert not at.exception, at.exception
+    lines = " ".join(m.value for m in at.markdown if "Värdering:" in m.value)
+    assert "💰 <b>Värdering:</b> MCap/framtida vinst" in lines and "efter skatt" in lines
+    assert "EV/EBITDA 4,1× (Börsdata)" in lines
+    caps = " ".join(c.value for c in at.caption)
+    assert ("💰 Värdering: inget att räkna ännu — MCap/framtida vinst kräver produktion, råvarupris, AISC "
+            "(eller break-even) · EV/resurs kräver kassa eller skuld (eller enterprise value) och resurs (mängd).") in caps
+    assert "NPV" not in caps                                       # producent: motorn läser inte NPV
+    assert json.dumps(at.session_state["confidence"], sort_keys=True, default=str) == before
+
+
+def _needs(c):
+    from datetime import date
+    from engines.durrett.engine import analyze
+    from engines.durrett import ui as dui
+    return dui._valuation_needs(c, analyze(c, today=date.today()))
+
+
+def _company(stage, **fields):
+    from confidence.data.models import CompanyInput
+    from confidence.data.provenance import dp
+    c = CompanyInput(ticker="X", name="X", commodity="gold", stage=stage)
+    for k, v in fields.items():
+        c.set(k, dp(v, kind="ACTUAL", source="test"))
+    return c
+
+
+def test_the_missing_list_names_what_the_engine_really_lacks():
+    """Granskningen: den fasta listan bad om resurs/NPV fast EV (kassa/skuld) var det som saknades, bad producenter
+    om NPV som motorn aldrig läser, och påstod att fält saknades när framtida vinst var ≤ 0."""
+    dev = _company("developer", market_cap_musd=61.0, resource_unit="oz", npv_musd=300.0)
+    assert _needs(dev) == ["MCap/framtida vinst kräver produktion, råvarupris, break-even-pris",
+                           "EV/resurs kräver kassa eller skuld (eller enterprise value) och resurs (mängd)",
+                           "EV/NPV kräver kassa eller skuld (eller enterprise value)"]
+    from confidence.data.provenance import dp
+    dev.set("cash_musd", dp(5.0, kind="ACTUAL", source="t"))
+    assert "EV/NPV" not in " ".join(_needs(dev))                         # med kassa räknas EV/NPV
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import durrett_cases as dcs
+    gpr = dcs.gold_producer()
+    gpr.set("npv_musd", dp(900.0, kind="ACTUAL", source="t"))
+    assert _needs(gpr) == []                                             # producent: ingen NPV-rad som aldrig försvinner
+    gpr.set("aisc", dp(3100.0, kind="ACTUAL", source="t"))               # AISC över råvarupriset
+    assert _needs(gpr) == ["MCap/framtida vinst: framtida vinst ≤ 0 — kostnaden (AISC/break-even) ligger över "
+                           "råvarupriset"]
+    cad = _company("explorer", market_cap_musd=80.0, market_currency="CAD")
+    assert "MCap/framtida vinst kräver växelkurs → USD (valutan är CAD)" in _needs(cad)
+    assert "EV/NPV: NPV ≤ 0" in _needs(_company("developer", market_cap_musd=61.0, npv_musd=-20.0))
+
+
+def test_the_missing_list_handles_units_zero_production_and_hidden_resource_gaps():
+    """Andra granskningen: koppar i kt mot ett pris i USD/lb räknar inga mängder (enheten är hindret, inte
+    resursen), produktion 0 är inte 'kostnaden över priset', och en saknad enhet döljer inte en saknad resurs."""
+    kt = _company("producer", market_cap_musd=3000.0, cash_musd=200.0, resource_unit="kt", production_current=120.0,
+                  resource_measured=2500.0, resource_indicated=4000.0, commodity_price=4.2, aisc=2.4)
+    kt.commodity = "copper"
+    assert _needs(kt) == ["MCap/framtida vinst kräver en enhet som passar råvarans pris i USD/lb (välj lb/Mlb i "
+                          "stället för kt)",
+                          "EV/resurs kräver en enhet som passar råvarans pris i USD/lb (välj lb/Mlb i stället för kt)"]
+    zero = _company("developer", market_cap_musd=61.0, cash_musd=5.0, production_current=0.0, breakeven_price=1400.0,
+                    commodity_price=2600.0, resource_unit="oz")
+    needs = " · ".join(_needs(zero))
+    assert ("MCap/framtida vinst: Produktion nu är 0 och läses före årsproduktionen — fyll i Produktion plan (eller "
+            "töm Produktion nu och fyll i årsproduktion ur studien)") in needs and "kostnaden" not in needs
+    from confidence.data.provenance import dp
+    zero.set("annual_production", dp(120000.0, kind="ESTIMATE", source="PEA"))      # finns redan — läses inte
+    assert "(eller töm Produktion nu så räknas årsproduktionen)" in " · ".join(_needs(zero))
+    no_unit = _company("producer", market_cap_musd=61.0, production_current=1000.0)
+    assert ("EV/resurs kräver kassa eller skuld (eller enterprise value) och enhet (resurs/produktion) och resurs "
+            "(mängd)") in _needs(no_unit)
+
+
+def test_reserves_alone_and_the_production_unit_fallback():
+    """Tredje granskningen: EV/resurs räknas bara på Measured/Indicated/Inferred — reserver ensamma ska nämnas, inte
+    tystna. Och motorn tar produktionsenheten när resursenheten saknas, så då ska ingen enhet efterfrågas."""
+    pp = _company("producer", market_cap_musd=1500.0, cash_musd=120.0, resource_unit="oz", reserve_proven=1.2e6,
+                  reserve_probable=1.8e6, production_current=200000.0, commodity_price=3000.0, aisc=1450.0)
+    assert ("EV/resurs kräver resurs Measured/Indicated/Inferred (reserver räknas inte i EV/resurs)") in _needs(pp)
+    pu = _company("producer", market_cap_musd=61.0, production_unit="oz", resource_measured=1.0e6)
+    assert not [n for n in _needs(pu) if "enhet" in n]
+    assert "EV/resurs kräver kassa eller skuld (eller enterprise value)" in _needs(pu)
