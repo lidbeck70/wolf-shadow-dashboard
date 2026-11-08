@@ -141,11 +141,17 @@ def _scorecard_check(strategy: str, sheets: dict, ticker: str, scorecard_fn: Opt
     if not cards_:
         return Check("scorecard", "Scorecardet", MANUAL,
                      "inget scorecard — fyll i de sju kryssen (luckor = INGEN AFFÄR)", src)
+    entries = (sheets or {}).get("scorecard_entries") or {}                 # samma kandidatrad som 🎯 Scorecard läser
+    try:
+        from scorecard import _shown                    # kortet som fliken visar det: strategin förvald
+        shown = {k: _shown(c or {}, entries.get(k)) for k, c in cards_.items()}
+    except Exception:
+        shown = {k: dict(c or {}) for k, c in cards_.items()}
     label = reg.label(strategy).lower()
-    key = next((k for k, c in cards_.items() if label in str((c or {}).get("strategy") or "").lower()),
+    key = next((k for k, c in shown.items() if label in str(c.get("strategy") or "").lower()),
                next(iter(cards_)))
-    card = cards_[key] or {}
-    entry = ((sheets or {}).get("scorecard_entries") or {}).get(key)     # samma kandidatrad som 🎯 Scorecard läser
+    card = shown[key]
+    entry = entries.get(key)
     try:
         if scorecard_fn is None:
             from scorecard import gate_state as scorecard_fn
