@@ -76,9 +76,9 @@
       "unit_cost": 2175.0
     },
     {
-      "aktuell_kurs": 5.2392,
+      "aktuell_kurs": 5.2,
       "aqs_capex": 2,
-      "aqs_expansion": 0,
+      "aqs_expansion": 1,
       "aqs_infrastruktur": 2,
       "aqs_jurisdiktion": 2,
       "aqs_kostnad": 2,
@@ -89,15 +89,15 @@
       "csm": {
         "Base": {
           "fcf_musd": 3550.0,
-          "price": 95.0
+          "price": 90.0
         },
         "Bear": {
           "fcf_musd": 2781.0,
-          "price": 70.0
+          "price": 50.0
         },
         "Bull": {
           "fcf_musd": 4165.0,
-          "price": 115.0
+          "price": 110.0
         },
         "bear_survival": true
       },
