@@ -617,13 +617,15 @@ def _card(data: dict, cards: dict, entry: dict, expanded: bool = False) -> None:
 
 def _sv(v: float, d: int = 1) -> str:
     """Tal med svenskt decimalkomma och mellanslag som tusentalsavgränsare: 5,5 · 1 250."""
-    return f"{v:,.{d}f}".replace(",", " ").replace(".", ",")
+    return f"{v:,.{d}f}".replace(",", " ").replace(".", ",").replace("-", "−")
 
 
 DURRETT_STRATEGY = "durrett"         # Poängmodellens Durrett-del (snabbpoängen) — inte ARKEN → 🧭 Durrett
 DURRETT_SHEET_STRATEGY = "confidence"  # ARKEN → 🧭 Durrett (10-stegsarket, Durrett-motorn) i kandidatraden
+ROYALTY_STRATEGY = "royalty"          # Royalty C i kandidatraden (sources_from_stores)
 VALUATION_SOURCE = {DURRETT_STRATEGY: "Poängmodellen → Durrett (snabbpoäng)",
-                    DURRETT_SHEET_STRATEGY: "Durrett-arket (ARKEN → 🧭 Durrett)"}
+                    DURRETT_SHEET_STRATEGY: "Durrett-arket (ARKEN → 🧭 Durrett)",
+                    "producenter": "Rick Rule", ROYALTY_STRATEGY: "Royalty C"}
 
 
 def _ev_ebitda_part(ref: Optional[dict]) -> list:
@@ -678,10 +680,92 @@ def valuation_suggestion(entry: Optional[dict], strategy: str, ref: Optional[dic
         ev_npv = _metric(metrics, "ev_npv")
         if ev_npv is not None:
             parts.append(f"EV/NPV {_sv(ev_npv, 2)}×")
+    elif strategy == "producenter":
+        row = (((entry or {}).get("rows") or {}).get("producenter"))
+        if not isinstance(row, dict):
+            return None
+        parts += _rule_parts(row, ref)
+        return " · ".join(parts) or None
+    elif strategy == ROYALTY_STRATEGY:
+        row = (((entry or {}).get("rows") or {}).get(ROYALTY_STRATEGY))
+        if not isinstance(row, dict):
+            return None
+        parts += _royalty_parts(row, ref)
+        return " · ".join(parts) or None
     else:
         return None
     parts += _ev_ebitda_part(ref)
     return " · ".join(parts) or None
+
+
+def _sheet_ev_ebitda(row: dict, field: str, ref: Optional[dict]) -> list:
+    """Arkets egen EV/EBITDA-ruta; tom ruta → Börsdatas (märkt) ur sifferuppdateringen. Negativ = lucka."""
+    v = _num(row.get(field))
+    if v is not None and v > 0:
+        return [f"EV/EBITDA {_sv(v, 2)}×"]                # två decimaler, som kortets ruta
+    return _ev_ebitda_part(ref)
+
+
+def _rule_parts(row: dict, ref: Optional[dict]) -> list:
+    """Rick Rule: EV/NAV med arkets bedömning (och NAV-prisvarningen), Lukacs säkerhetsmarginal mot fair value Base
+    med modulens band — med arkets varning om FCF-enhet/kursvaluta när den finns — och EV/EBITDA. Samma funktioner
+    och gränser som Rick Rule-kortet (producers, lukacs)."""
+    import producers as pr
+    parts = []
+    r = pr.ev_nav(row.get("ev_musd"), row.get("nav_musd"))
+    if r is not None:
+        label = (pr.NAV_CHEAP if r < pr.EV_NAV_CHEAP else pr.NAV_FAIR if r <= pr.EV_NAV_FAIR else pr.NAV_RICH)
+        txt = f"EV/NAV {_sv(r, 2)}× ({label[:1].lower() + label[1:]})"
+        gap = pr.nav_price_gap(row.get("nav_price"), row.get("price"))
+        if gap is not None and abs(gap) > pr.NAV_PRICE_GAP_PCT:
+            txt += (f", NAV räknad på {_sv(_num(row.get('nav_price')), 0)} mot spot {_sv(_num(row.get('price')), 0)} "
+                    f"({gap:+.0f} %)".replace(".", ","))
+        parts.append(txt)
+    ev = lukacs.evaluate(row)
+    if ev.get("not_fcf_valued"):
+        parts.append("Lukacs: klass D — värderas inte på FCF")
+    elif ev.get("mos") is not None and ev.get("fv_base") is not None:
+        band = ev.get("mos_band") or ""
+        txt = (f"Lukacs: säkerhetsmarginal {_sv(ev['mos'], 1)} % mot fair value Base {_sv(ev['fv_base'], 2)}"
+               + (f" ({band[:1].lower() + band[1:]})" if band else ""))      # en decimal, som kortet
+        obs = []
+        code = str(row.get("fcf_kvalitet") or "C").upper()[:1]           # samma förval som kortets klassruta
+        if any(lukacs.yield_error(code, sc.get("target_yield")) not in (None, lukacs.NOT_FCF_VALUED)
+               for sc in (row.get("fv") or {}).values() if isinstance(sc, dict)):
+            obs.append("target-yield utanför klassens band")
+        cur = lukacs.price_currency(row.get("aktuell_kurs"), ref)
+        if lukacs.fcf_unit_warnings(row, ref) or (cur is not None and cur.get("stored_is_local")):
+            obs.append("FCF-enhet eller kursvaluta")
+        if obs:
+            txt += " — OBS: arket varnar för " + " och ".join(obs)
+        parts.append(txt)
+    parts += _sheet_ev_ebitda(row, "ev_ebitda", ref)
+    return parts
+
+
+def _royalty_parts(row: dict, ref: Optional[dict]) -> list:
+    """Royalty C: P/NAV mot egen botten (köpläge högst +15 %), EV/EBITDA mot egen median, GEO per aktie på tre år
+    och arkets signal — samma funktioner och gränser som Royalty-kortet (producers)."""
+    import producers as pr
+    parts = []
+    disc = pr.discount_vs_bottom(row.get("pnav_now"), row.get("pnav_bottom"))
+    if disc is not None:                               # en decimal, som kortets 'Mot botten'
+        side = "över" if disc >= 0 else "under"
+        parts.append(f"P/NAV {_sv(_num(row.get('pnav_now')), 2)} ({_sv(abs(disc), 1)} % {side} egen botten "
+                     f"{_sv(_num(row.get('pnav_bottom')), 2)} — köpläge högst {pr.DISCOUNT_MAX:g} % över)")
+    med = pr.vs_median(row.get("ev_now"), row.get("ev_median"))
+    if med is not None:
+        rel = "på" if med == 0 else f"{_sv(abs(med), 1)} % {'över' if med > 0 else 'under'}"
+        parts.append(f"EV/EBITDA {_sv(_num(row.get('ev_now')), 2)}× ({rel} egen median "
+                     f"{_sv(_num(row.get('ev_median')), 2)}×)")
+    else:
+        parts += _sheet_ev_ebitda(row, "ev_now", ref)
+    geo = pr.geo_growth(row.get("geo_now"), row.get("geo_3y"))
+    if geo is not None:
+        parts.append(f"GEO/aktie {'+' if geo >= 0 else ''}{_sv(geo, 1)} % på 3 år")
+    if disc is not None or med is not None or geo is not None:   # kortets signal — GEO-varningen står på egen hand
+        parts.append(f'signal "{pr.royalty_signal(row).label}"')
+    return parts
 
 
 def _durrett_metrics(ticker: str) -> Optional[dict]:
@@ -704,6 +788,15 @@ def _valuation_ref(entry: Optional[dict], strategy: str) -> Optional[dict]:
         key = f"scoring:{row['id']}" if isinstance(row, dict) and row.get("id") else None
     elif strategy == DURRETT_SHEET_STRATEGY:
         key = f"confidence:{str((entry or {}).get('ticker') or '').strip().upper()}"
+    elif strategy in ("producenter", ROYALTY_STRATEGY):         # båda bor i arket producers, nyckel per rad-id
+        row = rows_e.get(strategy)
+        if not (isinstance(row, dict) and row.get("id")):
+            return None
+        try:                    # samma rad som Lukacs-panelen — Yahoo-reservens valuta ur tickerns suffix
+            import lukacs_ui
+            return lukacs_ui._refresh_row("producers", row["id"])
+        except Exception:
+            return None
     else:
         return None
     if not key:
