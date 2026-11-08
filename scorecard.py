@@ -702,7 +702,7 @@ def _sheet_ev_ebitda(row: dict, field: str, ref: Optional[dict]) -> list:
     """Arkets egen EV/EBITDA-ruta; tom ruta → Börsdatas (märkt) ur sifferuppdateringen. Negativ = lucka."""
     v = _num(row.get(field))
     if v is not None and v > 0:
-        return [f"EV/EBITDA {_sv(v)}×"]
+        return [f"EV/EBITDA {_sv(v, 2)}×"]                # två decimaler, som kortets ruta
     return _ev_ebitda_part(ref)
 
 
@@ -756,8 +756,8 @@ def _royalty_parts(row: dict, ref: Optional[dict]) -> list:
     med = pr.vs_median(row.get("ev_now"), row.get("ev_median"))
     if med is not None:
         rel = "på" if med == 0 else f"{_sv(abs(med), 1)} % {'över' if med > 0 else 'under'}"
-        parts.append(f"EV/EBITDA {_sv(_num(row.get('ev_now')))}× ({rel} egen median "
-                     f"{_sv(_num(row.get('ev_median')))}×)")
+        parts.append(f"EV/EBITDA {_sv(_num(row.get('ev_now')), 2)}× ({rel} egen median "
+                     f"{_sv(_num(row.get('ev_median')), 2)}×)")
     else:
         parts += _sheet_ev_ebitda(row, "ev_now", ref)
     geo = pr.geo_growth(row.get("geo_now"), row.get("geo_3y"))

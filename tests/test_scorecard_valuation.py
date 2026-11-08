@@ -234,7 +234,7 @@ def test_rick_rule_uses_the_sheets_ev_nav_and_lukacs():
     """EV/NAV 0,62× billigt (under 0,7×) och Lukacs: FV Base = 120 / 12 % / 100 M = 10,00, kurs 4 → MoS 60 %."""
     assert scorecard.valuation_suggestion(_rule(), "producenter") == (
         "EV/NAV 0,62× (billigt mot NAV) · Lukacs: säkerhetsmarginal 60,0 % mot fair value Base 10,00 "
-        "(mycket attraktiv) · EV/EBITDA 3,0×")
+        "(mycket attraktiv) · EV/EBITDA 3,00×")
     assert "(rimligt mot NAV)" in scorecard.valuation_suggestion(_rule(ev_musd=900.0), "producenter")
     assert "(dyrt mot NAV)" in scorecard.valuation_suggestion(_rule(ev_musd=1200.0), "producenter")
     assert "säkerhetsmarginal −25,0 %" in scorecard.valuation_suggestion(_rule(aktuell_kurs=12.5), "producenter")
@@ -266,8 +266,8 @@ def test_rick_rule_shows_only_what_can_be_computed():
 
 def test_royalty_uses_the_sheets_own_comparisons_and_signal():
     assert scorecard.valuation_suggestion(_roy(), "royalty") == (
-        "P/NAV 1,05 (5,0 % över egen botten 1,00 — köpläge högst 15 % över) · EV/EBITDA 12,0× (20,0 % under egen "
-        "median 15,0×) · GEO/aktie +10,0 % på 3 år · signal \"KÖPLÄGE\"")
+        "P/NAV 1,05 (5,0 % över egen botten 1,00 — köpläge högst 15 % över) · EV/EBITDA 12,00× (20,0 % under egen "
+        "median 15,00×) · GEO/aktie +10,0 % på 3 år · signal \"KÖPLÄGE\"")
     shrink = scorecard.valuation_suggestion(_roy(geo_now=0.9), "royalty")
     assert "GEO/aktie −10,0 % på 3 år" in shrink and shrink.endswith('signal "Varning: GEO/aktie krymper"')
     assert scorecard.valuation_suggestion(_roy(pnav_now=1.3), "royalty").endswith('signal "Neutral"')
@@ -278,7 +278,7 @@ def test_royalty_shows_only_what_can_be_computed():
     only_bd = scorecard.valuation_suggestion(_roy(pnav_now=None, ev_now=None, geo_now=None), "royalty",
                                              {"ev_ebitda": 11.0})
     assert only_bd == "EV/EBITDA 11,0× (Börsdata)"                       # ingen signal utan arkets jämförelser
-    assert "(på egen median 15,0×)" in scorecard.valuation_suggestion(_roy(ev_now=15.0), "royalty")
+    assert "(på egen median 15,00×)" in scorecard.valuation_suggestion(_roy(ev_now=15.0), "royalty")
 
 
 def test_the_rule_and_royalty_cards_show_their_sheets_suggestion(page):
@@ -334,8 +334,12 @@ def test_royalty_keeps_the_cards_decimal_at_the_fifteen_percent_limit():
     """+15,4 % är 'Neutral' på kortet; '15 % över … högst 15 % över' läste som köpläge."""
     edge = scorecard.valuation_suggestion(_roy(pnav_now=0.75, pnav_bottom=0.65), "royalty")
     assert "P/NAV 0,75 (15,4 % över egen botten 0,65" in edge and edge.endswith('signal "Neutral"')
-    assert "(0,3 % över egen median 15,0×)" in scorecard.valuation_suggestion(_roy(ev_now=15.05), "royalty")
+    assert "(0,3 % över egen median 15,00×)" in scorecard.valuation_suggestion(_roy(ev_now=15.05), "royalty")
     assert "GEO/aktie −0,2 % på 3 år" in scorecard.valuation_suggestion(_roy(geo_now=0.998), "royalty")
+    # Börsdatas oavrundade EV/EBITDA efter 'Använd' på kortet: två decimaler som rutan, inte '15,0× … under 15,0×'
+    assert "EV/EBITDA 14,96× (0,2 % under egen median 15,00×)" in \
+        scorecard.valuation_suggestion(_roy(ev_now=14.9637), "royalty")
+    assert "EV/EBITDA 3,25×" in scorecard.valuation_suggestion(_rule(ev_ebitda=3.25), "producenter")
 
 
 def test_the_geo_warning_shows_even_before_bottom_and_median_are_filled():
