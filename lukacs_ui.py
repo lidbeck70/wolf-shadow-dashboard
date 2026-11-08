@@ -45,6 +45,27 @@ def _refresh_row(sheet: str, key: str):
         return None
 
 
+def bd_fcf_line(row: dict, key: str, sheet: str, ref=None) -> None:
+    """'🤖 Börsdata FCF 12 mån: X MUSD' vid FCF-rutorna — bara en referens att jämföra med (senaste tolv månaderna,
+    inte normaliserad), ingen knapp. Visas bara när talet säkert står i USD (lukacs.ref_fcf_musd)."""
+    if ref is None:
+        ref = _refresh_row(sheet, key)
+    v = fv.ref_fcf_musd(ref)
+    if v is None:
+        return
+    txt = (f"{v:,.0f}" if abs(v) >= 10 else f"{v:,.1f}").replace(",", " ").replace(".", ",").replace("-", "−")
+    asof = str(ref.get("asof") or "")[:10]
+    note = ""
+    try:
+        import refresh_ui
+        note = refresh_ui.matched_note(refresh_ui.load_refresh(), sheet, row, key)
+    except Exception:
+        pass
+    st.markdown(f"<span style='color:{DIM};font-size:0.78rem;'>🤖 Börsdata FCF 12 mån: {txt} MUSD"
+                f"{f' ({asof})' if asof else ''}{note} — referens, inte normaliserad.</span>",
+                unsafe_allow_html=True)
+
+
 FX_MISS_RETRY_S = 900
 _FX_MISS: dict = {}     # {'SEKUSD=X': tid för senaste misslyckade hämtning} — inte en Yahoo-fråga per kort och omkörning
 
@@ -210,6 +231,8 @@ def render_fv(row: dict, key: str, prefix: str = "fv", sheet: str = "") -> bool:
                    f"uppsida man redan bestämt sig för.")
 
     # ── Scenarierna ──────────────────────────────────────────────────────────
+    if sheet:
+        bd_fcf_line(row, key, sheet, ref)
     for s in fv.FV_SCENARIOS:
         sc = data.setdefault(s, {})
         # Synliga korta etiketter: på mobilen staplas kolumnerna och rutorna måste säga vilket scenario de gäller

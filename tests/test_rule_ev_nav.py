@@ -51,14 +51,18 @@ def test_ev_nav_does_not_change_the_score():
     assert csv["_ev_nav"] == 5.0 and csv["_ev_nav_band"] == prod.NAV_RICH
 
 
-def test_refresh_puts_ev_on_rick_rule_rows_only():
+def test_refresh_puts_ev_on_producer_rows_only():
+    """EV till Rick Rule (EV/NAV). Royalty C får samma MUSD-block sedan batch 2 (Lukacs FV-kontrollen), men inte
+    Poängmodellen eller Insider."""
     import sheets_refresh as sr
     from test_sheets_refresh import _API, _sheets
     api = _API()
     api.snaps[40]["ev"] = 100000.0                             # BOL, SEK
+    api.snaps[103]["ev"] = 20000.0                             # FNV, CAD i fejken
     rows = sr.refresh(api, _sheets())["rows"]
     assert rows["producers:r1"]["ev_musd"] == round(100000.0 * sr.FX_TO_USD["SEK"], 1)
-    assert "ev_musd" not in rows["producers:y1"]                # inte Royalty C
+    assert rows["producers:y1"]["ev_musd"] == round(20000.0 * sr.FX_TO_USD["CAD"], 1)
+    assert "ev_musd" not in rows["scoring:d1"] and "ev_musd" not in rows["insider:i1"]
 
 
 def test_extractor_offers_nav_on_the_rule_sheet():

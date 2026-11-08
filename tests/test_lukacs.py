@@ -311,9 +311,10 @@ def test_the_checks_change_no_calculation():
 
 
 def producer_refresh_row(ccy: str = "NOK", price: float = 49.53, market_cap: float = 122000.0,
-                         ev: float = 158436.0) -> dict:
-    """Rick Rule-raden som det riktiga nattjobbet (sheets_refresh.refresh) bygger den — utan fx_to_usd och
-    fcf_musd, som bara Durrett-arkets rader får. Inget nätverk: Börsdata är testernas fejk."""
+                         ev: float = 158436.0, fcf_m=None, report: str = "USD") -> dict:
+    """Rick Rule-raden som det riktiga nattjobbet (sheets_refresh.refresh) bygger den — utan fx_to_usd, som bara
+    Durrett-arkets rader får. fcf_m = Börsdatas FCF i miljoner rapportvaluta (report); utan den är fcf_musd tomt.
+    Inget nätverk: Börsdata är testernas fejk."""
     import sheets_refresh as sr
     from tests.test_sheets_refresh import _API, _sheets
 
@@ -322,9 +323,11 @@ def producer_refresh_row(ccy: str = "NOK", price: float = 49.53, market_cap: flo
             super().__init__()
             self.prices[40] = price
             self.snaps[40] = {"ev_ebitda": 3.0, "net_debt_ebitda": 0.8, "market_cap": market_cap, "ev": ev}
+            if fcf_m is not None:
+                self.snaps[40]["fcf_m"] = fcf_m
 
         def get_instruments(self):
-            return [dict(i, stockPriceCurrency=ccy, reportCurrency="USD") if i["insId"] == 40 else i
+            return [dict(i, stockPriceCurrency=ccy, reportCurrency=report) if i["insId"] == 40 else i
                     for i in super().get_instruments()]
 
     sheets = _sheets()
@@ -573,3 +576,33 @@ def test_mnok_fcf_at_low_conversion_still_withholds_the_one_click_price():
     # Det riktigt billiga bolaget: ingen varning om enheten (inget råd att dela med 10) — knappen hålls bara inne
     cheap = _sek_row((140, 60, 260), csm=(140, 60, 260), shares=100.0, price=20.0)
     assert fv.fcf_unit_warnings(cheap, okea) == [] and fv.fcf_maybe_local(cheap, okea) == "NOK"
+
+
+# ── Batch 2: Börsdatas FCF (12 mån) på Rick Rule- och Royalty-raderna ───────
+def test_the_nightly_fcf_reaches_the_unit_check():
+    """Rick Rule-raden bär nu Börsdatas FCF (12 mån, i USD ur rapportvalutan) — Vår Energi rapporterar i USD men
+    handlas i NOK. FCF i tusental och i miljoner NOK fångas mot den, utan någon ändring i kontrollen."""
+    ref = producer_refresh_row(fcf_m=3000.0)
+    assert ref["fcf_musd"] == 3000.0 and ref["report_currency"] == "USD" and "fx_to_usd" not in ref
+    w = fv.fcf_unit_warnings(_var_energi(csm={}), ref)
+    assert len(w) == 3 and "Base: forward FCF 12 MUSD mot Börsdatas FCF (12 mån) 3 000 MUSD" in " ".join(w)
+    mnok = _var_energi(csm={}, fv={"Base": {"forward_fcf_musd": 30000.0, "target_yield": 12.0}})
+    assert "Står talet i miljoner NOK?" in " ".join(fv.fcf_unit_warnings(mnok, ref))
+    ok = _var_energi(csm={}, fv={"Base": {"forward_fcf_musd": 2800.0, "target_yield": 12.0}})
+    assert fv.fcf_unit_warnings(ok, ref) == []
+
+
+def test_the_borsdata_fcf_is_never_compared_in_another_currency():
+    """Rapportvalutan utanför jobbets fasta tabell: jobbet räknar om med 1,0, så fcf_musd vore miljoner ZAR — ingen
+    referens då, varken i kontrollen eller på kortet. Samma för kursvalutor utanför tabellen (pence)."""
+    zar = producer_refresh_row("USD", 8.0, fcf_m=3000.0, report="ZAR")
+    assert zar["fcf_musd"] == 3000.0 and zar["report_currency"] == "ZAR"
+    assert fv.ref_fcf_musd(zar) is None
+    assert not [w for w in fv.fcf_unit_warnings(_var_energi(csm={}), zar) if "Börsdatas FCF" in w]
+    assert fv.ref_fcf_musd(producer_refresh_row(fcf_m=3000.0)) == 3000.0
+    sek = producer_refresh_row("SEK", 300.0, fcf_m=20000.0, report="SEK")
+    assert fv.ref_fcf_musd(sek) == 1900.0                          # MSEK × 0,095 → MUSD
+    assert fv.ref_fcf_musd({"currency": "GBX", "fcf_musd": 100.0}) is None
+    assert fv.ref_fcf_musd({"currency": "SEK", "fcf_musd": -35.0}) == -35.0
+    assert fv.ref_fcf_musd({"fcf_musd": 50.0}) == 50.0             # äldre blob utan rapportvaluta
+    assert fv.ref_fcf_musd(None) is None

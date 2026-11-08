@@ -71,6 +71,16 @@ def _score_row(row: dict, fields, prefix: str, key: str,
 
 
 # ── DS ───────────────────────────────────────────────────────────────────────
+def _shares_year(sheet: str, row: dict, key: str) -> Optional[int]:
+    """Året aktieantalet i sifferuppdateringen kommer ur (senaste årsrapporten) — None i en äldre blob."""
+    try:
+        import refresh_ui
+        sug = refresh_ui.suggestion(refresh_ui.load_refresh(), sheet, row, "shares_year", row_id=key)
+        return int(sug[0]) if sug is not None else None
+    except Exception:
+        return None
+
+
 def render_ds(row: dict, key: str, runway_years=None,
               prefix: str = "ds", sheet: str = "") -> bool:
     """Dilution Score. runway_years ger ett förslag på första fältet; sheet
@@ -95,8 +105,11 @@ def render_ds(row: dict, key: str, runway_years=None,
             sug = None
         if sug is not None:
             pts = ctl.ds_shares_suggestion(sug[0])
-            st.caption(f"Börsdata {sug[1]}: antalet aktier är {sug[0]:+.0f} % mot för tre år "
-                       f"sedan — motsvarar {pts} riskpoäng på Aktier 3 år. Förslag, inte ifyllt.")
+            yr = _shares_year(sheet, row, key)
+            span = (f"i årsrapporten {yr} är {sug[0]:+.0f} % mot {yr - 3}" if yr
+                    else f"är {sug[0]:+.0f} % mot för tre år sedan")
+            st.caption(f"Börsdata {sug[1]}: antalet aktier {span} — motsvarar {pts} riskpoäng på "
+                       f"Aktier 3 år. Förslag, inte ifyllt.")
     if sheet and row.get("ds_historik") is None:
         try:
             import refresh_ui
@@ -107,7 +120,10 @@ def render_ds(row: dict, key: str, runway_years=None,
             sug5 = None
         if sug5 is not None:
             pts5 = jh.ds_history_points(sug5[0])
-            st.caption(f"Börsdata {sug5[1]}: antalet aktier är {sug5[0]:+.0f} % på fem år — "
+            yr5 = _shares_year(sheet, row, key)
+            span5 = (f"i årsrapporten {yr5} är {sug5[0]:+.0f} % mot {yr5 - 5}" if yr5
+                     else f"är {sug5[0]:+.0f} % på fem år")
+            st.caption(f"Börsdata {sug5[1]}: antalet aktier {span5} — "
                        f"motsvarar {pts5} riskpoäng på Historik "
                        f"({'serieutspädare' if pts5 == 2 else 'blandad' if pts5 == 1 else 'disciplinerad'}). "
                        f"Förslag, inte ifyllt.")
@@ -219,6 +235,8 @@ def render_csm(row: dict, key: str, kind: str = ctl.PRODUCER,
         row["csm_kind"], row["is_core"] = new_kind, is_core
         changed = True
 
+    if new_kind == ctl.PRODUCER and sheet:
+        lukacs_ui.bd_fcf_line(row, key, sheet)          # referens vid FCF-rutorna, ingen knapp
     for s in ctl.scenarios(is_core):
         sc = matrix.get(s) if isinstance(matrix.get(s), dict) else {}
         # Synliga korta etiketter med scenariot: på mobilen staplas kolumnerna och rutorna måste säga vad de är
