@@ -726,11 +726,18 @@ def _rule_parts(row: dict, ref: Optional[dict]) -> list:
         parts.append("Lukacs: klass D — värderas inte på FCF")
     elif ev.get("mos") is not None and ev.get("fv_base") is not None:
         band = ev.get("mos_band") or ""
-        txt = (f"Lukacs: säkerhetsmarginal {_sv(ev['mos'], 0)} % mot fair value Base {_sv(ev['fv_base'], 2)}"
-               + (f" ({band[:1].lower() + band[1:]})" if band else ""))
+        txt = (f"Lukacs: säkerhetsmarginal {_sv(ev['mos'], 1)} % mot fair value Base {_sv(ev['fv_base'], 2)}"
+               + (f" ({band[:1].lower() + band[1:]})" if band else ""))      # en decimal, som kortet
+        obs = []
+        code = str(row.get("fcf_kvalitet") or "C").upper()[:1]           # samma förval som kortets klassruta
+        if any(lukacs.yield_error(code, sc.get("target_yield")) not in (None, lukacs.NOT_FCF_VALUED)
+               for sc in (row.get("fv") or {}).values() if isinstance(sc, dict)):
+            obs.append("target-yield utanför klassens band")
         cur = lukacs.price_currency(row.get("aktuell_kurs"), ref)
         if lukacs.fcf_unit_warnings(row, ref) or (cur is not None and cur.get("stored_is_local")):
-            txt += " — OBS: arket varnar för FCF-enhet eller kursvaluta"
+            obs.append("FCF-enhet eller kursvaluta")
+        if obs:
+            txt += " — OBS: arket varnar för " + " och ".join(obs)
         parts.append(txt)
     parts += _sheet_ev_ebitda(row, "ev_ebitda", ref)
     return parts
@@ -742,21 +749,21 @@ def _royalty_parts(row: dict, ref: Optional[dict]) -> list:
     import producers as pr
     parts = []
     disc = pr.discount_vs_bottom(row.get("pnav_now"), row.get("pnav_bottom"))
-    if disc is not None:
+    if disc is not None:                               # en decimal, som kortets 'Mot botten'
         side = "över" if disc >= 0 else "under"
-        parts.append(f"P/NAV {_sv(_num(row.get('pnav_now')), 2)} ({_sv(abs(disc), 0)} % {side} egen botten "
+        parts.append(f"P/NAV {_sv(_num(row.get('pnav_now')), 2)} ({_sv(abs(disc), 1)} % {side} egen botten "
                      f"{_sv(_num(row.get('pnav_bottom')), 2)} — köpläge högst {pr.DISCOUNT_MAX:g} % över)")
     med = pr.vs_median(row.get("ev_now"), row.get("ev_median"))
     if med is not None:
-        side = "över" if med > 0 else "under" if med < 0 else "på"
-        parts.append(f"EV/EBITDA {_sv(_num(row.get('ev_now')))}× ({_sv(abs(med), 0)} % {side} egen median "
-                     f"{_sv(_num(row.get('ev_median')))}×)".replace("(0 % på", "(på"))
+        rel = "på" if med == 0 else f"{_sv(abs(med), 1)} % {'över' if med > 0 else 'under'}"
+        parts.append(f"EV/EBITDA {_sv(_num(row.get('ev_now')))}× ({rel} egen median "
+                     f"{_sv(_num(row.get('ev_median')))}×)")
     else:
         parts += _sheet_ev_ebitda(row, "ev_now", ref)
     geo = pr.geo_growth(row.get("geo_now"), row.get("geo_3y"))
     if geo is not None:
-        parts.append(f"GEO/aktie {'+' if geo >= 0 else ''}{_sv(geo, 0)} % på 3 år")
-    if disc is not None or med is not None:
+        parts.append(f"GEO/aktie {'+' if geo >= 0 else ''}{_sv(geo, 1)} % på 3 år")
+    if disc is not None or med is not None or geo is not None:   # kortets signal — GEO-varningen står på egen hand
         parts.append(f'signal "{pr.royalty_signal(row).label}"')
     return parts
 
@@ -783,7 +790,13 @@ def _valuation_ref(entry: Optional[dict], strategy: str) -> Optional[dict]:
         key = f"confidence:{str((entry or {}).get('ticker') or '').strip().upper()}"
     elif strategy in ("producenter", ROYALTY_STRATEGY):         # båda bor i arket producers, nyckel per rad-id
         row = rows_e.get(strategy)
-        key = f"producers:{row['id']}" if isinstance(row, dict) and row.get("id") else None
+        if not (isinstance(row, dict) and row.get("id")):
+            return None
+        try:                    # samma rad som Lukacs-panelen — Yahoo-reservens valuta ur tickerns suffix
+            import lukacs_ui
+            return lukacs_ui._refresh_row("producers", row["id"])
+        except Exception:
+            return None
     else:
         return None
     if not key:

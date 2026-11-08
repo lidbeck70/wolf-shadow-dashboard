@@ -233,11 +233,11 @@ def _roy(**kw):
 def test_rick_rule_uses_the_sheets_ev_nav_and_lukacs():
     """EV/NAV 0,62× billigt (under 0,7×) och Lukacs: FV Base = 120 / 12 % / 100 M = 10,00, kurs 4 → MoS 60 %."""
     assert scorecard.valuation_suggestion(_rule(), "producenter") == (
-        "EV/NAV 0,62× (billigt mot NAV) · Lukacs: säkerhetsmarginal 60 % mot fair value Base 10,00 "
+        "EV/NAV 0,62× (billigt mot NAV) · Lukacs: säkerhetsmarginal 60,0 % mot fair value Base 10,00 "
         "(mycket attraktiv) · EV/EBITDA 3,0×")
     assert "(rimligt mot NAV)" in scorecard.valuation_suggestion(_rule(ev_musd=900.0), "producenter")
     assert "(dyrt mot NAV)" in scorecard.valuation_suggestion(_rule(ev_musd=1200.0), "producenter")
-    assert "säkerhetsmarginal −25 %" in scorecard.valuation_suggestion(_rule(aktuell_kurs=12.5), "producenter")
+    assert "säkerhetsmarginal −25,0 %" in scorecard.valuation_suggestion(_rule(aktuell_kurs=12.5), "producenter")
 
 
 def test_rick_rule_carries_the_sheets_warnings():
@@ -266,10 +266,10 @@ def test_rick_rule_shows_only_what_can_be_computed():
 
 def test_royalty_uses_the_sheets_own_comparisons_and_signal():
     assert scorecard.valuation_suggestion(_roy(), "royalty") == (
-        "P/NAV 1,05 (5 % över egen botten 1,00 — köpläge högst 15 % över) · EV/EBITDA 12,0× (20 % under egen "
-        "median 15,0×) · GEO/aktie +10 % på 3 år · signal \"KÖPLÄGE\"")
+        "P/NAV 1,05 (5,0 % över egen botten 1,00 — köpläge högst 15 % över) · EV/EBITDA 12,0× (20,0 % under egen "
+        "median 15,0×) · GEO/aktie +10,0 % på 3 år · signal \"KÖPLÄGE\"")
     shrink = scorecard.valuation_suggestion(_roy(geo_now=0.9), "royalty")
-    assert "GEO/aktie −10 % på 3 år" in shrink and shrink.endswith('signal "Varning: GEO/aktie krymper"')
+    assert "GEO/aktie −10,0 % på 3 år" in shrink and shrink.endswith('signal "Varning: GEO/aktie krymper"')
     assert scorecard.valuation_suggestion(_roy(pnav_now=1.3), "royalty").endswith('signal "Neutral"')
 
 
@@ -294,3 +294,53 @@ def test_the_rule_and_royalty_cards_show_their_sheets_suggestion(page):
     at.button(key="sc_useval_roy co|BBB").click().run()
     card = at.session_state["scorecard"]["cards"]["roy co|BBB"]
     assert card["valuation"].startswith("P/NAV 1,05") and card["strategy"] == "royalty"
+
+
+# ── Granskningens fynd (Rick Rule/Royalty) ──────────────────────────────────
+def test_the_margin_keeps_the_cards_decimal_at_the_band_edges():
+    """24,6 % är 'Bevaka' på kortet — avrundat till '25 %' såg förslaget ut att klara köpgrindens 25 %."""
+    assert "säkerhetsmarginal 24,6 % mot fair value Base 10,00 (bevaka)" in \
+        scorecard.valuation_suggestion(_rule(aktuell_kurs=7.54), "producenter")
+    assert "säkerhetsmarginal 25,0 % mot fair value Base 10,00 (attraktiv)" in \
+        scorecard.valuation_suggestion(_rule(aktuell_kurs=7.5), "producenter")
+    assert "säkerhetsmarginal 9,6 %" in scorecard.valuation_suggestion(_rule(aktuell_kurs=9.04), "producenter")
+
+
+def test_an_out_of_band_target_yield_is_flagged_like_the_card():
+    """Klass C har bandet 10–14 %: 8 % visar ett fel på kortet — förslaget får inte se rent ut."""
+    bad = scorecard.valuation_suggestion(_rule(aktuell_kurs=9.0, fv={"Base": {"forward_fcf_musd": 120.0,
+                                                                              "target_yield": 8.0}}), "producenter")
+    assert "säkerhetsmarginal 40,0 %" in bad and "— OBS: arket varnar för target-yield utanför klassens band" in bad
+    unset = scorecard.valuation_suggestion(_rule(fcf_kvalitet=None, aktuell_kurs=9.0,
+                                                 fv={"Base": {"forward_fcf_musd": 120.0, "target_yield": 8.0}}),
+                                           "producenter")
+    assert "target-yield utanför klassens band" in unset                  # kortets förval är klass C
+    assert "OBS" not in scorecard.valuation_suggestion(_rule(), "producenter")
+
+
+def test_a_yahoo_fallback_row_gets_its_currency_like_the_lukacs_panel(page):
+    """Börsdata saknar bolaget → Yahoos kurs utan valuta. Panelen läser valutan ur tickern (VAR.OL = NOK) och varnar;
+    förslaget gör nu samma sak i stället för att visa en ren marginal."""
+    blob = {"rows": {"producers:r1": {"ticker": "VAR.OL", "price": 30.0, "currency": None, "source": "yfinance",
+                                      "asof": "2026-11-07"}}}
+    at = page(blob)
+    at.session_state["producers"] = {"producers": [dict(RULE, ticker="VAR.OL", aktuell_kurs=30.0)], "royalty": []}
+    at.run()
+    assert not at.exception, at.exception
+    assert "— OBS: arket varnar för FCF-enhet eller kursvaluta" in _hint(at)
+
+
+def test_royalty_keeps_the_cards_decimal_at_the_fifteen_percent_limit():
+    """+15,4 % är 'Neutral' på kortet; '15 % över … högst 15 % över' läste som köpläge."""
+    edge = scorecard.valuation_suggestion(_roy(pnav_now=0.75, pnav_bottom=0.65), "royalty")
+    assert "P/NAV 0,75 (15,4 % över egen botten 0,65" in edge and edge.endswith('signal "Neutral"')
+    assert "(0,3 % över egen median 15,0×)" in scorecard.valuation_suggestion(_roy(ev_now=15.05), "royalty")
+    assert "GEO/aktie −0,2 % på 3 år" in scorecard.valuation_suggestion(_roy(geo_now=0.998), "royalty")
+
+
+def test_the_geo_warning_shows_even_before_bottom_and_median_are_filled():
+    """Kortet varnar för krympande GEO/aktie utan P/NAV-botten och median — förslaget också."""
+    fresh = scorecard.valuation_suggestion(_roy(pnav_bottom=None, ev_median=None, geo_now=0.9), "royalty")
+    assert fresh.endswith('signal "Varning: GEO/aktie krymper"')
+    assert scorecard.valuation_suggestion(_roy(pnav_bottom=None, ev_median=None, ev_now=None), "royalty").endswith(
+        'signal "Neutral"')
