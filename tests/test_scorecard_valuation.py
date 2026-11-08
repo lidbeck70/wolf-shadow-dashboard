@@ -408,7 +408,7 @@ def test_sprott_runway_against_the_eighteen_month_gate():
         "runway 0,5 år = 6 mån (under Sprotts grind 18 mån — avstå oavsett poäng)")
     # 17,6 mån visas inte som '18 mån' bredvid 'under grinden'
     assert scorecard.valuation_suggestion(_sp(cash=29.3), "sprott") == (
-        "runway 1,5 år = 17,6 mån (under Sprotts grind 18 mån — avstå oavsett poäng)")
+        "runway 1,47 år = 17,6 mån (under Sprotts grind 18 mån — avstå oavsett poäng)")      # inte '1,5 år
     assert scorecard.valuation_suggestion(_sp(cash=30.0), "sprott") == (
         "runway 1,5 år = 18 mån (klarar Sprotts grind 18 mån)")
     assert scorecard.valuation_suggestion(_sp(burn=0.0), "sprott") is None
@@ -436,3 +436,22 @@ def test_the_tiggre_and_sprott_cards_show_their_sheets_suggestion(page):
     at.button(key="sc_useval_junior|JR").click().run()
     card = at.session_state["scorecard"]["cards"]["junior|JR"]
     assert card["valuation"].startswith("runway 2,2 år") and card["strategy"] == "sprott"
+
+
+def test_values_exactly_on_a_limit_show_the_cards_decimals_with_an_approx_sign():
+    """Runda tal som ger exakt gränsen blir flyttalsbrus (200/700/−60 → U/N 2,9999999999999996), och arket säger
+    'under'. Inga extra nollor ('3,0000:1', '$50,000' som läses som femtiotusen) — kortets decimaler med '≈'."""
+    assert scorecard.valuation_suggestion(_tg(mcap=200.0, nav=700.0, downside=-60.0), "tiggre").endswith(
+        "U/N ≈3,0:1 (under kravet 3:1)")
+    assert scorecard.valuation_suggestion(_entry(mcap=110.0, moz=2.2, profit=None), "durrett") == (
+        "MCap/uns ≈$50 (mycket billigt)")
+    assert scorecard.valuation_suggestion(_entry(mcap=52.3, profit=5.23, moz=None), "durrett") == (
+        "MCap/framtida vinst ≈10,0× (under köpregelns 10×)")
+    assert scorecard.valuation_suggestion(_sp(cash=4.8, burn=3.2), "sprott") == (
+        "runway ≈1,5 år = ≈18 mån (under Sprotts grind 18 mån — avstå oavsett poäng)")
+    base100 = {"Base": {"forward_fcf_musd": 100.0, "target_yield": 12.0}}
+    mos = scorecard.valuation_suggestion(_rule(aktuell_kurs=6.25, fv=base100), "producenter")
+    assert "säkerhetsmarginal ≈25,0 % mot fair value Base 8,33 (bevaka)" in mos
+    # Vanliga tal får inget '≈'
+    assert "≈" not in scorecard.valuation_suggestion(_tg(), "tiggre")
+    assert "≈" not in scorecard.valuation_suggestion(_sp(), "sprott")

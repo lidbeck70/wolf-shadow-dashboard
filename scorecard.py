@@ -623,18 +623,28 @@ def _sv(v: float, d: int = 1) -> str:
 _CMP = {"<": lambda a, b: a < b, "<=": lambda a, b: a <= b, ">": lambda a, b: a > b, ">=": lambda a, b: a >= b}
 
 
-def _edge_digits(v: float, d: int, limits) -> int:
+def _edge_digits(v: float, d: int, limits) -> Optional[int]:
     """Kortets decimaler — men fler när avrundningen skulle hamna på andra sidan en gräns som domen bygger på
-    (2,96 visas inte som '3,0:1' bredvid 'under kravet 3'). limits = [(gräns, jämförelse)] som arkets egen regel."""
+    (2,96 visas inte som '3,0:1' bredvid 'under kravet 3'). limits = [(gräns, jämförelse)] som arkets egen regel.
+    None när inte ens tre decimaler till räcker: talet ligger på gränsen (flyttalsbrus, 2,9999999999999996) — då
+    visas kortets decimaler med '≈' framför (se _edge), inte en rad nollor."""
     for dd in range(d, d + 4):
         r = round(v, dd)
         if all(_CMP[op](r, lim) == _CMP[op](v, lim) for lim, op in limits):
             return dd
-    return d + 3
+    return None
 
 
-def _sv_edge(v: float, d: int, limits) -> str:
-    return _sv(v, _edge_digits(v, d, limits))
+def _edge(v: float, d: int, limits, prefix: str = "") -> str:
+    """Talet för en dom mot limits: _edge_digits decimaler, eller '≈' + kortets decimaler precis på gränsen."""
+    dd = _edge_digits(v, d, limits)
+    return f"{prefix}{_sv(v, dd)}" if dd is not None else f"≈{prefix}{_sv(v, d)}"
+
+
+def _edge_abs(v: float, d: int, limits) -> str:
+    """Som _edge, men beloppet (tecknet står i orden 'över/under')."""
+    dd = _edge_digits(v, d, limits)
+    return _sv(abs(v), dd) if dd is not None else f"≈{_sv(abs(v), d)}"
 
 
 DURRETT_STRATEGY = "durrett"         # Poängmodellens Durrett-del (snabbpoängen) — inte ARKEN → 🧭 Durrett
@@ -674,7 +684,7 @@ def valuation_suggestion(entry: Optional[dict], strategy: str, ref: Optional[dic
         ratio = scoring.mcap_per_earnings(row.get("mcap"), row.get("profit"))
         if ratio is not None:
             ok = scoring.durrett_buy_ok(ratio)
-            parts.append(f"MCap/framtida vinst {_sv_edge(ratio, 1, [(scoring.DURRETT_BUY_MAX, '<')])}× "
+            parts.append(f"MCap/framtida vinst {_edge(ratio, 1, [(scoring.DURRETT_BUY_MAX, '<')])}× "
                          f"({'under' if ok else 'över'} köpregelns "
                          f"{scoring.DURRETT_BUY_MAX:g}×)")
         per_oz = scoring.mcap_per_oz(row.get("mcap"), row.get("moz"))
@@ -683,7 +693,7 @@ def valuation_suggestion(entry: Optional[dict], strategy: str, ref: Optional[dic
                     else "billigt" if per_oz < scoring.MCAP_PER_OZ_CHEAP
                     else f"över ${scoring.MCAP_PER_OZ_CHEAP:g}")
             lim = [(scoring.MCAP_PER_OZ_VERY, "<"), (scoring.MCAP_PER_OZ_CHEAP, "<")]
-            parts.append(f"MCap/uns ${_sv_edge(per_oz, 0, lim)} ({band})")
+            parts.append(f"MCap/uns {_edge(per_oz, 0, lim, prefix='$')} ({band})")
     elif strategy == DURRETT_SHEET_STRATEGY:
         if not isinstance(metrics, dict):
             return None
@@ -691,7 +701,7 @@ def valuation_suggestion(entry: Optional[dict], strategy: str, ref: Optional[dic
         buy_max = float(dcfg.DURRETT_CONFIG["mcap_future_earnings_buy_max"])
         r = _metric(metrics, "mcap_future_earnings")
         if r is not None:
-            parts.append(f"MCap/framtida vinst {_sv_edge(r, 1, [(buy_max, '<')])}× efter skatt "
+            parts.append(f"MCap/framtida vinst {_edge(r, 1, [(buy_max, '<')])}× efter skatt "
                          f"({'under' if r < buy_max else 'över'} "
                          f"köpregelns {buy_max:g}×)")
         ev_res = _metric(metrics, "ev_per_resource_unit")
@@ -743,7 +753,7 @@ def _rule_parts(row: dict, ref: Optional[dict]) -> list:
     if r is not None:
         label = (pr.NAV_CHEAP if r < pr.EV_NAV_CHEAP else pr.NAV_FAIR if r <= pr.EV_NAV_FAIR else pr.NAV_RICH)
         lim = [(pr.EV_NAV_CHEAP, "<"), (pr.EV_NAV_FAIR, "<=")]
-        txt = f"EV/NAV {_sv_edge(r, 2, lim)}× ({label[:1].lower() + label[1:]})"
+        txt = f"EV/NAV {_edge(r, 2, lim)}× ({label[:1].lower() + label[1:]})"
         gap = pr.nav_price_gap(row.get("nav_price"), row.get("price"))
         if gap is not None and abs(gap) > pr.NAV_PRICE_GAP_PCT:
             txt += (f", NAV räknad på {_sv(_num(row.get('nav_price')), 0)} mot spot {_sv(_num(row.get('price')), 0)} "
@@ -756,7 +766,7 @@ def _rule_parts(row: dict, ref: Optional[dict]) -> list:
         band = ev.get("mos_band") or ""
         m6 = round(ev["mos"], 6)                          # mos_band jämför det avrundade till 6 decimaler
         lim = [(lukacs.MOS_VERY_MIN, ">"), (lukacs.MOS_BUY_MIN, ">="), (lukacs.MOS_WATCH_MIN, ">=")]
-        txt = (f"Lukacs: säkerhetsmarginal {_sv_edge(m6, 1, lim)} % mot fair value Base {_sv(ev['fv_base'], 2)}"
+        txt = (f"Lukacs: säkerhetsmarginal {_edge(m6, 1, lim)} % mot fair value Base {_sv(ev['fv_base'], 2)}"
                + (f" ({band[:1].lower() + band[1:]})" if band else ""))      # en decimal, som kortet
         obs = []
         code = str(row.get("fcf_kvalitet") or "C").upper()[:1]           # samma förval som kortets klassruta
@@ -781,20 +791,20 @@ def _royalty_parts(row: dict, ref: Optional[dict]) -> list:
     disc = pr.discount_vs_bottom(row.get("pnav_now"), row.get("pnav_bottom"))
     if disc is not None:                               # en decimal, som kortets 'Mot botten'
         side = "över" if disc >= 0 else "under"
-        dd = _edge_digits(disc, 1, [(pr.DISCOUNT_MAX, "<="), (0.0, "<")])
-        parts.append(f"P/NAV {_sv(_num(row.get('pnav_now')), 2)} ({_sv(abs(disc), dd)} % {side} egen botten "
+        amount = _edge_abs(disc, 1, [(pr.DISCOUNT_MAX, "<="), (0.0, "<")])
+        parts.append(f"P/NAV {_sv(_num(row.get('pnav_now')), 2)} ({amount} % {side} egen botten "
                      f"{_sv(_num(row.get('pnav_bottom')), 2)} — köpläge högst {pr.DISCOUNT_MAX:g} % över)")
     med = pr.vs_median(row.get("ev_now"), row.get("ev_median"))
     if med is not None:
         rel = ("på" if med == 0 else
-               f"{_sv(abs(med), _edge_digits(med, 1, [(0.0, '<'), (0.0, '>')]))} % {'över' if med > 0 else 'under'}")
+               f"{_edge_abs(med, 1, [(0.0, '<'), (0.0, '>')])} % {'över' if med > 0 else 'under'}")
         parts.append(f"EV/EBITDA {_sv(_num(row.get('ev_now')), 2)}× ({rel} egen median "
                      f"{_sv(_num(row.get('ev_median')), 2)}×)")
     else:
         parts += _sheet_ev_ebitda(row, "ev_now", ref)
     geo = pr.geo_growth(row.get("geo_now"), row.get("geo_3y"))
     if geo is not None:
-        parts.append(f"GEO/aktie {'+' if geo >= 0 else ''}{_sv_edge(geo, 1, [(0.0, '<'), (0.0, '>')])} % på 3 år")
+        parts.append(f"GEO/aktie {'+' if geo >= 0 else ''}{_edge(geo, 1, [(0.0, '<'), (0.0, '>')])} % på 3 år")
     if disc is not None or med is not None or geo is not None:   # kortets signal — GEO-varningen står på egen hand
         parts.append(f'signal "{pr.royalty_signal(row).label}"')
     return parts
@@ -824,7 +834,7 @@ def _tiggre_parts(row: dict, ref: Optional[dict]) -> list:
         note = (f"≥ {tg.NAV_EXIT_HI:g}× NAV — omvärderingen gjord, sälj resten" if stage == "klar" else
                 f"{tg.NAV_EXIT_LO:g}–{tg.NAV_EXIT_HI:g}× NAV — slutsälj i etapper" if stage == "etapp" else
                 f"under {tg.NAV_EXIT_LO:g}× NAV — slutsäljregeln inte nådd")
-        parts.append(f"P/NAV {_sv_edge(pn, 2, lim)}× ({note})".replace(".", ","))
+        parts.append(f"P/NAV {_edge(pn, 2, lim)}× ({note})".replace(".", ","))
         return parts
     if pn is not None:
         parts.append(f"P/NAV {_sv(pn, 2)}× (köpzon 0,2–0,4×)")
@@ -834,7 +844,7 @@ def _tiggre_parts(row: dict, ref: Optional[dict]) -> list:
         un = tg.un_ratio(up, row.get("downside"))
         if un is not None:
             ok = un >= tg.UN_MIN
-            parts.append(f"U/N {_sv_edge(un, 1, [(tg.UN_MIN, '>=')])}:1 ({'klarar' if ok else 'under'} kravet "
+            parts.append(f"U/N {_edge(un, 1, [(tg.UN_MIN, '>=')])}:1 ({'klarar' if ok else 'under'} kravet "
                          f"{tg.UN_MIN:g}:1)")
     return parts
 
@@ -848,8 +858,9 @@ def _sprott_parts(row: dict) -> list:
         return []
     ok = scoring.sprott_runway_ok(rw)
     lim_m = scoring.SPROTT_RUNWAY_MIN_MONTHS
-    months = _sv_edge(rw * 12.0, 0, [(float(lim_m), ">=")])
-    return [f"runway {_sv(rw, 1)} år = {months} mån ({'klarar' if ok else 'under'} Sprotts grind {lim_m} mån"
+    months = _edge(rw * 12.0, 0, [(float(lim_m), ">=")])
+    years = _edge(rw, 1, [(lim_m / 12.0, ">=")])          # även åren: 1,465 år är inte '1,5 år' bredvid 'under'
+    return [f"runway {years} år = {months} mån ({'klarar' if ok else 'under'} Sprotts grind {lim_m} mån"
             f"{'' if ok else ' — avstå oavsett poäng'})"]
 
 
