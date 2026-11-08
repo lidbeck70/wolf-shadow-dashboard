@@ -158,13 +158,13 @@ def test_extraction_sheet_keys_match_the_field_registry():
 
 
 # ── fliken ───────────────────────────────────────────────────────────────────
-def test_tab_renders_with_a_company_and_without_network(monkeypatch):
+def _page_app(monkeypatch, company: CompanyInput):
+    """Fliken med ett bolag och granskningsarken PRODUCERS/TIGGRE, utan nätverk."""
     import streamlit as st
-    from streamlit.testing.v1 import AppTest
     import storage
 
     data = cs.default()
-    cs.put(data, cc.developer_high_quality())
+    cs.put(data, company)
     data["commodity_overrides"] = dict(cc.COPPER_OVERRIDES)
     stores = {"confidence": data, "producers": PRODUCERS, "tiggre": TIGGRE, "rotation": {}}
     monkeypatch.setattr(storage, "session_load", lambda name, default=None, legacy_file=None:
@@ -172,8 +172,7 @@ def test_tab_renders_with_a_company_and_without_network(monkeypatch):
     monkeypatch.setattr(storage, "load_error", lambda name: None)
     monkeypatch.setattr(storage, "is_dirty", lambda name: False)
     monkeypatch.setattr(storage, "last_saved", lambda name: None)
-
-    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    monkeypatch.setenv("CONF_TEST_ROOT", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
     def app():                                        # körs som eget skript: egna importer
         import os as _o
@@ -182,8 +181,13 @@ def test_tab_renders_with_a_company_and_without_network(monkeypatch):
         from confidence.ui import render_confidence_page
         render_confidence_page()
 
-    monkeypatch.setenv("CONF_TEST_ROOT", root)
+    return app
 
+
+def test_tab_renders_with_a_company_and_without_network(monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    app = _page_app(monkeypatch, cc.developer_high_quality())
     for sub in ("Analys", "Indata", "Råvaror", "Signaler"):
         at = AppTest.from_function(app, default_timeout=30)
         at.session_state["conf_sub"] = sub
@@ -196,3 +200,27 @@ def test_tab_renders_with_a_company_and_without_network(monkeypatch):
             assert at.metric[0].value == "86.2"
         elif sub == "Indata":
             assert any("Economics" in e.label for e in at.expander)
+
+
+def test_indata_prefill_maturity_survives_the_identity_form_above_it(monkeypatch):
+    """Indata ritar Identitet före förslagen. Använd på Mognad (Tiggre: FS klar) ska synas i Identitet-formen
+    direkt, och dess Uppdatera ska inte skriva tillbaka den gamla mognaden."""
+    from streamlit.testing.v1 import AppTest
+
+    dev = cc.developer_high_quality()
+    dev.maturity = "pea"
+    at = AppTest.from_function(_page_app(monkeypatch, dev), default_timeout=30)
+    at.session_state["conf_sub"] = "Indata"
+    at.session_state["conf_last"] = "DEV"
+    at.run()
+    assert not at.exception, at.exception
+    assert at.selectbox(key="conf_id_DEV_mat").value == "pea"
+    at.button(key="cf_pf_DEV_maturity").click().run()
+    assert not at.exception, at.exception
+    assert at.session_state["confidence"]["companies"]["DEV"]["maturity"] == "dfs"
+    assert at.selectbox(key="conf_id_DEV_mat").value == "dfs"
+    at.text_input(key="conf_id_DEV_name").set_value("Nytt namn").run()
+    at.button(key="FormSubmitter:conf_ident_DEV-Uppdatera").click().run()
+    assert not at.exception, at.exception
+    c = at.session_state["confidence"]["companies"]["DEV"]
+    assert c["name"] == "Nytt namn" and c["maturity"] == "dfs"

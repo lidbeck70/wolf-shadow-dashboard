@@ -500,21 +500,30 @@ def _render_prefill(data: dict, company: CompanyInput, store: str = cs.STORE) ->
                 a.markdown(f"<span style='color:{TEXT};'>Mognad: {cfg.MATURITY_LABEL[point]}</span> "
                            f"<span style='color:{DIM};font-size:0.8rem;'>(Tiggre: FS klar)</span>",
                            unsafe_allow_html=True)
-                if b.button("Använd", key=f"cf_pf_{company.ticker}_{key}"):
-                    company.maturity = point
-                    cs.put(data, company)
-                    _save_to(store, data)
-                    st.rerun()
-                continue
-            label = cfg.FIELD_BY_KEY[key].label
-            a.markdown(f"<span style='color:{TEXT};'>{describe(point, label)}</span>"
-                       + (f" <span style='color:{AMBER};font-size:0.78rem;'>ersätter {_fmt(company.get(key).value)}</span>"
-                          if already else ""), unsafe_allow_html=True)
-            if b.button("Använd", key=f"cf_pf_{company.ticker}_{key}"):
-                company.set(key, point)
-                cs.put(data, company)
-                _save_to(store, data)
-                st.rerun()
+            else:
+                label = cfg.FIELD_BY_KEY[key].label
+                a.markdown(f"<span style='color:{TEXT};'>{describe(point, label)}</span>"
+                           + (f" <span style='color:{AMBER};font-size:0.78rem;'>ersätter {_fmt(company.get(key).value)}</span>"
+                              if already else ""), unsafe_allow_html=True)
+            b.button("Använd", key=f"cf_pf_{company.ticker}_{key}", on_click=_apply_prefill,
+                     args=(data, company, key, point, store))
+
+
+def _apply_prefill(data: dict, company: CompanyInput, key: str, point, store: str) -> None:
+    """on_click för Använd i förslagen: skriv in förslaget och släpp fältets rutor i formerna (Identitet, Börsdata
+    fyller, Ekonomi, Confidence …). De ritas då om ur arket med det nya värdet — annars ligger det gamla kvar i
+    formen och nästa Uppdatera skriver tillbaka det. Klicket kör om sidan själv."""
+    t = company.ticker
+    if key == "maturity":
+        company.maturity = point
+        stale = (f"asym_id_{t}_mat", f"conf_id_{t}_mat")          # identity_widgets i Wolf Asymmetry / Indata
+    else:
+        company.set(key, point)
+        stale = tuple(f"cf_{t}_{key}_{s}" for s in ("v", "k", "s", "t", "d"))   # _field_widgets
+    cs.put(data, company)
+    _save_to(store, data)
+    for wk in stale:
+        st.session_state.pop(wk, None)
 
 
 def _render_extractor(data: dict, company: CompanyInput, store: str = cs.STORE,

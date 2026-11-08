@@ -109,14 +109,15 @@ def test_register_candidates_and_add():
 
 
 # ── fliken ───────────────────────────────────────────────────────────────────
-def _app(monkeypatch, conf: dict, legacy=None, register_rows=None, blob=None, futures=None, producers=None):
+def _app(monkeypatch, conf: dict, legacy=None, register_rows=None, blob=None, futures=None, producers=None,
+         tiggre=None):
     import streamlit as st
     import storage
     import positions
     import refresh_ui
     import commodity_prices
 
-    stores = {"confidence": conf, "asymmetry": legacy, "producers": producers or {}, "tiggre": {}}
+    stores = {"confidence": conf, "asymmetry": legacy, "producers": producers or {}, "tiggre": tiggre or {}}
     monkeypatch.setattr(storage, "session_load", lambda name, default=None, legacy_file=None:
                         st.session_state.setdefault(name, stores.get(name) if stores.get(name) is not None else default))
     monkeypatch.setattr(storage, "load_error", lambda name: None)
@@ -196,9 +197,11 @@ def test_ark_shows_only_score_fields_and_writes_to_shared_store(monkeypatch):
     assert not at.exception, at.exception
     labels = [e.label for e in at.expander]
     assert [l.split(" ·")[0].split(" —")[0] for l in labels] == [
-        "➕ Nytt bolag", "📥 Hämta från registret (Holdings)", "Identitet och strategi", "Börsdata fyller",
+        "➕ Nytt bolag", "📥 Hämta från registret (Holdings)",
+        "Förslag ur granskningsarken (Rick Rule/AQS/DS, Tiggre)",          # före formerna, som Durrett
+        "Identitet och strategi", "Börsdata fyller",
         "Ekonomi", "Confidence", "Confidence", "🤖 Läs ur presentationen / tekniska rapporten (AI-förslag",
-        "Förslag ur granskningsarken (Rick Rule/AQS/DS, Tiggre)", "📋 Underlag till ChatGPT"]
+        "📋 Underlag till ChatGPT"]
     assert any(l.startswith("Ekonomi") and l.endswith("3/4 ifyllda") for l in labels)   # GPR saknar produktionsenhet
     import form_keys as fk
     keys = fk.fields(at.text_input, "cf_GPR_")
@@ -247,6 +250,77 @@ def test_ark_offers_the_review_sheets_like_durrett(monkeypatch):
     p = at.session_state["confidence"]["companies"]["GPR"]["fields"]["aisc"]
     assert p["value"] == 1300.0 and p["source"] == "Granskningsarket Rick Rule" and p["kind"] == "ESTIMATE"
     assert not [b for b in at.button if b.key == "cf_pf_GPR_aisc"]              # inläst: förslaget försvinner
+    # Ekonomi-formen ovanför visar det inlästa värdet — inte det gamla 1450
+    assert at.text_input(key="cf_GPR_aisc_v").value == "1300"
+    assert at.text_input(key="cf_GPR_aisc_s").value == "Granskningsarket Rick Rule"
+    assert at.selectbox(key="cf_GPR_aisc_k").value == "ESTIMATE"
+    # nästa Uppdatera arket (produktionsenheten fylls i) skriver inte tillbaka det gamla
+    at.text_input(key="cf_GPR_production_unit_v").set_value("oz").run()
+    at.button(key="FormSubmitter:asym_econ_GPR-Uppdatera arket").click().run()
+    assert not at.exception, at.exception
+    f = at.session_state["confidence"]["companies"]["GPR"]["fields"]
+    assert f["production_unit"]["value"] == "oz"
+    assert f["aisc"]["value"] == 1300.0 and f["aisc"]["source"] == "Granskningsarket Rick Rule"
+
+
+def test_ark_review_sheet_value_survives_the_form_when_the_field_was_empty(monkeypatch):
+    """Tomt fält före Använd: formens tomma ruta får inte radera det inlästa värdet vid nästa Uppdatera arket."""
+    from streamlit.testing.v1 import AppTest
+
+    conf = _conf(dcs.gold_producer)
+    conf["companies"]["GPR"]["fields"].pop("aisc")
+    rule = {"producers": [{"id": "r1", "ticker": "GPR", "commodity": "Guld", "unit_cost": 1300.0,
+                           "date": "2026-11-01"}], "royalty": []}
+    at = AppTest.from_function(_app(monkeypatch, conf, producers=rule), default_timeout=60)
+    at.session_state["asym_mode"] = "Ark"
+    at.run()
+    assert not at.exception, at.exception
+    assert at.text_input(key="cf_GPR_aisc_v").value == ""
+    at.button(key="cf_pf_GPR_aisc").click().run()
+    assert not at.exception, at.exception
+    assert at.text_input(key="cf_GPR_aisc_v").value == "1300"
+    at.text_input(key="cf_GPR_production_current_v").set_value("210000").run()
+    at.button(key="FormSubmitter:asym_econ_GPR-Uppdatera arket").click().run()
+    assert not at.exception, at.exception
+    f = at.session_state["confidence"]["companies"]["GPR"]["fields"]
+    assert f["production_current"]["value"] == 210000.0
+    assert f["aisc"]["value"] == 1300.0 and f["aisc"]["source"] == "Granskningsarket Rick Rule"
+
+
+def test_ark_review_sheet_maturity_and_market_cap_survive_the_forms(monkeypatch):
+    """Tiggre: Mognad (FS klar → dfs) och börsvärdet. Identitet-formen och Börsdata fyller-formen visar det inlästa
+    efter Använd, och deras Uppdatera skriver inte tillbaka det gamla."""
+    from streamlit.testing.v1 import AppTest
+
+    conf = _conf(dcs.copper_developer)
+    conf["companies"]["CDV"]["maturity"] = "pea"
+    tiggre = {"candidates": [{"id": "t1", "ticker": "CDV", "mcap": 650, "screen": {"fs": True}}]}
+    at = AppTest.from_function(_app(monkeypatch, conf, tiggre=tiggre), default_timeout=60)
+    at.session_state["asym_mode"] = "Ark"
+    at.run()
+    assert not at.exception, at.exception
+    assert at.selectbox(key="asym_id_CDV_mat").value == "pea"
+    assert at.session_state["confidence"]["companies"]["CDV"]["maturity"] == "pea"     # att öppna skriver inget
+    # Mognad
+    at.button(key="cf_pf_CDV_maturity").click().run()
+    assert not at.exception, at.exception
+    assert at.session_state["confidence"]["companies"]["CDV"]["maturity"] == "dfs"
+    assert at.selectbox(key="asym_id_CDV_mat").value == "dfs"
+    at.text_input(key="asym_id_CDV_name").set_value("Nytt namn").run()
+    at.button(key="FormSubmitter:asym_ident_CDV-Uppdatera").click().run()
+    assert not at.exception, at.exception
+    c = at.session_state["confidence"]["companies"]["CDV"]
+    assert c["name"] == "Nytt namn" and c["maturity"] == "dfs"
+    # Börsvärdet mot Börsdata fyller-formen
+    at.button(key="cf_pf_CDV_market_cap_musd").click().run()
+    assert not at.exception, at.exception
+    assert at.text_input(key="cf_CDV_market_cap_musd_v").value == "650"
+    at.text_input(key="cf_CDV_cash_musd_v").set_value("260").run()
+    at.button(key="FormSubmitter:asym_auto_CDV-Uppdatera arket").click().run()
+    assert not at.exception, at.exception
+    f = at.session_state["confidence"]["companies"]["CDV"]["fields"]
+    assert f["cash_musd"]["value"] == 260.0
+    assert f["market_cap_musd"]["value"] == 650.0 and f["market_cap_musd"]["source"] == "Granskningsarket Tiggre"
 
 
 def test_empty_sheet_opens_ark_and_register_import(monkeypatch):

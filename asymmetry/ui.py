@@ -231,6 +231,9 @@ def _sheet(data: dict, company: Optional[CompanyInput]) -> None:
     if company is None:
         return
     st.markdown(f"#### {company.ticker}" + (f" · {company.name}" if company.name else ""))
+    # Samma förslag ur Rick Rule/Tiggre som Durrett-arket visar under Mer (en gång per sida: cf_pf_<ticker>_*).
+    # Före formerna som håller fälten (Identitet, Börsdata fyller, Ekonomi, Confidence), som Durrett före Alla fält.
+    cui.render_prefill(data, company, store=ast.STORE)
     with st.expander("Identitet och strategi", expanded=False):
         with st.form(f"asym_ident_{company.ticker}"):
             ident = cui.identity_widgets(f"asym_id_{company.ticker}", company)
@@ -262,8 +265,6 @@ def _sheet(data: dict, company: Optional[CompanyInput]) -> None:
     _block(data, company, "core", "Confidence — kärnan (tungt vägd)", fields.confidence_core(company.stage))
     _block(data, company, "more", "Confidence — finlir (lätt vägd)", fields.confidence_more(company.stage))
     cui.render_extractor(data, company, sheet_label="Wolf Asymmetry")
-    # Samma förslag ur Rick Rule/Tiggre som Durrett-arket visar under Mer (en gång per sida: cf_pf_<ticker>_*)
-    cui.render_prefill(data, company, store=ast.STORE)
     _chatgpt(data, company)
 
 
