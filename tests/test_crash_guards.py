@@ -633,6 +633,50 @@ def test_low_conversion_mnok_fcf_gets_no_one_click_usd_price(sheet):
     assert [b for b in at.button if b.label == "Använd USD"]
 
 
+def test_a_weak_trailing_year_does_not_hide_the_usd_price(sheet):
+    """Batch 2-granskningen: Börsdatas FCF (12 mån) på Rick Rule-raden gjorde Bull 1 800 MUSD (9,5× ett svagt år) till
+    'miljoner SEK' och tog bort 'Använd USD' för en ny kandidat. Bandet prövas mot tolv månader bara i Base."""
+    from tests.test_lukacs import producer_refresh_row
+    blob = {"rows": {"producers:r1": producer_refresh_row("SEK", 330.0, market_cap=90000.0, ev=98000.0, fcf_m=2000.0,
+                                                          report="SEK")}}
+    weak = {"Base": 900.0, "Bear": 400.0, "Bull": 1800.0}
+    at = sheet("Rick Rule", blob, {"producers": {"producers": [_bol_row(None, weak)], "royalty": []}})
+    at.run()
+    assert not at.exception, at.exception
+    assert any("Börsdata FCF 12 mån: 190 MUSD" in m.value for m in at.markdown)
+    assert "miljoner" not in " ".join(w.value for w in at.warning)
+    [b for b in at.button if b.label == "Använd USD"][0].click().run()
+    assert not at.exception, at.exception
+    assert at.session_state["producers"]["producers"][0]["aktuell_kurs"] == pytest.approx(31.35)
+    # Base i MSEK mot samma tolv månader håller fortfarande inne knappen
+    at = sheet("Rick Rule", blob, {"producers": {"producers": [_bol_row(None, dict(weak, Base=2000.0))],
+                                                 "royalty": []}})
+    at.run()
+    assert "Base: forward FCF 2 000 MUSD är 10,5× Börsdatas FCF (12 mån)" in " ".join(w.value for w in at.warning)
+    assert not [b for b in at.button if b.label == "Använd USD"]
+
+
+def test_a_break_even_trailing_fcf_gives_no_unit_warning_on_the_card(sheet):
+    """Batch 2-granskningen: Börsdatas FCF 1,5 MUSD (0,12 % av EV, ett kapitaltungt år) gav 'står talet i miljoner
+    USD?' på rätta MUSD-tal. Referensraden visas ändå; tusental varnas som förut."""
+    from tests.test_lukacs import producer_refresh_row
+    blob = {"rows": {"producers:r1": producer_refresh_row("USD", 10.0, market_cap=1200.0, ev=1300.0, fcf_m=1.5)}}
+
+    def row(fcf):
+        return _var_row(ticker="BOL.ST", aktuell_kurs=10.0, framtida_antal_aktier=120.0, ev_musd=1300.0,
+                        csm={s_: {"price": p} for s_, p in (("Base", 95.0), ("Bear", 70.0), ("Bull", 115.0))},
+                        fv={s_: {"forward_fcf_musd": f, "target_yield": 12.0}
+                            for s_, f in zip(("Base", "Bear", "Bull"), fcf)})
+    at = sheet("Rick Rule", blob, {"producers": {"producers": [row((150.0, 30.0, 260.0))], "royalty": []}})
+    at.run()
+    assert not at.exception, at.exception
+    assert any("Börsdata FCF 12 mån: 1,5 MUSD" in m.value for m in at.markdown)
+    assert not [w for w in at.warning if "står talet i miljoner USD" in w.value]
+    at = sheet("Rick Rule", blob, {"producers": {"producers": [row((150000.0, 30.0, 260.0))], "royalty": []}})
+    at.run()
+    assert "Base: forward FCF 150 000 MUSD är över 2× EV 1 300 MUSD" in " ".join(w.value for w in at.warning)
+
+
 def test_live_fx_reads_the_price_layer_and_falls_back_quietly(monkeypatch):
     """Dagens växelkurs ur kurslagret (Yahoo '{CCY}USD=X', cachad) — pence delas med 100, fel ger None (tabellen)."""
     import pandas as pd

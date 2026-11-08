@@ -561,6 +561,8 @@ def _fcf_scan(row: dict, ref: Optional[dict] = None) -> list:
             mcap, mcap_lbl = shares * p, "börsvärdet (aktier × kurs)"
     size, size_lbl = max(((v, lbl) for v, lbl in ((ev, "EV"), (mcap, mcap_lbl)) if v is not None),
                          default=(None, ""))
+    if bd_fcf is not None and size is not None and bd_fcf < FCF_EV_MIN * size:
+        bd_fcf = None                                   # break-even: samma regel som för CSM:s referens
     ccy = str((ref or {}).get("currency") or "").strip() if isinstance(ref, dict) else ""
     fx_l = fx_to_usd(ccy) if ccy and not _is_pence(ccy) else None
     if fx_l is not None and max(fx_l, 1.0 / fx_l) < FCF_LOCAL_FX_MIN:
@@ -593,14 +595,22 @@ def _fcf_scan(row: dict, ref: Optional[dict] = None) -> list:
         if base is not None and big(base):             # CSM i fel enhet duger inte som referens
             out.append((s, "size", f"{s}: {src} {_f(base)} MUSD är {too_big}"))
             base = None
-        if base is not None and size is not None and base < FCF_EV_MIN * size:
+        even = base is not None and size is not None and base < FCF_EV_MIN * size
+        if even:
             base = None                                 # break-even: en kvot mot nästan noll säger inget om enheten
-        if base is None and bd_fcf is not None:
+        # Börsdatas tolv månader tar inte platsen för en CSM-FCF nära noll — CSM säger att scenariot ligger där
+        trailing = base is None and bd_fcf is not None and not even
+        if trailing:
             base, src = bd_fcf, "Börsdatas FCF (12 mån)"
-        if base is not None and (f < FCF_TOO_SMALL * base or f > FCF_TOO_LARGE * base):
+        # Tolv månader bakåt är ett tal för alla scenarier: Bear får ligga långt under det (bara över 50× är en
+        # enhet), och ±30 %-bandet för miljoner NOK/SEK/DKK prövas mot det bara i Base (Bull 5–10× ett svagt år
+        # är vanligt)
+        low = base is not None and f < FCF_TOO_SMALL * base and not (trailing and s == ctl.BEAR)
+        if base is not None and (low or f > FCF_TOO_LARGE * base):
             out.append((s, "unit", f"{s}: forward FCF {_f(f)} MUSD mot {src} {_ref(base)} MUSD — står talet i "
                                    f"miljoner USD?"))
-        elif (base is not None and fx_l is not None and (size is None or base >= FCF_LOCAL_REF_MIN * size)
+        elif (base is not None and fx_l is not None and (not trailing or s == ctl.BASE)
+              and (size is None or base >= FCF_LOCAL_REF_MIN * size)
               and abs(f * fx_l / base - 1.0) <= FCF_LOCAL_BAND):
             out.append((s, "local", f"{s}: forward FCF {_f(f)} MUSD är {f / base:.1f}× {src} {_ref(base)} MUSD"
                         .replace(".", ",") + f" — omräknat från {C} stämmer det. Står talet i miljoner {C}?"))
@@ -638,8 +648,10 @@ def fcf_unit_warnings(row: dict, ref: Optional[dict] = None) -> list:
     lokal valuta, inte tusental. Bolagets storlek (Börsdatas EV före kortets handskrivna, eller börsvärde, det större; utan betrott
     börsvärde aktier × kurs i USD) är ett tak för båda
     talen: CSM:s FCF skrivs också för hand, så en referens över 2× storleken varnas själv och används inte, och en
-    referens under 0,2 % av storleken (break-even) säger inget om enheten. Utan referens: över 2× storleken, eller
-    under 0,2 % av EV — utom i Bear, som får ligga nära noll."""
+    referens under 0,2 % av storleken (break-even) säger inget om enheten — det gäller CSM:s och Börsdatas, och en
+    CSM-FCF nära noll ersätts inte med Börsdatas. Börsdatas tolv månader är ett tal för alla scenarier: mot det
+    prövas Bear bara uppåt (över 50×) och miljoner NOK/SEK/DKK (±30 %) bara i Base. Utan referens: över 2×
+    storleken, eller under 0,2 % av EV — utom i Bear, som får ligga nära noll."""
     return [text for _, kind, text in _fcf_scan(row, ref) if kind != "maybe_local"]
 
 
