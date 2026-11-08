@@ -456,11 +456,14 @@ def _valuation_needs(company: CompanyInput, a: DurrettAnalysis) -> list:
             out.append("MCap/framtida vinst kan inte räknas med de här talen (se Analys → loggen)")
     ev_need = mcap_need or ("kassa eller skuld (eller enterprise value)" if a.enterprise_value_musd is None else None)
     if val("ev_per_resource_unit") is None:
-        res_keys = ("resource_measured", "resource_indicated", "resource_inferred", "reserve_proven", "reserve_probable")
-        res_given = any(u(k) for k in res_keys)
-        unit_need = (conflict if res_given and conflict else
-                     "enhet (resurs/produktion)" if unit_missing or (res_given and not u("resource_unit")) else None)
-        miss = [x for x in (ev_need, unit_need, "resurs (mängd)" if not res_given else None) if x]
+        mii_given = any(u(k) for k in ("resource_measured", "resource_indicated", "resource_inferred"))
+        qty_given = mii_given or any(u(k) for k in ("reserve_proven", "reserve_probable"))
+        # Enheten: unit_missing räcker — motorn löser varje angiven mängd (och faller tillbaka på produktionsenheten)
+        unit_need = conflict if qty_given and conflict else ("enhet (resurs/produktion)" if unit_missing else None)
+        res_need = (None if mii_given else
+                    "resurs Measured/Indicated/Inferred (reserver räknas inte i EV/resurs)" if qty_given
+                    else "resurs (mängd)")
+        miss = [x for x in (ev_need, unit_need, res_need) if x]
         if miss:
             out.append("EV/resurs kräver " + " och ".join(miss))
     npv_spec = ccfg.FIELD_BY_KEY.get("npv_musd")

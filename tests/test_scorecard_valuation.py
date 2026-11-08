@@ -560,3 +560,14 @@ def test_the_missing_list_handles_units_zero_production_and_hidden_resource_gaps
     no_unit = _company("producer", market_cap_musd=61.0, production_current=1000.0)
     assert ("EV/resurs kräver kassa eller skuld (eller enterprise value) och enhet (resurs/produktion) och resurs "
             "(mängd)") in _needs(no_unit)
+
+
+def test_reserves_alone_and_the_production_unit_fallback():
+    """Tredje granskningen: EV/resurs räknas bara på Measured/Indicated/Inferred — reserver ensamma ska nämnas, inte
+    tystna. Och motorn tar produktionsenheten när resursenheten saknas, så då ska ingen enhet efterfrågas."""
+    pp = _company("producer", market_cap_musd=1500.0, cash_musd=120.0, resource_unit="oz", reserve_proven=1.2e6,
+                  reserve_probable=1.8e6, production_current=200000.0, commodity_price=3000.0, aisc=1450.0)
+    assert ("EV/resurs kräver resurs Measured/Indicated/Inferred (reserver räknas inte i EV/resurs)") in _needs(pp)
+    pu = _company("producer", market_cap_musd=61.0, production_unit="oz", resource_measured=1.0e6)
+    assert not [n for n in _needs(pu) if "enhet" in n]
+    assert "EV/resurs kräver kassa eller skuld (eller enterprise value)" in _needs(pu)
