@@ -1083,12 +1083,17 @@ def held_weight(ticker: str, rows: list, total) -> Optional[str]:
 
 
 def _position_lines(entry: dict, strategy: str) -> None:
-    """Raderna under positionen: ramen (position_frame) och nuvarande vikt när bolaget redan ägs. Läses bara."""
+    """Raderna under positionen: ramen (position_frame) och nuvarande vikt när bolaget redan ägs. Läses bara.
+    Vikten visar innehavets värde och totalen (med kassan) — bara när innehaven är upplåsta (private_lock).
+    Låst syns ingen rad alls, så att raden inte själv avslöjar vilka bolag som ägs."""
     try:
         import allocator
         import positions
+        from portfolio import private_lock
         alloc = allocator._load()
         st.caption(f"📏 {position_frame(entry, strategy, alloc.get('peak'), alloc.get('current'))}")
+        if not private_lock.unlocked():
+            return
         t = str(entry.get("ticker") or "").strip().upper()
         if not any(r.get("ticker") == t for r in positions.all_positions()):
             return

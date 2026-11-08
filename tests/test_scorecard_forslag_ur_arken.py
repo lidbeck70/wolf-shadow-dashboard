@@ -4,7 +4,7 @@ Scorecard (batch 9): förslag ur arken som redan har svaret — inga regler änd
   Granskningen är klar   arkets egen dom (review_link._REVIEWERS) på raden för kortets strategi: PASS ger ett förslag
                          med Använd, MANUAL och FAIL står som text som säger vad som saknas
   Position (% av total)  taket, normalbandet, halveringen vid skuld och strömbrytaren ur allokeraren — bara visning,
-                         och nuvarande vikt när bolaget redan ägs
+                         och nuvarande vikt när bolaget redan ägs (bara när innehaven är upplåsta)
   Vald säljregel         en rullista ur playbookens exitregler (Insider även stoppen), utan förval
   Trigger / katalysator  nästa väntande katalysator — aldrig en försenad, utebliven eller passerad
 
@@ -27,6 +27,7 @@ import scorecard as sc  # noqa: E402
 import storage  # noqa: E402
 import strategy_rules  # noqa: E402
 import tiggre as tg  # noqa: E402
+from portfolio import private_lock  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TODAY = date(2026, 11, 8)
@@ -185,8 +186,9 @@ def page(monkeypatch):
     monkeypatch.setattr(gist_storage, "load_blob", lambda *a, **k: None)
     monkeypatch.setattr(refresh_ui, "load_refresh", lambda: {})
 
-    def run():
+    def run(unlocked: bool = False, seed: dict = None):
         from streamlit.testing.v1 import AppTest
+        stores.update(copy.deepcopy(seed or {}))
 
         def app(root):
             import sys as _s
@@ -194,6 +196,8 @@ def page(monkeypatch):
             import scorecard as s
             s.render_scorecard_page()
         at = AppTest.from_function(app, args=(ROOT,), default_timeout=90)
+        if unlocked:
+            at.session_state[private_lock.STATE] = True          # innehaven upplåsta (HOLDINGS_PASSWORD)
         at.run()
         assert not at.exception, at.exception
         return at
@@ -209,7 +213,7 @@ def _md(at) -> str:
 
 
 def test_opening_the_page_shows_the_suggestions_and_writes_nothing(page):
-    at = page()
+    at = page(unlocked=True)
     caps = _caps(at)
     assert "🤖 Ur Rick Rule: PASS — 4/5 p — Köpkandidat. Marginal och disciplin på plats. — förslag, inte inskrivet." in caps
     assert "📏 Tak 4 % av totalen · normalt 5–10 % av strategidelen · strömbrytaren NORMAL (5,0 % från topp)" in caps
@@ -226,6 +230,36 @@ def test_opening_the_page_shows_the_suggestions_and_writes_nothing(page):
         assert _same(at.session_state[name], STORES[name]), name
     held = at.session_state["holdings"]["long"]                 # registret normaliseras vid läsning, inget mer
     assert [(r["ticker"], r["shares"], r["entry_price"]) for r in held] == [("BOL.ST", 100, 200.0)]
+
+
+def _texts(at) -> str:
+    colls = (at.markdown, at.caption, at.info, at.warning, at.error, at.success)
+    return " ".join(getattr(e, "value", "") or "" for coll in colls for e in coll)
+
+
+# Samma frö som tests/test_private_holdings.py: HEMLIG.ST, 33 st à 70 kr, kassa 21 000 kr.
+HEMLIG = {"holdings": {"swing": [], "ovtlyr": [], "momentum": [], "tiggre": [], "closed": [], "cash": 21000,
+                       "long": [{"id": "q1", "ticker": "HEMLIG.ST", "strategy": "Quality", "entry_price": 70.0,
+                                 "shares": 33}]},
+          "producers": {"producers": [dict(RULE, id="a9", ticker="HEMLIG.ST", name="Hemlig")], "royalty": []},
+          "insider": {"signals": []},
+          "tiggre": {"candidates": [], "positions": [], "closed": [], "parked": []},
+          "allocator": {"values": {}, "positions": [], "peak": None, "current": None, "quarters_cash_high": 0,
+                        "updated": ""}}
+
+
+def test_a_held_ticker_shows_no_weight_or_total_while_the_holdings_are_locked(page):
+    """Låset (#275) döljer kassan och totalen — Scorecardet visar dem inte heller, och ingen rad som bara syns
+    på ägda bolag. Ramen (📏) står kvar: taken är publika regler."""
+    at = page(seed=HEMLIG)
+    caps, t = _caps(at), _texts(at)
+    assert "📏 Tak 4 % av totalen" in caps
+    assert "Äger redan" not in t and "HEMLIG.ST för" not in t
+    assert "2 310" not in t and "23 310" not in t and "21 000" not in t and " kr av " not in t
+    assert not [c for c in at.caption if "🔒" in c.value or "låst" in c.value.lower()]
+
+    at = page(unlocked=True, seed=HEMLIG)                      # upplåst: vikten syns som förut
+    assert "Äger redan: 9,9 % av totalen (2 310 kr av 23 310 kr)." in _caps(at)
 
 
 def test_anvand_ticks_the_review_box_and_the_hint_goes_away(page):
