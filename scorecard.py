@@ -620,12 +620,30 @@ def _sv(v: float, d: int = 1) -> str:
     return f"{v:,.{d}f}".replace(",", " ").replace(".", ",").replace("-", "−")
 
 
+_CMP = {"<": lambda a, b: a < b, "<=": lambda a, b: a <= b, ">": lambda a, b: a > b, ">=": lambda a, b: a >= b}
+
+
+def _edge_digits(v: float, d: int, limits) -> int:
+    """Kortets decimaler — men fler när avrundningen skulle hamna på andra sidan en gräns som domen bygger på
+    (2,96 visas inte som '3,0:1' bredvid 'under kravet 3'). limits = [(gräns, jämförelse)] som arkets egen regel."""
+    for dd in range(d, d + 4):
+        r = round(v, dd)
+        if all(_CMP[op](r, lim) == _CMP[op](v, lim) for lim, op in limits):
+            return dd
+    return d + 3
+
+
+def _sv_edge(v: float, d: int, limits) -> str:
+    return _sv(v, _edge_digits(v, d, limits))
+
+
 DURRETT_STRATEGY = "durrett"         # Poängmodellens Durrett-del (snabbpoängen) — inte ARKEN → 🧭 Durrett
 DURRETT_SHEET_STRATEGY = "confidence"  # ARKEN → 🧭 Durrett (10-stegsarket, Durrett-motorn) i kandidatraden
 ROYALTY_STRATEGY = "royalty"          # Royalty C i kandidatraden (sources_from_stores)
 VALUATION_SOURCE = {DURRETT_STRATEGY: "Poängmodellen → Durrett (snabbpoäng)",
                     DURRETT_SHEET_STRATEGY: "Durrett-arket (ARKEN → 🧭 Durrett)",
-                    "producenter": "Rick Rule", ROYALTY_STRATEGY: "Royalty C"}
+                    "producenter": "Rick Rule", ROYALTY_STRATEGY: "Royalty C",
+                    "tiggre": "Tiggre (Lobo-arket)", "sprott": "Poängmodellen → Sprott (optionalitet)"}
 
 
 def _ev_ebitda_part(ref: Optional[dict]) -> list:
@@ -656,14 +674,16 @@ def valuation_suggestion(entry: Optional[dict], strategy: str, ref: Optional[dic
         ratio = scoring.mcap_per_earnings(row.get("mcap"), row.get("profit"))
         if ratio is not None:
             ok = scoring.durrett_buy_ok(ratio)
-            parts.append(f"MCap/framtida vinst {_sv(ratio)}× ({'under' if ok else 'över'} köpregelns "
+            parts.append(f"MCap/framtida vinst {_sv_edge(ratio, 1, [(scoring.DURRETT_BUY_MAX, '<')])}× "
+                         f"({'under' if ok else 'över'} köpregelns "
                          f"{scoring.DURRETT_BUY_MAX:g}×)")
         per_oz = scoring.mcap_per_oz(row.get("mcap"), row.get("moz"))
         if per_oz is not None:
             band = ("mycket billigt" if per_oz < scoring.MCAP_PER_OZ_VERY
                     else "billigt" if per_oz < scoring.MCAP_PER_OZ_CHEAP
                     else f"över ${scoring.MCAP_PER_OZ_CHEAP:g}")
-            parts.append(f"MCap/uns ${_sv(per_oz, 0)} ({band})")
+            lim = [(scoring.MCAP_PER_OZ_VERY, "<"), (scoring.MCAP_PER_OZ_CHEAP, "<")]
+            parts.append(f"MCap/uns ${_sv_edge(per_oz, 0, lim)} ({band})")
     elif strategy == DURRETT_SHEET_STRATEGY:
         if not isinstance(metrics, dict):
             return None
@@ -671,7 +691,8 @@ def valuation_suggestion(entry: Optional[dict], strategy: str, ref: Optional[dic
         buy_max = float(dcfg.DURRETT_CONFIG["mcap_future_earnings_buy_max"])
         r = _metric(metrics, "mcap_future_earnings")
         if r is not None:
-            parts.append(f"MCap/framtida vinst {_sv(r)}× efter skatt ({'under' if r < buy_max else 'över'} "
+            parts.append(f"MCap/framtida vinst {_sv_edge(r, 1, [(buy_max, '<')])}× efter skatt "
+                         f"({'under' if r < buy_max else 'över'} "
                          f"köpregelns {buy_max:g}×)")
         ev_res = _metric(metrics, "ev_per_resource_unit")
         if ev_res is not None:
@@ -691,6 +712,12 @@ def valuation_suggestion(entry: Optional[dict], strategy: str, ref: Optional[dic
         if not isinstance(row, dict):
             return None
         parts += _royalty_parts(row, ref)
+        return " · ".join(parts) or None
+    elif strategy in ("tiggre", "sprott"):
+        row = (((entry or {}).get("rows") or {}).get(strategy))
+        if not isinstance(row, dict):
+            return None
+        parts += _tiggre_parts(row, ref) if strategy == "tiggre" else _sprott_parts(row)
         return " · ".join(parts) or None
     else:
         return None
@@ -715,7 +742,8 @@ def _rule_parts(row: dict, ref: Optional[dict]) -> list:
     r = pr.ev_nav(row.get("ev_musd"), row.get("nav_musd"))
     if r is not None:
         label = (pr.NAV_CHEAP if r < pr.EV_NAV_CHEAP else pr.NAV_FAIR if r <= pr.EV_NAV_FAIR else pr.NAV_RICH)
-        txt = f"EV/NAV {_sv(r, 2)}× ({label[:1].lower() + label[1:]})"
+        lim = [(pr.EV_NAV_CHEAP, "<"), (pr.EV_NAV_FAIR, "<=")]
+        txt = f"EV/NAV {_sv_edge(r, 2, lim)}× ({label[:1].lower() + label[1:]})"
         gap = pr.nav_price_gap(row.get("nav_price"), row.get("price"))
         if gap is not None and abs(gap) > pr.NAV_PRICE_GAP_PCT:
             txt += (f", NAV räknad på {_sv(_num(row.get('nav_price')), 0)} mot spot {_sv(_num(row.get('price')), 0)} "
@@ -726,7 +754,9 @@ def _rule_parts(row: dict, ref: Optional[dict]) -> list:
         parts.append("Lukacs: klass D — värderas inte på FCF")
     elif ev.get("mos") is not None and ev.get("fv_base") is not None:
         band = ev.get("mos_band") or ""
-        txt = (f"Lukacs: säkerhetsmarginal {_sv(ev['mos'], 1)} % mot fair value Base {_sv(ev['fv_base'], 2)}"
+        m6 = round(ev["mos"], 6)                          # mos_band jämför det avrundade till 6 decimaler
+        lim = [(lukacs.MOS_VERY_MIN, ">"), (lukacs.MOS_BUY_MIN, ">="), (lukacs.MOS_WATCH_MIN, ">=")]
+        txt = (f"Lukacs: säkerhetsmarginal {_sv_edge(m6, 1, lim)} % mot fair value Base {_sv(ev['fv_base'], 2)}"
                + (f" ({band[:1].lower() + band[1:]})" if band else ""))      # en decimal, som kortet
         obs = []
         code = str(row.get("fcf_kvalitet") or "C").upper()[:1]           # samma förval som kortets klassruta
@@ -751,21 +781,76 @@ def _royalty_parts(row: dict, ref: Optional[dict]) -> list:
     disc = pr.discount_vs_bottom(row.get("pnav_now"), row.get("pnav_bottom"))
     if disc is not None:                               # en decimal, som kortets 'Mot botten'
         side = "över" if disc >= 0 else "under"
-        parts.append(f"P/NAV {_sv(_num(row.get('pnav_now')), 2)} ({_sv(abs(disc), 1)} % {side} egen botten "
+        dd = _edge_digits(disc, 1, [(pr.DISCOUNT_MAX, "<="), (0.0, "<")])
+        parts.append(f"P/NAV {_sv(_num(row.get('pnav_now')), 2)} ({_sv(abs(disc), dd)} % {side} egen botten "
                      f"{_sv(_num(row.get('pnav_bottom')), 2)} — köpläge högst {pr.DISCOUNT_MAX:g} % över)")
     med = pr.vs_median(row.get("ev_now"), row.get("ev_median"))
     if med is not None:
-        rel = "på" if med == 0 else f"{_sv(abs(med), 1)} % {'över' if med > 0 else 'under'}"
+        rel = ("på" if med == 0 else
+               f"{_sv(abs(med), _edge_digits(med, 1, [(0.0, '<'), (0.0, '>')]))} % {'över' if med > 0 else 'under'}")
         parts.append(f"EV/EBITDA {_sv(_num(row.get('ev_now')), 2)}× ({rel} egen median "
                      f"{_sv(_num(row.get('ev_median')), 2)}×)")
     else:
         parts += _sheet_ev_ebitda(row, "ev_now", ref)
     geo = pr.geo_growth(row.get("geo_now"), row.get("geo_3y"))
     if geo is not None:
-        parts.append(f"GEO/aktie {'+' if geo >= 0 else ''}{_sv(geo, 1)} % på 3 år")
+        parts.append(f"GEO/aktie {'+' if geo >= 0 else ''}{_sv_edge(geo, 1, [(0.0, '<'), (0.0, '>')])} % på 3 år")
     if disc is not None or med is not None or geo is not None:   # kortets signal — GEO-varningen står på egen hand
         parts.append(f'signal "{pr.royalty_signal(row).label}"')
     return parts
+
+
+def _nonneg(v) -> Optional[float]:
+    x = _num(v)
+    return None if x is None or x < 0 else x
+
+
+def _tiggre_parts(row: dict, ref: Optional[dict]) -> list:
+    """Tiggre (Lobo-arket): P/NAV mot köpzonen 0,2–0,4×, uppsidan till 0,8× NAV och U/N-kvoten mot kravet ≥ 3 —
+    samma funktioner som kandidatkortet (tiggre). En öppen position räknas som positionskortet: på dagens börsvärde
+    ur sifferuppdateringen när det finns, och med slutsäljregeln (0,8–1,0× NAV) i stället för köpets mått.
+    Negativa tal är luckor (rutorna har golvet 0)."""
+    import tiggre as tg
+    parts = []
+    held = str(row.get("strategy") or "") == tg.STRATEGY
+    mc, nav = _nonneg(row.get("mcap")), _nonneg(row.get("nav"))
+    if held:
+        fresh = _nonneg((ref or {}).get("mcap_musd")) if isinstance(ref, dict) else None
+        mc = fresh or mc
+    pn = tg.p_nav(mc, nav) if mc and nav else None
+    if pn is not None and held:
+        stage = tg.nav_exit_stage(pn)
+        lim = [(tg.NAV_EXIT_LO, ">="), (tg.NAV_EXIT_HI, ">=")]
+        note = (f"≥ {tg.NAV_EXIT_HI:g}× NAV — omvärderingen gjord, sälj resten" if stage == "klar" else
+                f"{tg.NAV_EXIT_LO:g}–{tg.NAV_EXIT_HI:g}× NAV — slutsälj i etapper" if stage == "etapp" else
+                f"under {tg.NAV_EXIT_LO:g}× NAV — slutsäljregeln inte nådd")
+        parts.append(f"P/NAV {_sv_edge(pn, 2, lim)}× ({note})".replace(".", ","))
+        return parts
+    if pn is not None:
+        parts.append(f"P/NAV {_sv(pn, 2)}× (köpzon 0,2–0,4×)")
+    up = tg.upside_pct(mc, nav) if mc and nav else None
+    if up is not None:
+        parts.append(f"uppsida till {_sv(tg.NAV_TARGET, 1)}× NAV {'+' if up >= 0 else ''}{_sv(up, 0)} %")
+        un = tg.un_ratio(up, row.get("downside"))
+        if un is not None:
+            ok = un >= tg.UN_MIN
+            parts.append(f"U/N {_sv_edge(un, 1, [(tg.UN_MIN, '>=')])}:1 ({'klarar' if ok else 'under'} kravet "
+                         f"{tg.UN_MIN:g}:1)")
+    return parts
+
+
+def _sprott_parts(row: dict) -> list:
+    """Sprott: runway = kassa ÷ årsburn, i år och månader mot Sprotts hårda grind (18 månader) — samma funktioner
+    som Poängmodellens Sprott-kort (scoring)."""
+    import scoring
+    rw = scoring.runway_years(row.get("cash"), row.get("burn"))
+    if rw is None:
+        return []
+    ok = scoring.sprott_runway_ok(rw)
+    lim_m = scoring.SPROTT_RUNWAY_MIN_MONTHS
+    months = _sv_edge(rw * 12.0, 0, [(float(lim_m), ">=")])
+    return [f"runway {_sv(rw, 1)} år = {months} mån ({'klarar' if ok else 'under'} Sprotts grind {lim_m} mån"
+            f"{'' if ok else ' — avstå oavsett poäng'})"]
 
 
 def _durrett_metrics(ticker: str) -> Optional[dict]:
@@ -788,6 +873,9 @@ def _valuation_ref(entry: Optional[dict], strategy: str) -> Optional[dict]:
         key = f"scoring:{row['id']}" if isinstance(row, dict) and row.get("id") else None
     elif strategy == DURRETT_SHEET_STRATEGY:
         key = f"confidence:{str((entry or {}).get('ticker') or '').strip().upper()}"
+    elif strategy == "tiggre":                                 # kandidater och positioner: tiggre:<id>
+        row = rows_e.get("tiggre")
+        key = f"tiggre:{row['id']}" if isinstance(row, dict) and row.get("id") else None
     elif strategy in ("producenter", ROYALTY_STRATEGY):         # båda bor i arket producers, nyckel per rad-id
         row = rows_e.get(strategy)
         if not (isinstance(row, dict) and row.get("id")):

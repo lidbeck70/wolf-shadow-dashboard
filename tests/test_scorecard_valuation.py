@@ -348,3 +348,91 @@ def test_the_geo_warning_shows_even_before_bottom_and_median_are_filled():
     assert fresh.endswith('signal "Varning: GEO/aktie krymper"')
     assert scorecard.valuation_suggestion(_roy(pnav_bottom=None, ev_median=None, ev_now=None), "royalty").endswith(
         'signal "Neutral"')
+
+
+# ── Tiggre och Sprott ───────────────────────────────────────────────────────
+LOB = {"id": "c1", "ticker": "LOB", "name": "Lobo", "added": "2026-09-01", "screen": {}, "factors": {},
+       "catalysts": [], "mcap": 200.0, "nav": 650.0, "downside": -40.0}
+JR = {"id": "s1", "ticker": "JR", "name": "Junior", "commodity": "Guld", "date": "2026-09-01", "factors": {},
+      "cash": 45.0, "burn": 20.0}
+
+
+def _tg(**kw):
+    return {"rows": {"tiggre": dict(LOB, **kw)}}
+
+
+def _sp(**kw):
+    return {"rows": {"sprott": dict(JR, **kw)}}
+
+
+def test_tiggre_uses_the_lobo_sheets_numbers():
+    """Masterguidens exempel: MCap 200, NAV 650 → 0,31× NAV, +160 % till 0,8× NAV; nedsida −40 % → U/N 4,0:1."""
+    assert scorecard.valuation_suggestion(_tg(), "tiggre") == (
+        "P/NAV 0,31× (köpzon 0,2–0,4×) · uppsida till 0,8× NAV +160 % · U/N 4,0:1 (klarar kravet 3:1)")
+    assert scorecard.valuation_suggestion(_tg(downside=-80.0), "tiggre").endswith("U/N 2,0:1 (under kravet 3:1)")
+    assert scorecard.valuation_suggestion(_tg(downside=None), "tiggre") == (
+        "P/NAV 0,31× (köpzon 0,2–0,4×) · uppsida till 0,8× NAV +160 %")
+
+
+def test_tiggre_un_at_the_limit_never_rounds_across_it():
+    """U/N 2,96 visas inte som '3,0:1' bredvid 'under kravet' — en decimal till när avrundningen korsar gränsen."""
+    below = scorecard.valuation_suggestion(_tg(downside=-54.0), "tiggre")            # 160 / 54 = 2,963
+    assert below.endswith("U/N 2,96:1 (under kravet 3:1)")
+    assert scorecard.valuation_suggestion(_tg(downside=-53.3), "tiggre").endswith("U/N 3,0:1 (klarar kravet 3:1)")
+
+
+def test_a_held_tiggre_position_uses_todays_market_cap_and_the_exit_rule():
+    """Positionen räknas som positionskortet: dagens börsvärde (tiggre:<id>) och slutsäljregeln 0,8–1,0× NAV."""
+    pos = {"rows": {"tiggre": {"id": "p1", "ticker": "AU", "strategy": "Tiggre", "entry": 10.0, "nav": 300.0,
+                               "mcap": 200.0}}}
+    assert scorecard.valuation_suggestion(pos, "tiggre", {"mcap_musd": 292.0}) == (
+        "P/NAV 0,97× (0,8–1× NAV — slutsälj i etapper)")
+    assert scorecard.valuation_suggestion(pos, "tiggre", {"mcap_musd": 310.0}) == (
+        "P/NAV 1,03× (≥ 1× NAV — omvärderingen gjord, sälj resten)")
+    assert scorecard.valuation_suggestion(pos, "tiggre") == (
+        "P/NAV 0,67× (under 0,8× NAV — slutsäljregeln inte nådd)")
+    assert scorecard.valuation_suggestion(pos, "tiggre", {"mcap_musd": 239.9}) == (
+        "P/NAV 0,7997× (under 0,8× NAV — slutsäljregeln inte nådd)")              # inte '0,80×' bredvid 'under 0,8'
+
+
+def test_tiggre_shows_nothing_for_gaps_or_negatives():
+    assert scorecard.valuation_suggestion(_tg(mcap=None), "tiggre") is None
+    assert scorecard.valuation_suggestion(_tg(nav=-650.0), "tiggre") is None
+    assert scorecard.valuation_suggestion({"rows": {"tiggre": {"id": "c9"}}}, "tiggre") is None
+
+
+def test_sprott_runway_against_the_eighteen_month_gate():
+    assert scorecard.valuation_suggestion(_sp(), "sprott") == (
+        "runway 2,2 år = 27 mån (klarar Sprotts grind 18 mån)")
+    assert scorecard.valuation_suggestion(_sp(cash=10.0), "sprott") == (
+        "runway 0,5 år = 6 mån (under Sprotts grind 18 mån — avstå oavsett poäng)")
+    # 17,6 mån visas inte som '18 mån' bredvid 'under grinden'
+    assert scorecard.valuation_suggestion(_sp(cash=29.3), "sprott") == (
+        "runway 1,5 år = 17,6 mån (under Sprotts grind 18 mån — avstå oavsett poäng)")
+    assert scorecard.valuation_suggestion(_sp(cash=30.0), "sprott") == (
+        "runway 1,5 år = 18 mån (klarar Sprotts grind 18 mån)")
+    assert scorecard.valuation_suggestion(_sp(burn=0.0), "sprott") is None
+    assert scorecard.valuation_suggestion(_sp(cash=-5.0), "sprott") is None
+
+
+def test_the_edge_rule_also_guards_the_earlier_sheets():
+    """Samma kantregel i de tidigare arken: talet hamnar aldrig på andra sidan gränsen domen bygger på."""
+    assert "15,04 % över egen botten" in scorecard.valuation_suggestion(_roy(pnav_now=1.1504), "royalty")
+    assert "säkerhetsmarginal 24,96 %" in scorecard.valuation_suggestion(_rule(aktuell_kurs=7.504), "producenter")
+    assert "MCap/framtida vinst 9,97×" in scorecard.valuation_suggestion(_entry(profit=30.1, moz=None), "durrett")
+    assert "EV/NAV 0,6996× (billigt mot NAV)" in scorecard.valuation_suggestion(_rule(ev_musd=699.6), "producenter")
+
+
+def test_the_tiggre_and_sprott_cards_show_their_sheets_suggestion(page):
+    at = page()
+    at.session_state["tiggre"] = dict(copy.deepcopy(STORES["tiggre"]), candidates=[LOB])
+    at.session_state["scoring"] = {"sprott": [JR], "durrett": []}
+    at.run()
+    assert not at.exception, at.exception
+    hint = _hint(at)
+    assert "🤖 Ur Tiggre (Lobo-arket): P/NAV 0,31×" in hint
+    assert "🤖 Ur Poängmodellen → Sprott (optionalitet): runway 2,2 år = 27 mån" in hint
+    assert _same(at.session_state["scorecard"], STORES["scorecard"])
+    at.button(key="sc_useval_junior|JR").click().run()
+    card = at.session_state["scorecard"]["cards"]["junior|JR"]
+    assert card["valuation"].startswith("runway 2,2 år") and card["strategy"] == "sprott"
