@@ -377,6 +377,24 @@ def _sheet_summary(a: DurrettAnalysis) -> None:
 
 
 # ── Analys ───────────────────────────────────────────────────────────────────
+def _unit_conflict(company: CompanyInput) -> Optional[str]:
+    """Enheten för resurs/produktion går inte att räkna om till råvarans prisenhet (motorn räknar då inga mängder):
+    t.ex. kt mot USD/lb. Texten säger vilka val som passar, eller att inget val finns för prisenheten."""
+    from engines.durrett import _base as db
+    unit = str(company.get("resource_unit").value if company.has("resource_unit") else "").strip()
+    if not unit:
+        pu = str(company.get("production_unit").value if company.has("production_unit") else "").strip()
+        unit = pu if pu in db._UNIT_FACTOR else ""
+    reg = com.REGISTRY.get(company.commodity) if company.commodity else None
+    price_unit = reg.unit if reg else ""
+    base = db._PRICE_UNIT_BASE.get(price_unit, "")
+    if not unit or not base or unit not in db._UNIT_FACTOR or db._UNIT_FACTOR[unit][0] == base:
+        return None
+    fits = [k for k, (b, _) in db._UNIT_FACTOR.items() if b == base]
+    return (f"en enhet som passar råvarans pris i {price_unit} (välj {'/'.join(fits)} i stället för {unit})" if fits
+            else f"en enhet för råvarans pris i {price_unit} — arkets enhetsval ({unit}) går inte att räkna om")
+
+
 def _valuation_needs(company: CompanyInput, a: DurrettAnalysis) -> list:
     """Vad som hindrar varje värderingsmått — ur vad motorn faktiskt saknar, inte en fast lista: börsvärde eller
     växelkurs, kassa/skuld för EV, enhet, produktion/pris/kostnad, eller en framtida vinst ≤ 0. EV/NPV bara för de
@@ -391,6 +409,7 @@ def _valuation_needs(company: CompanyInput, a: DurrettAnalysis) -> list:
     def val(k):
         return (m.get(k) or {}).get("value")
     unit_missing = "resource_unit" in (a.missing_data or [])
+    conflict = _unit_conflict(company)                  # t.ex. koppar i kt mot ett pris i USD/lb
     cur = str(company.get("market_currency").value if company.has("market_currency") else "").strip().upper()
     if a.market_cap_musd is None:
         given = u("market_cap_musd") or (u("share_price") and (u("basic_shares_m") or u("shares_outstanding_m")))
@@ -399,15 +418,30 @@ def _valuation_needs(company: CompanyInput, a: DurrettAnalysis) -> list:
     else:
         mcap_need = None
     out = []
+    prod_keys = ("production_future", "production_current", "annual_production")
+    prod_used = next((_pnum(company.get(k)) for k in prod_keys if u(k)), None)   # motorns ordning
     if val("mcap_future_earnings") is None:
         fcf = val("future_fcf")
+        n_before = len(out)
         if mcap_need:
             out.append(f"MCap/framtida vinst kräver {mcap_need}")
+        elif prod_used is not None and conflict:
+            out.append(f"MCap/framtida vinst kräver {conflict}")
         elif fcf is not None and fcf <= 0:
-            out.append("MCap/framtida vinst: framtida vinst ≤ 0 — kostnaden (AISC/break-even) ligger över råvarupriset")
+            cost = _pnum(company.get("aisc")) if u("aisc") else (
+                _pnum(company.get("breakeven_price")) if u("breakeven_price") else None)
+            price = _pnum(company.get("commodity_price")) if u("commodity_price") else None
+            if prod_used == 0:
+                out.append("MCap/framtida vinst: produktionen som räknas är 0 — fyll i Produktion plan (eller "
+                           "årsproduktion ur studien)")
+            elif cost is not None and price is not None and cost >= price:
+                out.append("MCap/framtida vinst: framtida vinst ≤ 0 — kostnaden (AISC/break-even) ligger över "
+                           "råvarupriset")
+            else:
+                out.append("MCap/framtida vinst: framtida vinst ≤ 0")
         else:
             miss = []
-            if not any(u(k) for k in ("production_future", "production_current", "annual_production")):
+            if prod_used is None:
                 miss.append("produktion")
             elif unit_missing:
                 miss.append("enhet (resurs/produktion)")
@@ -418,10 +452,15 @@ def _valuation_needs(company: CompanyInput, a: DurrettAnalysis) -> list:
                 miss.append("AISC (eller break-even)" if aisc_ok else "break-even-pris")
             if miss:
                 out.append("MCap/framtida vinst kräver " + ", ".join(miss))
+        if len(out) == n_before:                        # måttet saknas men inget ovan förklarar det: säg det ändå
+            out.append("MCap/framtida vinst kan inte räknas med de här talen (se Analys → loggen)")
     ev_need = mcap_need or ("kassa eller skuld (eller enterprise value)" if a.enterprise_value_musd is None else None)
     if val("ev_per_resource_unit") is None:
-        miss = [x for x in (ev_need, "enhet (resurs/produktion)" if unit_missing else None,
-                            "resurs (mängd)" if val("resource_total") is None and not unit_missing else None) if x]
+        res_keys = ("resource_measured", "resource_indicated", "resource_inferred", "reserve_proven", "reserve_probable")
+        res_given = any(u(k) for k in res_keys)
+        unit_need = (conflict if res_given and conflict else
+                     "enhet (resurs/produktion)" if unit_missing or (res_given and not u("resource_unit")) else None)
+        miss = [x for x in (ev_need, unit_need, "resurs (mängd)" if not res_given else None) if x]
         if miss:
             out.append("EV/resurs kräver " + " och ".join(miss))
     npv_spec = ccfg.FIELD_BY_KEY.get("npv_musd")

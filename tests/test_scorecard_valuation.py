@@ -542,3 +542,21 @@ def test_the_missing_list_names_what_the_engine_really_lacks():
     cad = _company("explorer", market_cap_musd=80.0, market_currency="CAD")
     assert "MCap/framtida vinst kräver växelkurs → USD (valutan är CAD)" in _needs(cad)
     assert "EV/NPV: NPV ≤ 0" in _needs(_company("developer", market_cap_musd=61.0, npv_musd=-20.0))
+
+
+def test_the_missing_list_handles_units_zero_production_and_hidden_resource_gaps():
+    """Andra granskningen: koppar i kt mot ett pris i USD/lb räknar inga mängder (enheten är hindret, inte
+    resursen), produktion 0 är inte 'kostnaden över priset', och en saknad enhet döljer inte en saknad resurs."""
+    kt = _company("producer", market_cap_musd=3000.0, cash_musd=200.0, resource_unit="kt", production_current=120.0,
+                  resource_measured=2500.0, resource_indicated=4000.0, commodity_price=4.2, aisc=2.4)
+    kt.commodity = "copper"
+    assert _needs(kt) == ["MCap/framtida vinst kräver en enhet som passar råvarans pris i USD/lb (välj lb/Mlb i "
+                          "stället för kt)",
+                          "EV/resurs kräver en enhet som passar råvarans pris i USD/lb (välj lb/Mlb i stället för kt)"]
+    zero = _company("developer", market_cap_musd=61.0, cash_musd=5.0, production_current=0.0, breakeven_price=1400.0,
+                    commodity_price=2600.0, resource_unit="oz")
+    needs = " · ".join(_needs(zero))
+    assert "produktionen som räknas är 0" in needs and "kostnaden" not in needs
+    no_unit = _company("producer", market_cap_musd=61.0, production_current=1000.0)
+    assert ("EV/resurs kräver kassa eller skuld (eller enterprise value) och enhet (resurs/produktion) och resurs "
+            "(mängd)") in _needs(no_unit)
