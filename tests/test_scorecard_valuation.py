@@ -211,3 +211,86 @@ def test_a_shared_card_names_each_sheet_for_its_own_strategy(page):
     at.button(key=f"sc_useval_{key}").click().run()
     assert at.session_state["scorecard"]["cards"][key]["valuation"].startswith("MCap/framtida vinst")
     assert at.session_state["scorecard"]["cards"][key]["strategy"] == "confidence"
+
+
+# ── Rick Rule (producenter) och Royalty C ────────────────────────────────────
+RULE = {"id": "r1", "ticker": "AAA", "name": "Rule Co", "commodity": "Guld", "date": "2026-09-01",
+        "ev_musd": 620.0, "nav_musd": 1000.0, "nav_price": 2500.0, "price": 2600.0, "ev_ebitda": 3.0,
+        "fcf_kvalitet": "C", "framtida_antal_aktier": 100.0, "aktuell_kurs": 4.0,
+        "fv": {"Base": {"forward_fcf_musd": 120.0, "target_yield": 12.0}}}
+ROY = {"id": "y1", "ticker": "BBB", "name": "Roy Co", "level": 2, "date": "2026-09-01",
+       "pnav_now": 1.05, "pnav_bottom": 1.0, "ev_now": 12.0, "ev_median": 15.0, "geo_now": 1.1, "geo_3y": 1.0}
+
+
+def _rule(**kw):
+    return {"rows": {"producenter": dict(RULE, **kw)}}
+
+
+def _roy(**kw):
+    return {"rows": {"royalty": dict(ROY, **kw)}}
+
+
+def test_rick_rule_uses_the_sheets_ev_nav_and_lukacs():
+    """EV/NAV 0,62× billigt (under 0,7×) och Lukacs: FV Base = 120 / 12 % / 100 M = 10,00, kurs 4 → MoS 60 %."""
+    assert scorecard.valuation_suggestion(_rule(), "producenter") == (
+        "EV/NAV 0,62× (billigt mot NAV) · Lukacs: säkerhetsmarginal 60 % mot fair value Base 10,00 "
+        "(mycket attraktiv) · EV/EBITDA 3,0×")
+    assert "(rimligt mot NAV)" in scorecard.valuation_suggestion(_rule(ev_musd=900.0), "producenter")
+    assert "(dyrt mot NAV)" in scorecard.valuation_suggestion(_rule(ev_musd=1200.0), "producenter")
+    assert "säkerhetsmarginal −25 %" in scorecard.valuation_suggestion(_rule(aktuell_kurs=12.5), "producenter")
+
+
+def test_rick_rule_carries_the_sheets_warnings():
+    """NAV räknad långt från spot, och Lukacs-panelens varning om FCF-enhet/kursvaluta, följer med i förslaget."""
+    far = scorecard.valuation_suggestion(_rule(nav_price=1800.0), "producenter")
+    assert "EV/NAV 0,62× (billigt mot NAV), NAV räknad på 1 800 mot spot 2 600 (+44 %)" in far
+    nok = scorecard.valuation_suggestion(_rule(aktuell_kurs=49.53), "producenter",
+                                         {"price": 49.53, "currency": "NOK"})
+    assert "— OBS: arket varnar för FCF-enhet eller kursvaluta" in nok
+    yield_in_box = scorecard.valuation_suggestion(
+        _rule(fv={"Base": {"forward_fcf_musd": 12.0, "target_yield": 12.0}},
+              csm={"Base": {"fcf_musd": 3550.0}}), "producenter")
+    assert "OBS: arket varnar" in yield_in_box
+
+
+def test_rick_rule_shows_only_what_can_be_computed():
+    assert scorecard.valuation_suggestion(_rule(nav_musd=None, aktuell_kurs=None, ev_ebitda=None), "producenter") \
+        is None
+    assert scorecard.valuation_suggestion(_rule(nav_musd=None, aktuell_kurs=None, ev_ebitda=None), "producenter",
+                                          {"ev_ebitda": 4.2}) == "EV/EBITDA 4,2× (Börsdata)"
+    assert scorecard.valuation_suggestion(_rule(fcf_kvalitet="D", nav_musd=None, ev_ebitda=None), "producenter") == (
+        "Lukacs: klass D — värderas inte på FCF")
+    assert scorecard.valuation_suggestion(_rule(ev_musd=-50.0, nav_musd=1000.0, aktuell_kurs=None, ev_ebitda=-2.0),
+                                          "producenter") is None            # negativt = lucka, som i arket
+
+
+def test_royalty_uses_the_sheets_own_comparisons_and_signal():
+    assert scorecard.valuation_suggestion(_roy(), "royalty") == (
+        "P/NAV 1,05 (5 % över egen botten 1,00 — köpläge högst 15 % över) · EV/EBITDA 12,0× (20 % under egen "
+        "median 15,0×) · GEO/aktie +10 % på 3 år · signal \"KÖPLÄGE\"")
+    shrink = scorecard.valuation_suggestion(_roy(geo_now=0.9), "royalty")
+    assert "GEO/aktie −10 % på 3 år" in shrink and shrink.endswith('signal "Varning: GEO/aktie krymper"')
+    assert scorecard.valuation_suggestion(_roy(pnav_now=1.3), "royalty").endswith('signal "Neutral"')
+
+
+def test_royalty_shows_only_what_can_be_computed():
+    assert scorecard.valuation_suggestion({"rows": {"royalty": {"id": "y1"}}}, "royalty") is None
+    only_bd = scorecard.valuation_suggestion(_roy(pnav_now=None, ev_now=None, geo_now=None), "royalty",
+                                             {"ev_ebitda": 11.0})
+    assert only_bd == "EV/EBITDA 11,0× (Börsdata)"                       # ingen signal utan arkets jämförelser
+    assert "(på egen median 15,0×)" in scorecard.valuation_suggestion(_roy(ev_now=15.0), "royalty")
+
+
+def test_the_rule_and_royalty_cards_show_their_sheets_suggestion(page):
+    at = page({"rows": {"producers:y1": {"ev_ebitda": 11.0}}})
+    at.session_state["producers"] = {"producers": [RULE], "royalty": [ROY]}
+    at.run()
+    assert not at.exception, at.exception
+    hint = _hint(at)
+    assert "🤖 Ur Rick Rule: EV/NAV 0,62× (billigt mot NAV)" in hint
+    assert "🤖 Ur Royalty C: P/NAV 1,05" in hint and 'signal "KÖPLÄGE"' in hint
+    assert _same(at.session_state["scorecard"], STORES["scorecard"])         # att öppna skriver inget kort
+    assert _same(at.session_state["producers"], {"producers": [RULE], "royalty": [ROY]})
+    at.button(key="sc_useval_roy co|BBB").click().run()
+    card = at.session_state["scorecard"]["cards"]["roy co|BBB"]
+    assert card["valuation"].startswith("P/NAV 1,05") and card["strategy"] == "royalty"
