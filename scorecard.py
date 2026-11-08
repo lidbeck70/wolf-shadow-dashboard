@@ -548,6 +548,7 @@ def _card(data: dict, cards: dict, entry: dict, expanded: bool = False) -> None:
                              value=card.get("trigger", ""),
                              key=f"sc_trig_{entry['key']}",
                              placeholder="Vad, och när?")
+        _valuation_hint(data, cards, entry, strategy, val)
         sell = st.text_input("Vald säljregel", value=card.get("sell_rule", ""),
                              key=f"sc_sell_{entry['key']}",
                              placeholder="Vilken regel tar dig ur — bestäms nu")
@@ -612,6 +613,84 @@ def _card(data: dict, cards: dict, entry: dict, expanded: bool = False) -> None:
         _chatgpt(entry, _shown(card, entry), data)
         if rc:
             rc.fill(top, "scorecard", _shown(card, entry), entry=entry)
+
+
+def _sv(v: float, d: int = 1) -> str:
+    """Tal med svenskt decimalkomma och mellanslag som tusentalsavgränsare: 5,5 · 1 250."""
+    return f"{v:,.{d}f}".replace(",", " ").replace(".", ",")
+
+
+DURRETT_STRATEGY = "durrett"         # Durrett-arkets strateginamn i kandidatraden (sources_from_stores)
+
+
+def valuation_suggestion(entry: Optional[dict], strategy: str, ref: Optional[dict] = None) -> Optional[str]:
+    """Värderingen ur arkets egna tal — samma uträkning som arket gör, inte en ny. None när inget går att räkna.
+
+    Durrett: MCap/framtida vinst mot köpregeln (under 10×) och MCap/uns mot $100/$50 (scoring-modulens funktioner
+    och gränser), plus Börsdatas EV/EBITDA ur sifferuppdateringen (ref = raden 'scoring:<id>') när den finns.
+    Ren funktion — ingen Streamlit."""
+    if strategy != DURRETT_STRATEGY:
+        return None
+    row = (((entry or {}).get("rows") or {}).get(DURRETT_STRATEGY))
+    if not isinstance(row, dict):
+        return None
+    import scoring
+    parts = []
+    ratio = scoring.mcap_per_earnings(row.get("mcap"), row.get("profit"))
+    if ratio is not None:
+        ok = scoring.durrett_buy_ok(ratio)
+        parts.append(f"MCap/framtida vinst {_sv(ratio)}× ({'under' if ok else 'över'} köpregelns "
+                     f"{scoring.DURRETT_BUY_MAX:g}×)")
+    per_oz = scoring.mcap_per_oz(row.get("mcap"), row.get("moz"))
+    if per_oz is not None:
+        band = ("mycket billigt" if per_oz < scoring.MCAP_PER_OZ_VERY
+                else "billigt" if per_oz < scoring.MCAP_PER_OZ_CHEAP
+                else f"över ${scoring.MCAP_PER_OZ_CHEAP:g}")
+        parts.append(f"MCap/uns ${_sv(per_oz, 0)} ({band})")
+    ev_eb = _num((ref or {}).get("ev_ebitda")) if isinstance(ref, dict) else None
+    if ev_eb is not None and ev_eb > 0:
+        parts.append(f"EV/EBITDA {_sv(ev_eb)}× (Börsdata)")
+    return " · ".join(parts) or None
+
+
+def _valuation_ref(entry: Optional[dict], strategy: str) -> Optional[dict]:
+    """Sifferuppdateringens rad för kandidatens arkrad ('scoring:<id>') — None utan blob eller rad."""
+    if strategy != DURRETT_STRATEGY:
+        return None
+    row = (((entry or {}).get("rows") or {}).get(DURRETT_STRATEGY)) or {}
+    if not isinstance(row, dict) or not row.get("id"):
+        return None
+    try:
+        import refresh_ui
+        r = ((refresh_ui.load_refresh() or {}).get("rows") or {}).get(f"scoring:{row['id']}")
+        return r if isinstance(r, dict) else None
+    except Exception:
+        return None
+
+
+def _use_valuation(data: dict, cards: dict, entry: dict, strategy: str, text: str) -> None:
+    """on_click: arkets värdering in i kortets Värdering-ruta (samma mönster som _use_position)."""
+    card = cards.get(entry["key"]) if isinstance(cards.get(entry["key"]), dict) else {}
+    card["strategy"] = strategy
+    card["valuation"] = text
+    cards[entry["key"]] = card
+    st.session_state[f"sc_val_{entry['key']}"] = text
+    _save(data)
+
+
+def _valuation_hint(data: dict, cards: dict, entry: dict, strategy: str, current: str) -> None:
+    """Förslaget under Värdering: räknat ur arket, visas av sig självt — skrivs in först med 'Använd' (att öppna
+    sidan skriver ingenting). Döljs när rutan redan har exakt den texten."""
+    try:
+        text = valuation_suggestion(entry, strategy, _valuation_ref(entry, strategy))
+    except Exception:
+        return
+    if not text or (current or "").strip() == text:
+        return
+    a, b = st.columns([3, 1], vertical_alignment="center")
+    a.caption(f"🤖 Ur Durrett-arket: {text} — förslag, inte inskrivet.")
+    b.button("Använd", key=f"sc_useval_{entry['key']}", on_click=_use_valuation,
+             args=(data, cards, entry, strategy, text))
 
 
 def _use_position(data: dict, cards: dict, entry: dict, strategy: str, value: float) -> None:
