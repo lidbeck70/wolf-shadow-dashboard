@@ -19,8 +19,11 @@ kärninnehavs arbete.
 
 from __future__ import annotations
 
+import calendar
+import re
 from dataclasses import dataclass
 from datetime import date
+from html import escape
 from typing import Optional
 
 import streamlit as st
@@ -242,20 +245,26 @@ def _mechanical_gate(gate: Gate, ok: bool, gaps: list, note: str) -> None:
             f"• {gap}</div>", unsafe_allow_html=True)
 
 
-def _strategy_cap(strategy: str) -> Optional[float]:
-    """Strategins hårda positionstak ur allokeringsreglerna."""
+def _strategy_rule(strategy: str):
+    """Strategins positionsregel ur allokeringsreglerna (allocator.PositionRule), None utan regel (confidence)."""
     try:
         import allocator
     except Exception:                                    # pragma: no cover
         return None
     key = (strategy or "").strip().lower()
     # Strategins egen regel först (tiggre 4 %, sprott 1,5 % — de delar sleeve
-    # men inte tak); därefter det strängaste taket i sleeven med det namnet.
+    # men inte tak); därefter regeln med det strängaste taket i sleeven med det namnet.
     rule = allocator.rule_for_strategy(key)
     if rule is not None:
-        return rule.hard_cap
-    caps = [r.hard_cap for r in allocator.POSITION_RULES if r.sleeve == key]
-    return min(caps) if caps else None
+        return rule
+    rules = [r for r in allocator.POSITION_RULES if r.sleeve == key]
+    return min(rules, key=lambda r: r.hard_cap) if rules else None
+
+
+def _strategy_cap(strategy: str) -> Optional[float]:
+    """Strategins hårda positionstak ur allokeringsreglerna."""
+    rule = _strategy_rule(strategy)
+    return rule.hard_cap if rule is not None else None
 
 
 def gate_state(card: dict, entry: Optional[dict] = None) -> dict:
@@ -531,6 +540,7 @@ def _card(data: dict, cards: dict, entry: dict, expanded: bool = False) -> None:
             card["position_pct_strategy"] = pos_strat
             changed = True
         _rule_position(data, cards, entry, strategy, pos_total)
+        _position_lines(entry, strategy)
 
         # Sammanställningen — läses, matas inte in.
         st_ = control_state(entry, pos_total, strategy)
@@ -549,9 +559,12 @@ def _card(data: dict, cards: dict, entry: dict, expanded: bool = False) -> None:
                              key=f"sc_trig_{entry['key']}",
                              placeholder="Vad, och när?")
         _valuation_hint(data, cards, entry, strategy, val)
-        sell = st.text_input("Vald säljregel", value=card.get("sell_rule", ""),
+        _trigger_hint(data, cards, entry, strategy, trig)
+        w1, w2 = st.columns([3, 2], vertical_alignment="bottom")
+        sell = w1.text_input("Vald säljregel", value=card.get("sell_rule", ""),
                              key=f"sc_sell_{entry['key']}",
                              placeholder="Vilken regel tar dig ur — bestäms nu")
+        _sell_rule_pick(w2, data, cards, entry, strategy)
         if (val != card.get("valuation", "") or trig != card.get("trigger", "")
                 or sell != card.get("sell_rule", "")):
             card["valuation"], card["trigger"], card["sell_rule"] = val, trig, sell
@@ -577,6 +590,8 @@ def _card(data: dict, cards: dict, entry: dict, expanded: bool = False) -> None:
             if v != bool(card.get(g.key)):
                 card[g.key] = v
                 changed = True
+            if g.key == "granskning_klar":
+                _review_hint(data, cards, entry, strategy, v)
             if g.key == "position_saljregel":
                 for gap in state["position_gaps"]:
                     st.markdown(
@@ -911,14 +926,20 @@ def _valuation_ref(entry: Optional[dict], strategy: str) -> Optional[dict]:
         return None
 
 
-def _use_valuation(data: dict, cards: dict, entry: dict, strategy: str, text: str) -> None:
-    """on_click: arkets värdering in i kortets Värdering-ruta (samma mönster som _use_position)."""
+def _use_card(data: dict, cards: dict, entry: dict, strategy: str, field: str, value, widget_key: str) -> None:
+    """on_click: ett förslag in i kortets fält och i widgetens state — kortet skapas först här (ett orört kort skrivs
+    aldrig). Strategin följer med: förslaget gällde den. 💾 Spara sköter persistensen som vanligt."""
     card = cards.get(entry["key"]) if isinstance(cards.get(entry["key"]), dict) else {}
     card["strategy"] = strategy
-    card["valuation"] = text
+    card[field] = value
     cards[entry["key"]] = card
-    st.session_state[f"sc_val_{entry['key']}"] = text
+    st.session_state[widget_key] = value
     _save(data)
+
+
+def _use_valuation(data: dict, cards: dict, entry: dict, strategy: str, text: str) -> None:
+    """on_click: arkets värdering in i kortets Värdering-ruta (samma mönster som _use_position)."""
+    _use_card(data, cards, entry, strategy, "valuation", text, f"sc_val_{entry['key']}")
 
 
 def _valuation_hint(data: dict, cards: dict, entry: dict, strategy: str, current: str) -> None:
@@ -942,12 +963,7 @@ def _valuation_hint(data: dict, cards: dict, entry: dict, strategy: str, current
 
 def _use_position(data: dict, cards: dict, entry: dict, strategy: str, value: float) -> None:
     """on_click: Rick Rule-kortets tänkta position in i scorecardet (samma tal, en gång)."""
-    card = cards.get(entry["key"]) if isinstance(cards.get(entry["key"]), dict) else {}
-    card["strategy"] = strategy
-    card["position_pct_total"] = value
-    cards[entry["key"]] = card
-    st.session_state[f"sc_post_{entry['key']}"] = value
-    _save(data)
+    _use_card(data, cards, entry, strategy, "position_pct_total", value, f"sc_post_{entry['key']}")
 
 
 RULE_STRATEGY = "producenter"        # Rick Rule-arkets strateginamn i kandidatraden (sources_from_stores)
@@ -967,6 +983,245 @@ def _rule_position(data: dict, cards: dict, entry: dict, strategy: str, pos_tota
     a.caption(f"Rick Rule-kortet: tänkt position {rule:g} % av total — förslag, inte inskrivet.")
     b.button("Använd", key=f"sc_userule_{entry['key']}", on_click=_use_position,
              args=(data, cards, entry, strategy, rule))
+
+
+# ── Förslag och visning ur arken som redan har svaret (batch 9) ──────────────
+# Scorecardets strateginamn → granskningen (review_link._REVIEWERS) och playbooken (strategy_rules.PLAYBOOKS); övriga
+# heter lika. confidence (ARKEN → 🧭 Durrett) har ingen granskare i review_link — Poängmodellens Durrett är ett annat
+# ark — men Durretts playbook.
+REVIEW_KEY = {RULE_STRATEGY: "rule"}
+PLAYBOOK_KEY = {**REVIEW_KEY, DURRETT_SHEET_STRATEGY: "durrett"}
+SHEET_LABEL = {**VALUATION_SOURCE, "insider": "Insiderbevakaren"}
+
+
+def _g(v: float) -> str:
+    """Tal utan onödiga decimaler, med decimalkomma: 4 · 1,5 · 12,5."""
+    return f"{v:g}".replace(".", ",").replace("-", "−")
+
+
+def review_verdict(entry: Optional[dict], strategy: str) -> Optional[tuple]:
+    """(ark, status, notering) ur arkets egen dom (review_link._REVIEWERS) på raden för kortets strategi — samma
+    PASS/MANUAL/FAIL som Copiloten och Thor läser. None när strategin saknar granskare eller raden saknas."""
+    import review_link
+    key = REVIEW_KEY.get(strategy, strategy)
+    fn = review_link._REVIEWERS.get(key)
+    row = ((entry or {}).get("rows") or {}).get(strategy)
+    if fn is None or not isinstance(row, dict):
+        return None
+    status, note = fn(row)
+    return review_link.sheet_name(key), status, note
+
+
+def _review_hint(data: dict, cards: dict, entry: dict, strategy: str, checked: bool) -> None:
+    """Under 'Granskningen är klar': arkets dom. PASS ger ett förslag med Använd (bara när rutan inte är kryssad);
+    MANUAL och FAIL står som text som säger vad som saknas — de kryssar ingenting."""
+    try:
+        verdict = review_verdict(entry, strategy)
+    except Exception:
+        return
+    if verdict is None:
+        return
+    sheet, status, note = verdict
+    if status == "PASS":
+        if checked:
+            return
+        a, b = st.columns([3, 1], vertical_alignment="center")
+        shown = f"🤖 Ur {sheet}: PASS — {note}".replace("$", "\\$")
+        a.caption(f"{shown} — förslag, inte inskrivet.")
+        b.button("Använd", key=f"sc_usegr_{entry['key']}", on_click=_use_card,
+                 args=(data, cards, entry, strategy, "granskning_klar", True,
+                       f"sc_g_{entry['key']}_granskning_klar"))
+        return
+    color = RED if status == "FAIL" else AMBER
+    text = escape(f"🤖 Ur {sheet}: {status} — {note}").replace("$", "&#36;")
+    st.markdown(f"<div style='color:{color};font-size:0.78rem;padding-left:22px;'>{text}</div>",
+                unsafe_allow_html=True)
+
+
+def position_frame(entry: Optional[dict], strategy: str, peak=None, current=None) -> str:
+    """Raden under 'Position (% av total)': strategins tak och normalband ur allokeraren, halveringen vid skuld
+    (deleveraging_cap, samma som grinden) och strömbrytarens läge (allocator.breaker_state på allokerarens topp och
+    nuvarande). Bara visning — taket är inget storleksförslag. Ren funktion."""
+    import allocator
+    rule = _strategy_rule(strategy)
+    if rule is None:
+        parts = ["Inget tak i allokeraren"]
+    else:
+        parts = [f"Tak {_g(rule.hard_cap)} % av totalen",
+                 f"normalt {_g(rule.normal_lo)}–{_g(rule.normal_hi)} % av strategidelen"]
+        half = deleveraging_cap(entry, {"strategy": strategy})
+        if half is not None:
+            nd = _num(source_row(entry, strategy).get("nd_ebitda"))
+            parts.append(f"nettoskulden {_g(nd)}× EBITDA halverar taket till {_g(half)} %")
+    dd = allocator.drawdown_pct(peak, current)
+    label, _color, action = allocator.breaker_state(dd)
+    if dd is None:
+        parts.append("strömbrytaren okänd — fyll i topp och nuvarande i Allokeringen")
+    elif label == allocator.BREAKER_LEVELS[0][2]:
+        parts.append(f"strömbrytaren {label} ({_sv(dd)} % från topp)")
+    else:
+        parts.append(f"strömbrytaren {label} ({_sv(dd)} % från topp): {action}")
+    return " · ".join(parts)
+
+
+def held_weight(ticker: str, rows: list, total) -> Optional[str]:
+    """'Äger redan …': registrets öppna positioner i bolaget (allocator.derived_positions — positions.valuation, antal
+    × kurs i SEK) mot allokerarens total (allocator._cap_total). None när bolaget inte ägs. Bara visning."""
+    t = str(ticker or "").strip().upper()
+    mine = [r for r in rows or [] if str(r.get("ticker") or "").strip().upper() == t]
+    if not t or not mine:
+        return None
+    vals = [_num(r.get("value")) for r in mine]
+    if any(v is None for v in vals):
+        return f"Äger redan {t} — antal eller kurs saknas i Positioner, vikten går inte att räkna."
+    value, tot = sum(vals), _num(total)
+    if not tot or tot <= 0:
+        return f"Äger redan {t} för {_sv(value, 0)} kr — totalen saknas i Allokeringen."
+    rough = any(str(r.get("_currency") or "SEK").upper() != "SEK" for r in mine)
+    return (f"Äger redan: {_sv(value / tot * 100)} % av totalen ({_sv(value, 0)} kr av {_sv(tot, 0)} kr"
+            + (", grovt omräknat till SEK" if rough else "") + ").")
+
+
+def _position_lines(entry: dict, strategy: str) -> None:
+    """Raderna under positionen: ramen (position_frame) och nuvarande vikt när bolaget redan ägs. Läses bara.
+    Vikten visar innehavets värde och totalen (med kassan) — bara när innehaven är upplåsta (private_lock).
+    Låst syns ingen rad alls, så att raden inte själv avslöjar vilka bolag som ägs."""
+    try:
+        import allocator
+        import positions
+        from portfolio import private_lock
+        alloc = allocator._load()
+        st.caption(f"📏 {position_frame(entry, strategy, alloc.get('peak'), alloc.get('current'))}")
+        if not private_lock.unlocked():
+            return
+        t = str(entry.get("ticker") or "").strip().upper()
+        if not any(r.get("ticker") == t for r in positions.all_positions()):
+            return
+        rows = allocator.derived_positions(allocator._fresh_rows())
+        line = held_weight(t, rows, allocator._cap_total(alloc.get("values") or {}, rows))
+        if line:
+            st.caption(line)
+    except Exception:
+        return
+
+
+def sell_rule_options(entry: Optional[dict], strategy: str) -> list:
+    """Säljreglerna ur strategins playbook (strategy_rules.PLAYBOOKS[pb].exit), i playbookens ordning. För Insider
+    läggs stoppen till (insider.stop_price: klustersnittet × STOP_FRAC). Tom lista utan playbook."""
+    import strategy_rules
+    pb = strategy_rules.PLAYBOOKS.get(PLAYBOOK_KEY.get(strategy, strategy))
+    out = [r.text for r in (pb.exit if pb else ())]
+    row = ((entry or {}).get("rows") or {}).get(strategy)
+    if strategy == "insider" and isinstance(row, dict):
+        import insider as ins
+        stop = ins.stop_price(row)
+        if stop is not None and stop > 0:
+            out.append(f"Stopp {_sv(stop, 2)} (klustersnittet {_sv(_num(row.get('cluster_avg')), 2)} × "
+                       f"{_sv(ins.STOP_FRAC, 2)})")
+    return out
+
+
+def _pick_sell_rule(data: dict, cards: dict, entry: dict, strategy: str) -> None:
+    """on_change: den valda regeln kopieras in i 'Vald säljregel'; listan står sedan tom igen (inget förval)."""
+    pick = f"sc_sellpick_{entry['key']}"
+    text = st.session_state.get(pick)
+    if text:
+        _use_card(data, cards, entry, strategy, "sell_rule", text, f"sc_sell_{entry['key']}")
+    st.session_state[pick] = None
+
+
+def _sell_rule_pick(col, data: dict, cards: dict, entry: dict, strategy: str) -> None:
+    try:
+        options = sell_rule_options(entry, strategy)
+    except Exception:
+        return
+    if not options:
+        return
+    col.selectbox("Ur playbooken", options, index=None, placeholder="Välj — texten kopieras",
+                  key=f"sc_sellpick_{entry['key']}", on_change=_pick_sell_rule,
+                  args=(data, cards, entry, strategy))
+
+
+def _period_end(text) -> Optional[date]:
+    """Sista dagen i perioden: ÅÅÅÅ-MM-DD, ÅÅÅÅ-MM, ÅÅÅÅ-Qn/Qn ÅÅÅÅ, ÅÅÅÅ-Hn eller ÅÅÅÅ. None när det inte går att
+    läsa — en katalysator utan när är ingen trigger."""
+    s = str(text or "").strip()
+    try:
+        m = re.match(r"^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?$", s)
+        if m:
+            y, mo = int(m.group(1)), int(m.group(2))
+            if m.group(3):
+                return date(y, mo, int(m.group(3)))
+            return date(y, mo, calendar.monthrange(y, mo)[1])
+        m = (re.match(r"^(\d{4})\s*-?\s*([QqHh])([1-4])$", s)
+             or re.match(r"^([QqHh])([1-4])\s*-?\s*(\d{4})$", s))
+        if m:
+            g = m.groups()
+            y, kind, n = (g[0], g[1], g[2]) if g[0].isdigit() else (g[2], g[0], g[1])
+            months = 3 if kind.upper() == "Q" else 6
+            if kind.upper() == "H" and int(n) > 2:
+                return None
+            mo = int(n) * months
+            return date(int(y), mo, calendar.monthrange(int(y), mo)[1])
+        if re.match(r"^\d{4}$", s):
+            return date(int(s), 12, 31)
+    except ValueError:
+        return None
+    return None
+
+
+def next_catalyst(entry: Optional[dict], strategy: str, today: Optional[date] = None) -> Optional[tuple]:
+    """(källa, text) för nästa väntande katalysator på raden för kortets strategi: Tiggre-radens kalender (status
+    Väntar), Durrett-arkets katalysatorer (engines.durrett.thesis.catalysts) och DS-finansieringskatalysatorn
+    (fin_catalyst_text/fin_catalyst_date). Försenade, uteblivna, levererade och passerade föreslås aldrig, och inte
+    heller en utan datum. Ren funktion."""
+    day = today or date.today()
+    row = ((entry or {}).get("rows") or {}).get(strategy)
+    if not isinstance(row, dict):
+        return None
+    found = []                                          # (periodens slut, ordning, källa, text)
+
+    def _add(name, when, source):
+        name, when = str(name or "").strip(), str(when or "").strip()
+        end = _period_end(when)
+        if name and end is not None and end >= day:
+            found.append((end, len(found), source, f"{name} ({when})"))
+
+    if strategy == "tiggre":
+        import tiggre as tg
+        done = (tg.CAT_DELIVERED, tg.CAT_LATE_1, tg.CAT_LATE_2, tg.CAT_MISSED)
+        for c in row.get("catalysts") or []:
+            if isinstance(c, dict) and c.get("status") not in done:
+                _add(c.get("name"), c.get("date"), SHEET_LABEL["tiggre"])
+    elif strategy == DURRETT_SHEET_STRATEGY:
+        from types import SimpleNamespace
+        from engines.durrett import thesis
+        cats = row.get("catalysts") if isinstance(row.get("catalysts"), list) else []
+        for c in thesis.catalysts(SimpleNamespace(catalysts=cats)):
+            _add(c.name, c.expected, SHEET_LABEL[DURRETT_SHEET_STRATEGY])
+    _add(row.get("fin_catalyst_text"), row.get("fin_catalyst_date"),
+         f"{SHEET_LABEL.get(strategy, strategy)} · DS-finansiering")
+    if not found:
+        return None
+    best = min(found)
+    return best[2], best[3]
+
+
+def _trigger_hint(data: dict, cards: dict, entry: dict, strategy: str, current: str) -> None:
+    """Förslaget under Trigger / katalysator: nästa väntande katalysator ur arket — skrivs in först med 'Använd'.
+    Döljs när rutan redan har exakt den texten."""
+    try:
+        hit = next_catalyst(entry, strategy)
+    except Exception:
+        return
+    if not hit or (current or "").strip() == hit[1]:
+        return
+    source, text = hit
+    a, b = st.columns([3, 1], vertical_alignment="center")
+    shown = f"🤖 Ur {source}: {text}".replace("$", "\\$")
+    a.caption(f"{shown} — nästa väntande katalysator, förslag, inte inskrivet.")
+    b.button("Använd", key=f"sc_usetrig_{entry['key']}", on_click=_use_card,
+             args=(data, cards, entry, strategy, "trigger", text, f"sc_trig_{entry['key']}"))
 
 
 def _chatgpt(entry: dict, card: dict, data: Optional[dict] = None) -> None:

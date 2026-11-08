@@ -99,3 +99,57 @@ def test_scorecard_tab_and_thors_arken_tab_agree(monkeypatch):
     assert {m.label: m.value for m in at.metric}["Klara för köp"] == "1"
     text = " ".join(m.value for m in at.markdown)
     assert "KLAR FÖR KÖP" in text and "Scorecard: READY · producenter" in text and "DS är inte bedömd" not in text
+
+
+# ── Kortet som fliken visar det (batch 9) ────────────────────────────────────
+# Ett kort sparat via kryssen utan att strategin rörts har ingen "strategy". Fliken förväljer kandidatens första
+# strategi (scorecard._shown) och räknar grinden på det; Thor räknade på det råa kortet och fick andra krav (DS).
+INS_KEY = "abc|ABC.ST"
+NO_STRATEGY = {**{g.key: True for g in sc.GATES}, "valuation": "v", "trigger": "t", "sell_rule": "s"}
+
+
+def _ins_stores():
+    return {"insider": {"signals": [{"id": "x", "ticker": "ABC.ST", "name": "Abc"}]},
+            "scorecard": {"cards": {INS_KEY: dict(NO_STRATEGY)}}}
+
+
+def test_thor_judges_the_card_as_the_tab_shows_it():
+    stores = _ins_stores()
+    entry = sc.entries_for(["ABC.ST"], stores)[INS_KEY]
+    assert sc.gate_state(sc._shown(NO_STRATEGY, entry), entry)["ready"]          # fliken: KLAR FÖR KÖP
+    assert not sc.gate_state(NO_STRATEGY, entry)["ready"]                         # det råa kortet: DS-luckan
+    sheets = td.sheets_for("ABC.ST", stores)
+    check = dom._scorecard_check("insider", sheets, "ABC.ST", None)
+    assert check.status == dom.PASS and check.note == "KLAR FÖR KÖP · insider"
+    assert stores["scorecard"]["cards"][INS_KEY] == NO_STRATEGY                   # Thor läser bara
+    seen = []
+    dom._scorecard_check("insider", sheets, "ABC.ST", lambda card, e: seen.append(card) or {"ready": True})
+    assert seen == [{**NO_STRATEGY, "strategy": "insider"}]                       # injicerad grind får samma kort
+
+
+def _ins_script():
+    import streamlit as st
+    import scorecard
+    from thor import arken as a
+    from thor import dossier as d
+    from thor import ui as t
+    scorecard.render_scorecard_page()
+    stores = {k: st.session_state.get(k) for k in ("insider", "scorecard")}
+    a.render(st, {}, d.identify("ABC.ST"), d.sheets_for("ABC.ST", stores), [], t.SHEET_LINK, t._jump)
+
+
+def test_a_card_without_strategy_is_ready_in_both_the_tab_and_thor(monkeypatch):
+    import storage
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+    monkeypatch.setattr(storage, "session_load",
+                        lambda name, default=None, legacy_file=None: st.session_state.setdefault(name, default))
+    at = AppTest.from_function(_ins_script, default_timeout=120)
+    for k, v in _ins_stores().items():
+        at.session_state[k] = v
+    at.run()
+    assert not at.exception, at.exception
+    assert {m.label: m.value for m in at.metric}["Klara för köp"] == "1"
+    text = " ".join(m.value for m in at.markdown)
+    assert "Scorecard: READY · insider" in text and "NO TRADE" not in text and "DS är inte bedömd" not in text
+    assert at.session_state["scorecard"]["cards"][INS_KEY] == NO_STRATEGY

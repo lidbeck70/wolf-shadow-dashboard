@@ -243,9 +243,10 @@ def _engines(st, ident: Ticker, sheets: dict, note) -> None:
 
 
 def _scorecard(st, ident: Ticker, sheets: dict) -> None:
-    from scorecard import GATE_BY_KEY, gate_state
+    from scorecard import GATE_BY_KEY, _shown, gate_state
     entries = sheets.get("scorecard_entries") or {}
-    for k, card in (sheets.get("scorecard") or {}).items():
+    for k, raw in (sheets.get("scorecard") or {}).items():
+        card = _shown(raw, entries.get(k))               # kortet som fliken visar det (strategin förvald)
         g = gate_state(card, entries.get(k))             # arkets riktiga rad — samma grind som 🎯 Scorecard-fliken
         word = "READY" if g.get("ready") else "NO TRADE"
         st.markdown(cards.chip(f"Scorecard: {word} · {card.get('strategy') or ''}".strip(" ·"), GREEN if g.get("ready") else AMBER,
