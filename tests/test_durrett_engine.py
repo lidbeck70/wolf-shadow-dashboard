@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pytest
 
 import durrett_cases as dcs
+import form_keys as fk
 from confidence.data.models import CompanyInput
 from confidence.data.provenance import dp
 from engines.contract import validate_result
@@ -400,7 +401,7 @@ def test_durrett_tab_renders_all_subtabs_without_network(monkeypatch):
             assert "Properties" in t2 and any(m.label == "DURRETT SCORE" for m in at.metric)
         if sub == "Arket":
             # arket: skriv in ett tal, tomt fält lämnas okänt, källa/datum följer med
-            at.text_input(key="ds_GPR_aisc").set_value("1500").run()
+            fk.sheet_box(at.text_input, "GPR", "aisc").set_value("1500").run()
             at.text_input(key="ds_src_GPR").set_value("MD&A Q2 2026").run()
             at.button(key="FormSubmitter:durrett_sheet_GPR-Uppdatera arket").click().run()
             assert not at.exception, at.exception
@@ -679,10 +680,10 @@ def test_the_manual_label_survives_the_next_save_of_the_same_form(monkeypatch):
         p = cs.get(at.session_state["confidence"], t).get(k)
         return p.value, p.source
 
-    at.text_input(key=f"cf_{t}_cash_musd_v").set_value("262")
+    fk.box(at.text_input, f"cf_{t}_", "cash_musd").set_value("262")
     _submit(at, form)
     assert stored("cash_musd") == (262.0, f"Manuell (ersätter {bd})")
-    at.text_input(key=f"cf_{t}_debt_musd_v").set_value("12.4")             # nästa spar: bara skulden ändras
+    fk.box(at.text_input, f"cf_{t}_", "debt_musd").set_value("12.4")             # nästa spar: bara skulden ändras
     _submit(at, form)
     assert stored("cash_musd") == (262.0, f"Manuell (ersätter {bd})")
     assert stored("debt_musd") == (12.4, f"Manuell (ersätter {bd})")
@@ -703,7 +704,7 @@ def test_big_numbers_are_shown_whole_and_keep_their_source_on_save(monkeypatch):
     c.set("resource_indicated", dp(2345678.0, kind="ACTUAL", source="PEA 2025 (Ausenco)"))
     at = _conf_form_app(monkeypatch, c)
     pillar = ccfg_pillar("resource_indicated")
-    assert at.text_input(key="cf_BIG_resource_indicated_v").value == "2345678"
+    assert fk.box(at.text_input, "cf_BIG_", "resource_indicated").value == "2345678"
     for _ in range(2):
         _submit(at, f"conf_form_BIG_{pillar}")
         p = cs.get(at.session_state["confidence"], "BIG").get("resource_indicated")
@@ -734,3 +735,103 @@ def test_yahoo_london_prices_in_pence_become_pounds():
         c.set(fkey, point)
     ss = dilution.share_structure(Ctx(c))
     assert ss["fd_mcap_usd"] == pytest.approx(ss["mcap_usd"], rel=0.01)
+
+
+def _dkk_row(ticker="LUG.CO"):
+    bd = "Börsdata (sifferuppdatering 2026-11-06)"
+    c = CompanyInput(ticker=ticker, name="Test Copper A/S", commodity="copper", stage="producer")
+    for k, v in (("market_cap_musd", 410.2), ("share_price", 61.5), ("basic_shares_m", 45.8), ("cash_musd", 38.4),
+                 ("debt_musd", 12.1)):
+        c.set(k, dp(v, kind="ACTUAL", source=bd, source_type="secondary", pub_date="2026-11-06"))
+    c.set("market_currency", dp("DKK", kind="ACTUAL", source=bd, source_type="secondary", pub_date="2026-11-06"))
+    return c, bd
+
+
+def test_a_value_used_elsewhere_is_not_written_back_by_the_form(monkeypatch):
+    """Granskningen (runda 3) och webbläsartest: en nycklad ruta behåller sin text även när det sparade byts (Använd,
+    import). Nästa Uppdatera skrev då tillbaka det gamla talet. Nu byts rutans nyckel med det sparade."""
+    from confidence import store as cs
+    c, bd = _dkk_row()
+    at = _conf_form_app(monkeypatch, c)
+    t, form = "LUG.CO", "conf_form_LUG.CO_balance_sheet"
+    d = at.session_state["confidence"]
+    comp = cs.get(d, t)
+    comp.set("cash_musd", dp(55.0, kind="ACTUAL", source="Börsdata (sifferuppdatering 2026-11-08)"))   # "Använd"
+    cs.put(d, comp)
+    at.session_state["confidence"] = d
+    at.run()
+    assert fk.box(at.text_input, f"cf_{t}_", "cash_musd").value == "55"
+    _submit(at, form)                                                     # ingenting ändrat i formuläret
+    p = cs.get(at.session_state["confidence"], t).get("cash_musd")
+    assert (p.value, p.source) == (55.0, "Börsdata (sifferuppdatering 2026-11-08)")
+
+
+def test_clearing_then_retyping_does_not_keep_the_deleted_borsdata_source(monkeypatch):
+    """Granskningen (runda 3): tömde man Skuld och skrev ett nytt tal sparades det under den borttagna punktens
+    Börsdata-källa — och valutaupplysningen tog det för Börsdatas USD."""
+    from confidence import store as cs
+    from engines.durrett import ui as dui
+    c, bd = _dkk_row()
+    at = _conf_form_app(monkeypatch, c)
+    t, form = "LUG.CO", "conf_form_LUG.CO_balance_sheet"
+    fk.box(at.text_input, f"cf_{t}_", "debt_musd").set_value("")
+    _submit(at, form)
+    assert cs.get(at.session_state["confidence"], t).get("debt_musd") is None
+    assert fk.box(at.text_input, f"cf_{t}_", "debt_musd", part="s").value == ""     # Källa ritas om tom
+    fk.box(at.text_input, f"cf_{t}_", "debt_musd").set_value("15")
+    _submit(at, form)
+    p = cs.get(at.session_state["confidence"], t).get("debt_musd")
+    assert p.value == 15.0 and not str(p.source).startswith("Börsdata")
+    assert "Skuld" in dui.musd_currency_note(cs.get(at.session_state["confidence"], t))
+
+
+def test_the_owner_can_write_the_original_source_back(monkeypatch):
+    """Granskningen (runda 3): att skriva tillbaka den ursprungliga källan i Källa ignorerades — Manuell-märket
+    gick inte att ta bort."""
+    from confidence import store as cs
+    c, bd = _dkk_row()
+    c.set("cash_musd", dp(262.0, kind="ACTUAL", source=f"Manuell (ersätter {bd})"))
+    at = _conf_form_app(monkeypatch, c)
+    t, form = "LUG.CO", "conf_form_LUG.CO_balance_sheet"
+    assert fk.box(at.text_input, f"cf_{t}_", "cash_musd", part="s").value == f"Manuell (ersätter {bd})"
+    fk.box(at.text_input, f"cf_{t}_", "cash_musd", part="s").set_value(bd)
+    fk.box(at.text_input, f"cf_{t}_", "cash_musd").set_value("38.4")
+    _submit(at, form)
+    p = cs.get(at.session_state["confidence"], t).get("cash_musd")
+    assert (p.value, p.source) == (38.4, bd)
+
+
+def test_the_nightly_yahoo_price_for_london_rows_is_in_pounds(monkeypatch):
+    """Granskningen (runda 3): nattjobbets Yahoo-reserv gav London-kursen i pence utan valuta, och Använd lade den
+    bredvid GBP — FD-börsvärdet 100× för högt. Bara Durrett/Asymmetry-rader räknas om; registrets rader rörs inte."""
+    import sheets_refresh as sr
+    from engines.durrett import refresh as dr
+    monkeypatch.setattr(sr, "_yf_close", lambda t, quiet=False, with_currency=False:
+                        (51.6, "2026-11-07", "GBp") if with_currency else (51.6, "2026-11-07"))
+    s = sr._confidence_yf_price("PAF.L")
+    assert s["price"] == pytest.approx(0.516) and s["currency"] == "GBP" and s["fx_to_usd"] == sr.FX_TO_USD["GBP"]
+    monkeypatch.setattr(sr, "_yf_close", lambda t, quiet=False, with_currency=False:
+                        (12.3, "2026-11-07", "CAD") if with_currency else (12.3, "2026-11-07"))
+    assert sr._confidence_yf_price("ABC.TO") == {"price": 12.3, "asof": "2026-11-07"}      # som förr
+    c = dcs.gold_producer()
+    c.ticker = "PAF.L"
+    c.set("market_currency", dp("GBP", kind="ACTUAL", source="test"))
+    row = {"price": 0.516, "asof": "2026-11-07", "currency": "GBP", "fx_to_usd": 1.27, "source": "yfinance"}
+    by = {k: p for k, p, _ in dr.proposals({"generated": "2026-11-08", "rows": {"confidence:PAF.L": row}}, c)}
+    assert by["share_price"].value == pytest.approx(0.516) and by["share_price"].unit == "GBP/aktie"
+
+
+def test_a_sub_penny_price_keeps_its_digits_and_is_not_proposed_again():
+    """Granskningen (runda 3): 0,675 pence = 0,00675 GBP avrundades till 4 decimaler (0,0068) och föreslogs igen
+    efter Använd."""
+    from engines.durrett import refresh as dr
+    c = dcs.gold_producer()
+    c.ticker = "TINY.L"
+    row = {"price": 0.00675, "asof": "2026-11-07", "currency": "GBP", "fx_to_usd": 1.27, "source_label": "Yahoo"}
+    blob = {"generated": "2026-11-08", "rows": {"confidence:TINY.L": row}}
+    props = dr.proposals(blob, c)
+    by = {k: p for k, p, _ in props}
+    assert by["share_price"].value == 0.00675
+    for k, p, _ in props:
+        c.set(k, p)
+    assert "share_price" not in {k for k, _p, _c in dr.proposals(blob, c)}

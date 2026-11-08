@@ -208,7 +208,8 @@ def _rows(data: dict) -> None:
 def _sheet_widget(company: CompanyInput, key: str, label: str, wkey: str):
     spec = ccfg.FIELD_BY_KEY[key]
     p = company.get(key)
-    cur = "" if p is None or p.missing else (str(p.value) if not isinstance(p.value, (int, float)) else f"{p.value:g}")
+    cur = "" if p is None or p.missing else cui._fmt_edit(p.value)    # helt tal: arket sparar inte tillbaka 6 siffror
+    wkey = f"{wkey}_{cui.stored_tag(p)}"            # ny ruta när det sparade byts (Använd/import) — se stored_tag
     if spec.kind == "choice":
         opts = ["—"] + list(spec.choices)
         return st.selectbox(label, opts, index=opts.index(cur) if cur in opts else 0, key=wkey, help=spec.hint or None)

@@ -295,11 +295,11 @@ def test_durrett_all_fields_toggle_shows_only_missing_buy_critical_fields(page):
     cs.put(data, company)
     state = {"confidence": data, "durrett_row_sub_GPR": "Mer"}
     at = page("engines.durrett.ui", "render_durrett_page", {}, state)
-    every = {t.key for t in at.text_input if str(t.key).startswith("cf_GPR_") and t.key.endswith("_v")}
+    import form_keys as fk
+    every = fk.fields(at.text_input, "cf_GPR_")
     at.toggle(key="conf_only_GPR").set_value(True).run()
     assert not at.exception, at.exception
-    shown = {t.key[len("cf_GPR_"):-2] for t in at.text_input if str(t.key).startswith("cf_GPR_") and t.key.endswith("_v")}
-    shown |= {s.key[len("cf_GPR_"):-2] for s in at.selectbox if str(s.key).startswith("cf_GPR_") and s.key.endswith("_v")}
+    shown = fk.fields(at.text_input, "cf_GPR_") | fk.fields(at.selectbox, "cf_GPR_")
     want = {it.path.split(".", 1)[1] for it in mis.missing_for("confidence", company) + mis.missing_for("asymmetry", company)
             if it.path.startswith("fields.")}
     assert want and shown == want and len(shown) < len(every)

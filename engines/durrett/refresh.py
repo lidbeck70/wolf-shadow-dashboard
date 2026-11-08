@@ -65,6 +65,9 @@ def proposals(blob: Optional[dict], company: CompanyInput, sheet: str = SHEET) -
             continue
         if bkey in _PCT_FIELDS:
             v = v * _PCT_FIELDS[bkey]
+        # det som sparas: kursen med 6 värdesiffror (en pencekurs i pund, 0,00675, tål inte 4 decimaler), annars 4
+        # decimaler — och jämförelsen görs mot samma tal, så ett använt förslag inte dyker upp igen
+        v = float(f"{v:.6g}") if bkey == "price" else round(v, 4)
         cur = company.num(fkey) if company.has(fkey) else None
         if cur is not None and abs(cur - v) < 1e-6:
             continue
@@ -75,7 +78,7 @@ def proposals(blob: Optional[dict], company: CompanyInput, sheet: str = SHEET) -
             note = f"{ccy} → USD ur jobbets fasta tabell — kontrollera mot dagskurs"
         elif bkey == "price":
             unit = f"{ccy}/aktie" if ccy else unit
-        out.append((fkey, dp(round(v, 4), kind=kind, source=source, source_type="secondary", pub_date=asof,
+        out.append((fkey, dp(v, kind=kind, source=source, source_type="secondary", pub_date=asof,
                              unit=unit, note=note), cur))
     if ccy and (company.get("market_currency") is None or str(company.get("market_currency").value) != ccy) \
             and ccy in _CCY_CHOICES:

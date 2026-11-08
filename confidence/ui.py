@@ -382,9 +382,21 @@ def _critical_missing(company: CompanyInput) -> set:
     return {it.path.split(".", 1)[1] for it in items if it.path.startswith("fields.")}
 
 
+def stored_tag(p) -> str:
+    """Ett kort avtryck av den sparade datapunkten, för widgetnycklarna. Streamlit (1.59) behåller en nycklad rutas
+    text i webbläsaren även när value= ändras — och att ta bort nyckeln ur session_state når inte webbläsaren. Byts
+    det sparade (Använd, spar, import) byts nyckeln, så rutan ritas om ur det sparade i stället för att nästa
+    Uppdatera skriver tillbaka det gamla talet."""
+    import zlib
+    if p is None:
+        return "0"
+    raw = repr((p.value, p.missing, p.kind, p.source, p.source_type, p.pub_date))
+    return format(zlib.crc32(raw.encode("utf-8")), "08x")
+
+
 def _field_widgets(company: CompanyInput, f: cfg.FieldSpec) -> dict:
     p = company.get(f.key)
-    k = f"cf_{company.ticker}_{f.key}"
+    k = f"cf_{company.ticker}_{f.key}_{stored_tag(p)}"
     c = st.columns([3, 1.4, 2.4, 1.4, 1.3])
     label = f.label + (f" ({f.unit})" if f.unit else "") + (f" 0–{f.max:g}" if f.max is not None else "")
     w = {}
@@ -449,8 +461,6 @@ def _edited_source(w: dict, f: cfg.FieldSpec) -> str:
     valutaupplysning ser att talet är skrivet för hand. Redan manuella källor och orörda värden behålls."""
     source = w["source"].strip()
     prev = str(w.get("_prev_source") or "").strip()
-    if prev.startswith(_MANUAL) and prev.endswith(")") and source == prev[len(_MANUAL):-1]:
-        return prev            # rutan visar fortfarande den ersatta källan (Streamlit behåller texten efter spar)
     if not prev or source != prev or "manuell" in prev.lower() or "_shown" not in w:
         return source
     now, shown = str(w["value"]).strip(), str(w["_shown"]).strip()
