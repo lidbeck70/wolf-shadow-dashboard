@@ -76,7 +76,7 @@
       "unit_cost": 2175.0
     },
     {
-      "aktuell_kurs": 49.53,
+      "aktuell_kurs": 5.2392,
       "aqs_capex": 2,
       "aqs_expansion": 0,
       "aqs_infrastruktur": 2,
@@ -116,15 +116,15 @@
       "fully_diluted_shares": 2496406246.0,
       "fv": {
         "Base": {
-          "forward_fcf_musd": 12.0,
+          "forward_fcf_musd": 3550.0,
           "target_yield": 12.0
         },
         "Bear": {
-          "forward_fcf_musd": 14.0,
+          "forward_fcf_musd": 2781.0,
           "target_yield": 14.0
         },
         "Bull": {
-          "forward_fcf_musd": 10.0,
+          "forward_fcf_musd": 4165.0,
           "target_yield": 10.0
         }
       },
@@ -142,7 +142,7 @@
       "nd_ebitda": 0.33403369784355164,
       "position_pct": 10.0,
       "price": 89.94,
-      "prob_deviation": true,
+      "prob_deviation": false,
       "probs": {
         "Base": 12.0,
         "Bear": 14.0,
