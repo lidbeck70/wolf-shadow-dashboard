@@ -109,14 +109,14 @@ def test_register_candidates_and_add():
 
 
 # ── fliken ───────────────────────────────────────────────────────────────────
-def _app(monkeypatch, conf: dict, legacy=None, register_rows=None, blob=None, futures=None):
+def _app(monkeypatch, conf: dict, legacy=None, register_rows=None, blob=None, futures=None, producers=None):
     import streamlit as st
     import storage
     import positions
     import refresh_ui
     import commodity_prices
 
-    stores = {"confidence": conf, "asymmetry": legacy, "producers": {}, "tiggre": {}}
+    stores = {"confidence": conf, "asymmetry": legacy, "producers": producers or {}, "tiggre": {}}
     monkeypatch.setattr(storage, "session_load", lambda name, default=None, legacy_file=None:
                         st.session_state.setdefault(name, stores.get(name) if stores.get(name) is not None else default))
     monkeypatch.setattr(storage, "load_error", lambda name: None)
@@ -198,7 +198,7 @@ def test_ark_shows_only_score_fields_and_writes_to_shared_store(monkeypatch):
     assert [l.split(" ·")[0].split(" —")[0] for l in labels] == [
         "➕ Nytt bolag", "📥 Hämta från registret (Holdings)", "Identitet och strategi", "Börsdata fyller",
         "Ekonomi", "Confidence", "Confidence", "🤖 Läs ur presentationen / tekniska rapporten (AI-förslag",
-        "📋 Underlag till ChatGPT"]
+        "Förslag ur granskningsarken (Rick Rule/AQS/DS, Tiggre)", "📋 Underlag till ChatGPT"]
     assert any(l.startswith("Ekonomi") and l.endswith("3/4 ifyllda") for l in labels)   # GPR saknar produktionsenhet
     import form_keys as fk
     keys = fk.fields(at.text_input, "cf_GPR_")
@@ -224,6 +224,29 @@ def test_ark_shows_only_score_fields_and_writes_to_shared_store(monkeypatch):
     at.button(key="FormSubmitter:asym_ident_GPR-Uppdatera").click().run()
     assert not at.exception, at.exception
     assert at.session_state["confidence"]["strategies"]["GPR"] == "Ember"
+
+
+def test_ark_offers_the_review_sheets_like_durrett(monkeypatch):
+    """Samma 'Förslag ur granskningsarken' som Durrett-arket visar under Mer: Rick Rule-radens AISC som förslag,
+    inget skrivs när arket öppnas, Använd skriver in den med källa i det gemensamma arket."""
+    from streamlit.testing.v1 import AppTest
+
+    rule = {"producers": [{"id": "r1", "ticker": "GPR", "commodity": "Guld", "unit_cost": 1300.0,
+                           "date": "2026-11-01"}], "royalty": []}
+    app = _app(monkeypatch, _conf(dcs.gold_producer), producers=rule)
+    at = AppTest.from_function(app, default_timeout=60)
+    at.session_state["asym_mode"] = "Ark"
+    at.run()
+    assert not at.exception, at.exception
+    assert any(e.label == "Förslag ur granskningsarken (Rick Rule/AQS/DS, Tiggre)" for e in at.expander)
+    assert "AISC" in _text(at) and "ersätter" in _text(at)
+    before = at.session_state["confidence"]["companies"]["GPR"]["fields"]["aisc"]["value"]
+    assert before != 1300.0                                                      # att öppna skriver inget
+    at.button(key="cf_pf_GPR_aisc").click().run()
+    assert not at.exception, at.exception
+    p = at.session_state["confidence"]["companies"]["GPR"]["fields"]["aisc"]
+    assert p["value"] == 1300.0 and p["source"] == "Granskningsarket Rick Rule" and p["kind"] == "ESTIMATE"
+    assert not [b for b in at.button if b.key == "cf_pf_GPR_aisc"]              # inläst: förslaget försvinner
 
 
 def test_empty_sheet_opens_ark_and_register_import(monkeypatch):

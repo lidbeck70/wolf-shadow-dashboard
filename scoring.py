@@ -472,8 +472,9 @@ def _rows(data: dict, key: str) -> None:
             # största enskilda risk, så den frågas alltid, oavsett storlek.
             rw = (runway_years(row.get("cash"), row.get("burn"))
                   if key == SPROTT else None)
+            # sheet: 'Aktier 3 år' och 'Historik' får Börsdatas aktiehistorik (scoring:<id>) som förslag.
             with st.expander("🧪 DS — utspädningsrisk", expanded=False):
-                if controls_ui.render_ds(row, row["id"], rw):
+                if controls_ui.render_ds(row, row["id"], rw, sheet="scoring"):
                     _save(data)
 
             blocked = ctl.ds_blocks_buy(row)

@@ -262,6 +262,8 @@ def _sheet(data: dict, company: Optional[CompanyInput]) -> None:
     _block(data, company, "core", "Confidence — kärnan (tungt vägd)", fields.confidence_core(company.stage))
     _block(data, company, "more", "Confidence — finlir (lätt vägd)", fields.confidence_more(company.stage))
     cui.render_extractor(data, company, sheet_label="Wolf Asymmetry")
+    # Samma förslag ur Rick Rule/Tiggre som Durrett-arket visar under Mer (en gång per sida: cf_pf_<ticker>_*)
+    cui.render_prefill(data, company, store=ast.STORE)
     _chatgpt(data, company)
 
 

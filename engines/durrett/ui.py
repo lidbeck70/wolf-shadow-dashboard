@@ -315,12 +315,15 @@ def _render_refresh(data: dict, company: CompanyInput) -> None:
     blob = refresh_ui.load_refresh()
     props = dr.proposals(blob, company)
     t = company.ticker
+    row = dr.refresh_row(blob, t)
+    _ins_id_offer(data, company, row)
     if not props:
-        if dr.refresh_row(blob, t):
+        if row:
             st.caption("🤖 Börsdata: sifferuppdateringen har inga nya tal för raden.")
         elif company.ins_id is None:
-            st.caption("🤖 Börsdata: raden saknar ins_id — håven sätter det, eller ange det under Mer → Alla fält. "
-                       "Sifferuppdateringen körs schemalagt (sheets_refresh.py).")
+            st.caption("🤖 Börsdata: raden saknar ins_id och har ingen rad i sifferuppdateringen än. Den schemalagda "
+                       "körningen (sheets_refresh.py) matchar på tickern. Håven sätter id:t; för hand anges det under "
+                       "🐺 Wolf Asymmetry → Ark → Identitet och strategi (samma ark).")
         return
     asof = props[0][1].pub_date or ""
     with st.expander(f"🤖 Börsdata {asof}: {len(props)} förslag ur sifferuppdateringen", expanded=True):
@@ -344,6 +347,27 @@ def _render_refresh(data: dict, company: CompanyInput) -> None:
             cs.put(data, company)
             _save(data)
             st.rerun()
+
+
+def _ins_id_offer(data: dict, company: CompanyInput, row: Optional[dict]) -> None:
+    """Nattradens Börsdata-id som förslag när bolaget saknar ett. Använd sparar det på bolaget (ins_id) som arkets
+    andra Använd — i sessionen, 💾 sparar. Kursen visas så att du ser att rätt bolag matchades."""
+    from engines.durrett import refresh as dr
+    iid = dr.ins_id_offer(row, company)
+    if iid is None:
+        return
+    px, ccy = row.get("price"), str(row.get("currency") or "")
+    seen = (f" (senaste kurs {px:,.4g}{' ' + ccy if ccy else ''})"
+            if isinstance(px, (int, float)) and not isinstance(px, bool) else "")
+    asof = str(row.get("asof") or "")[:10]
+    a, b = st.columns([4, 1])
+    a.caption(f"🤖 Börsdata{' ' + asof if asof else ''}: tickern matchades mot Börsdata-id {iid}{seen}. "
+              f"Med id:t på bolaget hämtas samma bolag varje natt.")
+    if b.button("Använd", key=f"durrett_insid_{company.ticker}"):
+        company.ins_id = iid
+        cs.put(data, company)
+        _save(data)
+        st.rerun()
 
 
 def _apply_sheet(company: CompanyInput, widgets: dict, source: str, stype: str, kind: str, when: Optional[str]) -> int:
