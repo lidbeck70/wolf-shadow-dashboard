@@ -455,3 +455,50 @@ def test_values_exactly_on_a_limit_show_the_cards_decimals_with_an_approx_sign()
     # Vanliga tal får inget '≈'
     assert "≈" not in scorecard.valuation_suggestion(_tg(), "tiggre")
     assert "≈" not in scorecard.valuation_suggestion(_sp(), "sprott")
+
+
+# ── ARKEN → 🧭 Durrett: samma värderingsrad i arket ──────────────────────────
+def test_the_durrett_sheet_shows_the_same_valuation_line_and_what_is_missing(monkeypatch):
+    """Arket visar raden under sammanfattningen — samma text som Scorecardet föreslår — och för ett bolag med bara
+    börsvärde (som i ägarens skärmbild) vad som saknas. Raden skriver ingenting."""
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+    import refresh_ui
+    import screens_ui
+    from confidence import store as cs
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import durrett_cases as dcs
+    from confidence.data.models import CompanyInput
+    from confidence.data.provenance import dp
+
+    data = cs.default()
+    cs.put(data, dcs.gold_producer())
+    thin = CompanyInput(ticker="THIN", name="Bara börsvärde", commodity="gold", stage="producer")
+    thin.set("market_cap_musd", dp(61.0, kind="ACTUAL", source="Arket"))
+    cs.put(data, thin)
+    before = json.dumps(data, sort_keys=True, default=str)
+    monkeypatch.setattr(storage, "session_load", lambda name, default=None, legacy_file=None:
+                        st.session_state.setdefault(name, {"confidence": data}.get(name, default)))
+    monkeypatch.setattr(storage, "load_error", lambda name: None)
+    monkeypatch.setattr(storage, "is_dirty", lambda name: False)
+    monkeypatch.setattr(storage, "last_saved", lambda name: None)
+    monkeypatch.setattr(refresh_ui, "load_refresh", lambda: {"rows": {"confidence:GPR": {"ev_ebitda": 4.1}}})
+    monkeypatch.setattr(screens_ui, "load_screens", lambda: {})
+
+    def app(root):
+        import sys as _s
+        _s.path.insert(0, root)
+        from engines.durrett.ui import render_durrett_page
+        render_durrett_page()
+    at = AppTest.from_function(app, args=(ROOT,), default_timeout=90)
+    at.session_state["durrett_row_sub_GPR"] = "Arket"
+    at.session_state["durrett_row_sub_THIN"] = "Arket"
+    at.run()
+    assert not at.exception, at.exception
+    lines = " ".join(m.value for m in at.markdown if "Värdering:" in m.value)
+    assert "💰 <b>Värdering:</b> MCap/framtida vinst" in lines and "efter skatt" in lines
+    assert "EV/EBITDA 4,1× (Börsdata)" in lines
+    caps = " ".join(c.value for c in at.caption)
+    assert ("💰 Värdering: inget att räkna ännu — MCap/framtida vinst kräver produktion, råvarupris och AISC "
+            "(eller break-even) samt börsvärde") in caps
+    assert json.dumps(at.session_state["confidence"], sort_keys=True, default=str) == before

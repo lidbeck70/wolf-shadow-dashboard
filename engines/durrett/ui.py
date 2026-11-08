@@ -256,6 +256,7 @@ def _render_sheet(data: dict, company: CompanyInput, a: DurrettAnalysis) -> None
             st.success(f"{changed} fält uppdaterade — spara med 💾 när du är klar.")
             st.rerun()
     _sheet_summary(a)
+    _valuation_line(company, a)
     _chatgpt(data, company)
 
 
@@ -376,6 +377,35 @@ def _sheet_summary(a: DurrettAnalysis) -> None:
 
 
 # ── Analys ───────────────────────────────────────────────────────────────────
+VALUATION_NEEDS = (("mcap_future_earnings", "MCap/framtida vinst kräver produktion, råvarupris och AISC (eller "
+                                            "break-even) samt börsvärde"),
+                   ("ev_per_resource_unit", "EV/resurs kräver resurs (enhet och mängd) samt börsvärde"),
+                   ("ev_npv", "EV/NPV kräver NPV (MUSD)"))
+
+
+def _valuation_line(company: CompanyInput, a: DurrettAnalysis) -> None:
+    """Värderingsraden ur motorns egna mått — samma text som Scorecardet föreslår under Värdering (strategin
+    confidence). Läses, skriver ingenting. Saknas ett mått står det vad som behövs för att räkna det."""
+    try:
+        import refresh_ui
+        import scorecard
+        from engines.durrett import refresh as dr
+        ref = dr.refresh_row(refresh_ui.load_refresh(), company.ticker)
+        text = scorecard.valuation_suggestion({"ticker": company.ticker}, scorecard.DURRETT_SHEET_STRATEGY, ref,
+                                              a.metrics)
+    except Exception:                                   # pragma: no cover — raden är en hjälp, aldrig ett hinder
+        return
+    missing = [need for key, need in VALUATION_NEEDS if (a.metrics.get(key) or {}).get("value") is None]
+    if text:
+        st.markdown(f"<div style='color:{TEXT};font-size:0.85rem;margin-top:4px;'>💰 <b>Värdering:</b> "
+                    f"{text.replace('$', '&#36;')}</div>"
+                    f"<div style='color:{DIM};font-size:0.75rem;'>Samma rad som Scorecardet föreslår under "
+                    f"Värdering (strategi confidence).</div>", unsafe_allow_html=True)
+    if missing:
+        st.caption(("💰 Värdering: inget att räkna ännu — " if not text else "Saknas för resten: ")
+                   + " · ".join(missing) + ".")
+
+
 def _render_analysis(a: DurrettAnalysis) -> None:
     cl = a.classification
     st.markdown(
