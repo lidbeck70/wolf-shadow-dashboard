@@ -620,49 +620,100 @@ def _sv(v: float, d: int = 1) -> str:
     return f"{v:,.{d}f}".replace(",", " ").replace(".", ",")
 
 
-DURRETT_STRATEGY = "durrett"         # Durrett-arkets strateginamn i kandidatraden (sources_from_stores)
+DURRETT_STRATEGY = "durrett"         # Poängmodellens Durrett-del (snabbpoängen) — inte ARKEN → 🧭 Durrett
+DURRETT_SHEET_STRATEGY = "confidence"  # ARKEN → 🧭 Durrett (10-stegsarket, Durrett-motorn) i kandidatraden
+VALUATION_SOURCE = {DURRETT_STRATEGY: "Poängmodellen → Durrett (snabbpoäng)",
+                    DURRETT_SHEET_STRATEGY: "Durrett-arket (ARKEN → 🧭 Durrett)"}
 
 
-def valuation_suggestion(entry: Optional[dict], strategy: str, ref: Optional[dict] = None) -> Optional[str]:
+def _ev_ebitda_part(ref: Optional[dict]) -> list:
+    ev_eb = _num((ref or {}).get("ev_ebitda")) if isinstance(ref, dict) else None
+    return [f"EV/EBITDA {_sv(ev_eb)}× (Börsdata)"] if ev_eb is not None and ev_eb > 0 else []
+
+
+def _metric(metrics: Optional[dict], name: str) -> Optional[float]:
+    m = (metrics or {}).get(name) if isinstance(metrics, dict) else None
+    return _num(m.get("value")) if isinstance(m, dict) else None
+
+
+def valuation_suggestion(entry: Optional[dict], strategy: str, ref: Optional[dict] = None,
+                         metrics: Optional[dict] = None) -> Optional[str]:
     """Värderingen ur arkets egna tal — samma uträkning som arket gör, inte en ny. None när inget går att räkna.
 
-    Durrett: MCap/framtida vinst mot köpregeln (under 10×) och MCap/uns mot $100/$50 (scoring-modulens funktioner
-    och gränser), plus Börsdatas EV/EBITDA ur sifferuppdateringen (ref = raden 'scoring:<id>') när den finns.
-    Ren funktion — ingen Streamlit."""
-    if strategy != DURRETT_STRATEGY:
+    durrett (Poängmodellens snabbpoäng): MCap/framtida vinst mot köpregeln (under 10×) och MCap/uns mot $100/$50
+    — scoring-modulens funktioner och gränser på arkradens börsvärde, uns och framtida vinst.
+    confidence (ARKEN → 🧭 Durrett): Durrett-motorns mått (metrics = analyze(...).metrics) — MCap/framtida vinst
+    efter skatt mot motorns köpregel, EV per resursenhet och EV/NPV — samma tal som arket visar.
+    Båda: Börsdatas EV/EBITDA ur sifferuppdateringen (ref) när den finns. Ren funktion — ingen Streamlit."""
+    parts: list = []
+    if strategy == DURRETT_STRATEGY:
+        row = (((entry or {}).get("rows") or {}).get(DURRETT_STRATEGY))
+        if not isinstance(row, dict):
+            return None
+        import scoring
+        ratio = scoring.mcap_per_earnings(row.get("mcap"), row.get("profit"))
+        if ratio is not None:
+            ok = scoring.durrett_buy_ok(ratio)
+            parts.append(f"MCap/framtida vinst {_sv(ratio)}× ({'under' if ok else 'över'} köpregelns "
+                         f"{scoring.DURRETT_BUY_MAX:g}×)")
+        per_oz = scoring.mcap_per_oz(row.get("mcap"), row.get("moz"))
+        if per_oz is not None:
+            band = ("mycket billigt" if per_oz < scoring.MCAP_PER_OZ_VERY
+                    else "billigt" if per_oz < scoring.MCAP_PER_OZ_CHEAP
+                    else f"över ${scoring.MCAP_PER_OZ_CHEAP:g}")
+            parts.append(f"MCap/uns ${_sv(per_oz, 0)} ({band})")
+    elif strategy == DURRETT_SHEET_STRATEGY:
+        if not isinstance(metrics, dict):
+            return None
+        from engines.durrett import config as dcfg
+        buy_max = float(dcfg.DURRETT_CONFIG["mcap_future_earnings_buy_max"])
+        r = _metric(metrics, "mcap_future_earnings")
+        if r is not None:
+            parts.append(f"MCap/framtida vinst {_sv(r)}× efter skatt ({'under' if r < buy_max else 'över'} "
+                         f"köpregelns {buy_max:g}×)")
+        ev_res = _metric(metrics, "ev_per_resource_unit")
+        if ev_res is not None:
+            unit = str((metrics.get("ev_per_resource_unit") or {}).get("unit") or "USD/enhet")
+            parts.append(f"EV/resurs {_sv(ev_res, 0 if ev_res >= 10 else 2)} {unit}")
+        ev_npv = _metric(metrics, "ev_npv")
+        if ev_npv is not None:
+            parts.append(f"EV/NPV {_sv(ev_npv, 2)}×")
+    else:
         return None
-    row = (((entry or {}).get("rows") or {}).get(DURRETT_STRATEGY))
-    if not isinstance(row, dict):
-        return None
-    import scoring
-    parts = []
-    ratio = scoring.mcap_per_earnings(row.get("mcap"), row.get("profit"))
-    if ratio is not None:
-        ok = scoring.durrett_buy_ok(ratio)
-        parts.append(f"MCap/framtida vinst {_sv(ratio)}× ({'under' if ok else 'över'} köpregelns "
-                     f"{scoring.DURRETT_BUY_MAX:g}×)")
-    per_oz = scoring.mcap_per_oz(row.get("mcap"), row.get("moz"))
-    if per_oz is not None:
-        band = ("mycket billigt" if per_oz < scoring.MCAP_PER_OZ_VERY
-                else "billigt" if per_oz < scoring.MCAP_PER_OZ_CHEAP
-                else f"över ${scoring.MCAP_PER_OZ_CHEAP:g}")
-        parts.append(f"MCap/uns ${_sv(per_oz, 0)} ({band})")
-    ev_eb = _num((ref or {}).get("ev_ebitda")) if isinstance(ref, dict) else None
-    if ev_eb is not None and ev_eb > 0:
-        parts.append(f"EV/EBITDA {_sv(ev_eb)}× (Börsdata)")
+    parts += _ev_ebitda_part(ref)
     return " · ".join(parts) or None
 
 
-def _valuation_ref(entry: Optional[dict], strategy: str) -> Optional[dict]:
-    """Sifferuppdateringens rad för kandidatens arkrad ('scoring:<id>') — None utan blob eller rad."""
-    if strategy != DURRETT_STRATEGY:
+def _durrett_metrics(ticker: str) -> Optional[dict]:
+    """Durrett-motorns mått för bolaget i ARKEN → 🧭 Durrett — samma körning som engine_summary. None utan bolag."""
+    try:
+        from confidence import store as cs
+        from confidence.ui import load_store
+        from engines.durrett.engine import analyze as durrett_analyze
+        company = cs.get(load_store(), (ticker or "").strip().upper())
+        return None if company is None else durrett_analyze(company, today=date.today()).metrics
+    except Exception:
         return None
-    row = (((entry or {}).get("rows") or {}).get(DURRETT_STRATEGY)) or {}
-    if not isinstance(row, dict) or not row.get("id"):
+
+
+def _valuation_ref(entry: Optional[dict], strategy: str) -> Optional[dict]:
+    """Sifferuppdateringens rad för kandidatens arkrad ('scoring:<id>' / 'confidence:<TICKER>') — None utan rad."""
+    rows_e = (entry or {}).get("rows") or {}
+    if strategy == DURRETT_STRATEGY:
+        row = rows_e.get(DURRETT_STRATEGY)
+        key = f"scoring:{row['id']}" if isinstance(row, dict) and row.get("id") else None
+    elif strategy == DURRETT_SHEET_STRATEGY:
+        key = f"confidence:{str((entry or {}).get('ticker') or '').strip().upper()}"
+    else:
+        return None
+    if not key:
         return None
     try:
         import refresh_ui
-        r = ((refresh_ui.load_refresh() or {}).get("rows") or {}).get(f"scoring:{row['id']}")
+        rows = (refresh_ui.load_refresh() or {}).get("rows") or {}
+        r = rows.get(key)
+        if r is None and strategy == DURRETT_SHEET_STRATEGY:     # arkets nyckel kan ha annan skiftläge
+            r = next((v for k, v in rows.items() if str(k).upper() == key.upper()), None)
         return r if isinstance(r, dict) else None
     except Exception:
         return None
@@ -679,16 +730,20 @@ def _use_valuation(data: dict, cards: dict, entry: dict, strategy: str, text: st
 
 
 def _valuation_hint(data: dict, cards: dict, entry: dict, strategy: str, current: str) -> None:
-    """Förslaget under Värdering: räknat ur arket, visas av sig självt — skrivs in först med 'Använd' (att öppna
-    sidan skriver ingenting). Döljs när rutan redan har exakt den texten."""
+    """Förslaget under Värdering: räknat ur arket strategin hör till, visas av sig självt med arkets namn — skrivs in
+    först med 'Använd' (att öppna sidan skriver ingenting). Döljs när rutan redan har exakt den texten."""
+    if strategy not in VALUATION_SOURCE:
+        return
     try:
-        text = valuation_suggestion(entry, strategy, _valuation_ref(entry, strategy))
+        metrics = _durrett_metrics(entry.get("ticker")) if strategy == DURRETT_SHEET_STRATEGY else None
+        text = valuation_suggestion(entry, strategy, _valuation_ref(entry, strategy), metrics)
     except Exception:
         return
     if not text or (current or "").strip() == text:
         return
     a, b = st.columns([3, 1], vertical_alignment="center")
-    a.caption(f"🤖 Ur Durrett-arket: {text} — förslag, inte inskrivet.")
+    shown = text.replace("$", "\\$")                   # två '$' på en rad blir annars en formel i Markdown
+    a.caption(f"🤖 Ur {VALUATION_SOURCE[strategy]}: {shown} — förslag, inte inskrivet.")
     b.button("Använd", key=f"sc_useval_{entry['key']}", on_click=_use_valuation,
              args=(data, cards, entry, strategy, text))
 
