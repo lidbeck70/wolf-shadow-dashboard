@@ -5,6 +5,24 @@
       "position_pct_total": 0.0,
       "strategy": "tiggre"
     },
+    "ggg|GOLD": {
+      "position_pct_strategy": 10.0,
+      "position_pct_total": 5.0,
+      "sell_rule": "",
+      "sources": {
+        "trigger": {
+          "source": "ChatGPT: https://www.goldmining.com/index.php?content_id=734; https://www.goldmining.com/index.php?content_id=734 · 2026-11-08",
+          "value": "São Jorge PFS och infill-borrningsprogram: 6 000 m borrning startad 28.10.2026; uppdaterad resursmodell och metallurgi/geoteknik ska stödja PFS, som bolaget förväntar sig H1 2028. Viktig delrisk: konvertera inferred resurser till indicated och visa robust processflöde/capex."
+        },
+        "valuation": {
+          "source": "ChatGPT: https://ca.marketscreener.com/news/goldmining-interim-financial-statements-fs-q3-2026-ce785dd2d08df122; https://goldmining.com/_resources/presentations/corporate-presentation.pdf?v=020401; https://www.goldmining.com/index.php?content_id=721 · 2026-11-08",
+          "value": "TSX GOLD CAD 1,11 per 06.11.2026; ca 215.484m utgivna aktier ⇒ börsvärde ca CAD 239m. Bolagets presentation anger 13.1 Moz AuEq M&I + 9.0 Moz inferred (22.1 Moz totalt), vilket motsvarar ca CAD 10.8 per resursuns före justering för investeringstillgångar. Bolaget har CAD 146.2m i cash + noterade innehav och ingen långfristig skuld. Resursmultipel är inte NAV; inferred får lägre vikt och projektens NPV ska inte adderas okritiskt."
+        }
+      },
+      "strategy": "durrett",
+      "trigger": "",
+      "valuation": ""
+    },
     "|VAR.OL": {
       "granskning_klar": true,
       "position_pct_strategy": 25.0,
