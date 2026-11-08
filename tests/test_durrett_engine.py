@@ -80,9 +80,9 @@ def test_share_structure_market_cap_and_ev():
     assert ss["mcap_usd"] == 1500 and ss["fd_mcap_usd"] == pytest.approx(6.0 * 260)
     assert ss["net_debt_usd"] == -80 and ss["ev_usd"] == 1420 and ss["fd_ev_usd"] == pytest.approx(1560 - 80)
     assert ss["serial_diluter"] is False
-    ctx = Ctx(dcs.lithium_explorer())                          # CAD → USD via fx_to_usd
+    ctx = Ctx(dcs.lithium_explorer())                          # CAD: bara kursen växlas — MUSD-fälten är USD
     ss = dilution.share_structure(ctx)
-    assert ss["mcap_usd"] == pytest.approx(60 * 0.73) and ss["price_usd"] == pytest.approx(0.6 * 0.73)
+    assert ss["mcap_usd"] == pytest.approx(60) and ss["price_usd"] == pytest.approx(0.6 * 0.73)
 
 
 def test_serial_diluter_is_flagged_and_caps_dilution_score():
@@ -494,3 +494,36 @@ def test_more_tab_renders_one_extractor_even_with_an_openai_key(monkeypatch):
     at.run()
     assert not at.exception, at.exception
     assert len([t for t in at.text_area if t.key == "cf_xt_GPR_txt"]) == 1      # en extraktor, inte två
+
+
+# ── Steg 0 (ägarens beslut C): MUSD-fälten är USD, bara kursen växlas ──────────
+def test_a_cad_row_keeps_the_nightly_usd_amounts_after_use_all():
+    """Förr gångrades MUSD-fälten med fx_to_usd när valutan inte var USD — fast sifferuppdateringen redan räknat om
+    dem. En CAD-rad fick börsvärde 1 168 i stället för 1 600 MUSD och MCap/framtida vinst 3,4× i stället för 4,4×."""
+    from engines.durrett import refresh as dr
+    blob = {"generated": "2026-11-08T06:00", "rows": {"confidence:GPR": {
+        "ticker": "GPR", "ins_id": 105, "price": 8.75, "asof": "2026-11-07", "currency": "CAD",
+        "mcap_musd": 1600.0, "ev_musd": 1400.0, "fx_to_usd": 0.73, "fx_table": "sheets_refresh.FX_TO_USD (fast tabell)"}}}
+    c = dcs.gold_producer()
+    for key in ("enterprise_value_musd",):
+        c.fields.pop(key, None)
+    for fkey, point, _cur in dr.proposals(blob, c):
+        c.set(fkey, point)                                    # "Använd alla"
+    assert c.get("market_currency").value == "CAD" and c.get("fx_to_usd").value == pytest.approx(0.73)
+    a = analyze(c, today=T)
+    assert a.market_cap_musd == pytest.approx(1600.0)
+    assert a.enterprise_value_musd == pytest.approx(1400.0)
+    ss = dilution.share_structure(Ctx(c))
+    assert ss["price_usd"] == pytest.approx(8.75 * 0.73)        # kursen står i CAD och växlas
+
+
+def test_the_sheet_says_how_amounts_are_read_on_non_usd_rows():
+    from engines.durrett import ui as dui
+    usd = dcs.gold_producer()
+    assert dui.musd_currency_note(usd) is None
+    lex = dcs.lithium_explorer()                                # CAD; marknadstalen har Börsdata som källa
+    note = dui.musd_currency_note(lex)
+    assert note.startswith("Valutan är CAD: belopp i MUSD räknas som USD") and "Skrivna för hand" not in note
+    lex.set("cash_musd", dp(18.0, kind="ACTUAL", source="Arket (manuell)"))
+    note = dui.musd_currency_note(lex)
+    assert "Skrivna för hand: Kassa" in note and "står de i CAD? Räkna om dem till USD." in note

@@ -568,8 +568,8 @@ def test_the_missing_list_names_what_the_engine_really_lacks():
     gpr.set("aisc", dp(3100.0, kind="ACTUAL", source="t"))               # AISC över råvarupriset
     assert _needs(gpr) == ["MCap/framtida vinst: framtida vinst ≤ 0 — kostnaden (AISC/break-even) ligger över "
                            "råvarupriset"]
-    cad = _company("explorer", market_cap_musd=80.0, market_currency="CAD")
-    assert "MCap/framtida vinst kräver växelkurs → USD (valutan är CAD)" in _needs(cad)
+    cad = _company("explorer", share_price=0.8, basic_shares_m=100.0, market_currency="CAD")   # kursen växlas
+    assert "MCap/framtida vinst kräver växelkurs → USD (kursen står i CAD)" in _needs(cad)
     assert "EV/NPV: NPV ≤ 0" in _needs(_company("developer", market_cap_musd=61.0, npv_musd=-20.0))
 
 
