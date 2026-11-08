@@ -429,6 +429,225 @@ def gate_gaps(row: dict, position_pct=None, strategy: str = "") -> list:
     return gaps
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+#  Rimlighetskontroller — bara varningar, de ändrar ingen beräkning eller grind
+# ═════════════════════════════════════════════════════════════════════════════
+PRICE_MATCH = 0.03          # sparad kurs inom 3 % av Börsdatas = samma tal, i Börsdatas valuta
+FX_DISTINCT = 2.0           # valutor minst 2× från USD (NOK, SEK, DKK, pence): kursen hör till den valuta den ligger närmast
+FX_LIVE_SANE = 0.30         # en dagskurs mer än 30 % från tabellens är ett datafel — då gäller tabellen
+FCF_TOO_SMALL = 0.02        # forward FCF under 2 % av referens-FCF:en — troligen fel enhet
+FCF_TOO_LARGE = 50.0        # … eller över 50× den
+FCF_EV_MIN = 0.002          # utan referens-FCF: under 0,2 % av EV (och en referens under 0,2 % av storleken = break-even)
+FCF_SIZE_MAX = 2.0          # över 2× bolagets storlek (EV eller börsvärde, det större) — en FCF-yield över 200 %
+FCF_LOCAL_BAND = 0.30       # forward FCF × växelkursen inom ±30 % av referensen = talet står i lokal valuta
+FCF_LOCAL_FX_MIN = 5.0      # … bara för valutor minst 5× från USD (NOK, SEK, DKK) — PLN:s 4× ligger inom vanliga modellgap
+FCF_LOCAL_REF_MIN = 0.02    # … och bara mot en referens på minst 2 % av storleken: nära noll är en kvot på 10× ingen enhet
+FCF_LOCAL_YIELD = 0.40      # Base-FCF över 40 % av storleken men under 40 % omräknad från NOK/SEK/DKK = lokal valuta
+FCF_LOCAL_EBITDA = 1.5      # … och (när Börsdatas EV/EBITDA finns) över 1,5× EBITDA: en äkta hög yield ligger under EBITDA
+PENCE = ("GBX", "GBp")      # London i pence: GBP/100
+
+
+def _job_table() -> dict:
+    """Sifferuppdateringens fasta tabell (sheets_refresh.FX_TO_USD) — den nattjobbet räknar om MUSD-talen med."""
+    try:
+        from sheets_refresh import FX_TO_USD
+        return FX_TO_USD
+    except Exception:                   # pragma: no cover — tabellen är en ren modulkonstant
+        return {}
+
+
+def _is_pence(raw: str) -> bool:
+    return raw in PENCE or raw.upper() == "GBX"
+
+
+def fx_to_usd(currency) -> Optional[float]:
+    """USD per kursenhet ur sifferuppdateringens fasta tabell. London i pence (GBX/GBp) = GBP/100. None för en
+    valuta tabellen inte har: den räknas inte om som om den vore USD. Tabellen är grov (den följer inte dagens
+    kurs) — kursförslaget föredrar dagens växelkurs när den finns."""
+    raw = str(currency or "").strip()
+    if not raw:
+        return None
+    table = _job_table()
+    if _is_pence(raw):
+        return table["GBP"] / 100.0 if "GBP" in table else None
+    return table.get(raw.upper())
+
+
+def fx_pair(currency) -> Optional[tuple]:
+    """(Yahoo-ticker, delare) för dagens växelkurs till USD: ('NOKUSD=X', 1); pence ('GBPUSD=X', 100).
+    None för USD och tomt."""
+    raw = str(currency or "").strip()
+    if not raw or raw.upper() == "USD":
+        return None
+    return ("GBPUSD=X", 100.0) if _is_pence(raw) else (f"{raw.upper()}USD=X", 1.0)
+
+
+def _looks_local(p: Optional[float], local: float, fx: Optional[float]) -> bool:
+    """Den sparade kursen är i Börsdatas valuta: inom 3 % av Börsdatas kurs — eller, när valutan ligger minst 2× från
+    USD, närmare den lokala kursen än den omräknade (kursen har rört sig sedan den skrevs in, men en NOK-kurs blir
+    inte en USD-kurs av det). Jämförs mot den oavrundade USD-kursen: en öreskurs blir aldrig 0 USD."""
+    if p is None or p <= 0:
+        return False
+    if abs(p - local) / local <= PRICE_MATCH:
+        return True
+    if not fx or max(fx, 1.0 / fx) < FX_DISTINCT:
+        return False
+    import math
+    return abs(math.log(p / local)) < abs(math.log(p / (local * fx)))
+
+
+def price_currency(price, ref: Optional[dict], live: Optional[tuple] = None) -> Optional[dict]:
+    """Kursens valuta mot forward FCF:ens (USD — MUSD ÷ miljoner aktier ger USD per aktie).
+
+    ref = sifferuppdateringens rad för bolaget (price, currency). live = (USD per enhet, datum) — dagens växelkurs
+    (pence: redan delad med 100), eller None. None när kursen saknas eller redan är i USD. Annars {currency,
+    local, usd, fx, fx_src, fx_asof, stored_is_local}: kursen i sin valuta omräknad till USD med dagens växelkurs
+    (fx_src 'live') eller den grova fasta tabellen ('tabell'); usd/fx None när ingen av dem har valutan. En dagskurs
+    mer än 30 % från tabellens förkastas som datafel. stored_is_local = kursen i rutan ser ut att stå i den lokala
+    valutan — då jämför säkerhetsmarginalen USD mot en annan valuta."""
+    if not isinstance(ref, dict):
+        return None
+    raw = str(ref.get("currency") or "").strip()
+    local = _pos(ref.get("price"))
+    if not raw or raw.upper() == "USD" or local is None:
+        return None
+    fx, src, asof = fx_to_usd(raw), "tabell", None
+    rate = _pos(live[0]) if isinstance(live, (tuple, list)) and live else None
+    if rate is not None and (fx is None or abs(rate / fx - 1.0) <= FX_LIVE_SANE):
+        fx, src, asof = rate, "live", (str(live[1])[:10] if len(live) > 1 and live[1] else None)
+    usd = round(local * fx, 4) if fx else None
+    return {"currency": "GBX" if _is_pence(raw) else raw.upper(), "local": local, "usd": usd, "fx": fx,
+            "fx_src": src if fx else None, "fx_asof": asof,
+            "stored_is_local": _looks_local(_num(price), local, fx)}
+
+
+def _ref_sizes_ok(ref: Optional[dict]) -> bool:
+    """Sifferuppdateringens MUSD-tal går att lita på: kursvalutan saknas eller finns i jobbets fasta tabell
+    (USD ingår). För en valuta utanför den — även London i pence — har jobbet räknat om med 1,0."""
+    if not isinstance(ref, dict):
+        return False
+    raw = str(ref.get("currency") or "").strip()
+    return not raw or raw.upper() in _job_table()
+
+
+def _fcf_scan(row: dict, ref: Optional[dict] = None) -> list:
+    """[(scenario, sort, text)] — se fcf_unit_warnings. sort: 'unit' (tusental/miljarder/yield), 'local' (miljoner
+    NOK/SEK/DKK) eller 'size' (över 2× bolagets storlek)."""
+    r = row or {}
+    fv_in, csm = r.get("fv") or {}, r.get("csm") or {}
+    rf = ref if _ref_sizes_ok(ref) else {}
+    bd_fcf = _pos(rf.get("fcf_musd"))
+    ev = _pos(rf.get("ev_musd")) or _pos(r.get("ev_musd"))     # Börsdatas EV först — rutan skrivs för hand (MSEK?)
+    ev_eb = _pos(rf.get("ev_ebitda"))
+    ebitda = _pos(rf.get("ev_musd")) / ev_eb if ev_eb and _pos(rf.get("ev_musd")) else None
+    mcap, mcap_lbl = _pos(rf.get("mcap_musd")), "börsvärdet"
+    shares = _pos(r.get("framtida_antal_aktier"))
+    if mcap is None and shares is not None:             # inget betrott börsvärde (pence, Yahoo, ny rad): aktier × kurs i USD
+        cur = price_currency(r.get("aktuell_kurs"), ref)
+        p = (cur["usd"] or None) if cur is not None else _pos(r.get("aktuell_kurs"))
+        if p:
+            mcap, mcap_lbl = shares * p, "börsvärdet (aktier × kurs)"
+    size, size_lbl = max(((v, lbl) for v, lbl in ((ev, "EV"), (mcap, mcap_lbl)) if v is not None),
+                         default=(None, ""))
+    ccy = str((ref or {}).get("currency") or "").strip() if isinstance(ref, dict) else ""
+    fx_l = fx_to_usd(ccy) if ccy and not _is_pence(ccy) else None
+    if fx_l is not None and max(fx_l, 1.0 / fx_l) < FCF_LOCAL_FX_MIN:
+        fx_l = None                                     # EUR/CAD/AUD/PLN … går inte att skilja från ett annat scenario
+    C = ccy.upper()
+    out = []
+
+    def _m(v):
+        return f"{v:,.0f}".replace(",", " ")
+
+    def _f(v):                                          # det inskrivna talet som det står: 12 · 12,5 · 3 550 000
+        return f"{v:,.12g}".replace(",", " ").replace(".", ",")
+
+    def _ref(v):                                        # en positiv referens visas aldrig som 0
+        return _f(round(v, 2)) if v < 10 else _m(v)
+
+    def big(v):
+        return size is not None and v > FCF_SIZE_MAX * size
+
+    def over_ebitda(v):                                 # enhetsfritt stöd: FCF i lokal valuta ligger ~10× över EBITDA
+        return ebitda is None or v > FCF_LOCAL_EBITDA * ebitda
+    too_big = f"över {FCF_SIZE_MAX:g}× {size_lbl} {_m(size) if size else ''} MUSD — står talet i miljoner USD (inte tusental)?"
+    for s in FV_SCENARIOS:
+        f = _num((fv_in.get(s) or {}).get("forward_fcf_musd") if isinstance(fv_in.get(s), dict) else None)
+        if f is None or f <= 0:
+            continue
+        sc = csm.get(s) if isinstance(csm, dict) else None
+        base = _pos(sc.get("fcf_musd")) if isinstance(sc, dict) else None
+        src = f"CSM:s {s}-FCF"
+        if base is not None and big(base):             # CSM i fel enhet duger inte som referens
+            out.append((s, "size", f"{s}: {src} {_f(base)} MUSD är {too_big}"))
+            base = None
+        if base is not None and size is not None and base < FCF_EV_MIN * size:
+            base = None                                 # break-even: en kvot mot nästan noll säger inget om enheten
+        if base is None and bd_fcf is not None:
+            base, src = bd_fcf, "Börsdatas FCF (12 mån)"
+        if base is not None and (f < FCF_TOO_SMALL * base or f > FCF_TOO_LARGE * base):
+            out.append((s, "unit", f"{s}: forward FCF {_f(f)} MUSD mot {src} {_ref(base)} MUSD — står talet i "
+                                   f"miljoner USD?"))
+        elif (base is not None and fx_l is not None and (size is None or base >= FCF_LOCAL_REF_MIN * size)
+              and abs(f * fx_l / base - 1.0) <= FCF_LOCAL_BAND):
+            out.append((s, "local", f"{s}: forward FCF {_f(f)} MUSD är {f / base:.1f}× {src} {_ref(base)} MUSD"
+                        .replace(".", ",") + f" — omräknat från {C} stämmer det. Står talet i miljoner {C}?"))
+        elif (s == ctl.BASE and fx_l is not None and size is not None
+              and f >= FCF_LOCAL_YIELD * size and f * fx_l <= FCF_LOCAL_YIELD * size and over_ebitda(f)):
+            out.append((s, "local", f"{s}: forward FCF {_f(f)} MUSD är {100 * f / size:.0f} % av {size_lbl} "
+                                    f"{_m(size)} MUSD — omräknat från {C} {100 * f * fx_l / size:.0f} %. Står talet i "
+                                    f"miljoner {C}?"))
+        elif big(f) and fx_l is not None and not big(f * fx_l) and over_ebitda(f):
+            out.append((s, "local", f"{s}: forward FCF {_f(f)} MUSD är över {FCF_SIZE_MAX:g}× {size_lbl} {_m(size)} "
+                                    f"MUSD — omräknat från {C} {100 * f * fx_l / size:.0f} %. Står talet i miljoner "
+                                    f"{C}?"))
+        elif big(f):
+            out.append((s, "size", f"{s}: forward FCF {_f(f)} MUSD är {too_big}"))
+        elif base is None and s != ctl.BEAR and ev is not None and f < FCF_EV_MIN * ev:
+            out.append((s, "unit", f"{s}: forward FCF {_f(f)} MUSD är under 0,2 % av EV {_m(ev)} MUSD — står talet "
+                                   f"i miljoner USD?"))
+        if (s == ctl.BASE and fx_l is not None and size is not None and not over_ebitda(f)
+                and f >= FCF_LOCAL_YIELD * size and f * fx_l <= FCF_LOCAL_YIELD * size):
+            # Under 1,5× EBITDA: ett riktigt billigt bolag — eller miljoner NOK hos en producent med låg konvertering
+            # (norsk E&P: FCF 5–15 % av EBITDA). EBITDA kan inte skilja dem åt: ingen varningstext, men inget klick.
+            out.append((s, "maybe_local", ""))
+    return out
+
+
+def fcf_unit_warnings(row: dict, ref: Optional[dict] = None) -> list:
+    """Varningar när forward FCF ser ut att stå i fel enhet (MUSD = miljoner USD). Bara text — räkningen är orörd.
+
+    Varje scenario prövas mot CSM:s FCF för samma scenario, annars Börsdatas FCF (12 mån): under 2 % eller över 50×
+    referensen (tusental, miljarder, en yield i fel ruta). För ett bolag noterat i NOK/SEK/DKK (valutor minst 5× från
+    USD) också miljoner i den valutan: inom ±30 % av en referens på minst 2 % av storleken omräknat, eller — när CSM
+    står i samma enhet eller saknas — en Base-FCF över 40 % av storleken som omräknad blir en vanlig yield; när
+    Börsdatas EV/EBITDA finns krävs också en FCF över 1,5× EBITDA (ett riktigt billigt bolag har hög yield men FCF
+    under EBITDA). En FCF över 2× storleken som omräknad blir rimlig (och ligger över EBITDA) räknas också som
+    lokal valuta, inte tusental. Bolagets storlek (Börsdatas EV före kortets handskrivna, eller börsvärde, det större; utan betrott
+    börsvärde aktier × kurs i USD) är ett tak för båda
+    talen: CSM:s FCF skrivs också för hand, så en referens över 2× storleken varnas själv och används inte, och en
+    referens under 0,2 % av storleken (break-even) säger inget om enheten. Utan referens: över 2× storleken, eller
+    under 0,2 % av EV — utom i Bear, som får ligga nära noll."""
+    return [text for _, kind, text in _fcf_scan(row, ref) if kind != "maybe_local"]
+
+
+def fcf_maybe_local(row: dict, ref: Optional[dict] = None) -> Optional[str]:
+    """Valutan när Base-FCF:en kan stå i miljoner av noteringsvalutan men inte går att skilja från ett riktigt billigt
+    bolag (över 40 % av storleken, under 1,5× EBITDA). Ingen varning om enheten — men ingen kurs i USD med ett
+    klick heller: det ena fallet öppnar grinden med en ~10× för god marginal."""
+    if any(kind == "maybe_local" for _, kind, _ in _fcf_scan(row, ref)):
+        return str((ref or {}).get("currency") or "").strip().upper() or None
+    return None
+
+
+def fcf_in_local_currency(row: dict, ref: Optional[dict] = None) -> Optional[str]:
+    """Valutan ('SEK') när forward FCF ser ut att stå i miljoner av bolagets noteringsvaluta — då hör en kurs i samma
+    valuta ihop med den, och att bara byta kursen till USD gör raden fel åt det optimistiska hållet."""
+    if any(kind == "local" for _, kind, _ in _fcf_scan(row, ref)):
+        return str((ref or {}).get("currency") or "").strip().upper() or None
+    return None
+
+
 def gate_ok(row: dict, position_pct=None, strategy: str = "") -> bool:
     """Steg 5 mekaniskt: MoS >= 25 % OCH 'what must go right' ifyllt."""
     return not gate_gaps(row, position_pct, strategy)
