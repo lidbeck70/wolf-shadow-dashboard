@@ -267,6 +267,21 @@ def test_rick_rule_has_no_obs_for_a_break_even_trailing_fcf():
         _rule(fv=kusd), "producenter", ref)
 
 
+def test_rick_rule_has_no_obs_for_a_capex_year_trailing_fcf():
+    """Granskningen av fixen: Börsdatas FCF 2,6–5 MUSD (0,2–0,4 % av EV 1 300) gav fortfarande OBS i texten som
+    Använd skriver. Tolv månader bakåt är en referens först från 2 % av storleken; miljarder ger OBS ändå."""
+    from tests.test_lukacs import producer_refresh_row
+    fcf = {s: {"forward_fcf_musd": f, "target_yield": 12.0}
+           for s, f in (("Base", 150.0), ("Bear", 30.0), ("Bull", 260.0))}
+    bn = {s: {"forward_fcf_musd": v["forward_fcf_musd"] / 1000.0, "target_yield": 12.0} for s, v in fcf.items()}
+    for m in (2.6, 3.0, 4.0, 5.0):
+        ref = producer_refresh_row("USD", 10.0, market_cap=1200.0, ev=1300.0, fcf_m=m)
+        txt = scorecard.valuation_suggestion(_rule(fv=fcf), "producenter", ref)
+        assert "Lukacs: säkerhetsmarginal" in txt and "OBS" not in txt, m
+        assert "— OBS: arket varnar för FCF-enhet eller kursvaluta" in scorecard.valuation_suggestion(
+            _rule(fv=bn), "producenter", ref), m
+
+
 def test_rick_rule_shows_only_what_can_be_computed():
     assert scorecard.valuation_suggestion(_rule(nav_musd=None, aktuell_kurs=None, ev_ebitda=None), "producenter") \
         is None

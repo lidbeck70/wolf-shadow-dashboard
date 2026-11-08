@@ -437,11 +437,12 @@ FX_DISTINCT = 2.0           # valutor minst 2× från USD (NOK, SEK, DKK, pence)
 FX_LIVE_SANE = 0.30         # en dagskurs mer än 30 % från tabellens är ett datafel — då gäller tabellen
 FCF_TOO_SMALL = 0.02        # forward FCF under 2 % av referens-FCF:en — troligen fel enhet
 FCF_TOO_LARGE = 50.0        # … eller över 50× den
-FCF_EV_MIN = 0.002          # utan referens-FCF: under 0,2 % av EV (och en referens under 0,2 % av storleken = break-even)
+FCF_EV_MIN = 0.002          # utan referens-FCF: under 0,2 % av EV (och en CSM-FCF under 0,2 % av storleken = break-even)
 FCF_SIZE_MAX = 2.0          # över 2× bolagets storlek (EV eller börsvärde, det större) — en FCF-yield över 200 %
 FCF_LOCAL_BAND = 0.30       # forward FCF × växelkursen inom ±30 % av referensen = talet står i lokal valuta
 FCF_LOCAL_FX_MIN = 5.0      # … bara för valutor minst 5× från USD (NOK, SEK, DKK) — PLN:s 4× ligger inom vanliga modellgap
 FCF_LOCAL_REF_MIN = 0.02    # … och bara mot en referens på minst 2 % av storleken: nära noll är en kvot på 10× ingen enhet
+#                             (Börsdatas FCF 12 mån är en referens först härifrån — 50× den är då minst storleken)
 FCF_LOCAL_YIELD = 0.40      # Base-FCF över 40 % av storleken men under 40 % omräknad från NOK/SEK/DKK = lokal valuta
 FCF_LOCAL_EBITDA = 1.5      # … och (när Börsdatas EV/EBITDA finns) över 1,5× EBITDA: en äkta hög yield ligger under EBITDA
 PENCE = ("GBX", "GBp")      # London i pence: GBP/100
@@ -561,8 +562,10 @@ def _fcf_scan(row: dict, ref: Optional[dict] = None) -> list:
             mcap, mcap_lbl = shares * p, "börsvärdet (aktier × kurs)"
     size, size_lbl = max(((v, lbl) for v, lbl in ((ev, "EV"), (mcap, mcap_lbl)) if v is not None),
                          default=(None, ""))
-    if bd_fcf is not None and size is not None and bd_fcf < FCF_EV_MIN * size:
-        bd_fcf = None                                   # break-even: samma regel som för CSM:s referens
+    # Tolv månader bakåt är en referens bara från 2 % av storleken: 50× det är då minst storleken, så en vanlig
+    # Base/Bull-yield når inte taket. Ett kapitaltungt år (break-even) säger inget om enheten.
+    if bd_fcf is not None and size is not None and bd_fcf < FCF_LOCAL_REF_MIN * size:
+        bd_fcf = None
     ccy = str((ref or {}).get("currency") or "").strip() if isinstance(ref, dict) else ""
     fx_l = fx_to_usd(ccy) if ccy and not _is_pence(ccy) else None
     if fx_l is not None and max(fx_l, 1.0 / fx_l) < FCF_LOCAL_FX_MIN:
@@ -625,7 +628,8 @@ def _fcf_scan(row: dict, ref: Optional[dict] = None) -> list:
                                     f"{C}?"))
         elif big(f):
             out.append((s, "size", f"{s}: forward FCF {_f(f)} MUSD är {too_big}"))
-        elif base is None and s != ctl.BEAR and ev is not None and f < FCF_EV_MIN * ev:
+        elif (base is None or trailing) and s != ctl.BEAR and ev is not None and f < FCF_EV_MIN * ev:
+            # golvet gäller också mot tolv månader bakåt: 2 % av den räcker inte för att fånga miljarder
             out.append((s, "unit", f"{s}: forward FCF {_f(f)} MUSD är under 0,2 % av EV {_m(ev)} MUSD — står talet "
                                    f"i miljoner USD?"))
         if (s == ctl.BASE and fx_l is not None and size is not None and not over_ebitda(f)
@@ -648,10 +652,11 @@ def fcf_unit_warnings(row: dict, ref: Optional[dict] = None) -> list:
     lokal valuta, inte tusental. Bolagets storlek (Börsdatas EV före kortets handskrivna, eller börsvärde, det större; utan betrott
     börsvärde aktier × kurs i USD) är ett tak för båda
     talen: CSM:s FCF skrivs också för hand, så en referens över 2× storleken varnas själv och används inte, och en
-    referens under 0,2 % av storleken (break-even) säger inget om enheten — det gäller CSM:s och Börsdatas, och en
-    CSM-FCF nära noll ersätts inte med Börsdatas. Börsdatas tolv månader är ett tal för alla scenarier: mot det
-    prövas Bear bara uppåt (över 50×) och miljoner NOK/SEK/DKK (±30 %) bara i Base. Utan referens: över 2×
-    storleken, eller under 0,2 % av EV — utom i Bear, som får ligga nära noll."""
+    CSM-FCF under 0,2 % av storleken (break-even) säger inget om enheten och ersätts inte med Börsdatas. Börsdatas
+    tolv månader är en referens först från 2 % av storleken: 50× det är då minst storleken, så en vanlig Base- eller
+    Bull-yield når inte taket. Det är ett tal för alla scenarier: mot det prövas Bear bara uppåt (över 50×),
+    miljoner NOK/SEK/DKK (±30 %) bara i Base, och golvet under 0,2 % av EV gäller ändå (miljarder). Utan referens:
+    över 2× storleken, eller under 0,2 % av EV — utom i Bear, som får ligga nära noll."""
     return [text for _, kind, text in _fcf_scan(row, ref) if kind != "maybe_local"]
 
 

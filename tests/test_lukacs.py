@@ -652,9 +652,41 @@ def test_a_csm_near_break_even_is_not_replaced_by_the_trailing_fcf():
     assert {w.split(":")[0] for w in fv.fcf_unit_warnings(_card((450000, 5, 700000)), healthy)} == {"Base", "Bull"}
     small = fv.fcf_unit_warnings(_card((0.45, 5, 0.7)), healthy)
     assert [w.split(":")[0] for w in small] == ["Base", "Bull"] and "mot Börsdatas FCF (12 mån) 400 MUSD" in small[0]
+    # 400 MUSD är 0,8 % av EV 50 000 — ingen referens (under 2 %); Bear i tusental fångas mot 1 500 MUSD (3 %)
     major = producer_refresh_row("USD", 50.0, market_cap=45000.0, ev=50000.0, fcf_m=400.0)
-    assert fv.fcf_unit_warnings(_card((None, 25000, None)), major) == [
-        "Bear: forward FCF 25 000 MUSD mot Börsdatas FCF (12 mån) 400 MUSD — står talet i miljoner USD?"]
+    assert fv.fcf_unit_warnings(_card((None, 25000, None)), major) == []
+    major = producer_refresh_row("USD", 50.0, market_cap=45000.0, ev=50000.0, fcf_m=1500.0)
+    assert fv.fcf_unit_warnings(_card((None, 80000, None)), major) == [
+        "Bear: forward FCF 80 000 MUSD mot Börsdatas FCF (12 mån) 1 500 MUSD — står talet i miljoner USD?"]
+
+
+def test_a_trailing_fcf_under_two_percent_of_size_is_no_unit_reference():
+    """Granskningen av fixen: Börsdatas FCF 2,6–5 MUSD (0,2–0,4 % av EV 1 300, ett kapitaltungt år) låg över
+    break-even-spärren, men 50× det är under en vanlig Bull — rätta MUSD-tal fick 'står talet i miljoner USD?'.
+    Tolv månader bakåt är en referens först från 2 % av storleken (26 MUSD här)."""
+    for m in (2.6, 3.0, 4.0, 5.0):
+        ref = producer_refresh_row("USD", 10.0, market_cap=1200.0, ev=1300.0, fcf_m=m)
+        assert ref["fcf_musd"] == m and fv.ref_fcf_musd(ref) == m      # kortets referensrad visar talet ändå
+        assert fv.fcf_unit_warnings(_card((150, 30, 260)), ref) == [], m
+    ref = producer_refresh_row("USD", 10.0, market_cap=1200.0, ev=1300.0, fcf_m=30.0)   # 2,3 % — en referens
+    assert fv.fcf_unit_warnings(_card((150, 30, 260)), ref) == []
+    assert "Bull: forward FCF 260 000 MUSD mot Börsdatas FCF (12 mån) 30 MUSD" in " ".join(
+        fv.fcf_unit_warnings(_card((150, 30, 260000)), ref))
+
+
+def test_billions_are_caught_next_to_a_trailing_fcf():
+    """FCF i miljarder (0,15 / 0,03 / 0,26 för 150 / 30 / 260 MUSD) fångas av golvet under 0,2 % av EV också när
+    Börsdatas tolv månader finns. Golvet gäller även mot en referens: 2 % av 30 MUSD är 0,6, så Bull 0,7 fångas
+    bara av golvet."""
+    for m in (4.0, 6.0):
+        ref = producer_refresh_row("USD", 10.0, market_cap=1200.0, ev=1300.0, fcf_m=m)
+        bn = fv.fcf_unit_warnings(_card((0.15, 0.03, 0.26)), ref)
+        assert [w.split(":")[0] for w in bn] == ["Base", "Bull"], m
+        assert all("är under 0,2 % av EV 1 300 MUSD" in w for w in bn), m
+    ref = producer_refresh_row("USD", 10.0, market_cap=1200.0, ev=1300.0, fcf_m=30.0)
+    assert fv.fcf_unit_warnings(_card((0.3, 0.1, 0.7)), ref) == [
+        "Base: forward FCF 0,3 MUSD mot Börsdatas FCF (12 mån) 30 MUSD — står talet i miljoner USD?",
+        "Bull: forward FCF 0,7 MUSD är under 0,2 % av EV 1 300 MUSD — står talet i miljoner USD?"]
 
 
 def test_the_trailing_fcf_checks_millions_of_sek_only_in_base():

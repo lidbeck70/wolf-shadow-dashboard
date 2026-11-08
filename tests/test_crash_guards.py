@@ -656,25 +656,46 @@ def test_a_weak_trailing_year_does_not_hide_the_usd_price(sheet):
     assert not [b for b in at.button if b.label == "Använd USD"]
 
 
+def _usd_card(fcf):
+    """Rick Rule-kortet för BOL.ST i USD (EV 1 300 MUSD) med forward FCF (Base, Bear, Bull) i MUSD."""
+    return {"producers": {"producers": [
+        _var_row(ticker="BOL.ST", aktuell_kurs=10.0, framtida_antal_aktier=120.0, ev_musd=1300.0,
+                 csm={s_: {"price": p} for s_, p in (("Base", 95.0), ("Bear", 70.0), ("Bull", 115.0))},
+                 fv={s_: {"forward_fcf_musd": f, "target_yield": 12.0}
+                     for s_, f in zip(("Base", "Bear", "Bull"), fcf)})], "royalty": []}}
+
+
 def test_a_break_even_trailing_fcf_gives_no_unit_warning_on_the_card(sheet):
     """Batch 2-granskningen: Börsdatas FCF 1,5 MUSD (0,12 % av EV, ett kapitaltungt år) gav 'står talet i miljoner
     USD?' på rätta MUSD-tal. Referensraden visas ändå; tusental varnas som förut."""
     from tests.test_lukacs import producer_refresh_row
     blob = {"rows": {"producers:r1": producer_refresh_row("USD", 10.0, market_cap=1200.0, ev=1300.0, fcf_m=1.5)}}
-
-    def row(fcf):
-        return _var_row(ticker="BOL.ST", aktuell_kurs=10.0, framtida_antal_aktier=120.0, ev_musd=1300.0,
-                        csm={s_: {"price": p} for s_, p in (("Base", 95.0), ("Bear", 70.0), ("Bull", 115.0))},
-                        fv={s_: {"forward_fcf_musd": f, "target_yield": 12.0}
-                            for s_, f in zip(("Base", "Bear", "Bull"), fcf)})
-    at = sheet("Rick Rule", blob, {"producers": {"producers": [row((150.0, 30.0, 260.0))], "royalty": []}})
+    at = sheet("Rick Rule", blob, _usd_card((150.0, 30.0, 260.0)))
     at.run()
     assert not at.exception, at.exception
     assert any("Börsdata FCF 12 mån: 1,5 MUSD" in m.value for m in at.markdown)
     assert not [w for w in at.warning if "står talet i miljoner USD" in w.value]
-    at = sheet("Rick Rule", blob, {"producers": {"producers": [row((150000.0, 30.0, 260.0))], "royalty": []}})
+    at = sheet("Rick Rule", blob, _usd_card((150000.0, 30.0, 260.0)))
     at.run()
     assert "Base: forward FCF 150 000 MUSD är över 2× EV 1 300 MUSD" in " ".join(w.value for w in at.warning)
+
+
+def test_a_capex_year_trailing_fcf_gives_no_unit_warning_on_the_card(sheet):
+    """Granskningen av fixen: Börsdatas FCF 4 MUSD (0,3 % av EV 1 300) låg över break-even-spärren, och Bull 260 MUSD
+    (över 50× det) fick 'står talet i miljoner USD?' på kortet. Miljarder varnas mot EV som förut."""
+    from tests.test_lukacs import producer_refresh_row
+    blob = {"rows": {"producers:r1": producer_refresh_row("USD", 10.0, market_cap=1200.0, ev=1300.0, fcf_m=4.0)}}
+    at = sheet("Rick Rule", blob, _usd_card((150.0, 30.0, 260.0)))
+    at.run()
+    assert not at.exception, at.exception
+    assert any("Börsdata FCF 12 mån: 4,0 MUSD" in m.value for m in at.markdown)
+    assert not [w for w in at.warning if "står talet i miljoner USD" in w.value]
+    at = sheet("Rick Rule", blob, _usd_card((0.15, 0.03, 0.26)))
+    at.run()
+    assert not at.exception, at.exception
+    warn = " ".join(w.value for w in at.warning)
+    assert "Base: forward FCF 0,15 MUSD är under 0,2 % av EV 1 300 MUSD" in warn
+    assert "Bull: forward FCF 0,26 MUSD är under 0,2 % av EV 1 300 MUSD" in warn
 
 
 def test_live_fx_reads_the_price_layer_and_falls_back_quietly(monkeypatch):
