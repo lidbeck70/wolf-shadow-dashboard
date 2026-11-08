@@ -217,16 +217,17 @@ def _sheet_widget(company: CompanyInput, key: str, label: str, wkey: str):
 
 def musd_currency_note(company: CompanyInput) -> Optional[str]:
     """Upplysning på rader i annan valuta än USD: MUSD-fälten läses som USD (som etiketterna säger och som
-    Börsdata-förslagen levererar dem) — bara kursen räknas om. Fält skrivna för hand kan stå i lokal valuta (förr
-    räknade motorn om dem); de räknas upp så att du kan kontrollera dem. None för USD-rader."""
+    Börsdata- och Yahoo-förslagen levererar dem) — bara kursen räknas om. Fält skrivna för hand kan stå i lokal
+    valuta (förr räknade motorn om dem); de räknas upp så att du kan kontrollera dem. None för USD-rader."""
+    from engines.durrett import refresh as dr
     cur = str(company.get("market_currency").value if company.has("market_currency") else "").strip().upper()
     if not cur or cur == "USD":
         return None
     manual = [ccfg.FIELD_BY_KEY[k].label for k in sorted(company.fields) if k.endswith("_musd") and k in ccfg.FIELD_BY_KEY
               and company.get(k) is not None and not company.get(k).missing
-              and not str(company.get(k).source or "").startswith("Börsdata")]
-    base = (f"Valutan är {cur}: belopp i MUSD räknas som USD (som etiketterna säger, och som Börsdata-förslagen "
-            f"levererar dem) — bara kursen räknas om med växelkursen.")
+              and not str(company.get(k).source or "").startswith(dr.AUTO_USD_SOURCES)]
+    base = (f"Valutan är {cur}: belopp i MUSD räknas som USD (som etiketterna säger, och som Börsdata- och "
+            f"Yahoo-förslagen levererar dem) — bara kursen räknas om med växelkursen.")
     if manual:
         base += f" Skrivna för hand: {', '.join(manual)} — står de i {cur}? Räkna om dem till USD."
     return base
@@ -481,7 +482,8 @@ def _valuation_needs(company: CompanyInput, a: DurrettAnalysis) -> list:
                 out.append("MCap/framtida vinst kräver " + ", ".join(miss))
         if len(out) == n_before:                        # måttet saknas men inget ovan förklarar det: säg det ändå
             out.append("MCap/framtida vinst kan inte räknas med de här talen (se Analys → loggen)")
-    ev_need = mcap_need or ("kassa eller skuld (eller enterprise value)" if a.enterprise_value_musd is None else None)
+    # EV ur enterprise_value_musd är USD och kräver varken kurs eller växelkurs — fråga bara när EV saknas
+    ev_need = None if a.enterprise_value_musd is not None else (mcap_need or "kassa eller skuld (eller enterprise value)")
     if val("ev_per_resource_unit") is None:
         mii_given = any(u(k) for k in ("resource_measured", "resource_indicated", "resource_inferred"))
         qty_given = mii_given or any(u(k) for k in ("reserve_proven", "reserve_probable"))

@@ -398,6 +398,9 @@ def _field_widgets(company: CompanyInput, f: cfg.FieldSpec) -> dict:
                                       key=f"{k}_t")
     w["pub_date"] = c[4].text_input("Datum", value=(p.pub_date or "") if p else "", key=f"{k}_d",
                                     placeholder="ÅÅÅÅ-MM-DD")
+    # det rutorna visade från början — ett ändrat värde under orörd källa är en handändring (_point_from_widgets)
+    w["_shown"] = cur if f.kind in ("bool", "choice") else (_fmt(p.value) if p and not p.missing else "")
+    w["_prev_source"] = (p.source or "") if p else ""
     return w
 
 
@@ -423,8 +426,24 @@ def _point_from_widgets(w: dict, f: cfg.FieldSpec) -> Optional[Datapoint]:
         if not str(raw).strip():
             return None
         value = str(raw).strip()
-    return dp(value, kind=w["kind"], source=w["source"].strip(), source_type=w["source_type"],
+    return dp(value, kind=w["kind"], source=_edited_source(w, f), source_type=w["source_type"],
               pub_date=(w["pub_date"].strip() or None), unit=f.unit)
+
+
+def _edited_source(w: dict, f: cfg.FieldSpec) -> str:
+    """Källan att spara. Ändrar du värdet men lämnar den ifyllda källan (t.ex. "Börsdata (sifferuppdatering …)")
+    är talet inte längre Börsdatas — då blir källan "Manuell (ersätter …)", så att t.ex. Durrett-arkets
+    valutaupplysning ser att talet är skrivet för hand. Redan manuella källor och orörda värden behålls."""
+    source = w["source"].strip()
+    prev = str(w.get("_prev_source") or "").strip()
+    if not prev or source != prev or "manuell" in prev.lower() or "_shown" not in w:
+        return source
+    now, shown = str(w["value"]).strip(), str(w["_shown"]).strip()
+    if f.kind in ("number", "int") and _num_or_none(now) is not None and _num_or_none(shown) is not None:
+        changed = abs(_num_or_none(now) - _num_or_none(shown)) > 1e-12
+    else:
+        changed = now != shown
+    return f"Manuell (ersätter {prev})" if changed else source
 
 
 def _render_prefill(data: dict, company: CompanyInput, store: str = cs.STORE) -> None:

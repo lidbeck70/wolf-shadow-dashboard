@@ -361,7 +361,8 @@ FIELDS: tuple = (
     # ── Scenarier (kedjan pris → produktion → EBITDA → FCF → EV/NAV → aktie) ──
     FieldSpec("shares_outstanding_m", "Antal aktier (fullt utspätt)", "M", "number", _ALL, "scenarios"),
     FieldSpec("share_price", "Aktiekurs", "valuta/aktie", "number", _ALL, "scenarios",
-              hint="Samma valuta som börsvärdet delat med aktier"),
+              hint="I handelsvalutan (market_currency), t.ex. TSX-kursen i CAD — Durrett växlar kursen med "
+                   "fx_to_usd. Börsvärde och övriga MUSD-fält står i USD."),
     FieldSpec("tax_rate_pct", "Skattesats", "%", "number", _ALL, "scenarios",
               hint=f"Saknas → {DEFAULT_TAX_RATE_PCT:g} % (ASSUMPTION)"),
     FieldSpec("target_ev_ebitda", "EV/EBITDA i scenariot", "×", "number", _PROD, "scenarios",
@@ -389,8 +390,9 @@ FIELDS: tuple = (
     FieldSpec("atm_program", "ATM-program aktivt", "", "bool", _ALL, "durrett_shares"),
     FieldSpec("recent_financing_musd", "Senaste finansiering (12 mån)", "MUSD", "number", _ALL, "durrett_shares"),
     FieldSpec("expected_financing_musd", "Väntad finansiering (12 mån)", "MUSD", "number", _ALL, "durrett_shares"),
-    FieldSpec("market_currency", "Valuta för kurs/börsvärde", "", "choice", _ALL, "durrett_shares",
-              choices=("USD", "CAD", "AUD", "GBP", "EUR", "SEK", "NOK")),
+    FieldSpec("market_currency", "Handelsvaluta (aktiekursen)", "", "choice", _ALL, "durrett_shares",
+              choices=("USD", "CAD", "AUD", "GBP", "EUR", "SEK", "NOK", "DKK", "CHF", "PLN"),
+              hint="Bara kursen står i denna valuta; MUSD-fälten är USD."),
     FieldSpec("fx_to_usd", "Växelkurs → USD", "USD per enhet", "number", _ALL, "durrett_shares",
               hint="1 CAD = 0,73 USD → 0.73. Krävs när valutan inte är USD; ingen dold FX."),
     # ── Resurser & reserver per kategori (SPEC §5) — i råvarans enhet ─────

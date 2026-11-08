@@ -156,7 +156,7 @@ DURRETT_CONFIG: dict = {
 
 # ── Valutor (SPEC §44). Intern modellvaluta USD. Kurserna är None tills du
 #    anger dem (fältet fx_to_usd per bolag, med datum) — ingen dold FX. ──
-CURRENCIES = ("USD", "CAD", "AUD", "GBP", "EUR", "SEK", "NOK")
+CURRENCIES = ("USD", "CAD", "AUD", "GBP", "EUR", "SEK", "NOK", "DKK", "CHF", "PLN")   # = market_currency-valen
 
 # ── Metallnormalisering (SPEC §45) — enhet per råvara ur confidence.commodities;
 #    här bara vilka kostnadsmått som gäller. ──

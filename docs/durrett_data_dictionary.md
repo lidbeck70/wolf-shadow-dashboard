@@ -21,7 +21,7 @@ Saknat fält = N/A i beräkningen och `missing_data` i svaret — aldrig 0. *Sta
 | `atm_program` | ATM-program aktivt | — | bool | alla |  |  |
 | `recent_financing_musd` | Senaste finansiering (12 mån) | MUSD | number | alla |  |  |
 | `expected_financing_musd` | Väntad finansiering (12 mån) | MUSD | number | alla |  |  |
-| `market_currency` | Valuta för kurs/börsvärde | — | choice | alla |  |  Val: USD, CAD, AUD, GBP, EUR, SEK, NOK |
+| `market_currency` | Handelsvaluta (aktiekursen) | — | choice | alla |  | Bara kursen står i denna valuta; MUSD-fälten är USD. Val: USD, CAD, AUD, GBP, EUR, SEK, NOK, DKK, CHF, PLN |
 | `fx_to_usd` | Växelkurs → USD | USD per enhet | number | alla |  | 1 CAD = 0,73 USD → 0.73. Krävs när valutan inte är USD; ingen dold FX. |
 
 ## Reserver & resurser (steg 1)
@@ -205,7 +205,7 @@ Saknat fält = N/A i beräkningen och `missing_data` i svaret — aldrig 0. *Sta
 | Nyckel | Etikett | Enhet | Typ | Stage | Max | Beskrivning |
 |---|---|---|---|---|---|---|
 | `shares_outstanding_m` | Antal aktier (fullt utspätt) | M | number | alla |  |  |
-| `share_price` | Aktiekurs | valuta/aktie | number | alla |  | Samma valuta som börsvärdet delat med aktier |
+| `share_price` | Aktiekurs | valuta/aktie | number | alla |  | I handelsvalutan (market_currency), t.ex. TSX-kursen i CAD — Durrett växlar kursen med fx_to_usd. Börsvärde och övriga MUSD-fält står i USD. |
 | `tax_rate_pct` | Skattesats | % | number | alla |  | Saknas → 25 % (ASSUMPTION) |
 | `target_ev_ebitda` | EV/EBITDA i scenariot | × | number | producer, royalty |  | Saknas → 5× (ASSUMPTION) |
 | `target_p_nav` | P/NAV vid omvärdering | × | number | explorer, developer |  | Saknas → 0.7× (ASSUMPTION) |
@@ -273,7 +273,7 @@ Saknat fält = N/A i beräkningen och `missing_data` i svaret — aldrig 0. *Sta
 |---|---|
 | `fd_m` | basic + optioner + warranter + konvertibler + övrigt |
 | `dilution_1y/3y/5y` | aktier nu / aktier då − 1 |
-| `mcap_usd`, `fd_mcap_usd` | börsvärde (× fx_to_usd), FD = kurs × FD-aktier |
+| `mcap_usd`, `fd_mcap_usd` | börsvärde (MUSD = USD, växlas inte); FD = kurs × fx_to_usd × FD-aktier |
 | `ev_usd`, `fd_ev_usd` | börsvärde + nettoskuld |
 | `reserve_total`, `resource_total`, `mi_total` | P+P, M+I+I, M+I (attributable) med kategorinot |
 | `mcap_per_*_unit`, `ev_per_*_unit` | MUSD × 1e6 / enheter |

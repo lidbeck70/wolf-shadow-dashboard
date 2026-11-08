@@ -527,3 +527,95 @@ def test_the_sheet_says_how_amounts_are_read_on_non_usd_rows():
     lex.set("cash_musd", dp(18.0, kind="ACTUAL", source="Arket (manuell)"))
     note = dui.musd_currency_note(lex)
     assert "Skrivna för hand: Kassa" in note and "står de i CAD? Räkna om dem till USD." in note
+
+
+def test_yahoo_fallback_amounts_are_not_called_hand_written():
+    """Granskningen: Asymmetrys Yahoo-reserv räknar redan om börsvärde/kassa/skuld till USD, men upplysningen kallade
+    dem "skrivna för hand" och bad ägaren räkna om dem en gång till (1 600 → 1 168)."""
+    from asymmetry import fetch
+    from engines.durrett import refresh as dr
+    from engines.durrett import ui as dui
+    info = {"marketCap": 450e6, "currency": "CAD", "financialCurrency": "CAD", "currentPrice": 2.1,
+            "sharesOutstanding": 214e6, "totalCash": 60e6, "totalDebt": 5e6}
+    row = fetch.yahoo_row("LIX", lambda s: info if s == "LIX.TO" else {})
+    c = dcs.lithium_explorer()
+    c.ticker = "LIX"
+    for k in ("market_cap_musd", "cash_musd", "debt_musd", "enterprise_value_musd"):
+        c.fields.pop(k, None)
+    for fkey, point, _cur in dr.proposals({"generated": "2026-11-08", "rows": {"confidence:LIX": row}}, c):
+        c.set(fkey, point)                                    # "Använd alla"
+    assert c.num("market_cap_musd") == pytest.approx(round(450 * 0.73, 1))
+    note = dui.musd_currency_note(c)
+    assert note.startswith("Valutan är CAD") and "Börsdata- och Yahoo-förslagen" in note
+    assert "Skrivna för hand" not in note
+    c.set("working_capital_musd", dp(12.0, kind="ACTUAL", source="Arket (manuell)"))
+    note = dui.musd_currency_note(c)
+    assert "Skrivna för hand: Rörelsekapital — står de i CAD?" in note
+
+
+def test_a_danish_row_gets_its_currency_so_the_price_is_converted():
+    """Granskningen: DKK/CHF/PLN fanns i växelkurstabellen men inte bland valen, så valutan föreslogs aldrig och den
+    danska kursen lästes som USD bredvid ett börsvärde i USD (FD-börsvärde ~7× för högt)."""
+    from confidence import config as ccfg
+    from engines.durrett import refresh as dr
+    import sheets_refresh as sr
+    assert set(sr.FX_TO_USD) <= set(ccfg.FIELD_BY_KEY["market_currency"].choices) == set(dc.CURRENCIES)
+    blob = {"generated": "2026-11-08", "rows": {"confidence:NOVO": {
+        "ticker": "NOVO", "price": 100.0, "asof": "2026-11-07", "currency": "DKK", "mcap_musd": 2175.0,
+        "fx_to_usd": 0.145, "fx_table": "sheets_refresh.FX_TO_USD (fast tabell)"}}}
+    c = dcs.gold_producer()
+    c.ticker = "NOVO"
+    c.fields.pop("market_currency", None)
+    for fkey, point, _cur in dr.proposals(blob, c):
+        c.set(fkey, point)
+    assert c.get("market_currency").value == "DKK"
+    ss = dilution.share_structure(Ctx(c))
+    assert ss["price_usd"] == pytest.approx(100.0 * 0.145) and ss["mcap_usd"] == pytest.approx(2175.0)
+
+
+def test_ev_measures_do_not_ask_for_fx_when_ev_is_given_in_usd():
+    """Granskningen: med EV ur enterprise_value_musd (USD) bad EV/NPV och EV/resurs ändå om växelkurs — den behövs
+    bara för kurs × aktier."""
+    from engines.durrett import ui as dui
+    c = dcs.currency_mismatch()                               # CAD-kurs utan växelkurs och utan börsvärde
+    c.set("enterprise_value_musd", dp(500.0, kind="ACTUAL", source="Börsdata (sifferuppdatering 2026-11-07)"))
+    c.fields.pop("npv_musd", None)
+    a = analyze(c, today=T)
+    assert a.enterprise_value_musd == pytest.approx(500.0) and a.market_cap_musd is None
+    needs = dui._valuation_needs(c, a)
+    ev_lines = [n for n in needs if n.startswith(("EV/NPV", "EV/resurs"))]
+    assert any(n.startswith("EV/NPV kräver NPV (MUSD)") for n in ev_lines)
+    assert not any("växelkurs" in n for n in ev_lines)
+    assert any("växelkurs → USD" in n for n in needs if n.startswith("MCap"))   # MCap räknas fortfarande ur kursen
+
+
+def test_a_hand_edit_under_the_prefilled_borsdata_source_becomes_manual():
+    """Granskningen: 'Alla fält' och Asymmetrys formulär fyller i Källa med den sparade källan. Ett tal skrivet för
+    hand behöll "Börsdata …", så valutaupplysningen tog det för Börsdatas USD."""
+    from confidence import config as ccfg
+    from confidence import ui as cui
+    f = ccfg.FIELD_BY_KEY["cash_musd"]
+    src = "Börsdata (sifferuppdatering 2026-11-07)"
+    w = {"value": "24.6", "kind": "ACTUAL", "source": src, "source_type": "secondary", "pub_date": "",
+         "_shown": "18", "_prev_source": src}
+    p = cui._point_from_widgets(w, f)
+    assert p.value == pytest.approx(24.6) and p.source == f"Manuell (ersätter {src})"
+    assert cui._point_from_widgets(dict(w, value="18.0"), f).source == src             # samma tal: orört
+    assert cui._point_from_widgets(dict(w, source="MD&A Q3"), f).source == "MD&A Q3"   # egen källa vinner
+    man = dict(w, source="Arket (manuell)", _prev_source="Arket (manuell)")
+    assert cui._point_from_widgets(man, f).source == "Arket (manuell)"                 # redan manuell
+    cur = ccfg.FIELD_BY_KEY["market_currency"]
+    wc = {"value": "USD", "kind": "ACTUAL", "source": src, "source_type": "secondary", "pub_date": "",
+          "_shown": "CAD", "_prev_source": src}
+    assert cui._point_from_widgets(wc, cur).source.startswith("Manuell (ersätter Börsdata")
+    lex = dcs.lithium_explorer()
+    lex.set("cash_musd", p)
+    from engines.durrett import ui as dui
+    assert "Skrivna för hand: Kassa" in dui.musd_currency_note(lex)
+
+
+def test_the_price_hint_says_only_the_price_is_in_the_trading_currency():
+    from confidence import config as ccfg
+    hint = ccfg.FIELD_BY_KEY["share_price"].hint
+    assert "handelsvalutan" in hint and "MUSD-fält står i USD" in hint
+    assert ccfg.FIELD_BY_KEY["market_currency"].label == "Handelsvaluta (aktiekursen)"
