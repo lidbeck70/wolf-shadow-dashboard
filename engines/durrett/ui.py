@@ -432,8 +432,15 @@ def _valuation_needs(company: CompanyInput, a: DurrettAnalysis) -> list:
                 _pnum(company.get("breakeven_price")) if u("breakeven_price") else None)
             price = _pnum(company.get("commodity_price")) if u("commodity_price") else None
             if prod_used == 0:
-                out.append("MCap/framtida vinst: produktionen som räknas är 0 — fyll i Produktion plan (eller "
-                           "årsproduktion ur studien)")
+                src = next((k for k in prod_keys if u(k)), None)          # fältet som ger nollan (motorns ordning)
+                if src == "production_current":
+                    out.append("MCap/framtida vinst: Produktion nu är 0 och läses före årsproduktionen — fyll i "
+                               "Produktion plan" + (" (eller töm Produktion nu så räknas årsproduktionen)"
+                                                    if u("annual_production") else
+                                                    " (eller töm Produktion nu och fyll i årsproduktion ur studien)"))
+                else:
+                    out.append("MCap/framtida vinst: produktionen som räknas är 0 — rätta Produktion plan/"
+                               "årsproduktion")
             elif cost is not None and price is not None and cost >= price:
                 out.append("MCap/framtida vinst: framtida vinst ≤ 0 — kostnaden (AISC/break-even) ligger över "
                            "råvarupriset")

@@ -556,7 +556,11 @@ def test_the_missing_list_handles_units_zero_production_and_hidden_resource_gaps
     zero = _company("developer", market_cap_musd=61.0, cash_musd=5.0, production_current=0.0, breakeven_price=1400.0,
                     commodity_price=2600.0, resource_unit="oz")
     needs = " · ".join(_needs(zero))
-    assert "produktionen som räknas är 0" in needs and "kostnaden" not in needs
+    assert ("MCap/framtida vinst: Produktion nu är 0 och läses före årsproduktionen — fyll i Produktion plan (eller "
+            "töm Produktion nu och fyll i årsproduktion ur studien)") in needs and "kostnaden" not in needs
+    from confidence.data.provenance import dp
+    zero.set("annual_production", dp(120000.0, kind="ESTIMATE", source="PEA"))      # finns redan — läses inte
+    assert "(eller töm Produktion nu så räknas årsproduktionen)" in " · ".join(_needs(zero))
     no_unit = _company("producer", market_cap_musd=61.0, production_current=1000.0)
     assert ("EV/resurs kräver kassa eller skuld (eller enterprise value) och enhet (resurs/produktion) och resurs "
             "(mängd)") in _needs(no_unit)
