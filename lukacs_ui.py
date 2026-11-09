@@ -253,21 +253,23 @@ def render_fv(row: dict, key: str, prefix: str = "fv", sheet: str = "") -> bool:
         unsafe_allow_html=True)
 
     # ── Kvalitetsklassen, som låser yield-bandet ─────────────────────────────
+    # Ingen vald klass visas som '—' (inte som C): grinden kräver ett val, och kortet räknar som grinden.
     codes = list(fv.CLASS_CODES)
-    cur_code = str(row.get("fcf_kvalitet") or "C").upper()[:1]
-    idx = codes.index(cur_code) if cur_code in codes else codes.index("C")
+    cur_code = str(row.get("fcf_kvalitet") or "").strip().upper()[:1]
+    cur_code = cur_code if cur_code in codes else None
     c1, c2, c3 = st.columns([1, 1.2, 1.2])
     code = c1.selectbox(
-        "FCF-kvalitet", codes, index=idx, key=f"{prefix}_{key}_class",
+        "FCF-kvalitet", codes, index=codes.index(cur_code) if cur_code else None,
+        key=f"{prefix}_{key}_class", placeholder="—",
         format_func=lambda c: f"{c} — {fv.CLASS_BY_CODE[c].name}",
         help="\n\n".join(_class_label(q) for q in fv.QUALITY_CLASSES))
-    if code != cur_code:
+    if code is not None and code != cur_code:
         row["fcf_kvalitet"] = code
         changed = True
 
     q = fv.quality_class(code)
     band = fv.yield_band(code)
-    locked = band is None
+    locked = q is not None and band is None           # klass D — ingen klass vald är inte låst, bara ofullständig
 
     shares = c2.number_input(
         "Framtida antal aktier (miljoner)", min_value=0.0, step=1.0,
@@ -301,7 +303,9 @@ def render_fv(row: dict, key: str, prefix: str = "fv", sheet: str = "") -> bool:
     if sheet:                                           # efter skrivningen: förslaget jämför med rutans tal nu
         _shares_suggestion(row, key, sheet, ref, shares, f"{prefix}_{key}_shares")
 
-    if locked:
+    if q is None:
+        st.info(f"{fv.CLASS_MISSING} Steg 5 blir inte grönt utan den.")
+    elif locked:
         st.info(f"{fv.NOT_FCF_VALUED}. Target-yield är låst — ett "
                 f"extraordinärt kassaflöde ger ingen meningsfull fair value. "
                 f"Byt klass om kassaflödet visar sig vara uthålligt.")
@@ -330,7 +334,7 @@ def render_fv(row: dict, key: str, prefix: str = "fv", sheet: str = "") -> bool:
             key=f"{prefix}_{key}_{s}_yield",
             disabled=locked,
             help=(f"Låst till klass {q.code}: {band[0]:g}–{band[1]:g} %."
-                  if band else fv.NOT_FCF_VALUED))
+                  if band else fv.NOT_FCF_VALUED if locked else "Välj FCF-kvalitet först — klassen låser bandet."))
         vals = {"forward_fcf_musd": fcf, "target_yield": ty}
         if any(storage.differs(v, sc.get(k))
                for k, v in vals.items()):

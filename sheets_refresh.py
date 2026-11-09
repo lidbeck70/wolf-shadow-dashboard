@@ -62,6 +62,24 @@ _SUFFIX_RE = re.compile(r"\.(ST|OL|HE|CO)$", re.I)
 
 FX_TO_USD = {"SEK": 0.095, "NOK": 0.095, "DKK": 0.145, "EUR": 1.08, "USD": 1.0,
              "CAD": 0.73, "AUD": 0.66, "GBP": 1.27, "CHF": 1.13, "PLN": 0.25}
+_UNKNOWN_CCY: set = set()
+
+
+def fx_rate(ccy) -> Optional[float]:
+    """USD per enhet ur FX_TO_USD. Saknad valuta räknas som USD (som förut). En valuta utanför tabellen (London i
+    pence 'GBX', 'ZAR' …) ger None: talen som räknas om med den lämnas tomma i stället för att räknas som om de vore
+    USD — samma regel som håven (screens_scan.metrics_for). Kursen i sin egen valuta påverkas inte."""
+    c = str(ccy or "").strip().upper() or "USD"
+    fx = FX_TO_USD.get(c)
+    if fx is None and c not in _UNKNOWN_CCY:
+        _UNKNOWN_CCY.add(c)
+        log.warning("Okänd valuta %s — MUSD-talen lämnas tomma (lägg till i FX_TO_USD)", c)
+    return fx
+
+
+def _musd(v: Optional[float], fx: Optional[float]) -> Optional[float]:
+    """Miljoner i lokal valuta × växelkursen → MUSD, en decimal. None när talet eller växelkursen saknas."""
+    return round(v * fx, 1) if v is not None and fx is not None else None
 
 
 def _now() -> str:
@@ -244,11 +262,12 @@ def _median(vals: list) -> Optional[float]:
     return xs[n // 2] if n % 2 else (xs[n // 2 - 1] + xs[n // 2]) / 2
 
 
-def report_fields(api, ins_id: int, rfx: float = 1.0) -> dict:
+def report_fields(api, ins_id: int, rfx: Optional[float] = 1.0) -> dict:
     """Talen ur Börsdatas rapporter (i miljoner, rapportvalutan × rfx → MUSD):
     kassa och burn (Sprott), skuld = nettoskuld + kassa, antal aktier nu och
     1/3/5 år tillbaka (Durrett-arket, DS "Aktier 3 år"). Tomt när rapporterna
-    inte går att läsa — jobbet fortsätter."""
+    inte går att läsa — jobbet fortsätter. rfx None (rapportvalutan saknas i
+    FX_TO_USD): kassa, skuld och burn blir None; aktieantalen står kvar."""
     out: dict = {}
     try:
         years = sorted((r for r in api.get_reports(ins_id, "year", max_count=7) or []
@@ -267,11 +286,11 @@ def report_fields(api, ins_id: int, rfx: float = 1.0) -> dict:
         nd = _f(latest.get("netDebt"))
         fcf = _f(latest.get("freeCashFlow"))
         if cash is not None:
-            out["cash_musd"] = round(cash * rfx, 1)
+            out["cash_musd"] = _musd(cash, rfx)
         if cash is not None and nd is not None:
-            out["debt_musd"] = round(max(0.0, nd + cash) * rfx, 1)     # bruttoskuld ≈ nettoskuld + kassa
+            out["debt_musd"] = _musd(max(0.0, nd + cash), rfx)         # bruttoskuld ≈ nettoskuld + kassa
         if fcf is not None:
-            out["burn_musd"] = round(max(0.0, -fcf) * rfx, 1)          # burn/år = negativt FCF r12
+            out["burn_musd"] = _musd(max(0.0, -fcf), rfx)              # burn/år = negativt FCF r12
     if years:
         by_year = {int(r["year"]): _f(r.get("numberOfShares")) for r in years}
         y_now = max(by_year)
@@ -303,15 +322,14 @@ def ev_ebitda_median(api, ins_id: int, years: int = 10) -> Optional[float]:
     return None if m is None else round(m, 1)
 
 
-def _snapshot_musd(snap: dict, fx: float, rfx: float) -> dict:
+def _snapshot_musd(snap: dict, fx: Optional[float], rfx: Optional[float]) -> dict:
     """MUSD-talen ur snapshoten: EV i kursvalutan × fx; nettoskuld, omsättning, FCF och operativt kassaflöde
-    (12 mån) i rapportvalutan × rfx. None när Börsdata saknar talet."""
+    (12 mån) i rapportvalutan × rfx. None när Börsdata saknar talet eller valutan saknas i FX_TO_USD."""
     out = {}
     for src_key, out_key, factor in (("ev", "ev_musd", fx), ("net_debt_m", "net_debt_musd", rfx),
                                      ("revenue_m", "revenue_musd", rfx), ("fcf_m", "fcf_musd", rfx),
                                      ("ocf_m", "ocf_musd", rfx)):
-        v = _f(snap.get(src_key))
-        out[out_key] = round(v * factor, 1) if v is not None else None
+        out[out_key] = _musd(_f(snap.get(src_key)), factor)
     return out
 
 
@@ -383,12 +401,10 @@ def refresh(api, sheets: dict) -> dict:
                 snap = snaps.get(iid) or {}
                 s["ev_ebitda"] = _f(snap.get("ev_ebitda"))
                 s["nd_ebitda"] = _f(snap.get("net_debt_ebitda"))
-                fx = FX_TO_USD.get(ccy or "USD", 1.0)
-                mc = _f(snap.get("market_cap"))
-                if mc is not None:
-                    s["mcap_musd"] = round(mc * fx, 1)
+                fx = fx_rate(ccy)                            # None för en valuta utanför tabellen
+                s["mcap_musd"] = _musd(_f(snap.get("market_cap")), fx)
                 rccy = str(meta.get("reportCurrency") or ccy or "USD").upper()
-                rfx = FX_TO_USD.get(rccy, 1.0)
+                rfx = fx_rate(rccy)
                 # Rapportfälten (kassa, burn, skuld, aktiehistorik) till Sprott,
                 # DS och Durrett-arket — en rapporthämtning per bolag.
                 if iid not in report_cache:
@@ -647,16 +663,14 @@ def fetch_row(api, ticker: str, ins_id=None) -> Optional[dict]:
         scope = "global"
     snap = (api.get_fundamentals_snapshot_fast([iid], scope=scope) or {}).get(iid) or {}
     ccy = str(meta.get("stockPriceCurrency") or "").upper() or None
-    fx = FX_TO_USD.get(ccy or "USD", 1.0)
+    fx = fx_rate(ccy)                                    # None för en valuta utanför tabellen, som nattjobbet
     rccy = str(meta.get("reportCurrency") or ccy or "USD").upper()
-    rfx = FX_TO_USD.get(rccy, 1.0)
+    rfx = fx_rate(rccy)
     price, asof = _last_close(api, iid)
     s = {"ticker": t, "ins_id": iid, "price": price, "asof": asof, "currency": ccy, "source": "borsdata",
          "ev_ebitda": _f(snap.get("ev_ebitda")), "nd_ebitda": _f(snap.get("net_debt_ebitda")), "mcap_musd": None}
     s.update(_bd_meta(meta, ccy))
-    mc = _f(snap.get("market_cap"))
-    if mc is not None:
-        s["mcap_musd"] = round(mc * fx, 1)
+    s["mcap_musd"] = _musd(_f(snap.get("market_cap")), fx)
     s.update(report_fields(api, iid, rfx))
     roic = _f(snap.get("roic"))
     s["roic_pct"] = round(roic * 100, 1) if roic is not None else None

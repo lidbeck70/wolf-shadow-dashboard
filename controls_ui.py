@@ -212,10 +212,30 @@ def render_ds(row: dict, key: str, runway_years=None,
 
 
 # ── AQS ──────────────────────────────────────────────────────────────────────
+def _aqs_offers(row: dict, key: str, prefill: Optional[dict], prefix: str, strategy: str) -> None:
+    """Förslagen på jurisdiktion/management ur frågorna fliken redan ställt, med Använd (refresh_ui.offer) — bara
+    för en obedömd delfråga. Klicket skriver fältet och rullgardinen; att rita förslaget skriver ingenting."""
+    if not prefill:
+        return
+    try:
+        import refresh_ui
+    except Exception:
+        return
+    fields = {f.key: f for f in ctl.AQS_FIELDS}
+    notes = ctl.AQS_PREFILL_NOTE.get((strategy or "").strip().lower(), {})
+    for k, v in prefill.items():
+        f = fields.get(k)
+        if f is None or row.get(k) not in (None, ""):
+            continue
+        refresh_ui.offer(row, k, v, f.label, key=f"aqs_{prefix}_{key}_{k}", source="Kortet",
+                         widget_key=f"{prefix}_{key}_{k}", cast=int, note=notes.get(k, ""),
+                         fmt=lambda o, f=f: f"{o} ({(f.zero, f.one, f.two)[o]})" if o in (0, 1, 2) else str(o))
+
+
 def render_aqs(row: dict, key: str, prefill: Optional[dict] = None,
-               prefix: str = "aqs") -> bool:
-    """Asset Quality Score. prefill fyller jurisdiktion/management från den
-    flik som redan frågat, i stället för att fråga igen."""
+               prefix: str = "aqs", strategy: str = "") -> bool:
+    """Asset Quality Score. prefill = förslag på jurisdiktion/management ur den flik som redan frågat (strategy
+    säger vilken, för underlaget i texten) — visas med Använd, inget fylls i när sektionen ritas."""
     changed = False
     st.markdown(
         f"<b style='color:{TEXT};'>AQS — Asset Quality Score</b> "
@@ -223,19 +243,11 @@ def render_aqs(row: dict, key: str, prefill: Optional[dict] = None,
         f"Tillgångens kvalitet, oberoende av vad den kostar.</span>",
         unsafe_allow_html=True)
 
-    for k, v in (prefill or {}).items():
-        if row.get(k) is None:
-            row[k] = v
-            changed = True
-    if prefill:
-        st.caption("↩ = hämtad från fliken som redan frågat. Skriv över om du "
-                   "vill — den frågan ställs inte två gånger.")
+    _aqs_offers(row, key, prefill, prefix, strategy)
 
     half = len(ctl.AQS_FIELDS) // 2
-    changed |= _score_row(row, ctl.AQS_FIELDS[:half], prefix, key,
-                          ctl.AQS_PREFILLED)
-    changed |= _score_row(row, ctl.AQS_FIELDS[half:], prefix, key,
-                          ctl.AQS_PREFILLED)
+    changed |= _score_row(row, ctl.AQS_FIELDS[:half], prefix, key)
+    changed |= _score_row(row, ctl.AQS_FIELDS[half:], prefix, key)
 
     total = ctl.aqs_total(row)
     band = ctl.aqs_band(total)
@@ -422,7 +434,7 @@ def render_all(row: dict, key: str, position_pct=None, strategy: str = "",
                                  sheet=SHEET_BY_STRATEGY.get(strategy, ""), runway_note=runway_note)
     if ctl.SEC_AQS in req:
         with st.expander("⛏ AQS — tillgångskvalitet", expanded=False):
-            changed |= render_aqs(row, key, aqs_prefill)
+            changed |= render_aqs(row, key, aqs_prefill, strategy=strategy)
     fv_req = lukacs.fv_required(position_pct, strategy)
     if ctl.SEC_CSM in req:
         with st.expander("📉 CSM — råvarukänslighet"

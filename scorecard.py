@@ -784,9 +784,11 @@ def _rule_parts(row: dict, ref: Optional[dict]) -> list:
         txt = (f"Lukacs: säkerhetsmarginal {_edge(m6, 1, lim)} % mot fair value Base {_sv(ev['fv_base'], 2)}"
                + (f" ({band[:1].lower() + band[1:]})" if band else ""))      # en decimal, som kortet
         obs = []
-        code = str(row.get("fcf_kvalitet") or "C").upper()[:1]           # samma förval som kortets klassruta
-        if any(lukacs.yield_error(code, sc.get("target_yield")) not in (None, lukacs.NOT_FCF_VALUED)
-               for sc in (row.get("fv") or {}).values() if isinstance(sc, dict)):
+        code = row.get("fcf_kvalitet")                                     # som kortet: ingen vald klass är '—'
+        if ev.get("quality") is None:
+            obs.append("saknad FCF-klass")
+        elif any(lukacs.yield_error(code, sc.get("target_yield")) not in (None, lukacs.NOT_FCF_VALUED)
+                 for sc in (row.get("fv") or {}).values() if isinstance(sc, dict)):
             obs.append("target-yield utanför klassens band")
         cur = lukacs.price_currency(row.get("aktuell_kurs"), ref)
         if lukacs.fcf_unit_warnings(row, ref) or (cur is not None and cur.get("stored_is_local")):

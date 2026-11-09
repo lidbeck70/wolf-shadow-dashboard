@@ -110,13 +110,13 @@ def yahoo_row(ticker: str, info_getter=None) -> Optional[dict]:
         raw_ccy = str(info.get("currency") or "USD")
         pence = lk._is_pence(raw_ccy)                 # London: kursen i pence (GBp/GBX), börsvärdet i GBP
         ccy = "GBP" if pence else raw_ccy.upper()
-        fx = sr.FX_TO_USD.get(ccy, 1.0)
+        fx = sr.fx_rate(ccy)                          # None för en valuta utanför tabellen — inte 1,0
         fccy = str(info.get("financialCurrency") or ccy).upper()
-        ffx = sr.FX_TO_USD.get(fccy, 1.0)
+        ffx = sr.fx_rate(fccy)
 
         def musd(v, f):
             try:
-                return round(float(v) * f / 1e6, 1) if v is not None else None
+                return round(float(v) * f / 1e6, 1) if v is not None and f is not None else None
             except (TypeError, ValueError):
                 return None
 

@@ -220,20 +220,30 @@ def aqs_band(total: Optional[int]) -> Optional[str]:
 
 
 # Återanvändning i stället för dubbelinmatning: jurisdiktion och management
-# frågas redan i Rick Rule-arket (0/1) och i Lobo (0–2).
+# frågas redan i Rick Rule-arket (0/1) och i Lobo (0–2). Det blir FÖRSLAG med
+# Använd (controls_ui.render_aqs) — ingenting fylls i när sidan ritas.
 def aqs_prefill_from_producer(row: dict) -> dict:
-    """Rick Rule-arket: 0/1-kryssen skalas till AQS 0–2."""
+    """Rick Rule-arket: förslag ur 0/1-kryssen. 'Jurisdiktion OK' är Fraser-rankingens topphalva → 1 p
+    (Topphalvan), inte toppkvartilen. Insynsägande → management 2 p."""
     r = row or {}
     out = {}
     if r.get("jurisdiktion") is not None:
-        out["aqs_jurisdiktion"] = 2 if r.get("jurisdiktion") else 0
+        out["aqs_jurisdiktion"] = 1 if r.get("jurisdiktion") else 0
     if r.get("insyn") is not None:
         out["aqs_management"] = 2 if r.get("insyn") else 0
     return out
 
 
+# Förslagens underlag, som det står bredvid Använd — per strategi, samma nycklar som förslagen.
+AQS_PREFILL_NOTE = {
+    "producenter": {"aqs_jurisdiktion": "ur krysset Jurisdiktion OK (Fraser-rankingens topphalva)",
+                    "aqs_management": "ur krysset Insynsägande"},
+    "tiggre": {"aqs_jurisdiktion": "ur faktorn Jurisdiktion", "aqs_management": "ur faktorn Människor"},
+}
+
+
 def aqs_prefill_from_tiggre(factors: dict) -> dict:
-    """Lobo: faktorerna är redan 0–2 och går in oförändrade."""
+    """Lobo: faktorerna är redan 0–2 och föreslås oförändrade."""
     f = factors or {}
     out = {}
     if _num(f.get("jurisdiktion")) is not None:

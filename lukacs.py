@@ -65,6 +65,7 @@ CLASS_BY_CODE = {q.code: q for q in QUALITY_CLASSES}
 CLASS_CODES = tuple(q.code for q in QUALITY_CLASSES)
 
 NOT_FCF_VALUED = "Klass D — värderas ej på FCF"
+CLASS_MISSING = "FCF-kvalitet är inte vald — välj klass A–D. Klassen låser target-yielden."
 
 
 def quality_class(code) -> Optional[QualityClass]:
@@ -405,7 +406,9 @@ def gate_gaps(row: dict, position_pct=None, strategy: str = "") -> list:
     if not fv_required(position_pct, strategy):
         return []
     ev = evaluate(row)
-    gaps = list(ev["yield_errors"]) + list(ev["prob_errors"])
+    # Utan vald klass finns inget band att låsa yielden mot — en yield utanför alla band skulle annars passera.
+    gaps = [CLASS_MISSING] if ev["quality"] is None else []
+    gaps += list(ev["yield_errors"]) + list(ev["prob_errors"])
     gaps += list(ev["delev"]["gaps"])
     if ev["not_fcf_valued"]:
         gaps.append(f"{NOT_FCF_VALUED} — säkerhetsmarginalen kan inte "
@@ -523,7 +526,8 @@ def price_currency(price, ref: Optional[dict], live: Optional[tuple] = None) -> 
 
 def _ref_sizes_ok(ref: Optional[dict]) -> bool:
     """Sifferuppdateringens MUSD-tal går att lita på: kursvalutan saknas eller finns i jobbets fasta tabell
-    (USD ingår). För en valuta utanför den — även London i pence — har jobbet räknat om med 1,0."""
+    (USD ingår). För en valuta utanför den — även London i pence — lämnar jobbet talen tomma (äldre blobbar: räknat
+    om med 1,0)."""
     if not isinstance(ref, dict):
         return False
     raw = str(ref.get("currency") or "").strip()
@@ -535,7 +539,8 @@ def ref_fcf_musd(ref: Optional[dict]) -> Optional[float]:
     FCF-rutorna. Enhetskontrollen läser den inte: tolv månader bakåt är fel mått för en forward FCF (ett
     kapitaltungt år nära noll, eller ett starkt år, gav falska enhetsvarningar och kunde ta bort spärren mot
     'Använd USD' bredvid MSEK). None när talet inte säkert står i USD: kursvalutan utanför jobbets fasta tabell
-    (som _ref_sizes_ok), eller rapportvalutan utanför den — jobbet räknar då om rapportens miljoner med 1,0."""
+    (som _ref_sizes_ok), eller rapportvalutan utanför den — jobbet lämnar då talet tomt (äldre blobbar: rapportens
+    miljoner × 1,0)."""
     if not _ref_sizes_ok(ref):
         return None
     rc = str(ref.get("report_currency") or "").strip().upper()

@@ -343,7 +343,8 @@ def test_an_out_of_band_target_yield_is_flagged_like_the_card():
     unset = scorecard.valuation_suggestion(_rule(fcf_kvalitet=None, aktuell_kurs=9.0,
                                                  fv={"Base": {"forward_fcf_musd": 120.0, "target_yield": 8.0}}),
                                            "producenter")
-    assert "target-yield utanför klassens band" in unset                  # kortets förval är klass C
+    # batch 18: kortet visar '—' för en ovald klass och grinden kräver ett val — förslaget säger samma sak
+    assert "— OBS: arket varnar för saknad FCF-klass" in unset and "utanför klassens band" not in unset
     assert "OBS" not in scorecard.valuation_suggestion(_rule(), "producenter")
 
 

@@ -615,10 +615,11 @@ def test_the_nightly_fcf_is_a_reference_only_and_does_not_steer_the_unit_check()
 
 
 def test_the_borsdata_fcf_reference_is_shown_only_in_usd():
-    """Rapportvalutan utanför jobbets fasta tabell: jobbet räknar om med 1,0, så talet vore miljoner ZAR — ingen
-    referensrad då. Samma för kursvalutor utanför tabellen (pence)."""
+    """Rapportvalutan utanför jobbets fasta tabell: jobbet skriver inget MUSD-tal (batch 18 — förut räknade det om
+    med 1,0, och talet vore miljoner ZAR) — ingen referensrad då. Samma för kursvalutor utanför tabellen (pence)."""
     zar = producer_refresh_row("USD", 8.0, fcf_m=3000.0, report="ZAR")
-    assert zar["fcf12_musd"] == 3000.0 and zar["report_currency"] == "ZAR" and fv.ref_fcf_musd(zar) is None
+    assert zar["fcf12_musd"] is None and zar["report_currency"] == "ZAR" and fv.ref_fcf_musd(zar) is None
+    assert fv.ref_fcf_musd(dict(zar, fcf12_musd=3000.0)) is None      # en äldre blob med 1,0-talet: fortfarande ingen
     assert fv.ref_fcf_musd(producer_refresh_row(fcf_m=3000.0)) == 3000.0
     assert fv.ref_fcf_musd(producer_refresh_row("SEK", 300.0, fcf_m=20000.0, report="SEK")) == 1900.0   # MSEK × 0,095
     assert fv.ref_fcf_musd({"currency": "GBX", "fcf12_musd": 100.0}) is None
