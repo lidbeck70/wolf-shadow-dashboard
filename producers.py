@@ -684,8 +684,11 @@ def _producers(data: dict) -> None:
                 row["position_pct"] = pos
                 changed = True
 
+            # Runwayen till DS:s förslag ur sifferuppdateringens kassa och burn (producers:<id>) — ingen vid positivt FCF.
+            rw, rw_note = controls_ui.sheet_runway("producers", row["id"])
             if controls_ui.render_all(
                     row, row["id"], position_pct=pos, strategy="producenter",
+                    runway_years=rw, runway_note=rw_note,
                     aqs_prefill=ctl.aqs_prefill_from_producer(row),
                     kind=ctl.PRODUCER):
                 changed = True

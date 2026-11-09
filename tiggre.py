@@ -679,11 +679,13 @@ def _candidate_card(data: dict, cand: dict, expanded: bool = False) -> None:
 
         # Kontrollsystemen (Masterguiden 4.0). Tiggre är utvecklare per
         # definition, och positionen ligger i intervallet 2–4 % — alltså
-        # kräver proportionalitetsregeln hela paketet.
+        # kräver proportionalitetsregeln hela paketet. Runwayen till DS:s förslag
+        # räknas ur sifferuppdateringens kassa och burn (tiggre:<id>).
+        rw, rw_note = controls_ui.sheet_runway("tiggre", cand["id"])
         if controls_ui.render_all(
                 cand, cand["id"],
                 position_pct=_num(cand.get("position_pct"), POS_MAX_PCT),
-                strategy="tiggre",
+                strategy="tiggre", runway_years=rw, runway_note=rw_note,
                 aqs_prefill=ctl.aqs_prefill_from_tiggre(cand.get("factors", {})),
                 kind=ctl.DEVELOPER):
             changed = True

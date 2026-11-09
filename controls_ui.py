@@ -81,10 +81,50 @@ def _shares_year(sheet: str, row: dict, key: str) -> Optional[int]:
         return None
 
 
+def _runway_months(years: float) -> str:
+    """Runwayen i hela månader för DS-texten — med decimaler bara när avrundningen skulle hamna på andra sidan
+    fältets gränser (12 och 24 mån, ctl.ds_runway_suggestion): 11,96 mån står inte som '12 mån' bredvid '< 12 mån'."""
+    m = years * 12.0
+    for d in range(4):
+        r = round(m, d)
+        if (r >= 12) == (m >= 12) and (r > 24) == (m > 24):
+            return f"{r:.{d}f}".replace(".", ",")
+    return f"≈{m:.0f}"
+
+
+def refresh_runway(r) -> tuple:
+    """(runway i år, källtext) ur sifferuppdateringens rad för arkraden: kassa ÷ burn, där burn är negativt FCF
+    12 mån — samma scoring.runway_years som Sprott-kortet räknar med. (None, "") utan båda talen, och när burn är
+    0 (positivt FCF): då finns ingen runway att föreslå."""
+    if not isinstance(r, dict):
+        return None, ""
+    try:
+        import scoring
+        years = scoring.runway_years(r.get("cash_musd"), r.get("burn_musd"))
+    except Exception:
+        return None, ""
+    if years is None:
+        return None, ""
+    asof = str(r.get("asof") or "")[:10]
+    cash, burn = (f"{float(r[k]):,.1f}".replace(",", " ").replace(".", ",") for k in ("cash_musd", "burn_musd"))
+    return years, (f"Börsdata{' ' + asof if asof else ''}: kassa {cash} MUSD ÷ burn {burn} MUSD/år "
+                   f"(negativt FCF 12 mån) = runway {_runway_months(years)} mån")
+
+
+def sheet_runway(sheet: str, row_id) -> tuple:
+    """refresh_runway för arkraden '<sheet>:<id>' (Tiggre, Rick Rule) — (None, "") utan sifferuppdatering."""
+    try:
+        import refresh_ui
+        r = ((refresh_ui.load_refresh() or {}).get("rows") or {}).get(f"{sheet}:{row_id}")
+    except Exception:
+        r = None
+    return refresh_runway(r)
+
+
 def render_ds(row: dict, key: str, runway_years=None,
-              prefix: str = "ds", sheet: str = "") -> bool:
-    """Dilution Score. runway_years ger ett förslag på första fältet; sheet
-    gör att "Aktier 3 år" kan föreslås ur Börsdatas aktiehistorik."""
+              prefix: str = "ds", sheet: str = "", runway_note: str = "") -> bool:
+    """Dilution Score. runway_years ger ett förslag på första fältet (runway_note säger varifrån talet kommer);
+    sheet gör att "Aktier 3 år" och "Historik" kan föreslås ur Börsdatas aktiehistorik."""
     changed = False
     st.markdown(
         f"<b style='color:{TEXT};'>DS — Dilution Score</b> "
@@ -94,8 +134,11 @@ def render_ds(row: dict, key: str, runway_years=None,
 
     suggestion = ctl.ds_runway_suggestion(runway_years)
     if suggestion is not None and row.get("ds_runway") is None:
-        st.caption(f"Runwayen motsvarar {suggestion} riskpoäng på första "
-                   f"fältet — förslag, inte ifyllt åt dig.")
+        if runway_note:
+            st.caption(f"{runway_note} — motsvarar {suggestion} riskpoäng på Runway. Förslag, inte ifyllt.")
+        else:
+            st.caption(f"Runwayen motsvarar {suggestion} riskpoäng på första "
+                       f"fältet — förslag, inte ifyllt åt dig.")
     if sheet and row.get("ds_aktier_3ar") is None:
         try:
             import refresh_ui
@@ -328,7 +371,7 @@ SHEET_BY_STRATEGY = {"producenter": "producers", "royalty": "producers",
 
 def render_all(row: dict, key: str, position_pct=None, strategy: str = "",
                runway_years=None, aqs_prefill: Optional[dict] = None,
-               kind: str = ctl.PRODUCER) -> bool:
+               kind: str = ctl.PRODUCER, runway_note: str = "") -> bool:
     """Alla kontroller som proportionalitetsregeln kräver för positionen."""
     req = ctl.required_sections(position_pct, strategy,
                                 bool(row.get("dilution_risk")))
@@ -336,7 +379,7 @@ def render_all(row: dict, key: str, position_pct=None, strategy: str = "",
     if ctl.SEC_DS in req:
         with st.expander("🧪 DS — utspädningsrisk", expanded=False):
             changed |= render_ds(row, key, runway_years,
-                                 sheet=SHEET_BY_STRATEGY.get(strategy, ""))
+                                 sheet=SHEET_BY_STRATEGY.get(strategy, ""), runway_note=runway_note)
     if ctl.SEC_AQS in req:
         with st.expander("⛏ AQS — tillgångskvalitet", expanded=False):
             changed |= render_aqs(row, key, aqs_prefill)

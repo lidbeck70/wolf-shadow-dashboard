@@ -300,6 +300,18 @@ def _close_position(data: dict, p: dict, reason: str) -> None:
     _save(data)
 
 
+def _suggest_price(p: dict) -> None:
+    """Sifferuppdateringens kurs (holdings:<id>, hinken momentum) som förslag under Kurs nu — samma mönster som
+    Tiggres positioner. Använd skriver in kursen och sparar positionen i registret; att öppna sidan skriver inget.
+    p binds per position: en lambda i loopen skulle annars spara den sista positionen."""
+    try:
+        import refresh_ui
+        refresh_ui.suggest("holdings", p, "current", "price", "kurs", f"swing_cur_{p['id']}",
+                           lambda: positions.put(STRATEGY, p, "swing"), with_currency=True)
+    except Exception:
+        pass
+
+
 def _positions(data: dict) -> None:
     rows = open_positions()
     st.markdown(
@@ -344,6 +356,7 @@ def _positions(data: dict) -> None:
                                     step=0.5, key=f"swing_entry_{p['id']}")
         new_cur = c2.number_input("Kurs nu", min_value=0.0, value=float(cur),
                                   step=0.5, key=f"swing_cur_{p['id']}")
+        _suggest_price(p)
         c3.metric("Stop (−10 %)", _fmt(stop), delta="hit" if stop_hit else None,
                   delta_color="inverse")
         c4.metric("P/L", _pct(ret))

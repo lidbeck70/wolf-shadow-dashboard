@@ -119,7 +119,8 @@ def test_ds_shares_suggestion_follows_the_fields_own_thresholds():
     import controls_ui
     assert "sheet" in inspect.signature(controls_ui.render_ds).parameters
     src = _src("controls_ui.py")
-    assert 'render_ds(row, key, runway_years,\n                                 sheet=SHEET_BY_STRATEGY.get(strategy, ""))' in src
+    assert ('render_ds(row, key, runway_years,\n                                 sheet=SHEET_BY_STRATEGY.get(strategy, ""), '
+            'runway_note=runway_note)') in src
     assert '"shares_growth_3y_pct", row_id=key' in src
 
 

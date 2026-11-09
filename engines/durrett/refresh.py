@@ -47,6 +47,18 @@ def refresh_row(blob: Optional[dict], ticker: str, sheet: str = SHEET) -> Option
     return ((blob or {}).get("rows") or {}).get(f"{sheet}:{(ticker or '').strip().upper()}")
 
 
+def ins_id_offer(row: Optional[dict], company: CompanyInput) -> Optional[int]:
+    """Nattradens Börsdata-id när bolaget saknar ett: jobbet matchade tickern (sheets_refresh.resolve), och sparat
+    på bolaget hämtas samma bolag varje natt. None när bolaget redan har ett id eller raden saknar ett."""
+    if company.ins_id is not None or not isinstance(row, dict) or isinstance(row.get("ins_id"), bool):
+        return None
+    try:
+        iid = int(row.get("ins_id"))
+    except (TypeError, ValueError):
+        return None
+    return iid if iid > 0 else None
+
+
 def proposals(blob: Optional[dict], company: CompanyInput, sheet: str = SHEET) -> list:
     """[(fältnyckel, Datapoint, nuvarande värde | None)] — bara avvikande tal."""
     s = refresh_row(blob, company.ticker, sheet)
@@ -97,4 +109,4 @@ def proposals(blob: Optional[dict], company: CompanyInput, sheet: str = SHEET) -
     return out
 
 
-__all__ = ["proposals", "refresh_row", "Datapoint", "AUTO_USD_SOURCES"]
+__all__ = ["proposals", "refresh_row", "ins_id_offer", "Datapoint", "AUTO_USD_SOURCES"]
