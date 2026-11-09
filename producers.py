@@ -26,6 +26,10 @@ Formlerna är migrationsspecens (§6), som i sin tur är arkets:
   EV/NAV     = EV (MUSD) / NAV efter skatt (MUSD) — Rules värdering av
                producenter. Egen rad utanför poängen: poängen säger om
                bolaget är bra, EV/NAV om det är billigt.
+
+Royalty C:s räknare föreslår (Använd skriver in, inget sparas av sig självt):
+  GEO/aktie  = total GEO (koz) × 1 000 / (Börsdatas aktieantal, milj. × 1 000 000) — nu och för tre år sedan, som par
+  P/NAV nu   = nattens kurs / NAV per aktie — bara i samma valuta
 """
 
 from __future__ import annotations
@@ -363,6 +367,172 @@ def position_cap_line(row: dict) -> str:
     if eff is not None and eff < cap:
         txt += f" ({_g(eff)} % med skuld/EBITDA {_g(_num(row.get('nd_ebitda')))})"
     return txt + " — en gräns, inte ett förslag på storlek."
+
+
+# ── Royalty C: räknarna för P/NAV och GEO per aktie (bara förslag) ───────────
+# Dina långsamma tal (NAV per aktie, total GEO) skrivs i tillfälliga rutor som inte sparas; Börsdatas snabba tal
+# (kurs, aktieantal) kommer ur nattens rad. Förslaget skrivs in först med Använd. Signalen och nattlarmet läser
+# som förut de sparade fälten. Gränserna nedan är enhetsvakter, inga regler: de största royaltybolagen har under
+# 1 000 koz GEO per år och Börsdatas aktieantal står i miljoner, så ett tal utanför står nästan säkert i fel enhet
+# (uns i stället för koz, styck i stället för miljoner). Då ges inget förslag — ett 1000×-fel får aldrig vända
+# GEO-signalen eller ±15 %-grinden. De små royaltybolagen har bara några tusen uns, så uns i koz-rutorna syns först
+# per aktie: inget royaltybolag har över GEO_PS_MAX uns per aktie, och inget handlas under sin intäkt per aktie
+# räknad på ett lågt guldpris (GEO_PS_PRICE) — ett uns/koz-fel ger 20–50× kursen.
+KOZ_MAX = 1_500.0           # koz GEO per år
+GEO_PS_MAX = 0.02           # uns GEO per aktie (Royal Gold, högst per aktie, har cirka 0,005)
+GEO_PS_PRICE = 1_000.0      # USD per uns, medvetet lågt: GEO per aktie × det över kursen = talen står i uns
+SHARES_M_MAX = 100_000.0    # miljoner aktier
+UNIT_JUMP = 100.0           # två tal i samma enhet för samma bolag skiljer sig inte 100×
+PNAV_SANE = (0.05, 20.0)    # P/NAV utanför = NAV per aktie står i fel enhet (t.ex. total NAV i miljoner)
+NAV_BASIS_NOTE = ("Samma NAV-bas som botten: ta NAV per aktie från samma källa och på samma metallpris som när "
+                  "botten sattes — annars jämförs olika saker och ±15 %-gränsen flyttas.")
+
+
+@dataclass(frozen=True)
+class Calc:
+    """En räknares förslag: fälten med sina värden (tomt = inget förslag), raden med talen bakom förslaget (eller
+    varför inget föreslås) och en varning som visas bredvid."""
+    values: dict
+    text: str = ""
+    note: str = ""
+
+
+def _pct(v: float) -> str:
+    """+9,3 % · −4,0 %"""
+    return f"{'+' if v >= 0 else '−'}{_sv(abs(v))} %"
+
+
+def _px(v: float) -> str:
+    """Kurs med decimalkomma: två decimaler, fyra under 1."""
+    return _sv(v, 2 if v >= 1 else 4)
+
+
+def geo_per_share(koz, shares_m) -> Optional[float]:
+    """GEO per aktie i kortets enhet (uns per aktie) ur total GEO i koz och aktieantalet i miljoner:
+    koz × 1 000 / (miljoner × 1 000 000). Sex värdesiffror. None utan båda talen."""
+    k, s = _nonneg(koz), _nonneg(shares_m)
+    if not k or not s:
+        return None
+    return float(f"{k * 1000.0 / (s * 1e6):.6g}")
+
+
+def shares_note(fresh: Optional[dict]) -> str:
+    """Raden i GEO-räknaren: Börsdatas aktieantal nu och för tre år sedan med årsrapportens år, och att GEO ska tas
+    för samma år. Tom sträng när något av talen saknas — då kan räknaren inte räkna."""
+    f = fresh or {}
+    now, old = _num(f.get("shares_now_m")), _num(f.get("shares_3y_ago_m"))
+    if now is None or old is None or now <= 0 or old <= 0:
+        return ""
+    yr = _num(f.get("shares_year"))
+    if yr:
+        what = f"{_sv(now, 2)} milj. ({int(yr)}) och {_sv(old, 2)} milj. ({int(yr) - 3})"
+    else:
+        what = f"{_sv(now, 2)} milj. nu och {_sv(old, 2)} milj. för tre år sedan"
+    return (f"Börsdatas aktieantal: {what}, från årsrapporterna (basic vid årsskiftet, inte vägt). Ta GEO för "
+            f"samma år — GEO-året kan skilja sig från aktieåret.")
+
+
+def geo_pair_suggestion(koz_now, koz_3y, fresh: Optional[dict], saved_now=None) -> Calc:
+    """GEO per aktie nu och för tre år sedan ur total GEO (koz) och nattens aktieantal (shares_now_m,
+    shares_3y_ago_m): bara som par, så att tillväxten alltid räknas på samma enhet och samma sorts aktieantal.
+    Inget förslag när ett tal ser ut att stå i fel enhet (KOZ_MAX, SHARES_M_MAX, UNIT_JUMP, och per aktie
+    GEO_PS_MAX och GEO_PS_PRICE mot nattens kurs). saved_now = det sparade GEO/aktie nu: skiljer förslaget sig mer
+    än UNIT_JUMP× från det blir det en varning."""
+    kn, k3 = _nonneg(koz_now), _nonneg(koz_3y)
+    if not kn and not k3:
+        return Calc({})
+    if not kn or not k3:
+        return Calc({}, "Fyll i GEO både nu och för tre år sedan — förslaget ges bara som par.")
+    f = fresh or {}
+    sn, s3 = _num(f.get("shares_now_m")), _num(f.get("shares_3y_ago_m"))
+    if sn is None or s3 is None or sn <= 0 or s3 <= 0:
+        return Calc({}, "Börsdata saknar aktieantalet nu eller för tre år sedan — ingen GEO per aktie.")
+    if max(kn, k3) > KOZ_MAX:
+        return Calc({}, f"{_g(max(kn, k3))} koz är mer än något royaltybolag har — står talet i uns? "
+                        f"Skriv koz (tusen uns).")
+    if max(kn, k3) / min(kn, k3) > UNIT_JUMP:
+        return Calc({}, f"GEO nu och för tre år sedan skiljer sig mer än {UNIT_JUMP:g}× — står båda i koz?")
+    if max(sn, s3) > SHARES_M_MAX or max(sn, s3) / min(sn, s3) > UNIT_JUMP:
+        return Calc({}, "Börsdatas aktieantal ser ut att stå i styck, inte miljoner — ingen GEO per aktie.")
+    gn, g3 = geo_per_share(kn, sn), geo_per_share(k3, s3)
+    hi, price = max(gn, g3), _nonneg(f.get("price"))
+    if price and hi * GEO_PS_PRICE > price:
+        ccy = str(f.get("currency") or "").strip().upper()
+        return Calc({}, f"GEO/aktie {_sv(hi, 6)} ger {_px(hi * GEO_PS_PRICE)} i intäkt per aktie redan vid "
+                        f"{_sv(GEO_PS_PRICE, 0)} USD/uns — mer än kursen {_px(price)}{' ' + ccy if ccy else ''}. "
+                        f"Står talen i uns? Skriv koz (tusen uns).")
+    if hi > GEO_PS_MAX:
+        return Calc({}, f"GEO/aktie {_sv(hi, 6)} är mer än något royaltybolag har — står talen i uns? "
+                        f"Skriv koz (tusen uns).")
+    growth = geo_growth(gn, g3)
+    yr = _num(f.get("shares_year"))
+    y_now, y_old = (f" {int(yr)}", f" {int(yr) - 3}") if yr else ("", "")
+    text = (f"🤖 Räknat med Börsdatas aktieantal: GEO/aktie nu {_sv(gn, 6)} ({_g(kn)} koz / {_sv(sn, 2)} milj. "
+            f"aktier{y_now}) och för 3 år sedan {_sv(g3, 6)} ({_g(k3)} koz / {_sv(s3, 2)} milj.{y_old})"
+            + (f" = {_pct(growth)}" if growth is not None else ""))
+    notes = []
+    if max(kn, k3) < 1:
+        notes.append("Under 1 koz — står talen i Moz? Skriv koz (tusen uns).")
+    saved = _nonneg(saved_now)
+    if saved and (gn / saved > UNIT_JUMP or saved / gn > UNIT_JUMP):
+        notes.append(f"GEO/aktie nu skiljer sig mer än {UNIT_JUMP:g}× från det sparade ({_sv(saved, 6)}) — "
+                     f"kontrollera koz mot uns innan du använder.")
+    return Calc({"geo_now": gn, "geo_3y": g3}, text, " ".join(notes))
+
+
+def _gate_pct(disc: float) -> str:
+    """'Mot botten' i P/NAV-förslaget: en decimal, men fler när avrundningen skulle hamna på andra sidan köplägets
+    gräns eller 0 (scorecard._edge, kantregeln) — +15,04 % står inte som '+15,0 %' bredvid 'högst 15 %'."""
+    import scorecard                                    # här, inte överst: scorecard läser producers
+    return scorecard._edge(disc, 1, [(DISCOUNT_MAX, "<="), (0.0, "<")], prefix="+" if disc >= 0 else "") + " %"
+
+
+def pnav_suggestion(fresh: Optional[dict], navps, nav_ccy, bottom=None) -> Calc:
+    """P/NAV nu = nattens kurs / NAV per aktie, sex värdesiffror (som GEO per aktie) — inte rutans två decimaler,
+    som kan flytta talet över ±15 %-grinden. Står de sex siffrorna på andra sidan grinden än kvoten skrivs kvoten.
+    Bara när kursens valuta är NAV:ns: samma bolag har kurs i USD på NYSE och CAD på TSX (cirka 27 % isär), så en
+    okänd eller annan valuta ger inget förslag. Ett P/NAV utanför PNAV_SANE tyder på fel enhet (total NAV i stället
+    för per aktie) och ger inget förslag. bottom = sparad botten: förslaget visar då var det hamnar mot grinden."""
+    n = _nonneg(navps)
+    if not n:
+        return Calc({})
+    f = fresh or {}
+    price = _nonneg(f.get("price"))
+    if not price:
+        return Calc({}, "Ingen kurs i nattens rad — P/NAV går inte att räkna här.")
+    pccy = str(f.get("currency") or "").strip().upper()
+    nccy = str(nav_ccy or "").strip().upper()
+    if not pccy:
+        return Calc({}, "Kursens valuta är okänd (kursen kommer inte från Börsdata) — inget förslag.")
+    if not nccy:
+        return Calc({}, f"Välj NAV:ns valuta — kursen är i {pccy}.")
+    if nccy != pccy:
+        return Calc({}, f"Kursen är i {pccy}, NAV per aktie i {nccy} — inget förslag. Samma bolag har kurs i USD "
+                        f"på NYSE och CAD på TSX; ta NAV per aktie i kursens valuta.")
+    raw = price / n
+    if not PNAV_SANE[0] <= raw <= PNAV_SANE[1]:
+        return Calc({}, f"Kurs {_px(price)} / NAV per aktie {_g(n)} = {_sv(raw, 3)} — orimligt. Står NAV per aktie "
+                        f"per aktie (inte total NAV i miljoner)?")
+    v = float(f"{raw:.6g}")
+    disc, exact = discount_vs_bottom(v, bottom), discount_vs_bottom(raw, bottom)
+    if disc is not None and (disc <= DISCOUNT_MAX) != (exact <= DISCOUNT_MAX):
+        v, disc = raw, exact                            # avrundningen får aldrig flytta grinden
+    asof = str(f.get("asof") or "")[:10]
+    src = "Börsdata" if f.get("source") in (None, "borsdata") else "nattens kurs"
+    text = (f"🤖 P/NAV nu = kurs {_px(price)} {pccy} ({src}{' ' + asof if asof else ''}) / NAV per aktie {_g(n)} "
+            f"{nccy} = {_sv(v, 2)}")
+    if disc is not None:
+        text += f" — mot botten {_sv(_num(bottom), 2)}: {_gate_pct(disc)}"
+    return Calc({"pnav_now": v}, text)
+
+
+def new_bottom(pnav_now, bottom) -> Optional[float]:
+    """'Ny egen botten?': P/NAV nu när det ligger under den sparade botten, annars None — också utan sparad botten,
+    för dagens P/NAV är ingen historisk botten bara för att ingen är ifylld."""
+    n, b = _nonneg(pnav_now), _nonneg(bottom)
+    if not n or not b or n >= b:
+        return None
+    return n
 
 
 def royalty_signal(row: dict) -> Verdict:
@@ -939,6 +1109,114 @@ def _level(row: dict) -> bool:
     return False
 
 
+def _offer(*args, **kw) -> bool:
+    """Ett förslag med Använd (refresh_ui.offer). False utan refresh_ui."""
+    try:
+        import refresh_ui
+    except Exception:                                   # pragma: no cover
+        return False
+    return refresh_ui.offer(*args, **kw)
+
+
+def _offer_fields(*args, **kw) -> bool:
+    """Flera fält med en Använd (refresh_ui.offer_fields). False utan refresh_ui."""
+    try:
+        import refresh_ui
+    except Exception:                                   # pragma: no cover
+        return False
+    return refresh_ui.offer_fields(*args, **kw)
+
+
+def _nav_currencies(price_ccy: str) -> list:
+    """Valutorna NAV per aktie kan stå i: växelkurstabellens (sheets_refresh.FX_TO_USD) och kursens egen, USD och
+    CAD först (NYSE och TSX)."""
+    try:
+        from sheets_refresh import FX_TO_USD
+        codes = set(FX_TO_USD)
+    except Exception:                                   # pragma: no cover
+        codes = {"USD", "CAD"}
+    if price_ccy:
+        codes.add(price_ccy)
+    first = [c for c in ("USD", "CAD") if c in codes]
+    return first + sorted(codes - set(first))
+
+
+def _pnav_calc(data: dict, row: dict, fresh: dict, bottom) -> Optional[float]:
+    """🧮 P/NAV nu ur nattens kurs och NAV per aktie. NAV per aktie och valutan är tillfälliga rutor — de sparas
+    inte. Förslaget skrivs in med Använd (P/NAV nu och rutan), bara när valutorna är samma. Returnerar det räknade
+    P/NAV:t till 'Ny egen botten?', None utan förslag."""
+    rid = row["id"]
+    price = _nonneg(fresh.get("price"))
+    with st.expander("🧮 Räkna P/NAV nu ur kursen och NAV per aktie", expanded=False):
+        if not price:
+            st.caption("Ingen kurs i nattens rad ännu — räknaren behöver den.")
+            return None
+        pccy = str(fresh.get("currency") or "").strip().upper()
+        asof = str(fresh.get("asof") or "")[:10]
+        st.caption(f"Kurs {_px(price)} {pccy or '(valuta okänd)'}{' · ' + asof if asof else ''}. NAV per aktie och "
+                   f"valutan sparas inte — de används bara här.")
+        c1, c2 = st.columns(2)
+        navps = c1.number_input("NAV per aktie", min_value=0.0, step=0.5, value=None, key=f"ro_navps_{rid}",
+                                help="Analytikernas eller bolagets NAV per aktie. Sparas inte.")
+        nccy = c2.selectbox("NAV:ns valuta", [""] + _nav_currencies(pccy), key=f"ro_navccy_{rid}",
+                            format_func=lambda c: c or "– välj", help="Måste vara kursens valuta.")
+        s = pnav_suggestion(fresh, navps, nccy, bottom)
+        if s.values:
+            if not _offer(row, "pnav_now", s.values["pnav_now"], "P/NAV nu", key=f"ro_pnav_calc_{rid}",
+                          widget_key=f"ro_pn_{rid}", on_apply=lambda: _save(data), cast=float, text=s.text):
+                st.caption(f"{s.text} — står redan i rutan.")
+        elif s.text:
+            st.caption(s.text)
+        st.caption(NAV_BASIS_NOTE)
+    return s.values.get("pnav_now")
+
+
+def _bottom_offer(data: dict, row: dict, pnav_now, bottom, source: str) -> None:
+    """'Ny egen botten?' med Använd när P/NAV nu (räknat, annars rutans) ligger under den sparade botten. Använd
+    skriver bara botten och dess ruta. Talen visas med två decimaler, fler när de annars skulle se lika ut (det
+    räknade P/NAV:t är oavrundat)."""
+    v = new_bottom(pnav_now, bottom)
+    if v is None:
+        return
+    rid = row["id"]
+    b = _num(bottom)
+    dd = next((d for d in range(2, 7) if round(v, d) < round(b, d)), 6)
+    _offer(row, "pnav_bottom", v, "P/NAV botten", key=f"ro_newbottom_{rid}", widget_key=f"ro_pb_{rid}",
+           on_apply=lambda: _save(data), cast=float,
+           text=f"🤖 Ny egen botten? P/NAV nu {_sv(v, dd)} ({source}) är under den sparade botten "
+                f"{_sv(b, dd)}. Använd bara om NAV-basen är densamma.")
+
+
+def _geo_calc(data: dict, row: dict, fresh: dict) -> None:
+    """🧮 GEO per aktie nu och för tre år sedan ur total GEO (koz, tillfälliga rutor som inte sparas) och nattens
+    aktieantal. Ett förslag för paret med en Använd (refresh_ui.offer_fields) — båda fälten och rutorna."""
+    rid = row["id"]
+    with st.expander("🧮 Räkna GEO per aktie ur total GEO och Börsdatas aktieantal", expanded=False):
+        note = shares_note(fresh)
+        if not note:
+            st.caption("Börsdata har inget aktieantal nu och för tre år sedan för bolaget — räknaren behöver båda.")
+            return
+        st.caption(note)
+        yr = _num(fresh.get("shares_year"))
+        k1, k2 = st.columns(2)
+        kn = k1.number_input(f"Total GEO {int(yr)} (koz)" if yr else "Total GEO nu (koz)", min_value=0.0,
+                             step=1.0, value=None, key=f"ro_geokoz_{rid}",
+                             help="Tusen uns guldekvivalenter under året — inte uns. Sparas inte.")
+        k3 = k2.number_input(f"Total GEO {int(yr) - 3} (koz)" if yr else "Total GEO för 3 år sedan (koz)",
+                             min_value=0.0, step=1.0, value=None, key=f"ro_geokoz3_{rid}",
+                             help="Samma mått tre år tidigare, i koz. Sparas inte.")
+        s = geo_pair_suggestion(kn, k3, fresh, row.get("geo_now"))
+        if s.values:
+            if not _offer_fields(row, s.values, s.text, key=f"ro_geo_calc_{rid}",
+                                 widget_keys={"geo_now": f"ro_gn_{rid}", "geo_3y": f"ro_g3_{rid}"},
+                                 on_apply=lambda: _save(data)):
+                st.caption(f"{s.text} — står redan i rutorna.")
+            if s.note:
+                st.caption(s.note)
+        elif s.text:
+            st.caption(s.text)
+
+
 def _royalty(data: dict) -> None:
     csv_export.download_button(
         [{**r["row"], "_discount": _r1(r["discount"]),
@@ -1001,6 +1279,10 @@ def _royalty(data: dict) -> None:
             p3.metric("Mot botten",
                       f"{disc:+.1f} %" if disc is not None else "–",
                       help=f"Köpläge kräver högst +{DISCOUNT_MAX:g} %.")
+            fresh = _fresh_row(row)
+            calc_pn = _pnav_calc(data, row, fresh, pb)
+            _bottom_offer(data, row, calc_pn if calc_pn is not None else pn, pb,
+                          "räknat ovan" if calc_pn is not None else "i rutan")
 
             e1, e2, e3 = st.columns(3)
             en = e1.number_input("EV/EBITDA nu", min_value=0.0, step=0.5,
@@ -1018,21 +1300,23 @@ def _royalty(data: dict) -> None:
                      f"ro_em_{row['id']}", lambda: _save(data), fmt="{:.1f}")
 
             g1, g2, g3 = st.columns(3)
+            # sex decimaler: GEO per aktie är uns per aktie (0,0021 för de stora, 0,0002 för de små)
             gn = g1.number_input("GEO/aktie nu", min_value=0.0, step=0.01,
-                                 format="%.4f",
+                                 format="%.6f",
                                  value=shown["geo_now"],
                                  key=f"ro_gn_{row['id']}")
             g3y = g2.number_input("GEO/aktie för 3 år sedan", min_value=0.0,
-                                  step=0.01, format="%.4f",
+                                  step=0.01, format="%.6f",
                                   value=shown["geo_3y"],
                                   key=f"ro_g3_{row['id']}")
             geo = geo_growth(gn, g3y)
             g3.metric("GEO-tillväxt", f"{geo:+.1f} %" if geo is not None else "–",
                       help="Per aktie. Krymper den är bolaget utspätt, inte "
                            "billigt.")
-            dil = dilution_line(_fresh_row(row))            # bara visning — aktieantalet ur nattens rad
+            dil = dilution_line(fresh)            # bara visning — aktieantalet ur nattens rad
             if dil:
                 st.caption(dil)
+            _geo_calc(data, row, fresh)
 
             _extract_section(data, row, "royalty",
                              {"geo_now": f"ro_gn_{row['id']}", "geo_3y": f"ro_g3_{row['id']}",
