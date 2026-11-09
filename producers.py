@@ -278,6 +278,25 @@ def geo_growth(now, three_years_ago) -> Optional[float]:
     return round((n / o - 1) * 100, 6)
 
 
+def _sv(v: float, dec: int = 1) -> str:
+    return f"{v:,.{dec}f}".replace(",", " ").replace(".", ",")
+
+
+def dilution_line(fresh: Optional[dict]) -> str:
+    """Utspädningen under GEO ur nattens royalty-rad (producers:<id>): antalet aktier nu och för tre år sedan
+    (shares_now_m, shares_3y_ago_m, året ur shares_year). Bara visning. Tom sträng när något av talen saknas."""
+    f = fresh or {}
+    now, old = _num(f.get("shares_now_m")), _num(f.get("shares_3y_ago_m"))
+    if now is None or old is None or now <= 0 or old <= 0:
+        return ""
+    pct = (now / old - 1) * 100
+    yr = _num(f.get("shares_year"))
+    years = f" ({int(yr)} mot {int(yr) - 3})" if yr else ""
+    asof = str(f.get("asof") or "")[:10]
+    return (f"Utspädning: {_sv(now, 2)} milj. aktier mot {_sv(old, 2)} milj. för tre år sedan{years} = "
+            f"{'+' if pct >= 0 else '−'}{_sv(abs(pct))} %. Börsdata{' ' + asof if asof else ''}.")
+
+
 def royalty_signal(row: dict) -> Verdict:
     """Signalen, i specens ordning.
 
@@ -408,6 +427,36 @@ def _suggest(*args, **kw) -> None:
         refresh_ui.suggest(*args, **kw)
     except Exception:
         pass
+
+
+def _fresh_row(row: dict) -> dict:
+    """Nattens rad för arkraden (producers:<id>) ur sifferuppdateringen. Tom utan blob."""
+    try:
+        import refresh_ui
+        return dict(((refresh_ui.load_refresh() or {}).get("rows") or {}).get(f"producers:{row.get('id')}") or {})
+    except Exception:
+        return {}
+
+
+def _registry_identity(ticker: str, name: str) -> dict:
+    """ins_id och namn ur universum-registret för ett bolag du lägger in (refresh_ui.registry_identity). Bara på
+    klicket; tom utan register — då blir raden som förut."""
+    try:
+        import refresh_ui
+        return refresh_ui.registry_identity(ticker, name)
+    except Exception:
+        return {}
+
+
+def _identity_note(row: dict) -> None:
+    """'Börsdata: <namn>' på en rad som fått sitt ins_id ur registret."""
+    try:
+        import refresh_ui
+        note = refresh_ui.identity_note(row)
+    except Exception:
+        note = ""
+    if note:
+        st.caption(note)
 
 
 def _chatgpt(data: dict, row: dict, sheet: str) -> None:
@@ -805,9 +854,11 @@ def _royalty(data: dict) -> None:
         level = c3.selectbox("Nivå", list(ROYALTY_LEVELS), key="ro_new_l")
         if st.button("Lägg till", key="ro_new_add"):
             if ticker.strip():
+                t = ticker.strip().upper()
                 data[ROYALTY].append({
-                    "id": _uid(), "ticker": ticker.strip().upper(),
-                    "name": name.strip(), "level": level, "date": _today()})
+                    "id": _uid(), "ticker": t,
+                    "name": name.strip(), "level": level, "date": _today(),
+                    **_registry_identity(t, name)})     # ins_id och Börsdatas namn, så att nattjobbet tar rätt bolag
                 _save(data)
                 st.rerun()
             else:
@@ -831,6 +882,7 @@ def _royalty(data: dict) -> None:
                 f"{vd.label}")
         with st.expander(head, expanded=bool(foc)):
             top = rc.slot() if rc else None
+            _identity_note(row)
             changed = _level(row)
 
             p1, p2, p3 = st.columns(3)
@@ -875,6 +927,9 @@ def _royalty(data: dict) -> None:
             g3.metric("GEO-tillväxt", f"{geo:+.1f} %" if geo is not None else "–",
                       help="Per aktie. Krymper den är bolaget utspätt, inte "
                            "billigt.")
+            dil = dilution_line(_fresh_row(row))            # bara visning — aktieantalet ur nattens rad
+            if dil:
+                st.caption(dil)
 
             _extract_section(data, row, "royalty",
                              {"geo_now": f"ro_gn_{row['id']}", "geo_3y": f"ro_g3_{row['id']}",
