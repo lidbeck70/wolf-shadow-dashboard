@@ -44,8 +44,13 @@ def test_one_letter_names_and_nordic_letters_are_not_called_a_mismatch():
                     ("A.P. Moller-Maersk", "A.P. Møller - Mærsk B"), ("Leroy", "Lerøy Seafood Group"),
                     ("Orsted", "Ørsted")):
         assert note(own, bd) == "", (own, bd)
+    assert note("B&O", "Bang & Olufsen") == ""                             # initialerna
     assert note("Z", "H&M B") == " (matchat: H&amp;M B)"                  # olika bokstäver: fortfarande en notis
     assert note("H&M B", "Boliden AB") == " (matchat: Boliden AB)"
+    # bokstäverna någonstans i namnet räcker inte (bekräftelserundan): andra bolag får notisen
+    for own, bd in (("B&O", "Boliden"), ("B&O", "Bouvet"), ("B&O", "Bonava B"), ("H&M", "HMS Networks"),
+                    ("H&M", "North Media"), ("H&M", "HM Holdings")):
+        assert note(own, bd).startswith(" (matchat: "), (own, bd)
 
 
 def test_matched_note_only_when_the_name_differs_or_is_missing():

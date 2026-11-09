@@ -68,9 +68,11 @@ def matched_note(blob: dict, sheet: str, row: dict, row_id=None) -> str:
         if name_resembles(own, bd):
             return ""
     elif own:
-        # bara enbokstavsdelar ('H&M B', Börsdatas eget namn): jämför bokstäverna hopskrivna, bolagsformer borta
-        ca, cb = ("".join(t for t in _name_parts(n) if t not in _LEGAL) for n in (own, bd))
-        if ca and (ca in cb or cb in ca):
+        # bara enbokstavsdelar ('H&M', 'B&O'): bokstäverna mot Börsdata-namnets initialer ('H&M B' → hmb,
+        # 'Bang & Olufsen' → bo) — inte var som helst i namnet, då vore 'B&O' samma bolag som Boliden
+        ca = "".join(t for t in _name_parts(own) if t not in _LEGAL)
+        ib = "".join(t[0] for t in _name_parts(bd) if t not in _LEGAL)
+        if ca and (ib.startswith(ca) or (len(ib) >= 2 and ca.startswith(ib))):
             return ""
     return f" (matchat: {html.escape(bd).replace('$', '&#36;')})"
 
