@@ -541,12 +541,25 @@ def ref_fcf_musd(ref: Optional[dict]) -> Optional[float]:
     'Använd USD' bredvid MSEK). None när talet inte säkert står i USD: kursvalutan utanför jobbets fasta tabell
     (som _ref_sizes_ok), eller rapportvalutan utanför den — jobbet lämnar då talet tomt (äldre blobbar: rapportens
     miljoner × 1,0)."""
+    return _ref_report_musd(ref, "fcf12_musd")
+
+
+def ref_net_debt_musd(ref: Optional[dict]) -> Optional[float]:
+    """Börsdatas nettoskuld i MUSD ur Rick Rule-/Royalty-radens fält net_debt_musd (negativ = nettokassa) — med samma
+    valutaspärr som ref_fcf_musd: jobbet räknar om båda från rapportvalutan på samma sätt. None när talet saknas
+    eller inte säkert står i USD."""
+    return _ref_report_musd(ref, "net_debt_musd")
+
+
+def _ref_report_musd(ref: Optional[dict], field: str) -> Optional[float]:
+    """Ett MUSD-tal ur rapporten (räknat om från rapportvalutan) — None när kursvalutan eller rapportvalutan ligger
+    utanför jobbets fasta tabell (se ref_fcf_musd)."""
     if not _ref_sizes_ok(ref):
         return None
     rc = str(ref.get("report_currency") or "").strip().upper()
     if rc and rc not in _job_table():
         return None
-    return _num(ref.get("fcf12_musd"))
+    return _num(ref.get(field))
 
 
 def _fcf_scan(row: dict, ref: Optional[dict] = None) -> list:

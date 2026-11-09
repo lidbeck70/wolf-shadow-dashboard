@@ -144,6 +144,42 @@ def _holding_hint(row: dict) -> None:
         st.caption(txt)
 
 
+def delev_years_hint(ref) -> str:
+    """Uppskattningen under 'År till låg skuld': '≈ 2,5 år (nettoskuld ÷ Börsdatas FCF 12 mån, grovt)' ur nattens
+    nettoskuld och FCF 12 mån (lukacs.ref_net_debt_musd / ref_fcf_musd — samma valutaspärr), eller 'nettokassa' när
+    nettoskulden är 0 eller lägre. Bara text: ingen Använd och ingen effekt på grinden — FCF bakåt är ett dåligt mått
+    på den framtida amorteringen. Tom sträng när ett tal saknas, valutan är okänd eller FCF 12 mån inte är positiv."""
+    if not isinstance(ref, dict) or not (ref.get("currency") or ref.get("report_currency")):
+        return ""                                       # ingen valuta alls: talen kan inte sägas stå i USD
+    nd = fv.ref_net_debt_musd(ref)
+    if nd is None:
+        return ""
+    if nd <= 0:
+        return "nettokassa"
+    fcf = fv.ref_fcf_musd(ref)
+    if fcf is None or fcf <= 0:
+        return ""
+    years = nd / fcf
+    txt = "under 0,1" if years < 0.05 else "≈ " + f"{years:,.1f}".replace(",", " ").replace(".", ",")
+    return f"{txt} år (nettoskuld ÷ Börsdatas FCF 12 mån, grovt)"
+
+
+def _delev_years_line(row: dict, key: str, sheet: str, ref) -> None:
+    """delev_years_hint under rutan, med datum och 'matchat:' när Börsdatas bolag inte liknar radens namn."""
+    txt = delev_years_hint(ref)
+    if not txt:
+        return
+    asof = str(ref.get("asof") or "")[:10]
+    note = ""
+    try:
+        import refresh_ui
+        note = refresh_ui.matched_note(refresh_ui.load_refresh(), sheet, row, key)
+    except Exception:
+        pass
+    st.markdown(f"<span style='color:{DIM};font-size:0.78rem;'>🤖 Börsdata{f' {asof}' if asof else ''}: {txt}"
+                f"{note} — uppskattning, fylls inte i.</span>", unsafe_allow_html=True)
+
+
 FX_MISS_RETRY_S = 900
 _FX_MISS: dict = {}     # {'SEKUSD=X': tid för senaste misslyckade hämtning} — inte en Yahoo-fråga per kort och omkörning
 
@@ -426,6 +462,8 @@ def render_fv(row: dict, key: str, prefix: str = "fv", sheet: str = "") -> bool:
         if storage.differs(yrs, row.get("ar_till_lag_skuld")):
             row["ar_till_lag_skuld"] = yrs
             changed = True
+        if sheet:
+            _delev_years_line(row, key, sheet, ref)
         for gap in fv.deleveraging_state(row.get("nd_ebitda"), yrs)["gaps"]:
             st.error(gap)
 
