@@ -17,6 +17,7 @@ from confidence.data.models import CompanyInput
 from confidence.data.provenance import Datapoint, dp
 
 SHEET = "confidence"
+_FX_FIELDS = frozenset({"price", "mcap_musd", "ev_musd", "fx_to_usd"})   # tal som jobbet räknar med kursvalutan
 # Valutorna fältet market_currency kan ta (samma lista som valen i arket) — DKK/CHF/PLN ingår, annars lästes en
 # dansk kurs som USD bredvid ett börsvärde i USD.
 _CCY_CHOICES = tuple(FIELD_BY_KEY["market_currency"].choices)
@@ -55,7 +56,16 @@ def proposals(blob: Optional[dict], company: CompanyInput, sheet: str = SHEET) -
     src = s.get("source_label") or f"Börsdata (sifferuppdatering {asof or '?'})"
     out = []
     ccy = str(s.get("currency") or "").upper()
+    # En kursvaluta utanför jobbets växelkurstabell (London i pence, 'GBX') räknas om med 1,0 i jobbet: börsvärde
+    # och EV vore då miljoner GBX som USD (~79× för högt) och växelkursen 1,0 fel. De talen föreslås inte alls.
+    try:
+        import sheets_refresh as _sr
+        unknown_ccy = bool(ccy) and ccy not in _sr.FX_TO_USD
+    except Exception:
+        unknown_ccy = False
     for bkey, fkey, unit, kind in _MAP:
+        if unknown_ccy and bkey in _FX_FIELDS:
+            continue
         v = s.get(bkey)
         if v is None:
             continue

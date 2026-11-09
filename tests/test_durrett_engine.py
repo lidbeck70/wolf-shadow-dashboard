@@ -622,7 +622,7 @@ def test_the_price_hint_says_only_the_price_is_in_the_trading_currency():
     assert ccfg.FIELD_BY_KEY["market_currency"].label == "Handelsvaluta (aktiekursen)"
 
 
-def _conf_form_app(monkeypatch, company):
+def _conf_form_app(monkeypatch, company, identity=False):
     """Confidence-sidans Indata-formulär (samma _field_widgets/_point_from_widgets som 'Alla fält' och Asymmetry)."""
     import streamlit as st
     from streamlit.testing.v1 import AppTest
@@ -642,11 +642,13 @@ def _conf_form_app(monkeypatch, company):
         from confidence import store as cs
         from confidence import ui as cui
         d = st.session_state["confidence"]
-        cui._render_inputs(d, cs.get(d, st.session_state["_t"]), tools=False, identity=False)
+        cui._render_inputs(d, cs.get(d, st.session_state["_t"]), tools=False,
+                           identity=bool(st.session_state.get("_ident")))
 
     at = AppTest.from_function(app, default_timeout=120)
     at.session_state["confidence"] = data
     at.session_state["_t"] = company.ticker
+    at.session_state["_ident"] = identity
     at.run()
     assert not at.exception, at.exception
     return at
@@ -835,3 +837,41 @@ def test_a_sub_penny_price_keeps_its_digits_and_is_not_proposed_again():
     for k, p, _ in props:
         c.set(k, p)
     assert "share_price" not in {k for k, _p, _c in dr.proposals(blob, c)}
+
+
+def test_the_identity_form_does_not_write_back_an_old_maturity(monkeypatch):
+    """Granskningen (runda 4): Använd på Tiggre-förslaget 'Mognad: DFS' ändrade bolaget, men Identitet-formuläret
+    visade kvar PEA och nästa Uppdatera (bara Land ändrat) skrev tillbaka pea. Nu byts rutorna med det sparade."""
+    from confidence import store as cs
+    c = dcs.copper_developer()
+    c.ticker, c.maturity, c.country = "CDV", "pea", "CA"
+    at = _conf_form_app(monkeypatch, c, identity=True)
+    d = at.session_state["confidence"]
+    comp = cs.get(d, "CDV")
+    comp.maturity = "dfs"                                                 # "Använd" på förslaget
+    cs.put(d, comp)
+    at.session_state["confidence"] = d
+    at.run()
+    assert not at.exception, at.exception
+    land = [t for t in at.text_input if str(t.key).startswith("conf_id_CDV_") and str(t.key).endswith("_country")]
+    assert len(land) == 1
+    land[0].set_value("DK")
+    _submit(at, "conf_ident_CDV")
+    comp = cs.get(at.session_state["confidence"], "CDV")
+    assert (comp.maturity, comp.country) == ("dfs", "DK")
+
+
+def test_borsdata_london_rows_in_pence_get_no_size_or_fx_proposals():
+    """Granskningen (runda 4): ett Londonbolag som Börsdata känner har kursvalutan GBX — jobbet räknar om med 1,0, så
+    börsvärde och EV vore miljoner GBX som USD (~79× för högt) och växelkursen 1,0. De talen föreslås inte."""
+    from engines.durrett import refresh as dr
+    c = dcs.gold_producer()
+    c.ticker = "GGP.L"
+    row = {"price": 15.2, "asof": "2026-11-07", "currency": "GBX", "mcap_musd": 197600.0, "ev_musd": 190000.0,
+           "fx_to_usd": 1.0, "shares_now_m": 13000.0, "ev_ebitda": 6.5}
+    keys = {k for k, _p, _c in dr.proposals({"generated": "2026-11-08", "rows": {"confidence:GGP.L": row}}, c)}
+    assert not keys & {"share_price", "market_cap_musd", "enterprise_value_musd", "fx_to_usd", "market_currency"}
+    assert {"basic_shares_m", "ev_ebitda"} <= keys                        # valutalösa tal föreslås som förut
+    usd = dict(row, currency="USD", mcap_musd=2500.0, ev_musd=2400.0, price=0.19)
+    keys = {k for k, _p, _c in dr.proposals({"generated": "2026-11-08", "rows": {"confidence:GGP.L": usd}}, c)}
+    assert {"share_price", "market_cap_musd", "enterprise_value_musd"} <= keys

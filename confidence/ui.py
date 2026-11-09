@@ -149,6 +149,10 @@ def render_confidence_page() -> None:
 
 # ── nytt bolag ───────────────────────────────────────────────────────────────
 def _identity_widgets(prefix: str, c: Optional[CompanyInput]) -> dict:
+    if c is not None:                   # nya rutor när det sparade byts (t.ex. Använd på Mognad) — se stored_tag
+        import zlib
+        raw = repr((c.name, c.commodity, c.country, c.jurisdiction, c.exchange, c.stage, c.maturity))
+        prefix = f"{prefix}_{format(zlib.crc32(raw.encode('utf-8')), '08x')}"
     labels = {k: f"{v.label} ({k})" for k, v in com.REGISTRY.items()}
     keys = list(labels)
     a, b, d = st.columns(3)
