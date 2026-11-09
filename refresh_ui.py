@@ -10,6 +10,12 @@ skrivs annars, och 💾 Spara sköter persistensen som vanligt.
 offer() är samma knapp för förslag av vilken typ som helst (heltal, text, val,
 kryss) ur andra källor än bloben — t.ex. Insider-skanningen. offer_fields() är
 samma knapp för tal som bara gäller tillsammans (Royalty C:s GEO-par).
+
+'Hämta nu' (fetch_live, fetch_button): en rad hämtad på ditt klick läggs i
+sessionen under radens nyckel ('producers:<id>', 'tiggre:<id>',
+'confidence:<TICKER>') och current_blob() lägger den över nattens blob — så
+läser kortets förslag den först. Bara i sessionen: inget skrivs till Gisten
+eller repot, och raden i arket ändras bara med Använd (💾 sparar).
 """
 from __future__ import annotations
 
@@ -64,7 +70,7 @@ def matched_note(blob: dict, sheet: str, row: dict, row_id=None) -> str:
     """' (matchat: Genovis AB)' när sifferuppdateringens bolag inte liknar radens eget namn, eller raden saknar
     namn — så syns det när en manuell rad fått fel bolag. Tom sträng annars, och utan Börsdatas namn."""
     s = ((blob or {}).get("rows") or {}).get(f"{sheet}:{row_id or (row or {}).get('id')}") or {}
-    bd = str(s.get("bd_name") or "").strip()
+    bd = str(s.get("bd_name") or s.get("yahoo_name") or "").strip()      # Yahoo-reservens namn för 'Hämta nu'
     if not bd:
         return ""
     own = str((row or {}).get("name") or "").strip()
@@ -137,6 +143,189 @@ def load_refresh() -> dict:
         return d if isinstance(d, dict) else {}
     except Exception:
         return {}
+
+
+# ── 'Hämta nu': raden du hämtat, bara i sessionen ───────────────────────────
+LIVE_KEY = "rf_live_rows"          # session: {'producers:<id>': rad} — aldrig till Gisten eller repot
+_COMMODITY_FIELDS = ("commodity_price", "commodity_unit", "commodity_asof", "commodity_ticker")
+FETCH_HELP = ("Hämtar bolagets tal nu, utan att vänta på nattens körning: Börsdata först, Yahoo om Börsdata inte "
+              "känner tickern. Varje klick drar Börsdata-kvot. Utan ins_id kan fel bolag matchas — kontrollera "
+              "namnet som visas. Talen blir förslag med Använd; inget sparas förrän du trycker 💾.")
+
+
+def live_rows() -> dict:
+    """{radnyckel: rad} som hämtats med 'Hämta nu' i sessionen. Tom utan sådana (eller utan session)."""
+    try:
+        v = st.session_state.get(LIVE_KEY)
+    except Exception:
+        return {}
+    return v if isinstance(v, dict) else {}
+
+
+def _live_applies(night: Optional[dict], live: Optional[dict]) -> bool:
+    """Går den hämtade raden före nattens? Ja, utom när nattens rad är nyare (en körning efter hämtningen, i en session
+    som stått öppen) — datumen jämförs som text (ÅÅÅÅ-MM-DD). Saknar någon av dem datum gäller hämtningen."""
+    n, f = str((night or {}).get("asof") or "")[:10], str((live or {}).get("asof") or "")[:10]
+    return not (n and f and n > f)
+
+
+def is_live(ref: str) -> bool:
+    """Läser kortet raden '<ark>:<id>' ur en hämtning i sessionen (och inte ur nattens blob)?"""
+    live = live_rows().get(ref)
+    if live is None:
+        return False
+    try:
+        night = ((load_refresh() or {}).get("rows") or {}).get(ref)
+    except Exception:
+        night = None
+    return _live_applies(night, live)
+
+
+def put_live(ref: str, row: dict) -> None:
+    """Lägg en hämtad rad i sessionen under radens nyckel. Ersätter en tidigare hämtning av samma rad."""
+    rows = dict(live_rows())
+    rows[ref] = dict(row)
+    st.session_state[LIVE_KEY] = rows
+
+
+def with_live(blob, live: Optional[dict]):
+    """Nattens blob med de hämtade raderna ovanpå: en hämtad rad ersätter nattens rad för samma nyckel — utom när
+    nattens rad är nyare (en körning efter hämtningen, i en session som stått öppen). Nattens råvarupris
+    (commodity_*) följer med när hämtningen inte fick något eget — det har sitt eget datum och gäller bara medan
+    kortets råvara är densamma (commodity_prices.night_fits). Bloben som den är utan hämtade rader."""
+    if not live:
+        return blob
+    night = (blob or {}).get("rows") or {}
+    rows = dict(night)
+    for ref, r in live.items():
+        n = night.get(ref) or {}
+        if not _live_applies(n, r):
+            continue                                    # natten har kört sedan du hämtade
+        merged = dict(r)
+        if merged.get("commodity_price") is None and n.get("commodity_price") is not None:
+            merged.update({k: n[k] for k in _COMMODITY_FIELDS if k in n})
+        rows[ref] = merged
+    return {**(blob or {}), "rows": rows}
+
+
+def current_blob():
+    """Sifferuppdateringens blob som kortens förslag läser: raderna du hämtat nu (live_rows) före nattens (load_refresh)."""
+    return with_live(load_refresh(), live_rows())
+
+
+def source_name(s: Optional[dict]) -> str:
+    """Var radens tal kommer ifrån: 'Börsdata', eller 'Yahoo (FNV.TO)' för Yahoo-reservens rad — suffixsökningen kan
+    träffa fel bolag, så symbolen den använde står med."""
+    s = s or {}
+    if str(s.get("source") or "") == "yfinance" and s.get("yahoo"):
+        return f"Yahoo ({s['yahoo']})"
+    return "Börsdata"
+
+
+def fetched_line(s: Optional[dict], row: Optional[dict]) -> str:
+    """Raden under 'Hämta nu': varifrån talen kom, datum och vilket bolag som matchades — alltid med namnet, eftersom
+    en rad utan ins_id kan få fel bolag. Varning när namnet inte liknar radens, när raden saknar ins_id och när
+    kursvalutan saknas i växelkurstabellen (då inga omräknade MUSD-tal). Oescapad text; tom sträng utan rad."""
+    if not isinstance(s, dict):
+        return ""
+    row = row or {}
+    asof = str(s.get("asof") or "")[:10]
+    yahoo = source_name(s) != "Börsdata"
+    name = str((s.get("yahoo_name") if yahoo else s.get("bd_name")) or "").strip()
+    sym = "" if yahoo else str(s.get("bd_ticker") or "").strip()
+    who = (name + (f" ({sym})" if sym else "")) if name else sym
+    px = s.get("price")
+    seen = (f"kurs {px:,.4g}{' ' + str(s.get('currency')) if s.get('currency') else ''}"
+            if isinstance(px, (int, float)) and not isinstance(px, bool) else "")
+    txt = (f"🤖 Hämtat nu ur {source_name(s)}{' ' + asof if asof else ''}: "
+           + (f"{who}{', ' + seen if seen else ''}." if who else
+              f"svaret har inget bolagsnamn{' (' + seen + ')' if seen else ''} — kontrollera att det är rätt bolag."))
+    own = str(row.get("name") or "").strip()
+    if name and own and not name_resembles(own, name):
+        txt += f" Liknar inte '{own}' — kontrollera tickern."
+    if yahoo:
+        txt += " Yahoo provar tickern med börssuffix och kan träffa fel bolag."
+    elif row.get("ins_id") in (None, ""):
+        txt += " Raden saknar ins_id — matchat på tickern."
+    ccy = str(s.get("currency") or "").strip().upper()
+    try:
+        from sheets_refresh import FX_TO_USD
+        unknown = bool(ccy) and ccy not in FX_TO_USD
+    except Exception:                                   # pragma: no cover
+        unknown = False
+    if unknown:
+        txt += f" Kursen står i {ccy}, som saknas i växelkurstabellen — inga omräknade MUSD-tal."
+    return txt
+
+
+def fetch_live(sheet: str, row: dict, row_id=None, commodity: Optional[str] = None, api=None, info_getter=None,
+               yahoo: bool = True) -> tuple:
+    """'Hämta nu' för en arkrad: samma rad som nattjobbet bygger (sheets_refresh.fetch_row, Börsdata) — eller Yahoo-
+    reservens (asymmetry/fetch.yahoo_row) när Börsdata inte känner tickern och yahoo=True — i nattens form för arket
+    (sheets_refresh.as_sheet_row), med dagens terminspris för commodity (kortets råvara; commodity_prices.spot).
+    Raden läggs i sessionen (put_live) och ingenting skrivs i arket. (rad | None, varför Börsdata inte gav någon —
+    tom när den gjorde det)."""
+    import sheets_refresh as sr
+    t = str((row or {}).get("ticker") or "").strip().upper()
+    if not t:
+        return None, "Raden saknar ticker."
+    got, why = None, ""
+    try:
+        if api is None:
+            from borsdata_api import BorsdataAPI
+            api = BorsdataAPI()
+        got = sr.fetch_row(api, t, (row or {}).get("ins_id"))
+        if got is None:
+            why = f"Börsdata känner inte {t}."
+    except Exception as exc:
+        why = f"Börsdata svarade inte: {exc}"
+    if got is None and yahoo:
+        try:
+            from asymmetry import fetch as af
+            got = af.yahoo_row(t, info_getter)
+        except Exception:
+            got = None
+        if got is None:
+            return None, why + f" Yahoo har inte heller {t} — vänta på nattens körning eller skriv talen själv."
+    if got is None:
+        return None, why
+    out = sr.as_sheet_row(got, sheet)
+    if commodity:
+        try:
+            import commodity_prices
+            sp = commodity_prices.spot(commodity)
+        except Exception:
+            sp = None
+        if sp:
+            out.update(commodity_price=sp["price"], commodity_unit=sp["unit"], commodity_asof=sp["asof"],
+                       commodity_ticker=sp.get("ticker"))
+    put_live(f"{sheet}:{row_id or row.get('id')}", out)
+    return out, why
+
+
+def _fetch_click(sheet: str, row: dict, key: str, row_id, commodity: Optional[str]) -> None:
+    """on_click för 'Hämta nu': raden in i sessionen och, när inget hittades, varför (visas under knappen)."""
+    got, why = fetch_live(sheet, row, row_id=row_id, commodity=commodity)
+    st.session_state[f"{key}_msg"] = "" if got is not None else why
+
+
+def fetch_button(sheet: str, row: dict, key: str, row_id=None, commodity: Optional[str] = None,
+                 container=None) -> None:
+    """'Hämta nu' med raden om vad som hämtades (fetched_line) eller varför inget hittades. Att rita hämtar ingenting —
+    bara klicket (on_click), och det skriver bara sessionens överlagring, aldrig raden i arket. container = där
+    knappen ritas (Tiggre: under Börsvärde; raden står då under kolumnerna); utan den står knapp och rad bredvid
+    varandra."""
+    if container is None:
+        container, note = st.columns([1, 3], vertical_alignment="center")
+    else:
+        note = st
+    container.button("Hämta nu", key=key, on_click=_fetch_click, args=(sheet, row, key, row_id, commodity),
+                     help=FETCH_HELP)
+    msg = st.session_state.get(f"{key}_msg")
+    ref = f"{sheet}:{row_id or row.get('id')}"
+    text = msg or (fetched_line(live_rows().get(ref), row) if is_live(ref) else "")
+    if text:
+        note.caption(text.replace("$", "\\$"))
 
 
 def suggestion(blob: dict, sheet: str, row: dict, source_field: str,
@@ -297,8 +486,9 @@ def suggest(sheet: str, row: dict, field: str, source_field: str, label: str,
             fmt: str = "{:g}", with_currency: bool = False, row_id=None,
             unit_field: Optional[str] = None, lo: Optional[float] = None) -> None:
     """Rita förslaget om det finns och skiljer sig från fältets värde. lo = fältets golv: ett förslag under det
-    (Börsdatas negativa EV/EBITDA vid negativt EBITDA) erbjuds inte — rutan skulle inte kunna visa det."""
-    blob = load_refresh()
+    (Börsdatas negativa EV/EBITDA vid negativt EBITDA) erbjuds inte — rutan skulle inte kunna visa det. En rad
+    hämtad nu (current_blob) går före nattens och märks '(hämtat nu)'; Yahoo-reservens med symbolen."""
+    blob = current_blob()
     sug = suggestion(blob, sheet, row, source_field, row_id=row_id,
                      unit_field=unit_field)
     if sug is None or (lo is not None and sug[0] < lo):
@@ -312,8 +502,11 @@ def suggest(sheet: str, row: dict, field: str, source_field: str, label: str,
     except (TypeError, ValueError):
         pass
     unit = f" {ccy}" if with_currency and ccy else ""
+    ref = f"{sheet}:{row_id or row.get('id')}"
+    src = html.escape(source_name(((blob or {}).get("rows") or {}).get(ref)))
+    now = " (hämtat nu)" if is_live(ref) else ""
     c1, c2 = st.columns([3, 1])
-    c1.markdown(f"<span style='color:{DIM};font-size:0.78rem;'>🤖 Börsdata {asof}: "
+    c1.markdown(f"<span style='color:{DIM};font-size:0.78rem;'>🤖 {src} {asof}{now}: "
                 f"{label} {fmt.format(val)}{unit}{matched_note(blob, sheet, row, row_id)}</span>",
                 unsafe_allow_html=True)
     c2.button("Använd", key=f"rf_{sheet}_{row_id or row.get('id')}_{field}",

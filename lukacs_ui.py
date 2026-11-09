@@ -31,7 +31,7 @@ def _refresh_row(sheet: str, key: str):
         return None
     try:
         import refresh_ui
-        r = ((refresh_ui.load_refresh() or {}).get("rows") or {}).get(f"{sheet}:{key}")
+        r = ((refresh_ui.current_blob() or {}).get("rows") or {}).get(f"{sheet}:{key}")
         if not isinstance(r, dict):
             return None
         if not r.get("currency") and r.get("source") == "yfinance" and r.get("price") is not None:
@@ -58,7 +58,7 @@ def bd_fcf_line(row: dict, key: str, sheet: str, ref=None) -> None:
     note = ""
     try:
         import refresh_ui
-        note = refresh_ui.matched_note(refresh_ui.load_refresh(), sheet, row, key)
+        note = refresh_ui.matched_note(refresh_ui.current_blob(), sheet, row, key)
     except Exception:
         pass
     st.markdown(f"<span style='color:{DIM};font-size:0.78rem;'>🤖 Börsdata FCF 12 mån: {txt} MUSD"
@@ -173,7 +173,7 @@ def _delev_years_line(row: dict, key: str, sheet: str, ref) -> None:
     note = ""
     try:
         import refresh_ui
-        note = refresh_ui.matched_note(refresh_ui.load_refresh(), sheet, row, key)
+        note = refresh_ui.matched_note(refresh_ui.current_blob(), sheet, row, key)
     except Exception:
         pass
     st.markdown(f"<span style='color:{DIM};font-size:0.78rem;'>🤖 Börsdata{f' {asof}' if asof else ''}: {txt}"

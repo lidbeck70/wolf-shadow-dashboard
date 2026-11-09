@@ -124,7 +124,8 @@ def yahoo_row(ticker: str, info_getter=None) -> Optional[dict]:
         if pence and price is not None:
             price = float(price) / 100.0               # pence → GBP, så att kurs, valuta och växelkurs stämmer
         shares = info.get("sharesOutstanding")
-        return {"ticker": t, "yahoo": sym, "ins_id": None, "source": "yfinance",
+        name = str(info.get("longName") or info.get("shortName") or "").strip() or None
+        return {"ticker": t, "yahoo": sym, "yahoo_name": name, "ins_id": None, "source": "yfinance",
                 "source_label": f"Yahoo Finance ({sym}, {_date.today().isoformat()})",
                 "price": float(price) if price is not None else None, "asof": _date.today().isoformat(),
                 "currency": ccy, "mcap_musd": musd(mc, fx), "cash_musd": musd(info.get("totalCash"), ffx),
@@ -151,3 +152,16 @@ def fetch_now(company: CompanyInput, api=None, info_getter=None) -> tuple:
     yprops = dr.proposals(yblob, company)
     return yblob, yprops, (f"{msg} Yahoo ({row['yahoo']}): {len(yprops)} tal"
                           + (f" (kurs {row['price']:g} {row['currency']})" if row.get("price") is not None else ""))
+
+
+def fetch_to_session(company: CompanyInput, api=None, info_getter=None) -> tuple:
+    """'Hämta nu' på Wolf Asymmetry- och Durrett-arket: fetch_now, och raden in i sessionens överlagring
+    (refresh_ui.put_live, nyckeln confidence:<TICKER>) — båda arkens förslag läser den före nattens blob. Ingenting
+    skrivs i bolaget; det gör Använd. (True, meddelande) när en rad hämtades, annars (False, varför)."""
+    blob, _props, msg = fetch_now(company, api, info_getter)
+    if blob is None:
+        return False, msg
+    import refresh_ui
+    for ref, row in (blob.get("rows") or {}).items():
+        refresh_ui.put_live(ref, row)
+    return True, msg

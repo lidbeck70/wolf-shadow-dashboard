@@ -31,6 +31,21 @@ def _no_live_commodity_futures(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_fetched_rows_between_tests():
+    """'Hämta nu' lägger raden i st.session_state (refresh_ui.LIVE_KEY). Utan 'streamlit run' är den processglobal — en
+    test som klickar (producers._fetch_ev …) skulle annars ge nästa test en hämtad rad ovanpå sin blob."""
+    yield
+    rui = sys.modules.get("refresh_ui")                 # bara om testet laddade den — ingen import för andra tester
+    if rui is None:
+        return
+    try:
+        import streamlit as st
+        st.session_state.pop(rui.LIVE_KEY, None)
+    except Exception:
+        pass
+
+
+@pytest.fixture(autouse=True)
 def _journal_stays_out_of_the_repo(monkeypatch, tmp_path):
     """Tradejournalen skriver aldrig i repot eller till den riktiga Gisten under testerna.
 

@@ -970,3 +970,30 @@ def fetch_row(api, ticker: str, ins_id=None) -> Optional[dict]:
     for k in ("pe", "ps", "rs_rank", "ebitda_margin"):
         s[k] = _f(snap.get(k))
     return s
+
+
+# fetch_row bygger Durrett-/Wolf Asymmetry-arkets rad. Fälten bara den raden får i nattjobbet (refresh ovan):
+_CONFIDENCE_ONLY = ("roic_pct", "fcf_yield_pct", "ev_ebit", "fx_to_usd", "fx_table", "pe", "ps", "rs_rank",
+                    "ebitda_margin")
+_SNAPSHOT_MUSD = ("ev_musd", "net_debt_musd", "revenue_musd", "fcf_musd", "ocf_musd")
+
+
+def as_sheet_row(row: Optional[dict], sheet: str) -> Optional[dict]:
+    """fetch_row:s rad (eller Yahoo-reservens, asymmetry/fetch.yahoo_row) i nattjobbets form för arket — 'Hämta nu'
+    ger kortet samma fält som natten: Rick Rule och Royalty C (producers) får MUSD-blocket med FCF 12 mån under
+    fcf12_musd (lukacs.ref_fcf_musd — enhetskontrollen läser fcf_musd som forward FCF), övriga ark bara bas- och
+    rapportfälten, Durrett-/Wolf Asymmetry-arket (confidence) raden som den är. En kopia; None in ger None."""
+    if not isinstance(row, dict):
+        return None
+    s = dict(row)
+    if sheet == "confidence":
+        return s
+    for k in _CONFIDENCE_ONLY:
+        s.pop(k, None)
+    if sheet == "producers":
+        if "fcf_musd" in s:
+            s["fcf12_musd"] = s.pop("fcf_musd")
+    else:
+        for k in _SNAPSHOT_MUSD:
+            s.pop(k, None)
+    return s

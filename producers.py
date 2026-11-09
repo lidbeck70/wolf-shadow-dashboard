@@ -725,12 +725,24 @@ def _commodity(row: dict, key: str, on_apply) -> bool:
 
 
 def _fresh_row(row: dict) -> dict:
-    """Nattens rad för arkraden (producers:<id>) ur sifferuppdateringen. Tom utan blob."""
+    """Sifferuppdateringens rad för arkraden (producers:<id>) — den du hämtat nu (Hämta nu) före nattens
+    (refresh_ui.current_blob). Tom utan blob."""
     try:
         import refresh_ui
-        return dict(((refresh_ui.load_refresh() or {}).get("rows") or {}).get(f"producers:{row.get('id')}") or {})
+        return dict(((refresh_ui.current_blob() or {}).get("rows") or {}).get(f"producers:{row.get('id')}") or {})
     except Exception:
         return {}
+
+
+def _fetch_button(row: dict) -> None:
+    """'Hämta nu' överst på Rick Rule-kortet (refresh_ui.fetch_button): hela raden ur Börsdata och dagens terminspris för
+    kortets råvara blir kortets förslag (EV/EBITDA, nettoskuld/EBITDA, råvarupris, EV, aktier, kurs, FCF 12 mån, DS-
+    runway …) — bara i sessionen; Använd skriver, 💾 sparar."""
+    try:
+        import refresh_ui
+    except Exception:                                   # pragma: no cover
+        return
+    refresh_ui.fetch_button("producers", row, key=f"pr_live_{row['id']}", commodity=row.get("commodity") or None)
 
 
 def _night_price_fits(row: dict) -> bool:
@@ -925,6 +937,7 @@ def _producers(data: dict) -> None:
         with st.expander(head, expanded=bool(foc)):
             top = rc.slot() if rc else None
             changed = _commodity(row, f"pr_com_{row['id']}", lambda: _save(data))
+            _fetch_button(row)
             v1, v2, v3, v4 = st.columns(4)
             shown = {k: _nonneg(row.get(k)) for k in ("ev_ebitda", "unit_cost", "price")}
             ev = v1.number_input("EV/EBITDA", min_value=0.0, step=0.5,
@@ -1085,13 +1098,17 @@ def _producers(data: dict) -> None:
 
 
 def _fetch_ev(row: dict, widget_key: str) -> None:
-    """Hämta EV (MUSD) ur Börsdata direkt — samma rad som det nattliga jobbet."""
+    """Hämta EV (MUSD) ur Börsdata direkt — samma rad som det nattliga jobbet. Hela raden går in i sessionen
+    (refresh_ui.fetch_live, som 'Hämta nu'), så kortets andra förslag får den också; bara EV skrivs i rutan, som förut."""
     try:
-        from borsdata_api import BorsdataAPI
+        import refresh_ui
         import sheets_refresh as sr
-        s_ = sr.fetch_row(BorsdataAPI(), row.get("ticker", ""), row.get("ins_id"))
+        s_, why = refresh_ui.fetch_live("producers", row, commodity=row.get("commodity") or None, yahoo=False)
     except Exception as exc:
         st.session_state[f"{widget_key}_msg"] = f"Börsdata svarade inte: {exc}"
+        return
+    if s_ is None and why.startswith("Börsdata svarade inte"):
+        st.session_state[f"{widget_key}_msg"] = why
         return
     ev = (s_ or {}).get("ev_musd")
     if ev is not None and ev < 0:                      # rutan har golvet 0 — ett negativt EV skrivs inte in
@@ -1135,7 +1152,9 @@ def _ev_nav_section(data: dict, row: dict, durrett=None) -> bool:
     src = st.text_input("NAV-källa", value=row.get("nav_source") or "", key=f"pr_navs_{rid}",
                         placeholder="t.ex. NI 43-101 2025, 5 % diskontering / analytikerkonsensus")
     b1, b2 = st.columns([1, 3])
-    b1.button("Hämta EV nu", key=f"pr_evget_{rid}", on_click=_fetch_ev, args=(row, k_ev))
+    b1.button("Hämta EV nu", key=f"pr_evget_{rid}", on_click=_fetch_ev, args=(row, k_ev),
+              help="Hämtar raden ur Börsdata nu och skriver EV i rutan (💾 sparar). Drar Börsdata-kvot. Kortets andra "
+                   "förslag får samma rad.")
     if st.session_state.get(f"{k_ev}_msg"):
         b2.caption(st.session_state[f"{k_ev}_msg"])
     _suggest("producers", row, "ev_musd", "ev_musd", "EV (MUSD)", k_ev, lambda: _save(data), fmt="{:,.0f}", lo=0.0)
