@@ -291,6 +291,12 @@ def fetch_live(sheet: str, row: dict, row_id=None, commodity: Optional[str] = No
         if api is None:
             from borsdata_api import BorsdataAPI
             api = BorsdataAPI()
+        # Instrumentlistan först: utan ins_id sväljer tickeruppslaget (sheets_refresh.resolve) felet och svarar 'känner
+        # inte', så en saknad nyckel, 401, 429 eller nätet gav Yahoo på bara tickern. fetch_row läser listan ändå, och
+        # klienten cachar den — ingen extra kvot.
+        instruments = getattr(api, "get_instruments", None)
+        if callable(instruments):
+            instruments()
         got = sr.fetch_row(api, t, (row or {}).get("ins_id"))
     except Exception as exc:
         return None, f"Börsdata svarade inte: {exc}"

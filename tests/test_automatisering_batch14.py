@@ -520,12 +520,12 @@ def test_rule_fetch_ev_now_clears_the_old_fetch_now_failure(page, monkeypatch):
     assert f"EV 65,000 MUSD ur Börsdata ({TODAY})." in cap
 
 
-def _yahoo_answers_the_bare_ticker(monkeypatch, ticker: str, name: str):
+def _yahoo_answers_the_bare_ticker(monkeypatch, ticker: str, name: str, **extra):
     """Yahoo har ett annat bolag på den nakna tickern — det som en reserv efter ett Börsdata-fel skulle ge."""
     from asymmetry import fetch as af
     real = af.yahoo_row
     info = {"marketCap": 4.2e9, "currency": "USD", "currentPrice": 31.0, "sharesOutstanding": 135e6,
-            "totalCash": 9e8, "longName": name}
+            "totalCash": 9e8, "longName": name, **extra}
     monkeypatch.setattr(af, "yahoo_row", lambda t, getter=None: real(t, lambda sym: info if sym == ticker else {}))
 
 
@@ -562,3 +562,120 @@ def test_rule_borsdata_error_keeps_the_night_row(page, monkeypatch):
     md = _md(at)
     assert "🤖 Börsdata 2026-11-06: EV (MUSD) 65,000" in md and "hämtat nu" not in md and "Nemo" not in md
     assert rui.LIVE_KEY not in at.session_state
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  Rättelser 2: Börsdata-fel på en rad utan ins_id, och Yahoos EV/EBITDA märkt Yahoo
+# ═════════════════════════════════════════════════════════════════════════════
+class _DownApi:
+    """Börsdata som inte svarar (nyckeln utgången, 401, 429 efter tre försök, nätet): instrumentlistan och
+    tickeruppslaget kastar, den globala listan ger [] som den riktiga klienten gör vid fel."""
+
+    def __init__(self):
+        self.calls: list = []
+
+    def get_instruments(self, force_refresh=False):
+        self.calls.append("get_instruments")
+        raise RuntimeError("401 Unauthorized")
+
+    def resolve_instrument_id(self, ticker):
+        self.calls.append("resolve_instrument_id")
+        raise RuntimeError("401 Unauthorized")
+
+    def get_global_instruments_list(self):
+        self.calls.append("get_global_instruments_list")
+        return []
+
+
+class _UnknownApi:
+    """Börsdata svarar men känner inte tickern."""
+
+    def get_instruments(self, force_refresh=False):
+        return []
+
+    def resolve_instrument_id(self, ticker):
+        return None
+
+    def get_global_instruments_list(self):
+        return []
+
+
+def test_borsdata_error_without_ins_id_gives_no_yahoo(session, monkeypatch):
+    """Raden saknar ins_id (➕ Nytt bolag): tickeruppslaget i fetch_row sväljer Börsdatas fel och svarar 'känner inte'.
+    fetch_live hämtar instrumentlistan först, så felet står under knappen — ingen Yahoo på bara tickern, inget lagras,
+    en tidigare hämtning står kvar. Svarar Börsdata men känner inte tickern ger det Yahoo som förut."""
+    from asymmetry import fetch as af
+    asked = []
+    monkeypatch.setattr(af, "yahoo_row", lambda t, getter=None: asked.append(t) or {
+        "ticker": t, "source": "yfinance", "yahoo": t, "yahoo_name": "Nemo Mining Inc", "ev_ebitda": 3.1})
+    assert sr.fetch_row(_DownApi(), "NEM") is None                     # felet sväljs här — därav kontrollen
+    api = _DownApi()
+    got, why = rui.fetch_live("producers", {"id": "p1", "ticker": "NEM", "name": "Newmont"}, api=api)
+    assert (got, why) == (None, "Börsdata svarade inte: 401 Unauthorized")
+    assert not asked and api.calls == ["get_instruments"] and rui.LIVE_KEY not in session
+    rui.put_live("tiggre:c1", {"mcap_musd": 85.4})
+    got, why = rui.fetch_live("tiggre", {"id": "c1", "ticker": "TGR"}, api=_DownApi())
+    assert (got, why) == (None, "Börsdata svarade inte: 401 Unauthorized")
+    assert not asked and rui.live_rows() == {"tiggre:c1": {"mcap_musd": 85.4}}
+    got, why = rui.fetch_live("producers", {"id": "p1", "ticker": "NEM"}, api=_UnknownApi())
+    assert why == "Börsdata känner inte NEM." and asked == ["NEM"] and rui.is_live("producers:p1")
+
+
+def test_rule_borsdata_error_without_ins_id_keeps_the_night_row(page, monkeypatch):
+    """Rick Rule-raden från ➕ Nytt bolag (inget ins_id) har nattens rad. Börsdata svarar inte på 'Hämta nu' — med den
+    riktiga fetch_row: felet står under knappen, nattens EV/EBITDA och EV står kvar, inget annat bolag ur Yahoo."""
+    import borsdata_api
+    real_fetch_row = sr.fetch_row
+    night = {"rows": {"producers:p1": sr.as_sheet_row(dict(NEM, asof="2026-11-06"), "producers")}}
+    at = page("Rick Rule", night, _rule_store(), {"NEM": NEM})
+    monkeypatch.setattr(sr, "fetch_row", real_fetch_row)
+    monkeypatch.setattr(borsdata_api, "BorsdataAPI", lambda *a, **k: _DownApi())
+    _yahoo_answers_the_bare_ticker(monkeypatch, "NEM", "Nemo Mining Inc", enterpriseToEbitda=3.1)
+    at.run()
+    assert not at.exception, at.exception
+    before = {k for k in _buttons(at) if k.startswith("rf_")}
+    assert {"rf_producers_p1_ev_musd", "rf_producers_p1_ev_ebitda"} <= before
+    at.button(key="pr_live_p1").click().run()
+    assert not at.exception, at.exception
+    assert "Börsdata svarade inte: 401 Unauthorized" in _captions(at)
+    assert {k for k in _buttons(at) if k.startswith("rf_")} == before                  # nattens förslag står kvar
+    md = _md(at)
+    assert "🤖 Börsdata 2026-11-06: EV/EBITDA 6.2" in md and "🤖 Börsdata 2026-11-06: EV (MUSD) 65,000" in md
+    assert "hämtat nu" not in md and "Nemo" not in md and "Yahoo" not in md
+    assert rui.LIVE_KEY not in at.session_state and not page.saves
+
+
+def test_yahoo_ev_ebitda_is_labelled_yahoo_in_the_valuation_suggestion(session):
+    """'Hämta nu' med Yahoo-reserven: Scorecardets värderingsförslag för Rick Rule och Royalty C säger Yahoo och
+    symbolen som träffades — inte '(Börsdata)'. Börsdatas rader märks som förut."""
+    import scorecard
+    from asymmetry import fetch as af
+    info = {"marketCap": 1.5e9, "currency": "CAD", "currentPrice": 12.0, "enterpriseToEbitda": 4.3,
+            "longName": "Abc Gold Corp"}
+    y = af.yahoo_row("ABC", lambda sym: info if sym == "ABC.TO" else {})
+    rui.put_live("producers:p1", sr.as_sheet_row(y, "producers"))
+    entry = {"ticker": "ABC", "rows": {"producenter": {"id": "p1", "ticker": "ABC", "name": "Abc Gold"}}}
+    ref = scorecard._valuation_ref(entry, "producenter")
+    assert scorecard.valuation_suggestion(entry, "producenter", ref) == "EV/EBITDA 4,3× (Yahoo ABC.TO)"
+    roy = {"ticker": "ABC", "rows": {"royalty": {"id": "p1", "ticker": "ABC"}}}
+    assert scorecard.valuation_suggestion(roy, "royalty", scorecard._valuation_ref(roy, "royalty")) == (
+        "EV/EBITDA 4,3× (Yahoo ABC.TO)")
+    assert scorecard._ev_ebitda_part({"source": "yfinance", "ev_ebitda": 4.3}) == ["EV/EBITDA 4,3× (Yahoo)"]
+    rui.put_live("producers:p1", sr.as_sheet_row(NEM, "producers"))
+    assert scorecard.valuation_suggestion(entry, "producenter", scorecard._valuation_ref(entry, "producenter")) == (
+        "EV/EBITDA 6,2× (Börsdata)")
+
+
+def test_durrett_yahoo_fallback_labels_ev_ebitda_yahoo(page, monkeypatch):
+    """Durrett-arket: Börsdata känner inte NEM, Yahoo svarar på den nakna tickern. Värderingsraden säger
+    '(Yahoo NEM)' — inte '(Börsdata)'."""
+    _yahoo_answers_the_bare_ticker(monkeypatch, "NEM", "Nemo Mining Inc", enterpriseToEbitda=3.1)
+    at = page("Durrett", {}, _durrett_store(), {})
+    at.run()
+    assert not at.exception, at.exception
+    at.button(key="durrett_bd_go_NEM").click().run()
+    assert not at.exception, at.exception
+    assert "confidence:NEM" in at.session_state[rui.LIVE_KEY]
+    lines = " ".join(m.value for m in at.markdown if "Värdering:" in m.value)
+    assert "EV/EBITDA 3,1× (Yahoo NEM)" in lines and "(Börsdata)" not in lines
+    assert at.session_state["confidence"]["companies"]["NEM"]["fields"] == {} and not page.saves
