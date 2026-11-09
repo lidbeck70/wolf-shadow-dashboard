@@ -142,9 +142,10 @@ def test_the_ten_year_life_scores_two():
 
 # Ingen dubbelinmatning — jurisdiktion och management finns redan.
 def test_producer_checkboxes_map_onto_the_aqs_scale():
-    """0/1 -> 0/2, per the spec's explicit instruction."""
+    """Insyn 0/1 -> 0/2. 'Jurisdiktion OK' is the Fraser top half -> 1 p (owner's decision, batch 18), not the
+    top quartile. Suggestions only — controls_ui.render_aqs shows them with Använd."""
     assert c.aqs_prefill_from_producer({"jurisdiktion": True, "insyn": True}) == {
-        "aqs_jurisdiktion": 2, "aqs_management": 2}
+        "aqs_jurisdiktion": 1, "aqs_management": 2}
     assert c.aqs_prefill_from_producer({"jurisdiktion": False, "insyn": False}) == {
         "aqs_jurisdiktion": 0, "aqs_management": 0}
     assert c.aqs_prefill_from_producer({}) == {}

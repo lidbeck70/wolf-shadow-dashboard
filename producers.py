@@ -796,6 +796,11 @@ def _fetch_ev(row: dict, widget_key: str) -> None:
                                                  f"börsvärde) — fältet tar bara ≥ 0, så inget skrevs in.")
         return
     if ev is None:
+        ccy = str((s_ or {}).get("currency") or "").strip().upper()
+        if ccy and ccy not in sr.FX_TO_USD:            # talet finns, men i en valuta jobbet inte kan räkna om
+            st.session_state[f"{widget_key}_msg"] = (f"Börsdata har {row.get('ticker', '?')} i {ccy}, som saknas i "
+                                                     f"växelkurstabellen — skriv EV själv i MUSD.")
+            return
         st.session_state[f"{widget_key}_msg"] = (f"Börsdata har ingen EV för {row.get('ticker', '?')} — "
                                                  f"skriv den själv (börsvärde + nettoskuld, MUSD).")
         return

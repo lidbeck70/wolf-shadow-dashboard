@@ -68,8 +68,9 @@ def proposals(blob: Optional[dict], company: CompanyInput, sheet: str = SHEET) -
     src = s.get("source_label") or f"Börsdata (sifferuppdatering {asof or '?'})"
     out = []
     ccy = str(s.get("currency") or "").upper()
-    # En kursvaluta utanför jobbets växelkurstabell (London i pence, 'GBX') räknas om med 1,0 i jobbet: börsvärde
-    # och EV vore då miljoner GBX som USD (~79× för högt) och växelkursen 1,0 fel. De talen föreslås inte alls.
+    # En kursvaluta utanför jobbets växelkurstabell (London i pence, 'GBX'): jobbet lämnar börsvärde, EV och
+    # växelkurs tomma, men en äldre blob räknade om med 1,0 (miljoner GBX som USD, ~79× för högt) — och kursen står i
+    # en valuta arket inte kan välja. De talen föreslås inte alls.
     try:
         import sheets_refresh as _sr
         unknown_ccy = bool(ccy) and ccy not in _sr.FX_TO_USD

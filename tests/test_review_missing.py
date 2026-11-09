@@ -123,11 +123,13 @@ def test_lukacs_and_deleveraging_over_the_limit():
     big = dict(RULE_OK, position_pct=3.0, nd_ebitda=1.5, **AQS2,
                csm={s: {"price": 3000.0, "fcf_musd": 50.0} for s in ctl.SCENARIOS_3})
     p = _paths(mis.missing_for("rule", big))
-    assert p == {"fv.Base.forward_fcf_musd", "fv.Base.target_yield", "framtida_antal_aktier", "aktuell_kurs",
-                 "what_must_go_right", "ar_till_lag_skuld"}
-    filled = dict(big, framtida_antal_aktier=50.0, aktuell_kurs=10.0, what_must_go_right="Kopparpris 4 USD/lb",
+    assert p == {"fcf_kvalitet", "fv.Base.forward_fcf_musd", "fv.Base.target_yield", "framtida_antal_aktier",
+                 "aktuell_kurs", "what_must_go_right", "ar_till_lag_skuld"}      # klassen: grinden kräver ett val
+    filled = dict(big, fcf_kvalitet="C", framtida_antal_aktier=50.0, aktuell_kurs=10.0,
+                  what_must_go_right="Kopparpris 4 USD/lb",
                   ar_till_lag_skuld=2.0, fv={"Base": {"forward_fcf_musd": 100.0, "target_yield": 12.0}})
     assert mis.missing_for("rule", filled) == []                 # en låg MoS är ett svar — inte en lucka här
+    assert _paths(mis.missing_for("rule", dict(filled, fcf_kvalitet=None))) == {"fcf_kvalitet"}
     assert mis.missing_for("rule", dict(big, fcf_kvalitet="D", aktuell_kurs=10.0,
                                         what_must_go_right="x", ar_till_lag_skuld=2.0)) == []   # klass D: ingen FV
 

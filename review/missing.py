@@ -113,6 +113,8 @@ def _lukacs(out: _Out) -> None:
     ev = lukacs.evaluate(row)
     if ev["not_fcf_valued"]:
         return                                   # klass D: ett svar, inte en lucka
+    if ev["quality"] is None:                    # grinden kräver en vald klass (lukacs.gate_gaps)
+        out.add("fcf_kvalitet", lukacs.CLASS_MISSING, g)
     if ev["fv_base"] is None:
         why = "Fair value för Base går inte att räkna — forward FCF, target-yield och aktieantal krävs."
         for path in ("fv.Base.forward_fcf_musd", "fv.Base.target_yield", "framtida_antal_aktier"):

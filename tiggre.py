@@ -980,6 +980,22 @@ def _promote(data: dict, cand: dict, entry: Optional[float]) -> None:
 
 
 # ── 5. Positioner ────────────────────────────────────────────────────────────
+def _delayed_twice_offer(p: dict, cat: dict) -> None:
+    """Kalendern har en katalysator som 'Försenad 2:a ggn' men positionens säljtrigger är inte markerad: följden visas
+    som ett förslag med en knapp. Bara klicket markerar triggern och sparar registret (refresh_ui._apply med
+    positions.put) — att rita förslaget skriver ingenting."""
+    import html
+    from functools import partial
+    import refresh_ui
+    name = html.escape(str(cat.get("name") or "Katalysatorn")).replace("$", "&#36;")
+    c1, c2 = st.columns([3, 1], vertical_alignment="center")
+    c1.markdown(f"<span style='color:{RED};font-size:0.82rem;'>{name} står som Försenad 2:a ggn — säljregeln gäller "
+                f"(sälj allt). Försenad två gånger — markera?</span>", unsafe_allow_html=True)
+    c2.button("Markera", key=f"tg_dt_{p['id']}", on_click=refresh_ui._apply,
+              args=(p.setdefault("triggers", {}), "delayed_twice", True, f"tg_t_{p['id']}_delayed_twice",
+                    partial(positions.put, STRATEGY, p, "tiggre")))
+
+
 def _positions(data: dict) -> None:
     pos = open_positions()
     st.markdown(
@@ -998,13 +1014,16 @@ def _positions(data: dict) -> None:
     for p in list(pos):
         entry = _num(p.get("entry"), 0.0) or 0.0
         cur = _num(p.get("current"), 0.0) or 0.0
-        # Kalendern styr sin egen trigger: en katalysator satt till "Försenad
-        # 2:a ggn" ÄR säljregeln, så den ska inte behöva kryssas i för hand.
+        # En katalysator satt till "Försenad 2:a ggn" ÄR säljregeln — men triggern markeras bara på ditt klick
+        # (förslaget under kryssen). Att öppna sidan skriver ingenting i registret.
         cat_sell = catalyst_sell_signal(p.get("catalysts", []))
-        if cat_sell and not (p.get("triggers") or {}).get("delayed_twice"):
-            p.setdefault("triggers", {})["delayed_twice"] = True
-            positions.put(STRATEGY, p, "tiggre")
         fired = [lbl for k, lbl in SELL_ALL_TRIGGERS if p.get("triggers", {}).get(k)]
+        # Säljorsaken vid Stäng följer brickan (position_signals): katalysatorn räknas som säljregel även när
+        # triggern inte är markerad än. Räknas i minnet — skriver ingenting.
+        eff = dict(p.get("triggers") or {})
+        if cat_sell:
+            eff["delayed_twice"] = True
+        close_reason = next((lbl for k, lbl in SELL_ALL_TRIGGERS if eff.get(k)), "manuell")
         # Färskt börsvärde och kurs ur sifferuppdateringen: P/NAV och −40 %
         # räknas på dagens läge, inte på talen från köpdagen.
         f = fresh.get(f"tiggre:{p.get('id')}") or {}
@@ -1079,14 +1098,15 @@ def _positions(data: dict) -> None:
                 "id": p["id"], "ticker": p.get("ticker", "?"),
                 "entry": new_entry, "exit": new_cur, "date": _today(),
                 "ret": (new_cur / new_entry - 1) if new_entry > 0 else 0.0,
-                "reason": fired[0] if fired else "manuell",
+                "reason": close_reason,
                 "catalysts": p.get("catalysts", []),
             })
-            positions.close(row_id=p["id"], exit_price=new_cur,
-                            reason=fired[0] if fired else "manuell")
+            positions.close(row_id=p["id"], exit_price=new_cur, reason=close_reason)
             _save(data)
             st.rerun()
 
+        if cat_sell and not trig.get("delayed_twice"):
+            _delayed_twice_offer(p, cat_sell)
         if fired:
             st.error("Sälj allt samma vecka: " + " · ".join(fired))
         for kind, label in signals:
