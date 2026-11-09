@@ -11,7 +11,8 @@ Automatisering, batch 8 — Durrett och Wolf Asymmetry: rensa förslagen och hä
    som Durrett-motorn (Ctx.quantity), nu också i Asymmetry. Produktion × pris räknas där utan omräkning, så en
    skalad enhet (koz, Mlb, kt …) varnas också, och arkets resursenhet i koz ger inget 'oz'-förslag som märker talen fel.
    Bara det produktionstal som faktiskt läses räknas (resurser i Moz utan produktion varnas inte), och en resursenhet
-   på en annan bas än priset (koppar i kt) ger varningen och inget 'lb'-förslag — Ctx.quantitys ordning.
+   på en annan bas än priset (koppar i kt) ger varningen och inget 'lb'-förslag — Ctx.quantitys ordning. Förslaget
+   ges bara när produktionsenheten är tom: 't' för koppar får varningen (räkna om talet), aldrig en ny etikett 'lb'.
 4. Burn per kvartal = nattens burn/år ÷ 4 (FCF-baserad som i dag), bara explorer/developer och bara när burn > 0.
 5. Högsta resurskategori = den högsta kategorin med ett tal > 0 bland arkets reserver/resurser (Använd), härledd och
    sagd som härledd.
@@ -181,6 +182,7 @@ def test_production_unit_offer_is_the_unit_the_price_is_quoted_in():
 @pytest.mark.parametrize("commodity, unit, conflict", [
     ("gold", "oz", None), ("copper", "lb", None), ("oil_gas", "boe", None), ("lithium", "t", None),
     ("copper", "t", "base"), ("gold", "lb", "base"), ("oil_gas", "oz", "base"), ("lithium", "lb", "base"),
+    ("uranium", "t", "base"),
     # produktion × pris räknas utan omräkning (Asymmetry, scenarierna): en skalad enhet ger fel tal
     ("gold", "koz", "scale"), ("gold", "Moz", "scale"), ("copper", "Mlb", "scale"), ("uranium", "Mlb", "scale"),
     ("lithium", "kt", "scale"), ("iron_ore", "Mt", "scale"),
@@ -193,8 +195,9 @@ def test_production_unit_conflict_uses_the_engines_unit_tables(commodity, unit, 
     offer = dr.production_unit_offer(c)
     base = dr.production_unit_offer(CompanyInput(ticker="U", commodity=commodity))[1].value
     if conflict == "base":
-        assert f"Produktionsenheten {unit} passar inte" in text and f"Förslag: {base}" in text
-        assert offer[1].value == base and offer[2] == unit
+        assert f"Produktionsenheten {unit} passar inte" in text
+        assert text.endswith(f"Skriv produktionen i {base} (räkna om talet) och enheten {base}.")
+        assert offer is None                          # en ny etikett utan omräkning: 50 000 t blir 50 000 lb
     elif conflict == "scale":
         assert text.startswith(f"Produktionen i {unit} räknas som {base} — produktion × pris blir ")
         assert text.endswith(f"Skriv produktionen i {base} och enheten {base}.")       # ingen produktion: inget tal
@@ -388,6 +391,35 @@ def test_the_durrett_valuation_reads_the_same_unit_check():
     assert dr.quantity_unit_mismatch(dcs.copper_developer()) is None
 
 
+def _copper_in_t() -> CompanyInput:
+    """Kopparproducenten som gruvbolag rapporterar: Produktion nu 50 000 i t (Produktionsenhet t), ingen Enhet för
+    resurser/produktion, pris 4,5 USD/lb."""
+    c = _off_base("copper", "kt", pu="t")
+    c.fields.pop("resource_unit")
+    c.set("production_current", dp(50_000, **dcs._FS))
+    return c
+
+
+_T_LB = ("Produktionsenheten t passar inte råvarans pris i USD/lb — produktion × pris blir fel. "
+         "Skriv produktionen i lb (räkna om talet) och enheten lb.")
+
+
+def test_a_production_unit_on_another_base_gets_no_relabel_offer():
+    """'lb' över 't' skulle märka 50 000 t som 50 000 lb (borde vara ca 110 miljoner lb): motorn som vägrade
+    (enhetskonflikt) räknar då tyst 2 204,6 gånger fel och varningen försvinner. Inget förslag — varningen ber om
+    omräkning."""
+    from engines.durrett._base import Ctx
+    c = _copper_in_t()
+    ctx = Ctx(c)
+    assert ctx.quantity("production_current") is None and any("enhetskonflikt" in x for x in ctx.log)
+    assert dr.production_unit_offer(c) is None
+    assert dr.derived_offers(c, ["production_unit"]) == []
+    assert dr.production_unit_conflict(c) == _T_LB
+    uranium = _with_unit(CompanyInput(ticker="UR", commodity="uranium", stage="producer"), "t")
+    assert dr.production_unit_offer(uranium) is None
+    assert dr.production_unit_conflict(uranium).endswith("Skriv produktionen i lb (räkna om talet) och enheten lb.")
+
+
 # ── 4. burn per kvartal ──────────────────────────────────────────────────────
 def test_quarterly_burn_is_the_nightly_burn_over_four_for_pre_revenue_only():
     blob = _blob("EXP.V", currency="CAD", burn_musd=12.0, fcf_musd=-12.0)
@@ -519,11 +551,13 @@ def test_asymmetry_economy_offers_the_unit_and_warns_on_a_mismatch(monkeypatch):
     assert p["value"] == "oz" and p["kind"] == "ASSUMPTION"
     assert fk.box(at.text_input, "cf_GPR_", "production_unit").value == "oz"
     assert "cf_dv_GPR_production_unit" not in {b.key for b in at.button}
-    # en enhet som inte passar priset: varningen i Ekonomi och på Analys-kortet
+    # en enhet som inte passar priset: varningen i Ekonomi och på Analys-kortet, men ingen Använd (talet står i lb)
     at = _ark(monkeypatch, _conf(_with_unit(dcs.gold_producer(), "lb")), "GPR")
-    warn = "⚠ Produktionsenheten lb passar inte råvarans pris i USD/oz — produktion × pris blir fel. Förslag: oz."
+    warn = ("⚠ Produktionsenheten lb passar inte råvarans pris i USD/oz — produktion × pris blir fel. "
+            "Skriv produktionen i oz (räkna om talet) och enheten oz.")
     assert warn in _captions(at)
-    assert "Förslag: Produktionsenhet oz (Guld prissätts i USD/oz), ersätter lb" in _captions(at)
+    assert not any(c.startswith("Förslag: Produktionsenhet") for c in _captions(at))
+    assert "cf_dv_GPR_production_unit" not in {b.key for b in at.button}
     at = _ark(monkeypatch, _conf(_with_unit(dcs.gold_producer(), "lb")), "GPR", mode="Analys")
     assert any(c.startswith("⚠ Produktionsenheten lb passar inte") for c in _captions(at))
     at = _ark(monkeypatch, _conf(_with_unit(dcs.gold_producer(), "oz")), "GPR", mode="Analys")
@@ -579,6 +613,20 @@ def test_asymmetry_offers_no_lb_against_a_kt_sheet_and_warns(monkeypatch):
     assert f"⚠ {_KT} Rätta under Ark → Ekonomi." in _captions(at)
     at = _ark(monkeypatch, _conf(_off_base("copper", "kt", pu="lb")), "CPR", mode="Analys")   # lb redan skrivet
     assert f"⚠ {_KT} Rätta under Ark → Ekonomi." in _captions(at)
+
+
+def test_asymmetry_offers_no_lb_over_a_production_unit_in_t(monkeypatch):
+    """Koppar med Produktion nu 50 000 i t: varningen i Ekonomi, ingen Använd som byter t mot lb utan att räkna om."""
+    conf = _conf(_copper_in_t())
+    before = copy.deepcopy(conf)
+    at = _ark(monkeypatch, conf, "CPR")
+    caps = _captions(at)
+    assert f"⚠ {_T_LB}" in caps
+    assert not any(c.startswith("Förslag: Produktionsenhet") for c in caps)
+    assert "cf_dv_CPR_production_unit" not in {b.key for b in at.button}
+    assert at.session_state["confidence"]["companies"] == before["companies"]          # att öppna skriver inget
+    at = _ark(monkeypatch, _conf(_copper_in_t()), "CPR", mode="Analys")
+    assert f"⚠ {_T_LB} Rätta under Ark → Ekonomi." in _captions(at)
 
 
 def test_asymmetry_core_offers_the_resource_category_from_the_sheet(monkeypatch):
@@ -663,8 +711,11 @@ def test_durrett_all_fields_offer_unit_and_category(monkeypatch):
     cdv = _with_unit(dcs.copper_developer(), "t")
     at = _durrett(monkeypatch, _conf(cdv), "Mer", "CDV")
     caps = _captions(at)
-    assert "⚠ Produktionsenheten t passar inte råvarans pris i USD/lb — produktion × pris blir fel. Förslag: lb." in caps
-    assert {"cf_dv_CDV_production_unit", "cf_dv_CDV_resource_category"} <= {b.key for b in at.button}
+    assert ("⚠ Produktionsenheten t passar inte råvarans pris i USD/lb — produktion × pris blir fel. "
+            "Skriv produktionen i lb (räkna om talet) och enheten lb.") in caps
+    keys = {b.key for b in at.button}
+    assert "cf_dv_CDV_resource_category" in keys and "cf_dv_CDV_production_unit" not in keys   # t: ingen ny etikett
+    at = _durrett(monkeypatch, _conf(_with_unit(dcs.copper_developer(), None)), "Mer", "CDV")   # tomt fält
     at.button(key="cf_dv_CDV_production_unit").click().run()
     assert not at.exception, at.exception
     assert _company(at, "CDV")["fields"]["production_unit"]["value"] == "lb"

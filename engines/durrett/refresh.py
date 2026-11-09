@@ -237,13 +237,14 @@ def _unit_base(unit: str) -> Optional[str]:
 
 def _base_mismatch(company: CompanyInput, reg, base: str) -> Optional[str]:
     """Produktionsenheten har en annan bas än råvarans prisenhet (t i stället för lb för koppar) — samma kontroll som
-    Durrett-motorns Ctx.quantity (enhetskonflikt: ingen mängd). None när enheten passar, saknas eller är egen text."""
+    Durrett-motorns Ctx.quantity (enhetskonflikt: ingen mängd). Talet står i den enheten, så det måste räknas om — en
+    ny etikett räcker inte (50 000 t är inte 50 000 lb). None när enheten passar, saknas eller är egen text."""
     unit = _text(company, "production_unit")
     ub = _unit_base(unit) if unit else None
     if ub is None or ub == base:
         return None
     return (f"Produktionsenheten {unit} passar inte råvarans pris i {reg.unit} — produktion × pris blir fel. "
-            f"Förslag: {base}.")
+            f"Skriv produktionen i {base} (räkna om talet) och enheten {base}.")
 
 
 def quantity_unit_mismatch(company: CompanyInput) -> Optional[tuple]:
@@ -333,16 +334,17 @@ def production_unit_conflict(company: CompanyInput) -> Optional[str]:
 
 
 def production_unit_offer(company: CompanyInput) -> Optional[tuple]:
-    """('production_unit', Datapoint, nuvarande | None): enheten råvarans pris står i (registrets prisenhet: USD/oz →
-    oz). När fältet är tomt eller har en annan bas än prisenheten (_base_mismatch) — aldrig när arkets resursenhet är
-    skalad (koz, Mlb …) eller har en annan bas (kt mot USD/lb): där står produktionen i den enheten, och en bar oz
-    eller lb skulle märka talen fel (varningen säger vad som behöver skrivas om). Datapunkten får varken datum eller
-    källtyp — som en enhet skriven för hand, så Data Quality inte blåses upp. None annars."""
+    """('production_unit', Datapoint, None): enheten råvarans pris står i (registrets prisenhet: USD/oz → oz). Bara när
+    fältet är tomt — aldrig över en skriven enhet, inte heller en på annan bas (t för koppar): talet står i den
+    enheten, och en bar lb skulle märka 50 000 t som 50 000 lb utan att räkna om dem (_base_mismatch varnar och säger
+    vad som behöver skrivas om). Aldrig heller när arkets resursenhet är skalad (koz, Mlb …) eller har en annan bas
+    (kt mot USD/lb), av samma skäl. Datapunkten får varken datum eller källtyp — som en enhet skriven för hand, så Data
+    Quality inte blåses upp. None annars."""
     reg, base = _price_base(company)
     if not base or _scaled(_known_unit(company, "resource_unit", base)) != 1.0 or _resource_base_mismatch(company):
         return None
     cur = _text(company, "production_unit") or None
-    if cur and not _base_mismatch(company, reg, base):
+    if cur:
         return None
     return ("production_unit", dp(base, kind="ASSUMPTION", source=f"Råvarans prisenhet ({reg.unit})",
                                   note=f"{reg.label} prissätts i {reg.unit}"), cur)
