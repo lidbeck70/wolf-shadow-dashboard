@@ -458,18 +458,13 @@ def _sheet_summary(a: DurrettAnalysis) -> None:
 # ── Analys ───────────────────────────────────────────────────────────────────
 def _unit_conflict(company: CompanyInput) -> Optional[str]:
     """Enheten för resurs/produktion går inte att räkna om till råvarans prisenhet (motorn räknar då inga mängder):
-    t.ex. kt mot USD/lb. Texten säger vilka val som passar, eller att inget val finns för prisenheten."""
-    from engines.durrett import _base as db
-    unit = str(company.get("resource_unit").value if company.has("resource_unit") else "").strip()
-    if not unit:
-        pu = str(company.get("production_unit").value if company.has("production_unit") else "").strip()
-        unit = pu if pu in db._UNIT_FACTOR else ""
-    reg = com.REGISTRY.get(company.commodity) if company.commodity else None
-    price_unit = reg.unit if reg else ""
-    base = db._PRICE_UNIT_BASE.get(price_unit, "")
-    if not unit or not base or unit not in db._UNIT_FACTOR or db._UNIT_FACTOR[unit][0] == base:
+    t.ex. kt mot USD/lb. Texten säger vilka val som passar, eller att inget val finns för prisenheten. Kontrollen är
+    refresh.quantity_unit_mismatch (samma som Ekonomi-varningen)."""
+    from engines.durrett import refresh as dr
+    m = dr.quantity_unit_mismatch(company)
+    if not m:
         return None
-    fits = [k for k, (b, _) in db._UNIT_FACTOR.items() if b == base]
+    _key, unit, price_unit, fits = m
     return (f"en enhet som passar råvarans pris i {price_unit} (välj {'/'.join(fits)} i stället för {unit})" if fits
             else f"en enhet för råvarans pris i {price_unit} — arkets enhetsval ({unit}) går inte att räkna om")
 

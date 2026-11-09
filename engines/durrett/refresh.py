@@ -246,6 +246,36 @@ def _base_mismatch(company: CompanyInput, reg, base: str) -> Optional[str]:
             f"Förslag: {base}.")
 
 
+def quantity_unit_mismatch(company: CompanyInput) -> Optional[tuple]:
+    """(fält, enhet, prisenhet, passande val) när enheten Durrett-motorn läser mängderna i har en annan bas än råvarans
+    prisenhet (koppar i kt mot USD/lb) — samma ordning som Ctx.quantity: Enhet för resurser/produktion först, annars
+    produktionsenheten när motorns tabell känner den. Passande val = motorns enheter med prisets bas (lb/Mlb), tom
+    lista när ingen finns (boe, kg …). Motorn räknar då inga mängder (enhetskonflikt). None när enheten passar, saknas
+    eller är okänd, eller råvaran saknar prisenhet."""
+    from engines.durrett import _base as db
+    key = "resource_unit"
+    unit = _text(company, key)
+    if not unit:
+        key, unit = "production_unit", _text(company, "production_unit")
+    reg, base = _price_base(company)
+    if not base or unit not in db._UNIT_FACTOR or db._UNIT_FACTOR[unit][0] == base:
+        return None
+    return key, unit, reg.unit, [k for k, (b, _f) in db._UNIT_FACTOR.items() if b == base]
+
+
+def _resource_base_mismatch(company: CompanyInput) -> Optional[str]:
+    """Enhet för resurser/produktion har en annan bas än råvarans prisenhet (kt mot USD/lb): motorn räknar inga mängder,
+    och produktionen som står i den enheten blir fel tal i produktion × pris. None annars (produktionsenheten är
+    _base_mismatch sak)."""
+    m = quantity_unit_mismatch(company)
+    if not m or m[0] != "resource_unit":
+        return None
+    _key, unit, price_unit, fits = m
+    fix = f"Välj {'/'.join(fits)} och räkna om talen." if fits else f"Inget av arkets val passar {price_unit}."
+    return (f"{FIELD_BY_KEY['resource_unit'].label} {unit} passar inte råvarans pris i {price_unit} — produktion × "
+            f"pris blir fel. {fix}")
+
+
 def _known_unit(company: CompanyInput, key: str, base: str) -> Optional[str]:
     """Fältets enhet när motorns tabell (_base._UNIT_FACTOR) känner den och basen passar priset (koz mot USD/oz).
     None för tomt, egen text eller annan bas (den sista är _base_mismatch sak)."""
@@ -264,46 +294,52 @@ def _scale_conflict(company: CompanyInput, base: str) -> Optional[str]:
     """Asymmetry (asymmetry/model.py) och scenarierna (confidence/scenarios/engine.py) räknar produktion × pris utan
     omräkning, så produktionen måste stå i prisets basenhet. Durrett-motorn läser produktionen i Enhet för
     resurser/produktion (Ctx.quantity) och räknar om — här blir koz, Moz, Mlb, kt och Mt i stället fel tal.
-    Produktionsenheten först, annars arkets resursenhet. Två enheter som säger olika om samma tal (oz mot koz)
-    varnas för sig: vilken som stämmer går inte att avgöra. None när allt står i basenheten."""
+    Bara det tal Asymmetry faktiskt läser räknas: årsproduktionen, annars Produktion nu. Arkets resursenhet gäller det
+    talet bara när det är Produktion nu (Durretts fält, i resursenheten) — resurser i Moz utan produktion, eller bara
+    Produktion plan i koz, varnas inte. Två enheter som säger olika (oz mot koz) varnas bara när båda motorerna läser
+    samma tal: Produktion nu, eller årsproduktionen när Durrett saknar Produktion plan och Produktion nu och faller
+    tillbaka på den. None när talet står i basenheten eller ingen produktion räknas."""
     pu = _known_unit(company, "production_unit", base)
     ru = _known_unit(company, "resource_unit", base)
     ru_label = FIELD_BY_KEY["resource_unit"].label
-    if pu and ru and pu != ru:
+    key = next((k for k in ("annual_production", "production_current") if cval.usable(company, k)), None)
+    shared = key == "production_current" or (key == "annual_production" and not any(
+        cval.usable(company, k) for k in ("production_future", "production_current")))
+    if shared and pu and ru and pu != ru:
         return (f"Produktionsenheten {pu} och {ru_label} {ru} säger olika om samma tal — produktion × pris räknar "
                 f"det som {base}. Skriv produktionen i {base} och båda enheterna {base} (resurserna också i {base}).")
-    unit = pu or ru
+    unit = pu or (ru if key == "production_current" else None)
     factor = _scaled(unit)
     if factor == 1.0:
         return None
-    key = next((k for k in ("annual_production", "production_current") if cval.usable(company, k)), None)
     v = company.num(key) if key else None              # samma tal som Asymmetry räknar med
     shown = f" ({_amount(v * factor)})" if v else ""
-    also = f", också {ru_label} (Durrett-arket) med resurserna i {base}" if ru else ""
+    also = f", också {ru_label} (Durrett-arket) med resurserna i {base}" if ru and shared else ""
     return (f"Produktionen i {unit} räknas som {base} — produktion × pris blir {_amount(factor)} gånger för litet. "
             f"Skriv produktionen i {base}{shown} och enheten {base}{also}.")
 
 
 def production_unit_conflict(company: CompanyInput) -> Optional[str]:
     """Varningen där produktion × pris räknas utan omräkning (Asymmetrys Ekonomi och Analys, Durrett-arkets
-    Economics): produktionsenheten har en annan bas än råvarans prisenhet (t i stället för lb för koppar, samma kontroll
-    som Durrett-motorns Ctx.quantity), eller produktionen står i en skalad enhet (koz, Mlb, kt …) som räknas som
-    basenheten, eller produktionsenheten och arkets resursenhet säger olika. None när enheten passar, saknas eller är
-    en egen text, eller när råvaran saknar prisenhet."""
+    Economics), i Ctx.quantitys ordning: arkets resursenhet har en annan bas än råvarans prisenhet (kt mot USD/lb),
+    produktionsenheten har det (t i stället för lb för koppar), produktionen står i en skalad enhet (koz, Mlb, kt …)
+    som räknas som basenheten, eller produktionsenheten och arkets resursenhet säger olika om samma tal. None när
+    enheten passar, saknas eller är en egen text, eller när råvaran saknar prisenhet."""
     reg, base = _price_base(company)
     if not base:
         return None
-    return _base_mismatch(company, reg, base) or _scale_conflict(company, base)
+    return (_resource_base_mismatch(company) or _base_mismatch(company, reg, base)
+            or _scale_conflict(company, base))
 
 
 def production_unit_offer(company: CompanyInput) -> Optional[tuple]:
     """('production_unit', Datapoint, nuvarande | None): enheten råvarans pris står i (registrets prisenhet: USD/oz →
     oz). När fältet är tomt eller har en annan bas än prisenheten (_base_mismatch) — aldrig när arkets resursenhet är
-    skalad (koz, Mlb …): där står produktionen i den enheten, och en bar oz skulle märka talen fel (varningen säger
-    vad som behöver skrivas om). Datapunkten får varken datum eller källtyp — som en enhet skriven för hand, så Data
-    Quality inte blåses upp. None annars."""
+    skalad (koz, Mlb …) eller har en annan bas (kt mot USD/lb): där står produktionen i den enheten, och en bar oz
+    eller lb skulle märka talen fel (varningen säger vad som behöver skrivas om). Datapunkten får varken datum eller
+    källtyp — som en enhet skriven för hand, så Data Quality inte blåses upp. None annars."""
     reg, base = _price_base(company)
-    if not base or _scaled(_known_unit(company, "resource_unit", base)) != 1.0:
+    if not base or _scaled(_known_unit(company, "resource_unit", base)) != 1.0 or _resource_base_mismatch(company):
         return None
     cur = _text(company, "production_unit") or None
     if cur and not _base_mismatch(company, reg, base):
@@ -377,4 +413,5 @@ def spot_earnings(s: Optional[dict], company: CompanyInput) -> Optional[dict]:
 
 __all__ = ["proposals", "refresh_row", "ins_id_offer", "commodity_price_offer", "spot_earnings", "Datapoint",
            "AUTO_USD_SOURCES", "quarterly_burn_offer", "stage_offer", "stage_offer_text", "production_unit_offer",
-           "production_unit_conflict", "resource_category_offer", "derived_offers", "CATEGORY_FIELDS"]
+           "production_unit_conflict", "quantity_unit_mismatch", "resource_category_offer", "derived_offers",
+           "CATEGORY_FIELDS"]
