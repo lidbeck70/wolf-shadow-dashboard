@@ -824,3 +824,173 @@ def test_tiggre_global_list_error_keeps_the_night_row(page, monkeypatch, tmp_pat
     assert "🤖 Börsdata 2026-11-06: börsvärde MUSD 85" in md and "hämtat nu" not in md and "Tegra" not in md
     assert rui.LIVE_KEY not in at.session_state and not page.saves
     assert set(bd.http.paths) == {"/instruments", "/instruments/global"}
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  Rättelser 4: Börsdatas fel visar aldrig API-nyckeln
+# ═════════════════════════════════════════════════════════════════════════════
+KEY = "SECRET"
+LEAK_URL = f"https://x/v1/instruments?authKey={KEY}"
+
+
+def _http_401():
+    import requests
+    return requests.HTTPError(f"401 Client Error: Unauthorized for url: {LEAK_URL}")
+
+
+def _net_down():
+    import requests
+    return requests.ConnectionError(f"Max retries exceeded with url: {LEAK_URL} (Caused by NewConnectionError('x'))")
+
+
+class _LeakyApi:
+    """Börsdata-klient vars fel bär hela adressen med nyckeln, som requests-felen gör. where='instruments': listan
+    kastar; where='global': listan svarar, tickern är okänd och den globala listan (_get) kastar."""
+
+    def __init__(self, exc, where="instruments"):
+        self.exc, self.where = exc, where
+
+    def get_instruments(self, force_refresh=False):
+        if self.where == "instruments":
+            raise self.exc
+        return []
+
+    def resolve_instrument_id(self, ticker):
+        return None
+
+    def get_global_instruments_list(self):
+        return []
+
+    def _get(self, path, params=None, use_cache=True):
+        raise self.exc
+
+
+def test_bd_error_never_shows_the_key():
+    import requests
+    assert rui.bd_error(_http_401()) == "HTTP 401 (nyckeln avvisades)"
+    assert rui.bd_error(requests.HTTPError(f"403 Client Error: Forbidden for url: {LEAK_URL}")) == (
+        "HTTP 403 (nyckeln avvisades)")
+    resp = requests.Response()
+    resp.status_code, resp.url, resp.reason = 503, LEAK_URL, "Service Unavailable"
+    assert rui.bd_error(requests.HTTPError(f"503 Server Error: for url: {LEAK_URL}", response=resp)) == "HTTP 503"
+    assert rui.bd_error(requests.HTTPError(f"for url: {LEAK_URL}")) == "HTTP-fel"
+    assert rui.bd_error(_net_down()) == "nätverksfel"
+    assert rui.bd_error(requests.exceptions.SSLError(f"SSL-fel för {LEAK_URL}")) == "nätverksfel"
+    assert rui.bd_error(requests.Timeout(f"Read timed out: {LEAK_URL}")) == "timeout"
+    assert rui.bd_error(requests.exceptions.ConnectTimeout(LEAK_URL)) == "timeout"
+    other = rui.bd_error(RuntimeError(f"något för url: {LEAK_URL}&x=1 ('authkey={KEY}')"))
+    assert KEY not in other and other == "något för url: https://x/v1/instruments?authKey=***&x=1 ('authkey=***')"
+    assert rui.bd_error(RuntimeError("429 kvoten slut")) == "429 kvoten slut"                 # utan nyckel: som förut
+    assert rui.bd_error(RuntimeError("Failed after 3 attempts: /instruments/global")) == (
+        "Failed after 3 attempts: /instruments/global")
+
+
+@pytest.mark.parametrize("where", ["instruments", "global"])
+@pytest.mark.parametrize("make_exc, text", [(_http_401, "HTTP 401 (nyckeln avvisades)"), (_net_down, "nätverksfel")],
+                         ids=["401", "nätet"])
+def test_fetch_live_error_hides_the_key(session, monkeypatch, where, make_exc, text):
+    """'Hämta nu' när Börsdata inte svarar: felet under knappen säger vad som hände, aldrig adressen med nyckeln. Ingen
+    Yahoo och inget lagrat, som förut."""
+    asked = _yahoo_spy(monkeypatch)
+    got, why = rui.fetch_live("tiggre", {"id": "c1", "ticker": "TGR"}, api=_LeakyApi(make_exc(), where))
+    assert (got, why) == (None, f"Börsdata svarade inte: {text}") and KEY not in why
+    assert not asked and rui.LIVE_KEY not in session
+    if where == "instruments":                          # ett sparat ins_id ändrar inget
+        got, why = rui.fetch_live("tiggre", {"id": "c1", "ticker": "TGR", "ins_id": 9001},
+                                  api=_LeakyApi(make_exc()))
+        assert why == f"Börsdata svarade inte: {text}"
+
+
+class _LeakyHttp(_Http):
+    """Som _Http, men som det riktiga requests: svarets adress har frågan med authKey, och 'nätet' kastar ett
+    anslutningsfel med samma adress i texten."""
+
+    def get(self, url, params=None, timeout=None):
+        import requests
+        q = "&".join(f"{k}={v}" for k, v in (params or {}).items())
+        path = url.split("/v1", 1)[1]
+        if self.answers.get(path) == "nätet":
+            self.paths.append(path)
+            raise requests.exceptions.ConnectionError(
+                f"HTTPSConnectionPool(host='apiservice.borsdata.se', port=443): Max retries exceeded with url: "
+                f"/v1{path}?{q} (Caused by NewConnectionError('Failed to establish a new connection'))")
+        resp = super().get(url, params, timeout)
+        resp.url = f"{url}?{q}"
+        return resp
+
+
+def _leaky_bd(tmp_path, monkeypatch, answers: dict):
+    """Den riktiga BorsdataAPI med nyckeln KEY mot _LeakyHttp. Inga väntetider."""
+    import time as _time
+    import types
+    import borsdata_api
+    monkeypatch.setattr(borsdata_api, "time", types.SimpleNamespace(time=_time.time, sleep=lambda s: None))
+    http = _LeakyHttp(answers)
+
+    def make(*a, **k):
+        api = _RealBorsdataAPI(api_key=KEY, cache_dir=str(tmp_path / "bd_cache"))
+        api._session = http
+        return api
+    make.http = http
+    return make
+
+
+@pytest.mark.parametrize("answers, text", [({"/instruments": 401}, "HTTP 401 (nyckeln avvisades)"),
+                                           ({"/instruments": NORDIC_LIST, "/instruments/global": "nätet"},
+                                            "nätverksfel")], ids=["401", "nätet"])
+def test_real_client_error_text_hides_the_key(session, monkeypatch, tmp_path, answers, text):
+    """Med den riktiga klienten: requests-felets text har adressen med authKey — den når aldrig meddelandet."""
+    import requests
+    bd = _leaky_bd(tmp_path, monkeypatch, answers)
+    with pytest.raises(requests.RequestException, match=KEY):            # felet som klienten släpper igenom
+        bd()._get(next(p for p, a in answers.items() if not isinstance(a, dict)))
+    _yahoo_spy(monkeypatch)
+    got, why = rui.fetch_live("tiggre", {"id": "c1", "ticker": "TGR"}, api=bd())
+    assert (got, why) == (None, f"Börsdata svarade inte: {text}") and KEY not in why
+
+
+def test_borsdata_now_and_fetch_ev_hide_the_key(session, monkeypatch):
+    """Asymmetry/Durrett (borsdata_now, en rad med ins_id) och Rick Rules 'Hämta EV nu' (rad utan ins_id, och när
+    fetch_live själv kastar): meddelandet utan nyckeln."""
+    import borsdata_api
+    import producers
+    from asymmetry import fetch as af
+    from confidence.data.models import CompanyInput
+
+    def leak(api, t, ins_id=None):
+        raise _http_401()
+    monkeypatch.setattr(sr, "fetch_row", leak)
+    nem = CompanyInput(ticker="NEM", name="Newmont", ins_id=501)
+    blob, props, msg = af.borsdata_now(nem, api=_Api())
+    assert (blob, props, msg) == (None, [], "Börsdata svarade inte: HTTP 401 (nyckeln avvisades)")
+    ok, msg = af.fetch_to_session(nem, api=_Api(), info_getter=lambda sym: {})          # Durretts varning
+    assert not ok and msg.startswith("Börsdata svarade inte: HTTP 401 (nyckeln avvisades)") and KEY not in msg
+
+    monkeypatch.setattr(borsdata_api, "BorsdataAPI", lambda *a, **k: _LeakyApi(_net_down()))
+    producers._fetch_ev({"id": "p1", "ticker": "NEM", "name": "Newmont"}, "pr_evm_p1")
+    assert session["pr_evm_p1_msg"] == "Börsdata svarade inte: nätverksfel"
+
+    def boom(*a, **k):
+        raise _http_401()
+    monkeypatch.setattr(rui, "fetch_live", boom)
+    producers._fetch_ev({"id": "p1", "ticker": "NEM", "ins_id": 501}, "pr_evm_p1")
+    assert session["pr_evm_p1_msg"] == "Börsdata svarade inte: HTTP 401 (nyckeln avvisades)"
+    assert KEY not in str(session)
+
+
+def test_tiggre_fetch_now_error_caption_hides_the_key(page, monkeypatch, tmp_path):
+    """Tiggre-kortet: Börsdata avvisar nyckeln (401) på 'Hämta nu' — med den riktiga klienten, vars fel har adressen
+    med authKey. Raden under knappen säger HTTP 401, aldrig nyckeln; inget lagras."""
+    import borsdata_api
+    at = page("Tiggre", {}, _tiggre_store(), {"TGR": TGR})
+    at.run()
+    assert not at.exception, at.exception
+    bd = _leaky_bd(tmp_path, monkeypatch, {"/instruments": 401})
+    monkeypatch.setattr(borsdata_api, "BorsdataAPI", bd)
+    _yahoo_answers_the_bare_ticker(monkeypatch, "TGR", "Tegra Holdings Inc")
+    at.button(key="tg_live_c1").click().run()
+    assert not at.exception, at.exception
+    cap = _captions(at)
+    assert "Börsdata svarade inte: HTTP 401 (nyckeln avvisades)" in cap and KEY not in cap
+    assert KEY not in _md(at) and KEY not in str(at.session_state[rui.MSG_KEY])
+    assert bd.http.paths == ["/instruments"] and rui.LIVE_KEY not in at.session_state and not page.saves

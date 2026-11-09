@@ -70,7 +70,8 @@ def borsdata_now(company: CompanyInput, api=None) -> tuple:
     try:
         row = sr.fetch_row(api, company.ticker, company.ins_id)
     except Exception as exc:
-        return None, [], f"Börsdata svarade inte: {exc}"
+        import refresh_ui
+        return None, [], f"Börsdata svarade inte: {refresh_ui.bd_error(exc)}"      # utan nyckeln i adressen
     if row is None:
         return None, [], f"Börsdata känner inte {company.ticker}."
     blob = {"generated": datetime.now(tz=timezone.utc).isoformat(), "rows": {f"{sr.ref_key('confidence', {'id': company.ticker})}": row}}

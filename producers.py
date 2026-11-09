@@ -1105,7 +1105,8 @@ def _fetch_ev(row: dict, widget_key: str) -> None:
         import sheets_refresh as sr
         s_, why = refresh_ui.fetch_live("producers", row, commodity=row.get("commodity") or None, yahoo=False)
     except Exception as exc:
-        st.session_state[f"{widget_key}_msg"] = f"Börsdata svarade inte: {exc}"
+        import refresh_ui
+        st.session_state[f"{widget_key}_msg"] = f"Börsdata svarade inte: {refresh_ui.bd_error(exc)}"   # utan nyckeln
         return
     if s_ is None and why.startswith("Börsdata svarade inte"):
         st.session_state[f"{widget_key}_msg"] = why

@@ -275,6 +275,31 @@ def fetched_line(s: Optional[dict], row: Optional[dict]) -> str:
     return txt
 
 
+_AUTH_KEY = re.compile(r"(authKey=)[^&\s'\")]+", re.IGNORECASE)
+_HTTP_HINT = {401: "nyckeln avvisades", 403: "nyckeln avvisades", 429: "för många anrop"}
+
+
+def bd_error(exc) -> str:
+    """Börsdatas fel som kort text utan API-nyckeln — requests-felens text har hela adressen, med authKey i frågan.
+    HTTP-fel: 'HTTP 401 (nyckeln avvisades)'; nätet: 'nätverksfel'; 'timeout'. Annat: felets text med authKey=***."""
+    try:
+        import requests
+        if isinstance(exc, requests.exceptions.HTTPError):
+            code = getattr(getattr(exc, "response", None), "status_code", None)
+            if code is None:                            # felet utan svar: statuskoden står först i texten
+                m = re.match(r"\s*(\d{3})\b", str(exc))
+                code = int(m.group(1)) if m else None
+            hint = _HTTP_HINT.get(code)
+            return (f"HTTP {code}" if code else "HTTP-fel") + (f" ({hint})" if hint else "")
+        if isinstance(exc, requests.exceptions.Timeout):
+            return "timeout"
+        if isinstance(exc, requests.exceptions.ConnectionError):
+            return "nätverksfel"
+    except ImportError:                                 # pragma: no cover
+        pass
+    return _AUTH_KEY.sub(r"\1***", str(exc))
+
+
 def _global_list_answered(api) -> None:
     """Kastar när Börsdatas globala lista inte svarade. Tickeruppslaget (sheets_refresh.resolve_global) läser den
     genom get_global_instruments_list, som sväljer felet och ger [] — så en timeout, 5xx, 401, 429 eller nätet blev
@@ -317,7 +342,7 @@ def fetch_live(sheet: str, row: dict, row_id=None, commodity: Optional[str] = No
         if got is None:
             _global_list_answered(api)
     except Exception as exc:
-        return None, f"Börsdata svarade inte: {exc}"
+        return None, f"Börsdata svarade inte: {bd_error(exc)}"
     why = "" if got is not None else f"Börsdata känner inte {t}."
     if got is None and yahoo:
         try:
