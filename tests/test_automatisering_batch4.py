@@ -53,6 +53,8 @@ def test_commodity_for_follows_the_lists_and_the_branch(ticker, branch, name, so
     ("BOL.ST", None, "flera råvaror (Koppar · Zink & nickel)"),
     ("LUN.TO", None, "flera råvaror (Koppar · Zink & nickel)"),            # temalistan: samma som Boliden
     ("WPM", None, "flera råvaror (Guld · Silver)"),
+    ("WPM.TO", None, "flera råvaror (Guld · Silver)"),                     # samma bolag på TSX (alla former räknas)
+    ("WPM.TO", 18, "flera råvaror (Guld · Silver)"),
     ("OUT1V.HE", None, "flera råvaror (Zink & nickel · Stål)"),
     ("NHY.OL", None, "Aluminium finns inte i arkets lista"),
     ("", 2, ""),
@@ -144,7 +146,7 @@ def sheet(monkeypatch):
     import refresh_ui
     import storage
 
-    def make(page="Rick Rule", rows=(), which=None):
+    def make(page="Rick Rule", rows=(), which=None, blob=None):
         bucket = {"Rick Rule": ("producers", "producers"), "Sprott": ("scoring", "sprott"),
                   "Durrett": ("scoring", "durrett")}[page]
         store = ({"producers": [dict(r) for r in rows], "royalty": []} if bucket[0] == "producers"
@@ -156,7 +158,7 @@ def sheet(monkeypatch):
         monkeypatch.setattr(storage, "is_dirty", lambda name: False)
         monkeypatch.setattr(storage, "last_saved", lambda name: None)
         monkeypatch.setattr(gist_storage, "load_blob", lambda *a, **k: None)
-        monkeypatch.setattr(refresh_ui, "load_refresh", lambda: {})
+        monkeypatch.setattr(refresh_ui, "load_refresh", lambda: blob or {})
         monkeypatch.setattr(screens_ui, "load_screens", lambda: SCREENS)
         from streamlit.testing.v1 import AppTest
 
@@ -418,18 +420,82 @@ def test_new_company_form_starts_on_the_dash(monkeypatch):
 
 
 # ── 5. Snabbkollen: ins_id följer med, råvaran bara som förslag ─────────────
-def test_quick_hint_uses_ember_without_yahoo_and_the_same_uncertainty_rules():
+def test_quick_hint_asks_the_lists_first_then_only_embers_own_map():
     from asymmetry import quick_ui
     seen = []
 
-    def detect(t, auto=True):
-        seen.append((t, auto))
-        return {"CCO.TO": "uran", "BOL.ST": "koppar"}.get(t)
-    assert quick_ui.sheet_commodity_hint({"yf_ticker": "CCO.TO"}, detect) == ("uranium", "EMBER-temat")
-    assert seen == [("CCO.TO", False)]                                       # auto=False: inte Yahoos bransch
-    assert quick_ui.sheet_commodity_hint({"yf_ticker": "BOL.ST"}, detect)[0] is None    # polymetalliskt
-    assert quick_ui.sheet_commodity_hint({"yf_ticker": "EQNR.OL"}, detect) == ("oil_gas", "BERSERK-listan")
-    assert quick_ui.sheet_commodity_hint({}, detect) == (None, "")
+    def lookup(t):
+        seen.append(t)
+        return {"ZZU.V": "uran", "CCO.TO": "guld", "BOL.ST": "koppar"}.get(t)
+    assert quick_ui.sheet_commodity_hint({"yf_ticker": "CCO.TO"}, lookup) == ("uranium", "EMBER-listan")
+    assert quick_ui.sheet_commodity_hint({"yf_ticker": "EQNR.OL"}, lookup) == ("oil_gas", "BERSERK-listan")
+    assert quick_ui.sheet_commodity_hint({"yf_ticker": "BOL.ST"}, lookup) == (
+        None, "flera råvaror (Koppar · Zink & nickel)")                      # polymetalliskt
+    assert seen == []                                                        # listorna kände alla tre
+    assert quick_ui.sheet_commodity_hint({"yf_ticker": "zzu.v"}, lookup) == ("uranium", "EMBER-temat")
+    assert seen == ["ZZU.V"]
+    assert quick_ui.sheet_commodity_hint({"yf_ticker": "ZZX.V"}, lookup) == (None, "")
+    assert quick_ui.sheet_commodity_hint({}, lookup) == (None, "")
+
+
+def test_quick_hint_takes_the_borsdata_branch_like_the_rule_card():
+    from asymmetry import quick_ui
+    assert quick_ui.sheet_commodity_hint({"yf_ticker": "ZZOIL.TO", "bd_branch_id": 2}) == ("oil_gas", "Börsdata-bransch 2")
+    assert quick_ui.sheet_commodity_hint({"yf_ticker": "ZZAU.V", "bd_branch_id": 18}) == (
+        None, "Börsdata-bransch 18 är både guld och silver")
+
+
+def test_quick_hint_reads_the_registry_overlay(monkeypatch):
+    from asymmetry import quick_ui
+    from ember import regime
+    monkeypatch.setitem(regime._THEME_OVERLAY, "ZZU.V", "uran")
+    assert quick_ui.curated_theme("zzu.v") == "uran"
+    assert quick_ui.sheet_commodity_hint({"yf_ticker": "ZZU.V"}) == ("uranium", "EMBER-temat")
+
+
+def _holdings_sector(monkeypatch, ticker, sector):
+    """Holdings-raden med en fritext-sektor (ember.regime.register_sector läser den) och inget i arket."""
+    import positions
+    from ember import regime
+    monkeypatch.setattr(positions, "open_positions", lambda strategy=None, bucket=None:
+                        [{"ticker": ticker, "sector": sector}] if sector else [])
+    monkeypatch.setattr(regime, "sheet_commodity", lambda t: None)
+    return regime
+
+
+@pytest.mark.parametrize("ticker, sector, guess, key", [
+    ("URG", "Energy", "olja", "uranium"),                                    # uranbolag, sektortexten säger olja
+    ("OKEA.OL", "Oil & Gas", "naturgas", "oil_gas"),                         # oljebolag, sektortexten säger gas
+])
+def test_quick_hint_asks_the_lists_before_the_holdings_sector(monkeypatch, ticker, sector, guess, key):
+    from asymmetry import quick_ui
+    regime = _holdings_sector(monkeypatch, ticker, sector)
+    assert regime.detect_theme(ticker, auto=False) == guess                 # gissningen som förut blev förslaget
+    assert quick_ui.sheet_commodity_hint({"yf_ticker": ticker}) == (key, "BERSERK-listan")
+
+
+@pytest.mark.parametrize("sector, complex_key", [
+    ("Energy", None), ("Energi", None), ("Precious metals", None), ("Basmetaller", None),
+    (None, "energi"), (None, "adelmetaller"), (None, "basmetaller"),
+])
+def test_quick_hint_never_guesses_from_the_sector_text_or_the_complex(monkeypatch, sector, complex_key):
+    from asymmetry import quick_ui
+    regime = _holdings_sector(monkeypatch, "PDN.AX", sector)
+    monkeypatch.setattr(regime, "complex_overrides", lambda: {"PDN.AX": complex_key} if complex_key else {})
+    assert regime.detect_theme("PDN.AX", auto=False)                        # EMBER gissar ett tema …
+    assert quick_ui.sheet_commodity_hint({"yf_ticker": "PDN.AX"}) == (None, "")   # … men det blir inget förslag
+
+
+def test_identity_lists_win_over_a_stale_quick_hint(monkeypatch):
+    from confidence import ui as cui
+    monkeypatch.setattr(streamlit, "session_state", {})
+    cui.remember_commodity_hint("OKEA.OL", "natural_gas", "EMBER-temat")    # en gammal, grov gissning
+    cui.remember_commodity_hint("BOL.ST", "copper", "EMBER-temat")
+    cui.remember_commodity_hint("ZZOIL.TO", "oil_gas", "Börsdata-bransch 2")
+    assert cui.commodity_offer("OKEA.OL") == ("oil_gas", "BERSERK-listan")
+    assert cui.commodity_offer("BOL.ST") == (None, "flera råvaror (Koppar · Zink & nickel)")
+    assert cui.commodity_offer("zzoil.to") == ("oil_gas", "Börsdata-bransch 2")   # listorna vet inget: förslaget
+    assert cui.commodity_offer("ZZX.V") == (None, "")
 
 
 QUICK = {"name": "Cameco Corp", "source": "Börsdata", "ins_id": 4321, "yf_ticker": "CCO.TO",
@@ -456,7 +522,7 @@ def test_quick_add_writes_ins_id_and_only_suggests_the_commodity(monkeypatch):
     at.session_state["asym_pick"] = "CCO.TO"
     at.run()
     assert not at.exception, at.exception
-    assert "Förslag: Uran (EMBER-temat)" in [x.value for x in at.caption]
+    assert "Förslag: Uran (EMBER-listan)" in [x.value for x in at.caption]
     assert _ident(at, "CCO.TO").value == ""
     assert at.session_state["confidence"]["companies"]["CCO.TO"]["commodity"] == ""
     at.button(key="cf_com_CCO.TO").click().run()
@@ -477,3 +543,130 @@ def test_add_quick_ignores_a_bad_ins_id_and_never_writes_the_commodity():
     assert d["companies"]["WW.V"]["ins_id"] == 77
     assert all(c["commodity"] == "" for c in d["companies"].values())
     assert com.REGISTRY["copper"].label == "Koppar"
+
+
+@pytest.mark.parametrize("ticker, sector, complex_key, label, source", [
+    ("PDN.AX", "Energy", "energi", None, None),                              # uran: ingen gissad olja
+    ("OKEA.OL", "Oil & Gas", None, "Olja & gas", "BERSERK-listan"),          # olja: listan, inte sektortextens gas
+])
+def test_quick_add_suggests_only_what_the_lists_know(monkeypatch, ticker, sector, complex_key, label, source):
+    from streamlit.testing.v1 import AppTest
+    from ember import regime
+    sys.path.insert(0, os.path.join(ROOT, "tests"))
+    quick = dict(QUICK, name=ticker, yf_ticker=ticker, ins_id=999)
+    app = _asym_app(monkeypatch, _conf(), quick=quick)
+    monkeypatch.setattr(regime, "register_sector", lambda t: sector if str(t).upper() == ticker else None)
+    monkeypatch.setattr(regime, "complex_overrides", lambda: {ticker: complex_key} if complex_key else {})
+    monkeypatch.setattr(regime, "sheet_commodity", lambda t: None)
+    assert regime.detect_theme(ticker, auto=False)                          # EMBER:s gissning finns
+    at = AppTest.from_function(app, default_timeout=60)
+    at.run()
+    assert not at.exception, at.exception
+    at.text_input(key="asym_quick_ticker").set_value(ticker.lower())
+    at.button(key="FormSubmitter:asym_quick_form-🔍 Analysera").click().run()
+    assert not at.exception, at.exception
+    at.button(key=f"asym_quick_add_{ticker}").click().run()
+    assert not at.exception, at.exception
+    msg = " ".join(s.value for s in at.success)
+    assert f"{ticker} ligger i arket" in msg
+    if label:
+        assert f"Förslag på råvara: {label} (Använd under Identitet)." in msg
+    else:
+        assert "Förslag på råvara" not in msg
+    at.session_state["asym_mode"] = "Ark"
+    at.session_state["asym_pick"] = ticker
+    at.run()
+    assert not at.exception, at.exception
+    caps = [c.value for c in at.caption]
+    assert at.session_state["confidence"]["companies"][ticker]["commodity"] == ""   # inget skrivet
+    if label:
+        assert f"Förslag: {label} ({source})" in caps
+        assert f"cf_com_{ticker}" in {b.key for b in at.button}
+    else:
+        assert not any(c.startswith("Förslag:") for c in caps)
+        assert f"cf_com_{ticker}" not in {b.key for b in at.button}
+
+
+# ── Nattens råvarupris gäller bara råvaran det hämtades för ──────────────────
+GOLD_NIGHT = {"ticker": "EQNR.OL", "asof": "2026-11-08", "commodity_price": 2650.0, "commodity_unit": "USD/oz",
+              "commodity_asof": "2026-11-08"}
+
+
+def _night(**kw) -> dict:
+    return {"rows": {"producers:p1": dict(GOLD_NIGHT, **kw)}}
+
+
+def test_the_night_price_fits_only_the_commodity_it_was_fetched_for():
+    import commodity_prices as cp
+    import controls_ui
+    assert cp.night_fits(GOLD_NIGHT, "Guld")
+    for other in ("Olja", "Koppar", "Uran", "", None):                      # annan enhet, ingen termin, '—'
+        assert not cp.night_fits(GOLD_NIGHT, other), other
+    assert cp.night_fits(GOLD_NIGHT, "Silver")                              # äldre natt utan termin: bara enheten
+    gc = dict(GOLD_NIGHT, commodity_ticker="GC=F")
+    assert cp.night_fits(gc, "guld") and not cp.night_fits(gc, "Silver")    # med terminen: guld är inte silver
+    assert not cp.night_fits(None, "Guld") and not cp.night_fits({}, "Guld")
+    assert controls_ui.spot_context(gc, {"commodity": "Guld"}).startswith("🤖 Spot i dag 2")
+    assert controls_ui.spot_context(gc, {"commodity": "Silver"}) == ""      # CSM-raden: samma regel
+
+
+def test_the_night_stores_the_futures_ticker_with_the_price(monkeypatch):
+    sys.path.insert(0, os.path.join(ROOT, "tests"))
+    import commodity_prices as cp
+    import sheets_refresh as sr
+    from test_sheets_refresh import _API, _sheets
+    monkeypatch.setattr(cp, "spot_many", lambda names: {
+        "guld": {"price": 2650.0, "unit": "USD/oz", "asof": "2026-11-08", "ticker": "GC=F"}})
+    sheets = _sheets()
+    sheets["producers"]["producers"][0]["commodity"] = "Guld"
+    row = sr.refresh(_API(), sheets)["rows"]["producers:r1"]
+    assert row["commodity_price"] == 2650.0 and row["commodity_ticker"] == "GC=F"
+    assert cp.night_fits(row, "Guld") and not cp.night_fits(row, "Silver")
+
+
+def _keys(at) -> set:
+    return {b.key for b in at.button}
+
+
+@pytest.mark.parametrize("night", [_night(), _night(commodity_ticker="GC=F")])
+def test_rule_card_drops_the_night_price_when_the_commodity_changes(sheet, night):
+    at = sheet("Rick Rule", rows=[RULE_ROW], blob=night)
+    assert "rf_producers_p1_price" in _keys(at)                              # Guld: nattens guldpris erbjuds
+    assert "råvarupris 2,650.00" in _text(at)
+    at.button(key="rf_offer_pr_com_p1").click().run()                        # Använd på 'Förslag: Olja'
+    assert not at.exception, at.exception
+    assert _row(at, "EQNR.OL")["commodity"] == "Olja"
+    assert "rf_producers_p1_price" not in _keys(at)                          # inget guldpris på oljekortet
+    assert "råvarupris 2,650.00" not in _text(at)
+    _box(at, "pr_com_p1_").set_value("").run()                               # '—'
+    assert not at.exception, at.exception
+    assert _row(at, "EQNR.OL")["commodity"] == ""
+    assert "rf_producers_p1_price" not in _keys(at)
+    _box(at, "pr_com_p1_").set_value("Guld").run()                           # tillbaka: priset gäller igen
+    assert not at.exception, at.exception
+    assert "rf_producers_p1_price" in _keys(at)
+    assert _row(at, "EQNR.OL").get("price") is None                         # inget skrivet utan Använd
+
+
+def test_rule_card_gold_price_never_lands_on_a_silver_card(sheet):
+    row = dict(RULE_ROW, ticker="ZZAG.V", name="Zz Silver")
+    at = sheet("Rick Rule", rows=[row], blob=_night(ticker="ZZAG.V", commodity_ticker="GC=F"))
+    assert "rf_producers_p1_price" in _keys(at)
+    _box(at, "pr_com_p1_").set_value("Silver").run()                         # båda USD/oz — terminen skiljer
+    assert not at.exception, at.exception
+    assert _row(at, "ZZAG.V")["commodity"] == "Silver"
+    assert "rf_producers_p1_price" not in _keys(at)
+
+
+def test_chatgpt_export_offers_the_night_price_only_for_the_rows_commodity():
+    from review import export as ex
+    night = _night(commodity_ticker="GC=F")
+    assert ex._suggestion(night, "rule", RULE_ROW, "commodity_price") == (2650.0, "2026-11-08", "USD/oz")
+    for other in ("Olja", "Silver", "", None):
+        assert ex._suggestion(night, "rule", dict(RULE_ROW, commodity=other), "commodity_price") is None, other
+
+    def price(row):
+        return {r["key"]: r for r in ex.build("EQNR.OL", {}, sheets=["rule"], rows={"rule": row}, blob=night).rows}[
+            "rule:price"]["value"]
+    assert price(RULE_ROW) == 2650.0
+    assert price(dict(RULE_ROW, commodity="Olja")) == ""

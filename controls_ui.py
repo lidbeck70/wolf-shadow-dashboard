@@ -377,19 +377,19 @@ def _price_txt(v: float) -> str:
 def spot_context(ref, row: dict) -> str:
     """Kontextraden över CSM-scenarierna: 'Spot i dag X USD/oz (datum) · NAV räknad på Y'. Spot är nattens
     råvarupris på producentraden (commodity_price/commodity_unit, Yahoo-termin), Y kortets eget 'Metallpris i NAV'.
-    Inget fylls i. Tom sträng utan spot, och när nattens enhet inte är enheten för kortets råvara (råvaran bytt sedan
-    natten, eller ingen Yahoo-termin) — USD/lb jämförs aldrig med USD/oz. Ett NAV-pris mer än NAV_PRICE_SCALE_MAX×
-    från spot visas inte som jämförelse."""
+    Inget fylls i. Tom sträng utan spot, och när nattens pris inte gäller kortets råvara (råvaran bytt sedan natten,
+    eller ingen Yahoo-termin: commodity_prices.night_fits) — USD/lb jämförs aldrig med USD/oz. Ett NAV-pris mer än
+    NAV_PRICE_SCALE_MAX× från spot visas inte som jämförelse."""
     r = ref if isinstance(ref, dict) else {}
     spot, unit = ctl._num(r.get("commodity_price")), str(r.get("commodity_unit") or "").strip()
     if spot is None or spot <= 0 or not unit:
         return ""
     try:
         import commodity_prices
-        spec = commodity_prices.ticker_for((row or {}).get("commodity"))
+        fits = commodity_prices.night_fits(r, (row or {}).get("commodity"))
     except Exception:
-        spec = None
-    if not spec or spec[1] != unit:
+        fits = False
+    if not fits:
         return ""
     asof = str(r.get("commodity_asof") or "")[:10]
     txt = f"🤖 Spot i dag {_price_txt(spot)} {unit}{f' ({asof})' if asof else ''}"

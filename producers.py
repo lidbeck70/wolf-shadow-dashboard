@@ -472,6 +472,16 @@ def _fresh_row(row: dict) -> dict:
         return {}
 
 
+def _night_price_fits(row: dict) -> bool:
+    """Gäller nattens råvarupris råvaran som står på kortet nu (commodity_prices.night_fits)? Natten hämtade priset
+    för råvaran som stod där då — Guld bytt till Olja ger inget guldpris på oljekortet."""
+    try:
+        import commodity_prices
+        return commodity_prices.night_fits(_fresh_row(row), row.get("commodity"))
+    except Exception:
+        return False
+
+
 def _registry_identity(ticker: str, name: str) -> dict:
     """ins_id och namn ur universum-registret för ett bolag du lägger in (refresh_ui.registry_identity). Bara på
     klicket; tom utan register — då blir raden som förut."""
@@ -675,10 +685,13 @@ def _producers(data: dict) -> None:
             _suggest("producers", row, "nd_ebitda", "nd_ebitda", "nettoskuld/EBITDA",
                      f"pr_nd_{row['id']}", lambda: _save(data), fmt="{:.2f}")
             # Råvarupriset ur sifferuppdateringen (Yahoo-terminer, USD per
-            # oz/lb/fat) — kontrollera att AISC står i samma enhet.
-            _suggest("producers", row, "price", "commodity_price", "råvarupris",
-                     f"pr_p_{row['id']}", lambda: _save(data), fmt="{:,.2f}",
-                     unit_field="commodity_unit")
+            # oz/lb/fat) — kontrollera att AISC står i samma enhet. Bara medan
+            # nattens pris gäller kortets råvara: bytt råvara (eller '—') sedan
+            # natten ger inget förslag.
+            if _night_price_fits(row):
+                _suggest("producers", row, "price", "commodity_price", "råvarupris",
+                         f"pr_p_{row['id']}", lambda: _save(data), fmt="{:,.2f}",
+                         unit_field="commodity_unit")
             _neg_note(row, {"ev_ebitda": "EV/EBITDA", "unit_cost": "kostnad per enhet", "price": "råvarupris"})
             if _write_changed(row, (("ev_ebitda", ev, shown["ev_ebitda"]), ("nd_ebitda", nd, row.get("nd_ebitda")),
                                     ("unit_cost", cost, shown["unit_cost"]), ("price", price, shown["price"]))):

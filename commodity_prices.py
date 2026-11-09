@@ -39,6 +39,20 @@ def ticker_for(name: str) -> Optional[tuple]:
     return TICKERS.get(_key(name))
 
 
+def night_fits(night, name) -> bool:
+    """Gäller nattens råvarupris (sheets_refresh: commodity_price på producentraden) råvaran som står i raden NU?
+    Natten hämtar priset för råvaran som stod där då — byts den sedan (väljaren, Använd), gäller priset inte längre.
+    Terminen jämförs när natten sparade den (Guld → Silver är båda USD/oz), annars enheten: USD/oz jämförs aldrig
+    med USD/lb. False utan Yahoo-termin för råvaran ('—', Uran)."""
+    spec = ticker_for(name)
+    if not spec or not isinstance(night, dict):
+        return False
+    tick = str(night.get("commodity_ticker") or "").strip()
+    if tick:
+        return tick == spec[0]
+    return spec[1] == str(night.get("commodity_unit") or "").strip()
+
+
 def spot(name: str) -> Optional[dict]:
     """{price, unit, asof, ticker} — senaste stängning, eller None."""
     spec = ticker_for(name)

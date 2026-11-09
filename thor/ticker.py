@@ -188,19 +188,20 @@ def _theme_label(theme) -> str:
 
 def mixed_themes(ticker) -> tuple:
     """Temana när panelens listor (BERSERK, EMBER och alla teman i temalistan) knyter bolaget till mer än en råvara:
-    BOL.ST → ('koppar', 'zink_nickel'). Tom tuple när det är en råvara — eller när listorna inte känner bolaget."""
+    BOL.ST → ('koppar', 'zink_nickel'). Alla former av tickern räknas, så att samma bolag på en annan börs får samma
+    svar (WPM.TO som WPM: guld + silver). Tom tuple när det är en råvara — eller när listorna inte känner bolaget."""
     from berserk import universe as buv
     from universe import theme_members as tm
-    t = forms(ticker)[0] if str(ticker or "").strip() else ""
-    if not t:
+    fs = forms(ticker) if str(ticker or "").strip() else []
+    if not fs:
         return ()
-    themes = [buv.theme_of(t)]
     try:
         from ember.config import TICKER_THEME_MAP
-        themes.append(TICKER_THEME_MAP.get(t))
     except Exception:
-        pass
-    themes += list(tm.themes_of(t))
+        TICKER_THEME_MAP = {}
+    themes: list = []
+    for f in fs:
+        themes += [buv.theme_of(f), TICKER_THEME_MAP.get(f), *tm.themes_of(f)]
     kinds: dict = {}
     for th in (x for x in themes if x):
         kinds.setdefault(theme_commodity(th) or f"tema:{th}", th)

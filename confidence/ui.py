@@ -536,16 +536,18 @@ def remember_commodity_hint(ticker: str, key: Optional[str], source: str) -> Non
 
 
 def commodity_offer(ticker: str) -> tuple:
-    """(registernyckel | None, källa eller varför inget förslag): Snabbkollens förslag om det finns, annars samma
-    härledning som Rick Rule-kortet (thor.ticker.commodity_suggestion — listorna, aldrig arket självt)."""
-    hint = (st.session_state.get(_COM_HINT) or {}).get(str(ticker or "").strip().upper())
-    if hint:
-        return hint
+    """(registernyckel | None, källa eller varför inget förslag): samma härledning som Rick Rule-kortet
+    (thor.ticker.commodity_suggestion — listorna, aldrig arket självt). Snabbkollens förslag bara när listorna inte
+    känner bolaget, så ett gammalt eller grovt förslag i sessionen aldrig går före listorna."""
     try:
         from thor import ticker as tk
-        return tk.commodity_suggestion(ticker)
+        own = tuple(tk.commodity_suggestion(ticker))
     except Exception:
-        return None, ""
+        own = (None, "")
+    if own[0] or own[1]:
+        return own
+    hint = (st.session_state.get(_COM_HINT) or {}).get(str(ticker or "").strip().upper())
+    return tuple(hint) if hint else own
 
 
 def render_commodity_offer(data: dict, company: CompanyInput, store: str = cs.STORE) -> None:

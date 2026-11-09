@@ -93,24 +93,33 @@ def render_quick(add_to_sheet=None) -> None:
                 if ok else f"{t} finns redan i arket.")
 
 
-def sheet_commodity_hint(data: dict, detect=None) -> tuple:
-    """(registernyckel | None, källa) för arket — ember.regime.detect_theme(auto=False) (utan Yahoos grova bransch),
-    sedan samma osäkerhetsregler som Rick Rule-kortet (thor.ticker.commodity_suggestion). Bara ett förslag: skrivs
-    först med Använd under Identitet."""
+def sheet_commodity_hint(data: dict, lookup=None) -> tuple:
+    """(registernyckel | None, källa — eller varför inget förslag) för arket. Listorna först: samma härledning som
+    Rick Rule-kortet och Identitet (thor.ticker.commodity_suggestion, med Börsdatas bransch). Bara när listorna inte
+    känner bolaget: EMBER:s handplockade tema (curated_theme), med samma osäkerhetsregler. Aldrig Holdings
+    sektortext, komplexets standardtema eller Yahoos bransch — för grova för en råvara (uran under 'Energy', silver
+    under 'Precious metals'). Bara ett förslag: skrivs först med Använd under Identitet."""
     t = str(data.get("yf_ticker") or data.get("ticker") or "").strip().upper()
     if not t:
         return None, ""
     try:
-        if detect is None:
-            from ember.regime import detect_theme as detect
-        theme = detect(t, auto=False)
-    except Exception:
-        theme = None
-    try:
         from thor import ticker as tk
-        return tk.commodity_suggestion(t, theme=theme, source="EMBER-temat" if theme else "")
+        key, why = tk.commodity_suggestion(t, branch_id=data.get("branch_id") or data.get("bd_branch_id"))
+        if key or why:
+            return key, why
+        theme = (lookup or curated_theme)(t)
+        return tk.commodity_suggestion(t, theme=theme, source="EMBER-temat") if theme else (None, "")
     except Exception:
         return None, ""
+
+
+def curated_theme(ticker: str) -> Optional[str]:
+    """EMBER:s temakarta eller universum-registrets tema (ember.regime) — bara de handplockade träffarna, inte resten
+    av detect_theme (sektortexten i Holdings, komplexets standardtema, Yahoo)."""
+    from ember.config import TICKER_THEME_MAP
+    from ember.regime import _THEME_OVERLAY
+    t = str(ticker or "").strip().upper()
+    return TICKER_THEME_MAP.get(t) or _THEME_OVERLAY.get(t)
 
 
 def _commodity_label(key) -> str:

@@ -389,6 +389,8 @@ def refresh(api, sheets: dict) -> dict:
                     s["commodity_price"] = sp["price"]
                     s["commodity_unit"] = sp["unit"]
                     s["commodity_asof"] = sp["asof"]
+                    # terminen: kortet erbjuder priset bara medan raden har den råvaran (commodity_prices.night_fits)
+                    s["commodity_ticker"] = sp.get("ticker")
             if iid is not None:
                 if iid not in price_cache:
                     price_cache[iid] = _last_close(api, iid)
