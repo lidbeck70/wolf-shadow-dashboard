@@ -342,6 +342,73 @@ def breaker_state(dd: Optional[float]) -> tuple[str, str, str]:
     return "OKÄND", DIM, ""
 
 
+# ── Strömbrytarens tal ur fördelningens summa (bara förslag) ─────────────────
+# Topp och Nuvarande skrivs för hand. Fälten under Fördelningsmodellen (som "Fyll i ur registret" fyller) ger
+# samma total som procenten räknas på — den föreslås, och skrivs in först med Använd. Gränserna och uträkningen
+# (drawdown_pct, breaker_state) rörs inte.
+def allocation_total(values: Optional[dict]) -> float:
+    """Fördelningsfältens summa i SEK: samma fält och samma golv (0) som procenten räknas på (sleeve_pct)."""
+    vals = values or {}
+    return float(sum(max(0.0, _num(vals.get(s.key), 0.0) or 0.0) for s in SLEEVES))
+
+
+def _short(s: Sleeve) -> str:
+    """'Royaltykärnan (nivå 1)' -> 'Royaltykärnan'."""
+    return s.name.split(" (")[0]
+
+
+def total_parts(values: Optional[dict]) -> tuple[list, list]:
+    """([(kort namn, värde)] för ifyllda fält, [kort namn] för tomma), i fördelningens ordning."""
+    vals = values or {}
+    filled, empty = [], []
+    for s in SLEEVES:
+        v = max(0.0, _num(vals.get(s.key), 0.0) or 0.0)
+        if v > 0:
+            filled.append((_short(s), v))
+        else:
+            empty.append(_short(s))
+    return filled, empty
+
+
+def total_note(values: Optional[dict], register: Optional[dict] = None) -> str:
+    """Vad fördelningens summa består av, vilka fält som är tomma och att det som inte står i fälten inte är med —
+    så att en del som saknas inte läses som ett fall. register = sleeve_sums ur registret: ett tomt fält där
+    registret har ett belopp nämns. Tom text när inget fält är ifyllt. Ren funktion."""
+    filled, empty = total_parts(values)
+    if not filled:
+        return ""
+    text = ("Summan är fälten under Fördelningsmodellen: "
+            + " · ".join(f"{n} {v:,.0f}" for n, v in filled) + " SEK.")
+    if empty:
+        text += f" Tomma fält: {', '.join(empty)}."
+    vals = values or {}
+    missing = [_short(s) for s in SLEEVES
+               if (_num((register or {}).get(s.key), 0.0) or 0.0) > 0
+               and (_num(vals.get(s.key), 0.0) or 0.0) <= 0]
+    if missing:
+        text += f" Registret har belopp i {', '.join(missing)} — Fyll i ur registret nedan."
+    text += (" Det som inte står i fälten (t.ex. fysiska metaller, fondkonton) räknas inte, så en del som "
+             "saknas ser ut som ett fall.")
+    return text.replace("$", "\\$")
+
+
+def breaker_suggestions(data: Optional[dict]) -> dict:
+    """Förslagen till strömbrytaren ur fördelningens summa (allocation_total): 'current' när summan skiljer sig
+    från Nuvarande, 'peak' när den är större än den sparade toppen. Tomt när fälten är tomma. Ren funktion —
+    Topp och Nuvarande skrivs bara med Använd."""
+    d = data or {}
+    total = allocation_total(d.get("values"))
+    if total <= 0:
+        return {}
+    out = {}
+    cur = _num(d.get("current"))
+    if cur is None or abs(cur - total) > 1e-6:
+        out["current"] = total
+    if total > (_num(d.get("peak"), 0.0) or 0.0):
+        out["peak"] = total
+    return out
+
+
 def next_capital_target(values: dict, total: Optional[float] = None) -> Optional[Sleeve]:
     """Nytt kapital går alltid till strategin längst under sitt mål."""
     pcts = sleeve_pct(values, total)
@@ -434,6 +501,8 @@ def _default() -> dict:
     return {"values": {s.key: 0.0 for s in SLEEVES}, "positions": [],
             "peak": 0.0, "current": 0.0, "quarters_cash_high": 0,
             "updated": ""}
+# "values_asof" (datumet i strömbrytarens förslag) är medvetet inget standardfält: det skrivs först när du ändrar
+# ett fördelningsfält, så att öppna en sida som läser lagret inte lägger till något.
 
 
 def _load() -> dict:
@@ -454,6 +523,15 @@ def _save(data: dict) -> None:
     st.session_state[STORE] = data
 
 
+def _today() -> str:
+    """Dagens datum i svensk tid (servern går på UTC)."""
+    try:
+        from tabs.home_today import now_se
+        return now_se().date().isoformat()
+    except Exception:
+        return date.today().isoformat()
+
+
 # ── UI ───────────────────────────────────────────────────────────────────────
 def render_allocator_page() -> None:
     """Huvud-entry point för Portföljallokeraren."""
@@ -469,8 +547,13 @@ def render_allocator_page() -> None:
             f"</p>", unsafe_allow_html=True)
 
         _export(data)
-        _breaker(data)
+        slot = _breaker(data)
         _allocation(data)
+        with slot:                 # efter fälten: summan är den som står i dem nu
+            try:
+                _breaker_hints(data)
+            except Exception:      # ett förslag får aldrig fälla sidan
+                pass
         _caps(data)
         _positions(data)
     except Exception as e:
@@ -536,7 +619,9 @@ def _export(data: dict) -> None:
                                    label="⬇ Positioner (CSV)", key="csv_alloc_pos")
 
 
-def _breaker(data: dict) -> None:
+def _breaker(data: dict):
+    """Strömbrytaren. Returnerar en tom container under Topp/Nuvarande där förslagen ur fördelningens summa ritas
+    när fälten lästs (_breaker_hints)."""
     st.markdown(f"<div style='color:{DIM};font-size:0.7rem;letter-spacing:0.12em;"
                 f"margin-bottom:6px;'>STRÖMBRYTAREN — PORTFÖLJENS STOP LOSS</div>",
                 unsafe_allow_html=True)
@@ -564,9 +649,41 @@ def _breaker(data: dict) -> None:
             f"</span>"
             f"<div style='color:{TEXT};font-size:0.8rem;margin-top:4px;'>{action}</div>"
             f"</div>", unsafe_allow_html=True)
+    slot = st.container()
     st.caption("Halvera i stället för att sälja allt: strategiernas bästa köplägen "
                "uppstår exakt i breda nedgångar. Strömbrytaren hindrar förblödning "
                "— inte bottenfiske.")
+    return slot
+
+
+TOTAL_SOURCE = "Fördelningens summa"
+
+
+def _breaker_hints(data: dict) -> None:
+    """Förslag till Nuvarande och Topp ur fördelningens summa, och vad summan består av. Använd skriver bara det
+    fältet och rutan (refresh_ui.offer, on_click) och sparar som sidan (_save — 💾 sparar till repot). Att öppna
+    sidan skriver ingenting. Sidan ritas bara när innehaven är upplåsta (wolf_panel: gate)."""
+    vals = data.get("values") or {}
+    if allocation_total(vals) <= 0:
+        return
+    import refresh_ui
+    sug = breaker_suggestions(data)
+    when = str(data.get("values_asof") or "")[:10]
+    common = dict(source=TOTAL_SOURCE, asof=f"(fälten ändrade {when})" if when else "",
+                  on_apply=lambda: _save(data), cast=float, fmt="{:,.0f}", unit="SEK")
+    if "current" in sug:
+        refresh_ui.offer(data, "current", sug["current"], "Nuvarande", key="al_cur_total",
+                         widget_key="al_cur", **common)
+    if "peak" in sug:
+        peak = _num(data.get("peak"), 0.0) or 0.0
+        refresh_ui.offer(data, "peak", sug["peak"], "Ny topp?", key="al_peak_total", widget_key="al_peak",
+                         note=f"större än sparade toppen {peak:,.0f}" if peak > 0 else "ingen topp sparad",
+                         **common)
+    try:
+        register = sleeve_sums(derived_positions(_fresh_rows()), positions.cash())
+    except Exception:
+        register = None
+    st.caption(total_note(vals, register))
 
 
 def _allocation(data: dict) -> None:
@@ -588,6 +705,7 @@ def _allocation(data: dict) -> None:
                 if v:
                     vals[k] = float(v)
                     st.session_state.pop(f"al_v_{k}", None)
+            data["values_asof"] = _today()
             _save(data)
             st.rerun()
     changed = False
@@ -600,6 +718,7 @@ def _allocation(data: dict) -> None:
             vals[s.key] = v
             changed = True
     if changed:
+        data["values_asof"] = _today()      # datumet i strömbrytarens förslag
         _save(data)
 
     total = sum(max(0.0, _num(v, 0.0) or 0.0) for v in vals.values())
