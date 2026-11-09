@@ -8,7 +8,8 @@ Automatisering, batch 8 — Durrett och Wolf Asymmetry: rensa förslagen och hä
 2. Identitet (Durrett och Asymmetry): 'Förslag: stage producer (Durrett-motorn, …)' med Använd när klassificeringen är
    säker (hög/medel) och säger något annat än fältet. Använd sparar och ritar om Identitet-formen.
 3. Produktionsenhet ur råvarans prisenhet (Använd) och en varning när enheten inte passar prisenheten — samma kontroll
-   som Durrett-motorn (Ctx.quantity), nu också i Asymmetry.
+   som Durrett-motorn (Ctx.quantity), nu också i Asymmetry. Produktion × pris räknas där utan omräkning, så en
+   skalad enhet (koz, Mlb, kt …) varnas också, och arkets resursenhet i koz ger inget 'oz'-förslag som märker talen fel.
 4. Burn per kvartal = nattens burn/år ÷ 4 (FCF-baserad som i dag), bara explorer/developer och bara när burn > 0.
 5. Högsta resurskategori = den högsta kategorin med ett tal > 0 bland arkets reserver/resurser (Använd), härledd och
    sagd som härledd.
@@ -176,34 +177,102 @@ def test_production_unit_offer_is_the_unit_the_price_is_quoted_in():
 
 
 @pytest.mark.parametrize("commodity, unit, conflict", [
-    ("gold", "oz", False), ("gold", "koz", False), ("gold", "Moz", False), ("copper", "Mlb", False),
-    ("oil_gas", "boe", False), ("lithium", "kt", False),
-    ("copper", "t", True), ("gold", "lb", True), ("oil_gas", "oz", True), ("lithium", "lb", True),
-    ("gold", "oz (attributable)", False), ("gold", "enheter", False),      # egen text: kan inte avgöras
+    ("gold", "oz", None), ("copper", "lb", None), ("oil_gas", "boe", None), ("lithium", "t", None),
+    ("copper", "t", "base"), ("gold", "lb", "base"), ("oil_gas", "oz", "base"), ("lithium", "lb", "base"),
+    # produktion × pris räknas utan omräkning (Asymmetry, scenarierna): en skalad enhet ger fel tal
+    ("gold", "koz", "scale"), ("gold", "Moz", "scale"), ("copper", "Mlb", "scale"), ("uranium", "Mlb", "scale"),
+    ("lithium", "kt", "scale"), ("iron_ore", "Mt", "scale"),
+    ("gold", "oz (attributable)", None), ("gold", "enheter", None),        # egen text: kan inte avgöras
 ])
 def test_production_unit_conflict_uses_the_engines_unit_tables(commodity, unit, conflict):
     c = _with_unit(CompanyInput(ticker="U", commodity=commodity), unit)
     text = dr.production_unit_conflict(c)
-    assert bool(text) is conflict
+    assert bool(text) is bool(conflict)
     offer = dr.production_unit_offer(c)
-    if conflict:
-        base = dr.production_unit_offer(CompanyInput(ticker="U", commodity=commodity))[1].value
+    base = dr.production_unit_offer(CompanyInput(ticker="U", commodity=commodity))[1].value
+    if conflict == "base":
         assert f"Produktionsenheten {unit} passar inte" in text and f"Förslag: {base}" in text
         assert offer[1].value == base and offer[2] == unit
+    elif conflict == "scale":
+        assert text.startswith(f"Produktionen i {unit} räknas som {base} — produktion × pris blir ")
+        assert text.endswith(f"Skriv produktionen i {base} och enheten {base}.")       # ingen produktion: inget tal
+        assert offer is None                          # en bar bas skulle märka talen fel utan att räkna om dem
     else:
         assert offer is None                                              # enheten passar, eller är din egen text
 
 
 def test_the_conflict_matches_the_engines_quantity_check():
-    """Samma tabeller som Ctx.quantity: en enhetskonflikt där ger ingen mängd i motorn."""
+    """Samma tabeller som Ctx.quantity: en enhetskonflikt där ger ingen mängd i motorn. En skalad enhet (Mlb) räknar
+    motorn om — men inte produktion × pris i Asymmetry och scenarierna, så där varnas den ändå."""
     from engines.durrett._base import Ctx
     c = _with_unit(dcs.copper_developer(), "t")
     c.fields.pop("resource_unit")
     ctx = Ctx(c)
     assert ctx.quantity("production_future") is None and any("enhetskonflikt" in x for x in ctx.log)
     assert dr.production_unit_conflict(c)
-    _with_unit(c, "Mlb")
+    _with_unit(c, "lb")
     assert Ctx(c).quantity("production_future") is not None and dr.production_unit_conflict(c) is None
+    _with_unit(c, "Mlb")
+    assert Ctx(c).quantity("production_future") is not None
+    assert dr.production_unit_conflict(c).startswith("Produktionen i Mlb räknas som lb")
+
+
+def _koz_producer(unit) -> CompanyInput:
+    """Guldproducenten skriven som Durrett-arket brukar: Enhet för resurser/produktion koz, Produktion nu 200
+    (Durrett-motorn läser 200 000 oz). unit = produktionsenheten (None = tom)."""
+    c = dcs.gold_producer()
+    dcs.fill(c, dict(resource_unit="koz", production_current=200, production_future=300, production_3y_ago=150),
+             **dcs._FS)
+    for key, _cat in dr.CATEGORY_FIELDS:
+        c.set(key, dp(c.num(key) / 1000, kind="ESTIMATE", source="NI 43-101 FS (Ausenco) 2025"))
+    return _with_unit(c, unit)
+
+
+_KOZ = ("Produktionen i koz räknas som oz — produktion × pris blir 1 000 gånger för litet. Skriv produktionen i oz "
+        "(200 000) och enheten oz, också Enhet för resurser/produktion (Durrett-arket) med resurserna i oz.")
+
+
+def test_a_koz_sheet_gets_no_bare_oz_offer_but_the_scale_warning():
+    """Arket säger att 200 står i koz (Durrett-motorn läser 200 000 oz). Ett förslag 'oz' skulle märka talet fel, och
+    Asymmetry räknar 200 × pris rakt av — 1 000 gånger för litet."""
+    from engines.durrett._base import Ctx
+    from asymmetry.model import Inputs
+    c = _koz_producer(None)
+    assert Ctx(c).quantity("production_current") == 200_000
+    assert dr.production_unit_offer(c) is None
+    assert [k for k, _p, _cur in dr.derived_offers(c, ["production_unit"])] == []
+    assert dr.production_unit_conflict(c) == _KOZ
+    assert Inputs(c).point().revenue_musd == pytest.approx(200 * 3000 / 1e6)  # det varningen säger: 0,6 MUSD
+    assert dr.production_unit_conflict(_koz_producer("koz")) == _KOZ                 # (b): koz i båda fälten
+    assert dr.production_unit_offer(_koz_producer("koz")) is None
+    assert dr.production_unit_offer(_koz_producer("lb")) is None                     # inte heller vid fel bas
+
+
+def test_a_production_unit_in_koz_alone_names_the_number_in_oz():
+    c = _with_unit(CompanyInput(ticker="U", commodity="gold", stage="producer"), "koz")
+    c.set("production_current", dp(200, kind="ACTUAL", source="Årsredovisning"))
+    assert dr.production_unit_conflict(c) == ("Produktionen i koz räknas som oz — produktion × pris blir 1 000 "
+                                              "gånger för litet. Skriv produktionen i oz (200 000) och enheten oz.")
+    c.set("annual_production", dp(250, kind="ACTUAL", source="FS"))                 # Asymmetrys ordning: årsproduktion
+    assert "(250 000)" in dr.production_unit_conflict(c)
+
+
+@pytest.mark.parametrize("pu, ru", [("oz", "koz"), ("koz", "oz"), ("Moz", "koz")])
+def test_two_units_that_disagree_are_flagged_without_an_offer(pu, ru):
+    """Produktionsenheten och arkets resursenhet säger olika om samma tal — vilken som stämmer går inte att avgöra,
+    så varningen ber om basenheten i båda och inget förslag skrivs (oz mot koz var det Använd förr kunde skriva)."""
+    c = _koz_producer(pu)
+    c.set("resource_unit", dp(ru, kind="ACTUAL", source="Årsredovisning"))
+    assert dr.production_unit_conflict(c) == (
+        f"Produktionsenheten {pu} och Enhet för resurser/produktion {ru} säger olika om samma tal — produktion × "
+        "pris räknar det som oz. Skriv produktionen i oz och båda enheterna oz (resurserna också i oz).")
+    assert dr.production_unit_offer(c) is None
+
+
+def test_base_units_in_both_fields_give_no_warning():
+    c = _with_unit(dcs.gold_producer(), "oz")
+    assert dr.production_unit_conflict(c) is None and dr.production_unit_offer(c) is None
+    assert dr.production_unit_offer(_with_unit(dcs.gold_producer(), None))[1].value == "oz"   # resursenhet oz
 
 
 # ── 4. burn per kvartal ──────────────────────────────────────────────────────
@@ -348,6 +417,27 @@ def test_asymmetry_economy_offers_the_unit_and_warns_on_a_mismatch(monkeypatch):
     assert not any("Produktionsenheten" in c for c in _captions(at))
 
 
+def test_asymmetry_analysis_warns_on_production_in_koz(monkeypatch):
+    """(b) Produktionsenheten koz, så som guldproduktion brukar rapporteras: Asymmetry räknar 200 × pris."""
+    at = _ark(monkeypatch, _conf(_koz_producer("koz")), "GPR", mode="Analys")
+    assert f"⚠ {_KOZ} Rätta under Ark → Ekonomi." in _captions(at)
+    at = _ark(monkeypatch, _conf(_koz_producer("koz")), "GPR")
+    assert f"⚠ {_KOZ}" in _captions(at)                                  # Ekonomi-blocket
+    assert "cf_dv_GPR_production_unit" not in {b.key for b in at.button}
+
+
+def test_asymmetry_economy_offers_no_bare_oz_against_a_koz_sheet(monkeypatch):
+    """(a) Produktionsenheten tom, arkets resursenhet koz: inget 'oz'-förslag som motsäger arket, men varningen."""
+    conf = _conf(_koz_producer(None))
+    before = copy.deepcopy(conf)
+    at = _ark(monkeypatch, conf, "GPR")
+    caps = _captions(at)
+    assert f"⚠ {_KOZ}" in caps
+    assert not any(c.startswith("Förslag: Produktionsenhet") for c in caps)
+    assert "cf_dv_GPR_production_unit" not in {b.key for b in at.button}
+    assert at.session_state["confidence"]["companies"] == before["companies"]          # att öppna skriver inget
+
+
 def test_asymmetry_core_offers_the_resource_category_from_the_sheet(monkeypatch):
     at = _ark(monkeypatch, _conf(dcs.copper_developer()), "CDV")
     assert ("Förslag: Högsta resurskategori proven (härlett ur arkets egna tal: Reserv — Proven 900 000 000 lb), "
@@ -436,6 +526,14 @@ def test_durrett_all_fields_offer_unit_and_category(monkeypatch):
     assert not at.exception, at.exception
     assert _company(at, "CDV")["fields"]["production_unit"]["value"] == "lb"
     assert not any(c.startswith("⚠ Produktionsenheten") for c in _captions(at))
+
+
+def test_durrett_all_fields_offer_no_bare_oz_against_a_koz_sheet(monkeypatch):
+    at = _durrett(monkeypatch, _conf(_koz_producer(None)), "Mer", "GPR")
+    caps = _captions(at)
+    assert f"⚠ {_KOZ}" in caps
+    assert not any(c.startswith("Förslag: Produktionsenhet") for c in caps)
+    assert "cf_dv_GPR_production_unit" not in {b.key for b in at.button}
 
 
 def test_durrett_sheet_offers_fcf_ocf_and_quarterly_burn_for_an_explorer(monkeypatch):
