@@ -12,6 +12,8 @@ Automatisering, batch 6 — kopior ur Durrett-arket till granskningsarken (en ge
 5. Rättelser: enhetskontrollen stänger (cent, okänd valuta, ingen per-enhet, annat tillägg); kostnadsmåttet följer
    prisenheten (bara AISC är all-in); ingen gruvlivslängd för olja och gas; NAV-paret skrivs ihop (utan pris töms
    det gamla Metallpris i NAV) och studiens pris följer inte med ett NAV ur en annan källa.
+6. Rättelse 2: NAV och projekt-NPV föreslås bara i miljoner USD — rand ('R million'), tusental ('US$ 000') och
+   USD utan skala föreslås aldrig som MUSD.
 
 Ägarens beslut: nav_musd vinner över npv_musd. Allt är förslag med Använd — inget skrivs när en sida öppnas.
 Inga grindar, trösklar, poängformler eller storlekar ändrade.
@@ -679,3 +681,49 @@ def test_rule_oil_card_gets_opex_and_no_mine_life(page):
     assert "all-in, inte C1" not in md and "Durrett-arket (VAR): gruvlivslängd" not in md
     assert "rf_offer_xs_pr_cost_p1" in _buttons(at) and "rf_offer_xs_pr_life_p1" not in _buttons(at)
     assert _rule_row(at) == card and not page.saves
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  Rättelser efter granskningen (batch 6, fix 2): NAV bara i miljoner USD
+# ═════════════════════════════════════════════════════════════════════════════
+@pytest.mark.parametrize("unit", ["MUSD", "US$M", "US$ million", "USD mn", "USD millions", ""])
+def test_musd_fits_accepts_millions_of_usd(unit):
+    assert xs.musd_fits(unit)
+
+
+@pytest.mark.parametrize("unit", [
+    "R million", "Rm", "Rbn", "R$ M", "miljoner kronor",                  # rand, real, kronor: okänd valuta
+    "USD '000", "US$ 000", "USD thousands", "TUSD", "USD k",              # tusental, inte miljoner
+    "USD", "ZAR m", "MCAD", "USD bn", "USD CAD M",                        # utan skala, annan valuta, miljarder
+])
+def test_musd_fits_rejects_rand_thousands_and_usd_without_scale(unit):
+    assert not xs.musd_fits(unit)
+
+
+@pytest.mark.parametrize("unit", ["R million", "R$ M", "miljoner kronor", "US$ 000", "TUSD", "USD"])
+def test_a_npv_in_another_unit_is_never_offered_as_musd(unit):
+    dev = _company(stage="developer", npv_musd=_p(15400.0, "DFS 2024", "2024-06-01", unit))
+    assert xs.nav_copy(dev) is None and xs.nav_offer(dev, "Guld", "EQX") is None
+    assert xs.tiggre_nav_offer(dev, None) is None
+    rule = {"ticker": "EQX", "nav_musd": 640.0, "nav_source": "NI 43-101 2025"}
+    assert xs.tiggre_nav_offer(dev, rule, "EQX")[0] == 640.0                # Tiggre tar Rick Rule-kortets NAV
+    both = _company(stage="developer", nav_musd=_p(1234567.0, unit="US$ 000"), npv_musd=_p(820.0, unit="US$ million"))
+    assert xs.nav_offer(both, "Guld").nav == 820.0                         # NAV i tusental hoppas över, NPV i MUSD
+
+
+@pytest.mark.parametrize("unit, offered", [("R million", False), ("US$ million", True)])
+def test_rule_card_never_offers_a_rand_npv_as_musd(page, unit, offered):
+    """En sydafrikansk DFS i 'R million' blev 15 400 MUSD och EV/NAV-rutan grön på 0,06x — nu inget förslag."""
+    dev = _company(stage="developer", npv_musd=_p(15400.0, "DFS 2024", "2024-06-01", unit))
+    card = dict(RULE, ev_musd=900.0)
+    at = page("Rick Rule", _rule_stores(card, dev))
+    assert ("rf_offer_xs_pr_nav_p1" in _buttons(at)) is offered
+    assert ("15 400 MUSD" in _md(at)) is offered
+    assert _rule_row(at) == card and not page.saves
+
+
+def test_tiggre_never_offers_a_thousands_npv_as_musd(page):
+    dev = _company("TGR", stage="developer", npv_musd=_p(1234567.0, "DFS 2024", "2024-06-01", "US$ 000"))
+    at = page("Tiggre", _tiggre_stores(companies=(dev,)))
+    assert "rf_offer_xs_tg_nav_c1" not in _buttons(at) and "1 234 567 MUSD" not in _md(at)
+    assert _cand(at) == dict(CAND) and not page.saves

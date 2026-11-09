@@ -17,7 +17,9 @@ visar med Använd (refresh_ui.offer). Att rita förslaget skriver ingenting.
   Livslängden    Gruvlivslängd föreslås inte för olja och gas — Rick Rule dömer dem på R/P (8 år, inte 5).
   NAV            nav_musd vinner; finns bara npv_musd föreslås det märkt "projekt-NPV (100 %), inte bolagets NAV"
                  (ägarandelen är inte avräknad). Studiens datum står alltid med. Metallpriset följer bara med när
-                 det hör till samma tal (projekt-NPV:n, eller samma källa och datum som NAV:n).
+                 det hör till samma tal (projekt-NPV:n, eller samma källa och datum som NAV:n). Bara belopp i
+                 miljoner USD (musd_fits): rand ('R million'), tusental ('US$ 000') och USD utan skala föreslås
+                 aldrig.
 
 Rena funktioner; durrett_company och producers_data läser sessionen som judgment_hints.gather_for.
 """
@@ -209,10 +211,19 @@ def unit_fits(given, expected) -> bool:
 
 
 def musd_fits(given) -> bool:
-    """Står ett belopp i miljoner USD (tom enhet = fältets MUSD)?"""
+    """Står ett belopp i miljoner USD? Tom enhet = fältets MUSD. Kontrollen stänger som unit_fits: USD och miljoner
+    ska stå utskrivna och varje ord vara just det. Okänd valuta ('R million', 'R$ M', 'miljoner kronor'), tusental
+    ('US$ 000', 'USD thousands', 'TUSD', 'USD k') och USD utan skala föreslås aldrig."""
     from review import units
-    g_ccy, g_per, g_scale = units.parts(given)
-    return (not g_ccy or g_ccy == "usd") and (not g_scale or g_scale == "M") and not g_per
+    s = str(given or "").strip()
+    if not s:
+        return True
+    g_ccy, g_per, g_scale = units.parts(s)
+    if g_ccy != "usd" or g_scale != "M" or g_per or "000" in s:
+        return False
+    head, _tail = _words(s)
+    return all((c or sc) and c in ("", "usd") and sc in ("", "M")
+               for c, _p, sc in map(units.parts, head))       # varje ord är USD eller miljoner
 
 
 def _price_copy(company, key: str, card_commodity) -> Optional[Copy]:
