@@ -10,6 +10,10 @@ sheets_refresh.build_events — inga regler, trösklar eller poäng ändras.
 Larm bara när bedömningen byter, och för Rick Rule bara när det sparade talet ligger inom ±50 % av det färska (annars
 står de nog i olika enheter). Inget larm när data saknas. Nycklarna är stabila, så alert_rules.sheet_alerts larmar en
 gång per övergång, och 'rule_'/'insider_'-prefixet leder larmet till rätt ark. Inget säljklusterlarm (brus).
+
+Fix: Rick Rules två larm har tre lägen var, så nyckeln bär den nya bedömningen — ett andra byte larmar också.
+Insider-triggern larmar inte när nattens grind säger Nej (kortet föreslår Nej samma natt), och texten lovar ingen
+Använd: för rader som skanningen har visar kortet ingen.
 """
 import logging
 import os
@@ -22,6 +26,8 @@ import alert_rules as ar  # noqa: E402
 import insider as ins  # noqa: E402
 import producers as prod  # noqa: E402
 import sheets_refresh as sr  # noqa: E402
+from tests import test_automatisering_batch15 as b15  # noqa: E402
+from tests.test_automatisering_batch15 import page  # noqa: E402,F401  (Insider-sidan, batch 15)
 
 TODAY = date(2026, 11, 9)
 
@@ -63,15 +69,15 @@ def _rule_events(row: dict, night: dict) -> dict:
 def test_the_verdict_alarm_fires_when_todays_price_changes_the_verdict():
     row = _rule()
     assert prod.producer_verdict(prod.producer_score(row)).label == prod.P_WATCH
-    ev = _rule_events(row, _night())["rule_verdict:producers:r1"]          # 2 500: 48 % marginal (2 p) + 2 = 4 p
+    ev = _rule_events(row, _night())[f"rule_verdict:producers:r1:{prod.P_BUY}"]   # 2 500: 48 % (2 p) + 2 = 4 p
     assert ev["kind"] == "rule_verdict" and ev["sheet"] == "producers" and ev["ticker"] == "BOL.ST"
     assert ev["title"] == f"🪨 Rick Rule: BOL.ST → {prod.P_BUY}"
     assert "2,500.00 USD/oz (sparat 2,000.00)" in ev["body"] and "marginal 48.0 % (var 35.0 %)" in ev["body"]
     assert "poäng 4/5 (var 3)" in ev["body"] and f"från '{prod.P_WATCH}' till '{prod.P_BUY}'" in ev["body"]
     assert "$" not in ev["title"] + ev["body"]
     assert row["price"] == 2000.0                                           # raden rörs inte
-    down = _rule_events(_rule(price=2500.0), _night(commodity_price=2000.0))["rule_verdict:producers:r1"]
-    assert down["title"].endswith(prod.P_WATCH)                             # åt andra hållet också
+    down = _rule_events(_rule(price=2500.0), _night(commodity_price=2000.0))
+    assert down[f"rule_verdict:producers:r1:{prod.P_WATCH}"]["title"].endswith(prod.P_WATCH)   # åt andra hållet också
 
 
 def test_no_verdict_alarm_without_a_change_or_without_data():
@@ -108,11 +114,11 @@ def _nav_row(**over) -> dict:
 
 
 def test_the_ev_nav_alarm_fires_when_fresh_ev_changes_the_verdict():
-    ev = _rule_events(_nav_row(), {"ev_musd": 800.0})["rule_ev_nav:producers:r1"]
+    ev = _rule_events(_nav_row(), {"ev_musd": 800.0})[f"rule_ev_nav:producers:r1:{prod.NAV_FAIR}"]
     assert ev["title"] == f"🪨 Rick Rule: BOL.ST 0.80× NAV — {prod.NAV_FAIR}"
     assert "Färskt EV 800 MUSD (sparat 650) mot NAV 1,000 MUSD = 0.80× (var 0.65×)" in ev["body"]
     assert f"från '{prod.NAV_CHEAP}' till '{prod.NAV_FAIR}'" in ev["body"]
-    rich = _rule_events(_nav_row(ev_musd=950.0), {"ev_musd": 1100.0})["rule_ev_nav:producers:r1"]
+    rich = _rule_events(_nav_row(ev_musd=950.0), {"ev_musd": 1100.0})[f"rule_ev_nav:producers:r1:{prod.NAV_RICH}"]
     assert rich["title"].endswith(prod.NAV_RICH)
 
 
@@ -128,7 +134,8 @@ def test_no_ev_nav_alarm_without_a_change_without_data_or_with_other_units():
 def test_the_three_rick_rule_alarms_can_come_together():
     row = _rule(ev_musd=650.0, nav_musd=1000.0, nd_ebitda=0.7)
     keys = set(_rule_events(row, _night(ev_musd=800.0, nd_ebitda=1.4)))
-    assert keys == {"rule_deleveraging:producers:r1", "rule_verdict:producers:r1", "rule_ev_nav:producers:r1"}
+    assert keys == {"rule_deleveraging:producers:r1", f"rule_verdict:producers:r1:{prod.P_BUY}",
+                    f"rule_ev_nav:producers:r1:{prod.NAV_FAIR}"}
 
 
 # ── insider_trigger: från 'Väntar på teknisk trigger' till KÖP ────────────────
@@ -140,8 +147,9 @@ def _sig(**over) -> dict:
     return row
 
 
-def _ins_events(row: dict, price=110.0, trigger_auto="A", note="stängning 110.00 > MA20 104.00, MA20 planat/vänt"):
-    s = {"ticker": row.get("ticker"), "price": price, "trigger_auto": trigger_auto, "trigger_note": note}
+def _ins_events(row: dict, price=110.0, trigger_auto="A", note="stängning 110.00 > MA20 104.00, MA20 planat/vänt",
+                **night):
+    s = {"ticker": row.get("ticker"), "price": price, "trigger_auto": trigger_auto, "trigger_note": note, **night}
     return _events({"insider": {"signals": [row]}}, {"insider:i1": s})
 
 
@@ -152,7 +160,9 @@ def test_the_trigger_alarm_fires_when_a_waiting_row_becomes_buy_without_chasing(
     assert ev["title"] == "👥 Insider: EKTA-B.ST trigger A — KÖP-läge"
     assert "Nattens trigger A: stängning 110.00 > MA20 104.00" in ev["body"]
     assert "Kurs 110.00 är +10 % mot klustersnittet 100.00 — under +30 %" in ev["body"]
-    assert "Poäng 7/10, grinden Ja" in ev["body"] and "stoppen 85.00" in ev["body"]
+    assert "Poäng 7/10, grinden Ja. Välj trigger A i raden (Teknisk trigger) och lägg stoppen 85.00 som order." \
+        in ev["body"]
+    assert "Använd" not in ev["body"]                            # kortet visar inte alltid en Använd för triggern
     b = _ins_events(_sig(trigger="Nej"), trigger_auto="B", note="")["insider_trigger:insider:i1"]
     assert b["title"].endswith("trigger B — KÖP-läge") and "Nattens trigger B. Kurs" in b["body"]
 
@@ -183,6 +193,47 @@ def test_no_trigger_alarm_without_a_nightly_trigger_or_without_data():
     assert _ins_events(_sig(cluster_avg=None)) == {}             # utan klustersnitt går jakten inte att pröva
 
 
+def test_no_trigger_alarm_when_the_nights_gate_says_nej():
+    """Ny rapport: F-score 3, så nattens grind blir 'Nej'. Kortet föreslår Nej samma natt (insider.gate_offer) — med
+    båda nattens förslag står raden i grinden, inte på KÖP. Då går inget KÖP-larm med 'grinden Ja'."""
+    s = {"price": 110.0, "trigger_auto": "A", "gate_auto": ins.GATE_NO}
+    assert ins.gate_offer(_sig(), s) == ins.GATE_NO and ins.trigger_offer(_sig(), s) == "A"
+    applied = dict(_sig(), **{k: v for k, v in ins.nightly_offers(_sig(), s).items() if k in ("gate", "trigger")})
+    assert ins.status(applied) == ins.S_GATE_FAIL
+    assert _ins_events(_sig(), gate_auto=ins.GATE_NO) == {}
+    # samma natt utan grindsvar: larmet går som förut
+    assert set(_ins_events(_sig(), gate_auto="")) == {"insider_trigger:insider:i1"}
+    assert set(_ins_events(_sig(), gate_auto=None)) == {"insider_trigger:insider:i1"}
+    # stopp- och passa-larmen bryr sig inte om grinden
+    assert set(_ins_events(_sig(), price=84.0, gate_auto=ins.GATE_NO)) == {"insider_stop:insider:i1"}
+    assert set(_ins_events(_sig(), price=131.0, gate_auto=ins.GATE_NO)) == {"insider_chase:insider:i1"}
+
+
+def test_a_row_the_scan_covers_gets_the_alarm_without_a_promised_button(page):  # noqa: F811
+    """En rad ur skanningen (samma ins_id, klustret i skanningens fönster) får ingen Använd för triggern på kortet —
+    nattjobbets förslag visas bara för rader som skanningen inte har. Larmet går ändå (skanningens eget köplarm kräver
+    skanningens grind Ja), och texten säger att du väljer triggern i raden."""
+    row = b15._row(id="v1", ticker="VOLV B", name="Volvo", ins_id=123, insiders=3, role=ins.ROLE_TOP, amount=1500.0,
+                   gate=ins.GATE_YES, trigger="", cluster_avg=48.2)
+    night = b15._night(gate_auto="", trigger_auto="B", trigger_note="stängning 50.00 > MA20 48.00, 1 mån +4.0 %")
+    assert ins.status(row) == ins.S_WAIT_TRIGGER
+    assert ins.match_signal(b15.SCAN["clusters"][0], [row]) is row             # skanningen täcker raden
+    ev = _events({"insider": {"signals": [row]}}, {"insider:v1": night})
+    assert set(ev) == {"insider_trigger:insider:v1"}
+    body = ev["insider_trigger:insider:v1"]["body"]
+    assert "Använd" not in body
+    assert "Välj trigger B i raden (Teknisk trigger) och lägg stoppen 40.97 som order." in body
+    stores = {"insider": {"signals": [row]}}
+    at = page(stores=stores, refresh={"generated": "2026-11-09T05:10:00+00:00", "rows": {"insider:v1": night}})
+    keys = {b.key for b in at.button}
+    assert "rf_offer_ins_night_v1_trigger" not in keys
+    assert not any(k.startswith("rf_offer_ins_night_v1_") for k in keys)
+    assert at.selectbox(key="ins_t_v1").value == ""                            # rutan finns — du väljer själv
+    assert at.selectbox(key="ins_t_v1").label == "Teknisk trigger"
+    assert "Grind och trigger ur skanningen är bara text" in b15._texts(at)
+    assert b15._same_json(at.session_state["insider"], stores["insider"])     # att öppna sidan skriver ingenting
+
+
 # ── Larmbenet: en gång per övergång, rätt ark ────────────────────────────────
 def _blob(events: list) -> dict:
     return {"generated": "2026-11-09T06:00:00", "error": None, "events": events}
@@ -207,6 +258,32 @@ def test_the_new_alarms_fire_once_per_transition_and_open_their_sheet():
     sig.update(trigger="A")
     done, state = ar.sheet_alerts(_blob(sr.build_events(sheets, night)), state)
     assert done == [] and state["events"] == {}
+
+
+def _nights(row: dict, nights: list) -> list:
+    """build_events → sheet_alerts natt för natt utan att raden ändras (du trycker inte Använd): larmens titlar."""
+    sheets = {"producers": {"producers": [row]}}
+    _a, state = ar.sheet_alerts(_blob([]), None)                                    # baslinjen
+    out = []
+    for s in nights:
+        alerts, state = ar.sheet_alerts(_blob(sr.build_events(sheets, {"producers:r1": s})), state)
+        out.append([a["title"] for a in alerts])
+    return out
+
+
+def test_a_second_verdict_change_alarms_too():
+    """Bedömningarna har tre lägen: ett andra byte utan Använd emellan larmar en gång, samma läge nästa natt inte."""
+    nav = _nights(_nav_row(), [{"ev_musd": v} for v in (716.0, 750.0, 1010.0, 1060.0)])   # sparat 650 / NAV 1 000
+    assert nav == [[f"🪨 Rick Rule: BOL.ST 0.72× NAV — {prod.NAV_FAIR}"], [],
+                   [f"🪨 Rick Rule: BOL.ST 1.01× NAV — {prod.NAV_RICH}"], []]
+    # sparat 850 (Rimligt): Billigt i natt, några veckor senare Dyrt — det sista larmet ska inte stå kvar på Billigt
+    back = _nights(_nav_row(ev_musd=850.0), [{"ev_musd": 680.0}, {"ev_musd": 1010.0}])
+    assert back == [[f"🪨 Rick Rule: BOL.ST 0.68× NAV — {prod.NAV_CHEAP}"],
+                    [f"🪨 Rick Rule: BOL.ST 1.01× NAV — {prod.NAV_RICH}"]]
+    # guld sparat 3 300, AISC 1 900, två kryss = Köpkandidat
+    verdict = _nights(_rule(price=3300.0, unit_cost=1900.0),
+                      [_night(commodity_price=v) for v in (3040.0, 2900.0, 2480.0)])
+    assert verdict == [[f"🪨 Rick Rule: BOL.ST → {prod.P_WATCH}"], [], [f"🪨 Rick Rule: BOL.ST → {prod.P_PASS}"]]
 
 
 def test_the_hidden_log_shows_only_the_kind(monkeypatch, caplog):
@@ -282,7 +359,8 @@ def test_the_nightly_job_raises_the_new_alarms_from_its_own_numbers(monkeypatch)
     assert s["insider:i1"]["price"] == 119.0 and s["insider:i1"]["trigger_auto"] == "A"
     assert s["producers:r1"]["commodity_price"] == 2500.0 and s["producers:r1"]["ev_musd"] == 760.0
     keys = {e["key"] for e in out["events"]}
-    assert keys == {"insider_trigger:insider:i1", "rule_verdict:producers:r1", "rule_ev_nav:producers:r1"}
+    assert keys == {"insider_trigger:insider:i1", f"rule_verdict:producers:r1:{prod.P_BUY}",
+                    f"rule_ev_nav:producers:r1:{prod.NAV_FAIR}"}
     assert set(api.calls) <= {"get_instruments", "get_global_instruments_list", "get_fundamentals_snapshot_fast",
                               "get_stockprices", "resolve_instrument_id", "get_reports"}
     assert sheets["insider"]["signals"][0]["trigger"] == "" and sheets["producers"]["producers"][0]["price"] == 2000.0

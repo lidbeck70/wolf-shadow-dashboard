@@ -31,7 +31,8 @@ lukacs.deleveraging_state, scoring.durrett_buy_ok) — inga regler ändras:
   durrett_buy_rule    MCap/framtida vinst korsar 10× i Durrett
 
 rule_verdict och rule_ev_nav larmar bara när det sparade talet ligger inom ±50 % av det färska (UNIT_GUARD_PCT,
-ägarens beslut i batch 17) — annars står de nog i olika enheter.
+ägarens beslut i batch 17) — annars står de nog i olika enheter. Deras nyckel bär den nya bedömningen (tre lägen),
+så varje byte larmar en gång även när du inte trycker Använd emellan.
 
 Insider-raderna får dessutom klustret omräknat (fönstret upptäckt − 30 dagar
 till i dag), grindens checklista, triggern och 'efter fall' med insider_scans
@@ -812,7 +813,8 @@ def unit_guard_ok(saved, fresh) -> bool:
 def _rule_verdict_events(row: dict, s: dict) -> list:
     """Rick Rule: producer_verdict på den sparade raden mot samma rad med nattens råvarupris (bara när priset gäller
     kortets råvara, commodity_prices.night_fits, och enhetsvakten håller). Strykregeln (döende tillgång) är densamma
-    före och efter. Larm bara när bedömningen byter; inget när pris, kostnad eller poäng saknas."""
+    före och efter. Larm bara när bedömningen byter; inget när pris, kostnad eller poäng saknas. Nyckeln bär den nya
+    bedömningen, så ett andra byte (Bevaka → Passa efter Köpkandidat → Bevaka) larmar också."""
     import commodity_prices as cp
     import producers as prod
     spot, saved = _f(s.get("commodity_price")), _f(row.get("price"))
@@ -826,15 +828,18 @@ def _rule_verdict_events(row: dict, s: dict) -> list:
     m0, m1 = prod.margin_pct(saved, row.get("unit_cost")), prod.margin_pct(spot, row.get("unit_cost"))
     unit = str(s.get("commodity_unit") or "").strip()
     t = str(row.get("ticker") or "").upper()
-    return [_ev("rule_verdict", "producers", row, f"🪨 Rick Rule: {t} → {after.label}",
-                f"Dagens råvarupris {spot:,.2f}{' ' + unit if unit else ''} (sparat {saved:,.2f}): marginal "
-                f"{m1:.1f} % (var {m0:.1f} %), poäng {sc1}/{prod.PROD_MAX_SCORE} (var {sc0}). Bedömningen byter "
-                f"från '{before.label}' till '{after.label}'. Använd priset på kortet om du håller med.")]
+    e = _ev("rule_verdict", "producers", row, f"🪨 Rick Rule: {t} → {after.label}",
+            f"Dagens råvarupris {spot:,.2f}{' ' + unit if unit else ''} (sparat {saved:,.2f}): marginal "
+            f"{m1:.1f} % (var {m0:.1f} %), poäng {sc1}/{prod.PROD_MAX_SCORE} (var {sc0}). Bedömningen byter "
+            f"från '{before.label}' till '{after.label}'. Använd priset på kortet om du håller med.")
+    e["key"] += f":{after.label}"
+    return [e]
 
 
 def _rule_ev_nav_events(row: dict, s: dict) -> list:
     """Rick Rule: ev_nav_verdict på den sparade raden mot samma rad med nattens EV (MUSD). Enhetsvakten på EV.
-    Larm bara när bedömningen byter; inget när EV eller NAV saknas."""
+    Larm bara när bedömningen byter; inget när EV eller NAV saknas. Nyckeln bär den nya bedömningen, så ett andra
+    byte (Billigt → Dyrt efter Rimligt → Billigt) larmar också."""
     import producers as prod
     ev, saved = _f(s.get("ev_musd")), _f(row.get("ev_musd"))
     if ev is None or saved is None or not unit_guard_ok(saved, ev):
@@ -845,19 +850,23 @@ def _rule_ev_nav_events(row: dict, s: dict) -> list:
         return []
     r0, r1 = prod.ev_nav(saved, row.get("nav_musd")), prod.ev_nav(ev, row.get("nav_musd"))
     t = str(row.get("ticker") or "").upper()
-    return [_ev("rule_ev_nav", "producers", row, f"🪨 Rick Rule: {t} {r1:.2f}× NAV — {after.label}",
-                f"Färskt EV {ev:,.0f} MUSD (sparat {saved:,.0f}) mot NAV {_f(row.get('nav_musd')):,.0f} MUSD = "
-                f"{r1:.2f}× (var {r0:.2f}×). Bedömningen byter från '{before.label}' till '{after.label}'. "
-                f"Använd EV på kortet om du håller med.")]
+    e = _ev("rule_ev_nav", "producers", row, f"🪨 Rick Rule: {t} {r1:.2f}× NAV — {after.label}",
+            f"Färskt EV {ev:,.0f} MUSD (sparat {saved:,.0f}) mot NAV {_f(row.get('nav_musd')):,.0f} MUSD = "
+            f"{r1:.2f}× (var {r0:.2f}×). Bedömningen byter från '{before.label}' till '{after.label}'. "
+            f"Använd EV på kortet om du håller med.")
+    e["key"] += f":{after.label}"
+    return [e]
 
 
 def _insider_trigger_events(row: dict, s: dict, price: float) -> list:
     """Insider: raden står på 'Väntar på teknisk trigger' (insider.status på den sparade raden) och nattens trigger
     (insider.trigger_offer — bara A eller B, bara när raden saknar trigger) gör den till KÖP, utan att kursen jagas
-    (insider.is_chase, passa över +30 % mot klustersnittet). Triggern sätter du själv med Använd i arket."""
+    (insider.is_chase, passa över +30 % mot klustersnittet). Inget larm när nattens grind mäter att något faller
+    (insider.gate_offer — kortet föreslår 'Nej' samma natt). Triggern väljer du själv i raden; för rader som
+    skanningen har visar kortet ingen Använd för triggern."""
     import insider as ins
     trig = ins.trigger_offer(row, s)
-    if not trig or ins.status(row) != ins.S_WAIT_TRIGGER:
+    if not trig or ins.gate_offer(row, s) is not None or ins.status(row) != ins.S_WAIT_TRIGGER:
         return []
     now = dict(row, price_now=price, trigger=trig)
     if ins.status(now) != ins.S_BUY or ins.is_chase(now):
@@ -870,8 +879,8 @@ def _insider_trigger_events(row: dict, s: dict, price: float) -> list:
     return [_ev("insider_trigger", "insider", row, f"👥 Insider: {t} trigger {trig} — KÖP-läge",
                 f"Nattens trigger {trig}{': ' + note if note else ''}. Kurs {price:.2f} är {vs:+.0f} % mot "
                 f"klustersnittet {avg:.2f} — under +{ins.CHASE_PCT:g} %, ingen jakt. Poäng {ins.score(now)}/"
-                f"{ins.MAX_SCORE}, grinden Ja. Sätt triggern med Använd i arket och lägg stoppen {stop:.2f} som "
-                f"order.")]
+                f"{ins.MAX_SCORE}, grinden Ja. Välj trigger {trig} i raden (Teknisk trigger) och lägg stoppen "
+                f"{stop:.2f} som order.")]
 
 
 def load_sheets() -> dict:
