@@ -21,6 +21,7 @@ from __future__ import annotations
 import streamlit as st
 from dataclasses import dataclass
 from datetime import date
+from functools import lru_cache
 from typing import Optional
 
 import csv_export
@@ -105,6 +106,9 @@ SELL_RULES = (
      "Jämför sektorns multiplar"),
     ("5. Tidsstopp", "18 månader utan materialisering", "Upptäckt + 18 mån"),
 )
+# Talen i säljreglerna som går att räkna ur raden (bara visning — testet håller dem lika med texterna ovan).
+SELL_FSCORE_BELOW = 4     # säljregel 3: "F-score < 4"
+TIME_STOP_MONTHS = 18     # säljregel 5: "Upptäckt + 18 mån"
 
 
 @dataclass(frozen=True)
@@ -218,6 +222,47 @@ def is_chase(sig: dict) -> bool:
     return vs is not None and vs > CHASE_PCT
 
 
+def _date(value) -> Optional[date]:
+    try:
+        return date.fromisoformat(str(value or "")[:10])
+    except ValueError:
+        return None
+
+
+def _add_months(d: date, months: int) -> date:
+    """d + months månader; dagen kläms till månadens sista (31 aug + 18 mån = 28/29 feb)."""
+    import calendar
+    y, m = divmod(d.month - 1 + months, 12)
+    y, m = d.year + y, m + 1
+    return date(y, m, min(d.day, calendar.monthrange(y, m)[1]))
+
+
+def time_stop(sig: dict) -> Optional[date]:
+    """Säljregel 5: upptäckt + 18 månader. None utan läsbart upptäcktsdatum."""
+    d = _date(sig.get("found"))
+    return None if d is None else _add_months(d, TIME_STOP_MONTHS)
+
+
+def sell_watch(sig: dict, f_score=None, asof: str = "", today: Optional[date] = None) -> list:
+    """Säljreglerna som går att räkna ur raden, som text: [(text, nivå)] där nivå är "stop" (regeln slår till),
+    "warn" (tidsstoppet passerat) eller "". Säljregel 3 ur nattjobbets F-score (inget när talet saknas — 'skulden
+    drar iväg' har ingen siffra och räknas inte), säljregel 5 ur upptäcktsdatumet. Ingen regel ändras."""
+    out = []
+    fs = _num(f_score)
+    if fs is not None:
+        when = f" (Börsdata {asof})" if asof else ""
+        if fs < SELL_FSCORE_BELOW:
+            out.append((f"Säljregel 3: F-score nu {fs:g} < {SELL_FSCORE_BELOW} — grinden bryts{when}", "stop"))
+        else:
+            out.append((f"Säljregel 3: F-score nu {fs:g}{when}", ""))
+    ts = time_stop(sig)
+    if ts is not None:
+        passed = (today or date.today()) >= ts
+        out.append((f"Säljregel 5: tidsstopp {ts.isoformat()} (upptäckt + {TIME_STOP_MONTHS} mån)"
+                    + (" — passerat" if passed else ""), "warn" if passed else ""))
+    return out
+
+
 def ranked(signals: list) -> list:
     """Signalerna med poäng och status, högst poäng först."""
     out = []
@@ -300,7 +345,8 @@ def _chatgpt(data: dict, sig: dict) -> None:
     except Exception:
         return
     chatgpt_ui.render_export(sig.get("ticker", ""), {STORE: data}, ["insider"], key=f"insider_{sig['id']}",
-                             name=sig.get("name", ""), rows={"insider": sig}, on_apply=lambda: _save(data))
+                             name=sig.get("name", ""), rows={"insider": sig}, on_apply=lambda: _save(data),
+                             scan=_load_auto_scan())
 
 
 def _rc():
@@ -353,6 +399,185 @@ def auto_to_signal(row: dict) -> dict:
     return sig
 
 
+# ── Skanningen mot arkets rader ──────────────────────────────────────────────
+# Fälten skanningen föreslår för en rad som redan finns. Grind och trigger är inte med: de visas bara som text
+# (om de får föreslås är ägarens beslut, planens batch 15). okar_25 sätts aldrig av skanningen.
+SCAN_FIELDS = ("insiders", "role", "amount", "aterkommande", "cluster_avg", "efter_fall")
+
+
+def _ins_id(value) -> Optional[int]:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _yf(ticker) -> str:
+    return str(ticker or "").strip().upper().replace(" ", "-")
+
+
+@lru_cache(maxsize=4096)
+def _forms(yf: str) -> frozenset:
+    """Arkformerna för tickern (thor.ticker.forms): 'VOLV-B.ST' → VOLV-B.ST, VOLV-B, VOLV B."""
+    try:
+        from thor.ticker import forms
+        return frozenset(str(f).upper() for f in forms(yf))
+    except Exception:
+        return frozenset({yf})
+
+
+def same_company(a, b) -> bool:
+    """Samma bolag i två tickerformer: 'VOLV B' skrivet för hand = 'VOLV-B.ST' i skanningen (thor.ticker.forms).
+    Två former som båda har börssuffix måste vara lika — 'ABB.ST' är inte 'ABB.HE'."""
+    ya, yb = _yf(a), _yf(b)
+    if not ya or not yb:
+        return False
+    if ya == yb:
+        return True
+    if "." in ya and "." in yb:
+        return False
+    return bool(_forms(ya) & _forms(yb))
+
+
+def match_signal(cluster: dict, signals: list) -> Optional[dict]:
+    """Arkets rad för skanningens kluster, eller None: först samma ins_id, sedan samma ticker i någon form. En rad
+    med ett annat ins_id är ett annat bolag och matchas inte på tickern."""
+    cid = _ins_id((cluster or {}).get("ins_id"))
+    rows = [s for s in signals or [] if isinstance(s, dict)]
+    if cid is not None:
+        hit = next((s for s in rows if _ins_id(s.get("ins_id")) == cid), None)
+        if hit is not None:
+            return hit
+    for s in rows:
+        sid = _ins_id(s.get("ins_id"))
+        if cid is not None and sid is not None and sid != cid:
+            continue
+        if same_company(s.get("ticker"), (cluster or {}).get("ticker")):
+            return s
+    return None
+
+
+def cluster_for(sig: dict, clusters: list, signals: list) -> Optional[dict]:
+    """Skanningens kluster för arkets rad — det kluster som match_signal ger just den här raden."""
+    return next((c for c in clusters or [] if isinstance(c, dict) and match_signal(c, signals) is sig), None)
+
+
+def clusters_by_row(clusters: list, signals: list) -> dict:
+    """{id(rad): kluster} för hela arket i ett svep (första klustret per rad) — samma matchning som cluster_for."""
+    out: dict = {}
+    for c in clusters or []:
+        if isinstance(c, dict):
+            hit = match_signal(c, signals)
+            if hit is not None:
+                out.setdefault(id(hit), c)
+    return out
+
+
+def same_cluster(sig: dict, cluster: dict) -> Optional[bool]:
+    """Gäller skanningens kluster raden? True när köpen började senast den dag raden lades in (Upptäckt), False när
+    alla köpen är senare — ett nytt kluster. None när något av datumen saknas."""
+    found = _date(sig.get("found"))
+    first = _date(((cluster or {}).get("auto") or {}).get("first_buy"))
+    if found is None or first is None:
+        return None
+    return first <= found
+
+
+def _empty(value) -> bool:
+    return value is None or (isinstance(value, str) and not value.strip())
+
+
+def rolled_out(sig: dict, cluster: dict) -> bool:
+    """Har köp fallit ur skanningens 30-dagarsfönster? Ja när skanningen har färre insiders eller lägre belopp än
+    raden — ett kluster som bara växer sänker aldrig något av dem. Jämförs bara när båda talen finns."""
+    c = cluster or {}
+    for k in ("insiders", "amount"):
+        new, cur = _num(c.get(k)), _num((sig or {}).get(k))
+        if new is not None and cur is not None and new < cur:
+            return True
+    return False
+
+
+def held_back_avg(sig: dict, cluster: dict) -> Optional[float]:
+    """Skanningens snittkurs när den inte föreslås för att köp fallit ur fönstret (samma kluster, raden har en annan
+    snittkurs) — talet bygger då bara på de senaste köpen. Bara för en text utan Använd; None annars."""
+    c = cluster or {}
+    avg, cur = _num(c.get("cluster_avg")), _num((sig or {}).get("cluster_avg"))
+    if not avg or avg <= 0 or cur is None or abs(cur - avg) <= 1e-9:
+        return None
+    return avg if same_cluster(sig, c) is True and rolled_out(sig, c) else None
+
+
+def scan_offers(sig: dict, cluster: dict) -> dict:
+    """{fält: värde} ur skanningens kluster för en rad som redan finns i arket. Bara förslag — inget skrivs här.
+
+    Aldrig en nedgradering: fönstret rullar från dagens datum, så ett lägre antal eller belopp är köp som fallit ur
+    fönstret, och skanningens 'nej' är inget besked ('efter fall' kräver känd F-score). Antal, belopp och roll
+    föreslås därför bara när de är högre, kryssen bara som ja. Ett ifyllt fält ändras bara inom samma kluster
+    (same_cluster); ett nytt kluster ger inga förslag, och utan datum fylls bara tomma fält. En annan snittkurs
+    föreslås bara när fönstret fortfarande har alla radens köp: har köp fallit ur fönstret (rolled_out) bygger
+    snittet bara på de senaste köpen och hålls tillbaka — då fylls bara en tom snittkurs. Grind och trigger
+    föreslås aldrig."""
+    c = cluster or {}
+    same = same_cluster(sig, c)
+    if same is False:
+        return {}
+    out = {}
+
+    def put(field, new, higher) -> None:
+        if new is None:
+            return
+        cur = sig.get(field)
+        if _empty(cur) or (same and higher(cur)):
+            out[field] = new
+
+    n = _num(c.get("insiders"))
+    put("insiders", int(n) if n is not None else None,
+        lambda cur: _num(cur) is None or int(n) > _num(cur))
+    role = c.get("role") if c.get("role") in ROLES else None
+    put("role", role, lambda cur: ROLE_POINTS.get(role, 0) > ROLE_POINTS.get(cur, -1))
+    amt = _num(c.get("amount"))
+    put("amount", amt, lambda cur: _num(cur) is None or amt > _num(cur))
+    avg = _num(c.get("cluster_avg"))
+    rolled = rolled_out(sig, c)
+    put("cluster_avg", avg if avg and avg > 0 else None,
+        lambda cur: not rolled and (_num(cur) is None or abs(_num(cur) - avg) > 1e-9))
+    for k in ("aterkommande", "efter_fall"):
+        if c.get(k) is True and sig.get(k) is not True:
+            out[k] = True
+    return {k: out[k] for k in SCAN_FIELDS if k in out}
+
+
+def scan_suggestions(sig: dict, scan: Optional[dict]) -> dict:
+    """{fält: (värde, datum, enhet)} — skanningens förslag för raden (scan_offers på klustret som matchar), som
+    underlaget till ChatGPT läser dem. Tomt utan skanning eller kluster. Ren funktion."""
+    clusters = [c for c in (scan or {}).get("clusters") or [] if isinstance(c, dict)]
+    cl = cluster_for(sig, clusters, [sig]) if isinstance(sig, dict) else None
+    if cl is None:
+        return {}
+    asof = str((scan or {}).get("generated") or "")[:10]
+    units = {"insiders": "st", "amount": "tkr", "cluster_avg": str(cl.get("currency") or "")}
+    return {k: (v, asof, units.get(k, "")) for k, v in scan_offers(sig, cl).items()}
+
+
+def _sv(x: float, decimals: int = 0) -> str:
+    """Tal på svenska: 1 300 · 0,95."""
+    return f"{x:,.{decimals}f}".replace(",", " ").replace(".", ",")
+
+
+def amount_note(cluster: dict) -> str:
+    """Underlaget för beloppet: lokal valuta och kursen skanningen räknade om med (grov fast tabell, så nära
+    500 och 1 000 tkr kan poängen hänga på kursen). Tom sträng för SEK eller utan lokalt belopp."""
+    c = cluster or {}
+    ccy = str(c.get("currency") or "").upper()
+    local, amt = _num((c.get("auto") or {}).get("amount_local")), _num(c.get("amount"))
+    if not ccy or ccy == "SEK" or not local or amt is None:
+        return ""
+    return f"{_sv(local)} t{ccy} × kurs {_sv(amt / local, 2)} (grov)"
+
+
 def _auto_scan(data: dict) -> None:
     auto = _load_auto_scan()
     clusters = [c for c in auto.get("clusters", []) if isinstance(c, dict)]
@@ -363,11 +588,11 @@ def _auto_scan(data: dict) -> None:
         st.caption(
             "Börsdatas insynsregister, riktiga köp senaste 30 dagarna, samma "
             "poäng/grind/trigger som arket (insider_scan.py, vardagar 08/12/18). "
-            "Grind '— ej körd —' betyder att något kräver dig: F-score ligger "
-            "inte i API-licensen, 'väg till FCF' och 'strukturellt fallande' är "
-            "bedömningar. 'Ökar innehav > 25 %' sätts aldrig automatiskt, "
-            "'efter fall' bara när F-score är känd. Lägg in klustret i arket och "
-            "fyll i resten.")
+            "Grind '— ej körd —' betyder att något kräver dig: 'väg till FCF' och "
+            "'strukturellt fallande' är bedömningar, och F-score (Börsdata) kan "
+            "saknas för enstaka bolag. 'Ökar innehav > 25 %' sätts aldrig "
+            "automatiskt, 'efter fall' bara när F-score är känd. Lägg in klustret "
+            "i arket och fyll i resten — finns det redan får du förslag per fält.")
         if auto.get("error"):
             st.warning(f"Senaste skanningen felade: {auto['error']}")
         if not clusters:
@@ -375,10 +600,11 @@ def _auto_scan(data: dict) -> None:
                 st.caption("Ingen skanning hittades i Gisten ännu — körs av "
                            "scheduled-scan-workflowen.")
             return
-        existing = {str(s.get("ticker", "")).strip().upper()
-                    for s in data.get("signals", [])}
+        signals = data.get("signals", [])
+        asof = str(auto.get("generated") or "")[:10]
         for row in clusters:
             t = str(row.get("ticker", "")).upper()
+            hit = match_signal(row, signals)       # ins_id först, sedan tickern i någon form ('VOLV B' = VOLV-B.ST)
             stat = row.get("status") or "–"
             color = STATUS_COLOR.get(stat, DIM)
             amt = _num(row.get("amount"))
@@ -417,12 +643,59 @@ def _auto_scan(data: dict) -> None:
                             + (f" @ {b.get('price'):g}" if _num(b.get('price')) is not None else "")
                             for b in buys[:8]))
                 with c2:
-                    if t in existing:
-                        st.caption("Finns i arket.")
+                    if hit is not None:
+                        other = _yf(hit.get("ticker")) != _yf(t)
+                        st.caption("Finns i arket" + (f" som {hit.get('ticker')}" if other else "") + ".")
                     elif st.button("➕ Lägg in i arket", key=f"ins_auto_add_{t}"):
                         data["signals"].append(auto_to_signal(row))
                         _save(data)
                         st.rerun()
+                if hit is not None:
+                    _scan_offer_rows(data, hit, row, asof)
+
+
+def _offer(*args, **kw) -> None:
+    """Ett förslag med Använd (refresh_ui.offer). Tyst om modulen inte går att läsa."""
+    try:
+        import refresh_ui
+        refresh_ui.offer(*args, **kw)
+    except Exception:
+        pass
+
+
+def _scan_offer_rows(data: dict, sig: dict, cluster: dict, asof: str) -> None:
+    """Skanningens tal för en rad som redan finns i arket: ett förslag per fält (scan_offers), Använd skriver in
+    värdet i raden och rutan — att öppna sidan skriver ingenting, 💾 sparar. Grind och trigger bara som text."""
+    a = cluster.get("auto") or {}
+    if same_cluster(sig, cluster) is False:
+        st.caption(f"Skanningens köp började {a.get('first_buy')}, efter att raden lades in "
+                   f"({sig.get('found')}) — ett nytt kluster, inga förslag.".replace("$", "\\$"))
+        return
+    offers = scan_offers(sig, cluster)
+    sid = sig["id"]
+    window = f"köp {a.get('first_buy')} – {a.get('last_buy')}" if a.get("first_buy") else ""
+    spec = {   # fält → (etikett, rutans nyckel, cast, enhet, underlag)
+        "insiders": ("Antal insiders", f"ins_n_{sid}", int, "",
+                     "räknar köparnamn: en person och hens bolag blir två"),
+        "role": ("Högsta roll", f"ins_r_{sid}", None, "", ""),
+        "amount": ("Belopp", f"ins_a_{sid}", float, "tkr", amount_note(cluster)),
+        "aterkommande": ("Återkommande köpare", f"ins_b_{sid}_aterkommande", None, "", ""),
+        "cluster_avg": ("Klustrets snittkurs", f"ins_ca_{sid}", float, str(cluster.get("currency") or ""), window),
+        "efter_fall": ("Efter fall > 20 %", f"ins_b_{sid}_efter_fall", None, "", str(a.get("efter_fall_note") or "")),
+    }
+    for field, value in offers.items():
+        label, wkey, cast, unit, note = spec[field]
+        _offer(sig, field, value, label, key=f"ins_scan_{sid}_{field}", source="Skanningen", asof=asof,
+               widget_key=wkey, on_apply=lambda: _save(data), cast=cast,
+               fmt=_sv if field == "amount" else "{:g}", unit=unit, note=note)
+    if not offers:
+        st.caption("Inga förslag — arket har samma eller högre tal.")
+    held = held_back_avg(sig, cluster)
+    if held is not None:
+        ccy = str(cluster.get("currency") or "")
+        st.caption(f"Klustrets snittkurs i fönstret {held:g}{f' {ccy}' if ccy else ''} — köp har fallit ur "
+                   f"fönstret, inget förslag.".replace("$", "\\$"))
+    st.caption("Grind och trigger ur skanningen är bara text — dem väljer du själv i raden.")
 
 
 def _summary(data: dict) -> None:
@@ -493,6 +766,8 @@ def _signals(data: dict) -> None:
 
     rc = _rc()
     foc = rc.focus("insider", [r["signal"].get("ticker") for r in rows]) if rc else None
+    by_row = clusters_by_row([c for c in _load_auto_scan().get("clusters", []) if isinstance(c, dict)],
+                             data.get("signals", []))
     for r in rows:
         sig = r["signal"]
         if rc and not rc.same_ticker(sig.get("ticker"), foc):
@@ -502,15 +777,43 @@ def _signals(data: dict) -> None:
         head = (f"{sig.get('ticker','?')}"
                 f"  ·  {pts if pts is not None else '–'}/{MAX_SCORE} p"
                 f"  ·  {stat or 'ofullständig'}")
+        cl = by_row.get(id(sig))
         with st.expander(head, expanded=bool(foc)):
             top = rc.slot() if rc else None
-            _signal_body(data, sig, r, c)
+            _signal_body(data, sig, r, c, n_offers=len(scan_offers(sig, cl)) if cl else 0)
             if rc:
                 rc.fill(top, "insider", sig)
 
 
-def _signal_body(data: dict, sig: dict, r: dict, color: str) -> None:
+def _refresh_fscore(sig: dict) -> tuple:
+    """(F-score, datum, not) ur nattjobbets rad insider:<id> (sheets_refresh), eller (None, "", ""). not =
+    refresh_ui.matched_note, redan HTML-escapad: ' (matchat: …)' när nattjobbets bolag inte liknar radens namn."""
+    try:
+        import refresh_ui
+        blob = refresh_ui.load_refresh()
+        sug = refresh_ui.suggestion(blob, "insider", sig, "f_score")
+        note = refresh_ui.matched_note(blob, "insider", sig) if sug else ""
+    except Exception:
+        sug, note = None, ""
+    return (sug[0], sug[1], note) if sug else (None, "", "")
+
+
+def _sell_watch(sig: dict) -> None:
+    """Säljregel 3 och 5 uträknade för raden — bara text, ingen regel ändras. Säljregel 3 får matchat-noten när
+    nattjobbets F-score kommer från ett bolag vars namn inte liknar radens."""
+    from html import escape
+    color = {"stop": RED, "warn": AMBER}
+    fs, asof, note = _refresh_fscore(sig)
+    for text, level in sell_watch(sig, fs, asof):
+        extra = note if text.startswith("Säljregel 3") else ""     # noten är redan escapad
+        st.markdown(f"<div style='color:{color.get(level, DIM)};font-size:0.8rem;'>{escape(text)}{extra}</div>",
+                    unsafe_allow_html=True)
+
+
+def _signal_body(data: dict, sig: dict, r: dict, color: str, n_offers: int = 0) -> None:
     changed = False
+    if n_offers:
+        st.caption(f"🤖 Skanningen har {n_offers} förslag för raden — under Automatisk skanning ovan.")
 
     st.markdown(f"<b style='color:{TEXT};'>Poängsättning</b> "
                 f"<span style='color:{DIM};font-size:0.78rem;'>"
@@ -603,6 +906,7 @@ def _signal_body(data: dict, sig: dict, r: dict, color: str) -> None:
     if is_chase(sig):
         st.warning(f"Kursen är {vs:+.1f} % mot klustersnittet — över "
                    f"+{CHASE_PCT:g} % är edgen förbrukad. Passa.")
+    _sell_watch(sig)
 
     com = st.text_input("Kommentar", value=sig.get("comment", ""),
                         key=f"ins_c_{sig['id']}")

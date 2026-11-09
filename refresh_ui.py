@@ -6,6 +6,9 @@ jobbets färska tal som FÖRSLAG. Knappen skriver in värdet i raden och i
 widgetens session-state via on_click-callback (det enda tillfället då
 Streamlit tillåter att en instansierad widgets state ändras) — inget
 skrivs annars, och 💾 Spara sköter persistensen som vanligt.
+
+offer() är samma knapp för förslag av vilken typ som helst (heltal, text, val,
+kryss) ur andra källor än bloben — t.ex. Insider-skanningen.
 """
 from __future__ import annotations
 
@@ -152,13 +155,61 @@ def suggestion(blob: dict, sheet: str, row: dict, source_field: str,
         return None
 
 
-def _apply(row: dict, field: str, value: float, widget_key: Optional[str],
+def _apply(row: dict, field: str, value, widget_key: Optional[str],
            on_apply: Optional[Callable]) -> None:
     row[field] = value
     if widget_key:
         st.session_state[widget_key] = value
     if on_apply:
         on_apply()
+
+
+def _shown(value, fmt="{:g}") -> str:
+    """Förslagets värde som text: kryss som ja/nej, tal med fmt (formatsträng eller funktion), text som den står."""
+    if isinstance(value, bool):
+        return "ja" if value else "nej"
+    if isinstance(value, (int, float)):
+        return fmt(value) if callable(fmt) else fmt.format(value)
+    return str(value)
+
+
+def _same(cur, value) -> bool:
+    """Har fältet redan förslagets värde? Kryss som kryss, tal som tal, text utan blanksteg i kanterna."""
+    if isinstance(value, bool):
+        return bool(cur) == value
+    if isinstance(value, (int, float)):
+        try:
+            return cur is not None and cur != "" and abs(float(cur) - float(value)) < 1e-6
+        except (TypeError, ValueError):
+            return False
+    return str(cur if cur is not None else "").strip() == str(value).strip()
+
+
+def offer(row: dict, field: str, value, label: str, key: str, source: str = "Börsdata", asof: str = "",
+          widget_key: Optional[str] = None, on_apply: Optional[Callable] = None, cast: Optional[Callable] = None,
+          fmt="{:g}", unit: str = "", note: str = "") -> bool:
+    """Ett förslag av vilken typ som helst (tal, text, val, kryss): '🤖 <källa> <datum>: <etikett> <värde> · Använd'.
+    Använd skriver fältet i raden och widgetens state via on_click (_apply, samma mekanik som suggest) — inget annat
+    skrivs, och att rita förslaget skriver ingenting. cast=int för heltalsrutor (Streamlit tar inte ett flyttal i en
+    heltalsruta). Ritas inte när fältet redan har värdet. note = kort tillägg efter värdet (underlaget). key gör
+    knappen unik. True när förslaget ritades."""
+    if value is None:
+        return False
+    if cast is not None:
+        try:
+            value = cast(value)
+        except (TypeError, ValueError):
+            return False
+    if _same(row.get(field), value):
+        return False
+    when = f" {asof}" if asof else ""
+    text = (f"🤖 {source}{when}: {label} {_shown(value, fmt)}" + (f" {unit}" if unit else "")
+            + (f" — {note}" if note else ""))
+    c1, c2 = st.columns([3, 1], vertical_alignment="center")
+    c1.markdown(f"<span style='color:{DIM};font-size:0.78rem;'>{html.escape(text).replace('$', '&#36;')}</span>",
+                unsafe_allow_html=True)
+    c2.button("Använd", key=f"rf_offer_{key}", on_click=_apply, args=(row, field, value, widget_key, on_apply))
+    return True
 
 
 def suggest(sheet: str, row: dict, field: str, source_field: str, label: str,

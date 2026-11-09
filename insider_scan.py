@@ -20,8 +20,8 @@ is_chase). Det här scriptet fyller bara arkets INMATNINGSFÄLT ur data:
   price_now     senaste stängning (Börsdata)
   gate          Ja när alla fem grindkriterier mäts OK, Nej när något mätbart
                 faller, "" (= "Kör kvalitetsgrinden!") när något kräver dig —
-                F-score ligger inte i licensen, "väg till FCF" och
-                "strukturellt fallande" är bedömningar
+                "väg till FCF" och "strukturellt fallande" är bedömningar, och
+                F-score (Börsdata, KPI 167 sedan PR #186) kan saknas för ett bolag
   trigger       A (stängning > MA20, MA20 planat/vänt) · B (1 mån > 0 och kurs
                 över klustersnitt) · Nej
   efter_fall    bara när kursen är ≥ 20 % under 52v-topp OCH F-score känd ≥ 5
@@ -198,7 +198,7 @@ def auto_gate(snap: dict, fx: float = 1.0) -> tuple:
 
     fs = _f(snap.get("f_score"))
     if fs is None:
-        add("F-score ≥ 5", "unknown", "F-score ligger inte i API-licensen — kolla i Börsdata")
+        add("F-score ≥ 5", "unknown", "F-score saknas i Börsdata för bolaget — kolla själv")
     else:
         add("F-score ≥ 5", "ok" if fs >= FSCORE_MIN else "fail", f"F-score {fs:g}")
 
@@ -223,7 +223,7 @@ def auto_gate(snap: dict, fx: float = 1.0) -> tuple:
     rg = _f(snap.get("revenue_growth"))
     if rg is None:
         add("Ej strukturellt fallande omsättning", "unknown",
-            "tillväxt-KPI:n ligger inte i licensen — kolla omsättningstrenden")
+            "omsättningstillväxten saknas i Börsdata för bolaget — kolla omsättningstrenden")
     elif rg >= 0:
         add("Ej strukturellt fallande omsättning", "ok", f"omsättning {rg * 100:+.0f} %")
     else:

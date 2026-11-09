@@ -187,7 +187,8 @@ def test_decisions_are_bara_du():
     assert all(card[g.key] == cat.BARA_DU for g in sc.GATES if g.key in card)
     ins_ = who("insider")
     assert ins_["gate"] == cat.BARA_DU and ins_["trigger"] == cat.BARA_DU
-    assert ins_["insiders"] == cat.CHATGPT and ins_["price_now"] == cat.BORSDATA
+    assert ins_["insiders"] == cat.BORSDATA and ins_["price_now"] == cat.BORSDATA    # skanningen har antalet
+    assert ins_["okar_25"] == cat.CHATGPT                                             # sätts aldrig av skanningen
     # poäng är bedömningar ChatGPT får föreslå, fakta med källa är ChatGPT, Börsdatas tal är Börsdata
     assert rule["ds_runway"] == cat.BEDOMNING and rule["aqs_kostnad"] == cat.BEDOMNING
     assert rule["unit_cost"] == cat.CHATGPT and rule["ev_ebitda"] == cat.BORSDATA
