@@ -96,6 +96,36 @@ def test_geo_pair_warns_when_the_saved_value_is_a_thousand_times_off():
     assert moz.values and moz.note.startswith("Under 1 koz — står talen i Moz?")
 
 
+def test_geo_pair_guards_ounces_of_a_small_royalty_company():
+    """Nivå 3 (Metalla, Vox, Sailfish) rapporterar '4 300 GEOs' i uns. Skrivna i koz-rutorna hade de gett 1000× för hög
+    GEO per aktie utan varning — nu inget förslag, med eller utan kurs. Samma tal i koz ger förslaget."""
+    small = {"shares_now_m": 91.0, "shares_3y_ago_m": 60.0, "shares_year": 2025}
+    s = p.geo_pair_suggestion(4300, 2100, small)
+    assert s.values == {} and "uns" in s.text and "koz" in s.text
+    ok = p.geo_pair_suggestion(4.3, 2.1, small)
+    assert ok.values["geo_now"] == pytest.approx(4.73e-05, rel=1e-3) and ok.values["geo_3y"] == pytest.approx(3.5e-05)
+    metalla = {"shares_now_m": 91.5, "shares_3y_ago_m": 52.0, "shares_year": 2025, "price": 5.1, "currency": "CAD"}
+    for fresh in (metalla, dict(metalla, price=None)):
+        s = p.geo_pair_suggestion(4812, 3401, fresh)
+        assert s.values == {} and "står talet i uns?" in s.text                 # över KOZ_MAX
+    good = p.geo_pair_suggestion(4.812, 3.401, metalla)
+    assert good.values == {"geo_now": p.geo_per_share(4.812, 91.5), "geo_3y": p.geo_per_share(3.401, 52.0)}
+
+
+def test_geo_pair_guards_ounces_per_share_under_koz_max():
+    """Uns under KOZ_MAX syns per aktie: över GEO_PS_MAX uns per aktie, eller mer intäkt per aktie på 1 000 USD/uns
+    än nattens kurs (royaltybolag handlas långt över sin intäkt per aktie)."""
+    s = p.geo_pair_suggestion(1200, 900, {"shares_now_m": 30.0, "shares_3y_ago_m": 25.0})
+    assert s.values == {} and s.text.startswith("GEO/aktie 0,040000 är mer än något royaltybolag har — står talen i uns?")
+    small = {"shares_now_m": 75.0, "shares_3y_ago_m": 60.0, "price": 3.2, "currency": "CAD"}
+    s = p.geo_pair_suggestion(1250, 980, small)
+    assert s.values == {}
+    assert s.text == ("GEO/aktie 0,016667 ger 16,67 i intäkt per aktie redan vid 1 000 USD/uns — mer än kursen "
+                      "3,20 CAD. Står talen i uns? Skriv koz (tusen uns).")
+    assert p.geo_pair_suggestion(1.25, 0.98, small).values                       # samma tal i koz: förslaget
+    assert p.geo_pair_suggestion(650, 560, NIGHT).values                          # FNV: 3,38 mot kursen 120,50
+
+
 def test_shares_note_names_the_years_and_the_basis():
     assert p.shares_note(NIGHT) == ("Börsdatas aktieantal: 192,40 milj. (2025) och 191,00 milj. (2022), från "
                                     "årsrapporterna (basic vid årsskiftet, inte vägt). Ta GEO för samma år — "
@@ -108,7 +138,8 @@ def test_shares_note_names_the_years_and_the_basis():
 # ── 2. P/NAV nu (rent) ───────────────────────────────────────────────────────
 def test_pnav_is_price_over_navps_in_the_same_currency():
     s = p.pnav_suggestion(NIGHT, 147.0, "usd", bottom=0.75)
-    assert s.values == {"pnav_now": 0.82}                                  # 120,5 / 147 = 0,8197 → två decimaler
+    assert s.values["pnav_now"] == pytest.approx(120.5 / 147)
+    assert s.values == {"pnav_now": 0.819728}                              # sex värdesiffror; rutan visar 0,82
     assert s.text == ("🤖 P/NAV nu = kurs 120,50 USD (Börsdata 2026-11-07) / NAV per aktie 147 USD = 0,82 — mot "
                       "botten 0,75: +9,3 %")
     assert p.pnav_suggestion(NIGHT, 147.0, "USD").text.endswith("= 0,82")  # utan botten: ingen grindrad
@@ -136,6 +167,43 @@ def test_pnav_guards_a_total_nav_typed_as_per_share():
     s = p.pnav_suggestion(NIGHT, 28_000.0, "USD")                         # total NAV i miljoner
     assert s.values == {} and "orimligt" in s.text
     assert p.pnav_suggestion(NIGHT, 1.0, "USD").values == {}               # P/NAV 120 — fel enhet
+
+
+GATE = {"ev_now": 18.0, "ev_median": 20.0, "geo_now": 0.05, "geo_3y": 0.04}    # under median och växande GEO
+
+
+@pytest.mark.parametrize("price, navps, bottom, ccy, shown, label", [
+    (1.66, 4.10, 0.35, "CAD", "= 0,40 — mot botten 0,35: +15,7 %", p.R_NEUTRAL),     # 0,40 hade gett +14,3 %
+    (115.49, 100.0, 1.00, "USD", "= 1,15 — mot botten 1,00: +15,5 %", p.R_NEUTRAL),  # 1,15 hade gett +15,0 %
+    (127.15, 147.0, 0.75, "USD", "= 0,86 — mot botten 0,75: +15,3 %", p.R_NEUTRAL),  # 0,86 hade gett +14,7 %
+    (135.85, 147.0, 0.80, "USD", "= 0,92 — mot botten 0,80: +15,5 %", p.R_NEUTRAL),
+    (88.53, 100.0, 0.77, "USD", "= 0,89 — mot botten 0,77: +15,0 %", p.R_BUY),       # 0,89 hade gett +15,6 %
+    (115.04, 100.0, 1.00, "USD", "= 1,15 — mot botten 1,00: +15,04 %", p.R_NEUTRAL),  # kantregeln: inte +15,0 %
+])
+def test_pnav_near_the_gate_writes_what_the_exact_quotient_says(price, navps, bottom, ccy, shown, label):
+    """Två decimaler flyttade P/NAV upp till ±0,005 — upp till 1,4 procentenheter mot botten, över ±15 %-grinden åt
+    båda hållen. Det skrivna talet ger nu samma signal som kvoten, och procenten står på rätt sida om 15."""
+    s = p.pnav_suggestion(dict(NIGHT, price=price, currency=ccy), navps, ccy, bottom)
+    exact = price / navps
+    assert s.values["pnav_now"] == pytest.approx(exact)
+    assert s.text.endswith(shown)
+    written = p.royalty_signal(dict(GATE, pnav_now=s.values["pnav_now"], pnav_bottom=bottom))
+    assert written == p.royalty_signal(dict(GATE, pnav_now=exact, pnav_bottom=bottom))
+    assert written.label == label
+    pct = float(shown.rsplit(": ", 1)[1].rstrip(" %").replace(",", "."))
+    assert (pct <= p.DISCOUNT_MAX) == (p.discount_vs_bottom(exact, bottom) <= p.DISCOUNT_MAX)
+
+
+def test_pnav_six_digits_never_cross_the_gate():
+    """1,150000006 med sex värdesiffror är 1,15 = köpläge, men kvoten ligger +15,000001 % över botten — då skrivs
+    kvoten själv. Procenten under kantregeln: fler decimaler, eller '≈' precis på gränsen."""
+    s = p.pnav_suggestion(dict(NIGHT, price=115.0000006), 100.0, "USD", bottom=1.0)
+    assert s.values == {"pnav_now": 115.0000006 / 100.0}
+    assert p.royalty_signal(dict(GATE, pnav_now=s.values["pnav_now"], pnav_bottom=1.0)).label == p.R_NEUTRAL
+    assert s.text.endswith("mot botten 1,00: ≈+15,0 %")
+    assert p.pnav_suggestion(dict(NIGHT, price=115.49), 100.0, "USD", bottom=1.0).values == {"pnav_now": 1.1549}
+    assert [p._gate_pct(d) for d in (9.297052, -4.0, 15.04, 14.96, -0.04)] == [
+        "+9,3 %", "−4,0 %", "+15,04 %", "+15,0 %", "−0,04 %"]
 
 
 # ── 3. Ny egen botten (rent) ─────────────────────────────────────────────────
@@ -282,6 +350,23 @@ def test_geo_calculator_refuses_ounces_typed_as_koz(page):
     assert "står talet i uns?" in _captions(at)
 
 
+def test_geo_calculator_refuses_ounces_of_a_small_royalty_company(page):
+    """1 250 och 980 uns i koz-rutorna: under KOZ_MAX och GEO_PS_MAX, men intäkten per aktie vore 16,67 mot kursen
+    3,20 — ingen Använd. Samma tal i koz ger förslaget."""
+    at = page(_blob(price=3.2, currency="CAD", shares_now_m=75.0, shares_3y_ago_m=60.0), _store())
+    at.run()
+    at.number_input(key="ro_geokoz_r1").set_value(1250.0)
+    at.number_input(key="ro_geokoz3_r1").set_value(980.0).run()
+    assert not at.exception, at.exception
+    assert _btn(at, "rf_offer_ro_geo_calc_r1") is None
+    assert "mer än kursen 3,20 CAD. Står talen i uns? Skriv koz (tusen uns)." in _captions(at)
+    assert "geo_now" not in _row(at)
+    at.number_input(key="ro_geokoz_r1").set_value(1.25)
+    at.number_input(key="ro_geokoz3_r1").set_value(0.98).run()
+    assert not at.exception, at.exception
+    assert _btn(at, "rf_offer_ro_geo_calc_r1") is not None
+
+
 def test_geo_calculator_without_share_counts_says_so(page):
     at = page(_blob(shares_now_m=None, shares_3y_ago_m=None), _store())
     at.run()
@@ -307,11 +392,29 @@ def test_pnav_calculator_offers_price_over_navps_and_use_writes_the_field(page):
     assert _row(at)["pnav_now"] == 1.2                                       # signalen läser det sparade talet
     _btn(at, "rf_offer_ro_pnav_calc_r1").click().run()
     assert not at.exception, at.exception
-    assert _row(at)["pnav_now"] == 0.82 and at.number_input(key="ro_pn_r1").value == 0.82
+    assert _row(at)["pnav_now"] == pytest.approx(120.5 / 147)
+    assert at.number_input(key="ro_pn_r1").value == _row(at)["pnav_now"]
     assert _row(at)["pnav_bottom"] == 0.75
     assert "navps" not in str(_row(at)) and "USD" not in str(_row(at))       # NAV per aktie och valutan sparas inte
     assert _btn(at, "rf_offer_ro_pnav_calc_r1") is None
     assert not page.saves
+
+
+def test_pnav_calculator_near_the_gate_writes_the_unrounded_value(page):
+    """127,15 / 147 = 0,86497 ligger +15,3 % över botten 0,75: förslaget visar inte '+14,7 %' (0,86), och Använd
+    vänder inte kortet till köpläge."""
+    at = page(_blob(price=127.15), _store(pnav_now=1.30, pnav_bottom=0.75, **GATE))
+    at.run()
+    assert _head(at).endswith(p.R_NEUTRAL)
+    at.number_input(key="ro_navps_r1").set_value(147.0)
+    at.selectbox(key="ro_navccy_r1").set_value("USD").run()
+    assert not at.exception, at.exception
+    assert "NAV per aktie 147 USD = 0,86 — mot botten 0,75: +15,3 %" in _markdown(at)
+    assert "+14,7 %" not in _markdown(at)
+    _btn(at, "rf_offer_ro_pnav_calc_r1").click().run()
+    assert not at.exception, at.exception
+    assert _row(at)["pnav_now"] == pytest.approx(127.15 / 147)
+    assert p.royalty_signal(_row(at)).label == p.R_NEUTRAL and _head(at).endswith(p.R_NEUTRAL)
 
 
 def test_pnav_calculator_says_why_when_the_currencies_differ(page):
@@ -345,9 +448,24 @@ def test_new_bottom_from_the_calculated_pnav_with_the_basis_reminder(page):
             "NAV-basen är densamma.") in _markdown(at)
     _btn(at, "rf_offer_ro_newbottom_r1").click().run()
     assert not at.exception, at.exception
-    assert _row(at)["pnav_bottom"] == 0.82 and at.number_input(key="ro_pb_r1").value == 0.82
+    assert _row(at)["pnav_bottom"] == pytest.approx(120.5 / 147)
+    assert at.number_input(key="ro_pb_r1").value == _row(at)["pnav_bottom"]
     assert _row(at)["pnav_now"] == 1.0                                       # bara botten skrivs
     assert _btn(at, "rf_offer_ro_newbottom_r1") is None
+
+
+def test_new_bottom_just_under_the_saved_bottom_shows_the_difference(page):
+    """Det räknade P/NAV:t är oavrundat: 0,8996 under botten 0,90 står inte som '0,90 är under 0,90'."""
+    at = page(_blob(price=89.96), _store(pnav_now=1.0, pnav_bottom=0.90))
+    at.run()
+    at.number_input(key="ro_navps_r1").set_value(100.0)
+    at.selectbox(key="ro_navccy_r1").set_value("USD").run()
+    assert not at.exception, at.exception
+    assert "= 0,90 — mot botten 0,90: −0,04 %" in _markdown(at)
+    assert "Ny egen botten? P/NAV nu 0,8996 (räknat ovan) är under den sparade botten 0,9000." in _markdown(at)
+    _btn(at, "rf_offer_ro_newbottom_r1").click().run()
+    assert not at.exception, at.exception
+    assert _row(at)["pnav_bottom"] == pytest.approx(0.8996)
 
 
 def test_new_bottom_from_the_saved_pnav_without_the_calculator(page):
