@@ -200,9 +200,10 @@ def test_ark_shows_only_score_fields_and_writes_to_shared_store(monkeypatch):
         "Ekonomi", "Confidence", "Confidence", "🤖 Läs ur presentationen / tekniska rapporten (AI-förslag",
         "📋 Underlag till ChatGPT"]
     assert any(l.startswith("Ekonomi") and l.endswith("3/4 ifyllda") for l in labels)   # GPR saknar produktionsenhet
-    keys = {t.key for t in at.text_input}
-    assert "cf_GPR_aisc_v" in keys and "cf_GPR_production_current_v" in keys
-    assert "cf_GPR_reserve_proven_v" not in keys and "cf_GPR_grade_v" not in keys   # Durretts fält syns inte
+    import form_keys as fk
+    keys = fk.fields(at.text_input, "cf_GPR_")
+    assert "aisc" in keys and "production_current" in keys
+    assert "reserve_proven" not in keys and "grade" not in keys   # Durretts fält syns inte
     # Börsdata: Använd skriver till det gemensamma arket
     at.button(key="asym_rf_GPR_market_cap_musd").click().run()
     assert not at.exception, at.exception
@@ -214,7 +215,7 @@ def test_ark_shows_only_score_fields_and_writes_to_shared_store(monkeypatch):
     p = at.session_state["confidence"]["companies"]["GPR"]["fields"]["commodity_price"]
     assert p["value"] == 3100.5 and p["kind"] == "ASSUMPTION" and "GC=F" in p["source"] and p["pub_date"] == "2026-09-26"
     # ett ekonomifält
-    at.text_input(key="cf_GPR_aisc_v").set_value("1400").run()
+    fk.box(at.text_input, "cf_GPR_", "aisc").set_value("1400").run()
     at.button(key="FormSubmitter:asym_econ_GPR-Uppdatera arket").click().run()   # knappen hette Spara
     assert not at.exception, at.exception
     assert at.session_state["confidence"]["companies"]["GPR"]["fields"]["aisc"]["value"] == 1400.0
@@ -259,8 +260,9 @@ def test_uranium_has_no_futures_and_developer_sheet_shows_study_fields(monkeypat
     at.run()
     assert not at.exception, at.exception
     assert "har ingen termin på Yahoo" in _text(at) and not any(b.key == "asym_fut_LEX" for b in at.button)
-    keys = {t.key for t in at.text_input}
-    assert "cf_LEX_npv_musd_v" in keys and "cf_LEX_quarterly_burn_musd_v" in keys
+    import form_keys as fk
+    keys = fk.fields(at.text_input, "cf_LEX_")
+    assert "npv_musd" in keys and "quarterly_burn_musd" in keys
 
 
 def test_legacy_asymmetry_store_is_merged_once(monkeypatch):

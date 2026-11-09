@@ -12,10 +12,18 @@ from __future__ import annotations
 
 from typing import Optional
 
+from confidence.config import FIELD_BY_KEY
 from confidence.data.models import CompanyInput
 from confidence.data.provenance import Datapoint, dp
 
 SHEET = "confidence"
+_FX_FIELDS = frozenset({"price", "mcap_musd", "ev_musd", "fx_to_usd"})   # tal som jobbet räknar med kursvalutan
+# Valutorna fältet market_currency kan ta (samma lista som valen i arket) — DKK/CHF/PLN ingår, annars lästes en
+# dansk kurs som USD bredvid ett börsvärde i USD.
+_CCY_CHOICES = tuple(FIELD_BY_KEY["market_currency"].choices)
+# Källor vars MUSD-tal redan är omräknade till USD: sifferuppdateringen och håven ("Börsdata …") och
+# Asymmetrys Yahoo-reserv (asymmetry/fetch.yahoo_row: "Yahoo Finance (…)"). Allt annat kan stå i lokal valuta.
+AUTO_USD_SOURCES = ("Börsdata", "Yahoo Finance")
 # (fält i bloben, fält i bolaget, enhet, kind)
 _MAP = (("mcap_musd", "market_cap_musd", "MUSD", "ACTUAL"), ("price", "share_price", "valuta/aktie", "ACTUAL"),
         ("ev_musd", "enterprise_value_musd", "MUSD", "ACTUAL"), ("ev_ebitda", "ev_ebitda", "×", "ACTUAL"),
@@ -48,7 +56,16 @@ def proposals(blob: Optional[dict], company: CompanyInput, sheet: str = SHEET) -
     src = s.get("source_label") or f"Börsdata (sifferuppdatering {asof or '?'})"
     out = []
     ccy = str(s.get("currency") or "").upper()
+    # En kursvaluta utanför jobbets växelkurstabell (London i pence, 'GBX') räknas om med 1,0 i jobbet: börsvärde
+    # och EV vore då miljoner GBX som USD (~79× för högt) och växelkursen 1,0 fel. De talen föreslås inte alls.
+    try:
+        import sheets_refresh as _sr
+        unknown_ccy = bool(ccy) and ccy not in _sr.FX_TO_USD
+    except Exception:
+        unknown_ccy = False
     for bkey, fkey, unit, kind in _MAP:
+        if unknown_ccy and bkey in _FX_FIELDS:
+            continue
         v = s.get(bkey)
         if v is None:
             continue
@@ -58,6 +75,9 @@ def proposals(blob: Optional[dict], company: CompanyInput, sheet: str = SHEET) -
             continue
         if bkey in _PCT_FIELDS:
             v = v * _PCT_FIELDS[bkey]
+        # det som sparas: kursen med 6 värdesiffror (en pencekurs i pund, 0,00675, tål inte 4 decimaler), annars 4
+        # decimaler — och jämförelsen görs mot samma tal, så ett använt förslag inte dyker upp igen
+        v = float(f"{v:.6g}") if bkey == "price" else round(v, 4)
         cur = company.num(fkey) if company.has(fkey) else None
         if cur is not None and abs(cur - v) < 1e-6:
             continue
@@ -68,13 +88,13 @@ def proposals(blob: Optional[dict], company: CompanyInput, sheet: str = SHEET) -
             note = f"{ccy} → USD ur jobbets fasta tabell — kontrollera mot dagskurs"
         elif bkey == "price":
             unit = f"{ccy}/aktie" if ccy else unit
-        out.append((fkey, dp(round(v, 4), kind=kind, source=source, source_type="secondary", pub_date=asof,
+        out.append((fkey, dp(v, kind=kind, source=source, source_type="secondary", pub_date=asof,
                              unit=unit, note=note), cur))
     if ccy and (company.get("market_currency") is None or str(company.get("market_currency").value) != ccy) \
-            and ccy in ("USD", "CAD", "AUD", "GBP", "EUR", "SEK", "NOK"):
+            and ccy in _CCY_CHOICES:
         out.append(("market_currency", dp(ccy, kind="ACTUAL", source=src, source_type="secondary", pub_date=asof),
                     str(company.get("market_currency").value) if company.get("market_currency") else None))
     return out
 
 
-__all__ = ["proposals", "refresh_row", "Datapoint"]
+__all__ = ["proposals", "refresh_row", "Datapoint", "AUTO_USD_SOURCES"]

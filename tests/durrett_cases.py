@@ -148,11 +148,13 @@ def missing_everything() -> CompanyInput:
 
 
 def currency_mismatch() -> CompanyInput:
-    """Kurs i CAD utan växelkurs → börsvärde N/A, inte fel tal."""
+    """Kurs i CAD utan växelkurs och inget börsvärde i MUSD → börsvärdet går inte att räkna ur kurs × aktier: N/A,
+    inte fel tal. (MUSD-fälten är USD och växlas inte — bara kursen behöver växelkursen.)"""
     c = copper_developer()
     c.ticker = "FXM"
     fill(c, dict(market_currency="CAD"), **_MKT)
-    c.fields.pop("fx_to_usd", None)
+    for k in ("fx_to_usd", "market_cap_musd", "enterprise_value_musd"):
+        c.fields.pop(k, None)
     return c
 
 

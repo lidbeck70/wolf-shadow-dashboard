@@ -41,7 +41,7 @@ def score(ctx: Ctx, company_type: str, ss: dict) -> Score:
     cash = ss.get("cash_usd")
     mcap = ss.get("mcap_usd")
     if company_type in (dc.PRODUCER, dc.ROYALTY, dc.HYBRID):
-        fcf = ctx.usd("free_cash_flow_musd", required=False)
+        fcf = ctx.musd("free_cash_flow_musd", required=False)
         exp_capex = ctx.num("expansion_capex_musd", required=False)
         if fcf is not None:
             comps["coverage"] = (steps_ge(fcf, ((0.0, 80), (-1e18, 30)), 30) if fcf >= 0 else 30.0,

@@ -93,8 +93,15 @@ class Ctx:
             return None
         return v * f
 
+    def musd(self, key: str, required: bool = True) -> Optional[float]:
+        """Ett MUSD-fält — alltid miljoner USD, som fältens etiketter säger och som Börsdata-förslagen levererar dem
+        (sifferuppdateringen räknar om med valutan). Växlas aldrig: förr gångrades de med fx_to_usd när
+        market_currency ≠ USD, så en CAD-rad räknades om två gånger (börsvärde 1 600 → 1 168 MUSD)."""
+        return self.num(key, required)
+
     def usd(self, key: str, required: bool = True) -> Optional[float]:
-        """Belopp i USD: fält × fx_to_usd när market_currency ≠ USD."""
+        """Ett pris per aktie i USD: fält × fx_to_usd när market_currency ≠ USD (kursen står i handelsvalutan).
+        Bara för aktiekursen — MUSD-fält läses med musd()."""
         v = self.num(key, required)
         if v is None:
             return None

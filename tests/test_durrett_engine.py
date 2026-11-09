@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pytest
 
 import durrett_cases as dcs
+import form_keys as fk
 from confidence.data.models import CompanyInput
 from confidence.data.provenance import dp
 from engines.contract import validate_result
@@ -80,9 +81,9 @@ def test_share_structure_market_cap_and_ev():
     assert ss["mcap_usd"] == 1500 and ss["fd_mcap_usd"] == pytest.approx(6.0 * 260)
     assert ss["net_debt_usd"] == -80 and ss["ev_usd"] == 1420 and ss["fd_ev_usd"] == pytest.approx(1560 - 80)
     assert ss["serial_diluter"] is False
-    ctx = Ctx(dcs.lithium_explorer())                          # CAD → USD via fx_to_usd
+    ctx = Ctx(dcs.lithium_explorer())                          # CAD: bara kursen växlas — MUSD-fälten är USD
     ss = dilution.share_structure(ctx)
-    assert ss["mcap_usd"] == pytest.approx(60 * 0.73) and ss["price_usd"] == pytest.approx(0.6 * 0.73)
+    assert ss["mcap_usd"] == pytest.approx(60) and ss["price_usd"] == pytest.approx(0.6 * 0.73)
 
 
 def test_serial_diluter_is_flagged_and_caps_dilution_score():
@@ -400,7 +401,7 @@ def test_durrett_tab_renders_all_subtabs_without_network(monkeypatch):
             assert "Properties" in t2 and any(m.label == "DURRETT SCORE" for m in at.metric)
         if sub == "Arket":
             # arket: skriv in ett tal, tomt fält lämnas okänt, källa/datum följer med
-            at.text_input(key="ds_GPR_aisc").set_value("1500").run()
+            fk.sheet_box(at.text_input, "GPR", "aisc").set_value("1500").run()
             at.text_input(key="ds_src_GPR").set_value("MD&A Q2 2026").run()
             at.button(key="FormSubmitter:durrett_sheet_GPR-Uppdatera arket").click().run()
             assert not at.exception, at.exception
@@ -494,3 +495,383 @@ def test_more_tab_renders_one_extractor_even_with_an_openai_key(monkeypatch):
     at.run()
     assert not at.exception, at.exception
     assert len([t for t in at.text_area if t.key == "cf_xt_GPR_txt"]) == 1      # en extraktor, inte två
+
+
+# ── Steg 0 (ägarens beslut C): MUSD-fälten är USD, bara kursen växlas ──────────
+def test_a_cad_row_keeps_the_nightly_usd_amounts_after_use_all():
+    """Förr gångrades MUSD-fälten med fx_to_usd när valutan inte var USD — fast sifferuppdateringen redan räknat om
+    dem. En CAD-rad fick börsvärde 1 168 i stället för 1 600 MUSD och MCap/framtida vinst 3,4× i stället för 4,4×."""
+    from engines.durrett import refresh as dr
+    blob = {"generated": "2026-11-08T06:00", "rows": {"confidence:GPR": {
+        "ticker": "GPR", "ins_id": 105, "price": 8.75, "asof": "2026-11-07", "currency": "CAD",
+        "mcap_musd": 1600.0, "ev_musd": 1400.0, "fx_to_usd": 0.73, "fx_table": "sheets_refresh.FX_TO_USD (fast tabell)"}}}
+    c = dcs.gold_producer()
+    for key in ("enterprise_value_musd",):
+        c.fields.pop(key, None)
+    for fkey, point, _cur in dr.proposals(blob, c):
+        c.set(fkey, point)                                    # "Använd alla"
+    assert c.get("market_currency").value == "CAD" and c.get("fx_to_usd").value == pytest.approx(0.73)
+    a = analyze(c, today=T)
+    assert a.market_cap_musd == pytest.approx(1600.0)
+    assert a.enterprise_value_musd == pytest.approx(1400.0)
+    ss = dilution.share_structure(Ctx(c))
+    assert ss["price_usd"] == pytest.approx(8.75 * 0.73)        # kursen står i CAD och växlas
+
+
+def test_the_sheet_says_how_amounts_are_read_on_non_usd_rows():
+    from engines.durrett import ui as dui
+    usd = dcs.gold_producer()
+    assert dui.musd_currency_note(usd) is None
+    lex = dcs.lithium_explorer()                                # CAD; marknadstalen har Börsdata som källa
+    note = dui.musd_currency_note(lex)
+    assert note.startswith("Valutan är CAD: belopp i MUSD räknas som USD") and "Skrivna för hand" not in note
+    lex.set("cash_musd", dp(18.0, kind="ACTUAL", source="Arket (manuell)"))
+    note = dui.musd_currency_note(lex)
+    assert "Skrivna för hand: Kassa" in note and "står de i CAD? Räkna om dem till USD." in note
+
+
+def test_yahoo_fallback_amounts_are_not_called_hand_written():
+    """Granskningen: Asymmetrys Yahoo-reserv räknar redan om börsvärde/kassa/skuld till USD, men upplysningen kallade
+    dem "skrivna för hand" och bad ägaren räkna om dem en gång till (1 600 → 1 168)."""
+    from asymmetry import fetch
+    from engines.durrett import refresh as dr
+    from engines.durrett import ui as dui
+    info = {"marketCap": 450e6, "currency": "CAD", "financialCurrency": "CAD", "currentPrice": 2.1,
+            "sharesOutstanding": 214e6, "totalCash": 60e6, "totalDebt": 5e6}
+    row = fetch.yahoo_row("LIX", lambda s: info if s == "LIX.TO" else {})
+    c = dcs.lithium_explorer()
+    c.ticker = "LIX"
+    for k in ("market_cap_musd", "cash_musd", "debt_musd", "enterprise_value_musd"):
+        c.fields.pop(k, None)
+    for fkey, point, _cur in dr.proposals({"generated": "2026-11-08", "rows": {"confidence:LIX": row}}, c):
+        c.set(fkey, point)                                    # "Använd alla"
+    assert c.num("market_cap_musd") == pytest.approx(round(450 * 0.73, 1))
+    note = dui.musd_currency_note(c)
+    assert note.startswith("Valutan är CAD") and "Börsdata- och Yahoo-förslagen" in note
+    assert "Skrivna för hand" not in note
+    c.set("working_capital_musd", dp(12.0, kind="ACTUAL", source="Arket (manuell)"))
+    note = dui.musd_currency_note(c)
+    assert "Skrivna för hand: Rörelsekapital — står de i CAD?" in note
+
+
+def test_a_danish_row_gets_its_currency_so_the_price_is_converted():
+    """Granskningen: DKK/CHF/PLN fanns i växelkurstabellen men inte bland valen, så valutan föreslogs aldrig och den
+    danska kursen lästes som USD bredvid ett börsvärde i USD (FD-börsvärde ~7× för högt)."""
+    from confidence import config as ccfg
+    from engines.durrett import refresh as dr
+    import sheets_refresh as sr
+    assert set(sr.FX_TO_USD) <= set(ccfg.FIELD_BY_KEY["market_currency"].choices) == set(dc.CURRENCIES)
+    blob = {"generated": "2026-11-08", "rows": {"confidence:NOVO": {
+        "ticker": "NOVO", "price": 100.0, "asof": "2026-11-07", "currency": "DKK", "mcap_musd": 2175.0,
+        "fx_to_usd": 0.145, "fx_table": "sheets_refresh.FX_TO_USD (fast tabell)"}}}
+    c = dcs.gold_producer()
+    c.ticker = "NOVO"
+    c.fields.pop("market_currency", None)
+    for fkey, point, _cur in dr.proposals(blob, c):
+        c.set(fkey, point)
+    assert c.get("market_currency").value == "DKK"
+    ss = dilution.share_structure(Ctx(c))
+    assert ss["price_usd"] == pytest.approx(100.0 * 0.145) and ss["mcap_usd"] == pytest.approx(2175.0)
+
+
+def test_ev_measures_do_not_ask_for_fx_when_ev_is_given_in_usd():
+    """Granskningen: med EV ur enterprise_value_musd (USD) bad EV/NPV och EV/resurs ändå om växelkurs — den behövs
+    bara för kurs × aktier."""
+    from engines.durrett import ui as dui
+    c = dcs.currency_mismatch()                               # CAD-kurs utan växelkurs och utan börsvärde
+    c.set("enterprise_value_musd", dp(500.0, kind="ACTUAL", source="Börsdata (sifferuppdatering 2026-11-07)"))
+    c.fields.pop("npv_musd", None)
+    a = analyze(c, today=T)
+    assert a.enterprise_value_musd == pytest.approx(500.0) and a.market_cap_musd is None
+    needs = dui._valuation_needs(c, a)
+    ev_lines = [n for n in needs if n.startswith(("EV/NPV", "EV/resurs"))]
+    assert any(n.startswith("EV/NPV kräver NPV (MUSD)") for n in ev_lines)
+    assert not any("växelkurs" in n for n in ev_lines)
+    assert any("växelkurs → USD" in n for n in needs if n.startswith("MCap"))   # MCap räknas fortfarande ur kursen
+
+
+def test_a_hand_edit_under_the_prefilled_borsdata_source_becomes_manual():
+    """Granskningen: 'Alla fält' och Asymmetrys formulär fyller i Källa med den sparade källan. Ett tal skrivet för
+    hand behöll "Börsdata …", så valutaupplysningen tog det för Börsdatas USD."""
+    from confidence import config as ccfg
+    from confidence import ui as cui
+    f = ccfg.FIELD_BY_KEY["cash_musd"]
+    src = "Börsdata (sifferuppdatering 2026-11-07)"
+    w = {"value": "24.6", "kind": "ACTUAL", "source": src, "source_type": "secondary", "pub_date": "",
+         "_shown": "18", "_prev_source": src}
+    p = cui._point_from_widgets(w, f)
+    assert p.value == pytest.approx(24.6) and p.source == f"Manuell (ersätter {src})"
+    assert cui._point_from_widgets(dict(w, value="18.0"), f).source == src             # samma tal: orört
+    assert cui._point_from_widgets(dict(w, source="MD&A Q3"), f).source == "MD&A Q3"   # egen källa vinner
+    man = dict(w, source="Arket (manuell)", _prev_source="Arket (manuell)")
+    assert cui._point_from_widgets(man, f).source == "Arket (manuell)"                 # redan manuell
+    cur = ccfg.FIELD_BY_KEY["market_currency"]
+    wc = {"value": "USD", "kind": "ACTUAL", "source": src, "source_type": "secondary", "pub_date": "",
+          "_shown": "CAD", "_prev_source": src}
+    assert cui._point_from_widgets(wc, cur).source.startswith("Manuell (ersätter Börsdata")
+    lex = dcs.lithium_explorer()
+    lex.set("cash_musd", p)
+    from engines.durrett import ui as dui
+    assert "Skrivna för hand: Kassa" in dui.musd_currency_note(lex)
+
+
+def test_the_price_hint_says_only_the_price_is_in_the_trading_currency():
+    from confidence import config as ccfg
+    hint = ccfg.FIELD_BY_KEY["share_price"].hint
+    assert "handelsvalutan" in hint and "MUSD-fält står i USD" in hint
+    assert ccfg.FIELD_BY_KEY["market_currency"].label == "Handelsvaluta (aktiekursen)"
+
+
+def _conf_form_app(monkeypatch, company, identity=False):
+    """Confidence-sidans Indata-formulär (samma _field_widgets/_point_from_widgets som 'Alla fält' och Asymmetry)."""
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+    import storage
+    from confidence import store as cs
+    data = cs.default()
+    cs.put(data, company)
+    monkeypatch.setattr(storage, "session_load",
+                        lambda name, default=None, legacy_file=None: st.session_state.setdefault(name, default))
+    for n in ("load_error", "load_failed", "last_saved"):
+        monkeypatch.setattr(storage, n, lambda name: None, raising=False)
+    monkeypatch.setattr(storage, "is_dirty", lambda name: False, raising=False)
+    monkeypatch.setattr(storage, "session_save", lambda *a, **k: True, raising=False)
+
+    def app():
+        import streamlit as st
+        from confidence import store as cs
+        from confidence import ui as cui
+        d = st.session_state["confidence"]
+        cui._render_inputs(d, cs.get(d, st.session_state["_t"]), tools=False,
+                           identity=bool(st.session_state.get("_ident")))
+
+    at = AppTest.from_function(app, default_timeout=120)
+    at.session_state["confidence"] = data
+    at.session_state["_t"] = company.ticker
+    at.session_state["_ident"] = identity
+    at.run()
+    assert not at.exception, at.exception
+    return at
+
+
+def _submit(at, form):
+    for b in at.button:
+        if b.proto.form_id == form:
+            b.click()
+            at.run()
+            assert not at.exception, at.exception
+            return
+    raise KeyError(form)
+
+
+def test_the_manual_label_survives_the_next_save_of_the_same_form(monkeypatch):
+    """Granskningen (runda 2): Källa-rutan behåller texten efter spar, så nästa spar skrev tillbaka "Börsdata …" på
+    ett tal som fortfarande var skrivet för hand — och valutaupplysningen tappade det."""
+    from confidence import store as cs
+    from engines.durrett import ui as dui
+    bd = "Börsdata (sifferuppdatering 2026-11-06)"
+    c = CompanyInput(ticker="LUG.CO", name="Test Copper A/S", commodity="copper", stage="producer")
+    for k, v in (("market_cap_musd", 410.2), ("share_price", 61.5), ("basic_shares_m", 45.8), ("cash_musd", 38.4),
+                 ("debt_musd", 12.1)):
+        c.set(k, dp(v, kind="ACTUAL", source=bd, source_type="secondary", pub_date="2026-11-06"))
+    c.set("market_currency", dp("DKK", kind="ACTUAL", source=bd, source_type="secondary", pub_date="2026-11-06"))
+    at = _conf_form_app(monkeypatch, c)
+    t, form = "LUG.CO", "conf_form_LUG.CO_balance_sheet"
+
+    def stored(k):
+        p = cs.get(at.session_state["confidence"], t).get(k)
+        return p.value, p.source
+
+    fk.box(at.text_input, f"cf_{t}_", "cash_musd").set_value("262")
+    _submit(at, form)
+    assert stored("cash_musd") == (262.0, f"Manuell (ersätter {bd})")
+    fk.box(at.text_input, f"cf_{t}_", "debt_musd").set_value("12.4")             # nästa spar: bara skulden ändras
+    _submit(at, form)
+    assert stored("cash_musd") == (262.0, f"Manuell (ersätter {bd})")
+    assert stored("debt_musd") == (12.4, f"Manuell (ersätter {bd})")
+    _submit(at, form)                                                       # inget ändrat
+    assert stored("cash_musd")[1] == f"Manuell (ersätter {bd})" and stored("market_cap_musd") == (410.2, bd)
+    assert "Kassa" in dui.musd_currency_note(cs.get(at.session_state["confidence"], t))
+
+
+def test_big_numbers_are_shown_whole_and_keep_their_source_on_save(monkeypatch):
+    """Granskningen (runda 2): rutan visade 6 värdesiffror (2.34568e+06), så ett orört tal blev "Manuell" och
+    avrundades till 2 345 680 när formuläret sparades igen."""
+    from confidence import store as cs
+    from confidence import ui as cui
+    assert cui._fmt_edit(2345678.0) == "2345678" and cui._fmt_edit(2345678) == "2345678"
+    assert cui._fmt_edit(245.678912) == "245.678912" and cui._fmt_edit(0.73) == "0.73"
+    c = dcs.gold_producer()
+    c.ticker = "BIG"
+    c.set("resource_indicated", dp(2345678.0, kind="ACTUAL", source="PEA 2025 (Ausenco)"))
+    at = _conf_form_app(monkeypatch, c)
+    pillar = ccfg_pillar("resource_indicated")
+    assert fk.box(at.text_input, "cf_BIG_", "resource_indicated").value == "2345678"
+    for _ in range(2):
+        _submit(at, f"conf_form_BIG_{pillar}")
+        p = cs.get(at.session_state["confidence"], "BIG").get("resource_indicated")
+        assert p.value == 2345678.0 and p.source == "PEA 2025 (Ausenco)"
+
+
+def ccfg_pillar(key):
+    from confidence import config as ccfg
+    return ccfg.FIELD_BY_KEY[key].pillar
+
+
+def test_yahoo_london_prices_in_pence_become_pounds():
+    """Granskningen (runda 2): Yahoo ger .L-kurser i pence (GBp) men raden märktes GBP, så Durrett växlade en
+    kurs 100× för hög och FD-börsvärdet blev 100× börsvärdet."""
+    from asymmetry import fetch
+    from engines.durrett import refresh as dr
+    info = {"marketCap": 1.05e9, "currency": "GBp", "financialCurrency": "USD", "currentPrice": 51.6,
+            "sharesOutstanding": 2.03e9, "totalCash": 80e6, "totalDebt": 20e6}
+    row = fetch.yahoo_row("PAF", lambda s: info if s == "PAF.L" else {})
+    assert row["currency"] == "GBP" and row["price"] == pytest.approx(0.516)
+    assert row["mcap_musd"] == pytest.approx(round(1.05e9 * 1.27 / 1e6, 1)) and row["cash_musd"] == 80.0
+    c = dcs.gold_producer()
+    c.ticker = "PAF"
+    for k in ("market_cap_musd", "cash_musd", "debt_musd", "enterprise_value_musd", "basic_shares_m", "options_m",
+              "warrants_m", "convertible_shares_m", "other_dilutive_m", "market_currency", "fx_to_usd"):
+        c.fields.pop(k, None)
+    for fkey, point, _cur in dr.proposals({"generated": "2026-11-08", "rows": {"confidence:PAF": row}}, c):
+        c.set(fkey, point)
+    ss = dilution.share_structure(Ctx(c))
+    assert ss["fd_mcap_usd"] == pytest.approx(ss["mcap_usd"], rel=0.01)
+
+
+def _dkk_row(ticker="LUG.CO"):
+    bd = "Börsdata (sifferuppdatering 2026-11-06)"
+    c = CompanyInput(ticker=ticker, name="Test Copper A/S", commodity="copper", stage="producer")
+    for k, v in (("market_cap_musd", 410.2), ("share_price", 61.5), ("basic_shares_m", 45.8), ("cash_musd", 38.4),
+                 ("debt_musd", 12.1)):
+        c.set(k, dp(v, kind="ACTUAL", source=bd, source_type="secondary", pub_date="2026-11-06"))
+    c.set("market_currency", dp("DKK", kind="ACTUAL", source=bd, source_type="secondary", pub_date="2026-11-06"))
+    return c, bd
+
+
+def test_a_value_used_elsewhere_is_not_written_back_by_the_form(monkeypatch):
+    """Granskningen (runda 3) och webbläsartest: en nycklad ruta behåller sin text även när det sparade byts (Använd,
+    import). Nästa Uppdatera skrev då tillbaka det gamla talet. Nu byts rutans nyckel med det sparade."""
+    from confidence import store as cs
+    c, bd = _dkk_row()
+    at = _conf_form_app(monkeypatch, c)
+    t, form = "LUG.CO", "conf_form_LUG.CO_balance_sheet"
+    d = at.session_state["confidence"]
+    comp = cs.get(d, t)
+    comp.set("cash_musd", dp(55.0, kind="ACTUAL", source="Börsdata (sifferuppdatering 2026-11-08)"))   # "Använd"
+    cs.put(d, comp)
+    at.session_state["confidence"] = d
+    at.run()
+    assert fk.box(at.text_input, f"cf_{t}_", "cash_musd").value == "55"
+    _submit(at, form)                                                     # ingenting ändrat i formuläret
+    p = cs.get(at.session_state["confidence"], t).get("cash_musd")
+    assert (p.value, p.source) == (55.0, "Börsdata (sifferuppdatering 2026-11-08)")
+
+
+def test_clearing_then_retyping_does_not_keep_the_deleted_borsdata_source(monkeypatch):
+    """Granskningen (runda 3): tömde man Skuld och skrev ett nytt tal sparades det under den borttagna punktens
+    Börsdata-källa — och valutaupplysningen tog det för Börsdatas USD."""
+    from confidence import store as cs
+    from engines.durrett import ui as dui
+    c, bd = _dkk_row()
+    at = _conf_form_app(monkeypatch, c)
+    t, form = "LUG.CO", "conf_form_LUG.CO_balance_sheet"
+    fk.box(at.text_input, f"cf_{t}_", "debt_musd").set_value("")
+    _submit(at, form)
+    assert cs.get(at.session_state["confidence"], t).get("debt_musd") is None
+    assert fk.box(at.text_input, f"cf_{t}_", "debt_musd", part="s").value == ""     # Källa ritas om tom
+    fk.box(at.text_input, f"cf_{t}_", "debt_musd").set_value("15")
+    _submit(at, form)
+    p = cs.get(at.session_state["confidence"], t).get("debt_musd")
+    assert p.value == 15.0 and not str(p.source).startswith("Börsdata")
+    assert "Skuld" in dui.musd_currency_note(cs.get(at.session_state["confidence"], t))
+
+
+def test_the_owner_can_write_the_original_source_back(monkeypatch):
+    """Granskningen (runda 3): att skriva tillbaka den ursprungliga källan i Källa ignorerades — Manuell-märket
+    gick inte att ta bort."""
+    from confidence import store as cs
+    c, bd = _dkk_row()
+    c.set("cash_musd", dp(262.0, kind="ACTUAL", source=f"Manuell (ersätter {bd})"))
+    at = _conf_form_app(monkeypatch, c)
+    t, form = "LUG.CO", "conf_form_LUG.CO_balance_sheet"
+    assert fk.box(at.text_input, f"cf_{t}_", "cash_musd", part="s").value == f"Manuell (ersätter {bd})"
+    fk.box(at.text_input, f"cf_{t}_", "cash_musd", part="s").set_value(bd)
+    fk.box(at.text_input, f"cf_{t}_", "cash_musd").set_value("38.4")
+    _submit(at, form)
+    p = cs.get(at.session_state["confidence"], t).get("cash_musd")
+    assert (p.value, p.source) == (38.4, bd)
+
+
+def test_the_nightly_yahoo_price_for_london_rows_is_in_pounds(monkeypatch):
+    """Granskningen (runda 3): nattjobbets Yahoo-reserv gav London-kursen i pence utan valuta, och Använd lade den
+    bredvid GBP — FD-börsvärdet 100× för högt. Bara Durrett/Asymmetry-rader räknas om; registrets rader rörs inte."""
+    import sheets_refresh as sr
+    from engines.durrett import refresh as dr
+    monkeypatch.setattr(sr, "_yf_close", lambda t, quiet=False, with_currency=False:
+                        (51.6, "2026-11-07", "GBp") if with_currency else (51.6, "2026-11-07"))
+    s = sr._confidence_yf_price("PAF.L")
+    assert s["price"] == pytest.approx(0.516) and s["currency"] == "GBP" and s["fx_to_usd"] == sr.FX_TO_USD["GBP"]
+    monkeypatch.setattr(sr, "_yf_close", lambda t, quiet=False, with_currency=False:
+                        (12.3, "2026-11-07", "CAD") if with_currency else (12.3, "2026-11-07"))
+    assert sr._confidence_yf_price("ABC.TO") == {"price": 12.3, "asof": "2026-11-07"}      # som förr
+    c = dcs.gold_producer()
+    c.ticker = "PAF.L"
+    c.set("market_currency", dp("GBP", kind="ACTUAL", source="test"))
+    row = {"price": 0.516, "asof": "2026-11-07", "currency": "GBP", "fx_to_usd": 1.27, "source": "yfinance"}
+    by = {k: p for k, p, _ in dr.proposals({"generated": "2026-11-08", "rows": {"confidence:PAF.L": row}}, c)}
+    assert by["share_price"].value == pytest.approx(0.516) and by["share_price"].unit == "GBP/aktie"
+
+
+def test_a_sub_penny_price_keeps_its_digits_and_is_not_proposed_again():
+    """Granskningen (runda 3): 0,675 pence = 0,00675 GBP avrundades till 4 decimaler (0,0068) och föreslogs igen
+    efter Använd."""
+    from engines.durrett import refresh as dr
+    c = dcs.gold_producer()
+    c.ticker = "TINY.L"
+    row = {"price": 0.00675, "asof": "2026-11-07", "currency": "GBP", "fx_to_usd": 1.27, "source_label": "Yahoo"}
+    blob = {"generated": "2026-11-08", "rows": {"confidence:TINY.L": row}}
+    props = dr.proposals(blob, c)
+    by = {k: p for k, p, _ in props}
+    assert by["share_price"].value == 0.00675
+    for k, p, _ in props:
+        c.set(k, p)
+    assert "share_price" not in {k for k, _p, _c in dr.proposals(blob, c)}
+
+
+def test_the_identity_form_does_not_write_back_an_old_maturity(monkeypatch):
+    """Granskningen (runda 4): Använd på Tiggre-förslaget 'Mognad: DFS' ändrade bolaget, men Identitet-formuläret
+    visade kvar PEA och nästa Uppdatera (bara Land ändrat) skrev tillbaka pea. Nu byts rutorna med det sparade."""
+    from confidence import store as cs
+    c = dcs.copper_developer()
+    c.ticker, c.maturity, c.country = "CDV", "pea", "CA"
+    at = _conf_form_app(monkeypatch, c, identity=True)
+    d = at.session_state["confidence"]
+    comp = cs.get(d, "CDV")
+    comp.maturity = "dfs"                                                 # "Använd" på förslaget
+    cs.put(d, comp)
+    at.session_state["confidence"] = d
+    at.run()
+    assert not at.exception, at.exception
+    land = [t for t in at.text_input if str(t.key).startswith("conf_id_CDV_") and str(t.key).endswith("_country")]
+    assert len(land) == 1
+    land[0].set_value("DK")
+    _submit(at, "conf_ident_CDV")
+    comp = cs.get(at.session_state["confidence"], "CDV")
+    assert (comp.maturity, comp.country) == ("dfs", "DK")
+
+
+def test_borsdata_london_rows_in_pence_get_no_size_or_fx_proposals():
+    """Granskningen (runda 4): ett Londonbolag som Börsdata känner har kursvalutan GBX — jobbet räknar om med 1,0, så
+    börsvärde och EV vore miljoner GBX som USD (~79× för högt) och växelkursen 1,0. De talen föreslås inte."""
+    from engines.durrett import refresh as dr
+    c = dcs.gold_producer()
+    c.ticker = "GGP.L"
+    row = {"price": 15.2, "asof": "2026-11-07", "currency": "GBX", "mcap_musd": 197600.0, "ev_musd": 190000.0,
+           "fx_to_usd": 1.0, "shares_now_m": 13000.0, "ev_ebitda": 6.5}
+    keys = {k for k, _p, _c in dr.proposals({"generated": "2026-11-08", "rows": {"confidence:GGP.L": row}}, c)}
+    assert not keys & {"share_price", "market_cap_musd", "enterprise_value_musd", "fx_to_usd", "market_currency"}
+    assert {"basic_shares_m", "ev_ebitda"} <= keys                        # valutalösa tal föreslås som förut
+    usd = dict(row, currency="USD", mcap_musd=2500.0, ev_musd=2400.0, price=0.19)
+    keys = {k for k, _p, _c in dr.proposals({"generated": "2026-11-08", "rows": {"confidence:GGP.L": usd}}, c)}
+    assert {"share_price", "market_cap_musd", "enterprise_value_musd"} <= keys

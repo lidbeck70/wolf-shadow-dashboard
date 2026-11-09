@@ -189,24 +189,46 @@ def _last_close(api, ins_id: int):
     return float(bars[-1]["c"]), str(bars[-1].get("d") or "")[:10]
 
 
-def _yf_close(ticker: str, quiet: bool = False):
+def _yf_close(ticker: str, quiet: bool = False, with_currency: bool = False):
     """Yahoo-reserven. quiet tystar yfinance egen fellogg (den namnger tickern) — för registrets rader när
-    PANEL_DATA_KEY finns, eftersom Actions-loggen är publik."""
+    PANEL_DATA_KEY finns, eftersom Actions-loggen är publik. with_currency: (kurs, datum, valuta) med Yahoos
+    kursvaluta (London: 'GBp' = pence) — samma anrop, valutan står i historikens metadata."""
     yf_log = logging.getLogger("yfinance")
     level = yf_log.level
     if quiet:
         yf_log.setLevel(logging.CRITICAL + 1)
+    none = (None, None, None) if with_currency else (None, None)
     try:
         import yfinance as yf
-        h = yf.Ticker(ticker).history(period="5d", auto_adjust=True)
+        tk = yf.Ticker(ticker)
+        h = tk.history(period="5d", auto_adjust=True)
         if h is None or h.empty:
-            return None, None
-        return float(h["Close"].iloc[-1]), str(h.index[-1])[:10]
+            return none
+        close, asof = float(h["Close"].iloc[-1]), str(h.index[-1])[:10]
+        if not with_currency:
+            return close, asof
+        try:
+            cur = (getattr(tk, "history_metadata", None) or {}).get("currency")
+        except Exception:
+            cur = None
+        return close, asof, (str(cur) if cur else None)
     except Exception:
-        return None, None
+        return none
     finally:
         if quiet:
             yf_log.setLevel(level)
+
+
+def _confidence_yf_price(ticker: str, quiet: bool = False) -> dict:
+    """Yahoo-reservens kurs för en Durrett/Asymmetry-rad (confidence): London i pence (GBp/GBX) blir pund med
+    valutan GBP och växelkursen ur tabellen — annars växlade Durrett en 100× för hög kurs bredvid ett börsvärde
+    i GBP. Andra valutor lämnas som förr (kurs utan valuta). Registrets rader (stopp och entry i pence) rörs inte."""
+    price, asof, cur = _yf_close(ticker, quiet=quiet, with_currency=True)
+    out = {"price": price, "asof": asof}
+    if price is not None and cur and (cur in ("GBp", "GBX") or cur.upper() == "GBX"):
+        out.update(price=round(price / 100.0, 6), currency="GBP", fx_to_usd=FX_TO_USD["GBP"],
+                   fx_table="sheets_refresh.FX_TO_USD (fast tabell)")
+    return out
 
 
 def _held(ref: dict) -> bool:
@@ -394,6 +416,9 @@ def refresh(api, sheets: dict) -> dict:
                     s.update(_snapshot_musd(snap, fx, rfx))
                     for k in ("pe", "ps", "rs_rank", "ebitda_margin"):
                         s[k] = _f(snap.get(k))
+            elif r["sheet"] == "confidence":
+                s.update(_confidence_yf_price(r["ticker"], quiet=hide and _held(r)))
+                s["source"] = "yfinance" if s["price"] is not None else None
             else:
                 s["price"], s["asof"] = _yf_close(r["ticker"], quiet=hide and _held(r))
                 s["source"] = "yfinance" if s["price"] is not None else None

@@ -208,11 +208,30 @@ def _rows(data: dict) -> None:
 def _sheet_widget(company: CompanyInput, key: str, label: str, wkey: str):
     spec = ccfg.FIELD_BY_KEY[key]
     p = company.get(key)
-    cur = "" if p is None or p.missing else (str(p.value) if not isinstance(p.value, (int, float)) else f"{p.value:g}")
+    cur = "" if p is None or p.missing else cui._fmt_edit(p.value)    # helt tal: arket sparar inte tillbaka 6 siffror
+    wkey = f"{wkey}_{cui.stored_tag(p)}"            # ny ruta när det sparade byts (Använd/import) — se stored_tag
     if spec.kind == "choice":
         opts = ["—"] + list(spec.choices)
         return st.selectbox(label, opts, index=opts.index(cur) if cur in opts else 0, key=wkey, help=spec.hint or None)
     return st.text_input(label, value=cur, key=wkey, placeholder=spec.unit or "", help=spec.hint or None)
+
+
+def musd_currency_note(company: CompanyInput) -> Optional[str]:
+    """Upplysning på rader i annan valuta än USD: MUSD-fälten läses som USD (som etiketterna säger och som
+    Börsdata- och Yahoo-förslagen levererar dem) — bara kursen räknas om. Fält skrivna för hand kan stå i lokal
+    valuta (förr räknade motorn om dem); de räknas upp så att du kan kontrollera dem. None för USD-rader."""
+    from engines.durrett import refresh as dr
+    cur = str(company.get("market_currency").value if company.has("market_currency") else "").strip().upper()
+    if not cur or cur == "USD":
+        return None
+    manual = [ccfg.FIELD_BY_KEY[k].label for k in sorted(company.fields) if k.endswith("_musd") and k in ccfg.FIELD_BY_KEY
+              and company.get(k) is not None and not company.get(k).missing
+              and not str(company.get(k).source or "").startswith(dr.AUTO_USD_SOURCES)]
+    base = (f"Valutan är {cur}: belopp i MUSD räknas som USD (som etiketterna säger, och som Börsdata- och "
+            f"Yahoo-förslagen levererar dem) — bara kursen räknas om med växelkursen.")
+    if manual:
+        base += f" Skrivna för hand: {', '.join(manual)} — står de i {cur}? Räkna om dem till USD."
+    return base
 
 
 def _render_sheet(data: dict, company: CompanyInput, a: DurrettAnalysis) -> None:
@@ -222,6 +241,9 @@ def _render_sheet(data: dict, company: CompanyInput, a: DurrettAnalysis) -> None
                 f"råvarans prisenhet ({a.commodity and com.REGISTRY.get(company.commodity).unit if company.commodity in com.REGISTRY else 'USD/enhet'}).</span>",
                 unsafe_allow_html=True)
     _render_refresh(data, company)
+    note = musd_currency_note(company)
+    if note:
+        st.caption(note)
     with st.form(f"durrett_sheet_{t}"):
         h1, h2, h3, h4 = st.columns([2, 1.2, 1.2, 1])
         source = h1.text_input("Källa för det du fyller i nu", value="Arket (manuell)", key=f"ds_src_{t}",
@@ -412,8 +434,8 @@ def _valuation_needs(company: CompanyInput, a: DurrettAnalysis) -> list:
     conflict = _unit_conflict(company)                  # t.ex. koppar i kt mot ett pris i USD/lb
     cur = str(company.get("market_currency").value if company.has("market_currency") else "").strip().upper()
     if a.market_cap_musd is None:
-        given = u("market_cap_musd") or (u("share_price") and (u("basic_shares_m") or u("shares_outstanding_m")))
-        mcap_need = (f"växelkurs → USD (valutan är {cur})" if given and cur and cur != "USD" and not u("fx_to_usd")
+        by_price = u("share_price") and (u("basic_shares_m") or u("shares_outstanding_m"))   # kursen växlas, MUSD inte
+        mcap_need = (f"växelkurs → USD (kursen står i {cur})" if by_price and cur and cur != "USD" and not u("fx_to_usd")
                      else "börsvärde (eller kurs och antal aktier)")
     else:
         mcap_need = None
@@ -461,7 +483,8 @@ def _valuation_needs(company: CompanyInput, a: DurrettAnalysis) -> list:
                 out.append("MCap/framtida vinst kräver " + ", ".join(miss))
         if len(out) == n_before:                        # måttet saknas men inget ovan förklarar det: säg det ändå
             out.append("MCap/framtida vinst kan inte räknas med de här talen (se Analys → loggen)")
-    ev_need = mcap_need or ("kassa eller skuld (eller enterprise value)" if a.enterprise_value_musd is None else None)
+    # EV ur enterprise_value_musd är USD och kräver varken kurs eller växelkurs — fråga bara när EV saknas
+    ev_need = None if a.enterprise_value_musd is not None else (mcap_need or "kassa eller skuld (eller enterprise value)")
     if val("ev_per_resource_unit") is None:
         mii_given = any(u(k) for k in ("resource_measured", "resource_indicated", "resource_inferred"))
         qty_given = mii_given or any(u(k) for k in ("reserve_proven", "reserve_probable"))

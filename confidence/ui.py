@@ -87,6 +87,18 @@ def _fmt(v) -> str:
     return str(v)
 
 
+def _fmt_edit(v) -> str:
+    """Talet i en inmatningsruta — förlustfritt, så att ett formulär som sparas igen inte avrundar 2 345 678 till
+    2 345 680 (_fmt visar 6 värdesiffror, bra för text men inte för en ruta som sparas tillbaka)."""
+    if isinstance(v, bool):
+        return _fmt(v)
+    if isinstance(v, int):
+        return str(v)
+    if isinstance(v, float):
+        return f"{v:.15g}"
+    return _fmt(v)
+
+
 def _signals_cache() -> dict:
     return st.session_state.setdefault(_SIG, {"rotation": None, "themes": None, "ratios": None,
                                               "complexes": None, "log": []})
@@ -137,6 +149,10 @@ def render_confidence_page() -> None:
 
 # ── nytt bolag ───────────────────────────────────────────────────────────────
 def _identity_widgets(prefix: str, c: Optional[CompanyInput]) -> dict:
+    if c is not None:                   # nya rutor när det sparade byts (t.ex. Använd på Mognad) — se stored_tag
+        import zlib
+        raw = repr((c.name, c.commodity, c.country, c.jurisdiction, c.exchange, c.stage, c.maturity))
+        prefix = f"{prefix}_{format(zlib.crc32(raw.encode('utf-8')), '08x')}"
     labels = {k: f"{v.label} ({k})" for k, v in com.REGISTRY.items()}
     keys = list(labels)
     a, b, d = st.columns(3)
@@ -370,9 +386,21 @@ def _critical_missing(company: CompanyInput) -> set:
     return {it.path.split(".", 1)[1] for it in items if it.path.startswith("fields.")}
 
 
+def stored_tag(p) -> str:
+    """Ett kort avtryck av den sparade datapunkten, för widgetnycklarna. Streamlit (1.59) behåller en nycklad rutas
+    text i webbläsaren även när value= ändras — och att ta bort nyckeln ur session_state når inte webbläsaren. Byts
+    det sparade (Använd, spar, import) byts nyckeln, så rutan ritas om ur det sparade i stället för att nästa
+    Uppdatera skriver tillbaka det gamla talet."""
+    import zlib
+    if p is None:
+        return "0"
+    raw = repr((p.value, p.missing, p.kind, p.source, p.source_type, p.pub_date))
+    return format(zlib.crc32(raw.encode("utf-8")), "08x")
+
+
 def _field_widgets(company: CompanyInput, f: cfg.FieldSpec) -> dict:
     p = company.get(f.key)
-    k = f"cf_{company.ticker}_{f.key}"
+    k = f"cf_{company.ticker}_{f.key}_{stored_tag(p)}"
     c = st.columns([3, 1.4, 2.4, 1.4, 1.3])
     label = f.label + (f" ({f.unit})" if f.unit else "") + (f" 0–{f.max:g}" if f.max is not None else "")
     w = {}
@@ -387,7 +415,7 @@ def _field_widgets(company: CompanyInput, f: cfg.FieldSpec) -> dict:
         cur = str(p.value) if p and not p.missing and str(p.value) in f.choices else "—"
         w["value"] = c[0].selectbox(label, opts, index=opts.index(cur), key=f"{k}_v", help=f.hint or None)
     else:
-        w["value"] = c[0].text_input(label, value=_fmt(p.value) if p and not p.missing else "", key=f"{k}_v",
+        w["value"] = c[0].text_input(label, value=_fmt_edit(p.value) if p and not p.missing else "", key=f"{k}_v",
                                      help=f.hint or None)
     kinds = list(cfg.KINDS)
     w["kind"] = c[1].selectbox("Typ", kinds, index=kinds.index(p.kind) if p and p.kind in kinds else 1,
@@ -398,6 +426,10 @@ def _field_widgets(company: CompanyInput, f: cfg.FieldSpec) -> dict:
                                       key=f"{k}_t")
     w["pub_date"] = c[4].text_input("Datum", value=(p.pub_date or "") if p else "", key=f"{k}_d",
                                     placeholder="ÅÅÅÅ-MM-DD")
+    # det rutorna visade från början — ett ändrat värde under orörd källa är en handändring (_point_from_widgets)
+    w["_shown"] = cur if f.kind in ("bool", "choice") else (_fmt_edit(p.value) if p and not p.missing else "")
+    w["_prev_value"] = p.value if p and not p.missing else None
+    w["_prev_source"] = (p.source or "") if p else ""
     return w
 
 
@@ -423,8 +455,29 @@ def _point_from_widgets(w: dict, f: cfg.FieldSpec) -> Optional[Datapoint]:
         if not str(raw).strip():
             return None
         value = str(raw).strip()
-    return dp(value, kind=w["kind"], source=w["source"].strip(), source_type=w["source_type"],
+    return dp(value, kind=w["kind"], source=_edited_source(w, f), source_type=w["source_type"],
               pub_date=(w["pub_date"].strip() or None), unit=f.unit)
+
+
+def _edited_source(w: dict, f: cfg.FieldSpec) -> str:
+    """Källan att spara. Ändrar du värdet men lämnar den ifyllda källan (t.ex. "Börsdata (sifferuppdatering …)")
+    är talet inte längre Börsdatas — då blir källan "Manuell (ersätter …)", så att t.ex. Durrett-arkets
+    valutaupplysning ser att talet är skrivet för hand. Redan manuella källor och orörda värden behålls."""
+    source = w["source"].strip()
+    prev = str(w.get("_prev_source") or "").strip()
+    if not prev or source != prev or "manuell" in prev.lower() or "_shown" not in w:
+        return source
+    now, shown = str(w["value"]).strip(), str(w["_shown"]).strip()
+    old = w.get("_prev_value")                 # det sparade talet (rutan kan visa det i annan form, t.ex. 18 / 18.0)
+    old = float(old) if isinstance(old, (int, float)) and not isinstance(old, bool) else _num_or_none(shown)
+    if f.kind in ("number", "int") and _num_or_none(now) is not None and old is not None:
+        changed = abs(_num_or_none(now) - old) > 1e-9 * max(1.0, abs(old))
+    else:
+        changed = now != shown
+    return f"{_MANUAL}{prev})" if changed else source
+
+
+_MANUAL = "Manuell (ersätter "
 
 
 def _render_prefill(data: dict, company: CompanyInput, store: str = cs.STORE) -> None:

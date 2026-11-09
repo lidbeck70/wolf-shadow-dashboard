@@ -3,7 +3,7 @@ engines/durrett/dilution.py — STEP 3 aktiestruktur (SPEC §7).
 
 FD Shares = basic + optioner + warranter + konvertibler + övrigt.
 Dilution 1/3/5 år = (aktier nu / aktier då − 1). FD Market Cap och FD EV
-i USD (valutanormaliserat via fx_to_usd). SERIAL DILUTER identifieras
+i USD: MUSD-fälten är redan USD, aktiekursen växlas via fx_to_usd. SERIAL DILUTER identifieras
 när 3-årsutspädningen ≥ tröskel eller årlig ≥ tröskel tre år i rad.
 
 share_structure() används även av valuation/upside — en beräkning, en plats.
@@ -51,17 +51,17 @@ def share_structure(ctx: Ctx) -> dict:
     d5 = dilution_pct(basic, ctx.num("shares_5y_ago_m", required=False))
 
     price = ctx.usd("share_price", required=False)
-    mcap = ctx.usd("market_cap_musd", required=False)
+    mcap = ctx.musd("market_cap_musd", required=False)
     if mcap is None and price is not None and basic is not None:
         mcap = price * basic
         ctx.log.append("börsvärde = kurs × basic-aktier (MODELLED)")
     fd_mcap = price * fd if price is not None and fd is not None else None
     if fd_mcap is None and mcap is not None and basic and fd:
         fd_mcap = mcap * fd / basic
-    cash = ctx.usd("cash_musd", required=False)
-    debt = ctx.usd("debt_musd", required=False)
+    cash = ctx.musd("cash_musd", required=False)
+    debt = ctx.musd("debt_musd", required=False)
     net_debt = (debt or 0.0) - (cash or 0.0) if (cash is not None or debt is not None) else None
-    ev = ctx.usd("enterprise_value_musd", required=False)
+    ev = ctx.musd("enterprise_value_musd", required=False)
     if ev is None and mcap is not None and net_debt is not None:
         ev = mcap + net_debt
     fd_ev = fd_mcap + net_debt if fd_mcap is not None and net_debt is not None else None

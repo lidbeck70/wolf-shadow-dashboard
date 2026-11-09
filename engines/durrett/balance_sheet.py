@@ -27,7 +27,7 @@ def annual_burn(ctx: Ctx) -> Optional[float]:
     q = ctx.num("quarterly_burn_musd", required=False)
     if q is not None:
         return q * 4.0
-    ocf = ctx.usd("operating_cash_flow_musd", required=False)
+    ocf = ctx.musd("operating_cash_flow_musd", required=False)
     if ocf is not None and ocf < 0:
         return -ocf
     return None
@@ -66,7 +66,7 @@ def score(ctx: Ctx, company_type: str, ss: dict, today: Optional[date] = None) -
         ctx.metric("cash_runway_years", rw, "år", f"kassa {cash:g} / årsburn {burn:g}")
         comps["runway"] = (steps_ge(rw, st["runway_years"]), f"runway {rw:.1f} år (kassa {cash:g} / burn {burn:g} MUSD/år)")
     elif company_type in (dc.PRODUCER, dc.ROYALTY, dc.HYBRID):
-        fcf = ctx.usd("free_cash_flow_musd", required=False)
+        fcf = ctx.musd("free_cash_flow_musd", required=False)
         if fcf is not None and fcf >= 0:
             comps["runway"] = (90.0, f"FCF-positiv ({fcf:+.0f} MUSD) — ingen burn")
         elif cash is not None and burn is None:
@@ -77,12 +77,12 @@ def score(ctx: Ctx, company_type: str, ss: dict, today: Optional[date] = None) -
         comps["runway"] = (None, "kassa eller burn saknas — runway N/A")
 
     parts, vals = [], []
-    wc = ctx.usd("working_capital_musd", required=False)
+    wc = ctx.musd("working_capital_musd", required=False)
     if wc is not None:
         vals.append(80.0 if wc > 0 else 25.0)
         parts.append(f"rörelsekapital {wc:+.0f} MUSD")
-    ie = ctx.usd("interest_expense_musd", required=False)
-    ocf = ctx.usd("operating_cash_flow_musd", required=False)
+    ie = ctx.musd("interest_expense_musd", required=False)
+    ocf = ctx.musd("operating_cash_flow_musd", required=False)
     if ie is not None and ie > 0 and ocf is not None:
         cover = ocf / ie
         vals.append(steps_ge(cover, ((5.0, 100), (3.0, 75), (1.5, 50), (0.0, 25)), 10))

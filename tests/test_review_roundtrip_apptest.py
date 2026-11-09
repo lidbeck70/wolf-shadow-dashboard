@@ -19,6 +19,7 @@ import streamlit
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import form_keys as fk  # noqa: E402
 import storage  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -342,7 +343,7 @@ def test_durrett_sheet_import_writes_datapoints_with_chatgpt_source(monkeypatch)
     p = f["debt_maturity_year"]
     assert p["value"] == 2029 and p["source_type"] == "primary" and p["pub_date"] == "2026-03-01"
     assert p["confidence"] == "medium" and "irr_pct" not in f            # IRR hör till utvecklare — visas inte här
-    assert at.text_input(key=f"ds_{t}_aisc").value == "1350"                  # Arket ritades om
+    assert fk.sheet_box(at.text_input, t, "aisc").value == "1350"                  # Arket ritades om
 
 
 def test_scorecard_routes_each_row_to_its_sheet_and_creates_the_card_then(page):
