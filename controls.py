@@ -219,6 +219,21 @@ def aqs_band(total: Optional[int]) -> Optional[str]:
     return AQS_DISCOUNT if total >= 7 else AQS_PASS
 
 
+AQS_LIFE_SHORT, AQS_LIFE_LONG = 5.0, 10.0       # år — fältets tryckta gränser: < 5 år, 5–10 år, > 10 år
+
+
+def aqs_life_suggestion(life_years) -> Optional[int]:
+    """Förslag på "Livslängd / resurs" ur en livslängd i år, med fältets tryckta gränser: under 5 år 0, 5–10 år 1,
+    över 10 år 2. None utan ett positivt tal — 0 är en ruta som aldrig fyllts i (som Rick Rule-kortets
+    strykregel läser den), inte en gruva utan liv."""
+    y = _num(life_years)
+    if y is None or y <= 0:
+        return None
+    if y < AQS_LIFE_SHORT:
+        return 0
+    return 1 if y <= AQS_LIFE_LONG else 2
+
+
 # Återanvändning i stället för dubbelinmatning: jurisdiktion och management
 # frågas redan i Rick Rule-arket (0/1) och i Lobo (0–2). Det blir FÖRSLAG med
 # Använd (controls_ui.render_aqs) — ingenting fylls i när sidan ritas.
