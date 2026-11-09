@@ -72,14 +72,16 @@ class _API:
                             "revenue_m": 600.0, "fcf_m": 110.0, "pe": 9.0, "rs_rank": 71.0, "ebitda_margin": 0.48}}
 
     def get_instruments(self):
-        return [{"insId": 1, "ticker": "EKTA B", "stockPriceCurrency": "SEK"},
-                {"insId": 2, "ticker": "HEXA B", "stockPriceCurrency": "SEK"},
-                {"insId": 40, "ticker": "BOL", "stockPriceCurrency": "SEK"}]
+        return [{"insId": 1, "ticker": "EKTA B", "name": "Elekta B", "stockPriceCurrency": "SEK"},
+                {"insId": 2, "ticker": "HEXA B", "name": "Hexagon B", "stockPriceCurrency": "SEK"},
+                {"insId": 40, "ticker": "BOL", "name": "Boliden", "stockPriceCurrency": "SEK"}]
 
     def get_global_instruments_list(self):
-        return [{"insId": i, "ticker": t, "stockPriceCurrency": "CAD"}
-                for i, t in ((101, "JR"), (102, "AU"), (103, "FNV"), (104, "MJS"))] + \
-            [{"insId": 105, "ticker": "GPR", "stockPriceCurrency": "USD", "reportCurrency": "USD"}]
+        return [{"insId": i, "ticker": t, "name": n, "stockPriceCurrency": "CAD"}
+                for i, t, n in ((101, "JR", "Jaguar"), (102, "AU", "AngloGold"), (103, "FNV", "Franco-Nevada"),
+                                (104, "MJS", "Majestic"))] + \
+            [{"insId": 105, "ticker": "GPR", "name": "Great Panther", "stockPriceCurrency": "USD",
+              "reportCurrency": "USD"}]
 
     def resolve_instrument_id(self, form):
         return {"EKTA B": 1, "HEXA B": 2, "BOL": 40}.get(form)
@@ -145,6 +147,141 @@ def test_refresh_survives_api_error():
             raise RuntimeError("401")
     out = sr.refresh(_Broken(), _sheets())
     assert out["error"] and out["events"] == []
+
+
+# ── Batch 2: nya nattfält utan extra Börsdata-anrop ──────────────────────────
+class _Counting(_API):
+    """Räknar anropen mot Börsdata-klienten — de nya fälten får inte kosta fler."""
+
+    def __init__(self):
+        super().__init__()
+        self.calls = []
+
+    def __getattribute__(self, name):
+        attr = object.__getattribute__(self, name)
+        if callable(attr) and not name.startswith("_") and name not in ("calls",):
+            object.__getattribute__(self, "calls").append(name)
+        return attr
+
+
+def test_snapshot_musd_converts_like_the_confidence_block():
+    """EV med kursvalutans fx, resten med rapportvalutans — None när Börsdata saknar talet."""
+    snap = {"ev": 1000.0, "net_debt_m": -200.0, "revenue_m": 500.0, "fcf_m": 100.0}
+    out = sr._snapshot_musd(snap, 0.095, 0.73)
+    assert out == {"ev_musd": 95.0, "net_debt_musd": -146.0, "revenue_musd": 365.0, "fcf_musd": 73.0,
+                   "ocf_musd": None}
+
+
+def test_producer_rows_get_the_musd_block_and_dividend_yield():
+    api = _API()
+    api.snaps[40].update(ev=100000.0, fcf_m=20000.0, net_debt_m=5000.0, revenue_m=80000.0, ocf_m=30000.0,
+                         dividend_yield=0.034)                   # BOL, SEK; snapshoten ger 3,4 % som 0,034
+    rows = sr.refresh(api, _sheets())["rows"]
+    r1 = rows["producers:r1"]
+    assert r1["fcf12_musd"] == 1900.0 and r1["net_debt_musd"] == 475.0 and r1["revenue_musd"] == 7600.0
+    assert "fcf_musd" not in r1                                  # bara referens: Lukacs enhetskontroll läser fcf_musd
+    assert r1["ocf_musd"] == 2850.0 and r1["ev_musd"] == 9500.0
+    assert r1["dividend_yield_pct"] == 3.4
+    y1 = rows["producers:y1"]                                    # Royalty C: samma block, tomt där talen saknas
+    assert y1["fcf12_musd"] is None and y1["dividend_yield_pct"] is None and y1["ev_ebitda_median"] is None
+    assert "fx_to_usd" not in r1                                 # fx_to_usd stannar på Durrett-arket
+    assert "fcf_musd" not in rows["insider:i1"] and "dividend_yield_pct" not in rows["scoring:d1"]
+
+
+def test_every_borsdata_row_says_which_company_was_matched():
+    rows = sr.refresh(_API(), _sheets())["rows"]
+    assert rows["insider:i1"]["bd_name"] == "Elekta B" and rows["insider:i1"]["bd_ticker"] == "EKTA B"
+    assert rows["producers:r1"]["bd_name"] == "Boliden" and rows["producers:r1"]["report_currency"] == "SEK"
+    assert rows["confidence:GPR"]["bd_name"] == "Great Panther" and rows["confidence:GPR"]["report_currency"] == "USD"
+    assert rows["tiggre:p1"]["bd_ticker"] == "AU"                 # global lista
+    assert rows["tiggre:c1"]["bd_name"] == "Jaguar" and rows["tiggre:c1"]["price"] is None   # matchad utan kurs
+
+
+def test_f_score_on_insider_rows_only():
+    api = _API()
+    api.snaps[1] = {"f_score": 7.0}
+    api.snaps[40]["f_score"] = 5.0
+    rows = sr.refresh(api, _sheets())["rows"]
+    assert rows["insider:i1"]["f_score"] == 7.0 and rows["insider:i2"]["f_score"] is None
+    assert "f_score" not in rows["producers:r1"]
+
+
+def test_the_new_fields_cost_no_extra_calls(monkeypatch):
+    """Samma Börsdata-anrop som före batch 2: en instrumentlista, en global, två snapshot-omgångar, en kurs- och
+    rapporthämtning per bolag och EV/EBITDA-historiken för Royalty C."""
+    api = _Counting()
+    out = sr.refresh(api, _sheets())
+    assert out["error"] is None
+    from collections import Counter
+    c = Counter(api.calls)
+    n_ids = len({v["ins_id"] for v in out["rows"].values() if v.get("ins_id") is not None})
+    assert c["get_instruments"] == 1 and c["get_global_instruments_list"] == 1
+    assert c["get_fundamentals_snapshot_fast"] == 2 and c["get_stockprices"] == n_ids
+    assert set(c) <= {"get_instruments", "get_global_instruments_list", "get_fundamentals_snapshot_fast",
+                      "get_stockprices", "resolve_instrument_id", "get_reports", "get_kpi_history"}
+
+
+def test_report_fields_say_which_year_the_share_count_is_from():
+    class _Rep:
+        def get_reports(self, ins_id, kind, max_count=7):
+            if kind == "r12":
+                return []
+            return [{"year": y, "numberOfShares": n} for y, n in ((2020, 80.0), (2022, 90.0), (2025, 100.0))]
+    out = sr.report_fields(_Rep(), 1)
+    assert out["shares_now_m"] == 100.0 and out["shares_year"] == 2025 and out["shares_3y_ago_m"] == 90.0
+    assert out["shares_growth_5y_pct"] == 25.0
+    assert "shares_year" not in sr.report_fields(type("_None", (), {"get_reports": lambda *a, **k: []})(), 1)
+
+
+def _two_country_api(tmp_path):
+    """Riktiga BorsdataAPI.resolve_instrument_id mot en instrumentlista där GENO finns i två länder (Genovis i
+    Sverige, General Oceans i Norge — Norge läses sist). Inget nätverk: _get är fejkad."""
+    from borsdata_api import BorsdataAPI
+    api = BorsdataAPI(api_key="test", cache_dir=str(tmp_path))
+    insts = [{"insId": 7, "ticker": "GENO", "name": "Genovis AB", "countryId": 1, "stockPriceCurrency": "SEK",
+              "reportCurrency": "SEK"},
+             {"insId": 8, "ticker": "GENO", "name": "General Oceans", "countryId": 2, "stockPriceCurrency": "NOK",
+              "reportCurrency": "NOK"},
+             {"insId": 9, "ticker": "EKTA B", "name": "Elekta B", "countryId": 1, "stockPriceCurrency": "SEK"}]
+    api._get = lambda path, params=None, use_cache=True: {"instruments": insts} if path == "/instruments" else {}
+    return api
+
+
+def test_resolve_picks_the_company_in_the_suffix_country(tmp_path):
+    api = _two_country_api(tmp_path)
+    assert api.resolve_instrument_id("GENO") == 8                # den nakna formen: den som lästes sist
+    assert sr.resolve(api, "GENO.ST") == 7                       # förut 8 — fel lands bolag
+    assert sr.resolve(api, "GENO.OL") == 8
+    assert sr.resolve(api, "geno.st") == 7 and sr.resolve(api, "EKTA-B.ST") == 9
+    assert sr.resolve(api, "GENO") == 8                          # utan suffix som förut
+    assert sr.resolve(api, "GENO.ST", ins_id=8) == 8             # sparat ins_id vinner alltid
+
+
+def test_refresh_matches_the_suffix_country_and_shows_the_name(tmp_path):
+    api = _two_country_api(tmp_path)
+    api.get_global_instruments_list = lambda: []
+    api.get_fundamentals_snapshot_fast = lambda ids, scope="nordic": {i: {"ins_id": i} for i in ids}
+    api.get_stockprices = lambda ins_id, max_count=5: [{"d": "2026-11-06", "c": 20.0}]
+    api.get_reports = lambda ins_id, kind, max_count=7: []
+    sheets = {"insider": {"signals": [{"id": "s1", "ticker": "GENO.ST", "name": "Genovis"},
+                                      {"id": "s2", "ticker": "GENO.OL", "name": "Genovis"}]}}
+    rows = sr.refresh(api, sheets)["rows"]
+    assert rows["insider:s1"]["ins_id"] == 7 and rows["insider:s1"]["bd_name"] == "Genovis AB"
+    assert rows["insider:s2"]["ins_id"] == 8 and rows["insider:s2"]["bd_name"] == "General Oceans"
+    blob = {"rows": rows}
+    assert rui.matched_note(blob, "insider", sheets["insider"]["signals"][0]) == ""
+    assert rui.matched_note(blob, "insider", sheets["insider"]["signals"][1]) == " (matchat: General Oceans)"
+
+
+def test_fetch_row_carries_the_same_new_fields(monkeypatch):
+    class _One(_API):
+        def get_reports(self, ins_id, kind, max_count=7):
+            return [] if kind == "r12" else [{"year": 2025, "numberOfShares": 50.0}]
+    api = _One()
+    api.snaps[40].update(fcf_m=1000.0, ev=2000.0)
+    row = sr.fetch_row(api, "BOL.ST")
+    assert row["ins_id"] == 40 and row["bd_name"] == "Boliden" and row["bd_ticker"] == "BOL"
+    assert row["fcf_musd"] == 95.0 and row["ev_musd"] == 190.0 and row["shares_year"] == 2025
 
 
 def test_suggestion_lookup_from_blob():

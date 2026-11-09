@@ -127,12 +127,19 @@ def ticker_forms(ticker: str) -> list:
 
 
 def resolve(api, ticker: str, ins_id=None) -> Optional[int]:
+    """insId för raden: sparat ins_id först, sedan tickerns former. En nordisk Yahoo-ticker ('GENO.ST') provas
+    hel först, så att Börsdatas uppslag kan välja bolaget i suffixets land (borsdata_api.match_by_country) — den
+    nakna formen 'GENO' gav det bolag som lästes sist, oavsett land."""
     if ins_id is not None:
         try:
             return int(ins_id)
         except (TypeError, ValueError):
             pass
-    for form in ticker_forms(ticker):
+    forms = ticker_forms(ticker)
+    full = str(ticker or "").strip().upper()
+    if _SUFFIX_RE.search(full):
+        forms = [full] + [f for f in forms if f != full]
+    for form in forms:
         try:
             iid = api.resolve_instrument_id(form)
         except Exception:
@@ -249,6 +256,7 @@ def report_fields(api, ins_id: int, rfx: float = 1.0) -> dict:
         now = by_year.get(y_now)
         if now:
             out["shares_now_m"] = round(now, 2)
+            out["shares_year"] = y_now                                  # årsrapporten aktieantalet kommer ur
             for back in (1, 3, 5):
                 v = by_year.get(y_now - back)
                 if v:
@@ -271,6 +279,26 @@ def ev_ebitda_median(api, ins_id: int, years: int = 10) -> Optional[float]:
     vals = [_f((e or {}).get("v")) for e in raw[-years:] if isinstance(e, dict)]
     m = _median([v for v in vals if v is not None and v > 0])
     return None if m is None else round(m, 1)
+
+
+def _snapshot_musd(snap: dict, fx: float, rfx: float) -> dict:
+    """MUSD-talen ur snapshoten: EV i kursvalutan × fx; nettoskuld, omsättning, FCF och operativt kassaflöde
+    (12 mån) i rapportvalutan × rfx. None när Börsdata saknar talet."""
+    out = {}
+    for src_key, out_key, factor in (("ev", "ev_musd", fx), ("net_debt_m", "net_debt_musd", rfx),
+                                     ("revenue_m", "revenue_musd", rfx), ("fcf_m", "fcf_musd", rfx),
+                                     ("ocf_m", "ocf_musd", rfx)):
+        v = _f(snap.get(src_key))
+        out[out_key] = round(v * factor, 1) if v is not None else None
+    return out
+
+
+def _bd_meta(meta: dict, ccy: Optional[str]) -> dict:
+    """Vilket bolag Börsdata matchade (namn och Börsdatas ticker) och rapportvalutan MUSD-talen räknats om från —
+    ur instrumentlistan som redan är laddad, inga nya anrop."""
+    return {"bd_name": str(meta.get("name") or "").strip() or None,
+            "bd_ticker": str(meta.get("ticker") or "").strip() or None,
+            "report_currency": str(meta.get("reportCurrency") or ccy or "").strip().upper() or None}
 
 
 def refresh(api, sheets: dict) -> dict:
@@ -329,6 +357,7 @@ def refresh(api, sheets: dict) -> dict:
                 meta = inst_map.get(iid) or {}
                 ccy = str(meta.get("stockPriceCurrency") or "").upper() or None
                 s["currency"] = ccy
+                s.update(_bd_meta(meta, ccy))
                 snap = snaps.get(iid) or {}
                 s["ev_ebitda"] = _f(snap.get("ev_ebitda"))
                 s["nd_ebitda"] = _f(snap.get("net_debt_ebitda"))
@@ -345,9 +374,15 @@ def refresh(api, sheets: dict) -> dict:
                 s.update(report_cache[iid])
                 if r["sheet"] == "producers" and bucket_of(r) == "royalty":
                     s["ev_ebitda_median"] = ev_ebitda_median(api, iid)
-                if r["sheet"] == "producers" and bucket_of(r) == "producers":  # Rick Rule: EV till EV/NAV
-                    ev = _f(snap.get("ev"))
-                    s["ev_musd"] = round(ev * fx, 1) if ev is not None else None
+                if r["sheet"] == "producers":                # Rick Rule och Royalty C: EV till EV/NAV
+                    s.update(_snapshot_musd(snap, fx, rfx))
+                    # FCF 12 mån bara som referens vid kortets FCF-rutor (lukacs.ref_fcf_musd) — under eget namn, så
+                    # att Lukacs enhetskontroll (som läser fcf_musd) inte tar tolv månader bakåt för en forward FCF
+                    s["fcf12_musd"] = s.pop("fcf_musd", None)
+                    dy = _f(snap.get("dividend_yield"))      # decimaltal (borsdata_api delar med 100) → %
+                    s["dividend_yield_pct"] = round(dy * 100, 2) if dy is not None else None
+                if r["sheet"] == "insider":
+                    s["f_score"] = _f(snap.get("f_score"))
                 if r["sheet"] == "confidence":               # Durrett-/Wolf Asymmetry-arket: fler tal ur snapshoten
                     roic = _f(snap.get("roic"))
                     s["roic_pct"] = round(roic * 100, 1) if roic is not None else None
@@ -356,11 +391,7 @@ def refresh(api, sheets: dict) -> dict:
                     s["ev_ebit"] = _f(snap.get("ev_ebit"))
                     s["fx_to_usd"] = fx if ccy else None
                     s["fx_table"] = "sheets_refresh.FX_TO_USD (fast tabell)"
-                    for src_key, out_key, factor in (("ev", "ev_musd", fx), ("net_debt_m", "net_debt_musd", rfx),
-                                                     ("revenue_m", "revenue_musd", rfx), ("fcf_m", "fcf_musd", rfx),
-                                                     ("ocf_m", "ocf_musd", rfx)):
-                        v = _f(snap.get(src_key))
-                        s[out_key] = round(v * factor, 1) if v is not None else None
+                    s.update(_snapshot_musd(snap, fx, rfx))
                     for k in ("pe", "ps", "rs_rank", "ebitda_margin"):
                         s[k] = _f(snap.get(k))
             else:
@@ -597,6 +628,7 @@ def fetch_row(api, ticker: str, ins_id=None) -> Optional[dict]:
     price, asof = _last_close(api, iid)
     s = {"ticker": t, "ins_id": iid, "price": price, "asof": asof, "currency": ccy, "source": "borsdata",
          "ev_ebitda": _f(snap.get("ev_ebitda")), "nd_ebitda": _f(snap.get("net_debt_ebitda")), "mcap_musd": None}
+    s.update(_bd_meta(meta, ccy))
     mc = _f(snap.get("market_cap"))
     if mc is not None:
         s["mcap_musd"] = round(mc * fx, 1)
@@ -608,11 +640,7 @@ def fetch_row(api, ticker: str, ins_id=None) -> Optional[dict]:
     s["ev_ebit"] = _f(snap.get("ev_ebit"))
     s["fx_to_usd"] = fx if ccy else None
     s["fx_table"] = "sheets_refresh.FX_TO_USD (fast tabell)"
-    for src_key, out_key, factor in (("ev", "ev_musd", fx), ("net_debt_m", "net_debt_musd", rfx),
-                                     ("revenue_m", "revenue_musd", rfx), ("fcf_m", "fcf_musd", rfx),
-                                     ("ocf_m", "ocf_musd", rfx)):
-        v = _f(snap.get(src_key))
-        s[out_key] = round(v * factor, 1) if v is not None else None
+    s.update(_snapshot_musd(snap, fx, rfx))
     for k in ("pe", "ps", "rs_rank", "ebitda_margin"):
         s[k] = _f(snap.get(k))
     return s

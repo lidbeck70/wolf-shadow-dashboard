@@ -311,9 +311,10 @@ def test_the_checks_change_no_calculation():
 
 
 def producer_refresh_row(ccy: str = "NOK", price: float = 49.53, market_cap: float = 122000.0,
-                         ev: float = 158436.0) -> dict:
-    """Rick Rule-raden som det riktiga nattjobbet (sheets_refresh.refresh) bygger den — utan fx_to_usd och
-    fcf_musd, som bara Durrett-arkets rader får. Inget nätverk: Börsdata är testernas fejk."""
+                         ev: float = 158436.0, fcf_m=None, report: str = "USD") -> dict:
+    """Rick Rule-raden som det riktiga nattjobbet (sheets_refresh.refresh) bygger den — utan fx_to_usd, som bara
+    Durrett-arkets rader får. fcf_m = Börsdatas FCF i miljoner rapportvaluta (report); utan den är fcf12_musd tomt.
+    Inget nätverk: Börsdata är testernas fejk."""
     import sheets_refresh as sr
     from tests.test_sheets_refresh import _API, _sheets
 
@@ -322,9 +323,11 @@ def producer_refresh_row(ccy: str = "NOK", price: float = 49.53, market_cap: flo
             super().__init__()
             self.prices[40] = price
             self.snaps[40] = {"ev_ebitda": 3.0, "net_debt_ebitda": 0.8, "market_cap": market_cap, "ev": ev}
+            if fcf_m is not None:
+                self.snaps[40]["fcf_m"] = fcf_m
 
         def get_instruments(self):
-            return [dict(i, stockPriceCurrency=ccy, reportCurrency="USD") if i["insId"] == 40 else i
+            return [dict(i, stockPriceCurrency=ccy, reportCurrency=report) if i["insId"] == 40 else i
                     for i in super().get_instruments()]
 
     sheets = _sheets()
@@ -573,3 +576,53 @@ def test_mnok_fcf_at_low_conversion_still_withholds_the_one_click_price():
     # Det riktigt billiga bolaget: ingen varning om enheten (inget råd att dela med 10) — knappen hålls bara inne
     cheap = _sek_row((140, 60, 260), csm=(140, 60, 260), shares=100.0, price=20.0)
     assert fv.fcf_unit_warnings(cheap, okea) == [] and fv.fcf_maybe_local(cheap, okea) == "NOK"
+
+
+# ── Batch 2: Börsdatas FCF (12 mån) på Rick Rule- och Royalty-raderna ───────
+def _card(fcf, csm=None):
+    """Lukacs-kortets forward FCF (Base, Bear, Bull) i MUSD — None hoppas över — och CSM:s FCF per scenario."""
+    row = {"fv": {s: {"forward_fcf_musd": f, "target_yield": 12.0}
+                  for s, f in zip(("Base", "Bear", "Bull"), fcf) if f is not None}}
+    if csm:
+        row["csm"] = {s: {"fcf_musd": c} for s, c in csm.items()}
+    return row
+
+
+def test_the_nightly_fcf_is_a_reference_only_and_does_not_steer_the_unit_check():
+    """Nattraden bär Börsdatas FCF (12 mån) som fcf12_musd — en referens vid kortets FCF-rutor. Enhetskontrollen
+    läser den inte: tre granskningsrundor visade att tolv månader bakåt är fel mått för en forward FCF (break-even-
+    år och kapitaltunga år gav falska varningar, och FCF i MSEK fick 'miljoner USD?' i stället för SEK — så spärren
+    mot 'Använd USD' släppte). Kontrollen ger samma svar med och utan talet, som på main."""
+    cases = [
+        (("USD", 10.0, 1200.0, 1300.0, "USD"), (1.5, 4.0, 30.0, 400.0),
+         [_card((150, 30, 260)), _card((150000, 30000, 260000)), _card((0.15, 0.03, 0.26))]),
+        (("SEK", 350.0, 95700.0, 110000.0, "SEK"), (2316.0,), [_card((11579, 5263, 16842)), _card((1100, 500, 1600))]),
+        (("SEK", 330.0, 90000.0, 98000.0, "SEK"), (2000.0,), [_card((900, 400, 1800))]),
+    ]
+    for (ccy, price, mc, ev, rep), fcfs, cards in cases:
+        bare = producer_refresh_row(ccy, price, market_cap=mc, ev=ev, report=rep)
+        for m in fcfs:
+            ref = producer_refresh_row(ccy, price, market_cap=mc, ev=ev, fcf_m=m, report=rep)
+            assert "fcf_musd" not in ref or ref["fcf_musd"] is None, ref
+            assert ref["fcf12_musd"] is not None
+            for card in cards:
+                assert fv.fcf_unit_warnings(card, ref) == fv.fcf_unit_warnings(card, bare), (m, card)
+                assert fv.fcf_in_local_currency(card, ref) == fv.fcf_in_local_currency(card, bare)
+                assert fv.fcf_maybe_local(card, ref) == fv.fcf_maybe_local(card, bare)
+    # Granskningens fall: FCF i MSEK utan CSM ska ge 'miljoner SEK' (spärren mot 'Använd USD'), inte 'miljoner USD'
+    msek = producer_refresh_row("SEK", 350.0, market_cap=95700.0, ev=110000.0, fcf_m=2316.0, report="SEK")
+    assert fv.fcf_in_local_currency(_card((11579, 5263, 16842)), msek) == "SEK"
+
+
+def test_the_borsdata_fcf_reference_is_shown_only_in_usd():
+    """Rapportvalutan utanför jobbets fasta tabell: jobbet räknar om med 1,0, så talet vore miljoner ZAR — ingen
+    referensrad då. Samma för kursvalutor utanför tabellen (pence)."""
+    zar = producer_refresh_row("USD", 8.0, fcf_m=3000.0, report="ZAR")
+    assert zar["fcf12_musd"] == 3000.0 and zar["report_currency"] == "ZAR" and fv.ref_fcf_musd(zar) is None
+    assert fv.ref_fcf_musd(producer_refresh_row(fcf_m=3000.0)) == 3000.0
+    assert fv.ref_fcf_musd(producer_refresh_row("SEK", 300.0, fcf_m=20000.0, report="SEK")) == 1900.0   # MSEK × 0,095
+    assert fv.ref_fcf_musd({"currency": "GBX", "fcf12_musd": 100.0}) is None
+    assert fv.ref_fcf_musd({"currency": "SEK", "fcf12_musd": -35.0}) == -35.0
+    assert fv.ref_fcf_musd({"fcf12_musd": 50.0}) == 50.0           # äldre blob utan rapportvaluta
+    assert fv.ref_fcf_musd({"fcf_musd": 50.0}) is None             # Durrett-radens fält är inte Rick Rules referens
+    assert fv.ref_fcf_musd(None) is None

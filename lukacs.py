@@ -530,6 +530,20 @@ def _ref_sizes_ok(ref: Optional[dict]) -> bool:
     return not raw or raw.upper() in _job_table()
 
 
+def ref_fcf_musd(ref: Optional[dict]) -> Optional[float]:
+    """Börsdatas FCF (12 mån) i MUSD ur Rick Rule-/Royalty-radens fält fcf12_musd — bara en referens att visa vid
+    FCF-rutorna. Enhetskontrollen läser den inte: tolv månader bakåt är fel mått för en forward FCF (ett
+    kapitaltungt år nära noll, eller ett starkt år, gav falska enhetsvarningar och kunde ta bort spärren mot
+    'Använd USD' bredvid MSEK). None när talet inte säkert står i USD: kursvalutan utanför jobbets fasta tabell
+    (som _ref_sizes_ok), eller rapportvalutan utanför den — jobbet räknar då om rapportens miljoner med 1,0."""
+    if not _ref_sizes_ok(ref):
+        return None
+    rc = str(ref.get("report_currency") or "").strip().upper()
+    if rc and rc not in _job_table():
+        return None
+    return _num(ref.get("fcf12_musd"))
+
+
 def _fcf_scan(row: dict, ref: Optional[dict] = None) -> list:
     """[(scenario, sort, text)] — se fcf_unit_warnings. sort: 'unit' (tusental/miljarder/yield), 'local' (miljoner
     NOK/SEK/DKK) eller 'size' (över 2× bolagets storlek)."""
