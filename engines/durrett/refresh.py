@@ -5,14 +5,19 @@ sheets_refresh.py (GitHub Actions) läser data/confidence.json, hämtar
 färska tal ur Börsdata och skriver dem till Gisten (sheets_refresh.json)
 under nyckeln "confidence:<TICKER>". Här översätts en sådan rad till
 förslag {fältnyckel: Datapoint} — bara sådant som skiljer sig från det
-bolaget redan har. Inget skrivs utan Använd. Rena funktioner.
+bolaget redan har, bara fält som gäller bolagets stage, och inga negativa
+tal där fältet inte får vara negativt. Dessutom förslag som härleds ur
+arket självt: stage (motorns klassificering), produktionsenhet (råvarans
+prisenhet) och högsta resurskategori (arkets reserver och resurser).
+Inget skrivs utan Använd. Rena funktioner.
 """
 
 from __future__ import annotations
 
 from typing import Optional
 
-from confidence.config import FIELD_BY_KEY
+from confidence.config import FIELD_BY_KEY, STAGES
+from confidence.data import validation as cval
 from confidence.data.models import CompanyInput
 from confidence.data.provenance import Datapoint, dp
 
@@ -60,7 +65,10 @@ def ins_id_offer(row: Optional[dict], company: CompanyInput) -> Optional[int]:
 
 
 def proposals(blob: Optional[dict], company: CompanyInput, sheet: str = SHEET) -> list:
-    """[(fältnyckel, Datapoint, nuvarande värde | None)] — bara avvikande tal."""
+    """[(fältnyckel, Datapoint, nuvarande värde | None)] — bara avvikande tal. Fält vars stages inte omfattar bolagets
+    stage föreslås inte (valideringen ignorerar dem ändå), och inte heller negativa tal för fält utanför
+    validation._MAY_BE_NEGATIVE — samma golv 0 som refresh_ui.suggest(lo=0): en explorers EV/EBITDA −3,2 blev förr ett
+    valideringsfel efter Använd. Negativt FCF, OCF och rörelsekapital föreslås (de får vara negativa)."""
     s = refresh_row(blob, company.ticker, sheet)
     if not s:
         return []
@@ -79,6 +87,9 @@ def proposals(blob: Optional[dict], company: CompanyInput, sheet: str = SHEET) -
     for bkey, fkey, unit, kind in _MAP:
         if unknown_ccy and bkey in _FX_FIELDS:
             continue
+        stages = FIELD_BY_KEY[fkey].stages
+        if stages and company.stage not in stages:
+            continue                                    # t.ex. EV/EBITDA och P/E för en explorer
         v = s.get(bkey)
         if v is None:
             continue
@@ -88,6 +99,8 @@ def proposals(blob: Optional[dict], company: CompanyInput, sheet: str = SHEET) -
             continue
         if bkey in _PCT_FIELDS:
             v = v * _PCT_FIELDS[bkey]
+        if v < 0 and fkey not in cval._MAY_BE_NEGATIVE:
+            continue                                    # rutan och valideringen tar ≥ 0 (negativt EBITDA m.m.)
         # det som sparas: kursen med 6 värdesiffror (en pencekurs i pund, 0,00675, tål inte 4 decimaler), annars 4
         # decimaler — och jämförelsen görs mot samma tal, så ett använt förslag inte dyker upp igen
         v = float(f"{v:.6g}") if bkey == "price" else round(v, 4)
@@ -103,6 +116,9 @@ def proposals(blob: Optional[dict], company: CompanyInput, sheet: str = SHEET) -
             unit = f"{ccy}/aktie" if ccy else unit
         out.append((fkey, dp(v, kind=kind, source=source, source_type="secondary", pub_date=asof,
                              unit=unit, note=note), cur))
+    burn = quarterly_burn_offer(s, company, src, asof)
+    if burn:
+        out.append(burn)
     if ccy and (company.get("market_currency") is None or str(company.get("market_currency").value) != ccy) \
             and ccy in _CCY_CHOICES:
         out.append(("market_currency", dp(ccy, kind="ACTUAL", source=src, source_type="secondary", pub_date=asof),
@@ -148,6 +164,144 @@ def commodity_price_offer(s: Optional[dict], company: CompanyInput) -> Optional[
                                   pub_date=asof, unit=reg.unit, note=note), cur)
 
 
+def quarterly_burn_offer(s: Optional[dict], company: CompanyInput, source: str, asof: Optional[str]) -> Optional[tuple]:
+    """('quarterly_burn_musd', Datapoint, nuvarande | None): nattens burn/år ÷ 4. Burn är definierad som i dag —
+    negativt fritt kassaflöde 12 mån (sheets_refresh.report_fields), alltså med capex. Bara för explorer och developer
+    (fältets stages) och bara när burn > 0 (positivt FCF ger burn 0, inget förslag). Samma tal som det sparade → None."""
+    spec = FIELD_BY_KEY["quarterly_burn_musd"]
+    if not isinstance(s, dict) or company.stage not in spec.stages:
+        return None
+    try:
+        burn = float(s.get("burn_musd"))
+    except (TypeError, ValueError):
+        return None
+    if not burn > 0:
+        return None
+    v = round(burn / 4.0, 4)
+    cur = company.num("quarterly_burn_musd") if company.has("quarterly_burn_musd") else None
+    if cur is not None and abs(cur - v) < 1e-6:
+        return None
+    return ("quarterly_burn_musd", dp(v, kind="ESTIMATE", source=source, source_type="secondary", pub_date=asof,
+                                      unit="MUSD", note=f"burn/år {burn:g} MUSD ÷ 4 — negativt FCF 12 mån, capex ingår"),
+            cur)
+
+
+# ── förslag som härleds ur arket självt (inte ur natten) ─────────────────────
+_CONF_SV = {"high": "hög", "medium": "medel"}
+
+
+def stage_offer(company: CompanyInput) -> Optional[tuple]:
+    """(stage, säkerhet, skäl) ur Durrett-motorns klassificering (classifier.classify) när den är säker (hög eller
+    medel) och kommer fram till ett annat stage än fältet — t.ex. ett skal från Holdings eller Snabbkoll (developer)
+    med en omsättning på minst 5 MUSD, som motorn redan läser som producer. Skälen är motorns egna. None annars."""
+    try:
+        from engines.durrett import classifier
+        from engines.durrett._base import Ctx
+        cl = classifier.classify(Ctx(company))
+    except Exception:                                   # förslaget är en hjälp — motorn får aldrig fälla sidan
+        return None
+    stage = cl.profile
+    if cl.confidence not in _CONF_SV or stage not in STAGES or stage == company.stage:
+        return None
+    return stage, cl.confidence, list(cl.reasons)
+
+
+def stage_offer_text(offer: tuple) -> str:
+    """'Förslag: stage producer (Durrett-motorn, säkerhet hög): omsättning 600 MUSD (≥ 5); …'."""
+    stage, conf, reasons = offer
+    return f"Förslag: stage {stage} (Durrett-motorn, säkerhet {_CONF_SV.get(conf, conf)}): " + "; ".join(reasons)
+
+
+def _text(company: CompanyInput, key: str) -> str:
+    return str(company.get(key).value).strip() if company.has(key) else ""
+
+
+def _price_base(company: CompanyInput) -> tuple:
+    """(registerpost, basenhet) för bolagets råvara: prisenheten USD/oz → oz, USD/lb U3O8 → lb, USD/boe → boe —
+    samma tabell som Durrett-motorn (_base._PRICE_UNIT_BASE). (None, None) utan råvara eller utan bas (USc/bu)."""
+    from confidence import commodities as com
+    from engines.durrett import _base as db
+    reg = com.get(company.commodity) if company.commodity else None
+    base = db._PRICE_UNIT_BASE.get(reg.unit) if reg else None
+    return (reg, base) if base else (None, None)
+
+
+def _unit_base(unit: str) -> Optional[str]:
+    """Basenheten för en mängdenhet ur motorns tabeller (koz → oz, Mlb → lb, kt → t; boe, MMBtu, kg och ct är sina
+    egna). None för en egen text motorn inte känner ('oz (attributable)')."""
+    from engines.durrett import _base as db
+    if unit in db._UNIT_FACTOR:
+        return db._UNIT_FACTOR[unit][0]
+    return unit if unit in set(db._PRICE_UNIT_BASE.values()) else None
+
+
+def production_unit_conflict(company: CompanyInput) -> Optional[str]:
+    """Varningen när produktionsenheten inte passar råvarans prisenhet (t i stället för lb för koppar) — samma kontroll
+    som Durrett-motorns Ctx.quantity (enhetskonflikt: ingen mängd). Asymmetry räknar produktion × pris rakt av, så där
+    blir talen fel. None när enheten passar, saknas eller är en egen text, eller när råvaran saknar prisenhet."""
+    unit = _text(company, "production_unit")
+    reg, base = _price_base(company)
+    ub = _unit_base(unit) if unit else None
+    if not base or ub is None or ub == base:
+        return None
+    return (f"Produktionsenheten {unit} passar inte råvarans pris i {reg.unit} — produktion × pris blir fel. "
+            f"Förslag: {base}.")
+
+
+def production_unit_offer(company: CompanyInput) -> Optional[tuple]:
+    """('production_unit', Datapoint, nuvarande | None): enheten råvarans pris står i (registrets prisenhet: USD/oz →
+    oz). När fältet är tomt eller inte passar prisenheten (production_unit_conflict). Datapunkten får varken datum
+    eller källtyp — som en enhet skriven för hand, så Data Quality inte blåses upp. None annars."""
+    reg, base = _price_base(company)
+    if not base:
+        return None
+    cur = _text(company, "production_unit") or None
+    if cur and not production_unit_conflict(company):
+        return None
+    return ("production_unit", dp(base, kind="ASSUMPTION", source=f"Råvarans prisenhet ({reg.unit})",
+                                  note=f"{reg.label} prissätts i {reg.unit}"), cur)
+
+
+# (fält, kategori) från den högsta kategorin — samma ordning som vikterna i confidence.config.RESOURCE_CATEGORY_WEIGHT
+CATEGORY_FIELDS = (("reserve_proven", "proven"), ("reserve_probable", "probable"), ("resource_measured", "measured"),
+                   ("resource_indicated", "indicated"), ("resource_inferred", "inferred"))
+
+
+def _amount(v: float) -> str:
+    return f"{v:,.0f}".replace(",", " ") if abs(v) >= 1000 else f"{v:g}"
+
+
+def resource_category_offer(company: CompanyInput) -> Optional[tuple]:
+    """('resource_category', Datapoint, nuvarande | None): den högsta kategorin med ett tal > 0 bland arkets egna
+    reserver och resurser (reserve_*/resource_*). Katalogen räknar fältet som en bedömning, så förslaget säger att det
+    är härlett ur arkets tal; datapunkten bär det talets källa, källtyp och datum. None utan ett sådant tal, eller när
+    fältet redan har kategorin."""
+    for key, cat in CATEGORY_FIELDS:
+        if not cval.usable(company, key):
+            continue
+        v = company.num(key)
+        if v is None or not v > 0:
+            continue
+        cur = str(company.get("resource_category").value) if company.has("resource_category") else None
+        if cur == cat:
+            return None
+        basis = company.get(key)
+        label = FIELD_BY_KEY[key].label
+        unit = _text(company, "resource_unit")
+        return ("resource_category", Datapoint(
+            value=cat, kind=basis.kind, source=f"Härlett ur arket: {label}" + (f" ({basis.source})" if basis.source else ""),
+            source_type=basis.source_type, pub_date=basis.pub_date, data_date=basis.data_date,
+            note=f"härlett ur arkets egna tal: {label} {_amount(v)}{' ' + unit if unit else ''}"), cur)
+    return None
+
+
+def derived_offers(company: CompanyInput, keys=None) -> list:
+    """[(fältnyckel, Datapoint, nuvarande | None)] som härleds ur arket och registret, inte ur natten: produktionsenhet
+    och högsta resurskategori. keys = bara de fälten (formen förslaget står över)."""
+    out = [o for o in (production_unit_offer(company), resource_category_offer(company)) if o]
+    return [o for o in out if keys is None or o[0] in keys]
+
+
 def spot_earnings(s: Optional[dict], company: CompanyInput) -> Optional[dict]:
     """Motorns framtida vinst (future_fcf, MUSD) räknad på nattens terminspris i stället för det sparade — bara för
     raden vid Råvarupris, inget skrivs. None när priset inte erbjuds (commodity_price_offer: fel råvara, fel enhet,
@@ -172,4 +326,5 @@ def spot_earnings(s: Optional[dict], company: CompanyInput) -> Optional[dict]:
 
 
 __all__ = ["proposals", "refresh_row", "ins_id_offer", "commodity_price_offer", "spot_earnings", "Datapoint",
-           "AUTO_USD_SOURCES"]
+           "AUTO_USD_SOURCES", "quarterly_burn_offer", "stage_offer", "stage_offer_text", "production_unit_offer",
+           "production_unit_conflict", "resource_category_offer", "derived_offers", "CATEGORY_FIELDS"]
