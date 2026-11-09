@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import refresh_ui as rui        # noqa: E402
 import sheets_refresh as sr     # noqa: E402
+from borsdata_api import BorsdataAPI as _RealBorsdataAPI    # noqa: E402  (sidornas fixtur byter ut klassen)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TODAY = "2026-11-09"
@@ -679,3 +680,147 @@ def test_durrett_yahoo_fallback_labels_ev_ebitda_yahoo(page, monkeypatch):
     lines = " ".join(m.value for m in at.markdown if "Värdering:" in m.value)
     assert "EV/EBITDA 3,1× (Yahoo NEM)" in lines and "(Börsdata)" not in lines
     assert at.session_state["confidence"]["companies"]["NEM"]["fields"] == {} and not page.saves
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  Rättelser 3: Börsdatas globala lista svarar inte (NYSE, TSX, TSX-V, ASX)
+# ═════════════════════════════════════════════════════════════════════════════
+NORDIC_LIST = {"instruments": [{"insId": 7, "ticker": "GENO", "name": "Genovis AB", "countryId": 1,
+                                "stockPriceCurrency": "SEK", "reportCurrency": "SEK"}]}
+GLOBAL_LIST = {"instruments": [{"insId": 900, "ticker": "FNV", "name": "Franco-Nevada", "countryId": 5,
+                                "stockPriceCurrency": "USD", "reportCurrency": "USD"}]}
+
+
+class _Http:
+    """requests.Session för den riktiga BorsdataAPI, utan nätverk: svar per sökväg (dict = 200 med den kroppen,
+    int = statuskoden, undantag = kastas). Anropen spelas in; en sökväg utan svar är ett fel i testet."""
+
+    def __init__(self, answers: dict):
+        self.answers = answers
+        self.paths: list = []
+        self.headers: dict = {}
+
+    def get(self, url, params=None, timeout=None):
+        import json
+        import requests
+        path = url.split("/v1", 1)[1]
+        self.paths.append(path)
+        if path not in self.answers:
+            raise AssertionError(f"oväntat anrop {path}")
+        a = self.answers[path]
+        if isinstance(a, BaseException):
+            raise a
+        code, body = (200, a) if isinstance(a, dict) else (a, {})
+        resp = requests.Response()
+        resp.status_code, resp.url, resp._content = code, url, json.dumps(body).encode()
+        resp.reason = {401: "Unauthorized", 403: "Forbidden", 429: "Too Many Requests",
+                       503: "Service Unavailable"}.get(code, "")
+        resp.headers["Retry-After"] = "0"
+        return resp
+
+
+def _real_bd(tmp_path, monkeypatch, global_answer, nordic: str = "cache"):
+    """En fabrik för den riktiga BorsdataAPI mot _Http (en inspelning för alla klienter den ger). nordic='cache':
+    instrumentlistan ligger i klientens diskcache sedan en tidigare hämtning, nordic='svar': den svarar 200. Inga
+    väntetider mellan försöken."""
+    import time as _time
+    import types
+    import borsdata_api
+    monkeypatch.setattr(borsdata_api, "time", types.SimpleNamespace(time=_time.time, sleep=lambda s: None))
+    cache = str(tmp_path / "bd_cache")
+    if nordic == "cache":
+        seed = _RealBorsdataAPI(api_key="test", cache_dir=cache)
+        seed._session = _Http({"/instruments": NORDIC_LIST})
+        seed.get_instruments()
+    answers = {"/instruments/global": global_answer}
+    if nordic == "svar":
+        answers["/instruments"] = NORDIC_LIST
+    http = _Http(answers)
+
+    def make(*a, **k):
+        api = _RealBorsdataAPI(api_key="test", cache_dir=cache)
+        api._session = http
+        return api
+    make.http = http
+    return make
+
+
+def _yahoo_spy(monkeypatch) -> list:
+    from asymmetry import fetch as af
+    asked: list = []
+    monkeypatch.setattr(af, "yahoo_row", lambda t, getter=None: asked.append(t) or {
+        "ticker": t, "source": "yfinance", "yahoo": t, "yahoo_name": "Tegra Holdings Inc", "mcap_musd": 4200.0})
+    return asked
+
+
+@pytest.mark.parametrize("nordic", ["cache", "svar"])
+@pytest.mark.parametrize("failure, tries", [(503, 3), (429, 3), (401, 1), ("anslutningsfel", 1), ("timeout", 3)])
+def test_global_list_error_without_ins_id_gives_no_yahoo(session, monkeypatch, tmp_path, nordic, failure, tries):
+    """TSX-V-juniorn TGR utan ins_id: den nordiska listan svarar (eller ligger i diskcachen), men den globala svarar
+    inte. Klienten sväljer det felet (get_global_instruments_list ger []) och tickeruppslaget säger 'känner inte' —
+    fetch_live frågar listan igen och visar Börsdatas fel. Ingen Yahoo på bara tickern, nattens rad och en tidigare
+    hämtning står kvar, felet står under knappen."""
+    import requests
+    import borsdata_api
+    exc = {"anslutningsfel": requests.exceptions.ConnectionError("Connection reset by peer"),
+           "timeout": requests.exceptions.Timeout("read timed out")}.get(failure, failure)
+    bd = _real_bd(tmp_path, monkeypatch, exc, nordic)
+    asked = _yahoo_spy(monkeypatch)
+    rui.put_live("tiggre:c1", {"mcap_musd": 85.4})
+    got, why = rui.fetch_live("tiggre", {"id": "c1", "ticker": "TGR"}, api=bd())
+    assert got is None and why.startswith("Börsdata svarade inte: "), why
+    assert not asked and rui.live_rows() == {"tiggre:c1": {"mcap_musd": 85.4}}
+    assert bd.http.paths == ["/instruments"] * (nordic == "svar") + ["/instruments/global"] * (2 * tries)
+    assert sr.fetch_row(bd(), "TGR") is None                          # felet sväljs här — därav kontrollen
+    monkeypatch.setattr(borsdata_api, "BorsdataAPI", bd)
+    rui._fetch_click("tiggre", {"id": "c1", "ticker": "TGR"}, None, None)          # 'Hämta nu'
+    assert session[rui.MSG_KEY]["tiggre:c1"].startswith("Börsdata svarade inte: ") and not asked
+    assert rui.live_rows() == {"tiggre:c1": {"mcap_musd": 85.4}}
+
+
+@pytest.mark.parametrize("answer, gets", [(400, 1), (403, 2), (GLOBAL_LIST, 1)],
+                         ids=["400 ingen global licens", "403", "listan saknar tickern"])
+def test_global_list_that_answers_still_gives_yahoo(session, monkeypatch, tmp_path, answer, gets):
+    """Den globala listan svarar men har inte tickern, eller licensen saknas (400 cachas som {}, 403): 'känner inte'
+    och Yahoo som förut. En lista som hämtats läses ur diskcachen — ingen extra kvot."""
+    bd = _real_bd(tmp_path, monkeypatch, answer)
+    asked = _yahoo_spy(monkeypatch)
+    got, why = rui.fetch_live("tiggre", {"id": "c1", "ticker": "TGR"}, api=bd())
+    assert why == "Börsdata känner inte TGR." and asked == ["TGR"] and got["mcap_musd"] == 4200.0
+    assert bd.http.paths == ["/instruments/global"] * gets and rui.is_live("tiggre:c1")
+
+
+def test_a_found_ticker_never_downloads_the_global_list(session, monkeypatch, tmp_path):
+    """Hittar fetch_row bolaget (nordisk ticker eller sparat ins_id) frågas den globala listan inte; en fejkad klient
+    utan _get (som _UnknownApi) hoppar över kontrollen."""
+    bd = _real_bd(tmp_path, monkeypatch, AssertionError("den globala listan ska inte hämtas"))
+    monkeypatch.setattr(sr, "fetch_row", lambda api, t, ins_id=None: dict(NEM))
+    got, why = rui.fetch_live("producers", {"id": "p1", "ticker": "NEM"}, api=bd())
+    assert why == "" and got["ev_ebitda"] == 6.2 and bd.http.paths == []
+    assert rui._global_list_answered(_UnknownApi()) is None           # inget _get: ingenting att fråga
+
+
+def test_tiggre_global_list_error_keeps_the_night_row(page, monkeypatch, tmp_path):
+    """Tiggre-kandidaten TGR (ingen ins_id) har nattens rad ur Börsdatas globala lista: Tiger Gold, 85 MUSD. Den
+    globala listan svarar 503 på 'Hämta nu' — med den riktiga klienten och fetch_row: felet står under knappen,
+    nattens börsvärde står kvar och Yahoos bolag på den nakna tickern (Tegra) kommer inte in."""
+    import borsdata_api
+    real_fetch_row = sr.fetch_row
+    night = {"rows": {"tiggre:c1": sr.as_sheet_row(dict(TGR, asof="2026-11-06"), "tiggre")}}
+    at = page("Tiggre", night, _tiggre_store(), {"TGR": TGR})
+    at.run()
+    assert not at.exception, at.exception
+    before = {k for k in _buttons(at) if k.startswith("rf_")}
+    assert "rf_tiggre_c1_mcap" in before
+    bd = _real_bd(tmp_path, monkeypatch, 503, nordic="svar")
+    monkeypatch.setattr(sr, "fetch_row", real_fetch_row)
+    monkeypatch.setattr(borsdata_api, "BorsdataAPI", bd)
+    _yahoo_answers_the_bare_ticker(monkeypatch, "TGR", "Tegra Holdings Inc")
+    at.button(key="tg_live_c1").click().run()
+    assert not at.exception, at.exception
+    assert "Börsdata svarade inte: Failed after 3 attempts: /instruments/global" in _captions(at)
+    assert {k for k in _buttons(at) if k.startswith("rf_")} == before                  # nattens förslag står kvar
+    md = _md(at)
+    assert "🤖 Börsdata 2026-11-06: börsvärde MUSD 85" in md and "hämtat nu" not in md and "Tegra" not in md
+    assert rui.LIVE_KEY not in at.session_state and not page.saves
+    assert set(bd.http.paths) == {"/instruments", "/instruments/global"}

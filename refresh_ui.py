@@ -275,6 +275,22 @@ def fetched_line(s: Optional[dict], row: Optional[dict]) -> str:
     return txt
 
 
+def _global_list_answered(api) -> None:
+    """Kastar när Börsdatas globala lista inte svarade. Tickeruppslaget (sheets_refresh.resolve_global) läser den
+    genom get_global_instruments_list, som sväljer felet och ger [] — så en timeout, 5xx, 401, 429 eller nätet blev
+    'känner inte' och Yahoo på bara tickern, fast NYSE-, TSX- och ASX-tickrar bara finns i den listan. Anropas bara
+    när inget hittades: en nordisk ticker laddar inte ner listan. Efter en lyckad hämtning svarar klientens diskcache
+    (ingen extra kvot). 400 (ingen global licens, cachad som {}) och 403 ger 'känner inte' och Yahoo som förut."""
+    raw_get = getattr(api, "_get", None)
+    if not callable(raw_get) or not callable(getattr(api, "get_global_instruments_list", None)):
+        return
+    try:
+        raw_get("/instruments/global")
+    except Exception as exc:
+        if getattr(getattr(exc, "response", None), "status_code", None) != 403:
+            raise
+
+
 def fetch_live(sheet: str, row: dict, row_id=None, commodity: Optional[str] = None, api=None, info_getter=None,
                yahoo: bool = True) -> tuple:
     """'Hämta nu' för en arkrad: samma rad som nattjobbet bygger (sheets_refresh.fetch_row, Börsdata) — eller Yahoo-
@@ -298,6 +314,8 @@ def fetch_live(sheet: str, row: dict, row_id=None, commodity: Optional[str] = No
         if callable(instruments):
             instruments()
         got = sr.fetch_row(api, t, (row or {}).get("ins_id"))
+        if got is None:
+            _global_list_answered(api)
     except Exception as exc:
         return None, f"Börsdata svarade inte: {exc}"
     why = "" if got is not None else f"Börsdata känner inte {t}."
