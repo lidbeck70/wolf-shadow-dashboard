@@ -214,8 +214,20 @@ def _ds_hints(blob: Optional[dict], sheet: str, row: dict) -> dict:
     return out
 
 
+def _scan_suggestions(scan: Optional[dict], row: dict) -> dict:
+    """Insider-skanningens förslag för raden {fält: (värde, datum, enhet)} — insider.scan_suggestions, tomt utan
+    skanning."""
+    if not scan or not isinstance(row, dict):
+        return {}
+    try:
+        import insider
+        return insider.scan_suggestions(row, scan)
+    except Exception:
+        return {}
+
+
 def _rows_for(ticker: str, sheet: str, row: Optional[dict], blob: Optional[dict], stage: Optional[str],
-              position_pct, entry: Optional[dict], strategies: tuple) -> tuple:
+              position_pct, entry: Optional[dict], strategies: tuple, scan: Optional[dict] = None) -> tuple:
     r = cat._as_row(row) if row is not None else {}
     fields = cat.fields_for(sheet, r, stage, position_pct, strategies)
     items = mis.missing_for(sheet, r, entry=entry, stage=stage, position_pct=position_pct)
@@ -225,6 +237,7 @@ def _rows_for(ticker: str, sheet: str, row: Optional[dict], blob: Optional[dict]
             need.setdefault(it.path, it.reason)
     props = _conf_proposals(blob, r) if sheet in cat.CONFIDENCE_SHEETS else {}
     ds_hints = _ds_hints(blob, sheet, r) if sheet in cat.FLAT_SHEETS else {}
+    scan_sug = _scan_suggestions(scan, r) if sheet == "insider" else {}
     label = cat.SHEETS[sheet].label
     out = []
     for f in fields:
@@ -237,7 +250,16 @@ def _rows_for(ticker: str, sheet: str, row: Optional[dict], blob: Optional[dict]
             unit = point.unit or unit
         elif stored:
             source = cat.source_for(r, f.path)       # inläst ur ChatGPT-svaret — bara medan värdet står kvar
-        if cat.is_empty(v):
+        if f.scan:
+            # Insider-skanningens fält: Börsdata bara när panelen har talet (sparat eller skanningens förslag) —
+            # annars frågas ChatGPT som förut. Ett sparat 'nej' i ett kryss är inget besked från skanningen.
+            hit = scan_sug.get(f.scan)
+            if hit is not None and cat.is_empty(v):
+                v, source, unit = hit[0], f"Insider-skanningen {hit[1]} — förslag, inte inskrivet", hit[2] or unit
+            elif hit is None and (cat.is_empty(v) or (f.kind == cat.BOOL and v is False)):
+                who = cat.CHATGPT
+                hint = ("Skanningen har inget tal för raden — fyll i ur insynsregistret. " + hint).strip()
+        elif cat.is_empty(v):
             sug = None
             if f.who == cat.BORSDATA and sheet in cat.FLAT_SHEETS:
                 s_ = _suggestion(blob, sheet, r, f.refresh)
@@ -276,12 +298,14 @@ def _rank(r: dict) -> int:
 
 def build(ticker: str, stores: dict, sheets=None, stage: Optional[str] = None, blob: Optional[dict] = None,
           name: str = "", rows: Optional[dict] = None, entry: Optional[dict] = None,
-          sheet_map: Optional[dict] = None) -> Export:
+          sheet_map: Optional[dict] = None, scan: Optional[dict] = None) -> Export:
     """Underlaget för aktien. sheets=None tar arken aktien finns i; ett ark i listan där aktien saknas blir en
     tom mall. blob är sifferuppdateringen (sheets_refresh.json) — None när den inte lästs, och då står tomma
     Börsdata-fält kvar som Börsdata (förslaget finns i arket). rows={ark: rad} låser raden (kortet som ritas)
     i stället för att söka på tickern; rows['scorecard'] är kortet och entry dess kandidatrad (scorecard.collect).
-    sheet_map = registrets karta för arkens bara nordiska former (Thor skickar den — samma rader som dossiern)."""
+    sheet_map = registrets karta för arkens bara nordiska former (Thor skickar den — samma rader som dossiern).
+    scan = Insider-skanningen (insider_scan.json): skanningens fält är Börsdata bara när den har talet för raden,
+    annars (och utan scan) frågas ChatGPT som förut."""
     t = str(ticker or "").strip().upper()
     stores = stores or {}
     wanted = [s for s in (sheets if sheets is not None else sheets_with(t, stores, sheet_map)) if s in cat.SHEETS]
@@ -307,7 +331,7 @@ def build(ticker: str, stores: dict, sheets=None, stage: Optional[str] = None, b
             exp.source_rows[sheet] = card
         else:
             pos = card_pos if (sheet == card_sheet and cat.SHEETS[sheet].strategy) else None
-            got, items, fs = _rows_for(t, sheet, row, blob, stage, pos, None, ())
+            got, items, fs = _rows_for(t, sheet, row, blob, stage, pos, None, (), scan)
             exp.source_rows[sheet] = cat._as_row(row) if row is not None else None
         exp.fields.update({f.key: f for f in fs})
         exp.sheets.append(sheet)

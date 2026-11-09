@@ -82,7 +82,7 @@ def test_gate_yes_only_when_everything_measurable_is_ok():
     gate, _ = sc.auto_gate(_snap(net_debt_m=-10.0, net_debt_ebitda=None))
     assert gate == ins.GATE_YES                      # nettokassa passerar
 
-    # F-score utanför licensen → inte Ja, inte Nej: kör grinden själv
+    # F-score saknas för bolaget → inte Ja, inte Nej: kör grinden själv
     gate, checks = sc.auto_gate(_snap(f_score=None))
     assert gate == ins.GATE_BLANK
     assert any(c["status"] == "unknown" and "F-score" in c["label"] for c in checks)

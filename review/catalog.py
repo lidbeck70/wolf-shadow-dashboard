@@ -8,7 +8,8 @@ asymmetry.fields.all_keys). Ledtrådarna kommer ur ai/extract_prompt.FIELDS och 
 kopieras hit — vilka kontroller som hör till ett kort avgör controls.required_sections, precis som i arket.
 
 Vem fyller:
-  Börsdata   sifferuppdateringen har talet (förslag i arket, "Använd" skriver in det)
+  Börsdata   sifferuppdateringen har talet (förslag i arket, "Använd" skriver in det) — för Insider också
+             skanningen av Börsdatas insynsregister (fältet scan, förslaget står vid klustret)
   ChatGPT    fakta med källa: rapport, presentation, teknisk rapport
   Bedömning  poäng 0–2 och omdömen som ChatGPT får FÖRESLÅ — du bekräftar
   Bara du    beslut: position, köpgrind, säljregel, kvalitetsgrind, trigger (AI beslutar aldrig storlek)
@@ -62,6 +63,7 @@ class SheetField:
     hint: str = ""
     gate: str = ""          # avsnittet eller grinden som läser fältet
     refresh: str = ""       # fältet i sifferuppdateringens rad (sheets_refresh.json) när Börsdata har talet
+    scan: str = ""          # fältet i Insider-skanningens kluster (insider_scan.json) när skanningen har talet
 
     @property
     def key(self) -> str:
@@ -336,17 +338,21 @@ def _tiggre(row: dict, pos) -> list:
 
 
 def _insider(row: dict, pos) -> list:
+    # Antal, roll, belopp, återkommande, efter fall och snittkurs räknar skanningen ur Börsdatas insynsregister
+    # (insider.SCAN_FIELDS) — Börsdata med scan=fältet, så att exporten inte ber ChatGPT om tal panelen har.
+    # 'Ökar innehav > 25 %' sätts aldrig av skanningen och är kvar hos ChatGPT.
     s, g = "insider", "Insiderpoängen"
-    out = [_f(s, "insiders", "Antal insiders 30 dgr", INT, CHATGPT, unit="st", lo=0.0, gate=g,
+    out = [_f(s, "insiders", "Antal insiders 30 dgr", INT, BORSDATA, unit="st", lo=0.0, gate=g, scan="insiders",
               hint="Olika insiders med riktiga marknadsköp inom 30 dagar — inte optionslösen, program, arv eller "
                    "interna omflyttningar."),
-           _f(s, "role", "Högsta roll", CHOICE, CHATGPT, choices=tuple(ins.ROLES), gate=g,
+           _f(s, "role", "Högsta roll", CHOICE, BORSDATA, choices=tuple(ins.ROLES), gate=g, scan="role",
               hint="Högsta roll bland köparna."),
-           _f(s, "amount", "Belopp totalt", NUMBER, CHATGPT, unit="tkr", lo=0.0, gate=g,
+           _f(s, "amount", "Belopp totalt", NUMBER, BORSDATA, unit="tkr", lo=0.0, gate=g, scan="amount",
               hint="Summan av klustrets marknadsköp i tusen kronor.")]
-    out += [_f(s, k, label, BOOL, CHATGPT, gate=g, hint=h) for k, label, h in ins.BOOL_FIELDS]
-    out += [_f(s, "cluster_avg", "Klustrets snittkurs", NUMBER, CHATGPT, unit="valuta/aktie", lo=0.0,
-               gate="Passa-regeln", hint="Snittkursen i klustrets köp."),
+    out += [_f(s, k, label, BOOL, BORSDATA if k in ins.SCAN_FIELDS else CHATGPT, gate=g, hint=h,
+               scan=k if k in ins.SCAN_FIELDS else "") for k, label, h in ins.BOOL_FIELDS]
+    out += [_f(s, "cluster_avg", "Klustrets snittkurs", NUMBER, BORSDATA, unit="valuta/aktie", lo=0.0,
+               gate="Passa-regeln", scan="cluster_avg", hint="Snittkursen i klustrets köp."),
             _f(s, "price_now", "Kurs nu", NUMBER, BORSDATA, unit="valuta/aktie", lo=0.0, gate="Passa-regeln",
                refresh="price"),
             _f(s, "gate", "Kvalitetsgrind OK?", CHOICE, BARA_DU, choices=(ins.GATE_YES, ins.GATE_NO),

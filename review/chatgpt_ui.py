@@ -94,14 +94,15 @@ def render_export(ticker: str, stores: Optional[dict] = None, sheets=None, key: 
                   strategy: str = "", dom_text: str = "", stage: Optional[str] = None, blob=_LOAD,
                   rows: Optional[dict] = None, entry: Optional[dict] = None, importable: bool = True,
                   targets: Optional[dict] = None, reset: tuple = (), on_apply: Optional[Callable] = None,
-                  sheet_map: Optional[dict] = None) -> None:
+                  sheet_map: Optional[dict] = None, scan: Optional[dict] = None) -> None:
     """Expandern med Excel, CSV och prompten för aktien — och importen av svaret. sheets=None tar arken aktien
     finns i; rows={ark: rad} låser kortets egen rad (Scorecardet: rows['scorecard'] är kortet och entry dess
     kandidatrad). sheet_map = registrets karta för arkens bara nordiska former (Thor: samma rader som dossiern —
     'TEL' i arket är TE Connectivity, inte Telenor TEL.OL).
 
     blob=None hoppar över sifferuppdateringen (Scorecardet och Thor, som inte läser den annars): då står tomma
-    Börsdata-fält kvar som Börsdata — förslaget med "Använd" finns i arket.
+    Börsdata-fält kvar som Börsdata — förslaget med "Använd" finns i arket. scan = Insider-skanningen (Insider-
+    sidan skickar den): skanningens fält står som Börsdata när den har talet för raden, annars frågas ChatGPT.
 
     Importen skriver i targets={ark: rad eller funktion som ger raden} (standard: rows — platta ark skickar in
     radens eget objekt); bara de arken tar emot svaret härifrån. reset=(id:n, prefix) är kortets widgetnycklar
@@ -110,7 +111,7 @@ def render_export(ticker: str, stores: Optional[dict] = None, sheets=None, key: 
     from review import export as ex
     try:
         exp = ex.build(ticker, stores if stores is not None else session_stores(), sheets, stage,
-                       _blob() if blob is _LOAD else blob, name, rows, entry, sheet_map)
+                       _blob() if blob is _LOAD else blob, name, rows, entry, sheet_map, scan)
     except Exception as exc:                                # underlaget får aldrig fälla kortet
         st.caption(f"Underlaget till ChatGPT kunde inte byggas: {exc}")
         return
