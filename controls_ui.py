@@ -137,14 +137,33 @@ def card_runway(cash, burn) -> tuple:
                    f"= runway {_runway_months(years)} mån")
 
 
-def sheet_runway(sheet: str, row_id) -> tuple:
-    """refresh_runway för arkraden '<sheet>:<id>' (Tiggre, Rick Rule) — (None, "") utan sifferuppdatering."""
+def _match_txt(sheet: str, row: dict, row_id, blob=None) -> str:
+    """' (matchat: Genovis AB)' när sifferuppdateringens bolag för arkraden inte liknar radens namn
+    (refresh_ui.matched_note, samma som Börsdatas andra förslag på kortet). Oescapad: refresh_ui.offer escapar
+    underlaget själv ('AT&T' blir annars 'AT&amp;amp;T'). Tom sträng annars, och utan sifferuppdatering."""
+    try:
+        import html
+        import refresh_ui
+        if blob is None:
+            blob = refresh_ui.load_refresh()
+        return html.unescape(refresh_ui.matched_note(blob, sheet, row, row_id))
+    except Exception:
+        return ""
+
+
+def sheet_runway(sheet: str, row_id, row: Optional[dict] = None) -> tuple:
+    """refresh_runway för arkraden '<sheet>:<id>' (Tiggre, Rick Rule) — (None, "") utan sifferuppdatering. Med row
+    slutar källtexten med '(matchat: …)' när nattjobbets bolag inte liknar radens namn — ett klick sätter DS-poäng."""
     try:
         import refresh_ui
-        r = ((refresh_ui.load_refresh() or {}).get("rows") or {}).get(f"{sheet}:{row_id}")
+        blob = refresh_ui.load_refresh() or {}
+        r = (blob.get("rows") or {}).get(f"{sheet}:{row_id}")
     except Exception:
-        r = None
-    return refresh_runway(r)
+        blob, r = {}, None
+    years, note = refresh_runway(r)
+    if years is not None and row is not None:
+        note += _match_txt(sheet, row, row_id, blob)
+    return years, note
 
 
 def _crit(f, points: int) -> str:
@@ -169,15 +188,28 @@ def _ds_offer(row: dict, key: str, prefix: str, field: str, points, basis: str) 
                      fmt=lambda p, f=f: f"{_crit(f, p)} → {p} riskpoäng")
 
 
-def _shares_basis(sug: tuple, year: Optional[int], back: int) -> str:
-    """Underlaget för 'Aktier 3 år' och 'Historik': Börsdatas datum, årsrapportens år och förändringen. Antalet
-    ur årsrapporten släpar (senare emissioner syns inte), och en omvänd split ser ut som en minskning."""
+def _pct_txt(g: float, limits: tuple = ()) -> str:
+    """Förändringen i hela procent med tecken — med decimaler bara när avrundningen skulle hamna på andra sidan en
+    av fältets gränser eller på 0 (scorecard._edge_digits, kantregeln): +25,4 står inte som '+25' bredvid
+    '> +25 %', och -0,4 inte som '-0'. Varje gräns prövas med både >= och >, eftersom 3-årsbanden bryter vid < 10
+    och <= 25 men 5-årsbanden vid >= 20 och > 50."""
+    import scorecard
+    g = 0.0 if g == 0 else float(g)                                   # -0,0 ur round(-0,04, 1) blir 0
+    d = scorecard._edge_digits(g, 0, [(x, op) for x in (0.0, *limits) for op in (">=", ">")])
+    return f"≈{g:+.0f}" if d is None else f"{g:+.{d}f}".replace(".", ",")
+
+
+def _shares_basis(sug: tuple, year: Optional[int], back: int, limits: tuple = (), match: str = "") -> str:
+    """Underlaget för 'Aktier 3 år' och 'Historik': Börsdatas datum, årsrapportens år och förändringen (_pct_txt mot
+    fältets gränser limits). match = '(matchat: …)' när nattjobbets bolag inte liknar radens namn. Antalet ur
+    årsrapporten släpar (senare emissioner syns inte), och en omvänd split ser ut som en minskning."""
     g, asof = sug[0], sug[1]
+    pct = _pct_txt(g, limits)
     if year:
-        span = f"i årsrapporten {year} är {g:+.0f} % mot {year - back}"
+        span = f"i årsrapporten {year} är {pct} % mot {year - back}"
     else:
-        span = f"är {g:+.0f} % " + ("mot för tre år sedan" if back == 3 else "på fem år")
-    return (f"Börsdata{' ' + asof if asof else ''}: antalet aktier {span}"
+        span = f"är {pct} % " + ("mot för tre år sedan" if back == 3 else "på fem år")
+    return (f"Börsdata{' ' + asof if asof else ''}: antalet aktier {span}{match}"
             + (" — en minskning kan vara en omvänd split" if g < 0 else ""))
 
 
@@ -207,17 +239,22 @@ def render_ds(row: dict, key: str, runway_years=None,
         y = ctl._num(runway_years)
         basis = runway_note or ("ingen förbränning" if math.isinf(y) else f"runway {_runway_months(y)} mån")
         _ds_offer(row, key, prefix, "ds_runway", suggestion, basis)
+    # '(matchat: …)' på aktieförslagen när nattjobbets bolag inte liknar radens namn (runwayen har den i
+    # runway_note ur sheet_runway) — som Börsdatas andra förslag på kortet.
+    mm = _match_txt(sheet, row, key) if sheet else ""
     if sheet and row.get("ds_aktier_3ar") is None:
         sug = _refresh_pct(sheet, row, "shares_growth_3y_pct", row_id=key)
         if sug is not None:
+            # gränserna i ctl.ds_shares_suggestion: < 10 → 0, ≤ 25 → 1, > 25 → 2
             _ds_offer(row, key, prefix, "ds_aktier_3ar", ctl.ds_shares_suggestion(sug[0]),
-                      _shares_basis(sug, _shares_year(sheet, row, key), 3))
+                      _shares_basis(sug, _shares_year(sheet, row, key), 3, (10.0, 25.0), mm))
     if sheet and row.get("ds_historik") is None:
         sug5 = _refresh_pct(sheet, row, "shares_growth_5y_pct", row_id=key)
         if sug5 is not None:
             import judgment_hints as jh
             _ds_offer(row, key, prefix, "ds_historik", jh.ds_history_points(sug5[0]),
-                      _shares_basis(sug5, _shares_year(sheet, row, key), 5)
+                      _shares_basis(sug5, _shares_year(sheet, row, key), 5,
+                                    (jh.DILUTION_5Y_MIXED_PCT, jh.DILUTION_5Y_SERIAL_PCT), mm)
                       + f". Grova gränser på 5 år: +{jh.DILUTION_5Y_MIXED_PCT:g} % blandad, "
                         f"över +{jh.DILUTION_5Y_SERIAL_PCT:g} % serieutspädare")
 

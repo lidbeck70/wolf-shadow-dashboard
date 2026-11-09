@@ -817,7 +817,7 @@ def _candidate_card(data: dict, cand: dict, expanded: bool = False) -> None:
         # definition, och positionen ligger i intervallet 2–4 % — alltså
         # kräver proportionalitetsregeln hela paketet. Runwayen till DS:s förslag
         # räknas ur sifferuppdateringens kassa och burn (tiggre:<id>).
-        rw, rw_note = controls_ui.sheet_runway("tiggre", cand["id"])
+        rw, rw_note = controls_ui.sheet_runway("tiggre", cand["id"], cand)
         if controls_ui.render_all(
                 cand, cand["id"],
                 position_pct=_num(cand.get("position_pct"), POS_MAX_PCT),

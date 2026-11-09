@@ -762,7 +762,7 @@ def _producers(data: dict) -> None:
 
             # Runwayen till DS:s förslag ur sifferuppdateringens kassa och burn (producers:<id>) — vid positivt FCF
             # (burn 0) blir förslaget '> 24 mån'. Gruvlivslängden ger AQS-förslaget på 'Livslängd / resurs'.
-            rw, rw_note = controls_ui.sheet_runway("producers", row["id"])
+            rw, rw_note = controls_ui.sheet_runway("producers", row["id"], row)
             if controls_ui.render_all(
                     row, row["id"], position_pct=pos, strategy="producenter",
                     runway_years=rw, runway_note=rw_note,

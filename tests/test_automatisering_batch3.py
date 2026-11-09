@@ -82,6 +82,60 @@ def test_share_basis_names_the_report_year_and_warns_for_a_decrease():
     assert cu._shares_basis((60.0, "", ""), None, 5) == "Börsdata: antalet aktier är +60 % på fem år"
 
 
+LIM3 = (10.0, 25.0)                                                    # ctl.ds_shares_suggestion
+LIM5 = (jh.DILUTION_5Y_MIXED_PCT, jh.DILUTION_5Y_SERIAL_PCT)          # jh.ds_history_points
+
+
+def _printed_pct(text: str) -> float:
+    import re
+    m = re.search(r"är ([+-][0-9]+(?:,[0-9]+)?) %", text)
+    assert m, text
+    return float(m.group(1).replace(",", "."))
+
+
+@pytest.mark.parametrize("g, back, shown", [
+    (9.6, 3, "+9,6"), (25.3, 3, "+25,3"), (25.4, 3, "+25,4"), (-0.4, 3, "-0,4"), (10.4, 3, "+10,4"),
+    (19.6, 5, "+19,6"), (50.3, 5, "+50,3"), (50.4, 5, "+50,4"), (-0.4, 5, "-0,4"),
+    # en bit från gränserna: hela procent, som förut
+    (17.3, 3, "+17"), (27.3, 3, "+27"), (25.0, 3, "+25"), (-12.0, 3, "-12"), (60.0, 5, "+60"), (35.2, 5, "+35"),
+    (20.0, 5, "+20"), (50.0, 5, "+50"),
+])
+def test_share_basis_never_rounds_across_the_fields_limits(g, back, shown):
+    """Nattjobbets tal har en decimal: avrundat till hela procent får det inte hamna på andra sidan gränsen som
+    förslaget bredvid Använd bygger på (25,4 som '+25 %' bredvid '> +25 %', 19,6 som '+20 %' bredvid
+    'disciplinerad')."""
+    limits, points = (LIM3, ctl.ds_shares_suggestion) if back == 3 else (LIM5, jh.ds_history_points)
+    text = cu._shares_basis((g, ASOF, ""), 2025, back, limits)
+    assert f"är {shown} % mot {2025 - back}" in text
+    assert points(_printed_pct(text)) == points(g)                  # det tryckta talet ger samma band
+    assert "-0 %" not in text and "+0 %" not in text
+    assert ("omvänd split" in text) == (g < 0)
+
+
+def test_share_pct_zero_is_never_minus_zero():
+    assert cu._pct_txt(-0.0, LIM3) == "+0" and cu._pct_txt(0.0, LIM5) == "+0"          # round(-0,04, 1) = -0,0
+    assert cu._pct_txt(0.3, LIM3) == "+0,3" and cu._pct_txt(-0.04, LIM3) == "-0,04"
+    assert "omvänd split" not in cu._shares_basis((-0.0, ASOF, ""), 2025, 3, LIM3)
+
+
+def test_share_basis_carries_the_match_note_before_the_split_warning():
+    assert (cu._shares_basis((-12.0, ASOF, ""), 2025, 3, LIM3, " (matchat: Genovis AB)")
+            == f"Börsdata {ASOF}: antalet aktier i årsrapporten 2025 är -12 % mot 2022 (matchat: Genovis AB) — en "
+               f"minskning kan vara en omvänd split")
+
+
+def test_sheet_runway_names_another_matched_company(monkeypatch):
+    import refresh_ui
+    night = {"asof": ASOF, "cash_musd": 30.0, "burn_musd": 40.0, "bd_name": "Genovis & Co $1"}
+    monkeypatch.setattr(refresh_ui, "load_refresh", lambda: {"rows": {"producers:p1": night}})
+    base = (f"Börsdata {ASOF}: kassa 30,0 MUSD ÷ burn 40,0 MUSD/år (negativt FCF 12 mån) = runway 9 mån")
+    assert cu.sheet_runway("producers", "p1")[1] == base                            # utan raden: som förut
+    assert (cu.sheet_runway("producers", "p1", {"id": "p1", "name": "Equinox Gold"})[1]
+            == base + " (matchat: Genovis & Co $1)")                                # oescapad: offer escapar
+    assert cu.sheet_runway("producers", "p1", {"id": "p1", "name": "Genovis"})[1] == base
+    assert cu.sheet_runway("producers", "p2", {"id": "p2", "name": "Equinox Gold"}) == (None, "")
+
+
 def test_owner_offer_only_for_a_number_from_the_durrett_sheet():
     assert jh.owner_offer({"insider_pct": (12.0, "Durrett-arket")}) == (2, 12.0, "Durrett-arket")
     assert jh.owner_offer({"insider_pct": (7.5, jh.SHEET_SOURCE)}) == (1, 7.5, "Durrett-arket")
@@ -114,7 +168,7 @@ def _ds_app():
     import streamlit as st
     import controls_ui
     row = st.session_state.setdefault("row", {"id": "p1", "name": "Boliden"})
-    rw, note = controls_ui.sheet_runway("producers", "p1")
+    rw, note = controls_ui.sheet_runway("producers", "p1", row)                    # som Rick Rule-sidan
     controls_ui.render_ds(row, "p1", rw, sheet="producers", runway_note=note)
 
 
@@ -189,6 +243,42 @@ def test_ds_no_suggestion_for_an_answered_field(monkeypatch):
     assert "🤖 DS: Runway" not in _md(at) and "🤖 DS: Aktier 3 år" not in _md(at)
     assert "🤖 DS: Historik" in _md(at)
     assert at.session_state["row"] == {"id": "p1", "ds_runway": 2, "ds_aktier_3ar": 1}
+
+
+def test_ds_share_offers_at_the_limits_print_the_decimal(monkeypatch):
+    at = _run_ds(monkeypatch, dict(NIGHT, shares_growth_3y_pct=25.4, shares_growth_5y_pct=19.6))
+    md = _md(at)
+    assert (f"🤖 DS: Aktier 3 år > +25 % → 2 riskpoäng — Börsdata {ASOF}: antalet aktier i årsrapporten 2025 är "
+            f"+25,4 % mot 2022") in md
+    assert (f"🤖 DS: Historik disciplinerad → 0 riskpoäng — Börsdata {ASOF}: antalet aktier i årsrapporten 2025 är "
+            f"+19,6 % mot 2020. Grova gränser på 5 år: +20 % blandad, över +50 % serieutspädare") in md
+    assert "+25 % mot" not in md and "+20 % mot" not in md
+    at.button(key="rf_offer_ds_ds_p1_ds_aktier_3ar").click().run()
+    assert not at.exception, at.exception
+    assert at.session_state["row"]["ds_aktier_3ar"] == 2                           # poängen ur rådata, som förut
+
+
+MATCHED = " (matchat: Genovis & Co $1)"
+
+
+def test_ds_offers_name_another_matched_company(monkeypatch):
+    """Nattjobbet har matchat raden mot ett annat bolag: alla tre DS-förslagen säger det, som Börsdatas andra
+    förslag på kortet — escapat en gång ('&', '$'), inte två."""
+    at = _run_ds(monkeypatch, dict(NIGHT, bd_name="Genovis & Co $1"))
+    md = _md(at)
+    assert f"= runway 18 mån{MATCHED}" in md
+    assert f"-12 % mot 2022{MATCHED} — en minskning kan vara en omvänd split" in md
+    assert f"+60 % mot 2020{MATCHED}. Grova gränser på 5 år" in md
+    assert md.count("(matchat:") == 3
+    assert "&amp;" not in md and "&#36;" not in md                                # inte dubbelescapat
+    assert not DS_KEYS & set(at.session_state["row"])                              # förslag, inte ifyllt
+
+
+def test_ds_offers_without_match_note_when_the_names_match(monkeypatch):
+    at = _run_ds(monkeypatch, dict(NIGHT, bd_name="Boliden AB"))
+    md = _md(at)
+    assert "🤖 DS: Runway" in md and "🤖 DS: Aktier 3 år" in md and "🤖 DS: Historik" in md
+    assert "(matchat:" not in md
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -293,6 +383,34 @@ def test_rule_ds_runway_use_sets_the_points(page):
     assert not at.exception, at.exception
     assert _rule_row(at)["ds_runway"] == 2 and at.selectbox(key="ds_p1_ds_runway").value == 2
     assert not page.saves                                                          # 💾 sparar, som förut
+
+
+def test_rule_ds_offers_say_when_the_night_row_is_another_company(page):
+    """Manuellt kort 'Equinox Gold' som nattjobbet matchat mot Genovis AB: DS-förslagen säger det, som EV/EBITDA- och
+    ND/EBITDA-förslagen på samma kort — ett klick sätter DS-poäng ur det bolagets tal."""
+    blob = {"rows": {"producers:p1": {"ticker": "EQX.TO", "asof": ASOF, "bd_name": "Genovis AB", "cash_musd": 30.0,
+                                      "burn_musd": 40.0, "shares_growth_3y_pct": -12.0, "ev_ebitda": 5.0}}}
+    at = page("Rick Rule", blob, _rule_store())
+    at.run()
+    assert not at.exception, at.exception
+    md = _md(at)
+    assert (f"🤖 DS: Runway < 12 mån → 2 riskpoäng — Börsdata {ASOF}: kassa 30,0 MUSD ÷ burn 40,0 MUSD/år "
+            f"(negativt FCF 12 mån) = runway 9 mån (matchat: Genovis AB)") in md
+    assert (f"🤖 DS: Aktier 3 år stabilt → 0 riskpoäng — Börsdata {ASOF}: antalet aktier är -12 % mot för tre år "
+            f"sedan (matchat: Genovis AB) — en minskning kan vara en omvänd split") in md     # inget shares_year
+    assert "EV/EBITDA" in md and md.count("(matchat: Genovis AB)") >= 3              # som EV/EBITDA-förslaget
+    assert not {"ds_runway", "ds_aktier_3ar"} & set(_rule_row(at)) and not page.saves
+
+
+def test_scoring_card_runway_has_no_match_note_but_the_share_offer_does(page):
+    blob = {"rows": {"scoring:q1": {"asof": ASOF, "bd_name": "Genovis AB", "shares_growth_3y_pct": 27.3,
+                                    "shares_year": 2025}}}
+    at = _open(page, _scoring_store(cash=30.0, burn=12.0, name="Alpha Gold"), blob=blob)
+    md = _md(at)
+    assert "🤖 DS: Runway > 24 mån → 0 riskpoäng — kortets kassa 30,0 MUSD ÷ burn 12,0 MUSD/år = runway 30 mån" in md
+    assert "runway 30 mån (matchat" not in md                                      # kortets egna tal
+    assert (f"🤖 DS: Aktier 3 år > +25 % → 2 riskpoäng — Börsdata {ASOF}: antalet aktier i årsrapporten 2025 är "
+            f"+27 % mot 2022 (matchat: Genovis AB)") in md
 
 
 # ── Tiggre: DS ───────────────────────────────────────────────────────────────
