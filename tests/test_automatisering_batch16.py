@@ -160,8 +160,11 @@ def test_broker_hints_keep_accounts_apart_and_show_the_matched_name():
     hints = ph.broker_hints(rows, ops)
     volvo = [h for h in hints if h["row"]["id"] == "r1"]
     got = [(h["account"], h["qty"], h["price"]) for h in volvo]
-    assert got == [("nordnet_isk", 100, 250.5), ("nordea_ask", 40, 260.0)]
+    assert got == [("nordnet_isk", None, None), ("nordea_ask", None, None)]   # en rad, två konton: bara text
     assert all(h["accounts"] == 2 for h in volvo)                      # två konton, aldrig summerade
+    assert [h["price_note"] for h in volvo] == [
+        "nordnet_isk: 100 st à 250,5 SEK — VOLV-B.ST finns på 2 konton, fördela själv",
+        "nordea_ask: 40 st à 260 SEK — VOLV-B.ST finns på 2 konton, fördela själv"]
     sand = next(h for h in hints if h["row"]["id"] == "r2")
     assert sand["qty"] == 12.5 and sand["accounts"] == 1
     assert "liknar inte 'Sandvik'" in sand["warn"]                       # ISIN-kopplingen syns
@@ -401,24 +404,29 @@ def broker_page(stores):
 
 def test_broker_numbers_are_offered_per_account_and_saved_only_on_click(broker_page, stores):
     stores["holdings"] = _reg(long=[_row("r1", "VOLV-B.ST", "Quality", 240.0, name="Volvo", shares=90)],
-                              swing=[_row("r2", "AAPL", "Wolf", 140.0, name="Apple", shares=5)])
+                              swing=[_row("r2", "AAPL", "Wolf", 140.0, name="Apple", shares=5),
+                                     _row("r3", "SAND.ST", "Wolf", 190.0, name="Sandvik", shares=10)])
     at = broker_page([_op(), _op(account="nordea_ask", qty=40.0, avg=260.0),
-                      _op(isin="US0378331005", ticker="AAPL", name="Apple Inc", qty=5.0, avg=150.0)])
+                      _op(isin="US0378331005", ticker="AAPL", name="Apple Inc", qty=5.0, avg=150.0),
+                      _op(isin="SE0000667891", ticker="SAND.ST", name="Sandvik", qty=12.0, avg=200.0)])
     at.run()
     assert not at.exception, at.exception
     md, caps = _markdown(at), _captions(at)
-    assert "🤖 Mäklaren (nordnet_isk): snittkurs 250.5 SEK" in md and "🤖 Mäklaren (nordnet_isk): antal 100 st" in md
-    assert "🤖 Mäklaren (nordea_ask): snittkurs 260 SEK" in md and "🤖 Mäklaren (nordea_ask): antal 40 st" in md
+    assert "🤖 Mäklaren (nordnet_isk): snittkurs 200 SEK" in md and "🤖 Mäklaren (nordnet_isk): antal 12 st" in md
     assert "finns på 2 konton — förslaget gäller det här kontot, inte summan" in caps
+    assert "nordnet_isk: 100 st à 250,5 SEK — VOLV-B.ST finns på 2 konton, fördela själv" in caps
+    assert "nordea_ask: 40 st à 260 SEK — VOLV-B.ST finns på 2 konton, fördela själv" in caps
+    assert not [b for b in at.button if b.key.startswith("rf_offer_imp_r1_")]   # ett kontos tal ≠ radens innehav
     assert "AAPL noteras i USD, inte föreslagen" in caps                       # Nordnets SEK är kontots valuta
     assert not [b for b in at.button if b.key.startswith("rf_offer_imp_r2_") and b.key.endswith("_avg")]
     assert not stores["_saves"]
-    at.button(key="rf_offer_imp_r1_nordnet_isk_SE0000107419_avg").click().run()
+    at.button(key="rf_offer_imp_r3_nordnet_isk_SE0000667891_avg").click().run()
     assert not at.exception, at.exception
     rows = _saved_rows(stores)
-    assert len(stores["_saves"]) == 1 and rows["r1"]["entry_price"] == 250.5 and rows["r1"]["shares"] == 90
-    at.button(key="rf_offer_imp_r1_nordnet_isk_SE0000107419_qty").click().run()
-    assert _saved_rows(stores)["r1"]["shares"] == 100 and _saved_rows(stores)["r1"]["entry_price"] == 250.5
+    assert len(stores["_saves"]) == 1 and rows["r3"]["entry_price"] == 200.0 and rows["r3"]["shares"] == 10
+    assert rows["r1"]["shares"] == 90 and rows["r1"]["entry_price"] == 240.0
+    at.button(key="rf_offer_imp_r3_nordnet_isk_SE0000667891_qty").click().run()
+    assert _saved_rows(stores)["r3"]["shares"] == 12 and _saved_rows(stores)["r3"]["entry_price"] == 200.0
 
 
 def test_broker_numbers_stay_hidden_while_the_holdings_are_locked(broker_page, stores):
@@ -669,3 +677,75 @@ def test_bd_sector_never_shows_the_key_from_an_error(monkeypatch, where):
     res = holdings.bd_sector("SAND.ST", "Sandvik AB")
     assert "SECRET" not in str(res) and "authKey" not in str(res)
     assert res == {"msg": "Börsdata svarade inte — skriv sektorn själv."}
+
+
+# e) Mäklarens snittkurs under radens sparade stopp ger journalen fel tecken på R — snittkursen blir bara text.
+_STOP_NOTE = ("snittkurs 100 SEK enligt mäklaren — radens stopp 140 ligger över den; ändra eller ta bort stoppen i "
+              "Holdings först, annars blir journalens R fel")
+
+
+def test_broker_average_at_or_under_the_rows_stop_is_text_only():
+    import journal_bridge
+    row = {"id": "q1", "ticker": "VOLV-B.ST", "name": "Volvo", "strategy": "Quality", "shares": 100,
+           "entry_price": 150.0, "stop": 140.0, "_bucket": "long"}
+    h = ph.broker_hints([row], [_op(qty=120.0, avg=100.0)])[0]
+    assert h["price"] is None and h["price_note"] == _STOP_NOTE
+    assert h["qty"] == 120                                                     # antalet erbjuds som förut
+    on = ph.broker_hints([dict(row, stop=100.0)], [_op(qty=120.0, avg=100.0)])[0]
+    assert on["price"] is None and "radens stopp 100 ligger på den" in on["price_note"]
+    below = ph.broker_hints([dict(row, stop=90.0)], [_op(qty=120.0, avg=100.0)])[0]
+    assert (below["price"], below["price_note"], below["qty"]) == (100.0, "", 120)
+    cleared = ph.broker_hints([dict(row, stop=None)], [_op(qty=120.0, avg=100.0)])[0]
+    assert cleared["price"] == 100.0                                           # stoppen borttagen: förslaget tillbaka
+    # varför: entry 100 med stopp 140 ger en vinnare negativt R i journalen
+    wrong = journal_bridge.trade_from_closed(dict(row, entry_price=100.0, exit_price=145.0,
+                                                  entry_date="2026-01-02", exit_date="2026-11-06"))
+    assert wrong["r_multiple"] < 0
+
+
+def test_broker_page_hides_the_average_under_a_saved_stop_but_offers_the_quantity(broker_page, stores):
+    stores["holdings"] = _reg(long=[_row("q1", "VOLV-B.ST", "Quality", 150.0, name="Volvo", shares=100,
+                                         stop=140.0)])
+    at = broker_page([_op(qty=120.0, avg=100.0)])
+    at.run()
+    assert not at.exception, at.exception
+    keys = {b.key for b in at.button}
+    assert "rf_offer_imp_q1_nordnet_isk_SE0000107419_avg" not in keys
+    assert "rf_offer_imp_q1_nordnet_isk_SE0000107419_qty" in keys
+    assert _STOP_NOTE in _captions(at) and not stores["_saves"]
+    at.button(key="rf_offer_imp_q1_nordnet_isk_SE0000107419_qty").click().run()
+    assert not at.exception, at.exception
+    saved = _saved_rows(stores)["q1"]
+    assert (saved["shares"], saved["entry_price"], saved["stop"]) == (120, 150.0, 140.0)   # stoppen rörs aldrig
+
+
+def test_broker_page_offers_the_average_again_once_the_stop_is_cleared(broker_page, stores):
+    stores["holdings"] = _reg(long=[_row("q1", "VOLV-B.ST", "Quality", 150.0, name="Volvo", shares=100,
+                                         stop=None)])
+    at = broker_page([_op(qty=120.0, avg=100.0)])
+    at.run()
+    assert not at.exception, at.exception
+    assert "rf_offer_imp_q1_nordnet_isk_SE0000107419_avg" in {b.key for b in at.button}
+    assert "radens stopp" not in _captions(at) and not stores["_saves"]
+
+
+# f) Samma ticker på två konton men en rad: raden är hela innehavet — ett kontos tal erbjuds aldrig med Använd.
+def test_broker_numbers_for_a_ticker_on_two_accounts_and_one_row_are_text_only():
+    row = {"id": "r1", "ticker": "VOLV-B.ST", "name": "Volvo", "strategy": "Quality", "shares": 140,
+           "entry_price": 253.0, "_bucket": "long"}
+    hints = ph.broker_hints([row], [_op(qty=100.0, avg=250.5), _op(account="nordea_ask", qty=40.0, avg=260.0)])
+    assert [(h["account"], h["qty"], h["price"], h["accounts"], h["rows"]) for h in hints] == [
+        ("nordnet_isk", None, None, 2, 1), ("nordea_ask", None, None, 2, 1)]
+    assert hints[1]["price_note"] == "nordea_ask: 40 st à 260 SEK — VOLV-B.ST finns på 2 konton, fördela själv"
+
+
+def test_broker_page_offers_nothing_for_a_ticker_on_two_accounts_and_one_row(broker_page, stores):
+    stores["holdings"] = _reg(long=[_row("r1", "VOLV-B.ST", "Quality", 253.0, name="Volvo", shares=140)])
+    at = broker_page([_op(qty=100.0, avg=250.5), _op(account="nordea_ask", qty=40.0, avg=260.0)])
+    at.run()
+    assert not at.exception, at.exception
+    caps = _captions(at)
+    assert "nordnet_isk: 100 st à 250,5 SEK — VOLV-B.ST finns på 2 konton, fördela själv" in caps
+    assert "nordea_ask: 40 st à 260 SEK — VOLV-B.ST finns på 2 konton, fördela själv" in caps
+    assert not list(at.button) and "🤖 Mäklaren" not in _markdown(at)
+    assert "✓ Snittkurs och antal stämmer med raden." not in caps and not stores["_saves"]

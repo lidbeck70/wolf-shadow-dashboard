@@ -8,7 +8,8 @@ portfolio/position_hints.py — förslag till positionernas fält ur regler och 
   sector_hint    Börsdatas sektor ur sektor-id:t (registret eller Börsdatas instrument), med matchat namn.
   broker_hints   Mäklarens FIFO-snitt och antal (journal_import.fifo.OpenPosition) mot registrets rader, ett konto
                  i taget — valuta, pence i London och fel ISIN-koppling syns i texten. Står tickern på flera
-                 rader blir talen bara text (kontots summa hör inte till en rad).
+                 rader eller finns den på flera konton blir talen bara text (ett kontos tal är inte radens
+                 innehav). Ligger radens stopp på eller över snittkursen blir snittkursen bara text.
   rank_hint      'Ur topp 40' ur wolf_screener.json (rank ≤ 40, swing_verdict.RANK_EXIT).
   ma50_from_screener / ma50_from_closes
                  'Stängt under MA50' ur screenerns dist_ma50, annars ur en kursserie (market_prices).
@@ -251,13 +252,31 @@ def _split_note(ticker: str, n: int, qty, avg, currency: str) -> str:
     return f"{ticker} står på {n} rader i Positioner — mäklarens {size}{each} gäller summan, fördela själv"
 
 
+def _accounts_note(account: str, ticker: str, n: int, qty, avg, currency: str) -> str:
+    """Texten när tickern finns på flera konton men på en rad: raden är hela innehavet, kontots tal är en del av det."""
+    a = _pos(avg)
+    size = f"{fmt_num(qty)} st" if qty is not None else "antal okänt"
+    each = f" à {fmt_num(a)} {currency or '?'}" if a is not None else ""
+    return f"{account or '?'}: {size}{each} — {ticker} finns på {n} konton, fördela själv"
+
+
+def _stop_note(price: float, unit: str, stop: float) -> str:
+    """Texten när radens sparade stopp ligger på eller över mäklarens snittkurs: entry under stoppen ger journalen
+    fel tecken på R (journal_bridge), så snittkursen erbjuds inte förrän stoppen är ändrad."""
+    where = "på" if stop == price else "över"
+    return (f"snittkurs {fmt_num(price)} {unit} enligt mäklaren — radens stopp {fmt_num(stop)} ligger {where} den; "
+            f"ändra eller ta bort stoppen i Holdings först, annars blir journalens R fel")
+
+
 def broker_hints(rows: Iterable, open_positions: Iterable) -> list:
     """En post per registerrad och mäklarposition med samma ticker: {'row', 'account', 'isin', 'name', 'qty',
     'price', 'price_note', 'warn', 'accounts', 'rows'}. Konton slås aldrig ihop — samma ticker på två konton ger två
-    poster, och 'accounts' säger hur många konton tickern finns på. 'rows' säger hur många registerrader tickern
-    står på: fler än en (samma bolag i två strategier) ger inga tal att använda, bara texten i price_note — kontots
-    summa hör inte till en rad. warn är satt när mäklarens namn inte liknar radens (ISIN→ticker-kartan kan ha
-    kopplat fel)."""
+    poster, och 'accounts' säger hur många konton tickern finns på. Talen erbjuds bara när tickern står på en rad
+    och finns på ett konto: fler rader (samma bolag i två strategier) eller fler konton ger bara texten i price_note
+    — ett kontos tal är inte hela radens innehav. Snittkursen erbjuds inte heller när radens sparade stopp ligger på
+    eller över den (journalen räknar R ur stoppen); antalet erbjuds då som förut. warn är satt när mäklarens namn
+    inte liknar radens (ISIN→ticker-kartan kan ha kopplat fel)."""
+    import positions
     import refresh_ui
     rows = [r for r in rows or [] if isinstance(r, dict)]
     ops = [p for p in open_positions or [] if (getattr(p, "ticker", None) or "").strip()]
@@ -271,24 +290,33 @@ def broker_hints(rows: Iterable, open_positions: Iterable) -> list:
     out = []
     for r in rows:
         t = str(r.get("ticker") or "").strip().upper()
+        n_acc = len(accounts.get(t, ()))
+        stop = _pos(r.get("stop"))
         for p in ops:
             if p.ticker.strip().upper() != t:
                 continue
             ccy = str(getattr(p, "currency", "") or "")
+            acct = str(getattr(p, "account", "") or "")
             qty = _qty(getattr(p, "qty", None))
             price, note = broker_price(t, getattr(p, "avg_price", None), ccy)
             if rows_per[t] > 1:
                 price, note = None, _split_note(t, rows_per[t], qty, getattr(p, "avg_price", None), ccy)
                 qty = None
+            elif n_acc > 1:
+                price, note = None, _accounts_note(acct, t, n_acc, qty, getattr(p, "avg_price", None), ccy)
+                qty = None
+            elif price is not None and stop is not None and stop >= price:
+                unit = "pence" if t.endswith(".L") else positions.currency_for(t)
+                price, note = None, _stop_note(price, unit, stop)
             name = str(getattr(p, "name", "") or "").strip()
             own = str(r.get("name") or "").strip()
             warn = ""
             if name and own and not refresh_ui.name_resembles(own, name):
                 warn = f"mäklarens '{name}' liknar inte '{own}' — kontrollera ISIN-kopplingen"
-            out.append({"row": r, "account": str(getattr(p, "account", "") or ""),
+            out.append({"row": r, "account": acct,
                         "isin": str(getattr(p, "isin", "") or ""), "name": name,
                         "qty": qty, "price": price, "price_note": note, "warn": warn,
-                        "currency": ccy, "accounts": len(accounts.get(t, ())), "rows": rows_per[t]})
+                        "currency": ccy, "accounts": n_acc, "rows": rows_per[t]})
     return out
 
 

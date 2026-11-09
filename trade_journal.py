@@ -484,8 +484,9 @@ def _save_position_field(row: dict, field: str) -> None:
 def _broker_suggestions(open_positions: list) -> None:
     """Rader som redan finns i Positioner: mäklarens FIFO-snitt och antal som förslag med Använd, ett konto i taget
     (portfolio.position_hints.broker_hints). Inget skrivs utan klick och inget slås ihop. Står tickern på flera rader
-    visas mäklarens tal bara som text — kontots summa hör inte till en rad. Bara när innehaven är upplåsta — låst
-    visas varken tal eller vilka bolag som ägs."""
+    eller finns den på flera konton visas mäklarens tal bara som text — ett kontos tal är inte radens innehav. Ligger
+    radens stopp på eller över snittkursen visas snittkursen bara som text (journalens R). Bara när innehaven är
+    upplåsta — låst visas varken tal eller vilka bolag som ägs."""
     if not open_positions:
         return
     try:
