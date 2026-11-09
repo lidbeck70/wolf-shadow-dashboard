@@ -101,6 +101,51 @@ def test_higher_numbers_are_offered_within_the_same_cluster():
                                                 "aterkommande": True, "cluster_avg": 48.2, "efter_fall": True}
 
 
+def _full_row(**over) -> dict:
+    """En rad som lades in ur skanningen: alla skanningsfält ifyllda, samma roll och kryss som klustret."""
+    return _row(**{"role": ins.ROLE_TOP, "aterkommande": True, "efter_fall": True, **over})
+
+
+def test_a_rolled_window_average_is_not_offered():
+    """Köp A 09-25 @40, B 10-05 @50, C 10-18 @60 → raden: 3 insiders, 1 500 tkr, snitt 50. Sex dagar senare har A
+    fallit ur fönstret: B och C ger 2 insiders, 1 100 tkr, snitt 55 — samma kluster, men snittet är bara de
+    senaste köpen och skulle flytta stoppen från 42,50 till 46,75."""
+    row = _full_row(found="2026-10-20", insiders=3, amount=1500.0, cluster_avg=50.0)
+    cl = _cluster(insiders=2, amount=1100.0, cluster_avg=55.0,
+                  auto={**_cluster()["auto"], "first_buy": "2026-10-05", "last_buy": "2026-10-18"})
+    assert ins.same_cluster(row, cl) is True and ins.rolled_out(row, cl)
+    assert ins.scan_offers(row, cl) == {}
+    scan = {"generated": "2026-10-26T07:01:00+00:00", "clusters": [cl]}
+    assert "cluster_avg" not in ins.scan_suggestions(row, scan)
+    assert ins.held_back_avg(row, cl) == 55.0                     # bara som text, utan Använd
+    assert ins.stop_price(row) == pytest.approx(42.5)             # raden orörd
+
+
+def test_the_three_week_old_row_keeps_its_average():
+    """Raden 2026-10-12: 3 insiders, 1 310 tkr, snitt 43,67 (stopp 37,12). 2026-11-02 har 10-01-köpet fallit ur
+    fönstret: 2 insiders, 510 tkr, snitt 51 — inget förslag, inte heller till ChatGPT-underlaget."""
+    row = _full_row(found="2026-10-12", insiders=3, amount=1310.0, cluster_avg=43.6667)
+    cl = _cluster(insiders=2, amount=510.0, cluster_avg=51.0,
+                  auto={**_cluster()["auto"], "first_buy": "2026-10-05", "last_buy": "2026-10-12"})
+    assert ins.same_cluster(row, cl) is True
+    assert "cluster_avg" not in ins.scan_offers(row, cl)
+    assert "cluster_avg" not in ins.scan_suggestions(row, {"generated": "2026-11-02", "clusters": [cl]})
+    # bara beloppet lägre räcker — och en tom snittkurs fylls som förut
+    assert "cluster_avg" not in ins.scan_offers(_full_row(found="2026-10-12", amount=1310.0, cluster_avg=43.6667), cl)
+    assert ins.scan_offers(_full_row(found="2026-10-12", insiders=3, amount=1310.0), cl) == {"cluster_avg": 51.0}
+    assert ins.held_back_avg(_full_row(found="2026-10-12", insiders=3, amount=1310.0), cl) is None
+
+
+def test_a_growing_cluster_still_offers_its_average():
+    row = _full_row(insiders=3, amount=1235.0, cluster_avg=50.0)          # lika många, lika mycket: inget föll bort
+    assert not ins.rolled_out(row, _cluster())
+    assert ins.scan_offers(row, _cluster()) == {"cluster_avg": 48.2}
+    assert ins.held_back_avg(row, _cluster()) is None
+    assert not ins.rolled_out(_row(cluster_avg=50.0), _cluster(insiders=1))   # radens tal saknas: inget att jämföra
+    empty = _full_row(cluster_avg=50.0)                                     # antal och belopp tomma
+    assert ins.scan_offers(empty, _cluster()) == {"insiders": 3, "amount": 1235.0, "cluster_avg": 48.2}
+
+
 def test_a_new_cluster_after_the_row_was_found_gets_no_suggestions():
     old = _row(found="2026-06-01", insiders=2, cluster_avg=80.0)
     assert ins.same_cluster(old, _cluster()) is False
@@ -269,19 +314,23 @@ def _same_json(a, b) -> bool:
 
 @pytest.fixture
 def page(monkeypatch):
-    """Insider-sidan ur en fejkad lagring och fejkad skanning — inget GitHub, ingen Gist."""
-    stores = copy.deepcopy(STORES)
+    """Insider-sidan ur en fejkad lagring och fejkad skanning — inget GitHub, ingen Gist. run() tar egna
+    arkdata, nattjobbsrader och skanning i stället för STORES, REFRESH och SCAN."""
+    state = {"stores": copy.deepcopy(STORES), "refresh": REFRESH, "scan": SCAN}
     monkeypatch.setattr(storage, "session_load", lambda name, default=None, legacy_file=None:
-                        streamlit.session_state.setdefault(name, copy.deepcopy(stores.get(name, default))))
+                        streamlit.session_state.setdefault(name, copy.deepcopy(state["stores"].get(name, default))))
     monkeypatch.setattr(storage, "load_error", lambda name: None)
     monkeypatch.setattr(storage, "is_dirty", lambda name: False)
     monkeypatch.setattr(storage, "last_saved", lambda name: None)
     import gist_storage
     monkeypatch.setattr(gist_storage, "load_blob", lambda *a, **k: None)
-    monkeypatch.setattr(rui, "load_refresh", lambda: REFRESH)
-    monkeypatch.setattr(ins, "_load_auto_scan", lambda: copy.deepcopy(SCAN))
+    monkeypatch.setattr(rui, "load_refresh", lambda: state["refresh"])
+    monkeypatch.setattr(ins, "_load_auto_scan", lambda: copy.deepcopy(state["scan"]))
 
-    def run():
+    def run(stores=None, refresh=None, scan=None):
+        for k, v in (("stores", stores), ("refresh", refresh), ("scan", scan)):
+            if v is not None:
+                state[k] = copy.deepcopy(v)
         from streamlit.testing.v1 import AppTest
 
         def app(root):
@@ -342,3 +391,45 @@ def test_anvand_writes_the_field_and_the_box(page):
     keys = {b.key for b in at.button}
     assert "rf_offer_ins_scan_v1_insiders" not in keys and "rf_offer_ins_scan_v1_cluster_avg" in keys
     assert len(at.session_state["insider"]["signals"]) == 1
+
+
+def test_a_rolled_window_average_gets_no_button_and_the_stop_stays(page):
+    row = _full_row(found="2026-10-12", insiders=3, amount=1310.0, cluster_avg=43.6667, price_now=50.0)
+    cl = _cluster(insiders=2, amount=510.0, cluster_avg=51.0, currency="SEK",
+                  auto={**_cluster()["auto"], "first_buy": "2026-10-05", "last_buy": "2026-10-12"})
+    stores = {"insider": {"signals": [row]}}
+    at = page(stores=stores, scan={"generated": "2026-11-02T07:01:00+00:00", "clusters": [cl]})
+    txt = _texts(at)
+    keys = {b.key for b in at.button}
+    assert not any(k.startswith("rf_offer_ins_scan_v1_") for k in keys)
+    assert "Inga förslag — arket har samma eller högre tal." in txt
+    assert "Klustrets snittkurs i fönstret 51 SEK — köp har fallit ur fönstret, inget förslag." in txt
+    assert "🤖 Skanningen har" not in txt
+    assert [m.value for m in at.metric if m.label == "Stopp (−15 %)"] == ["37.12"]
+    assert _same_json(at.session_state["insider"], stores["insider"])             # att öppna sidan skriver ingenting
+
+
+def test_the_fscore_line_names_the_matched_company(page):
+    """En handskriven rad vars nattrad matchats mot ett annat bolag: kursen är redan inskriven, så kursförslaget
+    (och dess matchat-not) ritas inte — säljregel 3 säger själv vilket bolag F-score kommer från."""
+    stores = {"insider": {"signals": [_row(price_now=50.0)]}}
+    other = {"rows": {"insider:v1": {"price": 50.0, "asof": "2026-11-08", "currency": "SEK", "f_score": 2,
+                                     "bd_name": "Volati AB"}}}
+    at = page(stores=stores, refresh=other)
+    lines = [m.value for m in at.markdown if "Säljregel" in (m.value or "")]
+    rule3 = [x for x in lines if "Säljregel 3" in x]
+    assert len(rule3) == 1
+    assert "Säljregel 3: F-score nu 2 &lt; 4 — grinden bryts (Börsdata 2026-11-08) (matchat: Volati AB)" in rule3[0]
+    assert not any("matchat" in x for x in lines if "Säljregel 5" in x)
+    assert "rf_insider_v1_price_now" not in {b.key for b in at.button}            # kursen har redan värdet
+    assert ins._refresh_fscore(_row()) == (2.0, "2026-11-08", " (matchat: Volati AB)")
+    # nattradens namn liknar radens: ingen not
+    same = copy.deepcopy(other)
+    same["rows"]["insider:v1"]["bd_name"] = "Volvo AB"
+    txt = _texts(page(stores=stores, refresh=same))
+    assert "Säljregel 3: F-score nu 2 &lt; 4" in txt and "(matchat:" not in txt
+    # noten är redan escapad och escapas inte en gång till
+    amp = copy.deepcopy(other)
+    amp["rows"]["insider:v1"]["bd_name"] = "A&B Mining"
+    txt = _texts(page(stores=stores, refresh=amp))
+    assert "(matchat: A&amp;B Mining)" in txt and "&amp;amp;" not in txt

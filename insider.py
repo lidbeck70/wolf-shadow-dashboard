@@ -489,14 +489,37 @@ def _empty(value) -> bool:
     return value is None or (isinstance(value, str) and not value.strip())
 
 
+def rolled_out(sig: dict, cluster: dict) -> bool:
+    """Har köp fallit ur skanningens 30-dagarsfönster? Ja när skanningen har färre insiders eller lägre belopp än
+    raden — ett kluster som bara växer sänker aldrig något av dem. Jämförs bara när båda talen finns."""
+    c = cluster or {}
+    for k in ("insiders", "amount"):
+        new, cur = _num(c.get(k)), _num((sig or {}).get(k))
+        if new is not None and cur is not None and new < cur:
+            return True
+    return False
+
+
+def held_back_avg(sig: dict, cluster: dict) -> Optional[float]:
+    """Skanningens snittkurs när den inte föreslås för att köp fallit ur fönstret (samma kluster, raden har en annan
+    snittkurs) — talet bygger då bara på de senaste köpen. Bara för en text utan Använd; None annars."""
+    c = cluster or {}
+    avg, cur = _num(c.get("cluster_avg")), _num((sig or {}).get("cluster_avg"))
+    if not avg or avg <= 0 or cur is None or abs(cur - avg) <= 1e-9:
+        return None
+    return avg if same_cluster(sig, c) is True and rolled_out(sig, c) else None
+
+
 def scan_offers(sig: dict, cluster: dict) -> dict:
     """{fält: värde} ur skanningens kluster för en rad som redan finns i arket. Bara förslag — inget skrivs här.
 
     Aldrig en nedgradering: fönstret rullar från dagens datum, så ett lägre antal eller belopp är köp som fallit ur
     fönstret, och skanningens 'nej' är inget besked ('efter fall' kräver känd F-score). Antal, belopp och roll
     föreslås därför bara när de är högre, kryssen bara som ja. Ett ifyllt fält ändras bara inom samma kluster
-    (same_cluster); ett nytt kluster ger inga förslag, och utan datum fylls bara tomma fält. Snittkursen har ingen
-    riktning och föreslås när den skiljer sig. Grind och trigger föreslås aldrig."""
+    (same_cluster); ett nytt kluster ger inga förslag, och utan datum fylls bara tomma fält. En annan snittkurs
+    föreslås bara när fönstret fortfarande har alla radens köp: har köp fallit ur fönstret (rolled_out) bygger
+    snittet bara på de senaste köpen och hålls tillbaka — då fylls bara en tom snittkurs. Grind och trigger
+    föreslås aldrig."""
     c = cluster or {}
     same = same_cluster(sig, c)
     if same is False:
@@ -518,8 +541,9 @@ def scan_offers(sig: dict, cluster: dict) -> dict:
     amt = _num(c.get("amount"))
     put("amount", amt, lambda cur: _num(cur) is None or amt > _num(cur))
     avg = _num(c.get("cluster_avg"))
+    rolled = rolled_out(sig, c)
     put("cluster_avg", avg if avg and avg > 0 else None,
-        lambda cur: _num(cur) is None or abs(_num(cur) - avg) > 1e-9)
+        lambda cur: not rolled and (_num(cur) is None or abs(_num(cur) - avg) > 1e-9))
     for k in ("aterkommande", "efter_fall"):
         if c.get(k) is True and sig.get(k) is not True:
             out[k] = True
@@ -666,6 +690,11 @@ def _scan_offer_rows(data: dict, sig: dict, cluster: dict, asof: str) -> None:
                fmt=_sv if field == "amount" else "{:g}", unit=unit, note=note)
     if not offers:
         st.caption("Inga förslag — arket har samma eller högre tal.")
+    held = held_back_avg(sig, cluster)
+    if held is not None:
+        ccy = str(cluster.get("currency") or "")
+        st.caption(f"Klustrets snittkurs i fönstret {held:g}{f' {ccy}' if ccy else ''} — köp har fallit ur "
+                   f"fönstret, inget förslag.".replace("$", "\\$"))
     st.caption("Grind och trigger ur skanningen är bara text — dem väljer du själv i raden.")
 
 
@@ -757,21 +786,27 @@ def _signals(data: dict) -> None:
 
 
 def _refresh_fscore(sig: dict) -> tuple:
-    """(F-score, datum) ur nattjobbets rad insider:<id> (sheets_refresh), eller (None, "")."""
+    """(F-score, datum, not) ur nattjobbets rad insider:<id> (sheets_refresh), eller (None, "", ""). not =
+    refresh_ui.matched_note, redan HTML-escapad: ' (matchat: …)' när nattjobbets bolag inte liknar radens namn."""
     try:
         import refresh_ui
-        sug = refresh_ui.suggestion(refresh_ui.load_refresh(), "insider", sig, "f_score")
+        blob = refresh_ui.load_refresh()
+        sug = refresh_ui.suggestion(blob, "insider", sig, "f_score")
+        note = refresh_ui.matched_note(blob, "insider", sig) if sug else ""
     except Exception:
-        sug = None
-    return (sug[0], sug[1]) if sug else (None, "")
+        sug, note = None, ""
+    return (sug[0], sug[1], note) if sug else (None, "", "")
 
 
 def _sell_watch(sig: dict) -> None:
-    """Säljregel 3 och 5 uträknade för raden — bara text, ingen regel ändras."""
+    """Säljregel 3 och 5 uträknade för raden — bara text, ingen regel ändras. Säljregel 3 får matchat-noten när
+    nattjobbets F-score kommer från ett bolag vars namn inte liknar radens."""
     from html import escape
     color = {"stop": RED, "warn": AMBER}
-    for text, level in sell_watch(sig, *_refresh_fscore(sig)):
-        st.markdown(f"<div style='color:{color.get(level, DIM)};font-size:0.8rem;'>{escape(text)}</div>",
+    fs, asof, note = _refresh_fscore(sig)
+    for text, level in sell_watch(sig, fs, asof):
+        extra = note if text.startswith("Säljregel 3") else ""     # noten är redan escapad
+        st.markdown(f"<div style='color:{color.get(level, DIM)};font-size:0.8rem;'>{escape(text)}{extra}</div>",
                     unsafe_allow_html=True)
 
 
