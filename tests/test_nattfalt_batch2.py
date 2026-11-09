@@ -32,6 +32,22 @@ def test_names_that_do_not():
     assert rui.name_resembles("", "General Oceans") and rui.name_resembles("Genovis", None)   # inget att jämföra
 
 
+def test_one_letter_names_and_nordic_letters_are_not_called_a_mismatch():
+    """Granskningen: 'H&M B' (Börsdatas eget namn, som Insider-raden får) har bara enbokstavsdelar och fick
+    '(matchat: H&M B)' mot sig själv; ø/æ delas inte av NFKD ('Maersk' mot 'A.P. Møller - Mærsk B')."""
+    import refresh_ui as rui
+
+    def note(own, bd):
+        return rui.matched_note({"rows": {"insider:s1": {"bd_name": bd}}}, "insider", {"id": "s1", "name": own})
+
+    for own, bd in (("H&M B", "H&M B"), ("H&M", "H&M B"), ("h&m b", "H&M B"), ("Maersk", "A.P. Møller - Mærsk B"),
+                    ("A.P. Moller-Maersk", "A.P. Møller - Mærsk B"), ("Leroy", "Lerøy Seafood Group"),
+                    ("Orsted", "Ørsted")):
+        assert note(own, bd) == "", (own, bd)
+    assert note("Z", "H&M B") == " (matchat: H&amp;M B)"                  # olika bokstäver: fortfarande en notis
+    assert note("H&M B", "Boliden AB") == " (matchat: Boliden AB)"
+
+
 def test_matched_note_only_when_the_name_differs_or_is_missing():
     blob = {"rows": {"insider:s1": {"price": 20.0, "bd_name": "General Oceans"},
                      "insider:s2": {"price": 20.0},

@@ -28,10 +28,17 @@ _GENERIC = frozenset("gold silver mining mines minerals metals resources royalty
 NAME_RATIO_MIN = 0.8        # teckenlikhet mellan de hopskrivna namnen som räknas som samma namn
 
 
-def _name_tokens(name) -> list:
-    s = unicodedata.normalize("NFKD", str(name or ""))
+_NORDIC = str.maketrans({"ø": "o", "Ø": "O", "æ": "ae", "Æ": "AE"})     # NFKD delar inte ø/æ ('Møller' = 'Moller')
+
+
+def _name_parts(name) -> list:
+    s = unicodedata.normalize("NFKD", str(name or "").translate(_NORDIC))
     s = "".join(c for c in s if not unicodedata.combining(c)).lower()
-    return [t for t in re.split(r"[^a-z0-9]+", s) if len(t) > 1 and t not in _LEGAL]
+    return [t for t in re.split(r"[^a-z0-9]+", s) if t]
+
+
+def _name_tokens(name) -> list:
+    return [t for t in _name_parts(name) if len(t) > 1 and t not in _LEGAL]
 
 
 def name_resembles(own, bd_name) -> bool:
@@ -57,8 +64,14 @@ def matched_note(blob: dict, sheet: str, row: dict, row_id=None) -> str:
     if not bd:
         return ""
     own = str((row or {}).get("name") or "").strip()
-    if _name_tokens(own) and name_resembles(own, bd):
-        return ""
+    if _name_tokens(own):
+        if name_resembles(own, bd):
+            return ""
+    elif own:
+        # bara enbokstavsdelar ('H&M B', Börsdatas eget namn): jämför bokstäverna hopskrivna, bolagsformer borta
+        ca, cb = ("".join(t for t in _name_parts(n) if t not in _LEGAL) for n in (own, bd))
+        if ca and (ca in cb or cb in ca):
+            return ""
     return f" (matchat: {html.escape(bd).replace('$', '&#36;')})"
 
 
