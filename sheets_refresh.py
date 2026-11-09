@@ -341,6 +341,24 @@ def _bd_meta(meta: dict, ccy: Optional[str]) -> dict:
             "report_currency": str(meta.get("reportCurrency") or ccy or "").strip().upper() or None}
 
 
+# Rader som får nattens råvarupris: Rick Rule, Poängmodellen och Durrett-/Wolf Asymmetry-arket (Royalty C inte).
+_PRICED = frozenset({("producers", "producers"), ("scoring", "sprott"), ("scoring", "durrett"),
+                     ("confidence", "companies")})
+
+
+def commodity_name(ref: dict) -> Optional[str]:
+    """Råvaran nattens terminspris hämtas för: arkets namn ('Guld' på Rick Rule och Poängmodellen) eller, på
+    Durrett-arket, registrets rotation_key ('gold' → 'guld', samma nycklar som commodity_prices.TICKERS). None för
+    andra ark och för rader utan råvara — de får inget pris."""
+    if (ref.get("sheet"), ref.get("bucket")) not in _PRICED:
+        return None
+    raw = (ref.get("row") or {}).get("commodity")
+    if ref.get("sheet") == "confidence":
+        import commodity_prices as _cp
+        return _cp.registry_name(raw)
+    return str(raw or "").strip() or None
+
+
 def refresh(api, sheets: dict) -> dict:
     """Färska tal per arkrad + övergångar. Rena arkfunktioner för händelserna."""
     out = {"generated": _now(), "rows": {}, "events": [], "error": None}
@@ -369,11 +387,11 @@ def refresh(api, sheets: dict) -> dict:
         if missing_meta:
             snaps.update(api.get_fundamentals_snapshot_fast(missing_meta, scope="global") or {})
 
-        # Råvarupriset till Rick Rule-arket: en hämtning per råvara (Yahoo-
-        # terminer), sedan på varje producentrad med samma råvara.
+        # Råvarupriset till Rick Rule, Poängmodellen och Durrett-arket: en hämtning per termin (Yahoo), delad mellan
+        # arken, sedan på varje rad med samma råvara. Rader utan råvara (eller utan termin) får inget.
         import commodity_prices as _cp
-        spots = _cp.spot_many(r["row"].get("commodity") for r in refs
-                              if r["sheet"] == "producers" and r["bucket"] == "producers")
+        com_names = {r["key"]: commodity_name(r) for r in refs}
+        spots = _cp.spot_many(n for n in com_names.values() if n)
         price_cache = {}
         report_cache: dict = {}
         import private_data
@@ -383,12 +401,14 @@ def refresh(api, sheets: dict) -> dict:
             s = {"ticker": r["ticker"], "ins_id": iid, "price": None, "asof": None,
                  "currency": None, "source": None, "ev_ebitda": None,
                  "nd_ebitda": None, "mcap_musd": None}
-            if r["sheet"] == "producers" and r["bucket"] == "producers":
-                sp = spots.get(_cp._key(r["row"].get("commodity")))
+            if com_names.get(r["key"]):
+                sp = spots.get(_cp._key(com_names[r["key"]]))
                 if sp:
                     s["commodity_price"] = sp["price"]
                     s["commodity_unit"] = sp["unit"]
                     s["commodity_asof"] = sp["asof"]
+                    # terminen: arket erbjuder priset bara medan raden har den råvaran (commodity_prices.night_fits)
+                    s["commodity_ticker"] = sp.get("ticker")
             if iid is not None:
                 if iid not in price_cache:
                     price_cache[iid] = _last_close(api, iid)

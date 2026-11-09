@@ -103,7 +103,7 @@ def render_asymmetry_page() -> None:
     mode = st.radio("", list(MODES), horizontal=True, label_visibility="collapsed", key="asym_mode")
     if mode == QUICK:
         from asymmetry.quick_ui import render_quick
-        render_quick(add_to_sheet=lambda t, name: _add_quick(data, t, name))
+        render_quick(add_to_sheet=lambda t, name, **kw: _add_quick(data, t, name, **kw))
         return
     c1, c2 = st.columns([3, 1.5])
     with c1:
@@ -124,12 +124,20 @@ def render_asymmetry_page() -> None:
     _analysis(data, company)
 
 
-def _add_quick(data: dict, ticker: str, name: str) -> bool:
-    """Snabbkollens bolag in i arket (samma ark som Durrett). False om det redan fanns."""
+def _add_quick(data: dict, ticker: str, name: str, ins_id=None, commodity: Optional[tuple] = None) -> bool:
+    """Snabbkollens bolag in i arket (samma ark som Durrett). False om det redan fanns. ins_id (Börsdatas id) följer
+    med så att 'Hämta nu' och natten hittar bolaget. Råvaran skrivs inte: commodity = (registernyckel, källa) blir
+    ett förslag med Använd under Identitet (bara i sessionen)."""
     t = str(ticker or "").strip().upper()
     if not t or _get(data, t):
         return False
-    _put(data, CompanyInput(ticker=t, name=name))
+    try:
+        iid = None if isinstance(ins_id, bool) else int(ins_id)
+    except (TypeError, ValueError):
+        iid = None
+    _put(data, CompanyInput(ticker=t, name=name, ins_id=iid if iid and iid > 0 else None))
+    if commodity and commodity[0]:
+        cui.remember_commodity_hint(t, commodity[0], commodity[1] if len(commodity) > 1 else "")
     _save(data)
     return True
 
@@ -235,6 +243,7 @@ def _sheet(data: dict, company: Optional[CompanyInput]) -> None:
     # Före formerna som håller fälten (Identitet, Börsdata fyller, Ekonomi, Confidence), som Durrett före Alla fält.
     cui.render_prefill(data, company, store=ast.STORE)
     with st.expander("Identitet och strategi", expanded=False):
+        cui.render_commodity_offer(data, company, store=ast.STORE)
         with st.form(f"asym_ident_{company.ticker}"):
             ident = cui.identity_widgets(f"asym_id_{company.ticker}", company)
             tags = list(ast.strategy_tags())

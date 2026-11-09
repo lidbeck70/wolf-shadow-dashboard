@@ -83,9 +83,52 @@ def render_quick(add_to_sheet=None) -> None:
         _note(" · ".join(extra))
     if add_to_sheet is not None:
         if st.button("➕ Lägg till i arket (Analys/Ark)", key=f"asym_quick_add_{t}"):
-            ok = add_to_sheet(data.get("yf_ticker") or t, data.get("name") or t)
+            key, src = sheet_commodity_hint(data)
+            ok = add_to_sheet(data.get("yf_ticker") or t, data.get("name") or t, ins_id=data.get("ins_id"),
+                              commodity=(key, src) if key else None)
+            label = _commodity_label(key)
             (st.success if ok else st.info)(
-                f"{t} ligger i arket — öppna Ark för råvara och stage." if ok else f"{t} finns redan i arket.")
+                (f"{t} ligger i arket — öppna Ark för råvara och stage."
+                 + (f" Förslag på råvara: {label} (Använd under Identitet)." if label else ""))
+                if ok else f"{t} finns redan i arket.")
+
+
+def sheet_commodity_hint(data: dict, lookup=None) -> tuple:
+    """(registernyckel | None, källa — eller varför inget förslag) för arket. Listorna först: samma härledning som
+    Rick Rule-kortet och Identitet (thor.ticker.commodity_suggestion, med Börsdatas bransch). Bara när listorna inte
+    känner bolaget: EMBER:s handplockade tema (curated_theme), med samma osäkerhetsregler. Aldrig Holdings
+    sektortext, komplexets standardtema eller Yahoos bransch — för grova för en råvara (uran under 'Energy', silver
+    under 'Precious metals'). Bara ett förslag: skrivs först med Använd under Identitet."""
+    t = str(data.get("yf_ticker") or data.get("ticker") or "").strip().upper()
+    if not t:
+        return None, ""
+    try:
+        from thor import ticker as tk
+        key, why = tk.commodity_suggestion(t, branch_id=data.get("branch_id") or data.get("bd_branch_id"))
+        if key or why:
+            return key, why
+        theme = (lookup or curated_theme)(t)
+        return tk.commodity_suggestion(t, theme=theme, source="EMBER-temat") if theme else (None, "")
+    except Exception:
+        return None, ""
+
+
+def curated_theme(ticker: str) -> Optional[str]:
+    """EMBER:s temakarta eller universum-registrets tema (ember.regime) — bara de handplockade träffarna, inte resten
+    av detect_theme (sektortexten i Holdings, komplexets standardtema, Yahoo)."""
+    from ember.config import TICKER_THEME_MAP
+    from ember.regime import _THEME_OVERLAY
+    t = str(ticker or "").strip().upper()
+    return TICKER_THEME_MAP.get(t) or _THEME_OVERLAY.get(t)
+
+
+def _commodity_label(key) -> str:
+    try:
+        from confidence import commodities as com
+        c = com.REGISTRY.get(key) if key else None
+        return c.label if c else ""
+    except Exception:
+        return ""
 
 
 # Förklaringstext och stora kort delas med andra flikar (ui/components).

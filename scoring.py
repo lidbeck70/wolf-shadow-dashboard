@@ -203,6 +203,34 @@ def future_profit(production, target_price, aisc) -> Optional[float]:
     return prod * (tp - cost)
 
 
+CALC_UNIT = "USD/oz"                       # hjälpräknarens enhet: koz × $/oz
+
+
+def spot_profit_line(night: Optional[dict], commodity, prod, aisc) -> str:
+    """Raden vid Målpris i hjälpräknaren: '🤖 Spot 4 012 USD/oz (2026-11-06) · vinst vid spot 385 MUSD/år'. Spot är
+    nattens terminspris på raden (sheets_refresh: commodity_price på scoring-raden), bara när det gäller kortets
+    råvara (commodity_prices.night_fits) och står i räknarens USD/oz — koppar i USD/lb räknas inte mot koz. Vinsten
+    är räknarens egen: produktion × (spot − AISC). Bara visning, ingen Använd. Tom sträng annars."""
+    r = night if isinstance(night, dict) else {}
+    spot = _nonneg(r.get("commodity_price"))
+    if not spot or str(r.get("commodity_unit") or "").strip() != CALC_UNIT:
+        return ""
+    try:
+        import commodity_prices
+        from controls_ui import _price_txt
+        if not commodity_prices.night_fits(r, commodity):
+            return ""
+    except Exception:
+        return ""
+    asof = str(r.get("commodity_asof") or "")[:10]
+    txt = f"🤖 Spot {_price_txt(spot)} {CALC_UNIT}" + (f" ({asof})" if asof else "")
+    fp = future_profit(prod, spot, aisc)
+    if fp is not None:
+        txt += (f" · vinst vid spot {fp / 1000.0:,.0f} MUSD/år".replace(",", " ") if fp >= 0
+                else " · spot under AISC, ingen vinst")
+    return txt + " — terminspris, bara visning."
+
+
 def total_score(factors: dict) -> Optional[int]:
     """Summan av de fem faktorerna, eller None när ingen är satt.
 
@@ -358,6 +386,25 @@ def _chatgpt(data: dict, row: dict, key: str) -> None:
                              name=row.get("name", ""), rows={key: row}, on_apply=lambda: _save(data))
 
 
+def _commodity(row: dict, key: str, on_apply) -> bool:
+    """Råvaran på kortet: väljaren och förslaget med Använd (refresh_ui.commodity_choice). True när du bytte."""
+    try:
+        import refresh_ui
+    except Exception:
+        return False
+    sel, _rest = st.columns([1.2, 3])
+    return refresh_ui.commodity_choice(row, COMMODITIES, key, on_apply, container=sel)
+
+
+def _night_row(row: dict) -> dict:
+    """Nattens rad för kortet (scoring:<id>) ur sifferuppdateringen. Tom utan blob."""
+    try:
+        import refresh_ui
+        return dict(((refresh_ui.load_refresh() or {}).get("rows") or {}).get(f"scoring:{row.get('id')}") or {})
+    except Exception:
+        return {}
+
+
 def _rc():
     """Kortstödet (fokus, x/y ifyllda, saknas-raden) — None om review-paketet inte går att läsa."""
     try:
@@ -376,7 +423,8 @@ def _screen_section(data: dict, key: str) -> None:
     existing = {str(r.get("ticker", "")).upper() for r in data.get(key, [])}
 
     def _add(fields: dict) -> None:
-        data[key].append({"id": _uid(), "commodity": COMMODITIES[0],
+        # Ingen gissad råvara (förr alltid 'Guld'): tom tills du väljer — kortet föreslår den med Använd.
+        data[key].append({"id": _uid(), "commodity": "",
                           "date": _today(), "factors": {}, **fields})
         _save(data)
 
@@ -456,11 +504,13 @@ def _rows(data: dict, key: str) -> None:
         if rc and not rc.same_ticker(row.get("ticker"), foc):
             continue
         c = VERDICT_COLOR.get(vd, DIM)
-        head = (f"{row.get('ticker','?')} · {row.get('commodity','')} · "
+        head = (f"{row.get('ticker','?')} · {row.get('commodity') or '—'} · "
                 f"{sc if sc is not None else '–'}/{MAX_SCORE} p · "
                 f"{vd or 'ej poängsatt'}")
         with st.expander(head, expanded=bool(foc)):
             top = rc.slot() if rc else None
+            if _commodity(row, f"sc_com_{row['id']}", lambda: _save(data)):
+                _save(data)
             if key == SPROTT:
                 _sprott_math(data, row)
                 _extract_section(data, row, SPROTT)
@@ -636,6 +686,9 @@ def _durrett_math(data: dict, row: dict) -> None:
         aisc = h3.number_input("AISC ($/oz)", min_value=0.0, step=50.0,
                                value=_nonneg(row.get("aisc")),
                                key=f"sc_aisc_{row['id']}")
+        spot = spot_profit_line(_night_row(row), row.get("commodity"), prod, aisc)
+        if spot:
+            st.caption(spot.replace("$", "\\$"))
         fp = future_profit(prod, tp, aisc)
         if fp is not None:
             # koz × $/oz = tusen dollar -> MUSD

@@ -35,12 +35,15 @@ def screen_rows(blob: dict, key: str) -> tuple:
 
 def row_to_fields(row: dict, key: str) -> dict:
     """Vad håven kan förifylla i respektive ark — bara sådant som är
-    samma tal i arket (arket räknar allt annat själv)."""
+    samma tal i arket (arket räknar allt annat själv). Råvaran gissas inte:
+    branch_id följer med så att kortet kan föreslå den."""
     m = row.get("m") or {}
     out = {"ticker": str(row.get("ticker") or "").upper(),
            "name": str(row.get("name") or "")}
     if row.get("ins_id") is not None:
         out["ins_id"] = row["ins_id"]          # så sifferuppdateringen hittar bolaget
+    if row.get("branch_id") is not None:
+        out["branch_id"] = row["branch_id"]    # Börsdatas bransch: underlag för kortets råvaruförslag (thor.ticker)
     if key == "rule":
         if m.get("ev_ebitda") is not None:
             out["ev_ebitda"] = float(m["ev_ebitda"])

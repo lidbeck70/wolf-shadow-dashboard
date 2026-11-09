@@ -107,7 +107,69 @@ def proposals(blob: Optional[dict], company: CompanyInput, sheet: str = SHEET) -
             and ccy in _CCY_CHOICES:
         out.append(("market_currency", dp(ccy, kind="ACTUAL", source=src, source_type="secondary", pub_date=asof),
                     str(company.get("market_currency").value) if company.get("market_currency") else None))
+    offer = commodity_price_offer(s, company)
+    if offer:
+        out.append(offer)
     return out
 
 
-__all__ = ["proposals", "refresh_row", "ins_id_offer", "Datapoint", "AUTO_USD_SOURCES"]
+def commodity_price_offer(s: Optional[dict], company: CompanyInput) -> Optional[tuple]:
+    """('commodity_price', Datapoint, nuvarande | None) ur nattens terminspris (sheets_refresh: commodity_price på
+    raden), eller None. Bara när priset hämtades för bolagets råvara (commodity_prices.night_fits — råvaran kan ha
+    bytts sedan natten) och står i registrets enhet (commodity_prices.unit_fits: guld/silver/platina/palladium USD/oz,
+    koppar USD/lb, gas USD/MMBtu, järnmalm USD/t; olja i USD/fat mot USD/boe, ett fat = en boe enligt ägarens beslut).
+    Råvarupriset står alltid i USD, så kursvalutans regel (okänd valuta → inga omräknade tal) gäller inte det. Uran,
+    litium, zink, nickel och kol har ingen termin och får inget. Skiljer sig inte från det sparade → None."""
+    if not isinstance(s, dict):
+        return None
+    try:
+        import commodity_prices as cp
+        from confidence import commodities as com
+        reg = com.get(company.commodity)
+        name = cp.registry_name(company.commodity)
+        if reg is None or not name or not cp.night_fits(s, name) or not cp.unit_fits(s.get("commodity_unit"), reg.unit):
+            return None
+        v = round(float(s.get("commodity_price")), 4)
+    except Exception:                                   # inget pris, eller en rad som inte går att läsa: inget förslag
+        return None
+    if not v > 0:
+        return None
+    cur = company.num("commodity_price") if company.has("commodity_price") else None
+    if cur is not None and abs(cur - v) < 1e-6:
+        return None
+    tick = str(s.get("commodity_ticker") or (cp.ticker_for(name) or ("",))[0])
+    night_unit = str(s.get("commodity_unit") or "").strip()
+    note = "; ".join(x for x in (
+        cp.BASIS.get(tick, ""),
+        f"{tick} står i {night_unit} — ett fat räknas som en boe" if night_unit != reg.unit else "",
+        "terminspris, inte spot eller realiserat pris — kan vara en dag gammalt") if x)
+    asof = str(s.get("commodity_asof") or "")[:10] or None
+    return ("commodity_price", dp(v, kind="ASSUMPTION", source=f"Yahoo {tick} (termin)", source_type="secondary",
+                                  pub_date=asof, unit=reg.unit, note=note), cur)
+
+
+def spot_earnings(s: Optional[dict], company: CompanyInput) -> Optional[dict]:
+    """Motorns framtida vinst (future_fcf, MUSD) räknad på nattens terminspris i stället för det sparade — bara för
+    raden vid Råvarupris, inget skrivs. None när priset inte erbjuds (commodity_price_offer: fel råvara, fel enhet,
+    samma tal) eller motorn inte kan räkna. {price, unit, asof, fcf_spot, fcf_saved}; fcf_* None när motorn saknar
+    produktion eller kostnad (fcf_saved också utan sparat pris)."""
+    offer = commodity_price_offer(s, company)
+    if not offer:
+        return None
+    point = offer[1]
+    try:
+        from engines.durrett.engine import analyze
+
+        def fcf(c):
+            return (analyze(c).metrics.get("future_fcf") or {}).get("value")
+        fresh = CompanyInput.from_dict(company.as_dict())
+        fresh.set("commodity_price", point)
+        out = {"price": point.value, "unit": point.unit, "asof": point.pub_date, "fcf_spot": fcf(fresh),
+               "fcf_saved": fcf(company) if company.has("commodity_price") else None}
+    except Exception:                                   # raden är en hjälp — motorn får aldrig fälla sidan
+        return None
+    return out
+
+
+__all__ = ["proposals", "refresh_row", "ins_id_offer", "commodity_price_offer", "spot_earnings", "Datapoint",
+           "AUTO_USD_SOURCES"]

@@ -177,12 +177,19 @@ def choice_list(f: cat.SheetField) -> tuple:
 
 
 def _suggestion(blob: Optional[dict], sheet: str, row: dict, source_field: str):
-    """Sifferuppdateringens förslag (värde, datum, enhet) för raden, eller None."""
+    """Sifferuppdateringens förslag (värde, datum, enhet) för raden, eller None. Råvarupriset bara medan nattens pris
+    gäller radens råvara (commodity_prices.night_fits — samma regel som kortet)."""
     if not blob or not source_field or not isinstance(row, dict) or not row.get("id"):
         return None
     try:
         import refresh_ui
-        return refresh_ui.suggestion(blob, cat.SHEETS[sheet].refresh, row, source_field,
+        refresh = cat.SHEETS[sheet].refresh
+        if source_field == "commodity_price":
+            import commodity_prices
+            night = ((blob.get("rows") or {}).get(f"{refresh}:{row.get('id')}")) or {}
+            if not commodity_prices.night_fits(night, row.get("commodity")):
+                return None
+        return refresh_ui.suggestion(blob, refresh, row, source_field,
                                      unit_field="commodity_unit" if source_field == "commodity_price" else None)
     except Exception:
         return None

@@ -52,7 +52,7 @@ CONFIDENCE_MORE: dict = {
 
 # bolagets råvarunyckel → terminsnamnet i commodity_prices.TICKERS
 FUTURES_NAME: dict = {"gold": "guld", "silver": "silver", "platinum": "platina", "palladium": "palladium",
-                      "copper": "koppar", "oil_gas": "olja", "natural_gas": "gas"}
+                      "copper": "koppar", "oil_gas": "olja", "natural_gas": "gas", "iron_ore": "jarnmalm"}
 
 
 def _stage(stage: str) -> str:

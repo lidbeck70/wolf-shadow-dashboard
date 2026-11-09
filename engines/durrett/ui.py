@@ -241,6 +241,7 @@ def _render_sheet(data: dict, company: CompanyInput, a: DurrettAnalysis) -> None
                 f"råvarans prisenhet ({a.commodity and com.REGISTRY.get(company.commodity).unit if company.commodity in com.REGISTRY else 'USD/enhet'}).</span>",
                 unsafe_allow_html=True)
     _render_refresh(data, company)
+    _spot_line(company)
     note = musd_currency_note(company)
     if note:
         st.caption(note)
@@ -347,6 +348,38 @@ def _render_refresh(data: dict, company: CompanyInput) -> None:
             cs.put(data, company)
             _save(data)
             st.rerun()
+
+
+def spot_line(company: CompanyInput, night: Optional[dict]) -> str:
+    """'🤖 Spot 4 012 USD/oz (2026-11-06) · framtida vinst vid spot 410 MUSD (på sparat pris 349 MUSD)'. Spot är
+    nattens terminspris när det erbjuds som Råvarupris (engines/durrett/refresh.commodity_price_offer: rätt råvara,
+    registrets enhet, ett annat tal än det sparade); vinsten är motorns egen (future_fcf). Bara visning — Använd i
+    förslagen skriver in priset. Tom sträng annars."""
+    from controls_ui import _price_txt
+    from engines.durrett import refresh as dr
+    e = dr.spot_earnings(night, company)
+    if not e:
+        return ""
+
+    def musd(v):
+        return f"{v:,.0f}".replace(",", " ")
+    txt = f"🤖 Spot {_price_txt(e['price'])} {e['unit']}" + (f" ({e['asof']})" if e.get("asof") else "")
+    if e.get("fcf_spot") is not None:
+        txt += f" · framtida vinst vid spot {musd(e['fcf_spot'])} MUSD"
+        if e.get("fcf_saved") is not None:
+            txt += f" (på sparat pris {musd(e['fcf_saved'])} MUSD)"
+    return txt + " — terminspris, bara visning."
+
+
+def _spot_line(company: CompanyInput) -> None:
+    try:
+        import refresh_ui
+        from engines.durrett import refresh as dr
+        txt = spot_line(company, dr.refresh_row(refresh_ui.load_refresh(), company.ticker))
+    except Exception:                                   # pragma: no cover — raden är en hjälp, aldrig ett hinder
+        return
+    if txt:
+        st.caption(txt.replace("$", "\\$"))
 
 
 def _ins_id_offer(data: dict, company: CompanyInput, row: Optional[dict]) -> None:

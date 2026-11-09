@@ -149,6 +149,50 @@ def margin_points(margin) -> int:
     return 1 if m >= MARGIN_OK else 0
 
 
+# Terminer vars enhet inte är den kortens kostnad brukar stå i (extraktorn: USD/oz, USD/lb, USD/boe). NG=F står i
+# USD/MMBtu och en boe är ungefär 5,8 MMBtu — inom NAV_PRICE_SCALE_MAX. Där måste kortets sparade pris stå inom så
+# många gånger från terminen; utan sparat pris räknas ingen marginal.
+SPOT_SCALE_TIGHT: dict = {"NG=F": 3.0}
+
+
+def spot_margin_line(night: Optional[dict], commodity, unit_cost, saved_price) -> str:
+    """Raden vid Marginal: '🤖 Med dagens pris 4 012 USD/oz (2026-11-06): marginal 64.2 % (2 p) — poängen räknas på
+    det sparade priset.' Dagens pris är nattens terminspris (sheets_refresh: commodity_price på producentraden), bara
+    när det gäller kortets råvara (commodity_prices.night_fits); marginalen är margin_pct som kortets egen. Bara
+    visning, ingen Använd. Tom sträng utan pris eller kostnad, och när det sparade priset redan är dagens.
+
+    Enhetsvakten är CSM-radens (controls_ui.spot_context): står kortets sparade pris (eller kostnaden, utan sparat
+    pris) mer än NAV_PRICE_SCALE_MAX× från terminen — koppar i USD/t mot HG=F i USD/lb — räknas ingen marginal, bara
+    en kort notis. Gas (SPOT_SCALE_TIGHT) kräver ett sparat pris inom 3× från terminen."""
+    r = night if isinstance(night, dict) else {}
+    spot = _nonneg(r.get("commodity_price"))
+    m = margin_pct(spot, unit_cost)
+    if not spot or m is None:
+        return ""
+    saved = _nonneg(saved_price)
+    if saved is not None and abs(saved - spot) < 1e-6:
+        return ""
+    try:
+        import commodity_prices
+        from controls_ui import NAV_PRICE_SCALE_MAX, _price_txt
+        if not commodity_prices.night_fits(r, commodity):
+            return ""
+        tight = SPOT_SCALE_TIGHT.get(commodity_prices.ticker_for(commodity)[0])
+    except Exception:
+        return ""
+    unit = str(r.get("commodity_unit") or "").strip()
+    spot_txt = f"{_price_txt(spot)}{' ' + unit if unit else ''}"
+    ref = saved or (None if tight else _nonneg(unit_cost))
+    if tight and not ref:
+        return ""
+    limit = tight or NAV_PRICE_SCALE_MAX
+    if ref and (ref / spot > limit or spot / ref > limit):
+        return f"🤖 Dagens pris {spot_txt} står nog i en annan enhet än kortets — ingen marginal räknad."
+    asof = str(r.get("commodity_asof") or "")[:10]
+    return (f"🤖 Med dagens pris {spot_txt}{f' ({asof})' if asof else ''}: "
+            f"marginal {m:.1f} % ({margin_points(m)} p) — poängen räknas på det sparade priset.")
+
+
 def _years(value) -> Optional[float]:
     """Ett årsfält, eller None om det inte är ifyllt.
 
@@ -453,6 +497,16 @@ def _suggest(*args, **kw) -> None:
         pass
 
 
+def _commodity(row: dict, key: str, on_apply) -> bool:
+    """Råvaran på kortet: väljaren och förslaget med Använd (refresh_ui.commodity_choice). True när du bytte."""
+    try:
+        import refresh_ui
+    except Exception:
+        return False
+    sel, _rest = st.columns([1.2, 3])
+    return refresh_ui.commodity_choice(row, COMMODITIES, key, on_apply, container=sel)
+
+
 def _fresh_row(row: dict) -> dict:
     """Nattens rad för arkraden (producers:<id>) ur sifferuppdateringen. Tom utan blob."""
     try:
@@ -460,6 +514,16 @@ def _fresh_row(row: dict) -> dict:
         return dict(((refresh_ui.load_refresh() or {}).get("rows") or {}).get(f"producers:{row.get('id')}") or {})
     except Exception:
         return {}
+
+
+def _night_price_fits(row: dict) -> bool:
+    """Gäller nattens råvarupris råvaran som står på kortet nu (commodity_prices.night_fits)? Natten hämtade priset
+    för råvaran som stod där då — Guld bytt till Olja ger inget guldpris på oljekortet."""
+    try:
+        import commodity_prices
+        return commodity_prices.night_fits(_fresh_row(row), row.get("commodity"))
+    except Exception:
+        return False
 
 
 def _registry_identity(ticker: str, name: str) -> dict:
@@ -622,8 +686,8 @@ def _producers(data: dict) -> None:
             else:
                 st.warning("Ticker krävs.")
 
-    _screen_section("rule", data, PRODUCERS,
-                    lambda f: {"commodity": COMMODITIES[0], **f})
+    # Ingen gissad råvara (förr alltid 'Guld'): tom tills du väljer — kortet föreslår den med Använd.
+    _screen_section("rule", data, PRODUCERS, lambda f: {"commodity": "", **f})
 
     rows = ranked_producers(data[PRODUCERS])
     if not rows:
@@ -637,13 +701,13 @@ def _producers(data: dict) -> None:
         row, sc, vd = r["row"], r["score"], r["verdict"]
         if rc and not rc.same_ticker(row.get("ticker"), foc):
             continue
-        head = (f"{row.get('ticker','?')} · {row.get('commodity','')} · "
+        head = (f"{row.get('ticker','?')} · {row.get('commodity') or '—'} · "
                 f"{sc if sc is not None else '–'}/{PROD_MAX_SCORE} p · "
                 f"{vd.label if vd else 'ofullständig'}"
                 + (f" · {r['ev_nav']:.2f}× NAV" if r.get("ev_nav") is not None else ""))
         with st.expander(head, expanded=bool(foc)):
             top = rc.slot() if rc else None
-            changed = False
+            changed = _commodity(row, f"pr_com_{row['id']}", lambda: _save(data))
             v1, v2, v3, v4 = st.columns(4)
             shown = {k: _nonneg(row.get(k)) for k in ("ev_ebitda", "unit_cost", "price")}
             ev = v1.number_input("EV/EBITDA", min_value=0.0, step=0.5,
@@ -665,10 +729,13 @@ def _producers(data: dict) -> None:
             _suggest("producers", row, "nd_ebitda", "nd_ebitda", "nettoskuld/EBITDA",
                      f"pr_nd_{row['id']}", lambda: _save(data), fmt="{:.2f}")
             # Råvarupriset ur sifferuppdateringen (Yahoo-terminer, USD per
-            # oz/lb/fat) — kontrollera att AISC står i samma enhet.
-            _suggest("producers", row, "price", "commodity_price", "råvarupris",
-                     f"pr_p_{row['id']}", lambda: _save(data), fmt="{:,.2f}",
-                     unit_field="commodity_unit")
+            # oz/lb/fat) — kontrollera att AISC står i samma enhet. Bara medan
+            # nattens pris gäller kortets råvara: bytt råvara (eller '—') sedan
+            # natten ger inget förslag.
+            if _night_price_fits(row):
+                _suggest("producers", row, "price", "commodity_price", "råvarupris",
+                         f"pr_p_{row['id']}", lambda: _save(data), fmt="{:,.2f}",
+                         unit_field="commodity_unit")
             _neg_note(row, {"ev_ebitda": "EV/EBITDA", "unit_cost": "kostnad per enhet", "price": "råvarupris"})
             if _write_changed(row, (("ev_ebitda", ev, shown["ev_ebitda"]), ("nd_ebitda", nd, row.get("nd_ebitda")),
                                     ("unit_cost", cost, shown["unit_cost"]), ("price", price, shown["price"]))):
@@ -680,6 +747,9 @@ def _producers(data: dict) -> None:
                       help=f"Ger {margin_points(m)} p. Kostnadskurvan är hela "
                            f"caset: de dyraste producenterna dör först i "
                            f"prisfall.")
+            spot_m = spot_margin_line(_fresh_row(row), row.get("commodity"), row.get("unit_cost"), row.get("price"))
+            if spot_m:
+                l1.caption(spot_m.replace("$", "\\$"))
             life = l2.number_input(
                 "Gruvlivslängd (år)", min_value=0.0, step=1.0,
                 value=_num(row.get("mine_life")),

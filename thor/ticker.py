@@ -22,6 +22,7 @@ Rena funktioner: Börsdata-klienten, arken och markets-tabellen skickas in.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from functools import lru_cache
 from typing import Optional
 
 from thor.candidates import NORDIC_SUFFIX, yf as yf_form
@@ -149,6 +150,144 @@ def theme_for(ticker, sheets: Optional[dict] = None, branch_id=None) -> tuple:
     if bid in BRANCH_THEME:
         return BRANCH_THEME[bid], f"{SOURCE_BRANCH} {bid}"
     return None, ""
+
+
+# ── Råvaran i arken: bara ett förslag (automatisering batch 4) ──────────────
+# Rick Rule, Poängmodellen, Durrett och Wolf Asymmetry fyller aldrig i råvaran själva. Den härleds ur samma listor
+# som theme_for — utan arken (sheets=None, annars läser härledningen arkets eget svar via valhall.picks) — och visas
+# som 'Förslag: Olja (BERSERK-listan) · Använd'. Inget förslag när svaret är osäkert:
+#   * temat rymmer flera råvaror i registret ('zink_nickel', 'litium' = litium/kobolt/grafit, 'godsel'),
+#   * Börsdata-bransch 18 (guld OCH silver),
+#   * listorna knyter bolaget till flera råvaror (BOL.ST och LUN.TO: koppar + zink & nickel; WPM: guld + silver),
+#   * temat är en korg i EMBER-listan ('sallsynta' rymmer även litiumbolagen PLS.AX, LTR.AX och MIN.AX).
+# Olja och naturgas räknas som en råvara — registrets 'Olja & gas' (USD/boe): EQNR.OL → Olja.
+BRANCH_UNSURE = {18: "Börsdata-bransch 18 är både guld och silver"}
+_EMBER_BASKET = {"sallsynta": "Sällsynta jordartsmetaller rymmer även litium i EMBER-listan"}
+_OIL, _GAS = "oil_gas", "natural_gas"
+
+
+def theme_commodity(theme) -> Optional[str]:
+    """Registernyckeln (confidence.commodities) för ett BERSERK/EMBER-tema — bara när temat är EN råvara:
+    'koppar' → 'copper', 'naturgas_eu' → 'natural_gas'. None för teman som rymmer flera och för okända."""
+    if not theme:
+        return None
+    from confidence import commodities as com
+    th = str(theme).strip().lower()
+    hits = [k for k, c in com.REGISTRY.items() if c.theme_key == th]
+    if hits:
+        return hits[0] if len(hits) == 1 else None
+    key = com.resolve_key(th)
+    c = com.REGISTRY.get(key)
+    return key if c is not None and (th == key or th in c.aliases or th == c.rotation_key) else None
+
+
+def _theme_label(theme) -> str:
+    try:
+        from berserk import themes as bth
+        return bth.label(theme)
+    except Exception:
+        return str(theme)
+
+
+@lru_cache(maxsize=1)
+def _listings() -> dict:
+    """{tickern utan suffix: listornas tickers} över temalistan, BERSERK-listan och EMBER-listan, byggt en gång:
+    'RIO' → ('RIO', 'RIO.L'), 'HBM' → ('HBM', 'HBM.TO'). Så ser osäkerhetsregeln åt båda hållen över börserna."""
+    from berserk import universe as buv
+    from universe import theme_members as tm
+    try:
+        from ember.config import TICKER_THEME_MAP
+    except Exception:
+        TICKER_THEME_MAP = {}
+    idx: dict = {}
+    for x in (*tm.tickers(), *buv.PRODUCERS, *TICKER_THEME_MAP):
+        t = yf_form(x)
+        if t:
+            idx.setdefault(base(t), set()).add(t)
+    return {b: tuple(sorted(ts)) for b, ts in idx.items()}
+
+
+def mixed_themes(ticker) -> tuple:
+    """Temana när panelens listor (BERSERK, EMBER och alla teman i temalistan) knyter bolaget till mer än en råvara:
+    BOL.ST → ('koppar', 'zink_nickel'). Alla former av tickern räknas, och listornas noteringar av samma bolag på
+    andra börser, så att svaret blir detsamma åt båda hållen (WPM.TO som WPM: guld + silver; RIO som RIO.L).
+    Tom tuple när det är en råvara — eller när listorna inte känner bolaget."""
+    from berserk import universe as buv
+    from universe import theme_members as tm
+    fs = forms(ticker) if str(ticker or "").strip() else []
+    if not fs:
+        return ()
+    fs += [x for x in _listings().get(base(ticker), ()) if x not in fs]
+    try:
+        from ember.config import TICKER_THEME_MAP
+    except Exception:
+        TICKER_THEME_MAP = {}
+    themes: list = []
+    for f in fs:
+        themes += [buv.theme_of(f), TICKER_THEME_MAP.get(f), *tm.themes_of(f)]
+    kinds: dict = {}
+    for th in (x for x in themes if x):
+        kinds.setdefault(theme_commodity(th) or f"tema:{th}", th)
+    if _OIL in kinds:
+        kinds.pop(_GAS, None)
+    return tuple(kinds.values()) if len(kinds) > 1 else ()
+
+
+def commodity_suggestion(ticker, branch_id=None, theme: Optional[str] = None, source: str = "") -> tuple:
+    """(registernyckel | None, källa — eller varför inget förslag). theme = ett tema någon annan redan härlett
+    (Snabbkollen: ember.regime.detect_theme(auto=False)); annars theme_for(ticker, None, branch_id). Läser aldrig
+    arken. (None, '') betyder att inget är känt om bolaget."""
+    if not str(ticker or "").strip():
+        return None, ""
+    if not theme:
+        theme, source = theme_for(ticker, None, branch_id)
+    if not theme:
+        return None, ""
+    mixed = mixed_themes(ticker)
+    if mixed:
+        return None, "flera råvaror (" + " · ".join(_theme_label(t) for t in mixed) + ")"
+    if str(source).startswith(SOURCE_BRANCH):
+        try:
+            bid = int(branch_id)
+        except (TypeError, ValueError):
+            bid = None
+        if bid in BRANCH_UNSURE:
+            return None, BRANCH_UNSURE[bid]
+    if str(source).startswith("EMBER") and theme in _EMBER_BASKET:       # 'EMBER-listan' och Snabbkollens 'EMBER-temat'
+        return None, _EMBER_BASKET[theme]
+    key = theme_commodity(theme)
+    if key is None:
+        return None, f"{_theme_label(theme)} rymmer flera råvaror"
+    return key, source
+
+
+def _sheet_names() -> tuple:
+    """Arkens råvarunamn (rotationens: 'Guld', 'Olja', 'Järnmalm' …) — samma lista som Rick Rule och Poängmodellen."""
+    try:
+        from rotation import COMMODITIES
+        return tuple(c.name for c in COMMODITIES)
+    except Exception:
+        return ()
+
+
+def commodity_hint(ticker, branch_id=None, names=None) -> tuple:
+    """(arkets råvarunamn | None, källa — eller varför inget förslag) för Rick Rule och Poängmodellen.
+    names = arkets lista (förval: rotationens). Aldrig en gissning: None när commodity_suggestion är osäker eller
+    när råvaran saknas i listan (Aluminium)."""
+    key, why = commodity_suggestion(ticker, branch_id)
+    if key is None:
+        return None, why
+    from confidence import commodities as com
+    name = next((n for n in (_sheet_names() if names is None else names) if com.resolve_key(n) == key), None)
+    if name is None:
+        return None, f"{com.REGISTRY[key].label} finns inte i arkets lista"
+    return name, why
+
+
+def commodity_for(ticker, branch_id=None, names=None) -> Optional[str]:
+    """Arkets råvarunamn för bolaget (EQNR.OL → 'Olja', CCO.TO → 'Uran', bransch 2 → 'Olja'), None när det är osäkert
+    (bransch 17 och 18, polymetalliska bolag). Rent förslag — skrivs bara med Använd."""
+    return commodity_hint(ticker, branch_id, names)[0]
 
 
 def segment_for(sector_id, branch_id, theme: Optional[str]) -> Optional[str]:

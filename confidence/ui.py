@@ -154,15 +154,17 @@ def _identity_widgets(prefix: str, c: Optional[CompanyInput]) -> dict:
         raw = repr((c.name, c.commodity, c.country, c.jurisdiction, c.exchange, c.stage, c.maturity))
         prefix = f"{prefix}_{format(zlib.crc32(raw.encode('utf-8')), '08x')}"
     labels = {k: f"{v.label} ({k})" for k, v in com.REGISTRY.items()}
-    keys = list(labels)
+    # '—' när råvaran är tom (förr förvaldes registrets första nyckel, uranium, och Uppdatera sparade den utan att
+    # någon märkte det). Ett sparat värde utanför registret står kvar som eget val.
+    cur = str(c.commodity or "") if c else ""
+    keys = [""] + list(labels) + ([cur] if cur and cur not in labels else [])
     a, b, d = st.columns(3)
     out = {}
     out["ticker"] = a.text_input("Ticker", value=c.ticker if c else "", key=f"{prefix}_ticker",
                                  disabled=c is not None)
     out["name"] = b.text_input("Namn", value=c.name if c else "", key=f"{prefix}_name")
-    cur = keys.index(c.commodity) if c and c.commodity in keys else 0
-    out["commodity"] = d.selectbox("Råvara", keys, index=cur, format_func=lambda k: labels[k],
-                                   key=f"{prefix}_commodity")
+    out["commodity"] = d.selectbox("Råvara", keys, index=keys.index(cur),
+                                   format_func=lambda k: labels.get(k, k) if k else "—", key=f"{prefix}_commodity")
     a, b, d = st.columns(3)
     out["country"] = a.text_input("Land (kod eller namn)", value=c.country if c else "", key=f"{prefix}_country",
                                   help="CA, US, AU, SE … — repots jurisdiktionstabell")
@@ -321,6 +323,7 @@ def _render_inputs(data: dict, company: CompanyInput, tools: bool = True, store:
     identity=False när fliken ritar identitet och radering själv."""
     if identity:
         with st.expander("Identitet", expanded=False):
+            render_commodity_offer(data, company, store)
             with st.form(f"conf_ident_{company.ticker}"):
                 ident = _identity_widgets(f"conf_id_{company.ticker}", company)
                 if st.form_submit_button("Uppdatera"):
@@ -512,13 +515,53 @@ def _render_prefill(data: dict, company: CompanyInput, store: str = cs.STORE) ->
 def _apply_prefill(data: dict, company: CompanyInput, key: str, point, store: str) -> None:
     """on_click för Använd i förslagen: skriv in förslaget och spara. Formernas rutor (Identitet, Börsdata fyller,
     Ekonomi, Confidence …) ritas om med det nya värdet av sig själva — deras nycklar bär ett avtryck av det sparade
-    (stored_tag / _identity_widgets). Klicket kör om sidan själv."""
-    if key == "maturity":
-        company.maturity = point
+    (stored_tag / _identity_widgets). Klicket kör om sidan själv. Mognad och råvara är identitet, inte fält."""
+    if key in ("maturity", "commodity"):
+        setattr(company, key, point)
     else:
         company.set(key, point)
     cs.put(data, company)
     _save_to(store, data)
+
+
+# Snabbkollens råvaruförslag per ticker — bara i sessionen, aldrig i arket (Använd skriver det).
+_COM_HINT = "conf_com_hint"
+
+
+def remember_commodity_hint(ticker: str, key: Optional[str], source: str) -> None:
+    """Spara ett härlett råvaruförslag för Identitet (Snabbkollens 'Lägg till i arket'). Skriver inte i arket."""
+    t = str(ticker or "").strip().upper()
+    if t and key in com.REGISTRY:
+        st.session_state.setdefault(_COM_HINT, {})[t] = (key, str(source or ""))
+
+
+def commodity_offer(ticker: str) -> tuple:
+    """(registernyckel | None, källa eller varför inget förslag): samma härledning som Rick Rule-kortet
+    (thor.ticker.commodity_suggestion — listorna, aldrig arket självt). Snabbkollens förslag bara när listorna inte
+    känner bolaget, så ett gammalt eller grovt förslag i sessionen aldrig går före listorna."""
+    try:
+        from thor import ticker as tk
+        own = tuple(tk.commodity_suggestion(ticker))
+    except Exception:
+        own = (None, "")
+    if own[0] or own[1]:
+        return own
+    hint = (st.session_state.get(_COM_HINT) or {}).get(str(ticker or "").strip().upper())
+    return tuple(hint) if hint else own
+
+
+def render_commodity_offer(data: dict, company: CompanyInput, store: str = cs.STORE) -> None:
+    """'Förslag: Koppar (BERSERK-listan) · Använd' över Identitet-formen (knappar får inte stå i en form). Inget
+    skrivs förrän du trycker Använd; formens rutor ritas sedan om med det sparade (_identity_widgets)."""
+    key, why = commodity_offer(company.ticker)
+    if not key or key == company.commodity or key not in com.REGISTRY:
+        if not key and why and not company.commodity:
+            st.caption(f"Inget förslag på råvara: {why} — välj själv.".replace("$", "\\$"))
+        return
+    a, b = st.columns([3, 1], vertical_alignment="center")
+    a.caption(f"Förslag: {com.REGISTRY[key].label} ({why})".replace("$", "\\$"))
+    b.button("Använd", key=f"cf_com_{company.ticker}", on_click=_apply_prefill,
+             args=(data, company, "commodity", key, store))
 
 
 def _render_extractor(data: dict, company: CompanyInput, store: str = cs.STORE,
