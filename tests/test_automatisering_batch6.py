@@ -9,6 +9,9 @@ Automatisering, batch 6 — kopior ur Durrett-arket till granskningsarken (en ge
 3. Tiggre: NAV ← Durrett nav_musd, annars npv_musd (märkt projekt-NPV, ägarandelen inte avräknad), annars Rick
    Rule-kortets NAV med dess källa. FS, tillstånd och finansiering föreslås bara som ja. CSM Base-NAV ← kortets NAV.
 4. Poängmodellen (Durrett-kortet): AISC bara för guld i USD/oz.
+5. Rättelser: enhetskontrollen stänger (cent, okänd valuta, ingen per-enhet, annat tillägg); kostnadsmåttet följer
+   prisenheten (bara AISC är all-in); ingen gruvlivslängd för olja och gas; NAV-paret skrivs ihop (utan pris töms
+   det gamla Metallpris i NAV) och studiens pris följer inte med ett NAV ur en annan källa.
 
 Ägarens beslut: nav_musd vinner över npv_musd. Allt är förslag med Använd — inget skrivs när en sida öppnas.
 Inga grindar, trösklar, poängformler eller storlekar ändrade.
@@ -383,7 +386,7 @@ def test_rule_copper_card_never_gets_an_ounce_aisc(page):
     assert "USD/lb · Koppar" in _captions(at)
     at.button(key="rf_offer_xs_pr_nav_p1").click().run()
     assert not at.exception, at.exception
-    assert _rule_row(at)["nav_musd"] == 850.0 and "nav_price" not in _rule_row(at)
+    assert _rule_row(at)["nav_musd"] == 850.0 and _rule_row(at).get("nav_price") is None
 
 
 def test_rule_card_on_another_commodity_gets_no_cost(page):
@@ -511,3 +514,168 @@ def test_scoring_durrett_card_on_silver_gets_nothing(page):
     silver = _company(commodity="silver", aisc=_p(22.0, unit="USD/oz"))
     at = page("Poängmodell", _scoring_stores("Silver", silver), which="durrett")
     assert "rf_offer_xs_sc_aisc_q1" not in _buttons(at) and "Durrett-arket: AISC" not in _md(at)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  Rättelser efter granskningen (batch 6, fix 1)
+# ═════════════════════════════════════════════════════════════════════════════
+CHECK_TXT = "(Durrett-fältet AISC/opex: se i källan om det är all-in, C1 eller opex)"
+
+
+# ── Enhetskontrollen stänger: cent, okänd valuta, ingen per-enhet, annat tillägg ──
+@pytest.mark.parametrize("given, card", [
+    ("US c/lb", "Koppar"), ("US¢/lb", "Koppar"), ("c/lb", "Koppar"), ("cents/lb", "Koppar"), ("¢/lb", "Koppar"),
+    ("USD per tonne", "Koppar"), ("USD per tonne", "Litium"), ("USD/t SC6", "Litium"), ("USD/t SC5.5", "Litium"),
+    ("USD/dmt", "Litium"), ("R/oz", "Guld"), ("USD", "Guld"), ("USD/lb U3O8", "Koppar"), ("/oz", "Guld"),
+])
+def test_unit_fits_rejects_what_it_cannot_read(given, card):
+    assert not xs.unit_fits(given, xs.price_unit(card))
+
+
+@pytest.mark.parametrize("given, card", [
+    ("", "Koppar"), ("USD/enhet", "Koppar"), ("US$/oz", "Guld"), ("USD/lb", "Koppar"), ("USD/lb", "Uran"),
+    ("USD/t LCE", "Litium"), ("USD/t", "Litium"), ("US$/oz sold", "Guld"), ("USD/boe", "Olja"),
+])
+def test_unit_fits_still_accepts_the_cards_unit(given, card):
+    assert xs.unit_fits(given, xs.price_unit(card))
+
+
+def test_unit_fits_us_cents_is_not_usd():
+    assert not xs.unit_fits("US c/lb", "USD/lb")
+
+
+def test_a_cents_aisc_is_never_offered_as_dollars():
+    cu = _company(commodity="copper", aisc=_p(165.0, unit="US c/lb"))
+    assert xs.cost_offer(cu, "Koppar") is None
+    nav = _company(commodity="copper", nav_musd=_p(850.0), npv_price_assumption=_p(420.0, unit="c/lb"))
+    pair = xs.nav_offer(nav, "Koppar")
+    assert pair.nav == 850.0 and pair.price is None and "metallpris" not in pair.text
+    assert xs.scoring_aisc_offer(_company(aisc=_p(18000.0, unit="R/oz")), "Guld") is None
+
+
+def test_the_offer_shows_the_stored_unit_when_it_is_written_out():
+    c = _company(aisc=_p(1450.0, "Årsrapport 2025", "2026-03-01", "US$/oz"),
+                 nav_musd=_p(850.0), npv_price_assumption=_p(2000.0, unit="US$/oz sold"))
+    assert "AISC 1 450 US$/oz (all-in" in xs.cost_offer(c, "Guld")[1]
+    assert "vid metallpris 2 000 US$/oz sold —" in xs.nav_offer(c, "Guld").text
+    assert "AISC 1 450 USD/oz" in xs.cost_offer(_company(**copy.deepcopy(GOLD)), "Guld")[1]   # 'USD/enhet' = kortets
+
+
+def test_a_cost_or_metal_price_far_from_the_cards_price_is_not_offered():
+    """Samma vakt som spot_margin_line: mer än NAV_PRICE_SCALE_MAX× från kortets sparade pris står i en annan enhet."""
+    cu = _company(commodity="copper", aisc=_p(165.0), nav_musd=_p(850.0), npv_price_assumption=_p(420.0))
+    assert xs.cost_offer(cu, "Koppar", card_price=4.5) is None              # tom enhet, men cent i talet
+    assert xs.cost_offer(cu, "Koppar")[0] == 165.0                         # utan sparat pris: ingen vakt
+    assert xs.nav_offer(cu, "Koppar", card_price=4.5).price is None
+    oil = _company(commodity="oil_gas", aisc=_p(6.5, unit="USD/boe"))
+    assert xs.cost_offer(oil, "Olja", card_price=75.0)[0] == 6.5           # opex långt under priset är normalt
+    gold = _company(**copy.deepcopy(GOLD))
+    assert xs.cost_offer(gold, "Guld", card_price=4000.0)[0] == 1450.0
+    assert xs.nav_offer(gold, "Guld", card_price=4000.0).price == 2000.0
+
+
+# ── NAV-paret: priset bara när det hör till talet, och ett gammalt pris töms ──
+def test_the_study_price_is_not_attached_to_a_nav_from_another_source():
+    c = _company(stage="developer", nav_musd=_p(1900.0, "Analytikerkonsensus (Scotia, BMO)", "2026-10-15"),
+                 npv_musd=_p(820.0, "PFS 2019", "2019-05-01"),
+                 npv_price_assumption=_p(1300.0, "PFS 2019", "2019-05-01", "USD/oz"))
+    pair = xs.nav_offer(c, "Guld", "EQX")
+    assert (pair.nav, pair.price) == (1900.0, None)
+    assert pair.source == "Durrett-arket: Analytikerkonsensus (Scotia, BMO), 2026-10-15"
+    assert pair.text == ("🤖 Durrett-arket: NAV 1 900 MUSD — Analytikerkonsensus (Scotia, BMO), 2026-10-15. "
+                         "Använd fyller också NAV-källa.")
+    same = _company(nav_musd=_p(850.0, "FS 2023", "2023-01-15"),
+                    npv_price_assumption=_p(2000.0, "FS 2023", "2023-01-15", "USD/oz"))
+    assert xs.nav_offer(same, "Guld").price == 2000.0                      # samma källa och datum: samma tal
+
+
+def test_a_pair_without_price_says_it_clears_the_old_metal_price():
+    c = _company(nav_musd=_p(1200.0, "Årsrapport 2025", "2026-03-01"))
+    assert xs.nav_offer(c, "Guld", "EQX", card_nav_price=2000.0).text == (
+        "🤖 Durrett-arket: NAV 1 200 MUSD — Årsrapport 2025, 2026-03-01. Använd fyller också NAV-källa och tömmer "
+        "Metallpris i NAV — Durrett-arket har inget pris till den här NAV:n.")
+    for empty in (None, 0.0, ""):
+        assert xs.nav_offer(c, "Guld", "EQX", card_nav_price=empty).text.endswith("Använd fyller också NAV-källa.")
+
+
+# ── Olja och gas: kostnaden är opex, livslängden är R/P ──────────────────────
+OIL = _company("VAR", commodity="oil_gas", aisc=_p(6.5, "Q2 2026 MD&A", "2026-08-01", "USD/boe"),
+               mine_life_years=_p(6.0, unit="år"))
+
+
+def test_oil_cost_is_opex_and_its_reserve_life_is_not_a_mine_life():
+    hit = xs.cost_offer(OIL, "Olja", "VAR.OL")
+    assert hit == (6.5, f"🤖 Durrett-arket (VAR): opex 6,5 USD/boe {CHECK_TXT} — Q2 2026 MD&A, 2026-08-01")
+    assert "inte C1" not in hit[1]
+    assert xs.life_offer(OIL, "VAR.OL", "Olja") is None
+    assert xs.life_offer(OIL, "VAR.OL") is None                            # kortet saknar råvara: Durrett-radens
+    gas = _company(commodity="natural_gas", mine_life_years=_p(7.0, unit="år"))
+    assert xs.life_offer(gas, "", "Naturgas") is None
+    assert xs.life_offer(_company(mine_life_years=_p(7.0, unit="år")), "", "Olja") is None
+    assert xs.life_offer(_company(**copy.deepcopy(GOLD)), "EQX", "Guld")[0] == 12.0
+
+
+def test_cost_metric_follows_the_cards_unit():
+    assert xs.cost_metric("Guld") == "AISC" and xs.cost_metric("Uran") == "AISC"
+    assert xs.cost_metric("Olja") == "opex" and xs.cost_metric("Koppar") == "C1/AISC"
+    assert xs.cost_metric("Litium") == "opex" and xs.cost_metric("") == "AISC/opex"
+    cu = xs.cost_offer(_company(commodity="copper", aisc=_p(2.1, unit="USD/lb")), "Koppar")[1]
+    assert f"C1/AISC 2,1 USD/lb {CHECK_TXT}" in cu and "inte C1" not in cu
+    assert AISC_TXT in xs.cost_offer(_company(**copy.deepcopy(GOLD)), "Guld")[1]
+
+
+# ── Arksidan ─────────────────────────────────────────────────────────────────
+@pytest.mark.parametrize("unit", ["US c/lb", "US¢/lb"])
+def test_rule_copper_card_gets_no_cents_aisc(page, unit):
+    cu = _company(commodity="copper", aisc=_p(165.0, unit=unit), nav_musd=_p(850.0))
+    at = page("Rick Rule", _rule_stores(dict(RULE, commodity="Koppar"), cu))    # utan pris: enhetskontrollen ensam
+    assert "rf_offer_xs_pr_cost_p1" not in _buttons(at) and "Durrett-arket (EQX): C1/AISC" not in _md(at)
+    assert "rf_offer_xs_pr_nav_p1" in _buttons(at)
+
+
+def test_rule_nav_without_price_clears_the_old_metal_price(page):
+    card = dict(RULE, price=4000.0, ev_musd=1000.0, nav_musd=500.0, nav_price=2000.0, nav_source="Konsensus 2024")
+    eqx = _company(nav_musd=_p(1200.0, "Årsrapport 2025", "2026-03-01"))
+    at = page("Rick Rule", _rule_stores(card, eqx))
+    md = _md(at)
+    assert "OBS: NAV räknad på 2,000" in md
+    assert ("🤖 Durrett-arket (EQX): NAV 1 200 MUSD — Årsrapport 2025, 2026-03-01. Använd fyller också NAV-källa och "
+            "tömmer Metallpris i NAV — Durrett-arket har inget pris till den här NAV:n.") in md
+    assert _rule_row(at) == card and not page.saves
+    at.button(key="rf_offer_xs_pr_nav_p1").click().run()
+    assert not at.exception, at.exception
+    row = _rule_row(at)
+    assert row["nav_musd"] == 1200.0 and row.get("nav_price") is None
+    assert row["nav_source"] == "Durrett-arket: Årsrapport 2025, 2026-03-01"
+    assert at.number_input(key="pr_navp_p1").value is None
+    md = _md(at)
+    assert "Ange metallpriset" in md and "OBS: NAV räknad på 2,000" not in md
+    at.run()                                                               # ritas om: det gamla priset kommer inte tillbaka
+    assert not at.exception, at.exception
+    assert _rule_row(at).get("nav_price") is None
+
+
+def test_rule_nav_from_consensus_does_not_carry_the_old_study_price(page):
+    dev = _company(stage="developer", nav_musd=_p(1900.0, "Analytikerkonsensus (Scotia, BMO)", "2026-10-15"),
+                   npv_musd=_p(820.0, "PFS 2019", "2019-05-01"),
+                   npv_price_assumption=_p(1300.0, "PFS 2019", "2019-05-01", "USD/oz"))
+    at = page("Rick Rule", _rule_stores(dict(RULE, price=4000.0, ev_musd=1000.0), dev))
+    assert ("🤖 Durrett-arket (EQX): NAV 1 900 MUSD — Analytikerkonsensus (Scotia, BMO), 2026-10-15. Använd fyller "
+            "också NAV-källa.") in _md(at)
+    at.button(key="rf_offer_xs_pr_nav_p1").click().run()
+    assert not at.exception, at.exception
+    row = _rule_row(at)
+    assert row["nav_musd"] == 1900.0 and row.get("nav_price") is None
+    assert at.number_input(key="pr_navp_p1").value is None
+    md = _md(at)
+    assert "OBS: NAV räknad på" not in md and "Ange metallpriset" in md
+
+
+def test_rule_oil_card_gets_opex_and_no_mine_life(page):
+    card = {"id": "p1", "ticker": "VAR.OL", "name": "Vår Energi", "commodity": "Olja", "date": "2026-09-01"}
+    at = page("Rick Rule", _rule_stores(card, OIL))
+    md = _md(at)
+    assert f"🤖 Durrett-arket (VAR): opex 6,5 USD/boe {CHECK_TXT} — Q2 2026 MD&A, 2026-08-01" in md
+    assert "all-in, inte C1" not in md and "Durrett-arket (VAR): gruvlivslängd" not in md
+    assert "rf_offer_xs_pr_cost_p1" in _buttons(at) and "rf_offer_xs_pr_life_p1" not in _buttons(at)
+    assert _rule_row(at) == card and not page.saves

@@ -692,11 +692,14 @@ def _durrett_offer(data: dict, row: dict, field: str, make, key: str, widget_key
 
 
 def _apply_nav_pair(data: dict, row: dict, price, source: str) -> None:
-    """on_apply för NAV-paret: metallpriset i NAV och NAV-källan följer med NAV:n (rutorna via sina nycklar)."""
+    """on_apply för NAV-paret: metallpriset i NAV och NAV-källan följer med NAV:n (rutorna via sina nycklar). Paret
+    skrivs ihop: utan pris töms kortets gamla Metallpris i NAV — det hörde till NAV:n som byttes ut."""
     rid = row["id"]
     if price is not None:
         row["nav_price"] = price
-        st.session_state[f"pr_navp_{rid}"] = price
+    else:
+        row.pop("nav_price", None)
+    st.session_state[f"pr_navp_{rid}"] = price
     row["nav_source"] = source
     st.session_state[f"pr_navs_{rid}"] = source
     _save(data)
@@ -958,7 +961,8 @@ def _producers(data: dict) -> None:
             durrett = _durrett(row)
             if durrett is not None:
                 _durrett_offer(data, row, "unit_cost",
-                               lambda xs: xs.cost_offer(durrett, row.get("commodity"), row.get("ticker")),
+                               lambda xs: xs.cost_offer(durrett, row.get("commodity"), row.get("ticker"),
+                                                        row.get("price")),
                                f"xs_pr_cost_{row['id']}", f"pr_c_{row['id']}")
             _neg_note(row, {"ev_ebitda": "EV/EBITDA", "unit_cost": "kostnad per enhet", "price": "råvarupris"})
             if _write_changed(row, (("ev_ebitda", ev, shown["ev_ebitda"]), ("nd_ebitda", nd, row.get("nd_ebitda")),
@@ -991,7 +995,8 @@ def _producers(data: dict) -> None:
                 row["mine_life"], row["rp_ratio"] = life, rp
                 changed = True
             if durrett is not None:
-                _durrett_offer(data, row, "mine_life", lambda xs: xs.life_offer(durrett, row.get("ticker")),
+                _durrett_offer(data, row, "mine_life",
+                               lambda xs: xs.life_offer(durrett, row.get("ticker"), row.get("commodity")),
                                f"xs_pr_life_{row['id']}", f"pr_life_{row['id']}")
 
             _extract_section(data, row, "rule",
@@ -1137,7 +1142,8 @@ def _ev_nav_section(data: dict, row: dict, durrett=None) -> bool:
     if durrett is not None:
         try:
             import crosssheet
-            pair = crosssheet.nav_offer(durrett, row.get("commodity"), row.get("ticker"))
+            pair = crosssheet.nav_offer(durrett, row.get("commodity"), row.get("ticker"), row.get("price"),
+                                        row.get("nav_price"))
         except Exception:
             pair = None
         if pair is not None:

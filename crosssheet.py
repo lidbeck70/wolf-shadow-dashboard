@@ -9,15 +9,22 @@ visar med Använd (refresh_ui.offer). Att rita förslaget skriver ingenting.
   Cirkeln        confidence/prefill.py kopierar åt andra hållet (Rick Rule/Tiggre → Durrett) med källan
                  "Granskningsarket …". En sådan datapunkt föreslås aldrig tillbaka.
   Enheten        AISC och metallpris föreslås bara när Durrett-bolagets råvara är kortets och enheten stämmer
-                 (review/units.py) — AISC i USD/oz på ett kopparkort i USD/lb vänder domen.
+                 (review/units.py) — AISC i USD/oz på ett kopparkort i USD/lb vänder domen. Kontrollen stänger:
+                 cent ('US c/lb'), okänd valuta ('R/oz'), ingen per-enhet ('USD per tonne') eller ett annat
+                 tillägg ('USD/t SC6' mot 'USD/t LCE') föreslås aldrig.
+  Kostnaden      Måttet följer kortets prisenhet (engines.durrett.config.COST_METRIC_BY_UNIT): bara AISC kallas
+                 all-in; olja, koppar m.fl. får måttet och en uppmaning att se efter i källan.
+  Livslängden    Gruvlivslängd föreslås inte för olja och gas — Rick Rule dömer dem på R/P (8 år, inte 5).
   NAV            nav_musd vinner; finns bara npv_musd föreslås det märkt "projekt-NPV (100 %), inte bolagets NAV"
-                 (ägarandelen är inte avräknad). Studiens datum står alltid med.
+                 (ägarandelen är inte avräknad). Studiens datum står alltid med. Metallpriset följer bara med när
+                 det hör till samma tal (projekt-NPV:n, eller samma källa och datum som NAV:n).
 
 Rena funktioner; durrett_company och producers_data läser sessionen som judgment_hints.gather_for.
 """
 
 from __future__ import annotations
 
+import re
 from typing import NamedTuple, Optional
 
 SOURCE = "Durrett-arket"
@@ -27,7 +34,11 @@ NPV_SOURCE = "projekt-NPV (100 %)"
 NO_SOURCE, NO_DATE = "källa saknas", "datum saknas"
 FS_DONE = ("dfs", "fid", "construction", "production")      # mognad där FS är klar (confidence.config.MATURITY)
 _GENERIC_PER = ("enhet", "enheter", "unit", "units")         # confidence-fältens 'USD/enhet' = råvarans enhet
+_CENTS = ("c", "cent", "cents")                              # 'US c/lb', 'cents/lb' — cent, inte dollar
+_NEUTRAL_TAIL = ("sold", "produced", "payable", "paid")      # 'US$/oz sold' — samma enhet
 COST_NOTE = "all-in, inte C1; biproduktkrediter enligt källan"
+COST_CHECK = "Durrett-fältet AISC/opex: se i källan om det är all-in, C1 eller opex"
+RP_COMMODITIES = ("oil_gas", "natural_gas")                  # Rick Rule dömer dem på R/P, inte gruvlivslängd
 
 
 class Copy(NamedTuple):
@@ -161,19 +172,40 @@ def same_commodity(card_commodity, company) -> bool:
     return a is not None and a == b
 
 
+def _words(unit) -> tuple:
+    """(ord före '/', tillägg efter per-enheten) i en enhetstext: 'US c/lb' → (('us', 'c'), ()), 'USD/t SC6' →
+    (('usd',), ('sc6',)). 'dmt' (torrton koncentrat) räknas som tillägg; 'sold'/'payable' räknas inte."""
+    from review import units
+    head, _sep, tail = units._clean(unit).partition("/")
+    words = re.findall(r"[a-z0-9åäöμ]+(?:\.[0-9]+)?", tail)
+    extra = tuple(w for w in words[1:] if w not in _NEUTRAL_TAIL)
+    if words[:1] == ["dmt"]:
+        extra = ("dmt",) + extra
+    return tuple(re.findall(r"[a-zåäöμ]+", head)), extra
+
+
 def unit_fits(given, expected) -> bool:
     """Står datapunktens enhet i kortets prisenhet? Valuta och per-enhet jämförs (review.units.parts); en tom eller
-    allmän enhet ('USD/enhet') är råvarans egen. Okänd förväntad enhet passar aldrig."""
+    allmän enhet ('USD/enhet') är råvarans egen. Kontrollen stänger — det den inte kan läsa passar inte: cent
+    ('US c/lb', 'US¢/lb'), okänd valuta ('R/oz'), ingen per-enhet ('USD per tonne') och ett annat tillägg efter
+    per-enheten ('USD/t SC6' mot 'USD/t LCE'). Okänd förväntad enhet passar aldrig."""
     from review import units
     e_ccy, e_per, _s = units.parts(expected)
     if not e_per:
         return False
+    if not str(given or "").strip():
+        return True
     g_ccy, g_per, g_scale = units.parts(given)
-    if g_scale:
+    g_head, g_tail = _words(given)
+    if g_scale or "¢" in str(given) or any(w in _CENTS for w in g_head):
         return False
     if g_ccy and e_ccy and g_ccy != e_ccy:
         return False
-    return not (g_per and g_per not in _GENERIC_PER and g_per != e_per)
+    if g_per in _GENERIC_PER:
+        return True
+    if (e_ccy and not g_ccy) or not g_per or g_per != e_per:
+        return False                    # valutan okänd ('c/lb', 'R/oz'), ingen per-enhet, eller en annan
+    return not g_tail or g_tail == _words(expected)[1]
 
 
 def musd_fits(given) -> bool:
@@ -191,6 +223,48 @@ def _price_copy(company, key: str, card_commodity) -> Optional[Copy]:
     if c is None or not unit_fits(c.unit, price_unit(card_commodity)):
         return None
     return c
+
+
+def _scale_max() -> float:
+    try:
+        from controls_ui import NAV_PRICE_SCALE_MAX
+        return float(NAV_PRICE_SCALE_MAX)
+    except Exception:
+        return 10.0
+
+
+def _far(value, card_price, below: bool = True) -> bool:
+    """Står talet mer än NAV_PRICE_SCALE_MAX× från kortets sparade råvarupris (som spot_margin_line)? Då står det nog
+    i en annan enhet. below=False: bara ett tal över priset räknas (opex/boe kan ligga långt under oljepriset)."""
+    v, p = _num(value), _num(card_price)
+    if v is None or p is None or v <= 0 or p <= 0:
+        return False
+    lim = _scale_max()
+    return v / p > lim or (below and p / v > lim)
+
+
+def _unit_text(c: Copy, expected: str) -> str:
+    """Enheten i förslagets text: datapunktens egen när den står utskriven och skiljer sig från kortets ('US$/oz'),
+    annars kortets (en tom eller 'USD/enhet' är kortets)."""
+    from review import units
+    if c.unit and units.parts(c.unit)[1] not in _GENERIC_PER and c.unit != expected:
+        return c.unit
+    return expected
+
+
+def cost_metric(card_commodity) -> str:
+    """Kostnadsmåttet i kortets prisenhet (engines.durrett.config.COST_METRIC_BY_UNIT): 'AISC' för USD/oz, 'opex'
+    för USD/boe, 'C1/AISC' för USD/lb. 'AISC/opex' när enheten är okänd."""
+    try:
+        from engines.durrett.config import COST_METRIC_BY_UNIT
+        return COST_METRIC_BY_UNIT.get(price_unit(card_commodity), "AISC/opex")
+    except Exception:
+        return "AISC/opex"
+
+
+def _cost_text(metric: str, c: Copy, unit: str) -> str:
+    """'AISC 1 450 USD/oz (all-in, inte C1; …)' — bara AISC kallas all-in; andra mått får en uppmaning att se efter."""
+    return f"{metric} {_g(c.value)} {unit} ({COST_NOTE if metric == 'AISC' else COST_CHECK})"
 
 
 # ── Texterna ─────────────────────────────────────────────────────────────────
@@ -217,17 +291,30 @@ def _ownership_note(company) -> str:
 
 
 # ── Rick Rule ────────────────────────────────────────────────────────────────
-def cost_offer(company, card_commodity, card_ticker="") -> Optional[tuple]:
-    """(AISC, text) för Rick Rules 'Kostnad per enhet' — bara samma råvara och samma enhet."""
+def cost_offer(company, card_commodity, card_ticker="", card_price=None) -> Optional[tuple]:
+    """(kostnad, text) för Rick Rules 'Kostnad per enhet' — bara samma råvara och samma enhet, och aldrig en kostnad
+    mer än NAV_PRICE_SCALE_MAX× över kortets sparade pris (cent som dollar). Måttet följer prisenheten (cost_metric):
+    bara AISC kallas all-in."""
     c = _price_copy(company, "aisc", card_commodity)
-    if c is None:
+    if c is None or _far(c.value, card_price, below=False):
         return None
-    return c.value, (f"{_head(company, card_ticker)}: AISC {_g(c.value)} {price_unit(card_commodity)} "
-                     f"({COST_NOTE}) — {when(c)}")
+    unit = _unit_text(c, price_unit(card_commodity))
+    return c.value, f"{_head(company, card_ticker)}: {_cost_text(cost_metric(card_commodity), c, unit)} — {when(c)}"
 
 
-def life_offer(company, card_ticker="") -> Optional[tuple]:
-    """(år, text) för 'Gruvlivslängd (år)' ur Durrett-arkets mine_life_years."""
+def _rp_commodity(value) -> bool:
+    try:
+        from confidence import commodities as com
+        return com.resolve_key(value) in RP_COMMODITIES
+    except Exception:
+        return False
+
+
+def life_offer(company, card_ticker="", card_commodity=None) -> Optional[tuple]:
+    """(år, text) för 'Gruvlivslängd (år)' ur Durrett-arkets mine_life_years. Inte för olja och gas (kortets eller
+    Durrett-radens råvara): där är talet reservlivslängd, och Rick Rule dömer dem på R/P med en annan gräns."""
+    if _rp_commodity(card_commodity) or _rp_commodity(getattr(company, "commodity", "")):
+        return None
     c = _positive(copy(company, "mine_life_years"))
     if c is None:
         return None
@@ -250,18 +337,30 @@ class NavPair(NamedTuple):
     text: str
 
 
-def nav_offer(company, card_commodity, card_ticker="") -> Optional[NavPair]:
-    """NAV-paret för Rick Rule: NAV (nav_musd, annars projekt-NPV) + metallpriset i NPV — priset bara när råvaran
-    och enheten är kortets. Använd skriver också NAV-källan."""
+def nav_offer(company, card_commodity, card_ticker="", card_price=None, card_nav_price=None) -> Optional[NavPair]:
+    """NAV-paret för Rick Rule: NAV (nav_musd, annars projekt-NPV) + metallpriset i NPV. Priset följer bara med när
+    det hör till talet — projekt-NPV:n, eller samma källa och datum som NAV:n — och när råvaran och enheten är
+    kortets och priset står inom NAV_PRICE_SCALE_MAX× från kortets råvarupris. Använd skriver också NAV-källan, och
+    utan pris i paret töms kortets gamla Metallpris i NAV (card_nav_price) — texten säger det."""
     hit = nav_copy(company)
     if hit is None:
         return None
     c, npv = hit
     price = _price_copy(company, "npv_price_assumption", card_commodity)
+    if price is not None and not npv and (price.source, price.pub_date) != (c.source, c.pub_date):
+        price = None                    # studiens pris hör inte till ett NAV ur en annan källa
+    if price is not None and _far(price.value, card_price):
+        price = None
     what = f"{NPV_LABEL}: {_g(c.value)} MUSD — {_ownership_note(company)}" if npv else f"NAV {_g(c.value)} MUSD"
-    at = f" vid metallpris {_g(price.value)} {price_unit(card_commodity)}" if price is not None else ""
-    fills = "metallpris och NAV-källa" if price is not None else "NAV-källa"
-    text = f"{_head(company, card_ticker)}: {what}{at} — {when(c)}. Använd fyller också {fills}."
+    if price is not None:
+        at = f" vid metallpris {_g(price.value)} {_unit_text(price, price_unit(card_commodity))}"
+        fills = "metallpris och NAV-källa."
+    else:
+        at = ""
+        old = _num(card_nav_price)
+        fills = ("NAV-källa och tömmer Metallpris i NAV — Durrett-arket har inget pris till den här NAV:n."
+                 if old not in (None, 0.0) else "NAV-källa.")
+    text = f"{_head(company, card_ticker)}: {what}{at} — {when(c)}. Använd fyller också {fills}"
     return NavPair(c.value, price.value if price is not None else None, nav_source_text(c, npv), text)
 
 
@@ -339,4 +438,4 @@ def scoring_aisc_offer(company, card_commodity, card_ticker="") -> Optional[tupl
     c = _price_copy(company, "aisc", card_commodity)
     if c is None or not unit_fits(c.unit, CALC_UNIT):
         return None
-    return c.value, f"{_head(company, card_ticker)}: AISC {_g(c.value)} {CALC_UNIT} ({COST_NOTE}) — {when(c)}"
+    return c.value, f"{_head(company, card_ticker)}: {_cost_text('AISC', c, CALC_UNIT)} — {when(c)}"
