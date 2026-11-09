@@ -670,3 +670,77 @@ def test_chatgpt_export_offers_the_night_price_only_for_the_rows_commodity():
             "rule:price"]["value"]
     assert price(RULE_ROW) == 2650.0
     assert price(dict(RULE_ROW, commodity="Olja")) == ""
+
+
+# ── Rättelser: EMBER:s 'sallsynta' är en korg, osäkerheten gäller åt båda hållen över börserna ──
+EMBER_BASKET = "Sällsynta jordartsmetaller rymmer även litium i EMBER-listan"
+
+
+@pytest.mark.parametrize("ticker", ["PLS.AX", "LTR.AX", "MIN.AX"])           # litiumbolag i EMBER:s 'sallsynta'
+def test_lithium_producers_get_no_rare_earth_suggestion(monkeypatch, ticker):
+    from asymmetry import quick_ui
+    from confidence import ui as cui
+    monkeypatch.setattr(streamlit, "session_state", {})
+    assert tk.commodity_suggestion(ticker) == (None, EMBER_BASKET)
+    assert quick_ui.sheet_commodity_hint({"yf_ticker": ticker})[0] is None
+    assert cui.commodity_offer(ticker) == (None, EMBER_BASKET)
+    cui.remember_commodity_hint(ticker, "rare_earth", "EMBER-temat")          # ett gammalt förslag i sessionen
+    assert cui.commodity_offer(ticker) == (None, EMBER_BASKET)
+    assert tk.commodity_hint(ticker) == (None, EMBER_BASKET)                  # inte 'finns inte i arkets lista'
+
+
+def test_the_ember_basket_holds_for_the_quick_fallback_too():
+    from asymmetry import quick_ui
+    assert quick_ui.sheet_commodity_hint({"yf_ticker": "ZZLI.AX"}, lambda t: "sallsynta") == (None, EMBER_BASKET)
+    assert quick_ui.sheet_commodity_hint({"yf_ticker": "ZZU.AX"}, lambda t: "uran") == ("uranium", "EMBER-temat")
+
+
+def test_berserk_still_knows_its_rare_earth_names():
+    assert tk.commodity_suggestion("MP") == ("rare_earth", "BERSERK-listan")
+    assert tk.commodity_suggestion("REMX") == ("rare_earth", "BERSERK-listan")
+
+
+@pytest.mark.parametrize("ticker, other", [("RIO", "RIO.L"), ("HBM", "HBM.TO"), ("ERO", "ERO.TO")])
+def test_the_uncertainty_rule_looks_both_ways_across_listings(ticker, other):
+    for t in (ticker, other):
+        key, why = tk.commodity_suggestion(t)
+        assert key is None and why.startswith("flera råvaror ("), t
+    assert tk.commodity_suggestion(ticker)[0] == tk.commodity_suggestion(other)[0]
+    assert set(tk.mixed_themes(ticker)) == set(tk.mixed_themes(other))
+    assert tk.commodity_hint(ticker)[0] is None
+
+
+def test_single_commodity_companies_keep_their_suggestion_across_listings():
+    assert tk.commodity_suggestion("FCX") == ("copper", "BERSERK-listan")
+    assert tk.commodity_suggestion("NXE") == ("uranium", "BERSERK-listan")   # NXE.TO också i listorna: bara uran
+    assert tk.commodity_suggestion("AGI") == ("gold", "BERSERK-listan")
+    assert tk.mixed_themes("ZZX.V") == ()                                     # okänt bolag: inget att jämföra
+
+
+@pytest.mark.parametrize("ticker, why", [
+    ("RIO", "flera råvaror (Aluminium · Järnmalm · Koppar)"),
+    ("PLS.AX", EMBER_BASKET),
+])
+def test_identity_says_why_and_offers_no_use(monkeypatch, ticker, why):
+    from streamlit.testing.v1 import AppTest
+    sys.path.insert(0, os.path.join(ROOT, "tests"))
+    conf = _conf(CompanyInput(ticker=ticker, name=ticker))
+    at = AppTest.from_function(_asym_app(monkeypatch, conf), default_timeout=60)
+    at.session_state["asym_mode"] = "Ark"
+    at.session_state["asym_pick"] = ticker
+    at.run()
+    assert not at.exception, at.exception
+    caps = [c.value for c in at.caption]
+    assert f"Inget förslag på råvara: {why} — välj själv." in caps
+    assert not any(c.startswith("Förslag:") for c in caps)
+    assert f"cf_com_{ticker}" not in {b.key for b in at.button}
+    assert at.session_state["confidence"]["companies"][ticker]["commodity"] == ""
+
+
+def test_rule_card_lithium_gets_the_basket_reason(sheet):
+    at = sheet("Rick Rule", rows=[dict(RULE_ROW, ticker="PLS.AX", name="Pilbara Minerals", commodity="")])
+    caps = [c.value for c in at.caption]
+    assert f"Inget förslag på råvara: {EMBER_BASKET} — välj själv." in caps
+    assert not any("finns inte i arkets lista" in c for c in caps)
+    assert "rf_offer_pr_com_p1" not in {b.key for b in at.button}
+    assert _rows(at)[0]["commodity"] == ""

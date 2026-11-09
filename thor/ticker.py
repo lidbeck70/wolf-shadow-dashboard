@@ -22,6 +22,7 @@ Rena funktioner: Börsdata-klienten, arken och markets-tabellen skickas in.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from functools import lru_cache
 from typing import Optional
 
 from thor.candidates import NORDIC_SUFFIX, yf as yf_form
@@ -157,9 +158,11 @@ def theme_for(ticker, sheets: Optional[dict] = None, branch_id=None) -> tuple:
 # som 'Förslag: Olja (BERSERK-listan) · Använd'. Inget förslag när svaret är osäkert:
 #   * temat rymmer flera råvaror i registret ('zink_nickel', 'litium' = litium/kobolt/grafit, 'godsel'),
 #   * Börsdata-bransch 18 (guld OCH silver),
-#   * listorna knyter bolaget till flera råvaror (BOL.ST och LUN.TO: koppar + zink & nickel; WPM: guld + silver).
+#   * listorna knyter bolaget till flera råvaror (BOL.ST och LUN.TO: koppar + zink & nickel; WPM: guld + silver),
+#   * temat är en korg i EMBER-listan ('sallsynta' rymmer även litiumbolagen PLS.AX, LTR.AX och MIN.AX).
 # Olja och naturgas räknas som en råvara — registrets 'Olja & gas' (USD/boe): EQNR.OL → Olja.
 BRANCH_UNSURE = {18: "Börsdata-bransch 18 är både guld och silver"}
+_EMBER_BASKET = {"sallsynta": "Sällsynta jordartsmetaller rymmer även litium i EMBER-listan"}
 _OIL, _GAS = "oil_gas", "natural_gas"
 
 
@@ -186,15 +189,35 @@ def _theme_label(theme) -> str:
         return str(theme)
 
 
+@lru_cache(maxsize=1)
+def _listings() -> dict:
+    """{tickern utan suffix: listornas tickers} över temalistan, BERSERK-listan och EMBER-listan, byggt en gång:
+    'RIO' → ('RIO', 'RIO.L'), 'HBM' → ('HBM', 'HBM.TO'). Så ser osäkerhetsregeln åt båda hållen över börserna."""
+    from berserk import universe as buv
+    from universe import theme_members as tm
+    try:
+        from ember.config import TICKER_THEME_MAP
+    except Exception:
+        TICKER_THEME_MAP = {}
+    idx: dict = {}
+    for x in (*tm.tickers(), *buv.PRODUCERS, *TICKER_THEME_MAP):
+        t = yf_form(x)
+        if t:
+            idx.setdefault(base(t), set()).add(t)
+    return {b: tuple(sorted(ts)) for b, ts in idx.items()}
+
+
 def mixed_themes(ticker) -> tuple:
     """Temana när panelens listor (BERSERK, EMBER och alla teman i temalistan) knyter bolaget till mer än en råvara:
-    BOL.ST → ('koppar', 'zink_nickel'). Alla former av tickern räknas, så att samma bolag på en annan börs får samma
-    svar (WPM.TO som WPM: guld + silver). Tom tuple när det är en råvara — eller när listorna inte känner bolaget."""
+    BOL.ST → ('koppar', 'zink_nickel'). Alla former av tickern räknas, och listornas noteringar av samma bolag på
+    andra börser, så att svaret blir detsamma åt båda hållen (WPM.TO som WPM: guld + silver; RIO som RIO.L).
+    Tom tuple när det är en råvara — eller när listorna inte känner bolaget."""
     from berserk import universe as buv
     from universe import theme_members as tm
     fs = forms(ticker) if str(ticker or "").strip() else []
     if not fs:
         return ()
+    fs += [x for x in _listings().get(base(ticker), ()) if x not in fs]
     try:
         from ember.config import TICKER_THEME_MAP
     except Exception:
@@ -230,6 +253,8 @@ def commodity_suggestion(ticker, branch_id=None, theme: Optional[str] = None, so
             bid = None
         if bid in BRANCH_UNSURE:
             return None, BRANCH_UNSURE[bid]
+    if str(source).startswith("EMBER") and theme in _EMBER_BASKET:       # 'EMBER-listan' och Snabbkollens 'EMBER-temat'
+        return None, _EMBER_BASKET[theme]
     key = theme_commodity(theme)
     if key is None:
         return None, f"{_theme_label(theme)} rymmer flera råvaror"
