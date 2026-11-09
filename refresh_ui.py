@@ -8,7 +8,8 @@ Streamlit tillåter att en instansierad widgets state ändras) — inget
 skrivs annars, och 💾 Spara sköter persistensen som vanligt.
 
 offer() är samma knapp för förslag av vilken typ som helst (heltal, text, val,
-kryss) ur andra källor än bloben — t.ex. Insider-skanningen.
+kryss) ur andra källor än bloben — t.ex. Insider-skanningen. offer_fields() är
+samma knapp för tal som bara gäller tillsammans (Royalty C:s GEO-par).
 """
 from __future__ import annotations
 
@@ -206,10 +207,46 @@ def offer(row: dict, field: str, value, label: str, key: str, source: str = "Bö
     when = f" {asof}" if asof else ""
     text = text or (f"🤖 {source}{when}: {label} {_shown(value, fmt)}" + (f" {unit}" if unit else "")
                     + (f" — {note}" if note else ""))
+    _offer_line(text, key, _apply, (row, field, value, widget_key, on_apply))
+    return True
+
+
+def _offer_line(text: str, key: str, on_click: Callable, args: tuple) -> None:
+    """Förslagsraden: texten (escapad — två '$' blir annars matematik) och Använd med on_click."""
     c1, c2 = st.columns([3, 1], vertical_alignment="center")
     c1.markdown(f"<span style='color:{DIM};font-size:0.78rem;'>{html.escape(text).replace('$', '&#36;')}</span>",
                 unsafe_allow_html=True)
-    c2.button("Använd", key=f"rf_offer_{key}", on_click=_apply, args=(row, field, value, widget_key, on_apply))
+    c2.button("Använd", key=f"rf_offer_{key}", on_click=on_click, args=args)
+
+
+def _apply_fields(row: dict, values: dict, widget_keys: dict, on_apply: Optional[Callable]) -> None:
+    """on_click för offer_fields: alla fälten och deras rutor (_apply), sedan on_apply en gång."""
+    for field, value in values.items():
+        _apply(row, field, value, widget_keys.get(field), None)
+    if on_apply:
+        on_apply()
+
+
+def _same_rel(cur, value) -> bool:
+    """Samma tal, relativt — så att små tal (GEO per aktie 0,00004) inte räknas som lika för att de ligger nära noll."""
+    try:
+        c, v = float(cur), float(value)
+    except (TypeError, ValueError):
+        return False
+    return abs(c - v) <= 1e-9 * max(abs(c), abs(v))
+
+
+def offer_fields(row: dict, values: dict, text: str, key: str, widget_keys: Optional[dict] = None,
+                 on_apply: Optional[Callable] = None) -> bool:
+    """Tal som bara gäller tillsammans (GEO per aktie nu och för tre år sedan) med EN Använd. text = hela raden,
+    med talen bakom förslaget. Använd skriver alla fälten i raden och deras rutor (widget_keys: fält → nyckel) via
+    on_click, som offer — att rita skriver ingenting. Ritas inte när något värde saknas, eller när alla fälten
+    redan har sina värden. True när förslaget ritades."""
+    if not values or any(v is None for v in values.values()):
+        return False
+    if all(_same_rel(row.get(f), v) for f, v in values.items()):
+        return False
+    _offer_line(text, key, _apply_fields, (row, dict(values), dict(widget_keys or {}), on_apply))
     return True
 
 
