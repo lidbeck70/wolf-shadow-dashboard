@@ -94,6 +94,7 @@ FACTORS: tuple[Factor, ...] = (
            "Vinst 3x+ vid guld +50 %", "Vinst ca 2x",
            "Låg hävstång (hedgad/högkostnad)"),
 )
+FACTOR_BY_KEY = {f.key: f for f in FACTORS}
 
 # ── Räknehjälpen ─────────────────────────────────────────────────────────────
 RUNWAY_STRONG, RUNWAY_WEAK = 2.0, 1.0      # år: > 2 -> 2p, 1–2 -> 1p
@@ -470,11 +471,12 @@ def _rows(data: dict, key: str) -> None:
 
             # DS (Masterguiden 4.0) — utspädningen är den här strategifamiljens
             # största enskilda risk, så den frågas alltid, oavsett storlek.
-            rw = (runway_years(row.get("cash"), row.get("burn"))
-                  if key == SPROTT else None)
-            # sheet: 'Aktier 3 år' och 'Historik' får Börsdatas aktiehistorik (scoring:<id>) som förslag.
+            rw, rw_note = (controls_ui.card_runway(row.get("cash"), row.get("burn"))
+                           if key == SPROTT else (None, ""))
+            # sheet: 'Aktier 3 år' och 'Historik' får Börsdatas aktiehistorik (scoring:<id>) som förslag;
+            # runwayn ur kortets kassa och burn, med talen som underlag.
             with st.expander("🧪 DS — utspädningsrisk", expanded=False):
-                if controls_ui.render_ds(row, row["id"], rw, sheet="scoring"):
+                if controls_ui.render_ds(row, row["id"], rw, sheet="scoring", runway_note=rw_note):
                     _save(data)
 
             blocked = ctl.ds_blocks_buy(row)
@@ -548,8 +550,29 @@ def _sprott_math(data: dict, row: dict) -> None:
             unsafe_allow_html=True)
     pts = runway_points(rw)
     if pts is not None:
-        st.caption(f"Runwayen motsvarar {pts} p på faktor 1 — förslag, inte "
-                   f"facit. Nettokassa och emissionshistorik kan flytta den.")
+        fac = row.setdefault("factors", {})                 # som _factors gör i samma körning
+        if _num(fac.get("balans")) is None:                 # obedömd faktor: förslag med Använd
+            _factor_offer(data, row, "balans", pts, "Kortet",
+                          f"{controls_ui.card_runway(cash, burn)[1]}. Nettokassa och emissionshistorik kan "
+                          f"flytta den.")
+        else:
+            st.caption(f"Runwayen motsvarar {pts} p på faktor 1 — förslag, inte "
+                       f"facit. Nettokassa och emissionshistorik kan flytta den.")
+
+
+def _factor_offer(data: dict, row: dict, fkey: str, points: int, source: str, note: str) -> None:
+    """Förslag på en faktor med Använd (refresh_ui.offer, samma knapp som arkens andra förslag): klicket skriver
+    faktorn och rullgardinen och sparar i sessionen (💾 sparar som vanligt). Att rita förslaget skriver ingenting.
+    Visas bara för en obedömd faktor — ditt svar skrivs aldrig över härifrån."""
+    f = FACTOR_BY_KEY[fkey]
+    crit = {2: f.two, 1: f.one, 0: f.zero}
+    try:
+        import refresh_ui
+    except Exception:
+        return
+    refresh_ui.offer(row.setdefault("factors", {}), fkey, points, f.label.split(". ", 1)[-1],
+                     key=f"sc_f_{row['id']}_{fkey}", source=source, widget_key=f"sc_f_{row['id']}_{fkey}",
+                     on_apply=lambda: _save(data), cast=int, fmt=lambda p: f"{p} p ({crit[p]})", note=note)
 
 
 def _durrett_math(data: dict, row: dict) -> None:
@@ -654,14 +677,19 @@ def _factors(data: dict, row: dict, key: str) -> None:
             changed = True
     if changed:
         _save(data)
-    # Faktor 4 ur insynsägandet i underlaget (utdraget, Durrett-arket) — förslag.
+    # Faktor 4 ur insynsägandet i underlaget. Talet ur Durrett-arket får Använd (bara för en obedömd faktor);
+    # talet ur utdraget (AI-läsning, som gather väljer först) står som text med källa.
     try:
         import judgment_hints as jh
         cur4 = _num(fac.get("agare"))
-        hint = jh.insider_hint(row.get("ticker", ""), int(cur4) if cur4 is not None else None,
-                               as_points=True)
-        if hint:
-            st.caption(hint)
+        offer4 = jh.owner_offer(jh.gather_for(row.get("ticker", ""))) if cur4 is None else None
+        if offer4:
+            _factor_offer(data, row, "agare", offer4[0], offer4[2], jh.owner_basis(offer4[1]))
+        else:
+            hint = jh.insider_hint(row.get("ticker", ""), int(cur4) if cur4 is not None else None,
+                                   as_points=True)
+            if hint:
+                st.caption(hint)
     except Exception:
         pass
 

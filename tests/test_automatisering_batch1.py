@@ -38,8 +38,7 @@ def test_refresh_runway_is_cash_over_burn_with_its_source():
 
 
 @pytest.mark.parametrize("row", [
-    {"cash_musd": 30.0, "burn_musd": 0.0},           # positivt FCF: burn 0 → ingen runway (som förut)
-    {"cash_musd": 30.0},                              # burn saknas
+    {"cash_musd": 30.0},                              # burn saknas (burn 0 = positivt FCF: se batch 3)
     {"burn_musd": 8.0},                               # kassa saknas
     {"cash_musd": -5.0, "burn_musd": 8.0},            # negativ kassa är en lucka, som i Sprott-rutan
     None, "inte en rad"])
@@ -136,7 +135,8 @@ def _captions(at) -> str:
 
 
 def _markdown(at) -> str:
-    return " ".join(m.value for m in at.markdown)
+    import html
+    return html.unescape(" ".join(m.value for m in at.markdown))
 
 
 # 1. Poängmodellen
@@ -150,10 +150,10 @@ def test_scoring_ds_offers_the_share_history_without_writing(bucket, page):
     at.session_state[scoring.WHICH_KEY] = scoring.WHICH_FOR[bucket]
     at.run()
     assert not at.exception, at.exception
-    text = _captions(at)
-    assert (f"Börsdata {ASOF}: antalet aktier är +27 % mot för tre år sedan — motsvarar 2 riskpoäng på "
-            f"Aktier 3 år") in text
-    assert "+60 % på fem år — motsvarar 2 riskpoäng på Historik (serieutspädare)" in text
+    text = _markdown(at)                     # batch 3: förslag med Använd, inte längre bara text
+    assert (f"🤖 DS: Aktier 3 år > +25 % → 2 riskpoäng — Börsdata {ASOF}: antalet aktier är +27 % mot för tre år "
+            f"sedan") in text
+    assert f"🤖 DS: Historik serieutspädare → 2 riskpoäng — Börsdata {ASOF}: antalet aktier är +60 % på fem år" in text
     saved = at.session_state["scoring"][bucket][0]
     assert "ds_aktier_3ar" not in saved and "ds_historik" not in saved           # förslag, inte ifyllt
     assert not page.saves
@@ -165,7 +165,7 @@ def test_scoring_ds_share_text_hides_once_the_field_is_set(page):
     at = page("Poängmodell", blob, {"scoring": {"sprott": [row], "durrett": []}})
     at.run()
     assert not at.exception, at.exception
-    assert "riskpoäng på Aktier 3 år" not in _captions(at) and "riskpoäng på Historik" not in _captions(at)
+    assert "🤖 DS: Aktier 3 år" not in _markdown(at) and "🤖 DS: Historik" not in _markdown(at)
 
 
 # 2. Tiggre
@@ -182,19 +182,19 @@ def test_tiggre_ds_runway_text_from_the_nightly_cash_and_burn(page):
     at = page("Tiggre", blob, _tiggre_store())
     at.run()
     assert not at.exception, at.exception
-    assert (f"Börsdata {ASOF}: kassa 12,0 MUSD ÷ burn 8,0 MUSD/år (negativt FCF 12 mån) = runway 18 mån — "
-            f"motsvarar 1 riskpoäng på Runway. Förslag, inte ifyllt.") in _captions(at)
+    assert (f"🤖 DS: Runway 12–24 mån → 1 riskpoäng — Börsdata {ASOF}: kassa 12,0 MUSD ÷ burn 8,0 MUSD/år "
+            f"(negativt FCF 12 mån) = runway 18 mån") in _markdown(at)
     assert "ds_runway" not in at.session_state["tiggre"]["candidates"][0]
     assert not page.saves
 
 
-@pytest.mark.parametrize("fresh", [{"cash_musd": 12.0, "burn_musd": 0.0}, {}])
+@pytest.mark.parametrize("fresh", [{"cash_musd": 12.0}, {}])          # burn 0 (positivt FCF): se batch 3
 def test_tiggre_without_burn_shows_no_runway_text(fresh, page):
     blob = {"rows": {"tiggre:c1": {"ticker": "TGR", "asof": ASOF, **fresh}}}
     at = page("Tiggre", blob, _tiggre_store())
     at.run()
     assert not at.exception, at.exception
-    assert "riskpoäng på Runway" not in _captions(at) and "Runwayen motsvarar" not in _captions(at)
+    assert "🤖 DS: Runway" not in _markdown(at)
 
 
 def test_tiggre_runway_text_hides_once_ds_runway_is_set(page):
@@ -202,21 +202,19 @@ def test_tiggre_runway_text_hides_once_ds_runway_is_set(page):
     at = page("Tiggre", blob, _tiggre_store(ds_runway=2))
     at.run()
     assert not at.exception, at.exception
-    assert "riskpoäng på Runway" not in _captions(at)
+    assert "🤖 DS: Runway" not in _markdown(at)
 
 
 # 3. Rick Rule
-@pytest.mark.parametrize("burn, expect", [(40.0, "runway 9 mån — motsvarar 2 riskpoäng på Runway"), (0.0, None)])
+@pytest.mark.parametrize("burn, expect", [(40.0, "Runway < 12 mån → 2 riskpoäng — Börsdata"),
+                                          (0.0, "Runway > 24 mån → 0 riskpoäng — Börsdata")])      # batch 3
 def test_rick_rule_ds_runway_text_from_the_nightly_row(burn, expect, page):
     blob = {"rows": {"producers:r1": {"ticker": "AAA", "asof": ASOF, "cash_musd": 30.0, "burn_musd": burn}}}
     at = page("Rick Rule", blob, {"producers": {"producers": [{"id": "r1", "ticker": "AAA", "commodity": "Guld"}],
                                                 "royalty": []}})
     at.run()
     assert not at.exception, at.exception
-    if expect:
-        assert expect in _captions(at)
-    else:
-        assert "riskpoäng på Runway" not in _captions(at)
+    assert expect in _markdown(at)
     assert "ds_runway" not in at.session_state["producers"]["producers"][0]
 
 

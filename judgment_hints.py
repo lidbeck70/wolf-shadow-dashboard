@@ -51,6 +51,10 @@ INSIDER_OK_PCT = 5.0
 DILUTION_5Y_MIXED_PCT = 20.0
 DILUTION_5Y_SERIAL_PCT = 50.0
 
+# Källan för tal ur Durrett-arket (confidence-lagret). Bara den får en Använd-knapp på Poängmodellens faktor 4 —
+# utdragets tal är en AI-läsning av ett dokument och visas som text med källa.
+SHEET_SOURCE = "Durrett-arket"
+
 
 def _num(v) -> Optional[float]:
     try:
@@ -146,12 +150,32 @@ def gather(ticker: str, confidence_data: Optional[dict] = None,
         if c is not None:
             if "jurisdiction" not in out and (c.jurisdiction or c.country):
                 out["jurisdiction"] = (", ".join(x for x in (c.jurisdiction, c.country) if x),
-                                       "Durrett-arket")
+                                       SHEET_SOURCE)
             if "insider_pct" not in out and c.has("insider_ownership_pct"):
                 v = c.num("insider_ownership_pct")
                 if v is not None:
-                    out["insider_pct"] = (v, "Durrett-arket")
+                    out["insider_pct"] = (v, SHEET_SOURCE)
     return out
+
+
+def owner_offer(gathered: Optional[dict]) -> Optional[tuple]:
+    """(poäng, insynsägande %, källa) för Sprotts faktor 4 ur underlaget (gather) — bara när talet kommer ur
+    Durrett-arket. Kommer det ur utdraget (som gather väljer först) blir det None: det talet visas som text med
+    källa (insider_hint), utan Använd."""
+    ins = (gathered or {}).get("insider_pct")
+    if not ins or ins[1] != SHEET_SOURCE:
+        return None
+    pts = owner_points(ins[0])
+    return None if pts is None else (pts, ins[0], ins[1])
+
+
+def owner_basis(pct) -> str:
+    """Underlaget bredvid faktor 4-förslaget: talet och gränserna det landar i (owner_points)."""
+    if _num(pct) is None:
+        return ""
+    p = f"{_num(pct):g}".replace(".", ",")
+    return (f"insynsägande {p} % (över {INSIDER_STRONG_PCT:g} % → 2 p, {INSIDER_OK_PCT:g}–{INSIDER_STRONG_PCT:g} % "
+            f"→ 1 p, under {INSIDER_OK_PCT:g} % → 0 p)")
 
 
 def gather_for(ticker: str) -> dict:

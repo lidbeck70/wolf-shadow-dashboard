@@ -11,6 +11,7 @@ Varje render-funktion muterar raden den får och returnerar True om något
 
 from __future__ import annotations
 
+import math
 from typing import Optional
 
 import streamlit as st
@@ -92,12 +93,25 @@ def _runway_months(years: float) -> str:
     return f"≈{m:.0f}"
 
 
+def _musd_txt(v) -> str:
+    """MUSD med en decimal och svenska tecken: 1 250,0."""
+    return f"{float(v):,.1f}".replace(",", " ").replace(".", ",")
+
+
 def refresh_runway(r) -> tuple:
     """(runway i år, källtext) ur sifferuppdateringens rad för arkraden: kassa ÷ burn, där burn är negativt FCF
-    12 mån — samma scoring.runway_years som Sprott-kortet räknar med. (None, "") utan båda talen, och när burn är
-    0 (positivt FCF): då finns ingen runway att föreslå."""
+    12 mån — samma scoring.runway_years som Sprott-kortet räknar med. (None, "") utan talen. Burn 0 (positivt
+    FCF 12 mån) ger (math.inf, källtext): ingen förbränning, alltså runway över 24 mån (ägarens beslut) — kassan
+    behövs inte då."""
     if not isinstance(r, dict):
         return None, ""
+    asof = str(r.get("asof") or "")[:10]
+    src = f"Börsdata{' ' + asof if asof else ''}"
+    burn = ctl._num(r.get("burn_musd"))
+    if burn == 0:
+        cash = ctl._num(r.get("cash_musd"))
+        return math.inf, (f"{src}: positivt FCF 12 mån, burn 0 MUSD/år"
+                          + (f", kassa {_musd_txt(cash)} MUSD" if cash is not None and cash >= 0 else ""))
     try:
         import scoring
         years = scoring.runway_years(r.get("cash_musd"), r.get("burn_musd"))
@@ -105,26 +119,114 @@ def refresh_runway(r) -> tuple:
         return None, ""
     if years is None:
         return None, ""
-    asof = str(r.get("asof") or "")[:10]
-    cash, burn = (f"{float(r[k]):,.1f}".replace(",", " ").replace(".", ",") for k in ("cash_musd", "burn_musd"))
-    return years, (f"Börsdata{' ' + asof if asof else ''}: kassa {cash} MUSD ÷ burn {burn} MUSD/år "
+    return years, (f"{src}: kassa {_musd_txt(r['cash_musd'])} MUSD ÷ burn {_musd_txt(r['burn_musd'])} MUSD/år "
                    f"(negativt FCF 12 mån) = runway {_runway_months(years)} mån")
 
 
-def sheet_runway(sheet: str, row_id) -> tuple:
-    """refresh_runway för arkraden '<sheet>:<id>' (Tiggre, Rick Rule) — (None, "") utan sifferuppdatering."""
+def card_runway(cash, burn) -> tuple:
+    """(runway i år, underlag) ur kortets egen kassa och burn (Poängmodellens Sprott-del) — samma
+    scoring.runway_years som rutan 'Runway'. (None, "") utan båda talen och vid burn 0, som rutan."""
+    try:
+        import scoring
+        years = scoring.runway_years(cash, burn)
+    except Exception:
+        return None, ""
+    if years is None:
+        return None, ""
+    return years, (f"kortets kassa {_musd_txt(cash)} MUSD ÷ burn {_musd_txt(burn)} MUSD/år "
+                   f"= runway {_runway_months(years)} mån")
+
+
+def _match_txt(sheet: str, row: dict, row_id, blob=None) -> str:
+    """' (matchat: Genovis AB)' när sifferuppdateringens bolag för arkraden inte liknar radens namn
+    (refresh_ui.matched_note, samma som Börsdatas andra förslag på kortet). Oescapad: refresh_ui.offer escapar
+    underlaget själv ('AT&T' blir annars 'AT&amp;amp;T'). Tom sträng annars, och utan sifferuppdatering."""
+    try:
+        import html
+        import refresh_ui
+        if blob is None:
+            blob = refresh_ui.load_refresh()
+        return html.unescape(refresh_ui.matched_note(blob, sheet, row, row_id))
+    except Exception:
+        return ""
+
+
+def sheet_runway(sheet: str, row_id, row: Optional[dict] = None) -> tuple:
+    """refresh_runway för arkraden '<sheet>:<id>' (Tiggre, Rick Rule) — (None, "") utan sifferuppdatering. Med row
+    slutar källtexten med '(matchat: …)' när nattjobbets bolag inte liknar radens namn — ett klick sätter DS-poäng."""
     try:
         import refresh_ui
-        r = ((refresh_ui.load_refresh() or {}).get("rows") or {}).get(f"{sheet}:{row_id}")
+        blob = refresh_ui.load_refresh() or {}
+        r = (blob.get("rows") or {}).get(f"{sheet}:{row_id}")
     except Exception:
-        r = None
-    return refresh_runway(r)
+        blob, r = {}, None
+    years, note = refresh_runway(r)
+    if years is not None and row is not None:
+        note += _match_txt(sheet, row, row_id, blob)
+    return years, note
+
+
+def _crit(f, points: int) -> str:
+    """Fältets tryckta kriterium för poängen, med liten bokstav mitt i en mening: 'serieutspädare', '> 24 mån'."""
+    t = (f.zero, f.one, f.two)[points]
+    return t[:1].lower() + t[1:]
+
+
+def _ds_offer(row: dict, key: str, prefix: str, field: str, points, basis: str) -> None:
+    """Ett DS-förslag med Använd (refresh_ui.offer): '🤖 DS: Runway 12–24 mån → 1 riskpoäng — <underlaget>'.
+    Underlaget (tal, källa, datum) står alltid med — ett klick sätter DS-poäng, och DS ≥ 6 låser köp
+    (ctl.ds_blocks_buy). Klicket skriver fältet och rullgardinen; att rita förslaget skriver ingenting."""
+    f = next((x for x in ctl.DS_FIELDS if x.key == field), None)
+    if f is None or points not in (0, 1, 2):
+        return
+    try:
+        import refresh_ui
+    except Exception:
+        return
+    refresh_ui.offer(row, field, points, f.label, key=f"ds_{prefix}_{key}_{field}", source="DS",
+                     widget_key=f"{prefix}_{key}_{field}", cast=int, note=basis,
+                     fmt=lambda p, f=f: f"{_crit(f, p)} → {p} riskpoäng")
+
+
+def _pct_txt(g: float, limits: tuple = ()) -> str:
+    """Förändringen i hela procent med tecken — med decimaler bara när avrundningen skulle hamna på andra sidan en
+    av fältets gränser eller på 0 (scorecard._edge_digits, kantregeln): +25,4 står inte som '+25' bredvid
+    '> +25 %', och -0,4 inte som '-0'. Varje gräns prövas med både >= och >, eftersom 3-årsbanden bryter vid < 10
+    och <= 25 men 5-årsbanden vid >= 20 och > 50."""
+    import scorecard
+    g = 0.0 if g == 0 else float(g)                                   # -0,0 ur round(-0,04, 1) blir 0
+    d = scorecard._edge_digits(g, 0, [(x, op) for x in (0.0, *limits) for op in (">=", ">")])
+    return f"≈{g:+.0f}" if d is None else f"{g:+.{d}f}".replace(".", ",")
+
+
+def _shares_basis(sug: tuple, year: Optional[int], back: int, limits: tuple = (), match: str = "") -> str:
+    """Underlaget för 'Aktier 3 år' och 'Historik': Börsdatas datum, årsrapportens år och förändringen (_pct_txt mot
+    fältets gränser limits). match = '(matchat: …)' när nattjobbets bolag inte liknar radens namn. Antalet ur
+    årsrapporten släpar (senare emissioner syns inte), och en omvänd split ser ut som en minskning."""
+    g, asof = sug[0], sug[1]
+    pct = _pct_txt(g, limits)
+    if year:
+        span = f"i årsrapporten {year} är {pct} % mot {year - back}"
+    else:
+        span = f"är {pct} % " + ("mot för tre år sedan" if back == 3 else "på fem år")
+    return (f"Börsdata{' ' + asof if asof else ''}: antalet aktier {span}{match}"
+            + (" — en minskning kan vara en omvänd split" if g < 0 else ""))
+
+
+def _refresh_pct(sheet: str, row: dict, field: str, row_id=None):
+    """(värde, asof, valuta) ur sifferuppdateringen för arkraden, eller None (ingen blob, inget tal)."""
+    try:
+        import refresh_ui
+        return refresh_ui.suggestion(refresh_ui.load_refresh(), sheet, row, field, row_id=row_id)
+    except Exception:
+        return None
 
 
 def render_ds(row: dict, key: str, runway_years=None,
               prefix: str = "ds", sheet: str = "", runway_note: str = "") -> bool:
-    """Dilution Score. runway_years ger ett förslag på första fältet (runway_note säger varifrån talet kommer);
-    sheet gör att "Aktier 3 år" och "Historik" kan föreslås ur Börsdatas aktiehistorik."""
+    """Dilution Score. runway_years ger ett förslag på första fältet (runway_note säger varifrån talet kommer;
+    math.inf = ingen förbränning); sheet gör att "Aktier 3 år" och "Historik" kan föreslås ur Börsdatas
+    aktiehistorik. Förslagen har Använd och visas bara för en obesvarad delfråga — inget fylls i när sidan ritas."""
     changed = False
     st.markdown(
         f"<b style='color:{TEXT};'>DS — Dilution Score</b> "
@@ -134,42 +236,27 @@ def render_ds(row: dict, key: str, runway_years=None,
 
     suggestion = ctl.ds_runway_suggestion(runway_years)
     if suggestion is not None and row.get("ds_runway") is None:
-        if runway_note:
-            st.caption(f"{runway_note} — motsvarar {suggestion} riskpoäng på Runway. Förslag, inte ifyllt.")
-        else:
-            st.caption(f"Runwayen motsvarar {suggestion} riskpoäng på första "
-                       f"fältet — förslag, inte ifyllt åt dig.")
+        y = ctl._num(runway_years)
+        basis = runway_note or ("ingen förbränning" if math.isinf(y) else f"runway {_runway_months(y)} mån")
+        _ds_offer(row, key, prefix, "ds_runway", suggestion, basis)
+    # '(matchat: …)' på aktieförslagen när nattjobbets bolag inte liknar radens namn (runwayen har den i
+    # runway_note ur sheet_runway) — som Börsdatas andra förslag på kortet.
+    mm = _match_txt(sheet, row, key) if sheet else ""
     if sheet and row.get("ds_aktier_3ar") is None:
-        try:
-            import refresh_ui
-            sug = refresh_ui.suggestion(refresh_ui.load_refresh(), sheet, row,
-                                        "shares_growth_3y_pct", row_id=key)
-        except Exception:
-            sug = None
+        sug = _refresh_pct(sheet, row, "shares_growth_3y_pct", row_id=key)
         if sug is not None:
-            pts = ctl.ds_shares_suggestion(sug[0])
-            yr = _shares_year(sheet, row, key)
-            span = (f"i årsrapporten {yr} är {sug[0]:+.0f} % mot {yr - 3}" if yr
-                    else f"är {sug[0]:+.0f} % mot för tre år sedan")
-            st.caption(f"Börsdata {sug[1]}: antalet aktier {span} — motsvarar {pts} riskpoäng på "
-                       f"Aktier 3 år. Förslag, inte ifyllt.")
+            # gränserna i ctl.ds_shares_suggestion: < 10 → 0, ≤ 25 → 1, > 25 → 2
+            _ds_offer(row, key, prefix, "ds_aktier_3ar", ctl.ds_shares_suggestion(sug[0]),
+                      _shares_basis(sug, _shares_year(sheet, row, key), 3, (10.0, 25.0), mm))
     if sheet and row.get("ds_historik") is None:
-        try:
-            import refresh_ui
-            import judgment_hints as jh
-            sug5 = refresh_ui.suggestion(refresh_ui.load_refresh(), sheet, row,
-                                         "shares_growth_5y_pct", row_id=key)
-        except Exception:
-            sug5 = None
+        sug5 = _refresh_pct(sheet, row, "shares_growth_5y_pct", row_id=key)
         if sug5 is not None:
-            pts5 = jh.ds_history_points(sug5[0])
-            yr5 = _shares_year(sheet, row, key)
-            span5 = (f"i årsrapporten {yr5} är {sug5[0]:+.0f} % mot {yr5 - 5}" if yr5
-                     else f"är {sug5[0]:+.0f} % på fem år")
-            st.caption(f"Börsdata {sug5[1]}: antalet aktier {span5} — "
-                       f"motsvarar {pts5} riskpoäng på Historik "
-                       f"({'serieutspädare' if pts5 == 2 else 'blandad' if pts5 == 1 else 'disciplinerad'}). "
-                       f"Förslag, inte ifyllt.")
+            import judgment_hints as jh
+            _ds_offer(row, key, prefix, "ds_historik", jh.ds_history_points(sug5[0]),
+                      _shares_basis(sug5, _shares_year(sheet, row, key), 5,
+                                    (jh.DILUTION_5Y_MIXED_PCT, jh.DILUTION_5Y_SERIAL_PCT), mm)
+                      + f". Grova gränser på 5 år: +{jh.DILUTION_5Y_MIXED_PCT:g} % blandad, "
+                        f"över +{jh.DILUTION_5Y_SERIAL_PCT:g} % serieutspädare")
 
     changed |= _score_row(row, ctl.DS_FIELDS, prefix, key)
 
@@ -232,10 +319,30 @@ def _aqs_offers(row: dict, key: str, prefill: Optional[dict], prefix: str, strat
                          fmt=lambda o, f=f: f"{o} ({(f.zero, f.one, f.two)[o]})" if o in (0, 1, 2) else str(o))
 
 
+def _aqs_life_offer(row: dict, key: str, prefix: str, life_years) -> None:
+    """'Livslängd / resurs' ur kortets gruvlivslängd (ctl.aqs_life_suggestion, fältets tryckta gränser), med
+    Använd — bara för en obedömd delfråga. Talet är gruvplanens/reservernas livslängd, inte resursens: en lång
+    resurs är inte en lång reserv, och det står i texten."""
+    pts = ctl.aqs_life_suggestion(life_years)
+    if pts is None or row.get("aqs_livslangd") not in (None, ""):
+        return
+    try:
+        import refresh_ui
+    except Exception:
+        return
+    f = next(x for x in ctl.AQS_FIELDS if x.key == "aqs_livslangd")
+    yrs = f"{ctl._num(life_years):g}".replace(".", ",")
+    refresh_ui.offer(row, f.key, pts, f.label, key=f"aqs_{prefix}_{key}_{f.key}", source="Kortet",
+                     widget_key=f"{prefix}_{key}_{f.key}", cast=int,
+                     note=f"ur Gruvlivslängd {yrs} år: reservernas livslängd (LOM), inte hela resursen",
+                     fmt=lambda o, f=f: f"{o} ({(f.zero, f.one, f.two)[o]})")
+
+
 def render_aqs(row: dict, key: str, prefill: Optional[dict] = None,
-               prefix: str = "aqs", strategy: str = "") -> bool:
+               prefix: str = "aqs", strategy: str = "", life_years=None) -> bool:
     """Asset Quality Score. prefill = förslag på jurisdiktion/management ur den flik som redan frågat (strategy
-    säger vilken, för underlaget i texten) — visas med Använd, inget fylls i när sektionen ritas."""
+    säger vilken, för underlaget i texten), life_years = kortets gruvlivslängd för 'Livslängd / resurs' — visas
+    med Använd, inget fylls i när sektionen ritas."""
     changed = False
     st.markdown(
         f"<b style='color:{TEXT};'>AQS — Asset Quality Score</b> "
@@ -244,6 +351,7 @@ def render_aqs(row: dict, key: str, prefill: Optional[dict] = None,
         unsafe_allow_html=True)
 
     _aqs_offers(row, key, prefill, prefix, strategy)
+    _aqs_life_offer(row, key, prefix, life_years)
 
     half = len(ctl.AQS_FIELDS) // 2
     changed |= _score_row(row, ctl.AQS_FIELDS[:half], prefix, key)
@@ -423,8 +531,9 @@ SHEET_BY_STRATEGY = {"producenter": "producers", "royalty": "producers",
 
 def render_all(row: dict, key: str, position_pct=None, strategy: str = "",
                runway_years=None, aqs_prefill: Optional[dict] = None,
-               kind: str = ctl.PRODUCER, runway_note: str = "") -> bool:
-    """Alla kontroller som proportionalitetsregeln kräver för positionen."""
+               kind: str = ctl.PRODUCER, runway_note: str = "", life_years=None) -> bool:
+    """Alla kontroller som proportionalitetsregeln kräver för positionen. life_years = kortets gruvlivslängd
+    (Rick Rule) till AQS-förslaget på 'Livslängd / resurs'."""
     req = ctl.required_sections(position_pct, strategy,
                                 bool(row.get("dilution_risk")))
     changed = False
@@ -434,7 +543,7 @@ def render_all(row: dict, key: str, position_pct=None, strategy: str = "",
                                  sheet=SHEET_BY_STRATEGY.get(strategy, ""), runway_note=runway_note)
     if ctl.SEC_AQS in req:
         with st.expander("⛏ AQS — tillgångskvalitet", expanded=False):
-            changed |= render_aqs(row, key, aqs_prefill, strategy=strategy)
+            changed |= render_aqs(row, key, aqs_prefill, strategy=strategy, life_years=life_years)
     fv_req = lukacs.fv_required(position_pct, strategy)
     if ctl.SEC_CSM in req:
         with st.expander("📉 CSM — råvarukänslighet"

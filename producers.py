@@ -760,13 +760,14 @@ def _producers(data: dict) -> None:
             if cap_line:
                 st.caption(cap_line)
 
-            # Runwayen till DS:s förslag ur sifferuppdateringens kassa och burn (producers:<id>) — ingen vid positivt FCF.
-            rw, rw_note = controls_ui.sheet_runway("producers", row["id"])
+            # Runwayen till DS:s förslag ur sifferuppdateringens kassa och burn (producers:<id>) — vid positivt FCF
+            # (burn 0) blir förslaget '> 24 mån'. Gruvlivslängden ger AQS-förslaget på 'Livslängd / resurs'.
+            rw, rw_note = controls_ui.sheet_runway("producers", row["id"], row)
             if controls_ui.render_all(
                     row, row["id"], position_pct=pos, strategy="producenter",
                     runway_years=rw, runway_note=rw_note,
                     aqs_prefill=ctl.aqs_prefill_from_producer(row),
-                    kind=ctl.PRODUCER):
+                    kind=ctl.PRODUCER, life_years=row.get("mine_life")):
                 changed = True
 
             _chatgpt(data, row, "rule")

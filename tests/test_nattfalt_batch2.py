@@ -170,7 +170,8 @@ def _run_ds(monkeypatch, ref):
     at = AppTest.from_function(_ds_app, default_timeout=60)
     at.run()
     assert not at.exception, at.exception
-    return at, " ".join(c.value for c in at.caption)
+    import html
+    return at, html.unescape(" ".join(m.value for m in at.markdown))      # batch 3: förslag med Använd
 
 
 def test_ds_suggestions_name_the_year_of_the_share_count(monkeypatch):
