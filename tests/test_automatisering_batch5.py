@@ -284,6 +284,28 @@ def test_rule_spot_margin_line():
     assert producers.spot_margin_line({}, "Guld", 1450.0, 3000.0) == ""
 
 
+HG = {"commodity_price": 4.52, "commodity_unit": "USD/lb", "commodity_asof": "2026-11-06", "commodity_ticker": "HG=F"}
+NG = {"commodity_price": 3.10, "commodity_unit": "USD/MMBtu", "commodity_asof": "2026-11-06", "commodity_ticker": "NG=F"}
+CU_NOTE = "🤖 Dagens pris 4,52 USD/lb står nog i en annan enhet än kortets — ingen marginal räknad."
+
+
+def test_rule_spot_margin_line_skips_a_card_in_another_unit():
+    """Fix 1: koppar per ton (LME) mot HG=F i USD/lb, eller gas per boe mot NG=F i USD/MMBtu, ger ingen marginal."""
+    assert producers.spot_margin_line(HG, "Koppar", 5500.0, 9900.0) == CU_NOTE           # sparat pris per ton
+    assert producers.spot_margin_line(HG, "Koppar", 5500.0, None) == CU_NOTE             # bara kostnaden per ton
+    assert producers.spot_margin_line(HG, "Koppar", 2.5, 4.1).startswith(
+        "🤖 Med dagens pris 4,52 USD/lb (2026-11-06): marginal 44.7 % (2 p)")             # samma enhet: som förut
+    assert producers.spot_margin_line(NG, "Gas", 11.0, 24.0) == (                       # per boe, 7,7× terminen
+        "🤖 Dagens pris 3,10 USD/MMBtu står nog i en annan enhet än kortets — ingen marginal räknad.")
+    assert producers.spot_margin_line(NG, "Gas", 11.0, None) == ""                       # gas kräver sparat pris
+    assert producers.spot_margin_line(NG, "Gas", 1.8, 3.5) == (
+        "🤖 Med dagens pris 3,10 USD/MMBtu (2026-11-06): marginal 41.9 % (2 p) — poängen räknas på det sparade "
+        "priset.")
+    # guldet som förut, också utan sparat pris
+    assert "marginal 63.9 % (2 p)" in producers.spot_margin_line(_night(), "Guld", 1450.0, 3000.0)
+    assert "marginal 27.7 % (1 p)" in producers.spot_margin_line(_night(), "Guld", 2900.0, None)
+
+
 # ── AppTest: korten visar raderna och skriver ingenting ─────────────────────
 @pytest.fixture
 def card(monkeypatch):
@@ -359,6 +381,16 @@ def test_rule_card_shows_the_margin_with_todays_price_and_writes_nothing(card):
     assert at.rows_now() == [RULE_ROW]
     plain = card("Rick Rule", [RULE_ROW], {})
     assert {b.key for b in at.button} - {b.key for b in plain.button} == {"rf_producers_p1_price"}   # bara förslaget
+
+
+def test_rule_card_in_tonnes_shows_no_margin_with_the_pound_price(card):
+    """Fix 1: ett kopparkort per ton får notisen, inte en marginal på -121 581 %. Att öppna skriver inget."""
+    row = dict(RULE_ROW, commodity="Koppar", unit_cost=5500.0, price=9900.0)
+    at = card("Rick Rule", [row], {"rows": {"producers:p1": HG}})
+    caps = _captions(at)
+    assert CU_NOTE in caps
+    assert not [c for c in caps if c.startswith("🤖 Med dagens pris")]
+    assert at.rows_now() == [row]
 
 
 # ── AppTest: Durrett-arket ───────────────────────────────────────────────────

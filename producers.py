@@ -149,11 +149,21 @@ def margin_points(margin) -> int:
     return 1 if m >= MARGIN_OK else 0
 
 
+# Terminer vars enhet inte är den kortens kostnad brukar stå i (extraktorn: USD/oz, USD/lb, USD/boe). NG=F står i
+# USD/MMBtu och en boe är ungefär 5,8 MMBtu — inom NAV_PRICE_SCALE_MAX. Där måste kortets sparade pris stå inom så
+# många gånger från terminen; utan sparat pris räknas ingen marginal.
+SPOT_SCALE_TIGHT: dict = {"NG=F": 3.0}
+
+
 def spot_margin_line(night: Optional[dict], commodity, unit_cost, saved_price) -> str:
     """Raden vid Marginal: '🤖 Med dagens pris 4 012 USD/oz (2026-11-06): marginal 64.2 % (2 p) — poängen räknas på
     det sparade priset.' Dagens pris är nattens terminspris (sheets_refresh: commodity_price på producentraden), bara
     när det gäller kortets råvara (commodity_prices.night_fits); marginalen är margin_pct som kortets egen. Bara
-    visning, ingen Använd. Tom sträng utan pris eller kostnad, och när det sparade priset redan är dagens."""
+    visning, ingen Använd. Tom sträng utan pris eller kostnad, och när det sparade priset redan är dagens.
+
+    Enhetsvakten är CSM-radens (controls_ui.spot_context): står kortets sparade pris (eller kostnaden, utan sparat
+    pris) mer än NAV_PRICE_SCALE_MAX× från terminen — koppar i USD/t mot HG=F i USD/lb — räknas ingen marginal, bara
+    en kort notis. Gas (SPOT_SCALE_TIGHT) kräver ett sparat pris inom 3× från terminen."""
     r = night if isinstance(night, dict) else {}
     spot = _nonneg(r.get("commodity_price"))
     m = margin_pct(spot, unit_cost)
@@ -164,14 +174,22 @@ def spot_margin_line(night: Optional[dict], commodity, unit_cost, saved_price) -
         return ""
     try:
         import commodity_prices
-        from controls_ui import _price_txt
+        from controls_ui import NAV_PRICE_SCALE_MAX, _price_txt
         if not commodity_prices.night_fits(r, commodity):
             return ""
+        tight = SPOT_SCALE_TIGHT.get(commodity_prices.ticker_for(commodity)[0])
     except Exception:
         return ""
     unit = str(r.get("commodity_unit") or "").strip()
+    spot_txt = f"{_price_txt(spot)}{' ' + unit if unit else ''}"
+    ref = saved or (None if tight else _nonneg(unit_cost))
+    if tight and not ref:
+        return ""
+    limit = tight or NAV_PRICE_SCALE_MAX
+    if ref and (ref / spot > limit or spot / ref > limit):
+        return f"🤖 Dagens pris {spot_txt} står nog i en annan enhet än kortets — ingen marginal räknad."
     asof = str(r.get("commodity_asof") or "")[:10]
-    return (f"🤖 Med dagens pris {_price_txt(spot)}{' ' + unit if unit else ''}{f' ({asof})' if asof else ''}: "
+    return (f"🤖 Med dagens pris {spot_txt}{f' ({asof})' if asof else ''}: "
             f"marginal {m:.1f} % ({margin_points(m)} p) — poängen räknas på det sparade priset.")
 
 
