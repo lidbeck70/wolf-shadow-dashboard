@@ -590,6 +590,8 @@ def _card(data: dict, cards: dict, entry: dict, expanded: bool = False) -> None:
             if v != bool(card.get(g.key)):
                 card[g.key] = v
                 changed = True
+            if g.key == "screener_kval":
+                _screener_hint(data, cards, entry, strategy, v)
             if g.key == "granskning_klar":
                 _review_hint(data, cards, entry, strategy, v)
             if g.key == "position_saljregel":
@@ -1037,6 +1039,85 @@ def _review_hint(data: dict, cards: dict, entry: dict, strategy: str, checked: b
     color = RED if status == "FAIL" else AMBER
     text = escape(f"🤖 Ur {sheet}: {status} — {note}").replace("$", "&#36;")
     st.markdown(f"<div style='color:{color};font-size:0.78rem;padding-left:22px;'>{text}</div>",
+                unsafe_allow_html=True)
+
+
+# Kortets strategi → håven i screens.json (screens_scan.SCREENS), samma håv som arkets egen Håven-sektion: Rick Rule
+# 'rule' och Royalty C 'royalty' (producers.py), Sprott och Durrett (scoring.py), Tiggre (tiggre.py) och 🧭 Durrett
+# 'durrett' (engines/durrett/ui.py). Insider läser Insider-skanningen (insider_scan.json). Övriga: ingen screener.
+SCREEN_KEY = {RULE_STRATEGY: "rule", ROYALTY_STRATEGY: "royalty", "sprott": "sprott", DURRETT_STRATEGY: "durrett",
+              DURRETT_SHEET_STRATEGY: "durrett", "tiggre": "tiggre"}
+INSIDER_STRATEGY = "insider"
+
+
+def has_screener(strategy: str) -> bool:
+    return strategy in SCREEN_KEY or strategy == INSIDER_STRATEGY
+
+
+def screener_verdict(entry: Optional[dict], strategy: str, run: Optional[dict]) -> Optional[tuple]:
+    """(screener, datum, kvalar, notering) — kvalar bolaget i den SENASTE körningen av strategins egen screener?
+    run = körningen ur Gisten: screens.json för håvarna, insider_scan.json för Insider. Bolaget matchas på ins_id
+    och sedan på tickerns former (insider.cluster_for, samma matchning som Insider-skanningen mot arket). None när
+    strategin saknar screener, körningen eller dess datum saknas, eller screenern felade i körningen. Ren funktion."""
+    if not has_screener(strategy) or not isinstance(run, dict):
+        return None
+    day = str(run.get("generated") or "")[:10]
+    if not day:
+        return None
+    if strategy == INSIDER_STRATEGY:
+        if run.get("error"):
+            return None
+        source, hits = "Insider-skanningen", run.get("clusters")
+    else:
+        sc = (run.get("screens") or {}).get(SCREEN_KEY[strategy])
+        if not isinstance(sc, dict) or sc.get("error"):
+            return None
+        source, hits = f"Håven {sc.get('label') or SCREEN_KEY[strategy]}", sc.get("rows")
+    row = ((entry or {}).get("rows") or {}).get(strategy)
+    row = row if isinstance(row, dict) else {}
+    probe = {"ticker": row.get("ticker") or (entry or {}).get("ticker"), "ins_id": row.get("ins_id")}
+    import insider as ins
+    hit = ins.cluster_for(probe, [h for h in hits or [] if isinstance(h, dict)], [probe])
+    note = ""
+    if hit is not None and strategy == INSIDER_STRATEGY and _num(hit.get("score")) is not None:
+        note = f" ({_g(_num(hit['score']))}/10 p)"
+    return source, day, hit is not None, note
+
+
+def _screener_run(strategy: str) -> dict:
+    """Senaste körningen av strategins screener ur Gisten (cachad som i arken) — {} utan screener eller körning."""
+    if strategy == INSIDER_STRATEGY:
+        import insider as ins
+        return ins._load_auto_scan() or {}
+    if strategy in SCREEN_KEY:
+        import screens_ui
+        return screens_ui.load_screens() or {}
+    return {}
+
+
+def _screener_hint(data: dict, cards: dict, entry: dict, strategy: str, checked: bool) -> None:
+    """Under 'Screenern kvalar': kvalar bolaget i den senaste körningen ger ett förslag med Använd (bara när rutan inte
+    är kryssad); annars en rad som säger att det inte kvalade, med körningens datum. Rutan kryssas aldrig av sig själv
+    och raden i arket stämplas inte. Inget visas när strategin saknar screener."""
+    try:
+        verdict = screener_verdict(entry, strategy, _screener_run(strategy)) if has_screener(strategy) else None
+    except Exception:
+        return
+    if verdict is None:
+        return
+    source, day, hit, note = verdict
+    if hit:
+        if checked:
+            return
+        a, b = st.columns([3, 1], vertical_alignment="center")
+        shown = f"🤖 {source} {day}: kvalar i senaste körningen{note}".replace("$", "\\$")
+        a.caption(f"{shown} — förslag, inte inskrivet.")
+        b.button("Använd", key=f"sc_usescr_{entry['key']}", on_click=_use_card,
+                 args=(data, cards, entry, strategy, "screener_kval", True,
+                       f"sc_g_{entry['key']}_screener_kval"))
+        return
+    text = escape(f"🤖 {source}: kvalade inte i senaste körningen ({day})").replace("$", "&#36;")
+    st.markdown(f"<div style='color:{DIM};font-size:0.78rem;padding-left:22px;'>{text}</div>",
                 unsafe_allow_html=True)
 
 
