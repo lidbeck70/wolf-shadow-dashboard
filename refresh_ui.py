@@ -77,6 +77,54 @@ def matched_note(blob: dict, sheet: str, row: dict, row_id=None) -> str:
     return f" (matchat: {html.escape(bd).replace('$', '&#36;')})"
 
 
+def _registry_member(ticker):
+    """Universum-registrets medlem för tickern (marknadens fil ur Gisten, sedan i sessionen — samma uppslag som
+    Thor, thor.ui.universe_member). None utan register (ingen Gist) eller okänd ticker."""
+    try:
+        from thor.ui import universe_member
+        return universe_member(st, ticker)
+    except Exception:
+        return None
+
+
+def registry_identity(ticker, name: str = "", member=None) -> dict:
+    """Fälten en rad du lägger in för hand får ur universum-registret: ins_id och Börsdatas namn (bd_name) när
+    registret har bolaget från Börsdata, och namnet när du lämnat det tomt. Anropas bara på ditt klick. Tom dict
+    utan register eller utan träff — då blir raden som förut."""
+    if member is None:
+        member = _registry_member(ticker)
+    if member is None:
+        return {}
+    out: dict = {}
+    nm = str(getattr(member, "name", "") or "").strip()
+    raw = getattr(member, "ins_id", None)
+    try:
+        iid = None if isinstance(raw, bool) else int(raw)
+    except (TypeError, ValueError):
+        iid = None
+    if iid is not None and iid > 0:
+        out["ins_id"] = iid                       # så att nattjobbet hämtar just det bolaget
+        if nm:
+            out["bd_name"] = nm
+    if nm and not str(name or "").strip():
+        out["name"] = nm
+    return out
+
+
+def identity_note(row: dict) -> str:
+    """'Börsdata: <namn>' för en rad som fått sitt ins_id ur registret — så syns en fel matchning. Med en varning
+    när namnet du skrev inte liknar Börsdatas. Tom sträng utan bd_name. Escapad för st.caption (två '$' blir
+    annars matematik)."""
+    bd = str((row or {}).get("bd_name") or "").strip()
+    if not bd:
+        return ""
+    own = str((row or {}).get("name") or "").strip()
+    note = f"Börsdata: {bd}"
+    if own and not name_resembles(own, bd):
+        note += f" — liknar inte '{own}'. Kontrollera tickern."
+    return note.replace("$", "\\$")
+
+
 @st.cache_data(ttl=600, show_spinner=False)
 def load_refresh() -> dict:
     try:

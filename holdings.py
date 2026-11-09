@@ -122,6 +122,18 @@ def _get_all_holdings_flat() -> List[dict]:
     return result
 
 
+def _registry_name(ticker: str, name: str = "") -> str:
+    """Bolagsnamnet ur universum-registret när du inte skrivit något (formuläret har inget namnfält). Bara på
+    + ADD; tomt utan register (ingen Gist) eller okänd ticker — då sparas raden som förut."""
+    if str(name or "").strip():
+        return str(name).strip()
+    try:
+        import refresh_ui
+        return refresh_ui.registry_identity(ticker, "").get("name", "")
+    except Exception:
+        return ""
+
+
 def _add_holding(
     portfolio_key: str,
     ticker: str,
@@ -134,7 +146,7 @@ def _add_holding(
     extras = {"tranches_deployed": max(0, min(3, tranches_deployed))} \
         if strategy == "Deep Contrarian" else {}
     ok, msg = positions.add(ticker, strategy, entry_price, shares, sector=sector,
-                            extras=extras, bucket=portfolio_key)
+                            name=_registry_name(ticker), extras=extras, bucket=portfolio_key)
     if not ok or positions.UNSAVED in msg:
         st.warning(msg)
     return ok

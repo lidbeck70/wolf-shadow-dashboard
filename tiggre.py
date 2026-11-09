@@ -300,6 +300,132 @@ def equity_at_risk(entry: float, current: float, shares: float,
     return e * s
 
 
+# ── Färska tal för positionerna (bara visning) ───────────────────────────────
+def price_currency(ticker, ccy=None) -> str:
+    """Kursens valuta för en position: nattradens valuta, annars tickerns suffix (positions.currency_for). London
+    noteras i pence (GBX), som positions.sek_factor räknar."""
+    c = str(ccy or positions.currency_for(ticker)).upper()
+    if c in ("GBP", "GBX") and str(ticker or "").upper().endswith(".L"):
+        return "GBX"
+    return c
+
+
+def position_quote(p: dict, fresh: Optional[dict] = None) -> tuple:
+    """(kurs, datum, valuta) som positionens avkastning och kapital i risk räknas på: nattens kurs ur tiggre:<id> —
+    samma rad som P/NAV nu läser — före arkets sparade 'Kurs nu' (då är datumet tomt). Inget skrivs."""
+    r = p or {}
+    f = (fresh or {}).get(f"tiggre:{r.get('id')}") or {}
+    ccy = price_currency(r.get("ticker"), f.get("currency"))
+    px = _num(f.get("price"))
+    if px is not None and px > 0:
+        return px, str(f.get("asof") or "")[:10], ccy
+    cur = _num(r.get("current"))
+    return (cur if cur is not None and cur > 0 else None), "", ccy
+
+
+def risk_text(entry, current, shares, half_sold, ccy: str) -> str:
+    """'Kapital i risk' som text i aktiens valuta. Efter free ride (halva såld vid +100 %) 0 — insatsen är uttagen,
+    oavsett antal. Annars står 'Antal saknas' utan antal (förut 0 kr, som såg ut som free ride) och 'Entry saknas'
+    utan entry."""
+    s, e = _num(shares), _num(entry)
+    if e is not None and e > 0 and half_sold and free_ride_reached(e, current):
+        return f"0 {ccy}".strip()
+    if s is None or s <= 0:
+        return "Antal saknas"
+    if e is None or e <= 0:
+        return "Entry saknas"
+    eq = equity_at_risk(e, current, s, half_sold)
+    return f"{_fmt(eq, 0)} {ccy}".strip() if eq is not None else "–"
+
+
+def export_rows(rows: list, fresh: Optional[dict] = None) -> list:
+    """Positionsbladet i CSV:n. Utveckling, kapital i risk, P/NAV och signalerna räknas på nattens kurs och
+    börsvärde (tiggre:<id>, samma som sidan), och kursen står med datum och valuta. Utan nattrad: arkets sparade tal.
+    Kapital i risk är 0 efter free ride (oavsett antal) och annars tomt när antal eller entry saknas — inte 0."""
+    out = []
+    for p in rows or []:
+        entry = _num(p.get("entry"), 0.0) or 0.0
+        px, asof, ccy = position_quote(p, fresh)
+        cur = px or 0.0
+        f = (fresh or {}).get(f"tiggre:{p.get('id')}") or {}
+        mc_now = _num(f.get("mcap_musd"))
+        ret = (cur / entry - 1) * 100 if entry > 0 and cur > 0 else None
+        pn = p_nav(mc_now if mc_now else p.get("mcap"), p.get("nav"))
+        sell = catalyst_sell_signal(p.get("catalysts", []))
+        shares = _num(p.get("shares"))
+        if entry > 0 and p.get("half_sold") and free_ride_reached(entry, cur):
+            risk = 0.0                                          # free ride: insatsen är uttagen, oavsett antal
+        else:
+            risk = (equity_at_risk(entry, cur, shares, p.get("half_sold"))
+                    if shares is not None and shares > 0 and entry > 0 else None)
+        out.append({
+            **p, "_ret": None if ret is None else round(ret, 1),
+            "_px": px, "_px_asof": asof or None, "_ccy": ccy,
+            "_free_ride": round(entry * 2, 2) if entry else None,
+            "_risk": risk,
+            "_pnav": None if pn is None else round(pn, 2),
+            "_sell": sell.get("name") if sell else None,
+            "_signals": " · ".join(lbl for _k, lbl in position_signals(
+                p, mcap_now=mc_now, price_now=_num(f.get("price")))) or None,
+        })
+    return out
+
+
+# ── Katalysatorernas datum (förlåtande tolkning) ─────────────────────────────
+_DATE_SEP = r"[-/. ]"
+
+
+def _month_end(year: int, month: int) -> Optional[date]:
+    import calendar
+    if not 1 <= month <= 12:
+        return None
+    try:                                                      # år 0000 finns inte — inget datum, ingen bricka
+        return date(year, month, calendar.monthrange(year, month)[1])
+    except ValueError:
+        return None
+
+
+def catalyst_due(text) -> Optional[date]:
+    """Sista dagen katalysatorn kan infalla enligt arkets datum: 'ÅÅÅÅ-MM-DD' den dagen, 'ÅÅÅÅ-MM' månadens sista,
+    'ÅÅÅÅ-Qn' eller 'Qn ÅÅÅÅ' kvartalets, 'ÅÅÅÅ-Hn' halvårets och 'ÅÅÅÅ' årets. None när datumet inte går att läsa."""
+    s = re.sub(r"\s+", " ", str(text or "").strip().upper())
+    if not s:
+        return None
+    m = re.fullmatch(rf"(\d{{4}}){_DATE_SEP}(\d{{1,2}}){_DATE_SEP}(\d{{1,2}})", s)
+    if m:
+        try:
+            return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            return None
+    m = re.fullmatch(rf"(\d{{4}}){_DATE_SEP}(\d{{1,2}})", s)
+    if m:
+        return _month_end(int(m.group(1)), int(m.group(2)))
+    for tag, months in (("Q|KV", 3), ("H", 6)):               # kvartal och halvår, året före eller efter
+        n = 12 // months
+        m = re.fullmatch(rf"(\d{{4}}){_DATE_SEP}?(?:{tag})([1-{n}])", s)
+        if m:
+            return _month_end(int(m.group(1)), int(m.group(2)) * months)
+        m = re.fullmatch(rf"(?:{tag})([1-{n}]){_DATE_SEP}?(\d{{4}})", s)
+        if m:
+            return _month_end(int(m.group(2)), int(m.group(1)) * months)
+    m = re.fullmatch(r"(\d{4})", s)
+    return _month_end(int(m.group(1)), 12) if m else None
+
+
+def catalyst_overdue(cat: dict, today: Optional[date] = None) -> Optional[str]:
+    """'ÅÅÅÅ-MM' när katalysatorns datum har passerat och statusen fortfarande är Väntar eller Försenad 1:a ggn —
+    då ska du ta ställning: Levererad eller Försenad? None annars, och när datumet inte går att läsa. Statusen
+    skrivs aldrig här."""
+    c = cat or {}
+    status = c.get("status") if c.get("status") in CAT_STATUSES else CAT_WAITING     # som rullgardinen visar den
+    if status not in (CAT_WAITING, CAT_LATE_1):
+        return None
+    due = catalyst_due(c.get("date"))
+    if due is None or (today or date.today()) <= due:
+        return None
+    return f"{due.year:04d}-{due.month:02d}"
+
+
 # ── Lagring ──────────────────────────────────────────────────────────────────
 def _default() -> dict:
     return {"candidates": [], "positions": [], "closed": [], "parked": []}
@@ -391,6 +517,7 @@ def render_tiggre_page() -> None:
 # ── 1. Håven ─────────────────────────────────────────────────────────────────
 POS_CSV = [("date", "Köpdatum"), ("ticker", "Ticker"), ("name", "Bolag"),
            ("shares", "Antal"), ("entry", "Entry"), ("current", "Kurs nu"),
+           ("_px", "Kurs i uträkningen"), ("_px_asof", "Kursdatum"), ("_ccy", "Valuta"),
            ("_ret", "Utveckling %"), ("_free_ride", "+100 %-nivå"),
            ("half_sold", "Halva såld"), ("_risk", "Kapital i risk"),
            ("_pnav", "P/NAV nu"), ("_sell", "Säljregel utlöst"),
@@ -402,23 +529,8 @@ CAT_CSV = [("_ticker", "Bolag"), ("name", "Katalysator"), ("date", "Förväntad"
 
 
 def _export(data: dict) -> None:
-    """Positionerna och katalysatorkalendern — arkets två viktigaste blad."""
-    pos_rows = []
-    for p in open_positions():
-        entry = _num(p.get("entry"), 0.0) or 0.0
-        cur = _num(p.get("current"), 0.0) or 0.0
-        ret = (cur / entry - 1) * 100 if entry > 0 and cur > 0 else None
-        pn = p_nav(p.get("mcap"), p.get("nav"))
-        sell = catalyst_sell_signal(p.get("catalysts", []))
-        pos_rows.append({
-            **p, "_ret": None if ret is None else round(ret, 1),
-            "_free_ride": round(entry * 2, 2) if entry else None,
-            "_risk": equity_at_risk(entry, cur, p.get("shares", 0),
-                                    p.get("half_sold")),
-            "_pnav": None if pn is None else round(pn, 2),
-            "_sell": sell.get("name") if sell else None,
-            "_signals": " · ".join(lbl for _k, lbl in position_signals(p)) or None,
-        })
+    """Positionerna och katalysatorkalendern — arkets två viktigaste blad. Positionerna på nattens tal (export_rows)."""
+    pos_rows = export_rows(open_positions(), _fresh_rows())
 
     cat_rows = []
     for p in open_positions() + data.get("candidates", []):
@@ -473,6 +585,27 @@ def _suggest(*args, **kw) -> None:
         refresh_ui.suggest(*args, **kw)
     except Exception:
         pass
+
+
+def _registry_identity(ticker: str, name: str) -> dict:
+    """ins_id och namn ur universum-registret för en kandidat du lägger in (refresh_ui.registry_identity). Bara på
+    klicket; tom utan register — då blir raden som förut."""
+    try:
+        import refresh_ui
+        return refresh_ui.registry_identity(ticker, name)
+    except Exception:
+        return {}
+
+
+def _identity_note(row: dict) -> None:
+    """'Börsdata: <namn>' på en rad som fått sitt ins_id ur registret."""
+    try:
+        import refresh_ui
+        note = refresh_ui.identity_note(row)
+    except Exception:
+        note = ""
+    if note:
+        st.caption(note)
 
 
 def _chatgpt(data: dict, cand: dict) -> None:
@@ -546,10 +679,12 @@ def _candidates(data: dict) -> None:
     nm = c2.text_input("Bolagsnamn", key="tg_add_name")
     if c3.button("Lägg till", key="tg_add_btn"):
         if tkr.strip():
+            t = tkr.upper().strip()
             data["candidates"].append({
-                "id": _uid(), "ticker": tkr.upper().strip(), "name": nm.strip(),
+                "id": _uid(), "ticker": t, "name": nm.strip(),
                 "added": _today(), "screen": {},
                 "downside": -40.0, "factors": {}, "catalysts": [],
+                **_registry_identity(t, nm),          # ins_id och Börsdatas namn, så att nattjobbet tar rätt bolag
             })
             _save(data)
             st.rerun()
@@ -583,6 +718,7 @@ def _candidate_card(data: dict, cand: dict, expanded: bool = False) -> None:
     rc = _rc()
     with st.expander(f"{head}  ·  poäng {score}/10", expanded=expanded):
         top = rc.slot() if rc else None
+        _identity_note(cand)
         # Grovsållning
         st.markdown(f"<b style='color:{TEXT};'>Grovsållning</b> "
                     f"<span style='color:{DIM};font-size:0.78rem;'>"
@@ -764,6 +900,12 @@ def _catalysts(data: dict, cand: dict) -> None:
         new = cc3.selectbox("Status", list(CAT_STATUSES),
                             index=CAT_STATUSES.index(cur),
                             key=f"tg_catst_{cand['id']}_{cat.get('id', '')}")
+        # Brickan följer rullgardinen i samma körning — bara en fråga till dig, statusen skrivs inte här.
+        due = catalyst_overdue(dict(cat, status=new))
+        if due:
+            cc1.markdown(f"<span style='background:{AMBER};color:#000;font-size:0.7rem;font-weight:700;"
+                         f"padding:1px 7px;border-radius:4px;'>förfallen sedan {due} — Levererad eller "
+                         f"Försenad?</span>", unsafe_allow_html=True)
         if new != cat.get("status"):
             cat["status"] = new
             changed = True
@@ -822,13 +964,17 @@ def _promote(data: dict, cand: dict, entry: Optional[float]) -> None:
     if entry is None or entry <= 0:
         st.warning("Ange en entry-kurs > 0.")
         return
-    positions.put(STRATEGY, {
+    row = {
         "id": _uid(), "ticker": cand.get("ticker", "?"), "name": cand.get("name", ""),
         "entry": entry, "current": entry, "shares": 0.0,
         "mcap": cand.get("mcap"), "nav": cand.get("nav"),
         "date": _today(), "half_sold": False,
         "triggers": {}, "catalysts": cand.get("catalysts", []),
-    }, "tiggre")
+    }
+    if cand.get("ins_id") is not None:
+        # Följer med till registret (extras): nattjobbet hämtar samma bolag som kandidaten, inte ett nytt tickeruppslag
+        row["ins_id"] = cand["ins_id"]
+    positions.put(STRATEGY, row, "tiggre")
     data["candidates"] = [c for c in data["candidates"] if c["id"] != cand["id"]]
     _save(data)
 
@@ -852,7 +998,6 @@ def _positions(data: dict) -> None:
     for p in list(pos):
         entry = _num(p.get("entry"), 0.0) or 0.0
         cur = _num(p.get("current"), 0.0) or 0.0
-        ret = (cur / entry - 1) * 100 if entry > 0 and cur > 0 else None
         # Kalendern styr sin egen trigger: en katalysator satt till "Försenad
         # 2:a ggn" ÄR säljregeln, så den ska inte behöva kryssas i för hand.
         cat_sell = catalyst_sell_signal(p.get("catalysts", []))
@@ -894,16 +1039,23 @@ def _positions(data: dict) -> None:
                                   step=0.5, key=f"tg_p_cur_{p['id']}")
         _suggest("tiggre", p, "current", "price", "kurs", f"tg_p_cur_{p['id']}",
                  lambda: positions.put(STRATEGY, p, "tiggre"), with_currency=True)
-        c3.metric("Avkastning", _pct(ret, 1) if ret is not None else "–")
+        # Avkastning och kapital i risk på nattens kurs — samma rad som P/NAV nu. Bara visning: inget skrivs.
+        px, px_asof, ccy = position_quote(dict(p, current=new_cur), fresh)
+        px_calc = px or 0.0
+        ret = (px_calc / new_entry - 1) * 100 if new_entry > 0 and px_calc > 0 else None
+        c3.metric("Avkastning", _pct(ret, 1) if ret is not None else "–",
+                  help=None if px_asof else "På Kurs nu i arket — ingen nattkurs ännu.")
         c4.metric("P/NAV nu", f"{pn_now:.2f}×" if pn_now is not None else "–",
                   help=(f"Slutsälj i etapper vid {NAV_EXIT_LO:g}–{NAV_EXIT_HI:g}× NAV eller "
                         f"produktionsstart. "
                         + (f"Räknat på färskt börsvärde {mc_now:,.0f} MUSD "
                            f"({str(f.get('asof') or '')[:10] or 'datum saknas'})." if mc_now else
                            "Räknat på arkets sparade börsvärde — ingen färsk siffra ännu.")))
-        eq = equity_at_risk(new_entry, new_cur, p.get("shares", 0), p.get("half_sold"))
-        c5.metric("Kapital i risk", "0 kr" if eq == 0 else (_fmt(eq, 0) if eq else "–"),
-                  help="Efter free ride är insatsen uttagen — resten åker på husets pengar.")
+        c5.metric("Kapital i risk", risk_text(new_entry, px_calc, p.get("shares"), p.get("half_sold"), ccy),
+                  help=f"Entry × antal aktier, i {ccy}. Efter free ride är insatsen uttagen — resten åker på "
+                       f"husets pengar. Antal saknas = positionen har inget antal aktier.")
+        if px_asof:
+            st.caption(f"Avkastning och kapital i risk räknas på nattens kurs {px:g} {ccy} ({px_asof}).")
         if (storage.differs(new_entry, entry)
                 or storage.differs(new_cur, cur)):
             p["entry"], p["current"] = new_entry, new_cur
