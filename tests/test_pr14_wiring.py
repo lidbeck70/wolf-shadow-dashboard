@@ -69,6 +69,7 @@ def test_spot_reads_the_last_close_once_per_commodity(monkeypatch):
                                 index=pd.to_datetime(["2026-09-19", "2026-09-22"]))
 
     monkeypatch.setitem(sys.modules, "yfinance", types.SimpleNamespace(Ticker=_T))
+    monkeypatch.setattr(cp, "spot", cp._real_spot)          # conftest stänger av Yahoo; här prövas hämtningen
     out = cp.spot_many(["Koppar", "koppar", "Uran", "Guld", None])
     assert set(out) == {"koppar", "guld"} and calls.count("HG=F") == 1
     assert out["koppar"] == {"price": 4.25, "unit": "USD/lb", "asof": "2026-09-22", "ticker": "HG=F"}

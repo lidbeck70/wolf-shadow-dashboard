@@ -149,6 +149,32 @@ def margin_points(margin) -> int:
     return 1 if m >= MARGIN_OK else 0
 
 
+def spot_margin_line(night: Optional[dict], commodity, unit_cost, saved_price) -> str:
+    """Raden vid Marginal: '🤖 Med dagens pris 4 012 USD/oz (2026-11-06): marginal 64.2 % (2 p) — poängen räknas på
+    det sparade priset.' Dagens pris är nattens terminspris (sheets_refresh: commodity_price på producentraden), bara
+    när det gäller kortets råvara (commodity_prices.night_fits); marginalen är margin_pct som kortets egen. Bara
+    visning, ingen Använd. Tom sträng utan pris eller kostnad, och när det sparade priset redan är dagens."""
+    r = night if isinstance(night, dict) else {}
+    spot = _nonneg(r.get("commodity_price"))
+    m = margin_pct(spot, unit_cost)
+    if not spot or m is None:
+        return ""
+    saved = _nonneg(saved_price)
+    if saved is not None and abs(saved - spot) < 1e-6:
+        return ""
+    try:
+        import commodity_prices
+        from controls_ui import _price_txt
+        if not commodity_prices.night_fits(r, commodity):
+            return ""
+    except Exception:
+        return ""
+    unit = str(r.get("commodity_unit") or "").strip()
+    asof = str(r.get("commodity_asof") or "")[:10]
+    return (f"🤖 Med dagens pris {_price_txt(spot)}{' ' + unit if unit else ''}{f' ({asof})' if asof else ''}: "
+            f"marginal {m:.1f} % ({margin_points(m)} p) — poängen räknas på det sparade priset.")
+
+
 def _years(value) -> Optional[float]:
     """Ett årsfält, eller None om det inte är ifyllt.
 
@@ -703,6 +729,9 @@ def _producers(data: dict) -> None:
                       help=f"Ger {margin_points(m)} p. Kostnadskurvan är hela "
                            f"caset: de dyraste producenterna dör först i "
                            f"prisfall.")
+            spot_m = spot_margin_line(_fresh_row(row), row.get("commodity"), row.get("unit_cost"), row.get("price"))
+            if spot_m:
+                l1.caption(spot_m.replace("$", "\\$"))
             life = l2.number_input(
                 "Gruvlivslängd (år)", min_value=0.0, step=1.0,
                 value=_num(row.get("mine_life")),

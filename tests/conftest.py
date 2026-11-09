@@ -20,6 +20,17 @@ def _no_live_universe_register(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_live_commodity_futures(monkeypatch):
+    """Nattjobbets råvarupris (commodity_prices.spot → Yahoo) hämtas inte live i testerna. Sedan batch 5 får även
+    Durrett-arkets och Poängmodellens rader priset, och testbolagen har råvara — sheets_refresh.refresh skulle annars
+    fråga Yahoo i CI (som har nätverk). Tester som prövar själva hämtningen tar den riktiga (_real_spot) eller sätter
+    en egen."""
+    import commodity_prices as cp
+    monkeypatch.setattr(cp, "_real_spot", cp.spot, raising=False)
+    monkeypatch.setattr(cp, "spot", lambda name: None)
+
+
+@pytest.fixture(autouse=True)
 def _journal_stays_out_of_the_repo(monkeypatch, tmp_path):
     """Tradejournalen skriver aldrig i repot eller till den riktiga Gisten under testerna.
 
