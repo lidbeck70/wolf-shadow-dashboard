@@ -19,6 +19,7 @@ from collections import Counter
 from datetime import date, timedelta
 
 import pytest
+import requests
 import streamlit
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -185,7 +186,7 @@ class _API:
     def get_reports(self, ins_id, kind, max_count=7):
         return []
 
-    def get_insider_transactions_batch(self, ids):
+    def get_insider_transactions_batch(self, ids, failed=None):
         self.batch_ids = list(ids)
         return {i: self.tx[i] for i in ids if i in self.tx}
 
@@ -218,7 +219,7 @@ def test_the_nightly_job_adds_the_cluster_with_one_batch_call():
 
 def test_the_job_goes_on_when_the_insider_data_fails():
     class _Broken(_API):
-        def get_insider_transactions_batch(self, ids):
+        def get_insider_transactions_batch(self, ids, failed=None):
             raise RuntimeError("503")
     api = _Broken()
     out = sr.refresh(api, _sheets(), today=TODAY)
@@ -432,3 +433,171 @@ def test_no_cluster_says_so_and_the_trigger_note_is_text(page):
     assert "🌙 Nattjobbet 2026-11-09: inga riktiga köp i Börsdatas insynsregister 2026-10-07 – 2026-11-09" in txt
     assert "🌙 Trigger i natt: Nej — stängning 40.00 vs MA20 45.00, 1 mån -3.0 %. Bara A eller B föreslås." in txt
     assert _same_json(at.session_state["insider"], STORES["insider"])
+
+
+# ── Fix: en felad insynshämtning är inte 'inga riktiga köp' ─────────────────
+# Den riktiga klienten fångar felet per klump om 50 id och svarar {} eller en del — den kastar aldrig. Rader vars
+# klump inte gick att läsa får därför inget fönster, så sidan säger ingenting i stället för 'inga riktiga köp'.
+def _bd(tmp_path):
+    from borsdata_api import BorsdataAPI
+    return BorsdataAPI(api_key="test", cache_dir=str(tmp_path))
+
+
+def _raise(exc):
+    def answer(path, params):
+        raise exc
+    return answer
+
+
+_FAILURES = {"fel efter tre försök": _raise(RuntimeError("Failed after 3 attempts: /holdings/insider")),
+             "anslutningsfel": _raise(requests.exceptions.ConnectionError("Connection reset by peer")),
+             "400 cachad som {}": lambda path, params: {}}
+
+
+class _RealClient(_API):
+    """Det fejkade API:t, men insynsanropet är den riktiga klientens (BorsdataAPI.get_insider_transactions_batch)
+    med ett utbytt _get som svarar med answer(path, params)."""
+
+    def __init__(self, answer, tmp_path):
+        super().__init__()
+        self._bd = _bd(tmp_path)
+        self._gets = []
+
+        def _get(path, params=None, use_cache=True):
+            self._gets.append(params["instList"])
+            return answer(path, params)
+        self._bd._get = _get
+
+    @property
+    def get_insider_transactions_batch(self):
+        return self._bd.get_insider_transactions_batch
+
+
+def test_the_client_lists_the_ids_it_could_not_read(tmp_path):
+    bd = _bd(tmp_path)
+    seen = []
+    buys = [{"shares": 100, "price": 10.0}]
+
+    def _get(path, params=None, use_cache=True):
+        seen.append(params["instList"])
+        if params["instList"].startswith("51,"):
+            raise RuntimeError("Failed after 3 attempts: /holdings/insider")
+        return {"list": [{"insId": 3, "values": buys}]}
+    bd._get = _get
+    failed = []
+    assert bd.get_insider_transactions_batch(list(range(1, 61)), failed=failed) == {3: buys}
+    assert [len(s.split(",")) for s in seen] == [50, 10] and failed == list(range(51, 61))
+    assert bd.get_insider_transactions_batch(list(range(1, 61))) == {3: buys}       # utan listan: som förut
+    # ett svar utan "list" (en 400 cachas som {}) är okänt, inte 'inga köp'; en tom lista är inga köp
+    for payload, bad in (({}, True), ([], True), (None, True), ({"list": None}, True), ({"list": []}, False)):
+        bd._get = lambda path, params=None, use_cache=True, p=payload: p
+        f = []
+        assert bd.get_insider_transactions_batch([7, 8], failed=f) == {}
+        assert f == ([7, 8] if bad else []), payload
+
+
+def test_the_real_get_400_and_connection_error_count_as_failed(tmp_path):
+    """Hela vägen genom den riktiga _get: en 400 cachas som {} (även nästa hämtning ur cachen är okänd), och ett
+    anslutningsfel fångas per klump."""
+    bd = _bd(tmp_path)
+    hits = []
+
+    class _Resp:
+        status_code = 400
+        headers: dict = {}
+    bd._session.get = lambda url, params=None, timeout=None: hits.append(params["instList"]) or _Resp()
+    for _ in range(2):
+        failed = []
+        assert bd.get_insider_transactions_batch([7, 8], failed=failed) == {} and failed == [7, 8]
+    assert hits == ["7,8"]                                                          # andra gången ur cachen
+
+    def _reset(url, params=None, timeout=None):
+        raise requests.exceptions.ConnectionError("Connection reset by peer")
+    bd._session.get = _reset
+    failed = []
+    assert bd.get_insider_transactions_batch([9], failed=failed) == {} and failed == [9]
+
+
+def test_insider_tx_returns_the_failed_ids():
+    class _NoGetter:
+        pass
+
+    class _Raises:
+        def get_insider_transactions_batch(self, ids, failed=None):
+            raise RuntimeError("503")
+
+    class _Partial:
+        def get_insider_transactions_batch(self, ids, failed=None):
+            failed.extend([2])
+            return {1: ["köp"]}
+    assert sr._insider_tx(_NoGetter(), []) == ({}, set())
+    assert sr._insider_tx(_NoGetter(), [1, 2]) == (None, {1, 2})
+    assert sr._insider_tx(_Raises(), [1, 2]) == (None, {1, 2})
+    assert sr._insider_tx(_Partial(), [1, 2]) == ({1: ["köp"]}, {2})
+
+
+@pytest.mark.parametrize("why", list(_FAILURES))
+def test_a_failed_insider_fetch_shows_no_window(why, tmp_path, page):
+    api = _RealClient(_FAILURES[why], tmp_path)
+    out = sr.refresh(api, _sheets(), today=TODAY)
+    assert out["error"] is None
+    assert Counter(api.calls)["get_insider_transactions_batch"] == 1 and api._gets == ["1"]   # ett anrop, som förut
+    for key in ("insider:m1", "insider:m2"):
+        row = out["rows"][key]
+        assert not any(k.startswith("cluster_") for k in row), key                  # registret lästes aldrig
+        assert "first_buy" not in row and "efter_fall_auto" not in row, key
+    m1 = out["rows"]["insider:m1"]
+    assert m1["gate_auto"] == ins.GATE_NO and m1["trigger_auto"] == "A"              # grind och trigger ändå
+    assert api.max_counts[1] == sr.INSIDER_BARS_MIN
+    at = page(refresh={"generated": "2026-11-09T05:10:00+00:00", "rows": {"insider:m1": m1}})
+    txt = _texts(at)
+    assert "inga riktiga köp" not in txt and "🌙 Nattjobbet" not in txt
+    night = {b.key for b in at.button if b.key and b.key.startswith("rf_offer_ins_night_m1_")}
+    assert night == {"rf_offer_ins_night_m1_gate", "rf_offer_ins_night_m1_trigger"}  # inga klusterförslag
+    assert _same_json(at.session_state["insider"], STORES["insider"])                # att öppna sidan skriver inget
+
+
+def test_an_empty_register_still_says_no_real_buys(tmp_path, page):
+    """Registret lästes och svarade utan köp: fönstret står kvar, och sidan säger 'inga riktiga köp' som förut."""
+    api = _RealClient(lambda path, params: {"list": []}, tmp_path)
+    m1 = sr.refresh(api, _sheets(), today=TODAY)["rows"]["insider:m1"]
+    assert m1["cluster_since"] == _ago(33) and "cluster_insiders" not in m1
+    at = page(refresh={"generated": "2026-11-09T05:10:00+00:00", "rows": {"insider:m1": m1}})
+    assert "🌙 Nattjobbet 2026-11-09: inga riktiga köp i Börsdatas insynsregister" in _texts(at)
+
+
+def test_only_the_failed_chunk_loses_its_window(tmp_path, page):
+    """60 bolag ger två anrop (50 + 10). Den andra klumpen felar: bara dess rader blir utan fönster."""
+    buys = [_tx("Anna", "cfo", 10000, 50.0, _ago(4)), _tx("Bertil", "board member", 8000, 48.0, _ago(2))]
+
+    def answer(path, params):
+        part = [int(i) for i in params["instList"].split(",")]
+        if 51 in part:
+            raise RuntimeError("Failed after 3 attempts: /holdings/insider")
+        return {"list": [{"insId": i, "values": buys} for i in part if i % 2]}         # jämna id: inga köp
+
+    class _Many(_RealClient):
+        def get_instruments(self):
+            return [{"insId": i, "ticker": f"T{i}", "name": f"Bolag {i}", "stockPriceCurrency": "SEK"}
+                    for i in range(1, 61)]
+
+    api = _Many(answer, tmp_path)
+    sheets = {"insider": {"signals": [{"id": f"r{i}", "ticker": f"T{i}", "ins_id": i, "found": _ago(3)}
+                                      for i in range(1, 61)]}}
+    out = sr.refresh(api, sheets, today=TODAY)
+    assert out["error"] is None
+    assert Counter(api.calls)["get_insider_transactions_batch"] == 1
+    assert [len(s.split(",")) for s in api._gets] == [50, 10]                         # ett anrop per 50 id
+    rows = out["rows"]
+    for i in range(1, 51):                                                             # den lästa klumpen
+        assert rows[f"insider:r{i}"]["cluster_since"] == _ago(33), i
+        assert ("cluster_insiders" in rows[f"insider:r{i}"]) is bool(i % 2), i
+    for i in range(51, 61):                                                            # den felade klumpen
+        assert not any(k.startswith("cluster_") for k in rows[f"insider:r{i}"]), i
+        assert api.max_counts[i] == sr.INSIDER_BARS_MIN
+    assert rows["insider:r1"]["cluster_insiders"] == 2 and api.max_counts[1] == 252 + 4 * 5 // 7 + 10
+    gen = "2026-11-09T05:10:00+00:00"
+    failed_txt = _texts(page(refresh={"generated": gen, "rows": {"insider:m1": rows["insider:r55"]}}))
+    assert "inga riktiga köp" not in failed_txt and "🌙 Nattjobbet" not in failed_txt
+    read_txt = _texts(page(refresh={"generated": gen, "rows": {"insider:m1": rows["insider:r2"]}}))
+    assert "🌙 Nattjobbet 2026-11-09: inga riktiga köp i Börsdatas insynsregister" in read_txt

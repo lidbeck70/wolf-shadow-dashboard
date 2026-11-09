@@ -841,12 +841,18 @@ class BorsdataAPI:
             return []
 
     def get_insider_transactions_batch(self, ins_ids: List[int],
-                                       chunk: int = 50) -> Dict[int, List[dict]]:
+                                       chunk: int = 50,
+                                       failed: Optional[list] = None) -> Dict[int, List[dict]]:
         """
         Insynstransaktioner för många instrument i klump (instList tar upp
         till 50 id per anrop). Returnerar {insId: [transaktioner]} — samma
         radform som get_insider_transactions. Instrument utan registrerade
         transaktioner saknas i svaret.
+
+        failed: en lista som får id:na i varje klump som inte gick att läsa —
+        anropet felade, eller svaret saknar "list" (en 400 cachas som {}).
+        Så skiljer anroparen "inga köp" från "registret lästes aldrig".
+        Utan listan (förval) är beteendet oförändrat.
         """
         out: Dict[int, List[dict]] = {}
         ids = [int(i) for i in ins_ids]
@@ -857,7 +863,11 @@ class BorsdataAPI:
                                  params={"instList": ",".join(str(i) for i in part)})
             except Exception as e:
                 logger.warning("holdings/insider batch %d–%d failed: %s", k, k + len(part), e)
+                if failed is not None:
+                    failed.extend(part)
                 continue
+            if failed is not None and not (isinstance(data, dict) and isinstance(data.get("list"), list)):
+                failed.extend(part)
             for group in (data.get("list") or []) if isinstance(data, dict) else []:
                 iid = group.get("insId")
                 if iid is None:

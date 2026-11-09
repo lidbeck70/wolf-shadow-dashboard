@@ -484,19 +484,27 @@ def insider_fields(cl: Optional[dict], row: dict, snap: dict, bars: list, ccy, t
     return out
 
 
-def _insider_tx(api, ids: list) -> Optional[dict]:
+def _insider_tx(api, ids: list) -> tuple:
     """Insynstransaktionerna för insider-radernas bolag: get_insider_transactions_batch, ett anrop per 50 id.
-    None när klienten saknar anropet eller det felar — då blir klusterfälten tomma och resten av jobbet går vidare."""
+    (tx, failed): failed är id:na vars klump inte gick att läsa (klienten fångar felet per klump och svarar {} eller
+    en del) — de raderna får inget klusterfönster, annars stod det 'inga riktiga köp' fast registret aldrig lästes.
+    (None, alla id) när klienten saknar anropet eller det felar — då blir klusterfälten tomma och resten av jobbet
+    går vidare."""
     if not ids:
-        return {}
+        return {}, set()
     getter = getattr(api, "get_insider_transactions_batch", None)
     if getter is None:
-        return None
+        return None, set(ids)
+    failed: list = []
     try:
-        return getter(list(ids)) or {}
+        tx = getter(list(ids), failed=failed) or {}
     except Exception as exc:
         log.warning("Insynsdatan för arkets rader gick inte att hämta: %s", exc)
-        return None
+        return None, set(ids)
+    if failed:
+        log.warning("Insynsdatan gick inte att hämta för %d av %d bolag — de raderna får inget klusterfönster",
+                    len(set(failed)), len(ids))
+    return tx, {int(i) for i in failed}
 
 
 def refresh(api, sheets: dict, today: Optional[date] = None) -> dict:
@@ -531,13 +539,14 @@ def refresh(api, sheets: dict, today: Optional[date] = None) -> dict:
         # Insider-raderna: insynsdatan i ett batchanrop per 50 id, klustret per rad i fönstret upptäckt − 30 dagar
         # till i dag, och så många dagskurser som 52 veckor före första köpet kräver (samma kursanrop).
         ins_refs = [r for r in refs if r["sheet"] == "insider" and r["key"] in resolved]
-        tx = _insider_tx(api, sorted({resolved[r["key"]] for r in ins_refs}))
+        # Bolag vars klump inte gick att läsa (tx_failed) får inget kluster och inget fönster.
+        tx, tx_failed = _insider_tx(api, sorted({resolved[r["key"]] for r in ins_refs}))
         clusters: dict = {}
         bars_needed: dict = {}
         for r in ins_refs:
             iid = resolved[r["key"]]
-            if tx is not None:
-                clusters[r["key"]] = insider_cluster(tx.get(iid) or [], r["row"],
+            if iid not in tx_failed:
+                clusters[r["key"]] = insider_cluster((tx or {}).get(iid) or [], r["row"],
                                                      (inst_map.get(iid) or {}).get("stockPriceCurrency"), today)
             first = (clusters.get(r["key"]) or {}).get("first_buy")
             bars_needed[iid] = max(bars_needed.get(iid, 0), insider_bars_needed(first, today))
@@ -600,7 +609,7 @@ def refresh(api, sheets: dict, today: Optional[date] = None) -> dict:
                 if r["sheet"] == "insider":
                     s["f_score"] = _f(snap.get("f_score"))
                     s.update(insider_fields(clusters.get(r["key"]), r["row"], snap, bars_cache[iid], ccy, today,
-                                            window=tx is not None))
+                                            window=iid not in tx_failed))
                 if r["sheet"] == "confidence":               # Durrett-/Wolf Asymmetry-arket: fler tal ur snapshoten
                     roic = _f(snap.get("roic"))
                     s["roic_pct"] = round(roic * 100, 1) if roic is not None else None
