@@ -453,6 +453,16 @@ def _suggest(*args, **kw) -> None:
         pass
 
 
+def _commodity(row: dict, key: str, on_apply) -> bool:
+    """Råvaran på kortet: väljaren och förslaget med Använd (refresh_ui.commodity_choice). True när du bytte."""
+    try:
+        import refresh_ui
+    except Exception:
+        return False
+    sel, _rest = st.columns([1.2, 3])
+    return refresh_ui.commodity_choice(row, COMMODITIES, key, on_apply, container=sel)
+
+
 def _fresh_row(row: dict) -> dict:
     """Nattens rad för arkraden (producers:<id>) ur sifferuppdateringen. Tom utan blob."""
     try:
@@ -622,8 +632,8 @@ def _producers(data: dict) -> None:
             else:
                 st.warning("Ticker krävs.")
 
-    _screen_section("rule", data, PRODUCERS,
-                    lambda f: {"commodity": COMMODITIES[0], **f})
+    # Ingen gissad råvara (förr alltid 'Guld'): tom tills du väljer — kortet föreslår den med Använd.
+    _screen_section("rule", data, PRODUCERS, lambda f: {"commodity": "", **f})
 
     rows = ranked_producers(data[PRODUCERS])
     if not rows:
@@ -637,13 +647,13 @@ def _producers(data: dict) -> None:
         row, sc, vd = r["row"], r["score"], r["verdict"]
         if rc and not rc.same_ticker(row.get("ticker"), foc):
             continue
-        head = (f"{row.get('ticker','?')} · {row.get('commodity','')} · "
+        head = (f"{row.get('ticker','?')} · {row.get('commodity') or '—'} · "
                 f"{sc if sc is not None else '–'}/{PROD_MAX_SCORE} p · "
                 f"{vd.label if vd else 'ofullständig'}"
                 + (f" · {r['ev_nav']:.2f}× NAV" if r.get("ev_nav") is not None else ""))
         with st.expander(head, expanded=bool(foc)):
             top = rc.slot() if rc else None
-            changed = False
+            changed = _commodity(row, f"pr_com_{row['id']}", lambda: _save(data))
             v1, v2, v3, v4 = st.columns(4)
             shown = {k: _nonneg(row.get(k)) for k in ("ev_ebitda", "unit_cost", "price")}
             ev = v1.number_input("EV/EBITDA", min_value=0.0, step=0.5,

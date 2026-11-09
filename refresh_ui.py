@@ -187,12 +187,13 @@ def _same(cur, value) -> bool:
 
 def offer(row: dict, field: str, value, label: str, key: str, source: str = "Börsdata", asof: str = "",
           widget_key: Optional[str] = None, on_apply: Optional[Callable] = None, cast: Optional[Callable] = None,
-          fmt="{:g}", unit: str = "", note: str = "") -> bool:
+          fmt="{:g}", unit: str = "", note: str = "", text: str = "") -> bool:
     """Ett förslag av vilken typ som helst (tal, text, val, kryss): '🤖 <källa> <datum>: <etikett> <värde> · Använd'.
     Använd skriver fältet i raden och widgetens state via on_click (_apply, samma mekanik som suggest) — inget annat
     skrivs, och att rita förslaget skriver ingenting. cast=int för heltalsrutor (Streamlit tar inte ett flyttal i en
-    heltalsruta). Ritas inte när fältet redan har värdet. note = kort tillägg efter värdet (underlaget). key gör
-    knappen unik. True när förslaget ritades."""
+    heltalsruta). Ritas inte när fältet redan har värdet. note = kort tillägg efter värdet (underlaget). text = färdig
+    rad i stället för källa/etikett/värde ('Förslag: Olja (BERSERK-listan)'). key gör knappen unik. True när
+    förslaget ritades."""
     if value is None:
         return False
     if cast is not None:
@@ -203,13 +204,55 @@ def offer(row: dict, field: str, value, label: str, key: str, source: str = "Bö
     if _same(row.get(field), value):
         return False
     when = f" {asof}" if asof else ""
-    text = (f"🤖 {source}{when}: {label} {_shown(value, fmt)}" + (f" {unit}" if unit else "")
-            + (f" — {note}" if note else ""))
+    text = text or (f"🤖 {source}{when}: {label} {_shown(value, fmt)}" + (f" {unit}" if unit else "")
+                    + (f" — {note}" if note else ""))
     c1, c2 = st.columns([3, 1], vertical_alignment="center")
     c1.markdown(f"<span style='color:{DIM};font-size:0.78rem;'>{html.escape(text).replace('$', '&#36;')}</span>",
                 unsafe_allow_html=True)
     c2.button("Använd", key=f"rf_offer_{key}", on_click=_apply, args=(row, field, value, widget_key, on_apply))
     return True
+
+
+NO_COMMODITY = "—"
+
+
+def _pick_commodity(row: dict, widget_key: str, on_apply: Optional[Callable]) -> None:
+    """on_change för råvaruväljaren: ditt val in i raden innan sidan ritas om — då får nästa ruta nyckeln för det nya
+    värdet direkt, och ett andra byte på samma kort går inte förlorat."""
+    row["commodity"] = str(st.session_state.get(widget_key) or "")
+    if on_apply:
+        on_apply()
+
+
+def commodity_choice(row: dict, names, key: str, on_apply: Optional[Callable] = None, container=None) -> bool:
+    """Råvaran på ett arkkort (Rick Rule, Poängmodellen): väljaren ('—' = ingen) och under den förslaget
+    'Förslag: Olja (BERSERK-listan) · Använd' (thor.ticker.commodity_hint — listorna och Börsdata-branschen, aldrig
+    arket självt). Att rita skriver ingenting: bara ditt byte i rutan (on_change) eller Använd skriver råvaran.
+    Rutans nyckel bär det sparade värdet, så en råvara som byts på annat håll (Använd, import) ger en ny ruta i
+    stället för att den gamla skriver tillbaka sitt val. Inget förslag när svaret är osäkert — då en rad om varför,
+    när råvaran är tom. True när rutan visar något annat än raden (skrivs då in här)."""
+    import zlib
+    names = [n for n in (names or ()) if n]
+    cur = str(row.get("commodity") or "").strip()
+    opts = [""] + names + ([cur] if cur and cur not in names else [])
+    wk = f"{key}_{format(zlib.crc32(cur.encode('utf-8')), '08x')}"
+    picked = (container or st).selectbox(
+        "Råvara", opts, index=opts.index(cur), format_func=lambda v: v or NO_COMMODITY, key=wk,
+        on_change=_pick_commodity, args=(row, wk, on_apply),
+        help="Styr nattens råvarupris och enhetskontrollen. — = ingen vald.")
+    changed = picked != cur
+    if changed:
+        row["commodity"] = picked
+    try:
+        from thor import ticker as tk
+        name, why = tk.commodity_hint(row.get("ticker"), row.get("branch_id"), names)
+    except Exception:
+        name, why = None, ""
+    if name:
+        offer(row, "commodity", name, "råvara", key=key, on_apply=on_apply, text=f"Förslag: {name} ({why})")
+    elif why and not row.get("commodity"):
+        st.caption(f"Inget förslag på råvara: {why} — välj själv.".replace("$", "\\$"))
+    return changed
 
 
 def suggest(sheet: str, row: dict, field: str, source_field: str, label: str,

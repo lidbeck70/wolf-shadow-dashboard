@@ -358,6 +358,16 @@ def _chatgpt(data: dict, row: dict, key: str) -> None:
                              name=row.get("name", ""), rows={key: row}, on_apply=lambda: _save(data))
 
 
+def _commodity(row: dict, key: str, on_apply) -> bool:
+    """Råvaran på kortet: väljaren och förslaget med Använd (refresh_ui.commodity_choice). True när du bytte."""
+    try:
+        import refresh_ui
+    except Exception:
+        return False
+    sel, _rest = st.columns([1.2, 3])
+    return refresh_ui.commodity_choice(row, COMMODITIES, key, on_apply, container=sel)
+
+
 def _rc():
     """Kortstödet (fokus, x/y ifyllda, saknas-raden) — None om review-paketet inte går att läsa."""
     try:
@@ -376,7 +386,8 @@ def _screen_section(data: dict, key: str) -> None:
     existing = {str(r.get("ticker", "")).upper() for r in data.get(key, [])}
 
     def _add(fields: dict) -> None:
-        data[key].append({"id": _uid(), "commodity": COMMODITIES[0],
+        # Ingen gissad råvara (förr alltid 'Guld'): tom tills du väljer — kortet föreslår den med Använd.
+        data[key].append({"id": _uid(), "commodity": "",
                           "date": _today(), "factors": {}, **fields})
         _save(data)
 
@@ -456,11 +467,13 @@ def _rows(data: dict, key: str) -> None:
         if rc and not rc.same_ticker(row.get("ticker"), foc):
             continue
         c = VERDICT_COLOR.get(vd, DIM)
-        head = (f"{row.get('ticker','?')} · {row.get('commodity','')} · "
+        head = (f"{row.get('ticker','?')} · {row.get('commodity') or '—'} · "
                 f"{sc if sc is not None else '–'}/{MAX_SCORE} p · "
                 f"{vd or 'ej poängsatt'}")
         with st.expander(head, expanded=bool(foc)):
             top = rc.slot() if rc else None
+            if _commodity(row, f"sc_com_{row['id']}", lambda: _save(data)):
+                _save(data)
             if key == SPROTT:
                 _sprott_math(data, row)
                 _extract_section(data, row, SPROTT)

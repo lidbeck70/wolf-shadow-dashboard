@@ -83,9 +83,43 @@ def render_quick(add_to_sheet=None) -> None:
         _note(" · ".join(extra))
     if add_to_sheet is not None:
         if st.button("➕ Lägg till i arket (Analys/Ark)", key=f"asym_quick_add_{t}"):
-            ok = add_to_sheet(data.get("yf_ticker") or t, data.get("name") or t)
+            key, src = sheet_commodity_hint(data)
+            ok = add_to_sheet(data.get("yf_ticker") or t, data.get("name") or t, ins_id=data.get("ins_id"),
+                              commodity=(key, src) if key else None)
+            label = _commodity_label(key)
             (st.success if ok else st.info)(
-                f"{t} ligger i arket — öppna Ark för råvara och stage." if ok else f"{t} finns redan i arket.")
+                (f"{t} ligger i arket — öppna Ark för råvara och stage."
+                 + (f" Förslag på råvara: {label} (Använd under Identitet)." if label else ""))
+                if ok else f"{t} finns redan i arket.")
+
+
+def sheet_commodity_hint(data: dict, detect=None) -> tuple:
+    """(registernyckel | None, källa) för arket — ember.regime.detect_theme(auto=False) (utan Yahoos grova bransch),
+    sedan samma osäkerhetsregler som Rick Rule-kortet (thor.ticker.commodity_suggestion). Bara ett förslag: skrivs
+    först med Använd under Identitet."""
+    t = str(data.get("yf_ticker") or data.get("ticker") or "").strip().upper()
+    if not t:
+        return None, ""
+    try:
+        if detect is None:
+            from ember.regime import detect_theme as detect
+        theme = detect(t, auto=False)
+    except Exception:
+        theme = None
+    try:
+        from thor import ticker as tk
+        return tk.commodity_suggestion(t, theme=theme, source="EMBER-temat" if theme else "")
+    except Exception:
+        return None, ""
+
+
+def _commodity_label(key) -> str:
+    try:
+        from confidence import commodities as com
+        c = com.REGISTRY.get(key) if key else None
+        return c.label if c else ""
+    except Exception:
+        return ""
 
 
 # Förklaringstext och stora kort delas med andra flikar (ui/components).
