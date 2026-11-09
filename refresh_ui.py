@@ -147,19 +147,34 @@ def load_refresh() -> dict:
 
 # ── 'Hämta nu': raden du hämtat, bara i sessionen ───────────────────────────
 LIVE_KEY = "rf_live_rows"          # session: {'producers:<id>': rad} — aldrig till Gisten eller repot
+MSG_KEY = "rf_live_msg"            # session: {'producers:<id>': varför senaste 'Hämta nu' inte gav någon rad}
 _COMMODITY_FIELDS = ("commodity_price", "commodity_unit", "commodity_asof", "commodity_ticker")
 FETCH_HELP = ("Hämtar bolagets tal nu, utan att vänta på nattens körning: Börsdata först, Yahoo om Börsdata inte "
               "känner tickern. Varje klick drar Börsdata-kvot. Utan ins_id kan fel bolag matchas — kontrollera "
               "namnet som visas. Talen blir förslag med Använd; inget sparas förrän du trycker 💾.")
 
 
-def live_rows() -> dict:
-    """{radnyckel: rad} som hämtats med 'Hämta nu' i sessionen. Tom utan sådana (eller utan session)."""
+def _session_dict(key: str) -> dict:
     try:
-        v = st.session_state.get(LIVE_KEY)
+        v = st.session_state.get(key)
     except Exception:
         return {}
     return v if isinstance(v, dict) else {}
+
+
+def live_rows() -> dict:
+    """{radnyckel: rad} som hämtats med 'Hämta nu' i sessionen. Tom utan sådana (eller utan session)."""
+    return _session_dict(LIVE_KEY)
+
+
+def _set_msg(ref: str, text: str) -> None:
+    """Varför 'Hämta nu' inte gav någon rad, under radens nyckel (inte knappens) — så att en rad som kommer in på
+    annat sätt ('Hämta EV nu') tar bort ett gammalt 'hittade inget'. Tom text tar bort; skriver bara vid ändring."""
+    msgs = _session_dict(MSG_KEY)
+    if text:
+        st.session_state[MSG_KEY] = {**msgs, ref: text}
+    elif ref in msgs:
+        st.session_state[MSG_KEY] = {k: v for k, v in msgs.items() if k != ref}
 
 
 def _live_applies(night: Optional[dict], live: Optional[dict]) -> bool:
@@ -182,10 +197,12 @@ def is_live(ref: str) -> bool:
 
 
 def put_live(ref: str, row: dict) -> None:
-    """Lägg en hämtad rad i sessionen under radens nyckel. Ersätter en tidigare hämtning av samma rad."""
+    """Lägg en hämtad rad i sessionen under radens nyckel. Ersätter en tidigare hämtning av samma rad och tar bort
+    ett gammalt 'hittade inget' för raden."""
     rows = dict(live_rows())
     rows[ref] = dict(row)
     st.session_state[LIVE_KEY] = rows
+    _set_msg(ref, "")
 
 
 def with_live(blob, live: Optional[dict]):
@@ -263,22 +280,21 @@ def fetch_live(sheet: str, row: dict, row_id=None, commodity: Optional[str] = No
     """'Hämta nu' för en arkrad: samma rad som nattjobbet bygger (sheets_refresh.fetch_row, Börsdata) — eller Yahoo-
     reservens (asymmetry/fetch.yahoo_row) när Börsdata inte känner tickern och yahoo=True — i nattens form för arket
     (sheets_refresh.as_sheet_row), med dagens terminspris för commodity (kortets råvara; commodity_prices.spot).
-    Raden läggs i sessionen (put_live) och ingenting skrivs i arket. (rad | None, varför Börsdata inte gav någon —
-    tom när den gjorde det)."""
+    Raden läggs i sessionen (put_live) och ingenting skrivs i arket. Svarar Börsdata inte (kvoten, nätet) provas inte
+    Yahoo: den söker på bara tickern och kan träffa ett annat bolag, så nattens rad och en tidigare hämtning står
+    kvar. (rad | None, varför Börsdata inte gav någon — tom när den gjorde det)."""
     import sheets_refresh as sr
     t = str((row or {}).get("ticker") or "").strip().upper()
     if not t:
         return None, "Raden saknar ticker."
-    got, why = None, ""
     try:
         if api is None:
             from borsdata_api import BorsdataAPI
             api = BorsdataAPI()
         got = sr.fetch_row(api, t, (row or {}).get("ins_id"))
-        if got is None:
-            why = f"Börsdata känner inte {t}."
     except Exception as exc:
-        why = f"Börsdata svarade inte: {exc}"
+        return None, f"Börsdata svarade inte: {exc}"
+    why = "" if got is not None else f"Börsdata känner inte {t}."
     if got is None and yahoo:
         try:
             from asymmetry import fetch as af
@@ -303,10 +319,12 @@ def fetch_live(sheet: str, row: dict, row_id=None, commodity: Optional[str] = No
     return out, why
 
 
-def _fetch_click(sheet: str, row: dict, key: str, row_id, commodity: Optional[str]) -> None:
-    """on_click för 'Hämta nu': raden in i sessionen och, när inget hittades, varför (visas under knappen)."""
+def _fetch_click(sheet: str, row: dict, row_id, commodity: Optional[str]) -> None:
+    """on_click för 'Hämta nu': raden in i sessionen (put_live tar då bort ett gammalt meddelande) och, när inget
+    hittades, varför (visas under knappen)."""
     got, why = fetch_live(sheet, row, row_id=row_id, commodity=commodity)
-    st.session_state[f"{key}_msg"] = "" if got is not None else why
+    if got is None:
+        _set_msg(f"{sheet}:{row_id or row.get('id')}", why)
 
 
 def fetch_button(sheet: str, row: dict, key: str, row_id=None, commodity: Optional[str] = None,
@@ -319,10 +337,10 @@ def fetch_button(sheet: str, row: dict, key: str, row_id=None, commodity: Option
         container, note = st.columns([1, 3], vertical_alignment="center")
     else:
         note = st
-    container.button("Hämta nu", key=key, on_click=_fetch_click, args=(sheet, row, key, row_id, commodity),
+    container.button("Hämta nu", key=key, on_click=_fetch_click, args=(sheet, row, row_id, commodity),
                      help=FETCH_HELP)
-    msg = st.session_state.get(f"{key}_msg")
     ref = f"{sheet}:{row_id or row.get('id')}"
+    msg = _session_dict(MSG_KEY).get(ref)
     text = msg or (fetched_line(live_rows().get(ref), row) if is_live(ref) else "")
     if text:
         note.caption(text.replace("$", "\\$"))

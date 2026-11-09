@@ -455,3 +455,110 @@ def test_durrett_fetch_now_feeds_the_proposals(page):
     assert not at.exception, at.exception
     mc = at.session_state["confidence"]["companies"]["NEM"]["fields"]["market_cap_musd"]
     assert mc["value"] == 60000.0 and mc["pub_date"] == TODAY and not page.saves
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  Rättelser: ett gammalt 'hittade inget' och Börsdata som inte svarar
+# ═════════════════════════════════════════════════════════════════════════════
+def _raise_429(api, t, ins_id=None):
+    raise RuntimeError("429 kvoten slut")
+
+
+def test_borsdata_error_gives_no_yahoo_and_keeps_the_rows(session, monkeypatch):
+    """Börsdata svarar inte (429): ingen Yahoo på bara tickern — den kan vara ett annat bolag. Inget lagras, en
+    tidigare hämtning står kvar. 'Känner inte tickern' ger Yahoo som förut."""
+    from asymmetry import fetch as af
+    asked = []
+    monkeypatch.setattr(af, "yahoo_row", lambda t, getter=None: asked.append(t) or {"ticker": t, "source": "yfinance",
+                                                                                    "yahoo": t, "mcap_musd": 9999.0})
+    monkeypatch.setattr(sr, "fetch_row", _raise_429)
+    rui.put_live("tiggre:c1", {"mcap_musd": 85.4})
+    for row in ({"id": "c1", "ticker": "TGR", "ins_id": 9001}, {"id": "c1", "ticker": "TGR"}):
+        got, why = rui.fetch_live("tiggre", row, api=_Api())
+        assert (got, why) == (None, "Börsdata svarade inte: 429 kvoten slut")
+        assert not asked and rui.live_rows() == {"tiggre:c1": {"mcap_musd": 85.4}}
+    monkeypatch.setattr(sr, "fetch_row", lambda api, t, ins_id=None: None)
+    got, why = rui.fetch_live("tiggre", {"id": "c1", "ticker": "TGR"}, api=_Api())
+    assert asked == ["TGR"] and why == "Börsdata känner inte TGR." and rui.live_rows()["tiggre:c1"]["mcap_musd"] == 9999.0
+
+
+def test_a_stored_row_clears_the_old_failure_for_that_row(session, monkeypatch):
+    """Meddelandet ligger under radens nyckel: en rad som kommer in på annat sätt tar bort det, andra raders står kvar."""
+    import borsdata_api
+    from asymmetry import fetch as af
+    monkeypatch.setattr(borsdata_api, "BorsdataAPI", lambda *a, **k: _Api())
+    monkeypatch.setattr(sr, "fetch_row", lambda api, t, ins_id=None: None)
+    monkeypatch.setattr(af, "yahoo_row", lambda t, getter=None: None)
+    rui._fetch_click("producers", {"id": "p1", "ticker": "NEM"}, None, None)
+    rui._fetch_click("producers", {"id": "p2", "ticker": "ZZZ"}, None, None)
+    assert "Yahoo har inte heller NEM" in session[rui.MSG_KEY]["producers:p1"]
+    rui.put_live("producers:p1", sr.as_sheet_row(NEM, "producers"))
+    assert set(session[rui.MSG_KEY]) == {"producers:p2"}
+    monkeypatch.setattr(sr, "fetch_row", lambda api, t, ins_id=None: dict(NEM, ticker=t))
+    rui._fetch_click("producers", {"id": "p2", "ticker": "ZZZ"}, None, None)
+    assert session[rui.MSG_KEY] == {} and rui.is_live("producers:p2")
+
+
+def test_rule_fetch_ev_now_clears_the_old_fetch_now_failure(page, monkeypatch):
+    """'Hämta nu' hittade inget, sedan svarar Börsdata på 'Hämta EV nu': det gamla 'hittade inget' försvinner och
+    raden under 'Hämta nu' säger vilket bolag som matchades."""
+    from asymmetry import fetch as af
+    monkeypatch.setattr(af, "yahoo_row", lambda t, getter=None: None)
+    rows: dict = {}
+    at = page("Rick Rule", {}, _rule_store(), rows)
+    at.run()
+    at.button(key="pr_live_p1").click().run()
+    assert not at.exception, at.exception
+    assert "Yahoo har inte heller NEM" in _captions(at)
+    rows["NEM"] = NEM                                                                   # nu känner Börsdata NEM
+    at.button(key="pr_evget_p1").click().run()
+    assert not at.exception, at.exception
+    cap = _captions(at)
+    assert "Yahoo har inte heller NEM" not in cap and "Börsdata känner inte NEM" not in cap
+    assert (f"🤖 Hämtat nu ur Börsdata {TODAY}: Newmont Corporation (NEM), kurs 52.3 USD. Raden saknar ins_id — "
+            f"matchat på tickern.") in cap
+    assert f"EV 65,000 MUSD ur Börsdata ({TODAY})." in cap
+
+
+def _yahoo_answers_the_bare_ticker(monkeypatch, ticker: str, name: str):
+    """Yahoo har ett annat bolag på den nakna tickern — det som en reserv efter ett Börsdata-fel skulle ge."""
+    from asymmetry import fetch as af
+    real = af.yahoo_row
+    info = {"marketCap": 4.2e9, "currency": "USD", "currentPrice": 31.0, "sharesOutstanding": 135e6,
+            "totalCash": 9e8, "longName": name}
+    monkeypatch.setattr(af, "yahoo_row", lambda t, getter=None: real(t, lambda sym: info if sym == ticker else {}))
+
+
+def test_tiggre_borsdata_error_keeps_the_night_row(page, monkeypatch):
+    night = {"rows": {"tiggre:c1": sr.as_sheet_row(dict(TGR, asof="2026-11-06"), "tiggre")}}
+    at = page("Tiggre", night, _tiggre_store(ins_id=9001), {"TGR": TGR})
+    at.run()
+    assert not at.exception, at.exception
+    before = {k for k in _buttons(at) if k.startswith("rf_")}
+    assert {"rf_tiggre_c1_mcap", "rf_offer_ds_ds_c1_ds_runway"} <= before
+    monkeypatch.setattr(sr, "fetch_row", _raise_429)
+    _yahoo_answers_the_bare_ticker(monkeypatch, "TGR", "Tegra Holdings Inc")
+    at.button(key="tg_live_c1").click().run()
+    assert not at.exception, at.exception
+    assert "Börsdata svarade inte: 429 kvoten slut" in _captions(at)
+    assert {k for k in _buttons(at) if k.startswith("rf_")} == before                  # nattens förslag står kvar
+    md = _md(at)
+    assert "🤖 Börsdata 2026-11-06: börsvärde MUSD 85" in md and "hämtat nu" not in md and "Tegra" not in md
+    assert rui.LIVE_KEY not in at.session_state
+
+
+def test_rule_borsdata_error_keeps_the_night_row(page, monkeypatch):
+    night = {"rows": {"producers:p1": sr.as_sheet_row(dict(NEM, asof="2026-11-06"), "producers")}}
+    at = page("Rick Rule", night, _rule_store(), {"NEM": NEM})
+    at.run()
+    assert not at.exception, at.exception
+    assert {"rf_producers_p1_ev_musd", "rf_producers_p1_nd_ebitda"} <= _buttons(at)
+    monkeypatch.setattr(sr, "fetch_row", _raise_429)
+    _yahoo_answers_the_bare_ticker(monkeypatch, "NEM", "Nemo Mining Inc")
+    at.button(key="pr_live_p1").click().run()
+    assert not at.exception, at.exception
+    assert "Börsdata svarade inte: 429 kvoten slut" in _captions(at)
+    assert {"rf_producers_p1_ev_musd", "rf_producers_p1_nd_ebitda"} <= _buttons(at)
+    md = _md(at)
+    assert "🤖 Börsdata 2026-11-06: EV (MUSD) 65,000" in md and "hämtat nu" not in md and "Nemo" not in md
+    assert rui.LIVE_KEY not in at.session_state
