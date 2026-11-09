@@ -89,7 +89,8 @@ def test_catalyst_due_reads_the_sheets_date_forms(text, due):
     assert tiggre.catalyst_due(text) == due
 
 
-@pytest.mark.parametrize("text", ["", None, "sen 2026", "2026-13", "2026-02-30", "Q5 2026", "H3 2026", "snart"])
+@pytest.mark.parametrize("text", ["", None, "sen 2026", "2026-13", "2026-02-30", "Q5 2026", "H3 2026", "snart",
+                                  "0000", "0000-06", "0000-Q1", "Q1 0000", "0000-H1"])    # år 0 finns inte
 def test_catalyst_due_gives_nothing_for_an_unreadable_date(text):
     import tiggre
     assert tiggre.catalyst_due(text) is None
@@ -449,17 +450,50 @@ def test_catalyst_badge_for_a_passed_date_and_the_status_is_never_written(page):
     cats = [{"id": "k1", "name": "Finansieringsbesked", "date": "2020-Q3", "status": "Väntar"},
             {"id": "k2", "name": "Byggstart", "date": "2020-03", "status": "Levererad"},
             {"id": "k3", "name": "FID", "date": "sent i år", "status": "Väntar"},
-            {"id": "k4", "name": "First pour", "date": "2099-01", "status": "Väntar"}]
+            {"id": "k4", "name": "First pour", "date": "2099-01", "status": "Väntar"},
+            {"id": "k5", "name": "Okänt", "date": "0000", "status": "Väntar"}]      # år 0: oläsbart, inget fel
     cand = {"id": "c1", "ticker": "LOB.TO", "name": "Lobo", "screen": {}, "downside": -40.0, "factors": {},
             "catalysts": cats}
     at = page("Tiggre", {}, _tiggre_stores(candidates=[cand]))
     at.run()
     assert not at.exception, at.exception
+    assert not at.error, [e.value for e in at.error]                           # fliken renderas hela vägen
+    assert at.button(key="tg_delcat_c1_k5")                                    # ✕ finns kvar för att ta bort raden
     text = _markdown(at)
     assert "förfallen sedan 2020-09 — Levererad eller Försenad?" in text
     assert text.count("förfallen sedan") == 1                                  # inte Levererad, oläsbart eller framtid
     assert [c["status"] for c in at.session_state["tiggre"]["candidates"][0]["catalysts"]] == \
-        ["Väntar", "Levererad", "Väntar", "Väntar"]
+        ["Väntar", "Levererad", "Väntar", "Väntar", "Väntar"]
+    assert not page.saves
+
+
+@pytest.mark.parametrize("answer", ["Levererad", "Försenad 2:a ggn — SÄLJREGEL"])
+def test_catalyst_badge_goes_away_on_the_same_run_as_the_answer(page, answer):
+    cats = [{"id": "k1", "name": "Finansieringsbesked", "date": "2020-Q3", "status": "Väntar"}]
+    cand = {"id": "c1", "ticker": "LOB.TO", "name": "Lobo", "screen": {}, "downside": -40.0, "factors": {},
+            "catalysts": cats}
+    at = page("Tiggre", {}, _tiggre_stores(candidates=[cand]))
+    at.run()
+    assert "förfallen sedan 2020-09" in _markdown(at)
+    at.selectbox(key="tg_catst_c1_k1").set_value(answer).run()
+    assert not at.exception, at.exception
+    assert "förfallen sedan" not in _markdown(at)                              # borta direkt, inte först nästa körning
+    assert ("SÄLJREGEL UTLÖST" in _markdown(at)) == answer.endswith("SÄLJREGEL")
+    assert at.session_state["tiggre"]["candidates"][0]["catalysts"][0]["status"] == answer   # ditt val, som förut
+    assert not page.saves                                                      # 💾 sparar, som förut
+
+
+def test_catalyst_badge_comes_back_on_the_same_run_when_set_back_to_waiting(page):
+    cats = [{"id": "k1", "name": "Finansieringsbesked", "date": "2020-Q3", "status": "Levererad"}]
+    cand = {"id": "c1", "ticker": "LOB.TO", "name": "Lobo", "screen": {}, "downside": -40.0, "factors": {},
+            "catalysts": cats}
+    at = page("Tiggre", {}, _tiggre_stores(candidates=[cand]))
+    at.run()
+    assert "förfallen sedan" not in _markdown(at)
+    at.selectbox(key="tg_catst_c1_k1").set_value("Väntar").run()
+    assert not at.exception, at.exception
+    assert "förfallen sedan 2020-09 — Levererad eller Försenad?" in _markdown(at)
+    assert at.session_state["tiggre"]["candidates"][0]["catalysts"][0]["status"] == "Väntar"
 
 
 # 5. Royalty C: utspädningen under GEO

@@ -379,7 +379,10 @@ def _month_end(year: int, month: int) -> Optional[date]:
     import calendar
     if not 1 <= month <= 12:
         return None
-    return date(year, month, calendar.monthrange(year, month)[1])
+    try:                                                      # år 0000 finns inte — inget datum, ingen bricka
+        return date(year, month, calendar.monthrange(year, month)[1])
+    except ValueError:
+        return None
 
 
 def catalyst_due(text) -> Optional[date]:
@@ -893,15 +896,16 @@ def _catalysts(data: dict, cand: dict) -> None:
                      f"{cat.get('name','?')}</span>", unsafe_allow_html=True)
         cc2.markdown(f"<span style='color:{DIM};font-size:0.8rem;'>"
                      f"{cat.get('date','?')}</span>", unsafe_allow_html=True)
-        due = catalyst_overdue(cat)            # bara en fråga till dig — statusen skrivs inte
-        if due:
-            cc1.markdown(f"<span style='background:{AMBER};color:#000;font-size:0.7rem;font-weight:700;"
-                         f"padding:1px 7px;border-radius:4px;'>förfallen sedan {due} — Levererad eller "
-                         f"Försenad?</span>", unsafe_allow_html=True)
         cur = cat.get("status") if cat.get("status") in CAT_STATUSES else CAT_WAITING
         new = cc3.selectbox("Status", list(CAT_STATUSES),
                             index=CAT_STATUSES.index(cur),
                             key=f"tg_catst_{cand['id']}_{cat.get('id', '')}")
+        # Brickan följer rullgardinen i samma körning — bara en fråga till dig, statusen skrivs inte här.
+        due = catalyst_overdue(dict(cat, status=new))
+        if due:
+            cc1.markdown(f"<span style='background:{AMBER};color:#000;font-size:0.7rem;font-weight:700;"
+                         f"padding:1px 7px;border-radius:4px;'>förfallen sedan {due} — Levererad eller "
+                         f"Försenad?</span>", unsafe_allow_html=True)
         if new != cat.get("status"):
             cat["status"] = new
             changed = True
