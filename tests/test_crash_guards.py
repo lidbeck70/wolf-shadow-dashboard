@@ -635,7 +635,7 @@ def test_low_conversion_mnok_fcf_gets_no_one_click_usd_price(sheet):
 
 def test_a_weak_trailing_year_does_not_hide_the_usd_price(sheet):
     """Batch 2-granskningen: Börsdatas FCF (12 mån) på Rick Rule-raden gjorde Bull 1 800 MUSD (9,5× ett svagt år) till
-    'miljoner SEK' och tog bort 'Använd USD' för en ny kandidat. Bandet prövas mot tolv månader bara i Base."""
+    'miljoner SEK' och tog bort 'Använd USD' för en ny kandidat. Talet är nu bara en referensrad."""
     from tests.test_lukacs import producer_refresh_row
     blob = {"rows": {"producers:r1": producer_refresh_row("SEK", 330.0, market_cap=90000.0, ev=98000.0, fcf_m=2000.0,
                                                           report="SEK")}}
@@ -648,11 +648,23 @@ def test_a_weak_trailing_year_does_not_hide_the_usd_price(sheet):
     [b for b in at.button if b.label == "Använd USD"][0].click().run()
     assert not at.exception, at.exception
     assert at.session_state["producers"]["producers"][0]["aktuell_kurs"] == pytest.approx(31.35)
-    # Base i MSEK mot samma tolv månader håller fortfarande inne knappen
-    at = sheet("Rick Rule", blob, {"producers": {"producers": [_bol_row(None, dict(weak, Base=2000.0))],
-                                                 "royalty": []}})
+
+
+def test_msek_fcf_still_holds_back_the_usd_price_next_to_a_trailing_fcf(sheet):
+    """Granskningen (runda 3): FCF i MSEK utan CSM och Börsdatas FCF 12 mån 220 MUSD gav 'står talet i miljoner
+    USD?' i stället för SEK — och 'Använd USD' erbjöds bredvid MSEK (falskt öppen MoS-grind). Referensen styr inte
+    kontrollen: SEK-varningen och 'FCF först, sedan kursen' står kvar."""
+    from tests.test_lukacs import producer_refresh_row
+    blob = {"rows": {"producers:r1": producer_refresh_row("SEK", 350.0, market_cap=95700.0, ev=110000.0, fcf_m=2316.0,
+                                                          report="SEK")}}
+    msek = {"Base": 11579.0, "Bear": 5263.0, "Bull": 16842.0}
+    at = sheet("Rick Rule", blob, {"producers": {"producers": [_bol_row(350.0, msek)], "royalty": []}})
     at.run()
-    assert "Base: forward FCF 2 000 MUSD är 10,5× Börsdatas FCF (12 mån)" in " ".join(w.value for w in at.warning)
+    assert not at.exception, at.exception
+    warn = " ".join(w.value for w in at.warning)
+    assert "Står talet i miljoner SEK?" in warn and "står talet i miljoner USD" not in warn
+    shown = list(at.caption) + list(at.markdown) + list(at.warning) + list(at.info)
+    assert "FCF först, sedan kursen" in " ".join(str(getattr(e, "value", "")) for e in shown)
     assert not [b for b in at.button if b.label == "Använd USD"]
 
 

@@ -374,8 +374,11 @@ def refresh(api, sheets: dict) -> dict:
                 s.update(report_cache[iid])
                 if r["sheet"] == "producers" and bucket_of(r) == "royalty":
                     s["ev_ebitda_median"] = ev_ebitda_median(api, iid)
-                if r["sheet"] == "producers":                # Rick Rule och Royalty C: EV till EV/NAV, FCF till Lukacs FV
+                if r["sheet"] == "producers":                # Rick Rule och Royalty C: EV till EV/NAV
                     s.update(_snapshot_musd(snap, fx, rfx))
+                    # FCF 12 mån bara som referens vid kortets FCF-rutor (lukacs.ref_fcf_musd) — under eget namn, så
+                    # att Lukacs enhetskontroll (som läser fcf_musd) inte tar tolv månader bakåt för en forward FCF
+                    s["fcf12_musd"] = s.pop("fcf_musd", None)
                     dy = _f(snap.get("dividend_yield"))      # decimaltal (borsdata_api delar med 100) → %
                     s["dividend_yield_pct"] = round(dy * 100, 2) if dy is not None else None
                 if r["sheet"] == "insider":

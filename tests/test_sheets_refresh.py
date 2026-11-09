@@ -178,11 +178,12 @@ def test_producer_rows_get_the_musd_block_and_dividend_yield():
                          dividend_yield=0.034)                   # BOL, SEK; snapshoten ger 3,4 % som 0,034
     rows = sr.refresh(api, _sheets())["rows"]
     r1 = rows["producers:r1"]
-    assert r1["fcf_musd"] == 1900.0 and r1["net_debt_musd"] == 475.0 and r1["revenue_musd"] == 7600.0
+    assert r1["fcf12_musd"] == 1900.0 and r1["net_debt_musd"] == 475.0 and r1["revenue_musd"] == 7600.0
+    assert "fcf_musd" not in r1                                  # bara referens: Lukacs enhetskontroll läser fcf_musd
     assert r1["ocf_musd"] == 2850.0 and r1["ev_musd"] == 9500.0
     assert r1["dividend_yield_pct"] == 3.4
     y1 = rows["producers:y1"]                                    # Royalty C: samma block, tomt där talen saknas
-    assert y1["fcf_musd"] is None and y1["dividend_yield_pct"] is None and y1["ev_ebitda_median"] is None
+    assert y1["fcf12_musd"] is None and y1["dividend_yield_pct"] is None and y1["ev_ebitda_median"] is None
     assert "fx_to_usd" not in r1                                 # fx_to_usd stannar på Durrett-arket
     assert "fcf_musd" not in rows["insider:i1"] and "dividend_yield_pct" not in rows["scoring:d1"]
 

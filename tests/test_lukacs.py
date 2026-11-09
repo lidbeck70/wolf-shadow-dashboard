@@ -313,7 +313,7 @@ def test_the_checks_change_no_calculation():
 def producer_refresh_row(ccy: str = "NOK", price: float = 49.53, market_cap: float = 122000.0,
                          ev: float = 158436.0, fcf_m=None, report: str = "USD") -> dict:
     """Rick Rule-raden som det riktiga nattjobbet (sheets_refresh.refresh) bygger den — utan fx_to_usd, som bara
-    Durrett-arkets rader får. fcf_m = Börsdatas FCF i miljoner rapportvaluta (report); utan den är fcf_musd tomt.
+    Durrett-arkets rader får. fcf_m = Börsdatas FCF i miljoner rapportvaluta (report); utan den är fcf12_musd tomt.
     Inget nätverk: Börsdata är testernas fejk."""
     import sheets_refresh as sr
     from tests.test_sheets_refresh import _API, _sheets
@@ -579,37 +579,6 @@ def test_mnok_fcf_at_low_conversion_still_withholds_the_one_click_price():
 
 
 # ── Batch 2: Börsdatas FCF (12 mån) på Rick Rule- och Royalty-raderna ───────
-def test_the_nightly_fcf_reaches_the_unit_check():
-    """Rick Rule-raden bär nu Börsdatas FCF (12 mån, i USD ur rapportvalutan) — Vår Energi rapporterar i USD men
-    handlas i NOK. FCF i tusental och i miljoner NOK fångas mot den, utan någon ändring i kontrollen."""
-    ref = producer_refresh_row(fcf_m=3000.0)
-    assert ref["fcf_musd"] == 3000.0 and ref["report_currency"] == "USD" and "fx_to_usd" not in ref
-    w = fv.fcf_unit_warnings(_var_energi(csm={}), ref)
-    assert [x.split(":")[0] for x in w] == ["Base", "Bull"]           # Bear får ligga långt under tolv månader bakåt
-    assert "Base: forward FCF 12 MUSD mot Börsdatas FCF (12 mån) 3 000 MUSD" in " ".join(w)
-    mnok = _var_energi(csm={}, fv={"Base": {"forward_fcf_musd": 30000.0, "target_yield": 12.0}})
-    assert "Står talet i miljoner NOK?" in " ".join(fv.fcf_unit_warnings(mnok, ref))
-    ok = _var_energi(csm={}, fv={"Base": {"forward_fcf_musd": 2800.0, "target_yield": 12.0}})
-    assert fv.fcf_unit_warnings(ok, ref) == []
-
-
-def test_the_borsdata_fcf_is_never_compared_in_another_currency():
-    """Rapportvalutan utanför jobbets fasta tabell: jobbet räknar om med 1,0, så fcf_musd vore miljoner ZAR — ingen
-    referens då, varken i kontrollen eller på kortet. Samma för kursvalutor utanför tabellen (pence)."""
-    zar = producer_refresh_row("USD", 8.0, fcf_m=3000.0, report="ZAR")
-    assert zar["fcf_musd"] == 3000.0 and zar["report_currency"] == "ZAR"
-    assert fv.ref_fcf_musd(zar) is None
-    assert not [w for w in fv.fcf_unit_warnings(_var_energi(csm={}), zar) if "Börsdatas FCF" in w]
-    assert fv.ref_fcf_musd(producer_refresh_row(fcf_m=3000.0)) == 3000.0
-    sek = producer_refresh_row("SEK", 300.0, fcf_m=20000.0, report="SEK")
-    assert fv.ref_fcf_musd(sek) == 1900.0                          # MSEK × 0,095 → MUSD
-    assert fv.ref_fcf_musd({"currency": "GBX", "fcf_musd": 100.0}) is None
-    assert fv.ref_fcf_musd({"currency": "SEK", "fcf_musd": -35.0}) == -35.0
-    assert fv.ref_fcf_musd({"fcf_musd": 50.0}) == 50.0             # äldre blob utan rapportvaluta
-    assert fv.ref_fcf_musd(None) is None
-
-
-# ── Batch 2-granskningen: tolv månader bakåt som referens ───────────────────
 def _card(fcf, csm=None):
     """Lukacs-kortets forward FCF (Base, Bear, Bull) i MUSD — None hoppas över — och CSM:s FCF per scenario."""
     row = {"fv": {s: {"forward_fcf_musd": f, "target_yield": 12.0}
@@ -619,92 +588,41 @@ def _card(fcf, csm=None):
     return row
 
 
-def test_a_break_even_borsdata_fcf_is_no_unit_reference():
-    """Ett kapitaltungt år: Börsdatas FCF 1,5–2 MUSD är under 0,2 % av EV 1 300 MUSD — samma break-even-regel som för
-    CSM:s referens. Rätta MUSD-tal varnas inte; tusental och miljarder fångas ändå mot EV."""
-    for m in (1.5, 2.0):
-        ref = producer_refresh_row("USD", 10.0, market_cap=1200.0, ev=1300.0, fcf_m=m)
-        assert ref["fcf_musd"] == m and ref["ev_musd"] == 1300.0
-        assert fv.fcf_unit_warnings(_card((150, 30, 260)), ref) == [], m
-    ref = producer_refresh_row("USD", 10.0, market_cap=1200.0, ev=1300.0, fcf_m=1.5)
-    assert fv.fcf_unit_warnings(_card((150, 30, 260), csm={"Bear": 0.5}), ref) == []
-    assert fv.fcf_unit_warnings(_card((150, 0.5, 260), csm={"Bear": 0.5}), ref) == []
-    kusd = fv.fcf_unit_warnings(_card((150000, 30000, 260000)), ref)
-    assert len(kusd) == 3 and all("är över 2× EV 1 300 MUSD" in w for w in kusd)
-    bn = fv.fcf_unit_warnings(_card((0.15, 0.03, 0.26)), ref)
-    assert [w.split(":")[0] for w in bn] == ["Base", "Bull"] and all("under 0,2 % av EV 1 300 MUSD" in w for w in bn)
-    assert fv.ref_fcf_musd(ref) == 1.5                             # kortets referensrad visar talet ändå
+def test_the_nightly_fcf_is_a_reference_only_and_does_not_steer_the_unit_check():
+    """Nattraden bär Börsdatas FCF (12 mån) som fcf12_musd — en referens vid kortets FCF-rutor. Enhetskontrollen
+    läser den inte: tre granskningsrundor visade att tolv månader bakåt är fel mått för en forward FCF (break-even-
+    år och kapitaltunga år gav falska varningar, och FCF i MSEK fick 'miljoner USD?' i stället för SEK — så spärren
+    mot 'Använd USD' släppte). Kontrollen ger samma svar med och utan talet, som på main."""
+    cases = [
+        (("USD", 10.0, 1200.0, 1300.0, "USD"), (1.5, 4.0, 30.0, 400.0),
+         [_card((150, 30, 260)), _card((150000, 30000, 260000)), _card((0.15, 0.03, 0.26))]),
+        (("SEK", 350.0, 95700.0, 110000.0, "SEK"), (2316.0,), [_card((11579, 5263, 16842)), _card((1100, 500, 1600))]),
+        (("SEK", 330.0, 90000.0, 98000.0, "SEK"), (2000.0,), [_card((900, 400, 1800))]),
+    ]
+    for (ccy, price, mc, ev, rep), fcfs, cards in cases:
+        bare = producer_refresh_row(ccy, price, market_cap=mc, ev=ev, report=rep)
+        for m in fcfs:
+            ref = producer_refresh_row(ccy, price, market_cap=mc, ev=ev, fcf_m=m, report=rep)
+            assert "fcf_musd" not in ref or ref["fcf_musd"] is None, ref
+            assert ref["fcf12_musd"] is not None
+            for card in cards:
+                assert fv.fcf_unit_warnings(card, ref) == fv.fcf_unit_warnings(card, bare), (m, card)
+                assert fv.fcf_in_local_currency(card, ref) == fv.fcf_in_local_currency(card, bare)
+                assert fv.fcf_maybe_local(card, ref) == fv.fcf_maybe_local(card, bare)
+    # Granskningens fall: FCF i MSEK utan CSM ska ge 'miljoner SEK' (spärren mot 'Använd USD'), inte 'miljoner USD'
+    msek = producer_refresh_row("SEK", 350.0, market_cap=95700.0, ev=110000.0, fcf_m=2316.0, report="SEK")
+    assert fv.fcf_in_local_currency(_card((11579, 5263, 16842)), msek) == "SEK"
 
 
-def test_a_csm_near_break_even_is_not_replaced_by_the_trailing_fcf():
-    """CSM:s Bear 0,5 MUSD säger att scenariot ligger nära noll — Börsdatas tolv månader (150–200 MUSD) tar inte dess
-    plats. Utan CSM får Bear ligga långt under tolv månader bakåt (5 mot 400): bara över 50× är en enhet."""
-    for m in (150.0, 200.0):
-        ref = producer_refresh_row("USD", 10.0, market_cap=1200.0, ev=1300.0, fcf_m=m)
-        for bear in (0.5, 1.0, 3.0):
-            row = _card((150, bear, 260), csm={"Bear": 0.5, "Base": 150.0})
-            assert fv.fcf_unit_warnings(row, ref) == [], (m, bear)
-    expansion = producer_refresh_row("USD", 10.0, market_cap=1400.0, ev=1500.0, fcf_m=2.0)
-    assert fv.fcf_unit_warnings(_card((120, None, 200)), expansion) == []
-    healthy = producer_refresh_row("USD", 10.0, market_cap=1400.0, ev=1500.0, fcf_m=400.0)
-    assert fv.fcf_unit_warnings(_card((450, 5, 700)), healthy) == []
-    # Fel enhet fångas fortfarande: Base och Bull i tusental och miljarder, Bear i tusental (över 50×)
-    assert {w.split(":")[0] for w in fv.fcf_unit_warnings(_card((450000, 5, 700000)), healthy)} == {"Base", "Bull"}
-    small = fv.fcf_unit_warnings(_card((0.45, 5, 0.7)), healthy)
-    assert [w.split(":")[0] for w in small] == ["Base", "Bull"] and "mot Börsdatas FCF (12 mån) 400 MUSD" in small[0]
-    # 400 MUSD är 0,8 % av EV 50 000 — ingen referens (under 2 %); Bear i tusental fångas mot 1 500 MUSD (3 %)
-    major = producer_refresh_row("USD", 50.0, market_cap=45000.0, ev=50000.0, fcf_m=400.0)
-    assert fv.fcf_unit_warnings(_card((None, 25000, None)), major) == []
-    major = producer_refresh_row("USD", 50.0, market_cap=45000.0, ev=50000.0, fcf_m=1500.0)
-    assert fv.fcf_unit_warnings(_card((None, 80000, None)), major) == [
-        "Bear: forward FCF 80 000 MUSD mot Börsdatas FCF (12 mån) 1 500 MUSD — står talet i miljoner USD?"]
-
-
-def test_a_trailing_fcf_under_two_percent_of_size_is_no_unit_reference():
-    """Granskningen av fixen: Börsdatas FCF 2,6–5 MUSD (0,2–0,4 % av EV 1 300, ett kapitaltungt år) låg över
-    break-even-spärren, men 50× det är under en vanlig Bull — rätta MUSD-tal fick 'står talet i miljoner USD?'.
-    Tolv månader bakåt är en referens först från 2 % av storleken (26 MUSD här)."""
-    for m in (2.6, 3.0, 4.0, 5.0):
-        ref = producer_refresh_row("USD", 10.0, market_cap=1200.0, ev=1300.0, fcf_m=m)
-        assert ref["fcf_musd"] == m and fv.ref_fcf_musd(ref) == m      # kortets referensrad visar talet ändå
-        assert fv.fcf_unit_warnings(_card((150, 30, 260)), ref) == [], m
-    ref = producer_refresh_row("USD", 10.0, market_cap=1200.0, ev=1300.0, fcf_m=30.0)   # 2,3 % — en referens
-    assert fv.fcf_unit_warnings(_card((150, 30, 260)), ref) == []
-    assert "Bull: forward FCF 260 000 MUSD mot Börsdatas FCF (12 mån) 30 MUSD" in " ".join(
-        fv.fcf_unit_warnings(_card((150, 30, 260000)), ref))
-
-
-def test_billions_are_caught_next_to_a_trailing_fcf():
-    """FCF i miljarder (0,15 / 0,03 / 0,26 för 150 / 30 / 260 MUSD) fångas av golvet under 0,2 % av EV också när
-    Börsdatas tolv månader finns. Golvet gäller även mot en referens: 2 % av 30 MUSD är 0,6, så Bull 0,7 fångas
-    bara av golvet."""
-    for m in (4.0, 6.0):
-        ref = producer_refresh_row("USD", 10.0, market_cap=1200.0, ev=1300.0, fcf_m=m)
-        bn = fv.fcf_unit_warnings(_card((0.15, 0.03, 0.26)), ref)
-        assert [w.split(":")[0] for w in bn] == ["Base", "Bull"], m
-        assert all("är under 0,2 % av EV 1 300 MUSD" in w for w in bn), m
-    ref = producer_refresh_row("USD", 10.0, market_cap=1200.0, ev=1300.0, fcf_m=30.0)
-    assert fv.fcf_unit_warnings(_card((0.3, 0.1, 0.7)), ref) == [
-        "Base: forward FCF 0,3 MUSD mot Börsdatas FCF (12 mån) 30 MUSD — står talet i miljoner USD?",
-        "Bull: forward FCF 0,7 MUSD är under 0,2 % av EV 1 300 MUSD — står talet i miljoner USD?"]
-
-
-def test_the_trailing_fcf_checks_millions_of_sek_only_in_base():
-    """Boliden-likt i ett svagt år: Börsdatas FCF 190 MUSD (2 % av EV 9 310). Bull 1 800 MUSD är 9,5× det — omräknat
-    från SEK 0,9×, men ett Bull-scenario 10× ett svagt år är vanligt. Bandet för miljoner SEK prövas mot tolv månader
-    bakåt bara i Base; CSM:s FCF för samma scenario gäller i alla tre."""
-    ref = producer_refresh_row("SEK", 330.0, market_cap=90000.0, ev=98000.0, fcf_m=2000.0, report="SEK")
-    assert ref["fcf_musd"] == 190.0 and ref["ev_musd"] == 9310.0
-    card = _card((900, 400, 1800))
-    assert fv.fcf_unit_warnings(card, ref) == []
-    assert fv.fcf_in_local_currency(card, ref) is None and fv.fcf_maybe_local(card, ref) is None
-    base = _card((2000, 400, 1800))                                # Base i MSEK
-    assert ("Base: forward FCF 2 000 MUSD är 10,5× Börsdatas FCF (12 mån) 190 MUSD — omräknat från SEK stämmer det. "
-            "Står talet i miljoner SEK?") in fv.fcf_unit_warnings(base, ref)
-    assert fv.fcf_in_local_currency(base, ref) == "SEK"
-    bull = _card((900, 400, 2100), csm={"Bull": 200.0})            # Bull i MSEK mot CSM:s Bull
-    assert "Bull: forward FCF 2 100 MUSD är 10,5× CSM:s Bull-FCF 200 MUSD" in " ".join(fv.fcf_unit_warnings(bull, ref))
-    assert fv.fcf_in_local_currency(bull, ref) == "SEK"
-    # Det äkta MNOK-fallet i Base (30 000 mot tolv månaders 3 000 MUSD) fångas som förut
-    mnok = _var_energi(csm={}, fv={"Base": {"forward_fcf_musd": 30000.0, "target_yield": 12.0}})
-    assert fv.fcf_in_local_currency(mnok, producer_refresh_row(fcf_m=3000.0)) == "NOK"
+def test_the_borsdata_fcf_reference_is_shown_only_in_usd():
+    """Rapportvalutan utanför jobbets fasta tabell: jobbet räknar om med 1,0, så talet vore miljoner ZAR — ingen
+    referensrad då. Samma för kursvalutor utanför tabellen (pence)."""
+    zar = producer_refresh_row("USD", 8.0, fcf_m=3000.0, report="ZAR")
+    assert zar["fcf12_musd"] == 3000.0 and zar["report_currency"] == "ZAR" and fv.ref_fcf_musd(zar) is None
+    assert fv.ref_fcf_musd(producer_refresh_row(fcf_m=3000.0)) == 3000.0
+    assert fv.ref_fcf_musd(producer_refresh_row("SEK", 300.0, fcf_m=20000.0, report="SEK")) == 1900.0   # MSEK × 0,095
+    assert fv.ref_fcf_musd({"currency": "GBX", "fcf12_musd": 100.0}) is None
+    assert fv.ref_fcf_musd({"currency": "SEK", "fcf12_musd": -35.0}) == -35.0
+    assert fv.ref_fcf_musd({"fcf12_musd": 50.0}) == 50.0           # äldre blob utan rapportvaluta
+    assert fv.ref_fcf_musd({"fcf_musd": 50.0}) is None             # Durrett-radens fält är inte Rick Rules referens
+    assert fv.ref_fcf_musd(None) is None

@@ -108,7 +108,7 @@ def _run_csm(monkeypatch, ref):
 
 
 _USD_REF = {"price": 8.0, "asof": "2026-11-07", "currency": "USD", "report_currency": "USD", "source": "borsdata",
-            "fcf_musd": 1234.0, "bd_name": "Great Panther Mining"}
+            "fcf12_musd": 1234.0, "bd_name": "Great Panther Mining"}
 
 
 def test_the_card_shows_borsdata_fcf_next_to_both_fcf_inputs(monkeypatch):
@@ -116,18 +116,18 @@ def test_the_card_shows_borsdata_fcf_next_to_both_fcf_inputs(monkeypatch):
     line = "🤖 Börsdata FCF 12 mån: 1 234 MUSD (2026-11-07) — referens, inte normaliserad."
     assert html.count(line) == 2                                         # CSM:s FCF-rutor och Lukacs forward FCF
     assert "matchat" not in html
-    assert "csm" not in at.session_state["row"] and "fcf_musd" not in at.session_state["row"]   # bara visning
+    assert "csm" not in at.session_state["row"] and "fcf12_musd" not in at.session_state["row"]   # bara visning
 
 
 def test_the_card_line_shows_negative_fcf_and_a_differing_match(monkeypatch):
-    _at, html = _run_csm(monkeypatch, dict(_USD_REF, fcf_musd=-35.0, bd_name="Other Company"))
+    _at, html = _run_csm(monkeypatch, dict(_USD_REF, fcf12_musd=-35.0, bd_name="Other Company"))
     assert "🤖 Börsdata FCF 12 mån: −35 MUSD (2026-11-07) (matchat: Other Company) — referens" in html
 
 
 def test_the_card_never_shows_fcf_in_another_currency(monkeypatch):
     _at, html = _run_csm(monkeypatch, dict(_USD_REF, report_currency="ZAR"))      # jobbet räknade om med 1,0
     assert "Börsdata FCF 12 mån" not in html
-    _at, html = _run_csm(monkeypatch, dict(_USD_REF, fcf_musd=None))
+    _at, html = _run_csm(monkeypatch, dict(_USD_REF, fcf12_musd=None))
     assert "Börsdata FCF 12 mån" not in html
 
 
