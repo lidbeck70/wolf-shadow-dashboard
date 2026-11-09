@@ -359,10 +359,11 @@ def add(ticker: str, strategy: str = "Untagged", entry_price=0, shares=0,
     return True, f"{t} tillagd i {BUCKETS[bucket]['name']}."
 
 
-def update(ticker: str, bucket: Optional[str] = None, **fields) -> bool:
+def update(ticker: str, bucket: Optional[str] = None, row_id=None, **fields) -> bool:
     """Ändrar fält på en öppen position. Okända fält hamnar i extras.
-    Byter strategin hink flyttas raden dit (om det finns plats)."""
-    row = find(ticker, bucket)
+    Byter strategin hink flyttas raden dit (om det finns plats). row_id pekar ut raden när samma ticker kan stå
+    två gånger (som close)."""
+    row = find_id(row_id) if row_id is not None else find(ticker, bucket)
     if row is None:
         return False
     data = load()
@@ -508,6 +509,9 @@ def put(strategy: str, view_row: dict, source: str) -> dict:
         if r["id"] == reg["id"] or (not view_row.get("id") and r["ticker"] == reg["ticker"]):
             reg["id"] = r["id"]
             reg["source"] = r.get("source") or source
+            for k in ("sector", "notes"):          # vyn bär dem inte — behåll radens egna (sektorn ur Holdings)
+                if k not in view_row:
+                    reg[k] = r.get(k, reg[k])
             rows[i] = reg
             break
     else:

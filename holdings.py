@@ -14,10 +14,12 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 import plotly.graph_objects as go
+import functools
 import logging
 from typing import Dict, List, Optional
 
 import positions
+import storage
 
 logger = logging.getLogger(__name__)
 
@@ -336,6 +338,107 @@ def _get_regime_signal(ticker: str, strategy_tag: str) -> dict:
         return {"type": "error", "error": str(exc)[:40]}
 
 
+# ── Förslag i redigeringsrutan: stopp och sektor (batch 16) ──────────────────
+# Förslagen räknas i portfolio/position_hints.py ur strategins egna regler och ritas med refresh_ui.offer. Använd
+# skriver in värdet och sparar positionen; att öppna sidan skriver ingenting och hämtar inget nytt — stoppen räknas
+# på kurserna sidan redan hämtat för raden (samma som signalkolumnen), sektorn hämtas först på ditt tryck.
+
+def _price_or_none(value) -> Optional[float]:
+    """Stopp/mål i rutan: tomt (eller ≤ 0) är tomt, inte 0."""
+    v = positions._opt(value)
+    return v if v is not None and v > 0 else None
+
+
+def _save_fields(pkey: str, row: dict, field: str, extra: dict) -> None:
+    """on_apply för Använd: fältet (redan skrivet i raden av refresh_ui._apply) och ev. följefält till registret."""
+    positions.update(row["ticker"], pkey, row_id=row.get("id"), **{field: row.get(field)}, **(extra or {}))
+
+
+def _esc(text: str) -> str:
+    return str(text or "").replace("$", "\\$")          # två '$' i en caption blir annars matematik
+
+
+def _stop_line(holding: dict, df, pkey: str, widget_key: str) -> None:
+    """Stoppförslaget under Stopp-rutan, per strategi ur regler som redan finns (position_hints.stop_hint). Nivåer
+    som rör sig (ATR, EMA200) dateras, och Använd sparar det fasta talet med regeln och dagen. Arkstrategierna får
+    texten 'ingen kursstopp'. Inget visas när kurserna saknas."""
+    try:
+        import refresh_ui
+        from portfolio import position_hints as ph
+        signals = None
+        if holding.get("strategy") == "Insider":            # insiderarket läses bara för Insider-rader
+            import insider
+            signals = (insider._load() or {}).get("signals")
+        hint = ph.stop_hint(holding, df, signals)
+        basis = str((holding.get("extras") or {}).get("stop_basis") or "")
+        if basis and _price_or_none(holding.get("stop")) is not None:
+            st.caption(_esc(f"Stoppen sattes ur {basis}."))
+        if not hint:
+            return
+        if hint.get("value") is None:
+            st.caption(_esc(hint["text"]))
+            return
+        save = functools.partial(_save_fields, pkey, holding, "stop", {"stop_basis": hint["basis"]})
+        refresh_ui.offer(holding, "stop", hint["value"], hint["label"], key=f"hold_stop_{pkey}_{holding['ticker']}",
+                         source=hint["source"], widget_key=widget_key, unit=hint["unit"], note=hint["note"],
+                         fmt=ph.fmt_num, on_apply=save)
+    except Exception as exc:                                  # ett förslag får aldrig fälla kortet
+        logger.debug("stoppförslaget för %s: %s", holding.get("ticker"), exc)
+
+
+def bd_sector(ticker: str, own_name: str = "") -> dict:
+    """Börsdatas sektor för tickern: sektor-id ur universum-registret, annars ur Börsdatas instrument
+    (thor.ticker.lookup), och sektornamnen ur Börsdata. {'value', 'note'} vid träff, annars {'msg'}. Körs bara på
+    ditt tryck."""
+    try:
+        from borsdata_api import get_api
+        api = get_api()
+        if not getattr(api, "is_configured", False):
+            return {"msg": "Börsdata-nyckeln saknas — skriv sektorn själv."}
+        import refresh_ui
+        member = refresh_ui._registry_member(ticker)
+        sid, bd_name = getattr(member, "sector_id", None), str(getattr(member, "name", "") or "")
+        if sid is None:
+            from thor import ticker as thor_ticker
+            info = thor_ticker.lookup(api, ticker) or {}
+            sid, bd_name = info.get("sectorId"), str(info.get("name") or bd_name)
+        sectors = {int(s["id"]): str(s.get("name") or "") for s in (api.get_sectors() or [])
+                   if isinstance(s, dict) and s.get("id") is not None}
+    except Exception as exc:                # bara typen: felets text bär anropets URL med nyckeln (authKey=…)
+        logger.debug("Börsdatas sektor för %s: %s", ticker, type(exc).__name__)
+        return {"msg": "Börsdata svarade inte — skriv sektorn själv."}
+    from portfolio import position_hints as ph
+    hint = ph.sector_hint(sid, sectors, bd_name, own_name)
+    return hint or {"msg": f"Börsdata har ingen sektor för {ticker}."}
+
+
+def _fetch_sector(holding: dict, state_key: str) -> None:
+    """on_click: hämtar sektorn och lägger förslaget i sessionen — ingenting skrivs i raden."""
+    st.session_state[state_key] = bd_sector(holding.get("ticker", ""), holding.get("name", ""))
+
+
+def _sector_line(holding: dict, pkey: str, widget_key: str) -> None:
+    """Under Sektor: hämta Börsdatas sektor på tryck, sedan förslaget med Använd (sparar positionen)."""
+    try:
+        import refresh_ui
+        state_key = f"hold_sec_{holding.get('id') or holding['ticker']}"
+        c1, c2 = st.columns([1, 3], vertical_alignment="center")
+        c1.button("Börsdatas sektor", key=f"{state_key}_get", on_click=_fetch_sector, args=(holding, state_key),
+                  help="Hämtar sektorn ur Börsdata (universum-registret, annars Börsdatas instrumentlista). "
+                       "Inget sparas förrän du trycker Använd.")
+        res = st.session_state.get(state_key) or {}
+        if res.get("msg"):
+            c2.caption(_esc(res["msg"]))
+        if res.get("value"):
+            drawn = refresh_ui.offer(holding, "sector", res["value"], "sektor", key=state_key, widget_key=widget_key,
+                                     note=res.get("note", ""),
+                                     on_apply=functools.partial(_save_fields, pkey, holding, "sector", {}))
+            if not drawn:
+                c2.caption(_esc(f"Sektorn är Börsdatas ({res['value']})."))
+    except Exception as exc:
+        logger.debug("sektorförslaget för %s: %s", holding.get("ticker"), exc)
+
+
 # ── UI Components ─────────────────────────────────────────────────────────────
 
 def _holding_card(
@@ -476,7 +579,7 @@ def _holding_card(
                 _remove_holding(portfolio_key, ticker)
                 st.rerun()
 
-        # Inline edit expander (strategy tag + tranches)
+        # Inline edit expander (strategy tag + tranches, stopp, mål och sektor)
         with st.expander(f"⚙ Edit {ticker}", expanded=False):
             e1, e2, e3 = st.columns([2, 1.5, 0.8])
             with e1:
@@ -498,14 +601,37 @@ def _holding_card(
                         format_func=lambda x: f"{x}/3",
                         key=f"edit_tr_{portfolio_key}_{ticker}",
                     )
+            # Stopp och mål på positionen (journalen räknar R ur stoppen) och sektorn — sparas med Save
+            stop, target, sector = _price_or_none(holding.get("stop")), _price_or_none(holding.get("target")), \
+                str(holding.get("sector") or "Unknown")
+            k_stop, k_sec = f"edit_stop_{portfolio_key}_{ticker}", f"edit_sec_{portfolio_key}_{ticker}"
+            s1, s2, s3 = st.columns([1, 1, 1.6])
+            new_stop = s1.number_input("Stopp", min_value=0.0, value=stop, step=0.01, key=k_stop,
+                                       help="Kursen där positionen säljs. Journalen räknar R ur den när "
+                                            "positionen stängs.")
+            new_target = s2.number_input("Mål", min_value=0.0, value=target, step=0.01,
+                                         key=f"edit_target_{portfolio_key}_{ticker}")
+            new_sector = s3.text_input("Sektor", value=sector, key=k_sec)
             with e3:
                 st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
-                if st.button("Save", key=f"save_edit_{portfolio_key}_{ticker}"):
-                    if new_strat != strategy:
-                        _edit_holding_field(portfolio_key, ticker, "strategy", new_strat)
-                    if new_tranches != tranches:
-                        _edit_holding_field(portfolio_key, ticker, "tranches_deployed", new_tranches)
-                    st.rerun()
+                save = st.button("Save", key=f"save_edit_{portfolio_key}_{ticker}")
+            _stop_line(holding, live.get("df"), portfolio_key, k_stop)
+            _sector_line(holding, portfolio_key, k_sec)
+            if save:
+                fields: dict = {}
+                if storage.differs(new_stop, stop):
+                    fields.update(stop=new_stop, stop_basis="")      # egen stopp: ingen regel bakom den
+                if storage.differs(new_target, target):
+                    fields["target"] = new_target
+                if (new_sector or "").strip() and new_sector.strip() != sector:
+                    fields["sector"] = new_sector.strip()
+                if fields:                                           # före strategin: den kan flytta raden
+                    positions.update(ticker, portfolio_key, row_id=holding.get("id"), **fields)
+                if new_strat != strategy:
+                    _edit_holding_field(portfolio_key, ticker, "strategy", new_strat)
+                if new_tranches != tranches:
+                    _edit_holding_field(portfolio_key, ticker, "tranches_deployed", new_tranches)
+                st.rerun()
 
     except Exception as e:
         st.warning(f"Error displaying {holding.get('ticker', '?')}: {e}")
@@ -817,7 +943,7 @@ def _render_summary_header() -> None:
             if val == 0 and count == 0:
                 continue
             pct   = val / grand_total * 100 if grand_total > 0 else 0
-            color = STRATEGY_COLORS[tag]
+            color = STRATEGY_COLORS.get(tag, DIM)        # Insider, Alpha m.fl. saknar egen färg — fällde sidan
             st.markdown(
                 f"<div style='display:flex;align-items:center;margin:2px 0;gap:8px;'>"
                 f"<span style='color:{color};font-size:0.68rem;font-weight:700;"

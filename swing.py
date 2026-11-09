@@ -17,6 +17,8 @@ med lokal fallback, cachad per session (en nätverkshämtning, inte per rerun).
 
 from __future__ import annotations
 
+import functools
+
 import streamlit as st
 
 import positions
@@ -312,8 +314,55 @@ def _suggest_price(p: dict) -> None:
         pass
 
 
+_SCREENER_TRIED = "_swing_screener_tried"
+
+
+def _screener():
+    """wolf_screener.json i samma sessionscache som Screener-sidan (wolf_screener_ui) — läses en gång per session,
+    också när filen saknas (Screener-sidans 📡 Uppdatera läser om den). None utan fil."""
+    try:
+        import wolf_screener_ui as wsu
+        cached = st.session_state.get(wsu._CACHE)
+        if cached is not None or st.session_state.get(_SCREENER_TRIED):
+            return cached
+        st.session_state[_SCREENER_TRIED] = True
+        return wsu._get_data()
+    except Exception:
+        return None
+
+
+def _rule_hints(p: dict, screener) -> None:
+    """Förslag under kryssen för säljregel 3 ('Ur topp 40', ur screenerns topplista) och säljregel 1 ('Stängt under
+    MA50', ur screenerns dist_ma50 — för bolag utanför listan ur kurslagret market_prices). Använd kryssar rutan och
+    sparar positionen; inget kryssas ur, och att öppna sidan skriver inget. p binds per position (functools.partial)."""
+    try:
+        import refresh_ui
+        from portfolio import position_hints as ph
+        save = functools.partial(positions.put, STRATEGY, p, "swing")
+        pid = p["id"]
+        if not p.get("outOfRank"):
+            h = ph.rank_hint(p.get("ticker"), screener)
+            if h:
+                refresh_ui.offer(p, "outOfRank", True, "Ur topp 40 (regel 3):", key=f"swing_rank_{pid}",
+                                 source="Screenern", asof=h["asof"], widget_key=f"swing_rank_{pid}", on_apply=save,
+                                 note=h["note"])
+        if not p.get("belowMA50"):
+            h, in_list = ph.ma50_from_screener(p.get("ticker"), screener)
+            source = "Screenern"
+            if not in_list:
+                import market_prices
+                h, source = ph.ma50_from_closes(market_prices.close(p.get("ticker"), "6mo")), "Kursen"
+            if h:
+                refresh_ui.offer(p, "belowMA50", True, "Stängt under MA50 (regel 1):", key=f"swing_ma50_{pid}",
+                                 source=source, asof=h["asof"], widget_key=f"swing_ma50_{pid}", on_apply=save,
+                                 note=h["note"])
+    except Exception:
+        pass
+
+
 def _positions(data: dict) -> None:
     rows = open_positions()
+    screener = _screener() if rows else None
     st.markdown(
         f"<div style='font-weight:700;color:{TEXT};margin-bottom:6px;'>"
         f"Positioner ({len(rows)}/6–8)</div>",
@@ -377,6 +426,7 @@ def _positions(data: dict) -> None:
                 or b_half != bool(p.get("halfTaken"))):
             p["belowMA50"], p["outOfRank"], p["halfTaken"] = b_ma50, b_rank, b_half
             positions.put(STRATEGY, p, "swing")
+        _rule_hints(p, screener)
         if f4.button("Stäng", key=f"swing_close_{p['id']}"):
             reason = ("stop -10%" if stop_hit else "under MA50" if p.get("belowMA50")
                       else "ur topp 40" if p.get("outOfRank") else "manuell")
