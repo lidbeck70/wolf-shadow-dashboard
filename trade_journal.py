@@ -5,7 +5,9 @@ Uses GitHub Gist for persistence (same pattern as gist_storage.py).
 En Gist som inte går att läsa visas som fel och spärrar sparandet för
 sessionen — den lokala filen används bara utan token (lokal körning).
 """
+import functools
 import json
+import logging
 import uuid
 import requests
 import streamlit as st
@@ -19,6 +21,8 @@ import gist_storage
 # Statistikbladet ur tradingjournal_swing.xlsx — rena funktioner, testade mot
 # arkets formler. R räknas här ur stoppen i stället för att skrivas in.
 import journal_stats as js
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Storage — reuse gist_storage.py token/auth helpers, store journal as
@@ -471,6 +475,59 @@ def import_open_positions(open_positions: list) -> tuple:
     return added, skipped
 
 
+def _save_position_field(row: dict, field: str) -> None:
+    """on_apply för Använd: fältet (redan skrivet i raden av refresh_ui._apply) till registret, på radens egen hink."""
+    import positions
+    positions.update(row["ticker"], row.get("_bucket"), row_id=row.get("id"), **{field: row.get(field)})
+
+
+def _broker_suggestions(open_positions: list) -> None:
+    """Rader som redan finns i Positioner: mäklarens FIFO-snitt och antal som förslag med Använd, ett konto i taget
+    (portfolio.position_hints.broker_hints). Inget skrivs utan klick och inget slås ihop. Bara när innehaven är
+    upplåsta — låst visas varken tal eller vilka bolag som ägs."""
+    if not open_positions:
+        return
+    try:
+        import refresh_ui
+        from portfolio import position_hints as ph
+        from portfolio import private_lock
+        if not private_lock.unlocked():
+            st.caption("🔒 Innehaven är låsta — lås upp under Positioner så visas mäklarens snittkurs och antal mot "
+                       "raderna där.")
+            return
+        import positions
+        hints = ph.broker_hints(positions.all_positions(), open_positions)
+    except Exception as exc:
+        logger.debug("mäklarens förslag: %s", exc)
+        return
+    if not hints:
+        return
+    st.markdown(f'<p style="color:{_GOLD}; font-weight:600; margin:10px 0 2px 0;">Finns redan i Positioner</p>',
+                unsafe_allow_html=True)
+    st.caption("Mäklarens snittkurs (FIFO) och antal som förslag — inget skrivs förrän du trycker Använd.")
+    for h in hints:
+        row = h["row"]
+        acct = h["account"] or "?"
+        head = (f"{row['ticker']} ({row.get('strategy', '')}) · konto {acct} · mäklaren: {h['name'] or '?'}"
+                + (f" ({h['isin']})" if h["isin"] else ""))
+        if h["accounts"] > 1:
+            head += f" · finns på {h['accounts']} konton — förslaget gäller det här kontot, inte summan"
+        st.caption(head.replace("$", "\\$"))
+        if h["warn"]:
+            st.warning(h["warn"].replace("$", "\\$"))
+        key = f"imp_{row['id']}_{acct}_{h['isin']}"
+        ccy = "pence" if str(row["ticker"]).upper().endswith(".L") else positions.currency_for(row["ticker"])
+        drawn = refresh_ui.offer(row, "entry_price", h["price"], "snittkurs", key=f"{key}_avg",
+                                 source=f"Mäklaren ({acct})", unit=ccy, note=h["price_note"],
+                                 on_apply=functools.partial(_save_position_field, row, "entry_price"))
+        if h["price"] is None and h["price_note"]:
+            st.caption(h["price_note"].replace("$", "\\$"))
+        drawn = refresh_ui.offer(row, "shares", h["qty"], "antal", key=f"{key}_qty", source=f"Mäklaren ({acct})",
+                                 unit="st", on_apply=functools.partial(_save_position_field, row, "shares")) or drawn
+        if not drawn and h["price"] is not None and h["qty"] is not None:
+            st.caption("✓ Snittkurs och antal stämmer med raden.")
+
+
 def _render_import_section(existing_trades: list) -> None:
     """Render the 'Import from Broker' expander at the bottom of the journal tab."""
     st.markdown(
@@ -590,6 +647,7 @@ def _render_import_section(existing_trades: list) -> None:
                     else:
                         st.success(f"{len(added)} inlagda i Holdings som Untagged — sätt strategi "
                                    f"där. {len(skipped)} hoppades över (fanns redan eller saknar ticker).")
+                _broker_suggestions(report.open_positions)
 
         # ── Confirm ────────────────────────────────────────────────────────
         if report.preview:

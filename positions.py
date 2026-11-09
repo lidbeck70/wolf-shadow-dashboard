@@ -359,10 +359,11 @@ def add(ticker: str, strategy: str = "Untagged", entry_price=0, shares=0,
     return True, f"{t} tillagd i {BUCKETS[bucket]['name']}."
 
 
-def update(ticker: str, bucket: Optional[str] = None, **fields) -> bool:
+def update(ticker: str, bucket: Optional[str] = None, row_id=None, **fields) -> bool:
     """Ändrar fält på en öppen position. Okända fält hamnar i extras.
-    Byter strategin hink flyttas raden dit (om det finns plats)."""
-    row = find(ticker, bucket)
+    Byter strategin hink flyttas raden dit (om det finns plats). row_id pekar ut raden när samma ticker kan stå
+    två gånger (som close)."""
+    row = find_id(row_id) if row_id is not None else find(ticker, bucket)
     if row is None:
         return False
     data = load()
