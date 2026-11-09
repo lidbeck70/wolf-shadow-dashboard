@@ -246,6 +246,42 @@ def render_aqs(row: dict, key: str, prefill: Optional[dict] = None,
 
 
 # ── CSM ──────────────────────────────────────────────────────────────────────
+NAV_PRICE_SCALE_MAX = 10.0      # NAV-priset mer än så många gånger från spot står nog i en annan enhet
+
+
+def _price_txt(v: float) -> str:
+    """Pris med decimalkomma: hela tal från 100 (4 012), två decimaler under (4,52)."""
+    return f"{v:,.{0 if v >= 100 else 2}f}".replace(",", " ").replace(".", ",")
+
+
+def spot_context(ref, row: dict) -> str:
+    """Kontextraden över CSM-scenarierna: 'Spot i dag X USD/oz (datum) · NAV räknad på Y'. Spot är nattens
+    råvarupris på producentraden (commodity_price/commodity_unit, Yahoo-termin), Y kortets eget 'Metallpris i NAV'.
+    Inget fylls i. Tom sträng utan spot, och när nattens enhet inte är enheten för kortets råvara (råvaran bytt sedan
+    natten, eller ingen Yahoo-termin) — USD/lb jämförs aldrig med USD/oz. Ett NAV-pris mer än NAV_PRICE_SCALE_MAX×
+    från spot visas inte som jämförelse."""
+    r = ref if isinstance(ref, dict) else {}
+    spot, unit = ctl._num(r.get("commodity_price")), str(r.get("commodity_unit") or "").strip()
+    if spot is None or spot <= 0 or not unit:
+        return ""
+    try:
+        import commodity_prices
+        spec = commodity_prices.ticker_for((row or {}).get("commodity"))
+    except Exception:
+        spec = None
+    if not spec or spec[1] != unit:
+        return ""
+    asof = str(r.get("commodity_asof") or "")[:10]
+    txt = f"🤖 Spot i dag {_price_txt(spot)} {unit}{f' ({asof})' if asof else ''}"
+    nav = ctl._num((row or {}).get("nav_price"))
+    if nav is not None and nav > 0:
+        if nav / spot > NAV_PRICE_SCALE_MAX or spot / nav > NAV_PRICE_SCALE_MAX:
+            txt += f" · NAV-priset {_price_txt(nav)} ser ut att stå i en annan enhet än {unit}"
+        else:
+            txt += f" · NAV räknad på {_price_txt(nav)}"
+    return txt
+
+
 def render_csm(row: dict, key: str, kind: str = ctl.PRODUCER,
                prefix: str = "csm", with_fv: bool = False, sheet: str = "") -> bool:
     """Commodity Sensitivity Matrix. Tre scenarier, fem för kärninnehav.
@@ -278,6 +314,10 @@ def render_csm(row: dict, key: str, kind: str = ctl.PRODUCER,
         row["csm_kind"], row["is_core"] = new_kind, is_core
         changed = True
 
+    if sheet == "producers":                            # spot och kortets NAV-pris — bara visning, inga rutor fylls
+        ctx = spot_context(lukacs_ui._refresh_row(sheet, key), row)
+        if ctx:
+            st.markdown(f"<span style='color:{DIM};font-size:0.78rem;'>{ctx}</span>", unsafe_allow_html=True)
     if new_kind == ctl.PRODUCER and sheet:
         lukacs_ui.bd_fcf_line(row, key, sheet)          # referens vid FCF-rutorna, ingen knapp
     for s in ctl.scenarios(is_core):
