@@ -400,8 +400,9 @@ def auto_to_signal(row: dict) -> dict:
 
 
 # ── Skanningen mot arkets rader ──────────────────────────────────────────────
-# Fälten skanningen föreslår för en rad som redan finns. Grind och trigger är inte med: de visas bara som text
-# (om de får föreslås är ägarens beslut, planens batch 15). okar_25 sätts aldrig av skanningen.
+# Fälten skanningen föreslår för en rad som redan finns. Grind och trigger är inte med: skanningens visas bara som
+# text. Nattjobbet (batch 15) föreslår grinden bara som 'Nej' och triggern bara som A/B — se nightly_offers.
+# okar_25 sätts aldrig av skanningen.
 SCAN_FIELDS = ("insiders", "role", "amount", "aterkommande", "cluster_avg", "efter_fall")
 
 
@@ -637,11 +638,7 @@ def _auto_scan(data: dict) -> None:
                                f"{'ja' if row.get('aterkommande') else 'nej'}")
                     buys = a.get("buys") or []
                     if buys:
-                        st.caption(" · ".join(
-                            f"{b.get('date')} {b.get('owner')} ({b.get('position') or '–'}) "
-                            f"{_num(b.get('shares')) or 0:,.0f} st"
-                            + (f" @ {b.get('price'):g}" if _num(b.get('price')) is not None else "")
-                            for b in buys[:8]))
+                        st.caption(_buys_text(buys))
                 with c2:
                     if hit is not None:
                         other = _yf(hit.get("ticker")) != _yf(t)
@@ -666,11 +663,19 @@ def _offer(*args, **kw) -> None:
 def _scan_offer_rows(data: dict, sig: dict, cluster: dict, asof: str) -> None:
     """Skanningens tal för en rad som redan finns i arket: ett förslag per fält (scan_offers), Använd skriver in
     värdet i raden och rutan — att öppna sidan skriver ingenting, 💾 sparar. Grind och trigger bara som text."""
+    if _cluster_offer_rows(data, sig, cluster, asof):
+        st.caption("Grind och trigger ur skanningen är bara text — dem väljer du själv i raden.")
+
+
+def _cluster_offer_rows(data: dict, sig: dict, cluster: dict, asof: str, source: str = "Skanningen",
+                        prefix: str = "ins_scan", whose: str = "Skanningens") -> bool:
+    """Ett förslag per klusterfält (scan_offers) ur skanningen eller nattjobbet (nightly_cluster). False när
+    klustret är nytt (köpen började efter Upptäckt) och inga förslag ges."""
     a = cluster.get("auto") or {}
     if same_cluster(sig, cluster) is False:
-        st.caption(f"Skanningens köp började {a.get('first_buy')}, efter att raden lades in "
+        st.caption(f"{whose} köp började {a.get('first_buy')}, efter att raden lades in "
                    f"({sig.get('found')}) — ett nytt kluster, inga förslag.".replace("$", "\\$"))
-        return
+        return False
     offers = scan_offers(sig, cluster)
     sid = sig["id"]
     window = f"köp {a.get('first_buy')} – {a.get('last_buy')}" if a.get("first_buy") else ""
@@ -685,7 +690,7 @@ def _scan_offer_rows(data: dict, sig: dict, cluster: dict, asof: str) -> None:
     }
     for field, value in offers.items():
         label, wkey, cast, unit, note = spec[field]
-        _offer(sig, field, value, label, key=f"ins_scan_{sid}_{field}", source="Skanningen", asof=asof,
+        _offer(sig, field, value, label, key=f"{prefix}_{sid}_{field}", source=source, asof=asof,
                widget_key=wkey, on_apply=lambda: _save(data), cast=cast,
                fmt=_sv if field == "amount" else "{:g}", unit=unit, note=note)
     if not offers:
@@ -695,7 +700,143 @@ def _scan_offer_rows(data: dict, sig: dict, cluster: dict, asof: str) -> None:
         ccy = str(cluster.get("currency") or "")
         st.caption(f"Klustrets snittkurs i fönstret {held:g}{f' {ccy}' if ccy else ''} — köp har fallit ur "
                    f"fönstret, inget förslag.".replace("$", "\\$"))
-    st.caption("Grind och trigger ur skanningen är bara text — dem väljer du själv i raden.")
+    return True
+
+
+def _buys_text(buys: list, n: int = 8) -> str:
+    """Köpen som text: '2026-11-05 Anna (cfo) 1 000 st @ 48.2 · …' — de n senaste."""
+    return " · ".join(
+        f"{b.get('date')} {b.get('owner')} ({b.get('position') or '–'}) "
+        f"{_num(b.get('shares')) or 0:,.0f} st"
+        + (f" @ {b.get('price'):g}" if _num(b.get('price')) is not None else "")
+        for b in (buys or [])[:n] if isinstance(b, dict))
+
+
+# ── Nattjobbets kluster för rader som skanningen inte har (automatisering batch 15) ──
+# sheets_refresh räknar om klustret för varje rad i arket (fönstret: upptäckt − 30 dagar till i dag), grindens
+# checklista, triggern och 'efter fall'. Visas för rader som skanningens blob inte täcker (handskrivna rader, rader
+# under skanningens gräns) med samma offer()-förslag som skanningen. Grinden föreslås bara som 'Nej', triggern bara
+# som A eller B när raden saknar trigger (en engångshändelse — aldrig en nedgradering). Inga regler ändras.
+NIGHT_TRIGGERS = ("A", "B")
+
+
+def nightly_row(blob: Optional[dict], sig: dict) -> dict:
+    """Nattjobbets rad insider:<id> ur sheets_refresh.json, eller {}."""
+    s = ((blob or {}).get("rows") or {}).get(f"insider:{(sig or {}).get('id')}")
+    return s if isinstance(s, dict) else {}
+
+
+def nightly_cluster(s: dict) -> Optional[dict]:
+    """Nattjobbets kluster i skanningens form, så att scan_offers, amount_note och förslagsraderna läser det.
+    None när nattjobbet inte hittade något kluster."""
+    s = s or {}
+    if _num(s.get("cluster_insiders")) is None:
+        return None
+    return {"insiders": s.get("cluster_insiders"), "role": s.get("cluster_role"),
+            "amount": s.get("cluster_amount_tkr"), "cluster_avg": s.get("cluster_avg"),
+            "aterkommande": s.get("cluster_aterkommande") is True, "efter_fall": s.get("efter_fall_auto") is True,
+            "currency": s.get("cluster_currency") or "",
+            "auto": {"first_buy": s.get("first_buy"), "last_buy": s.get("last_buy"),
+                     "amount_local": s.get("cluster_amount_local"),
+                     "efter_fall_note": s.get("efter_fall_note") or "", "buys": s.get("cluster_buys") or []}}
+
+
+def gate_offer(sig: dict, s: dict) -> Optional[str]:
+    """'Nej' när nattjobbets grind mäter att något faller och raden inte redan står på Nej, annars None. 'Ja'
+    föreslås aldrig — den väljer du själv."""
+    if (s or {}).get("gate_auto") == GATE_NO and (sig or {}).get("gate") != GATE_NO:
+        return GATE_NO
+    return None
+
+
+def trigger_offer(sig: dict, s: dict) -> Optional[str]:
+    """A eller B ur nattjobbet när raden saknar trigger (tom eller Nej). Triggern är en engångshändelse: en satt
+    trigger skrivs aldrig över, och Nej föreslås aldrig."""
+    t = (s or {}).get("trigger_auto")
+    if t in NIGHT_TRIGGERS and ((sig or {}).get("trigger") or "") in ("", "Nej"):
+        return t
+    return None
+
+
+def nightly_offers(sig: dict, s: dict) -> dict:
+    """{fält: värde} ur nattjobbet: klusterfälten med skanningens regler (scan_offers — aldrig en nedgradering, bara
+    inom samma kluster) plus grind ('Nej') och trigger (A/B). Ren funktion; inget skrivs."""
+    cl = nightly_cluster(s)
+    out = dict(scan_offers(sig, cl)) if cl else {}
+    gate, trig = gate_offer(sig, s), trigger_offer(sig, s)
+    if gate:
+        out["gate"] = gate
+    if trig:
+        out["trigger"] = trig
+    return out
+
+
+def _refresh_blob() -> dict:
+    try:
+        import refresh_ui
+        return refresh_ui.load_refresh() or {}
+    except Exception:
+        return {}
+
+
+def _night_note(blob: dict, sig: dict) -> str:
+    """' (matchat: …)' när nattjobbets bolag inte liknar radens namn (refresh_ui.matched_note, redan escapad)."""
+    try:
+        import refresh_ui
+        return refresh_ui.matched_note(blob, "insider", sig)
+    except Exception:
+        return ""
+
+
+def _nightly_cluster_rows(data: dict, sig: dict, s: dict, asof: str, note: str = "") -> None:
+    """Nattjobbets kluster för en rad som skanningen inte har: fönstret, ett förslag per fält (samma offer() och
+    regler som skanningens), köpen och förbehållet. Att rita skriver ingenting."""
+    from html import escape
+    cl = nightly_cluster(s)
+    if cl is None and not s.get("cluster_since"):
+        return
+    anchor = "upptäckt − 30 dagar till i dag" if _date(sig.get("found")) else "30 dagar till i dag"
+    span = f"{s.get('cluster_since')} – {s.get('cluster_until')}"
+    if cl is None:
+        head = f"🌙 Nattjobbet {asof}: inga riktiga köp i Börsdatas insynsregister {span} ({anchor})."
+    else:
+        head = (f"🌙 Nattjobbet {asof}: {int(_num(cl['insiders']))} köpare, köp {s.get('first_buy')} – "
+                f"{s.get('last_buy')} i fönstret {span} ({anchor})")
+    st.markdown(f"<div style='color:{DIM};font-size:0.8rem;padding-top:4px;'>"
+                f"{escape(head).replace('$', '&#36;')}{note}</div>", unsafe_allow_html=True)
+    if cl is None:
+        return
+    _cluster_offer_rows(data, sig, cl, asof, source="Nattjobbet", prefix="ins_night", whose="Nattjobbets")
+    buys = _buys_text(s.get("cluster_buys") or [])
+    st.caption(("Bara tilldelningsprogram räknas bort — gåvor och interna överföringar kan räknas med. "
+                + (f"Kolla köpen: {buys}" if buys else "")).replace("$", "\\$"))
+
+
+def _nightly_gate_trigger(data: dict, sig: dict, s: dict, asof: str) -> None:
+    """Under grind och trigger: 'Nej' som förslag när något mätbart faller, checklistan, och triggern A/B när raden
+    saknar trigger. Att rita skriver ingenting; Använd skriver fältet och rutan."""
+    from html import escape
+    sid = sig["id"]
+    gate = gate_offer(sig, s)
+    if gate:
+        _offer(sig, "gate", gate, "Kvalitetsgrind", key=f"ins_night_{sid}_gate", source="Nattjobbet", asof=asof,
+               widget_key=f"ins_g_{sid}", on_apply=lambda: _save(data), note="något mätbart faller")
+    checks = [c for c in s.get("gate_checks") or [] if isinstance(c, dict)]
+    if checks:
+        lines = [f"{_CHECK_ICON.get(c.get('status'), '⚪')} {escape(str(c.get('label') or ''))} — "
+                 f"{escape(str(c.get('detail') or ''))}" for c in checks]
+        st.markdown(f"<div style='color:{DIM};font-size:0.8rem;'>"
+                    + "<br>".join(lines).replace("$", "&#36;") + "</div>", unsafe_allow_html=True)
+        st.caption("Grinden mäts med närmevärden: omsättning ≥ 0 räknas som ej fallande, FCF ≤ 0 och tal som saknas "
+                   "bedömer du. Nattjobbet föreslår bara 'Nej' — 'Ja' väljer du själv.")
+    trig = trigger_offer(sig, s)
+    if trig:
+        _offer(sig, "trigger", trig, "Teknisk trigger", key=f"ins_night_{sid}_trigger", source="Nattjobbet",
+               asof=asof, widget_key=f"ins_t_{sid}", on_apply=lambda: _save(data),
+               note=str(s.get("trigger_note") or ""))
+    elif s.get("trigger_note") and (sig.get("trigger") or "") in ("", "Nej"):
+        st.caption(f"🌙 Trigger i natt: {s.get('trigger_auto') or '—'} — {s.get('trigger_note')}. "
+                   f"Bara A eller B föreslås.".replace("$", "\\$"))
 
 
 def _summary(data: dict) -> None:
@@ -768,6 +909,8 @@ def _signals(data: dict) -> None:
     foc = rc.focus("insider", [r["signal"].get("ticker") for r in rows]) if rc else None
     by_row = clusters_by_row([c for c in _load_auto_scan().get("clusters", []) if isinstance(c, dict)],
                              data.get("signals", []))
+    blob = _refresh_blob()
+    night_asof = str(blob.get("generated") or "")[:10]
     for r in rows:
         sig = r["signal"]
         if rc and not rc.same_ticker(sig.get("ticker"), foc):
@@ -778,9 +921,13 @@ def _signals(data: dict) -> None:
                 f"  ·  {pts if pts is not None else '–'}/{MAX_SCORE} p"
                 f"  ·  {stat or 'ofullständig'}")
         cl = by_row.get(id(sig))
+        # nattjobbets kluster bara för rader som skanningen inte har — de andra får skanningens förslag ovan
+        night = nightly_row(blob, sig) if cl is None else {}
         with st.expander(head, expanded=bool(foc)):
             top = rc.slot() if rc else None
-            _signal_body(data, sig, r, c, n_offers=len(scan_offers(sig, cl)) if cl else 0)
+            _signal_body(data, sig, r, c, n_offers=len(scan_offers(sig, cl)) if cl else 0, night=night,
+                         night_asof=night_asof or str(night.get("asof") or ""),
+                         night_note=_night_note(blob, sig) if night else "")
             if rc:
                 rc.fill(top, "insider", sig)
 
@@ -810,8 +957,10 @@ def _sell_watch(sig: dict) -> None:
                     unsafe_allow_html=True)
 
 
-def _signal_body(data: dict, sig: dict, r: dict, color: str, n_offers: int = 0) -> None:
+def _signal_body(data: dict, sig: dict, r: dict, color: str, n_offers: int = 0, night: Optional[dict] = None,
+                 night_asof: str = "", night_note: str = "") -> None:
     changed = False
+    night = night or {}
     if n_offers:
         st.caption(f"🤖 Skanningen har {n_offers} förslag för raden — under Automatisk skanning ovan.")
 
@@ -849,6 +998,8 @@ def _signal_body(data: dict, sig: dict, r: dict, color: str, n_offers: int = 0) 
         if v != bool(sig.get(bkey)):
             sig[bkey] = v
             changed = True
+    if night:
+        _nightly_cluster_rows(data, sig, night, night_asof, night_note)
 
     # Poäng + status
     pts, stat = score(sig), status(sig)
@@ -881,6 +1032,8 @@ def _signal_body(data: dict, sig: dict, r: dict, color: str, n_offers: int = 0) 
             or storage.differs(trig, sig.get("trigger"), "")):
         sig["gate"], sig["trigger"] = gate, trig
         changed = True
+    if night:
+        _nightly_gate_trigger(data, sig, night, night_asof)
 
     # Kurser
     k1, k2, k3, k4 = st.columns(4)
