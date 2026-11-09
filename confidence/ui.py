@@ -510,20 +510,15 @@ def _render_prefill(data: dict, company: CompanyInput, store: str = cs.STORE) ->
 
 
 def _apply_prefill(data: dict, company: CompanyInput, key: str, point, store: str) -> None:
-    """on_click för Använd i förslagen: skriv in förslaget och släpp fältets rutor i formerna (Identitet, Börsdata
-    fyller, Ekonomi, Confidence …). De ritas då om ur arket med det nya värdet — annars ligger det gamla kvar i
-    formen och nästa Uppdatera skriver tillbaka det. Klicket kör om sidan själv."""
-    t = company.ticker
+    """on_click för Använd i förslagen: skriv in förslaget och spara. Formernas rutor (Identitet, Börsdata fyller,
+    Ekonomi, Confidence …) ritas om med det nya värdet av sig själva — deras nycklar bär ett avtryck av det sparade
+    (stored_tag / _identity_widgets). Klicket kör om sidan själv."""
     if key == "maturity":
         company.maturity = point
-        stale = (f"asym_id_{t}_mat", f"conf_id_{t}_mat")          # identity_widgets i Wolf Asymmetry / Indata
     else:
         company.set(key, point)
-        stale = tuple(f"cf_{t}_{key}_{s}" for s in ("v", "k", "s", "t", "d"))   # _field_widgets
     cs.put(data, company)
     _save_to(store, data)
-    for wk in stale:
-        st.session_state.pop(wk, None)
 
 
 def _render_extractor(data: dict, company: CompanyInput, store: str = cs.STORE,

@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import confidence_cases as cc
+import form_keys as fk
 from confidence import config as cfg
 from confidence import prefill
 from confidence import reports
@@ -214,12 +215,12 @@ def test_indata_prefill_maturity_survives_the_identity_form_above_it(monkeypatch
     at.session_state["conf_last"] = "DEV"
     at.run()
     assert not at.exception, at.exception
-    assert at.selectbox(key="conf_id_DEV_mat").value == "pea"
+    assert fk.ident_box(at.selectbox, "conf_id_DEV", "mat").value == "pea"
     at.button(key="cf_pf_DEV_maturity").click().run()
     assert not at.exception, at.exception
     assert at.session_state["confidence"]["companies"]["DEV"]["maturity"] == "dfs"
-    assert at.selectbox(key="conf_id_DEV_mat").value == "dfs"
-    at.text_input(key="conf_id_DEV_name").set_value("Nytt namn").run()
+    assert fk.ident_box(at.selectbox, "conf_id_DEV", "mat").value == "dfs"
+    fk.ident_box(at.text_input, "conf_id_DEV", "name").set_value("Nytt namn").run()
     at.button(key="FormSubmitter:conf_ident_DEV-Uppdatera").click().run()
     assert not at.exception, at.exception
     c = at.session_state["confidence"]["companies"]["DEV"]

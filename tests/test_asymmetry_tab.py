@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import durrett_cases as dcs  # noqa: E402
+import form_keys as fk  # noqa: E402
 from asymmetry import fetch, fields  # noqa: E402
 from asymmetry import store as ast  # noqa: E402
 from confidence import config as cfg  # noqa: E402
@@ -251,11 +252,11 @@ def test_ark_offers_the_review_sheets_like_durrett(monkeypatch):
     assert p["value"] == 1300.0 and p["source"] == "Granskningsarket Rick Rule" and p["kind"] == "ESTIMATE"
     assert not [b for b in at.button if b.key == "cf_pf_GPR_aisc"]              # inläst: förslaget försvinner
     # Ekonomi-formen ovanför visar det inlästa värdet — inte det gamla 1450
-    assert at.text_input(key="cf_GPR_aisc_v").value == "1300"
-    assert at.text_input(key="cf_GPR_aisc_s").value == "Granskningsarket Rick Rule"
-    assert at.selectbox(key="cf_GPR_aisc_k").value == "ESTIMATE"
+    assert fk.box(at.text_input, "cf_GPR_", "aisc", part="v").value == "1300"
+    assert fk.box(at.text_input, "cf_GPR_", "aisc", part="s").value == "Granskningsarket Rick Rule"
+    assert fk.box(at.selectbox, "cf_GPR_", "aisc", part="k").value == "ESTIMATE"
     # nästa Uppdatera arket (produktionsenheten fylls i) skriver inte tillbaka det gamla
-    at.text_input(key="cf_GPR_production_unit_v").set_value("oz").run()
+    fk.box(at.text_input, "cf_GPR_", "production_unit", part="v").set_value("oz").run()
     at.button(key="FormSubmitter:asym_econ_GPR-Uppdatera arket").click().run()
     assert not at.exception, at.exception
     f = at.session_state["confidence"]["companies"]["GPR"]["fields"]
@@ -275,11 +276,11 @@ def test_ark_review_sheet_value_survives_the_form_when_the_field_was_empty(monke
     at.session_state["asym_mode"] = "Ark"
     at.run()
     assert not at.exception, at.exception
-    assert at.text_input(key="cf_GPR_aisc_v").value == ""
+    assert fk.box(at.text_input, "cf_GPR_", "aisc", part="v").value == ""
     at.button(key="cf_pf_GPR_aisc").click().run()
     assert not at.exception, at.exception
-    assert at.text_input(key="cf_GPR_aisc_v").value == "1300"
-    at.text_input(key="cf_GPR_production_current_v").set_value("210000").run()
+    assert fk.box(at.text_input, "cf_GPR_", "aisc", part="v").value == "1300"
+    fk.box(at.text_input, "cf_GPR_", "production_current", part="v").set_value("210000").run()
     at.button(key="FormSubmitter:asym_econ_GPR-Uppdatera arket").click().run()
     assert not at.exception, at.exception
     f = at.session_state["confidence"]["companies"]["GPR"]["fields"]
@@ -299,14 +300,14 @@ def test_ark_review_sheet_maturity_and_market_cap_survive_the_forms(monkeypatch)
     at.session_state["asym_mode"] = "Ark"
     at.run()
     assert not at.exception, at.exception
-    assert at.selectbox(key="asym_id_CDV_mat").value == "pea"
+    assert fk.ident_box(at.selectbox, "asym_id_CDV", "mat").value == "pea"
     assert at.session_state["confidence"]["companies"]["CDV"]["maturity"] == "pea"     # att öppna skriver inget
     # Mognad
     at.button(key="cf_pf_CDV_maturity").click().run()
     assert not at.exception, at.exception
     assert at.session_state["confidence"]["companies"]["CDV"]["maturity"] == "dfs"
-    assert at.selectbox(key="asym_id_CDV_mat").value == "dfs"
-    at.text_input(key="asym_id_CDV_name").set_value("Nytt namn").run()
+    assert fk.ident_box(at.selectbox, "asym_id_CDV", "mat").value == "dfs"
+    fk.ident_box(at.text_input, "asym_id_CDV", "name").set_value("Nytt namn").run()
     at.button(key="FormSubmitter:asym_ident_CDV-Uppdatera").click().run()
     assert not at.exception, at.exception
     c = at.session_state["confidence"]["companies"]["CDV"]
@@ -314,8 +315,8 @@ def test_ark_review_sheet_maturity_and_market_cap_survive_the_forms(monkeypatch)
     # Börsvärdet mot Börsdata fyller-formen
     at.button(key="cf_pf_CDV_market_cap_musd").click().run()
     assert not at.exception, at.exception
-    assert at.text_input(key="cf_CDV_market_cap_musd_v").value == "650"
-    at.text_input(key="cf_CDV_cash_musd_v").set_value("260").run()
+    assert fk.box(at.text_input, "cf_CDV_", "market_cap_musd", part="v").value == "650"
+    fk.box(at.text_input, "cf_CDV_", "cash_musd", part="v").set_value("260").run()
     at.button(key="FormSubmitter:asym_auto_CDV-Uppdatera arket").click().run()
     assert not at.exception, at.exception
     f = at.session_state["confidence"]["companies"]["CDV"]["fields"]
