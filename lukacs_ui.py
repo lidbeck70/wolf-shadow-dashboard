@@ -66,6 +66,84 @@ def bd_fcf_line(row: dict, key: str, sheet: str, ref=None) -> None:
                 unsafe_allow_html=True)
 
 
+SHARES_SCALE_MAX = 10.0     # framtida antal aktier mer än så många gånger från Börsdatas → troligen fel enhet
+
+
+def _sv_num(v: float) -> str:
+    """Tal med svenskt decimalkomma och mellanslag mellan tusental, utan onödiga decimaler: 1 234,5 · 0,0012."""
+    return f"{v:,.{2 if abs(v) >= 1 else 4}f}".rstrip("0").rstrip(".").replace(",", " ").replace(".", ",")
+
+
+def shares_scale_warning(typed, bd_shares, year=None) -> str:
+    """Varningstext när framtida antal aktier ligger mer än SHARES_SCALE_MAX× från Börsdatas aktieantal (miljoner)
+    — tusental i stället för miljoner gör FV per aktie lika många gånger fel, och ett för litet tal kan göra steg 5
+    grönt. Bara text: ingen räkning eller grind ändras. Tom sträng när något tal saknas eller de ligger nära."""
+    t, b = fv.num(typed), fv.num(bd_shares)
+    if not t or not b or t <= 0 or b <= 0:
+        return ""
+    yr = f", årsrapporten {int(year)}" if fv.num(year) else ""
+    ref = f"Börsdatas {_sv_num(b)} miljoner{yr}"
+    if t > SHARES_SCALE_MAX * b:
+        k = f"{t / b:,.0f}".replace(",", " ")
+        return (f"Framtida antal aktier {_sv_num(t)} är {k}× {ref}. Står talet i tusental? "
+                f"Rutan är i miljoner — FV per aktie blir då {k}× för låg.")
+    if t * SHARES_SCALE_MAX < b:
+        k = f"{b / t:,.0f}".replace(",", " ")
+        return (f"Framtida antal aktier {_sv_num(t)} är bara 1/{k} av {ref}. Står talet i miljarder? "
+                f"Rutan är i miljoner — FV per aktie blir då {k}× för hög och kan göra köpgrindens steg 5 grönt.")
+    return ""
+
+
+def _shares_suggestion(row: dict, key: str, sheet: str, ref, shares, widget_key: str) -> None:
+    """Börsdatas aktieantal (shares_now_m, med året ur shares_year) som förslag med Använd vid 'Framtida antal
+    aktier' — samma refresh_ui.suggest som kortets andra förslag — och en varning, bara text, när talet i rutan
+    ligger mer än SHARES_SCALE_MAX× därifrån."""
+    yr = fv.num((ref or {}).get("shares_year"))
+    label = "aktier i dag (miljoner" + (f", årsrapporten {int(yr)}" if yr else "") + ")"
+    try:
+        import refresh_ui
+        refresh_ui.suggest(sheet, row, "framtida_antal_aktier", "shares_now_m", label, widget_key, row_id=key)
+    except Exception:
+        pass
+    w = shares_scale_warning(shares, (ref or {}).get("shares_now_m"), yr)
+    if w:
+        st.warning(w)
+
+
+def holding_hint(ticker, find) -> str:
+    """'💡 Positionerna har X …' när registret har bolaget i någon av tickerns former (thor.ticker.forms) — ett
+    textförslag, rutan kryssas aldrig. find = positions.find. Tom sträng utan träff. Anroparen frågar bara när
+    innehaven är upplåsta."""
+    t = str(ticker or "").strip()
+    if not t:
+        return ""
+    try:
+        from thor.ticker import forms
+        fs = forms(t)
+    except Exception:
+        fs = [t.upper()]
+    for f in fs:
+        hit = find(f)
+        if hit:
+            return f"💡 Positionerna har {hit.get('ticker') or f} — kryssa om det här är ett innehav."
+    return ""
+
+
+def _holding_hint(row: dict) -> None:
+    """holding_hint under kryssrutan. Tyst när innehaven är låsta (portfolio.private_lock) — låst avslöjar arket
+    inte vad som ägs — och när registret inte går att läsa."""
+    try:
+        from portfolio import private_lock
+        if not private_lock.unlocked():
+            return
+        import positions
+        txt = holding_hint(row.get("ticker"), positions.find)
+    except Exception:
+        return
+    if txt:
+        st.caption(txt)
+
+
 FX_MISS_RETRY_S = 900
 _FX_MISS: dict = {}     # {'SEKUSD=X': tid för senaste misslyckade hämtning} — inte en Yahoo-fråga per kort och omkörning
 
@@ -220,6 +298,8 @@ def render_fv(row: dict, key: str, prefix: str = "fv", sheet: str = "") -> bool:
             or storage.differs(price, row.get("aktuell_kurs"))):
         row["framtida_antal_aktier"], row["aktuell_kurs"] = shares, price
         changed = True
+    if sheet:                                           # efter skrivningen: förslaget jämför med rutans tal nu
+        _shares_suggestion(row, key, sheet, ref, shares, f"{prefix}_{key}_shares")
 
     if locked:
         st.info(f"{fv.NOT_FCF_VALUED}. Target-yield är låst — ett "
@@ -325,6 +405,8 @@ def render_fv(row: dict, key: str, prefix: str = "fv", sheet: str = "") -> bool:
     if holding != bool(row.get("is_holding")):
         row["is_holding"] = holding
         changed = True
+    if not holding:
+        _holding_hint(row)
 
     # ── Deleveraging ─────────────────────────────────────────────────────────
     state = fv.deleveraging_state(row.get("nd_ebitda"),

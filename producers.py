@@ -297,6 +297,30 @@ def dilution_line(fresh: Optional[dict]) -> str:
             f"{'+' if pct >= 0 else '−'}{_sv(abs(pct))} %. Börsdata{' ' + asof if asof else ''}.")
 
 
+def _g(v: float) -> str:
+    """Tal utan onödiga decimaler, med decimalkomma: 4 · 1,4 · 12,5."""
+    return f"{v:g}".replace(".", ",").replace("-", "−")
+
+
+def position_cap_line(row: dict) -> str:
+    """Raden under 'Tänkt position': Rule-producentens hårda tak ur allokeraren (allocator.rule_for_strategy('rule'))
+    och halveringen vid skuld (lukacs.max_position_pct) — samma funktioner som scorecardet. Bara visning: taket är en
+    gräns, inget förslag på storlek. Tom sträng utan regel."""
+    try:
+        import allocator
+        rule = allocator.rule_for_strategy("rule")
+    except Exception:                                   # pragma: no cover
+        return ""
+    if rule is None:
+        return ""
+    cap = rule.hard_cap
+    txt = f"📏 Tak {_g(cap)} % av totalen"
+    eff = lukacs.max_position_pct(row.get("nd_ebitda"), cap, row.get("ar_till_lag_skuld"))
+    if eff is not None and eff < cap:
+        txt += f" ({_g(eff)} % med skuld/EBITDA {_g(_num(row.get('nd_ebitda')))})"
+    return txt + " — en gräns, inte ett förslag på storlek."
+
+
 def royalty_signal(row: dict) -> Verdict:
     """Signalen, i specens ordning.
 
@@ -732,6 +756,9 @@ def _producers(data: dict) -> None:
             if storage.differs(pos, row.get("position_pct")):
                 row["position_pct"] = pos
                 changed = True
+            cap_line = position_cap_line(row)
+            if cap_line:
+                st.caption(cap_line)
 
             # Runwayen till DS:s förslag ur sifferuppdateringens kassa och burn (producers:<id>) — ingen vid positivt FCF.
             rw, rw_note = controls_ui.sheet_runway("producers", row["id"])
