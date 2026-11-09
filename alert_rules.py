@@ -598,8 +598,9 @@ def screen_alerts(screens_data: Optional[dict], prev: Optional[dict]) -> tuple:
 # ── Arkens övergångar (sheets_refresh.py) ────────────────────────────────────
 def sheet_alerts(sheets_data: Optional[dict], prev: Optional[dict]) -> tuple:
     """(larm, nytt tillstånd) för händelser räknade på arkens rader med
-    färska tal: Insider-stopp/passa, Tiggre free ride/NAV-mål, Royalty-
-    signal, Rick Rule-skuld, Durretts köpregel.
+    färska tal: Insider-stopp/passa/trigger, Tiggre free ride/NAV-mål, Royalty-
+    signal, Rick Rule-skuld/bedömning/EV-NAV, Durretts köpregel. Händelsens
+    kind avgör arket via prefixet (sheet_target).
 
     sheets_data: {"generated", "events": [{key, kind, ticker, title, body}],
     "error"}. Tillståndet är de händelser som GÄLLER just nu; ett larm går
