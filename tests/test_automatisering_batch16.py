@@ -61,11 +61,11 @@ def test_wolf_stop_uses_wolfs_own_atr_and_multiplier_and_is_dated():
 @pytest.mark.parametrize("strategy", ["Quality", "Alpha"])
 def test_ema200_rules_suggest_todays_level_with_its_date(strategy):
     df = _ohlc()
-    h = ph.stop_hint({"strategy": strategy, "entry_price": 120.0}, df)
+    h = ph.stop_hint({"strategy": strategy, "entry_price": 130.0}, df)        # nivån 120,89 ligger under entry
     level = float(df["Close"].ewm(span=200).mean().iloc[-1])          # samma EMA200 som signalkolumnen
     assert h["value"] == pytest.approx(round(level, 2))
     assert h["label"] == "nivå i dag" and h["unit"] == "(2026-11-06)" and h["basis"] == "EMA200 2026-11-06"
-    assert ph.stop_hint({"strategy": strategy, "entry_price": 120.0}, df.tail(150)) is None    # < 200 staplar
+    assert ph.stop_hint({"strategy": strategy, "entry_price": 130.0}, df.tail(150)) is None    # < 200 staplar
 
 
 def test_insider_stop_is_the_sheets_stop_for_the_latest_cluster():
@@ -286,7 +286,7 @@ def test_holdings_stop_suggestions_per_strategy_save_only_on_click(holdings_page
     from strategies import wolf
     stores["holdings"] = _reg(
         swing=[_row("w1", "SAND.ST", "Wolf", 120.0)],
-        long=[_row("q1", "VOLV-B.ST", "Quality", 110.0), _row("i1", "BOL.ST", "Insider", 120.0)],
+        long=[_row("q1", "VOLV-B.ST", "Quality", 125.0), _row("i1", "BOL.ST", "Insider", 120.0)],
         momentum=[_row("m1", "ERIC-B.ST", "Momentum", 250.0)],
         tiggre=[_row("t1", "LOB.TO", "Tiggre", 1.2)])
     stores["insider"] = {"signals": [{"ticker": "BOL", "cluster_avg": 110.0, "found": "2026-11-01"}]}
@@ -513,3 +513,159 @@ def test_swing_without_screener_or_prices_shows_nothing(swing_page, stores):
     at.run()
     assert not at.exception, at.exception
     assert not [b for b in at.button if b.key.startswith("rf_offer_swing_")]
+
+
+# ── Fixar efter granskningen ─────────────────────────────────────────────────
+# a) En stopp på eller över entry ger journalen fel tecken på R — sådana nivåer visas bara som text.
+@pytest.mark.parametrize("strategy", ["Quality", "Alpha"])
+def test_an_ema200_level_above_entry_is_text_only(strategy):
+    df = _ohlc()                                                          # EMA200 i dag 120,89
+    h = ph.stop_hint({"strategy": strategy, "entry_price": 100.0}, df)
+    assert h["value"] is None
+    assert h["text"] == ("EMA200-regeln: nivå i dag 120,89 (2026-11-06) — över entry 100, sparas inte som stopp "
+                         "(journalens R räknas från stoppen).")
+    assert "på entry 120,89" in ph.stop_hint({"strategy": strategy, "entry_price": 120.89}, df)["text"]
+    no_entry = ph.stop_hint({"strategy": strategy, "entry_price": 0}, df)
+    assert no_entry["value"] is None and "120,89" in no_entry["text"] and "entry saknas" in no_entry["text"]
+
+
+def test_an_insider_stop_above_entry_is_text_only():
+    rows = [{"ticker": "BOL", "cluster_avg": 110.0, "found": "2026-11-01"}]          # stoppen 93,5
+    h = ph.stop_hint({"strategy": "Insider", "ticker": "BOL.ST", "entry_price": 90.0}, None, rows)
+    assert h["value"] is None and "stopp 93,5 — över entry 90" in h["text"]
+    assert ph.stop_hint({"strategy": "Insider", "ticker": "BOL.ST", "entry_price": 94.0}, None, rows)["value"] == 93.5
+
+
+def test_a_rule_stop_below_entry_gives_a_positive_r_for_a_winner():
+    import journal_bridge
+    h = ph.stop_hint({"strategy": "Quality", "entry_price": 130.0}, _ohlc())
+    assert h["value"] == pytest.approx(120.89)
+    closed = {"id": "q1", "ticker": "VOLV-B.ST", "strategy": "Quality", "entry_price": 130.0, "exit_price": 150.0,
+              "shares": 10, "stop": h["value"], "entry_date": "2026-01-02", "exit_date": "2026-11-06"}
+    assert journal_bridge.trade_from_closed(closed)["r_multiple"] > 0
+
+
+def test_holdings_shows_an_ema200_level_above_entry_as_text_without_use(holdings_page, stores):
+    import journal_bridge
+    stores["holdings"] = _reg(long=[_row("q1", "VOLV-B.ST", "Quality", 100.0),
+                                    _row("q2", "ATCO-A.ST", "Alpha", 125.0)])
+    at = holdings_page()
+    at.run()
+    assert not at.exception, at.exception
+    assert ("EMA200-regeln: nivå i dag 120,89 (2026-11-06) — över entry 100, sparas inte som stopp"
+            in _captions(at))
+    keys = {b.key for b in at.button}
+    assert "rf_offer_hold_stop_long_VOLV-B.ST" not in keys and "rf_offer_hold_stop_long_ATCO-A.ST" in keys
+    assert not stores["_saves"]
+    at.button(key="rf_offer_hold_stop_long_ATCO-A.ST").click().run()        # under entry: Använd som förut
+    assert not at.exception, at.exception
+    saved = _saved_rows(stores)
+    assert saved["q2"]["stop"] == pytest.approx(120.89) and saved["q1"]["stop"] is None
+    win = journal_bridge.trade_from_closed({**saved["q2"], "exit_price": 140.0, "exit_date": "2026-11-06"})
+    assert win["r_multiple"] > 0
+
+
+# b) Sektorn och anteckningen bor bara i registret — en skrivning från Swing-vyn får inte tappa dem.
+def test_put_from_the_view_keeps_the_rows_sector_and_notes(monkeypatch):
+    import streamlit
+    import positions
+    import storage
+    state: dict = {}
+    seed = {"holdings": {"momentum": [{"id": "m1", "ticker": "SAND.ST", "strategy": "Momentum", "entry_price": 250,
+                                       "sector": "Industri", "notes": "köpt efter rapporten"}]}}
+    monkeypatch.setattr(streamlit, "session_state", state)
+    monkeypatch.setattr(storage, "session_load", lambda name, default=None, legacy_file=None:
+                        state.setdefault(name, copy.deepcopy(seed.get(name, default))))
+    monkeypatch.setattr(storage, "save_session", lambda name: storage.SaveResult(name, "abc1234", "u", "t"))
+    view = positions.view_rows("Momentum")[0]
+    assert "sector" not in view and "notes" not in view                   # vyn bär dem inte
+    positions.put("Momentum", dict(view, outOfRank=True), "swing")
+    row = state["holdings"]["momentum"][0]
+    assert (row["sector"], row["notes"], row["extras"]["outOfRank"]) == ("Industri", "köpt efter rapporten", True)
+    positions.put("Momentum", dict(view, sector="Material"), "swing")      # bär vyn fältet gäller det
+    assert state["holdings"]["momentum"][0]["sector"] == "Material"
+
+
+def test_a_sector_saved_in_holdings_survives_a_swing_use_click(holdings_page, swing_page, stores):
+    _swing_stores(stores)
+    for r in stores["holdings"]["momentum"]:
+        r["shares"] = 10
+    stores["holdings"]["momentum"][2]["notes"] = "köpt efter rapporten"
+    at = holdings_page()
+    at.run()
+    assert not at.exception, at.exception
+    at.text_input(key="edit_sec_momentum_SAND.ST").set_value("Industri")
+    at.button(key="save_edit_momentum_SAND.ST").click().run()
+    assert not at.exception, at.exception
+    assert _saved_rows(stores)["m3"]["sector"] == "Industri"
+    stores["holdings"] = copy.deepcopy(next(s for n, s in reversed(stores["_saves"]) if n == "holdings"))
+    stores["_saves"].clear()                                                 # nästa sida läser det sparade
+    sw = swing_page(_screener())
+    sw.run()
+    assert not sw.exception, sw.exception
+    sw.button(key="rf_offer_swing_rank_m3").click().run()
+    assert not sw.exception, sw.exception
+    row = _saved_rows(stores)["m3"]
+    assert row["extras"]["outOfRank"] is True
+    assert (row["sector"], row["notes"]) == ("Industri", "köpt efter rapporten")
+
+
+# c) Samma ticker på två rader (två strategier): kontots summa hör inte till en rad — bara text, ingen Använd.
+def test_broker_numbers_for_a_ticker_on_two_rows_are_text_only():
+    rows = [{"id": "q1", "ticker": "VOLV-B.ST", "name": "Volvo", "strategy": "Quality", "shares": 100,
+             "entry_price": 240.0, "_bucket": "long"},
+            {"id": "m1", "ticker": "volv-b.st", "name": "Volvo", "strategy": "Momentum", "shares": 50,
+             "entry_price": 270.0, "_bucket": "momentum"},
+            {"id": "s1", "ticker": "SAND.ST", "name": "Sandvik", "strategy": "Wolf", "_bucket": "swing"}]
+    hints = ph.broker_hints(rows, [_op(qty=150.0, avg=250.0),
+                                   _op(isin="SE0000667891", ticker="SAND.ST", name="Sandvik", qty=10.0, avg=200.0)])
+    volvo = [h for h in hints if h["row"]["ticker"].upper() == "VOLV-B.ST"]
+    assert [h["row"]["id"] for h in volvo] == ["q1", "m1"]
+    for h in volvo:
+        assert h["rows"] == 2 and h["qty"] is None and h["price"] is None and h["accounts"] == 1
+        assert h["price_note"] == ("VOLV-B.ST står på 2 rader i Positioner — mäklarens 150 st à 250 SEK gäller "
+                                   "summan, fördela själv")
+    sand = next(h for h in hints if h["row"]["id"] == "s1")
+    assert sand["rows"] == 1 and (sand["qty"], sand["price"]) == (10, 200.0)      # en rad: som förut
+
+
+def test_broker_page_offers_nothing_for_a_ticker_on_two_rows(broker_page, stores):
+    stores["holdings"] = _reg(long=[_row("q1", "VOLV-B.ST", "Quality", 240.0, name="Volvo", shares=100)],
+                              momentum=[_row("m1", "VOLV-B.ST", "Momentum", 270.0, name="Volvo", shares=50)])
+    at = broker_page([_op(qty=150.0, avg=250.0)])
+    at.run()
+    assert not at.exception, at.exception
+    caps = _captions(at)
+    assert "VOLV-B.ST (Quality) · raden: 100 st à 240 · konto nordnet_isk" in caps
+    assert "VOLV-B.ST (Momentum) · raden: 50 st à 270 · konto nordnet_isk" in caps
+    assert caps.count("står på 2 rader i Positioner — mäklarens 150 st à 250 SEK gäller summan, fördela själv") == 2
+    assert not [b for b in at.button if b.key.startswith("rf_offer_imp_")]
+    assert "✓ Snittkurs och antal stämmer med raden." not in caps and not stores["_saves"]
+
+
+# d) Börsdatas felmeddelande bär anropets URL med nyckeln — det visas aldrig på sidan.
+@pytest.mark.parametrize("where", ["sectors", "lookup"])
+def test_bd_sector_never_shows_the_key_from_an_error(monkeypatch, where):
+    import requests
+    import borsdata_api
+    import holdings
+    import refresh_ui
+    from thor import ticker as thor_ticker
+    from universe import registry as ur
+    url = "https://apiservice.borsdata.se/v1/sectors?authKey=SECRET"
+
+    class _Api:
+        is_configured = True
+
+        def get_sectors(self):
+            raise requests.HTTPError(f"401 Client Error: Unauthorized for url: {url}")
+
+    def _lookup(api, t):
+        raise requests.ConnectionError(f"HTTPSConnectionPool: Max retries exceeded with url: {url}")
+    monkeypatch.setattr(borsdata_api, "get_api", lambda: _Api())
+    member = ur.Member("SAND.ST", "Sandvik", ur.NORDEN, sector_id=3) if where == "sectors" else None
+    monkeypatch.setattr(refresh_ui, "_registry_member", lambda t: member)
+    monkeypatch.setattr(thor_ticker, "lookup", _lookup)
+    res = holdings.bd_sector("SAND.ST", "Sandvik AB")
+    assert "SECRET" not in str(res) and "authKey" not in str(res)
+    assert res == {"msg": "Börsdata svarade inte — skriv sektorn själv."}

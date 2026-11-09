@@ -3,10 +3,12 @@ portfolio/position_hints.py — förslag till positionernas fält ur regler och 
 
   stop_hint      Stopp per strategi ur strategins egna regler: Insider (insider.stop_price), Momentum (−10 %,
                  swing_verdict.STOP_PCT), Wolf (entry − 2,5 × ATR14, strategies/wolf.py), EMA200-reglerna (Quality,
-                 Alpha: nivån i dag, daterad) och 'ingen kursstopp' för arkstrategierna.
+                 Alpha: nivån i dag, daterad) och 'ingen kursstopp' för arkstrategierna. En nivå på eller över
+                 entry (eller utan entry) blir bara text — journalen räknar R ur stoppen.
   sector_hint    Börsdatas sektor ur sektor-id:t (registret eller Börsdatas instrument), med matchat namn.
   broker_hints   Mäklarens FIFO-snitt och antal (journal_import.fifo.OpenPosition) mot registrets rader, ett konto
-                 i taget — valuta, pence i London och fel ISIN-koppling syns i texten.
+                 i taget — valuta, pence i London och fel ISIN-koppling syns i texten. Står tickern på flera
+                 rader blir talen bara text (kontots summa hör inte till en rad).
   rank_hint      'Ur topp 40' ur wolf_screener.json (rank ≤ 40, swing_verdict.RANK_EXIT).
   ma50_from_screener / ma50_from_closes
                  'Stängt under MA50' ur screenerns dist_ma50, annars ur en kursserie (market_prices).
@@ -120,12 +122,25 @@ def insider_row(ticker, rows: Iterable) -> Optional[dict]:
     return max(hits, key=lambda r: str(r.get("found") or ""))
 
 
+def _below_entry(hint: dict, entry: Optional[float]) -> dict:
+    """Ett stoppförslag får Använd bara när det ligger under entry. Journalen räknar R ur positionens stopp
+    (journal_bridge): en stopp på eller över entry ger fel tecken, och utan entry går det inte att se. Då visas
+    nivån bara som text, med regeln och dagen."""
+    value = hint.get("value")
+    if value is None or (entry is not None and value < entry):
+        return hint
+    level = f"{hint['source']}: {hint['label']} {fmt_num(value)}" + (f" {hint['unit']}" if hint.get("unit") else "")
+    why = "entry saknas" if entry is None else f"{'på' if value == entry else 'över'} entry {fmt_num(entry)}"
+    return {"value": None, "text": f"{level} — {why}, sparas inte som stopp (journalens R räknas från stoppen)."}
+
+
 def stop_hint(row: dict, df=None, insider_rows: Optional[list] = None) -> Optional[dict]:
     """Stoppförslaget för positionen ur strategins egen regel, eller None när regeln saknas eller underlaget fattas.
 
     {'value': kurs eller None, 'label', 'source', 'unit', 'note', 'basis'} — value None betyder bara text ('ingen
-    kursstopp'). unit bär datumet för nivåer som rör sig (ATR, EMA200): '(2026-11-06)'. basis följer med till
-    positionen vid Använd, så att det syns vilken regel och vilken dag stoppen kom ifrån."""
+    kursstopp', eller en nivå på eller över entry: _below_entry). unit bär datumet för nivåer som rör sig (ATR,
+    EMA200): '(2026-11-06)'. basis följer med till positionen vid Använd, så att det syns vilken regel och vilken
+    dag stoppen kom ifrån."""
     row = row or {}
     strategy = str(row.get("strategy") or "")
     rule = STOP_RULE.get(strategy)
@@ -140,9 +155,9 @@ def stop_hint(row: dict, df=None, insider_rows: Optional[list] = None) -> Option
         if entry is None:
             return None
         pct = float(sv.STOP_PCT)                      # −10.0
-        return {"value": _round(entry * (1 + pct / 100)), "label": "stopp", "source": "Momentum-regeln",
-                "unit": "", "note": f"entry {fmt_num(entry)} − {fmt_num(abs(pct))} %",
-                "basis": f"−{fmt_num(abs(pct))} % från entry"}
+        return _below_entry({"value": _round(entry * (1 + pct / 100)), "label": "stopp", "source": "Momentum-regeln",
+                             "unit": "", "note": f"entry {fmt_num(entry)} − {fmt_num(abs(pct))} %",
+                             "basis": f"−{fmt_num(abs(pct))} % från entry"}, entry)
     if rule == STOP_ATR:
         from strategies import wolf
         atr, day = last_atr(df)
@@ -152,15 +167,16 @@ def stop_hint(row: dict, df=None, insider_rows: Optional[list] = None) -> Option
         value = entry - mult * atr
         if value <= 0:
             return None
-        return {"value": _round(value), "label": "stopp", "source": "Wolf-regeln", "unit": f"({day})",
-                "note": f"entry {fmt_num(entry)} − {fmt_num(mult)} × ATR14 {fmt_num(round(atr, 2))}",
-                "basis": f"{fmt_num(mult)} × ATR14 {day}"}
+        return _below_entry({"value": _round(value), "label": "stopp", "source": "Wolf-regeln", "unit": f"({day})",
+                             "note": f"entry {fmt_num(entry)} − {fmt_num(mult)} × ATR14 {fmt_num(round(atr, 2))}",
+                             "basis": f"{fmt_num(mult)} × ATR14 {day}"}, entry)
     if rule == STOP_EMA200:
         level, day = ema200_level(df)
         if level is None:
             return None
-        return {"value": _round(level), "label": "nivå i dag", "source": "EMA200-regeln", "unit": f"({day})",
-                "note": "under EMA200 halveras positionen", "basis": f"EMA200 {day}"}
+        return _below_entry({"value": _round(level), "label": "nivå i dag", "source": "EMA200-regeln",
+                             "unit": f"({day})", "note": "under EMA200 halveras positionen",
+                             "basis": f"EMA200 {day}"}, entry)
     if rule == STOP_INSIDER:
         import insider as ins
         sig = insider_row(row.get("ticker"), insider_rows)
@@ -169,8 +185,8 @@ def stop_hint(row: dict, df=None, insider_rows: Optional[list] = None) -> Option
         avg = _num(sig.get("cluster_avg"))
         found = str(sig.get("found") or "")[:10]
         note = f"klustersnittet {fmt_num(avg)} × {fmt_num(ins.STOP_FRAC)}" + (f", kluster {found}" if found else "")
-        return {"value": _round(ins.stop_price(sig)), "label": "stopp", "source": "Insiderbevakaren", "unit": "",
-                "note": note, "basis": f"klustersnittet × {fmt_num(ins.STOP_FRAC)}"}
+        return _below_entry({"value": _round(ins.stop_price(sig)), "label": "stopp", "source": "Insiderbevakaren",
+                             "unit": "", "note": note, "basis": f"klustersnittet × {fmt_num(ins.STOP_FRAC)}"}, entry)
     return None
 
 
@@ -227,23 +243,43 @@ def _qty(v) -> Optional[float]:
     return int(q) if abs(q - round(q)) < 1e-6 else round(q, 6)
 
 
+def _split_note(ticker: str, n: int, qty, avg, currency: str) -> str:
+    """Texten när tickern står på flera rader: mäklarens tal gäller summan av raderna, inte en av dem."""
+    a = _pos(avg)
+    each = f" à {fmt_num(a)} {currency or '?'}" if a is not None else ""
+    size = f"{fmt_num(qty)} st" if qty is not None else "antal"
+    return f"{ticker} står på {n} rader i Positioner — mäklarens {size}{each} gäller summan, fördela själv"
+
+
 def broker_hints(rows: Iterable, open_positions: Iterable) -> list:
     """En post per registerrad och mäklarposition med samma ticker: {'row', 'account', 'isin', 'name', 'qty',
-    'price', 'price_note', 'warn', 'accounts'}. Konton slås aldrig ihop — samma ticker på två konton ger två poster,
-    och 'accounts' säger hur många konton tickern finns på. warn är satt när mäklarens namn inte liknar radens
-    (ISIN→ticker-kartan kan ha kopplat fel)."""
+    'price', 'price_note', 'warn', 'accounts', 'rows'}. Konton slås aldrig ihop — samma ticker på två konton ger två
+    poster, och 'accounts' säger hur många konton tickern finns på. 'rows' säger hur många registerrader tickern
+    står på: fler än en (samma bolag i två strategier) ger inga tal att använda, bara texten i price_note — kontots
+    summa hör inte till en rad. warn är satt när mäklarens namn inte liknar radens (ISIN→ticker-kartan kan ha
+    kopplat fel)."""
     import refresh_ui
+    rows = [r for r in rows or [] if isinstance(r, dict)]
     ops = [p for p in open_positions or [] if (getattr(p, "ticker", None) or "").strip()]
     accounts: dict = {}
     for p in ops:
         accounts.setdefault(p.ticker.strip().upper(), set()).add(str(getattr(p, "account", "") or ""))
+    rows_per: dict = {}
+    for r in rows:
+        t = str(r.get("ticker") or "").strip().upper()
+        rows_per[t] = rows_per.get(t, 0) + 1
     out = []
-    for r in rows or []:
-        t = str((r or {}).get("ticker") or "").strip().upper()
+    for r in rows:
+        t = str(r.get("ticker") or "").strip().upper()
         for p in ops:
             if p.ticker.strip().upper() != t:
                 continue
-            price, note = broker_price(t, getattr(p, "avg_price", None), getattr(p, "currency", ""))
+            ccy = str(getattr(p, "currency", "") or "")
+            qty = _qty(getattr(p, "qty", None))
+            price, note = broker_price(t, getattr(p, "avg_price", None), ccy)
+            if rows_per[t] > 1:
+                price, note = None, _split_note(t, rows_per[t], qty, getattr(p, "avg_price", None), ccy)
+                qty = None
             name = str(getattr(p, "name", "") or "").strip()
             own = str(r.get("name") or "").strip()
             warn = ""
@@ -251,8 +287,8 @@ def broker_hints(rows: Iterable, open_positions: Iterable) -> list:
                 warn = f"mäklarens '{name}' liknar inte '{own}' — kontrollera ISIN-kopplingen"
             out.append({"row": r, "account": str(getattr(p, "account", "") or ""),
                         "isin": str(getattr(p, "isin", "") or ""), "name": name,
-                        "qty": _qty(getattr(p, "qty", None)), "price": price, "price_note": note, "warn": warn,
-                        "currency": str(getattr(p, "currency", "") or ""), "accounts": len(accounts.get(t, ()))})
+                        "qty": qty, "price": price, "price_note": note, "warn": warn,
+                        "currency": ccy, "accounts": len(accounts.get(t, ())), "rows": rows_per[t]})
     return out
 
 

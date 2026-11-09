@@ -509,6 +509,9 @@ def put(strategy: str, view_row: dict, source: str) -> dict:
         if r["id"] == reg["id"] or (not view_row.get("id") and r["ticker"] == reg["ticker"]):
             reg["id"] = r["id"]
             reg["source"] = r.get("source") or source
+            for k in ("sector", "notes"):          # vyn bär dem inte — behåll radens egna (sektorn ur Holdings)
+                if k not in view_row:
+                    reg[k] = r.get(k, reg[k])
             rows[i] = reg
             break
     else:

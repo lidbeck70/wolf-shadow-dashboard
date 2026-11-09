@@ -404,8 +404,9 @@ def bd_sector(ticker: str, own_name: str = "") -> dict:
             sid, bd_name = info.get("sectorId"), str(info.get("name") or bd_name)
         sectors = {int(s["id"]): str(s.get("name") or "") for s in (api.get_sectors() or [])
                    if isinstance(s, dict) and s.get("id") is not None}
-    except Exception as exc:
-        return {"msg": f"Börsdata svarade inte: {exc}"}
+    except Exception as exc:                # bara typen: felets text bär anropets URL med nyckeln (authKey=…)
+        logger.debug("Börsdatas sektor för %s: %s", ticker, type(exc).__name__)
+        return {"msg": "Börsdata svarade inte — skriv sektorn själv."}
     from portfolio import position_hints as ph
     hint = ph.sector_hint(sid, sectors, bd_name, own_name)
     return hint or {"msg": f"Börsdata har ingen sektor för {ticker}."}

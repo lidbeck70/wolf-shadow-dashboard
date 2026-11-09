@@ -483,8 +483,9 @@ def _save_position_field(row: dict, field: str) -> None:
 
 def _broker_suggestions(open_positions: list) -> None:
     """Rader som redan finns i Positioner: mäklarens FIFO-snitt och antal som förslag med Använd, ett konto i taget
-    (portfolio.position_hints.broker_hints). Inget skrivs utan klick och inget slås ihop. Bara när innehaven är
-    upplåsta — låst visas varken tal eller vilka bolag som ägs."""
+    (portfolio.position_hints.broker_hints). Inget skrivs utan klick och inget slås ihop. Står tickern på flera rader
+    visas mäklarens tal bara som text — kontots summa hör inte till en rad. Bara när innehaven är upplåsta — låst
+    visas varken tal eller vilka bolag som ägs."""
     if not open_positions:
         return
     try:
@@ -508,8 +509,10 @@ def _broker_suggestions(open_positions: list) -> None:
     for h in hints:
         row = h["row"]
         acct = h["account"] or "?"
-        head = (f"{row['ticker']} ({row.get('strategy', '')}) · konto {acct} · mäklaren: {h['name'] or '?'}"
-                + (f" ({h['isin']})" if h["isin"] else ""))
+        own = (f"{ph.fmt_num(positions._num(row.get('shares')))} st à "
+               f"{ph.fmt_num(positions._num(row.get('entry_price')))}")      # två rader med samma strategi skiljs åt
+        head = (f"{row['ticker']} ({row.get('strategy', '')}) · raden: {own} · konto {acct} · "
+                f"mäklaren: {h['name'] or '?'}" + (f" ({h['isin']})" if h["isin"] else ""))
         if h["accounts"] > 1:
             head += f" · finns på {h['accounts']} konton — förslaget gäller det här kontot, inte summan"
         st.caption(head.replace("$", "\\$"))
