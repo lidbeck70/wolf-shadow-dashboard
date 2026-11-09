@@ -8,6 +8,7 @@ Automatisering, batch 18 — befintliga avvikelser, nu bestämda av ägaren.
 3. Okänd valuta i nattjobbet (och i 'Hämta nu'): talen som räknas om med en kurs utanför FX_TO_USD blir None i
    stället för att räknas som USD. Kursen i sin egen valuta står kvar.
 4. Tiggre: 'Försenad 2:a ggn' i kalendern blir ett förslag med en knapp — registret sparas bara på klicket.
+   Stäng utan Markera får ändå säljregeln som orsak (arket, registret, journalen), som förut.
 
 Inga grindar, trösklar, poängformler eller storlekar ändrade utöver ägarens beslut ovan.
 """
@@ -364,6 +365,53 @@ def test_no_suggestion_when_already_marked_or_not_delayed_twice(tiggre_page):
     late_1 = [dict(LATE_2[0], status="Försenad 1:a ggn")]
     at = tiggre_page(_stores(held=[_held(catalysts=late_1)]))
     assert "markera?" not in _md(at) and not tiggre_page.saves
+
+
+# Stäng utan Markera: säljorsaken följer brickan (som på main), räknad i minnet vid klicket.
+DELAYED_TWICE = "Katalysator försenad ANDRA gången utan god förklaring"
+
+
+@pytest.fixture
+def journal(monkeypatch):
+    """journal_bridge.record_close utan Gisten: raden som skickas spelas in, journalraden byggs som förut."""
+    import journal_bridge
+    rows: list = []
+
+    def _record(row):
+        rows.append(copy.deepcopy(row))
+        return journal_bridge.trade_from_closed(row)
+    monkeypatch.setattr(journal_bridge, "record_close", _record)
+    return rows
+
+
+def _close(at):
+    at.button(key="tg_close_t1").click().run()
+    assert not at.exception, at.exception
+    return at.session_state["tiggre"]["closed"], at.session_state["holdings"]["closed"]
+
+
+def test_closing_a_second_delay_without_marking_records_the_sell_rule(tiggre_page, journal):
+    import journal_bridge
+    at = tiggre_page(_stores(held=[_held(catalysts=LATE_2)]))
+    assert not tiggre_page.saves                                        # inget skrivet när sidan öppnas
+    assert at.checkbox(key="tg_t_t1_delayed_twice").value is False      # Markera inte klickad
+    sheet, reg = _close(at)
+    assert [c["reason"] for c in sheet] == [DELAYED_TWICE]              # förut (batch 18): 'manuell'
+    assert [c["exit_reason"] for c in reg] == [DELAYED_TWICE]
+    assert [r["exit_reason"] for r in journal] == [DELAYED_TWICE]
+    trade = journal_bridge.trade_from_closed(journal[0])
+    assert trade["exit_reason"] == DELAYED_TWICE.lower().replace(" ", "_")
+    assert at.session_state["holdings"]["tiggre"] == []
+
+
+def test_a_ticked_trigger_still_comes_first_and_no_sell_signal_closes_as_manual(tiggre_page, journal):
+    at = tiggre_page(_stores(held=[_held(catalysts=LATE_2, triggers={"key_person": True})]))
+    sheet, reg = _close(at)
+    assert sheet[0]["reason"] == reg[0]["exit_reason"] == "Nyckelperson lämnar"
+    late_1 = [dict(LATE_2[0], status="Försenad 1:a ggn")]
+    at = tiggre_page(_stores(held=[_held(catalysts=late_1)]))
+    sheet, reg = _close(at)
+    assert sheet[0]["reason"] == reg[0]["exit_reason"] == journal[-1]["exit_reason"] == "manuell"
 
 
 # ═════════════════════════════════════════════════════════════════════════════

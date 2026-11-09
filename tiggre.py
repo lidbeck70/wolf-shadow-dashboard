@@ -1018,6 +1018,12 @@ def _positions(data: dict) -> None:
         # (förslaget under kryssen). Att öppna sidan skriver ingenting i registret.
         cat_sell = catalyst_sell_signal(p.get("catalysts", []))
         fired = [lbl for k, lbl in SELL_ALL_TRIGGERS if p.get("triggers", {}).get(k)]
+        # Säljorsaken vid Stäng följer brickan (position_signals): katalysatorn räknas som säljregel även när
+        # triggern inte är markerad än. Räknas i minnet — skriver ingenting.
+        eff = dict(p.get("triggers") or {})
+        if cat_sell:
+            eff["delayed_twice"] = True
+        close_reason = next((lbl for k, lbl in SELL_ALL_TRIGGERS if eff.get(k)), "manuell")
         # Färskt börsvärde och kurs ur sifferuppdateringen: P/NAV och −40 %
         # räknas på dagens läge, inte på talen från köpdagen.
         f = fresh.get(f"tiggre:{p.get('id')}") or {}
@@ -1092,11 +1098,10 @@ def _positions(data: dict) -> None:
                 "id": p["id"], "ticker": p.get("ticker", "?"),
                 "entry": new_entry, "exit": new_cur, "date": _today(),
                 "ret": (new_cur / new_entry - 1) if new_entry > 0 else 0.0,
-                "reason": fired[0] if fired else "manuell",
+                "reason": close_reason,
                 "catalysts": p.get("catalysts", []),
             })
-            positions.close(row_id=p["id"], exit_price=new_cur,
-                            reason=fired[0] if fired else "manuell")
+            positions.close(row_id=p["id"], exit_price=new_cur, reason=close_reason)
             _save(data)
             st.rerun()
 
