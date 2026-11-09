@@ -320,16 +320,37 @@ def _scale_conflict(company: CompanyInput, base: str) -> Optional[str]:
             f"Skriv produktionen i {base}{shown} och enheten {base}{also}.")
 
 
+def _read_in_resource_unit(company: CompanyInput, base: str) -> bool:
+    """Står produktionstalet Asymmetry läser (årsproduktionen, annars Produktion nu) i arkets resursenhet? Ja för
+    Produktion nu (Durretts fält, i resursenheten), och för årsproduktionen när produktionsenheten inte är en känd
+    enhet på prisets bas (tom, t för koppar, egen text). Nej utan produktion, och för årsproduktion i lb med
+    produktionsenheten lb bredvid resurser i kt — den läses rätt."""
+    key = next((k for k in ("annual_production", "production_current") if cval.usable(company, k)), None)
+    return key == "production_current" or (
+        key == "annual_production" and _unit_base(_text(company, "production_unit")) != base)
+
+
+def resource_unit_conflict(company: CompanyInput) -> Optional[str]:
+    """Varningen för arkets resursenhet på en annan bas än råvarans prisenhet (kt mot USD/lb), bara när produktion ×
+    pris läser ett tal i den enheten (_read_in_resource_unit). Fältet finns bara i Durrett-arket. Durrett-motorns
+    egen kontroll (quantity_unit_mismatch, värderingsraden) flaggar enheten ändå. None annars."""
+    _reg, base = _price_base(company)
+    if not base or not _read_in_resource_unit(company, base):
+        return None
+    return _resource_base_mismatch(company)
+
+
 def production_unit_conflict(company: CompanyInput) -> Optional[str]:
     """Varningen där produktion × pris räknas utan omräkning (Asymmetrys Ekonomi och Analys, Durrett-arkets
-    Economics), i Ctx.quantitys ordning: arkets resursenhet har en annan bas än råvarans prisenhet (kt mot USD/lb),
-    produktionsenheten har det (t i stället för lb för koppar), produktionen står i en skalad enhet (koz, Mlb, kt …)
-    som räknas som basenheten, eller produktionsenheten och arkets resursenhet säger olika om samma tal. None när
-    enheten passar, saknas eller är en egen text, eller när råvaran saknar prisenhet."""
+    Economics), i Ctx.quantitys ordning: arkets resursenhet har en annan bas än råvarans prisenhet (kt mot USD/lb)
+    och produktionen som läses står i den (resource_unit_conflict), produktionsenheten har en annan bas (t i stället
+    för lb för koppar), produktionen står i en skalad enhet (koz, Mlb, kt …) som räknas som basenheten, eller
+    produktionsenheten och arkets resursenhet säger olika om samma tal. None när enheten passar, saknas eller är en
+    egen text, eller när råvaran saknar prisenhet."""
     reg, base = _price_base(company)
     if not base:
         return None
-    return (_resource_base_mismatch(company) or _base_mismatch(company, reg, base)
+    return (resource_unit_conflict(company) or _base_mismatch(company, reg, base)
             or _scale_conflict(company, base))
 
 
@@ -415,5 +436,6 @@ def spot_earnings(s: Optional[dict], company: CompanyInput) -> Optional[dict]:
 
 __all__ = ["proposals", "refresh_row", "ins_id_offer", "commodity_price_offer", "spot_earnings", "Datapoint",
            "AUTO_USD_SOURCES", "quarterly_burn_offer", "stage_offer", "stage_offer_text", "production_unit_offer",
-           "production_unit_conflict", "quantity_unit_mismatch", "resource_category_offer", "derived_offers",
+           "production_unit_conflict", "resource_unit_conflict", "quantity_unit_mismatch", "resource_category_offer",
+           "derived_offers",
            "CATEGORY_FIELDS"]

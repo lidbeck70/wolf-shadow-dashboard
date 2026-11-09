@@ -93,10 +93,16 @@ def _steps(steps: list) -> None:
 
 def _unit_conflict(company: CompanyInput) -> Optional[str]:
     """Produktionsenheten mot råvarans prisenhet — samma kontroll som Durrett-motorn (engines/durrett/refresh.
-    production_unit_conflict). Poängen räknar produktion × pris utan omräkning, så en enhet som inte passar ger fel tal."""
+    production_unit_conflict) — och var den rättas. Poängen räknar produktion × pris utan omräkning, så en enhet som
+    inte passar ger fel tal. Arkets resursenhet (Enhet för resurser/produktion) finns bara i Durrett-arket."""
     try:
         from engines.durrett import refresh as dr
-        return dr.production_unit_conflict(company)
+        conflict = dr.production_unit_conflict(company)
+        if not conflict:
+            return None
+        where = (f"Durrett-arket → {ccfg.FIELD_BY_KEY['resource_unit'].label}"
+                 if conflict == dr.resource_unit_conflict(company) else "Ark → Ekonomi")
+        return f"{conflict} Rätta under {where}."
     except Exception:                                     # pragma: no cover — varningen är en hjälp
         return None
 
@@ -201,7 +207,7 @@ def _analysis(data: dict, company: CompanyInput) -> None:
                    + (" …" if len(missing) > 10 else "") + " — fyll i under Ark.")
     conflict = _unit_conflict(company)
     if conflict:
-        st.caption(f"⚠ {conflict} Rätta under Ark → Ekonomi.".replace("$", "\\$"))
+        st.caption(f"⚠ {conflict}".replace("$", "\\$"))
 
     with st.expander("Diagram", expanded=False):
         x, y = st.columns([3, 2])

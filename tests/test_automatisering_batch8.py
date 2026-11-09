@@ -11,7 +11,8 @@ Automatisering, batch 8 — Durrett och Wolf Asymmetry: rensa förslagen och hä
    som Durrett-motorn (Ctx.quantity), nu också i Asymmetry. Produktion × pris räknas där utan omräkning, så en
    skalad enhet (koz, Mlb, kt …) varnas också, och arkets resursenhet i koz ger inget 'oz'-förslag som märker talen fel.
    Bara det produktionstal som faktiskt läses räknas (resurser i Moz utan produktion varnas inte), och en resursenhet
-   på en annan bas än priset (koppar i kt) ger varningen och inget 'lb'-förslag — Ctx.quantitys ordning. Förslaget
+   på en annan bas än priset (koppar i kt) ger inget 'lb'-förslag och varningen när talet som läses står i den
+   (Produktion nu, eller årsproduktion utan lb bredvid) — Ctx.quantitys ordning. Förslaget
    ges bara när produktionsenheten är tom: 't' för koppar får varningen (räkna om talet), aldrig en ny etikett 'lb'.
 4. Burn per kvartal = nattens burn/år ÷ 4 (FCF-baserad som i dag), bara explorer/developer och bara när burn > 0.
 5. Högsta resurskategori = den högsta kategorin med ett tal > 0 bland arkets reserver/resurser (Använd), härledd och
@@ -355,6 +356,7 @@ def _off_base(commodity: str, ru: str, pu=None) -> CompanyInput:
 
 _KT = ("Enhet för resurser/produktion kt passar inte råvarans pris i USD/lb — produktion × pris blir fel. "
        "Välj lb/Mlb och räkna om talen.")
+_KT_WHERE = "Rätta under Durrett-arket → Enhet för resurser/produktion."
 
 
 @pytest.mark.parametrize("commodity, ru, price_unit, fits", [
@@ -418,6 +420,54 @@ def test_a_production_unit_on_another_base_gets_no_relabel_offer():
     uranium = _with_unit(CompanyInput(ticker="UR", commodity="uranium", stage="producer"), "t")
     assert dr.production_unit_offer(uranium) is None
     assert dr.production_unit_conflict(uranium).endswith("Skriv produktionen i lb (räkna om talet) och enheten lb.")
+
+
+# Rättelse 4: arkets resursenhet på en annan bas (kt mot USD/lb) varnas i produktion × pris bara när talet som läses
+# står i den enheten — Produktion nu, eller årsproduktionen utan en produktionsenhet på prisets bas.
+def _kt_explorer() -> CompanyInput:
+    """Kopparexplorer: resurserna i kt, ingen produktion alls."""
+    c = CompanyInput(ticker="CEX", name="Test Copper Explorer", commodity="copper", stage="explorer",
+                     maturity="exploration")
+    dcs.fill(c, dict(resource_unit="kt", resource_indicated=800, resource_inferred=1200), **dcs._TR)
+    dcs.fill(c, dict(cash_musd=15, market_cap_musd=80, quarterly_burn_musd=2, commodity_price=4.5), **dcs._MKT)
+    return c
+
+
+def _kt_lb_developer(pu="lb") -> CompanyInput:
+    """Kopparutvecklare: Durretts resurser 800 kt, Asymmetrys årsproduktion 50 000 000 lb (produktionsenhet lb)."""
+    c = CompanyInput(ticker="CKD", name="Test Copper Developer", commodity="copper", stage="developer", maturity="dfs")
+    dcs.fill(c, dict(resource_unit="kt", reserve_probable=800, annual_production=50_000_000), **dcs._TR)
+    dcs.fill(c, dict(commodity_price=4.5, market_cap_musd=700, cash_musd=250), **dcs._MKT)
+    return _with_unit(c, pu)
+
+
+def test_resources_in_kt_without_production_give_no_production_warning():
+    """Ingen produktion att gånga med priset. Durrett-motorn flaggar kt ändå: mängderna blir N/A, inte fel tal."""
+    from asymmetry.model import Inputs
+    from engines.durrett import ui as dui
+    c = _kt_explorer()
+    assert Inputs(c).prod is None
+    assert dr.resource_unit_conflict(c) is None and dr.production_unit_conflict(c) is None
+    assert dr.quantity_unit_mismatch(c) == ("resource_unit", "kt", "USD/lb", ["lb", "Mlb"])
+    assert dui._unit_conflict(c) == "en enhet som passar råvarans pris i USD/lb (välj lb/Mlb i stället för kt)"
+    assert dr.production_unit_offer(c) is None                            # ingen bar 'lb' mot ett kt-ark (som förut)
+
+
+def test_annual_production_in_lb_next_to_resources_in_kt_gives_no_warning():
+    """Asymmetry läser 50 000 000 lb × 4,5 USD/lb — rätt. Varningen står kvar när talet kan stå i kt."""
+    from asymmetry.model import Inputs
+    from engines.durrett import ui as dui
+    c = _kt_lb_developer()
+    assert Inputs(c).prod == 50_000_000 and Inputs(c).unit == "lb"
+    assert dr.resource_unit_conflict(c) is None and dr.production_unit_conflict(c) is None
+    assert dr.quantity_unit_mismatch(c)[:2] == ("resource_unit", "kt")    # Durrett-värderingen flaggar fortfarande kt
+    assert dui._unit_conflict(c) == "en enhet som passar råvarans pris i USD/lb (välj lb/Mlb i stället för kt)"
+    for pu in (None, "t", "lb (attributable)"):                           # inte en känd enhet på prisets bas
+        assert dr.production_unit_conflict(_kt_lb_developer(pu)) == _KT, pu
+    assert dr.production_unit_conflict(_kt_lb_developer("Mlb")).startswith("Produktionen i Mlb räknas som lb")
+    c.fields.pop("annual_production")                                     # Produktion nu i kt, produktionsenhet lb
+    c.set("production_current", dp(120, **dcs._FS))
+    assert dr.production_unit_conflict(c) == _KT == dr.resource_unit_conflict(c)
 
 
 # ── 4. burn per kvartal ──────────────────────────────────────────────────────
@@ -610,9 +660,10 @@ def test_asymmetry_offers_no_lb_against_a_kt_sheet_and_warns(monkeypatch):
     assert "cf_dv_CPR_production_unit" not in {b.key for b in at.button}
     assert at.session_state["confidence"]["companies"] == before["companies"]          # att öppna skriver inget
     at = _ark(monkeypatch, _conf(_off_base("copper", "kt")), "CPR", mode="Analys")
-    assert f"⚠ {_KT} Rätta under Ark → Ekonomi." in _captions(at)
+    assert f"⚠ {_KT} {_KT_WHERE}" in _captions(at)                      # fältet finns bara i Durrett-arket
     at = _ark(monkeypatch, _conf(_off_base("copper", "kt", pu="lb")), "CPR", mode="Analys")   # lb redan skrivet
-    assert f"⚠ {_KT} Rätta under Ark → Ekonomi." in _captions(at)
+    assert f"⚠ {_KT} {_KT_WHERE}" in _captions(at)
+    assert not any("Rätta under Ark → Ekonomi" in c for c in _captions(at))
 
 
 def test_asymmetry_offers_no_lb_over_a_production_unit_in_t(monkeypatch):
@@ -627,6 +678,17 @@ def test_asymmetry_offers_no_lb_over_a_production_unit_in_t(monkeypatch):
     assert at.session_state["confidence"]["companies"] == before["companies"]          # att öppna skriver inget
     at = _ark(monkeypatch, _conf(_copper_in_t()), "CPR", mode="Analys")
     assert f"⚠ {_T_LB} Rätta under Ark → Ekonomi." in _captions(at)
+
+
+@pytest.mark.parametrize("company", [_kt_explorer, _kt_lb_developer], ids=["explorer-kt", "developer-kt-lb"])
+def test_asymmetry_shows_no_resource_unit_warning_when_production_is_read_right(monkeypatch, company):
+    """Resurser i kt utan produktion, eller årsproduktion i lb bredvid resurser i kt: inget att rätta i Asymmetry."""
+    c = company()
+    at = _ark(monkeypatch, _conf(c), c.ticker, mode="Analys")
+    assert _unit_warnings(at) == []
+    assert not any(x.startswith("⚠ Enhet för resurser") for x in _captions(at))
+    at = _ark(monkeypatch, _conf(company()), c.ticker)                   # Ark → Ekonomi
+    assert _unit_warnings(at) == []
 
 
 def test_asymmetry_core_offers_the_resource_category_from_the_sheet(monkeypatch):
