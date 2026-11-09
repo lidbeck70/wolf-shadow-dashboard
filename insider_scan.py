@@ -44,7 +44,7 @@ import logging
 import os
 import sys
 from collections import defaultdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 logging.basicConfig(level=logging.INFO,
@@ -118,13 +118,20 @@ def yf_ticker(inst: dict, table: Optional[dict] = None) -> str:
 
 
 # ── Klustret ur transaktionerna ──────────────────────────────────────────────
-def build_cluster(values: list, today: date, fx: float = 1.0) -> Optional[dict]:
+def build_cluster(values: list, today: date, fx: float = 1.0,
+                  since: Optional[date] = None) -> Optional[dict]:
     """Riktiga köp senaste CLUSTER_DAYS → arkets fält. None om inga köp.
 
     Riktning = tecknet på shares (Börsdatas typkoder är numeriska).
     equityProgram (tilldelning/optioner) räknas inte — arket: "Endast riktiga
     marknadsköp räknas".
+
+    since = fönstrets första dag i stället för today − CLUSTER_DAYS (nattjobbet
+    för arkets rader: upptäckt − 30 dagar till i dag). Köp i fönstret räknas då
+    också för återkommande köpare, även när de är äldre än RECUR_DAYS. Utan
+    since är allt som förut.
     """
+    start = since if since is not None else today - timedelta(days=CLUSTER_DAYS)
     recent, year = [], []
     for t in values or []:
         if not isinstance(t, dict) or t.get("equityProgram"):
@@ -136,7 +143,8 @@ def build_cluster(values: list, today: date, fx: float = 1.0) -> Optional[dict]:
         if d is None:
             continue
         age = (today - d).days
-        if age < 0 or age > RECUR_DAYS:
+        in_window = age >= 0 and d >= start
+        if age < 0 or (age > RECUR_DAYS and not in_window):
             continue
         price = _f(t.get("price"))
         amount = _f(t.get("amount"))
@@ -147,7 +155,7 @@ def build_cluster(values: list, today: date, fx: float = 1.0) -> Optional[dict]:
                "shares": shares, "price": price,
                "amount": abs(amount) if amount is not None else None}
         year.append(row)
-        if age <= CLUSTER_DAYS:
+        if in_window:
             recent.append(row)
     if not recent:
         return None

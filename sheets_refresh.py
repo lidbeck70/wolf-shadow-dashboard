@@ -27,6 +27,11 @@ lukacs.deleveraging_state, scoring.durrett_buy_ok) — inga regler ändras:
   rule_deleveraging   skuld/EBITDA korsar 1,0 (halv position) i Rick Rule
   durrett_buy_rule    MCap/framtida vinst korsar 10× i Durrett
 
+Insider-raderna får dessutom klustret omräknat (fönstret upptäckt − 30 dagar
+till i dag), grindens checklista, triggern och 'efter fall' med insider_scans
+egna funktioner (insider_fields) — ett extra batchanrop per 50 id för
+insynsdatan, och längre kurshistorik i samma kursanrop. Bara förslag.
+
 Env: BORSDATA_API_KEY, GITHUB_TOKEN (gist), ALERT_REPO_TOKEN (Contents: Read
 på panel-data), PANEL_DATA_KEY (läser registret; bloben bär innehavens kurser
 och sparas därför krypterad i Gisten när nyckeln finns). Flaggor: --dry-run.
@@ -39,7 +44,7 @@ import logging
 import os
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 logging.basicConfig(level=logging.INFO,
@@ -195,16 +200,25 @@ def resolve_global(api, ticker: str) -> Optional[int]:
     return None
 
 
-def _last_close(api, ins_id: int):
+def _bars(api, ins_id: int, max_count: int = 5) -> list:
+    """Dagskurserna ur Börsdata, äldst först, bara de med stängning. Tom lista vid fel."""
     try:
-        raw = api.get_stockprices(ins_id, max_count=5)
+        raw = api.get_stockprices(ins_id, max_count=max_count)
     except Exception:
-        return None, None
-    bars = sorted((b for b in raw or [] if b.get("c") is not None),
+        return []
+    return sorted((b for b in raw or [] if b.get("c") is not None),
                   key=lambda b: b.get("d") or "")
+
+
+def _close_of(bars: list):
+    """(senaste stängning, datum) ur _bars, eller (None, None)."""
     if not bars:
         return None, None
     return float(bars[-1]["c"]), str(bars[-1].get("d") or "")[:10]
+
+
+def _last_close(api, ins_id: int):
+    return _close_of(_bars(api, ins_id))
 
 
 def _yf_close(ticker: str, quiet: bool = False, with_currency: bool = False):
@@ -359,12 +373,139 @@ def commodity_name(ref: dict) -> Optional[str]:
     return str(raw or "").strip() or None
 
 
-def refresh(api, sheets: dict) -> dict:
+# ── Insider: klustret räknas om per arkrad (automatisering batch 15) ─────────
+# Arkets rader — även de som lagts in för hand och de under skanningens gräns — får klustret, grinden, triggern och
+# 'efter fall' med insider_scans egna funktioner. Bara förslag; inga regler, trösklar eller poäng ändras.
+# insider_scan importeras först här (_isc): dess logging.basicConfig gör då ingenting, eftersom den här modulen
+# redan har satt rotloggern (basicConfig rör inte en logger som har hanterare).
+INSIDER_BARS_MIN = 260              # ett års stängningar: MA20 och 1 mån för triggern
+WEEKS52_BARS = 252                  # 52 veckor, som insider_scan.drawdown_52w
+INSIDER_DAYS_BEFORE_FOUND = 30      # fönstret: upptäckt − 30 dagar till i dag (ägarens beslut)
+MAX_BARS = 5040                     # Börsdatas tak för dagskurser (20 år)
+INSIDER_FX_TABLE = "insider_scan.FX_TO_SEK (grov fast tabell)"
+_GATE_KEYS = ("market_cap", "f_score", "net_debt_m", "net_debt_ebitda", "fcf_m", "revenue_growth")
+
+
+def _isc():
+    import insider_scan
+    return insider_scan
+
+
+def _date_of(value) -> Optional[date]:
+    try:
+        return date.fromisoformat(str(value or "")[:10])
+    except ValueError:
+        return None
+
+
+def insider_window_start(row: dict) -> Optional[date]:
+    """Klusterfönstrets första dag för arkets rad: upptäckt − 30 dagar (fönstret går till i dag). None utan läsbart
+    upptäcktsdatum — då gäller skanningens rullande 30 dagar."""
+    d = _date_of((row or {}).get("found"))
+    return None if d is None else d - timedelta(days=INSIDER_DAYS_BEFORE_FOUND)
+
+
+def insider_fx(ccy) -> tuple:
+    """(valuta, SEK per enhet) ur skanningens tabell. Saknad valuta räknas som SEK (som skanningen); en valuta utanför
+    tabellen ger kursen None, så att beloppet i tkr lämnas tomt i stället för att räknas som kronor (batch 18)."""
+    c = str(ccy or "").strip().upper() or "SEK"
+    return c, _isc().FX_TO_SEK.get(c)
+
+
+def insider_cluster(values: list, row: dict, ccy, today: date) -> Optional[dict]:
+    """insider_scan.build_cluster för arkets rad i det beslutade fönstret. None utan riktiga köp i fönstret."""
+    _c, fx = insider_fx(ccy)
+    return _isc().build_cluster(values, today, fx if fx is not None else 1.0, since=insider_window_start(row))
+
+
+def insider_bars_needed(first_buy, today: date) -> int:
+    """Antal dagskurser som täcker 52 veckor före klustrets första köp och fram till i dag — samma kursanrop, bara
+    längre historik. Minst INSIDER_BARS_MIN; kalenderdagar × 5/7 + 10 räknar handelsdagarna med marginal."""
+    d = _date_of(first_buy)
+    if d is None:
+        return INSIDER_BARS_MIN
+    days = max(0, (today - d).days)
+    return min(MAX_BARS, max(INSIDER_BARS_MIN, WEEKS52_BARS + days * 5 // 7 + 10))
+
+
+def insider_fields(cl: Optional[dict], row: dict, snap: dict, bars: list, ccy, today: date,
+                   window: bool = True) -> dict:
+    """Nattjobbets insiderfält för arkets rad, bara förslag:
+
+      cluster_*        klustret i fönstret (antal köpare, högsta roll, belopp i tkr och i lokal valuta med valutan och
+                       kursen som använts, snittkurs, återkommande), first_buy, last_buy och köpen (högst 12)
+      gate_auto        'Nej' när något mätbart faller, annars '' — 'Ja' sparas aldrig, den väljer du
+      gate_checks      checklistan ur insider_scan.auto_gate på snapshoten som redan hämtats
+      trigger_auto     insider_scan.auto_trigger (A, B, Nej eller '') med radens klustersnitt, annars nattens
+      drawdown         kursen vid klustrets första köp mot 52-veckorstoppen före köpet (ägarens beslut)
+      efter_fall_auto  insider_scan.auto_efter_fall på det fallet och F-score
+
+    window=False när insynsdatan inte gick att hämta: då inga klusterfält och inget fönster."""
+    isc = _isc()
+    snap = snap or {}
+    c, fx = insider_fx(ccy)
+    out: dict = {}
+    if window:
+        since = insider_window_start(row) or today - timedelta(days=isc.CLUSTER_DAYS)
+        out.update(cluster_since=since.isoformat(), cluster_until=today.isoformat())
+    if cl:
+        out.update({
+            "cluster_insiders": int(cl["insiders"]), "cluster_role": cl["role"],
+            "cluster_amount_tkr": cl["amount"] if fx is not None else None,
+            "cluster_amount_local": cl["amount_local"], "cluster_currency": c,
+            "cluster_fx_to_sek": fx, "cluster_fx_table": INSIDER_FX_TABLE,
+            "cluster_avg": cl["cluster_avg"], "cluster_aterkommande": bool(cl["aterkommande"]),
+            "first_buy": cl["first_buy"], "last_buy": cl["last_buy"], "cluster_buys": list(cl["buys"][:12])})
+    if any(_f(snap.get(k)) is not None for k in _GATE_KEYS):
+        g = dict(snap)
+        if fx is None:
+            g["market_cap"] = None                       # valutan okänd: börsvärdet går inte att mäta i MSEK
+        gate, checks = isc.auto_gate(g, fx if fx is not None else 1.0)
+        if fx is None and _f(snap.get("market_cap")) is not None:
+            for chk in checks:
+                if str(chk.get("label") or "").startswith("Börsvärde"):
+                    chk["detail"] = f"valutan {c} saknas i växelkurstabellen"
+        out["gate_auto"] = "Nej" if gate == "Nej" else ""
+        out["gate_checks"] = checks
+    closes = [float(b["c"]) for b in bars or []]
+    if closes:
+        avg = _f((row or {}).get("cluster_avg"))
+        avg = avg if avg and avg > 0 else (cl or {}).get("cluster_avg")
+        out["trigger_auto"], out["trigger_note"] = isc.auto_trigger(closes, avg)
+    if cl and cl.get("first_buy"):
+        first = cl["first_buy"]
+        upto = [float(b["c"]) for b in bars or [] if str(b.get("d") or "")[:10] <= first]
+        dd = isc.drawdown_52w(upto) if upto else None
+        ef, note = isc.auto_efter_fall(dd, _f(snap.get("f_score")))
+        if dd is not None and len(upto) < WEEKS52_BARS:
+            note += f" (toppen på {len(upto)} handelsdagar)"
+        out.update(drawdown=dd, drawdown_ref=first, efter_fall_auto=bool(ef),
+                   efter_fall_note=f"vid första köpet {first}: {note}")
+    return out
+
+
+def _insider_tx(api, ids: list) -> Optional[dict]:
+    """Insynstransaktionerna för insider-radernas bolag: get_insider_transactions_batch, ett anrop per 50 id.
+    None när klienten saknar anropet eller det felar — då blir klusterfälten tomma och resten av jobbet går vidare."""
+    if not ids:
+        return {}
+    getter = getattr(api, "get_insider_transactions_batch", None)
+    if getter is None:
+        return None
+    try:
+        return getter(list(ids)) or {}
+    except Exception as exc:
+        log.warning("Insynsdatan för arkets rader gick inte att hämta: %s", exc)
+        return None
+
+
+def refresh(api, sheets: dict, today: Optional[date] = None) -> dict:
     """Färska tal per arkrad + övergångar. Rena arkfunktioner för händelserna."""
     out = {"generated": _now(), "rows": {}, "events": [], "error": None}
     refs = collect_rows(sheets)
     if not refs:
         return out
+    today = today or date.today()
     try:
         inst_map = {int(i["insId"]): i for i in api.get_instruments()
                     if i.get("insId") is not None}
@@ -387,12 +528,29 @@ def refresh(api, sheets: dict) -> dict:
         if missing_meta:
             snaps.update(api.get_fundamentals_snapshot_fast(missing_meta, scope="global") or {})
 
+        # Insider-raderna: insynsdatan i ett batchanrop per 50 id, klustret per rad i fönstret upptäckt − 30 dagar
+        # till i dag, och så många dagskurser som 52 veckor före första köpet kräver (samma kursanrop).
+        ins_refs = [r for r in refs if r["sheet"] == "insider" and r["key"] in resolved]
+        tx = _insider_tx(api, sorted({resolved[r["key"]] for r in ins_refs}))
+        clusters: dict = {}
+        bars_needed: dict = {}
+        for r in ins_refs:
+            iid = resolved[r["key"]]
+            if tx is not None:
+                clusters[r["key"]] = insider_cluster(tx.get(iid) or [], r["row"],
+                                                     (inst_map.get(iid) or {}).get("stockPriceCurrency"), today)
+            first = (clusters.get(r["key"]) or {}).get("first_buy")
+            bars_needed[iid] = max(bars_needed.get(iid, 0), insider_bars_needed(first, today))
+        if ins_refs:
+            log.info("Insider: insynsdata för %d bolag, kluster på %d av %d rader",
+                     len(tx or {}), sum(1 for v in clusters.values() if v), len(ins_refs))
+
         # Råvarupriset till Rick Rule, Poängmodellen och Durrett-arket: en hämtning per termin (Yahoo), delad mellan
         # arken, sedan på varje rad med samma råvara. Rader utan råvara (eller utan termin) får inget.
         import commodity_prices as _cp
         com_names = {r["key"]: commodity_name(r) for r in refs}
         spots = _cp.spot_many(n for n in com_names.values() if n)
-        price_cache = {}
+        bars_cache: dict = {}
         report_cache: dict = {}
         import private_data
         hide = bool(private_data.passphrase())      # Actions-loggen är publik: innehavens tickers syns inte där
@@ -410,9 +568,9 @@ def refresh(api, sheets: dict) -> dict:
                     # terminen: arket erbjuder priset bara medan raden har den råvaran (commodity_prices.night_fits)
                     s["commodity_ticker"] = sp.get("ticker")
             if iid is not None:
-                if iid not in price_cache:
-                    price_cache[iid] = _last_close(api, iid)
-                s["price"], s["asof"] = price_cache[iid]
+                if iid not in bars_cache:                    # insider-raderna: längre historik i samma anrop
+                    bars_cache[iid] = _bars(api, iid, max_count=bars_needed.get(iid, 5))
+                s["price"], s["asof"] = _close_of(bars_cache[iid])
                 s["source"] = "borsdata"
                 meta = inst_map.get(iid) or {}
                 ccy = str(meta.get("stockPriceCurrency") or "").upper() or None
@@ -441,6 +599,8 @@ def refresh(api, sheets: dict) -> dict:
                     s["dividend_yield_pct"] = round(dy * 100, 2) if dy is not None else None
                 if r["sheet"] == "insider":
                     s["f_score"] = _f(snap.get("f_score"))
+                    s.update(insider_fields(clusters.get(r["key"]), r["row"], snap, bars_cache[iid], ccy, today,
+                                            window=tx is not None))
                 if r["sheet"] == "confidence":               # Durrett-/Wolf Asymmetry-arket: fler tal ur snapshoten
                     roic = _f(snap.get("roic"))
                     s["roic_pct"] = round(roic * 100, 1) if roic is not None else None
