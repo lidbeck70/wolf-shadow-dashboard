@@ -324,9 +324,12 @@ def position_quote(p: dict, fresh: Optional[dict] = None) -> tuple:
 
 
 def risk_text(entry, current, shares, half_sold, ccy: str) -> str:
-    """'Kapital i risk' som text i aktiens valuta. Utan antal står 'Antal saknas' (förut 0 kr, som såg ut som
-    free ride), utan entry 'Entry saknas'; efter free ride 0."""
+    """'Kapital i risk' som text i aktiens valuta. Efter free ride (halva såld vid +100 %) 0 — insatsen är uttagen,
+    oavsett antal. Annars står 'Antal saknas' utan antal (förut 0 kr, som såg ut som free ride) och 'Entry saknas'
+    utan entry."""
     s, e = _num(shares), _num(entry)
+    if e is not None and e > 0 and half_sold and free_ride_reached(e, current):
+        return f"0 {ccy}".strip()
     if s is None or s <= 0:
         return "Antal saknas"
     if e is None or e <= 0:
@@ -338,7 +341,7 @@ def risk_text(entry, current, shares, half_sold, ccy: str) -> str:
 def export_rows(rows: list, fresh: Optional[dict] = None) -> list:
     """Positionsbladet i CSV:n. Utveckling, kapital i risk, P/NAV och signalerna räknas på nattens kurs och
     börsvärde (tiggre:<id>, samma som sidan), och kursen står med datum och valuta. Utan nattrad: arkets sparade tal.
-    Kapital i risk är tomt när antal eller entry saknas — inte 0."""
+    Kapital i risk är 0 efter free ride (oavsett antal) och annars tomt när antal eller entry saknas — inte 0."""
     out = []
     for p in rows or []:
         entry = _num(p.get("entry"), 0.0) or 0.0
@@ -350,8 +353,11 @@ def export_rows(rows: list, fresh: Optional[dict] = None) -> list:
         pn = p_nav(mc_now if mc_now else p.get("mcap"), p.get("nav"))
         sell = catalyst_sell_signal(p.get("catalysts", []))
         shares = _num(p.get("shares"))
-        risk = (equity_at_risk(entry, cur, shares, p.get("half_sold"))
-                if shares is not None and shares > 0 and entry > 0 else None)
+        if entry > 0 and p.get("half_sold") and free_ride_reached(entry, cur):
+            risk = 0.0                                          # free ride: insatsen är uttagen, oavsett antal
+        else:
+            risk = (equity_at_risk(entry, cur, shares, p.get("half_sold"))
+                    if shares is not None and shares > 0 and entry > 0 else None)
         out.append({
             **p, "_ret": None if ret is None else round(ret, 1),
             "_px": px, "_px_asof": asof or None, "_ccy": ccy,

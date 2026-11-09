@@ -126,6 +126,18 @@ def test_risk_text_says_what_is_missing_and_uses_the_currency():
     assert t.risk_text(1.0, 1.5, 2000, True, "CAD") == "2 000 CAD"            # halva såld men inte +100 %
 
 
+def test_risk_text_is_zero_after_free_ride_even_without_a_share_count():
+    """En position ur KÖP har antal 0 — efter free ride är insatsen ändå uttagen, så 0 och inte 'Antal saknas'."""
+    import tiggre as t
+    assert t.risk_text(1.0, 2.5, 0, True, "CAD") == "0 CAD"
+    assert t.risk_text(1.0, 2.5, None, True, "CAD") == "0 CAD"
+    assert t.risk_text(1.0, 2.0, 0, True, "CAD") == "0 CAD"                   # precis +100 %
+    assert t.risk_text(1.0, 1.5, 0, True, "CAD") == "Antal saknas"            # halva såld men inte +100 %
+    assert t.risk_text(1.0, 2.5, 0, False, "CAD") == "Antal saknas"           # +100 % men halvan inte såld
+    assert t.risk_text(1.0, None, 0, True, "CAD") == "Antal saknas"           # ingen kurs: ingen free ride
+    assert t.risk_text(0.0, 2.5, 0, True, "CAD") == "Antal saknas"            # ingen entry: ingen free ride
+
+
 def _pos(**kw):
     return {"id": "t1", "ticker": "LOB.TO", "name": "Lobo", "entry": 1.0, "current": 1.1, "shares": 0,
             "mcap": 50.0, "nav": 400.0, "half_sold": False, "triggers": {}, "catalysts": [], **kw}
@@ -150,6 +162,17 @@ def test_export_rows_without_a_night_row_keep_the_sheets_numbers():
     assert row["_px"] == 1.1 and row["_px_asof"] is None and row["_ccy"] == "CAD"
     assert row["_ret"] == 10.0 and row["_pnav"] == pytest.approx(0.12) and row["_signals"] is None
     assert t.export_rows([_pos()], {})[0]["_risk"] is None                     # antal saknas: tomt, inte 0
+
+
+def test_export_rows_risk_is_zero_after_free_ride_even_without_a_share_count():
+    import tiggre as t
+    fresh = {"tiggre:t1": {"price": 2.5, "currency": "CAD", "asof": ASOF}}
+    assert t.export_rows([_pos(half_sold=True)], fresh)[0]["_risk"] == 0.0           # antal 0, som efter KÖP
+    assert t.export_rows([_pos(half_sold=True, shares=None)], fresh)[0]["_risk"] == 0.0
+    assert t.export_rows([_pos(half_sold=True, shares=1000)], fresh)[0]["_risk"] == 0.0
+    half = {"tiggre:t1": {"price": 1.5, "currency": "CAD", "asof": ASOF}}
+    assert t.export_rows([_pos(half_sold=True)], half)[0]["_risk"] is None           # inte +100 %: antal saknas
+    assert t.export_rows([_pos()], fresh)[0]["_risk"] is None                        # halvan inte såld
 
 
 def test_dilution_line_from_the_royalty_night_row():
@@ -396,6 +419,21 @@ def test_tiggre_position_risk_in_the_stocks_currency_and_zero_after_free_ride(pa
     assert not at2.exception, at2.exception
     assert _metric(at2, "Kapital i risk") == "0 CAD" and _metric(at2, "Avkastning") == "+150.0 %"
     assert not page.saves
+
+
+def test_tiggre_free_ride_position_without_a_share_count_shows_zero_risk(page):
+    """Positioner ur KÖP har antal 0. Efter free ride visas 0 — inte 'Antal saknas'."""
+    blob = {"rows": {"tiggre:t1": {"ticker": "LOB.TO", "price": 2.5, "currency": "CAD", "asof": ASOF}}}
+    at = page("Tiggre", blob, _tiggre_stores(held=[_held(half_sold=True)]))
+    at.run()
+    assert not at.exception, at.exception
+    assert _metric(at, "Kapital i risk") == "0 CAD"
+    assert not page.saves
+    blob["rows"]["tiggre:t1"]["price"] = 1.5
+    at2 = page("Tiggre", blob, _tiggre_stores(held=[_held(half_sold=True)]))
+    at2.run()
+    assert not at2.exception, at2.exception
+    assert _metric(at2, "Kapital i risk") == "Antal saknas"                    # halva såld men inte +100 %
 
 
 def test_tiggre_position_without_a_night_row_uses_kurs_nu(page):
