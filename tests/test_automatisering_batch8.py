@@ -818,3 +818,23 @@ def test_durrett_sheet_offers_fcf_ocf_and_quarterly_burn_for_an_explorer(monkeyp
     assert f["quarterly_burn_musd"]["value"] == 3.0 and f["operating_cash_flow_musd"]["value"] == -9.0
     assert "ev_ebitda" not in f
     assert errors(validate(cs.get(at.session_state["confidence"], "LEX"))) == []
+
+
+def test_annual_production_without_a_production_unit_next_to_koz_resources_is_flagged():
+    """Bekräftelserundan: årsproduktionen utan produktionsenhet bredvid resurser i koz — Durrett läser den i koz
+    (faller tillbaka på den), produktion × pris som oz. Samma regel som resursenhetskontrollen; texten säger båda
+    fallen, så ett tal som redan står i oz inte uppmanas att bli 180 000 000."""
+    from engines.durrett._base import Ctx
+    c = CompanyInput(ticker="GAD", commodity="gold", stage="developer", maturity="pfs")
+    dcs.fill(c, dict(resource_unit="koz", annual_production=180, resource_indicated=2100), **dcs._TR)
+    assert Ctx(c).quantity("annual_production") == 180_000
+    text = dr.production_unit_conflict(c)
+    assert text == ("Årsproduktionen står utan produktionsenhet bredvid Enhet för resurser/produktion koz: Durrett "
+                    "läser den i koz, produktion × pris som oz. Står den i koz blir produktion × pris 1 000 gånger "
+                    "för litet — skriv den i oz (180 000) och enheterna oz. Står den redan i oz, välj "
+                    "produktionsenheten oz.")
+    c.set("production_unit", dp("oz", kind="ACTUAL", source="test"))        # nu säger fälten olika om samma tal
+    assert dr.production_unit_conflict(c).startswith("Produktionsenheten oz och Enhet för resurser/produktion koz")
+    d = CompanyInput(ticker="GAE", commodity="gold", stage="explorer")
+    dcs.fill(d, dict(resource_unit="Moz", resource_inferred=2.5), **dcs._TR)    # resurser utan produktion: ingen
+    assert dr.production_unit_conflict(d) is None

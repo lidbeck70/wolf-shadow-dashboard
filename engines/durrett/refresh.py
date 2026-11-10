@@ -309,13 +309,21 @@ def _scale_conflict(company: CompanyInput, base: str) -> Optional[str]:
     if shared and pu and ru and pu != ru:
         return (f"Produktionsenheten {pu} och {ru_label} {ru} säger olika om samma tal — produktion × pris räknar "
                 f"det som {base}. Skriv produktionen i {base} och båda enheterna {base} (resurserna också i {base}).")
-    unit = pu or (ru if key == "production_current" else None)
+    # utan känd produktionsenhet läses talet i arkets resursenhet — samma regel som resource_unit_conflict
+    from_ru = not pu and ru is not None and _read_in_resource_unit(company, base)
+    unit = pu or (ru if from_ru else None)
     factor = _scaled(unit)
     if factor == 1.0:
         return None
     v = company.num(key) if key else None              # samma tal som Asymmetry räknar med
     shown = f" ({_amount(v * factor)})" if v else ""
     also = f", också {ru_label} (Durrett-arket) med resurserna i {base}" if ru and shared else ""
+    if from_ru and key == "annual_production":
+        # årsproduktionen har ingen egen enhet här: den kan stå i resursenheten (Durretts läsning) eller redan i base
+        return (f"Årsproduktionen står utan produktionsenhet bredvid {ru_label} {ru}: Durrett läser den i {ru}, "
+                f"produktion × pris som {base}. Står den i {ru} blir produktion × pris {_amount(factor)} gånger för "
+                f"litet — skriv den i {base}{shown} och enheterna {base}. Står den redan i {base}, välj "
+                f"produktionsenheten {base}.")
     return (f"Produktionen i {unit} räknas som {base} — produktion × pris blir {_amount(factor)} gånger för litet. "
             f"Skriv produktionen i {base}{shown} och enheten {base}{also}.")
 
