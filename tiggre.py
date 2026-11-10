@@ -587,6 +587,24 @@ def _suggest(*args, **kw) -> None:
         pass
 
 
+def _durrett(cand: dict) -> tuple:
+    """(crosssheet, Durrett-bolaget för kandidatens ticker) — (None, None) när modulen inte går att läsa."""
+    try:
+        import crosssheet
+    except Exception:
+        return None, None
+    return crosssheet, crosssheet.durrett_company(cand.get("ticker"))
+
+
+def _offer(row: dict, field: str, value, text: str, key: str, widget_key: str, on_apply) -> None:
+    """Ett förslag med Använd (refresh_ui.offer). Att rita skriver ingenting. Tyst vid fel."""
+    try:
+        import refresh_ui
+        refresh_ui.offer(row, field, value, field, key=key, widget_key=widget_key, on_apply=on_apply, text=text)
+    except Exception:
+        pass
+
+
 def _registry_identity(ticker: str, name: str) -> dict:
     """ins_id och namn ur universum-registret för en kandidat du lägger in (refresh_ui.registry_identity). Bara på
     klicket; tom utan register — då blir raden som förut."""
@@ -731,6 +749,15 @@ def _candidate_card(data: dict, cand: dict, expanded: bool = False) -> None:
             if v != bool(sc.get(key)):
                 sc[key] = v
                 changed = True
+        # Ur Durrett-arket (crosssheet): FS, tillstånd och finansiering — bara som ja, med Använd.
+        xs, durrett = _durrett(cand)
+        try:
+            yes_offers = xs.screen_offers(durrett, cand.get("ticker")) if xs else []
+        except Exception:
+            yes_offers = []
+        for key, text in yes_offers:
+            _offer(sc, key, True, text, f"xs_tg_{key}_{cand['id']}", f"tg_sc_{cand['id']}_{key}",
+                   lambda: _save(data))
 
         # Lobo-arket
         st.markdown(f"<div style='height:8px;'></div><b style='color:{TEXT};'>"
@@ -748,6 +775,14 @@ def _candidate_card(data: dict, cand: dict, expanded: bool = False) -> None:
                               value=shown["nav"],
                               step=10.0, key=f"tg_nav_{cand['id']}",
                               help="Alltid after-tax — pre-tax är 30–40 % för högt.")
+        # NAV ur Durrett-arket (NAV, annars projekt-NPV), annars Rick Rule-kortets — med källa och datum.
+        try:
+            hit = xs.tiggre_nav_for(cand.get("ticker"), durrett) if xs else None
+        except Exception:
+            hit = None
+        if hit:
+            _offer(cand, "nav", hit[0], hit[1], f"xs_tg_nav_{cand['id']}", f"tg_nav_{cand['id']}",
+                   lambda: _save(data))
         down_shown = _num(cand.get("downside"))           # det som står sparat — nya kandidater får −40 när de läggs in
         down = m3.number_input("Nedsida (%)", value=down_shown,
                                step=5.0, key=f"tg_down_{cand['id']}",

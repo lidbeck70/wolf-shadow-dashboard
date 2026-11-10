@@ -402,6 +402,31 @@ def spot_context(ref, row: dict) -> str:
     return txt
 
 
+# Kortets eget NAV med samma definition som CSM:s 'NAV MUSD' (efter skatt): Tiggres 'NAV = NPV after tax'.
+CARD_NAV = {"tiggre": "nav"}
+
+
+def _attach_scenario(row: dict, matrix: dict, s: str, sc: dict) -> None:
+    """on_apply för Base-NAV:n: scenariot in i matrisen och matrisen i raden (en tom matris skrivs först nu)."""
+    matrix[s] = sc
+    row["csm"] = matrix
+
+
+def _card_nav_offer(row: dict, matrix: dict, sc: dict, s: str, key: str, prefix: str, sheet: str) -> None:
+    """Förslag på Base-radens NAV ur kortets eget NAV (CARD_NAV) med Använd. Att rita skriver ingenting."""
+    field = CARD_NAV.get(sheet)
+    nav = ctl._num((row or {}).get(field)) if field else None
+    if nav is None or nav <= 0:
+        return
+    try:
+        import crosssheet
+        import refresh_ui
+    except Exception:
+        return
+    refresh_ui.offer(sc, "nav_musd", nav, "NAV", key=f"xs_csm_{prefix}_{key}", widget_key=f"{prefix}_{key}_{s}_nav",
+                     on_apply=lambda: _attach_scenario(row, matrix, s, sc), text=crosssheet.csm_base_nav_text(nav))
+
+
 def render_csm(row: dict, key: str, kind: str = ctl.PRODUCER,
                prefix: str = "csm", with_fv: bool = False, sheet: str = "") -> bool:
     """Commodity Sensitivity Matrix. Tre scenarier, fem för kärninnehav.
@@ -471,6 +496,8 @@ def render_csm(row: dict, key: str, kind: str = ctl.PRODUCER,
             matrix[s] = sc
             row["csm"] = matrix
             changed = True
+        if s == ctl.BASE and new_kind != ctl.PRODUCER:
+            _card_nav_offer(row, matrix, sc, s, key, prefix, sheet)
 
     st.caption("Kolumner: scenario · råvarupris · "
                + ("fritt kassaflöde" if new_kind == ctl.PRODUCER

@@ -625,6 +625,21 @@ def _factor_offer(data: dict, row: dict, fkey: str, points: int, source: str, no
                      on_apply=lambda: _save(data), cast=int, fmt=lambda p: f"{p} p ({crit[p]})", note=note)
 
 
+def _durrett_aisc_offer(data: dict, row: dict) -> None:
+    """AISC ur Durrett-arket (ARKEN → 🧭 Durrett) till hjälpräknaren, med Använd — bara guld i USD/oz
+    (crosssheet.scoring_aisc_offer). Att rita skriver ingenting."""
+    try:
+        import crosssheet
+        import refresh_ui
+        hit = crosssheet.scoring_aisc_offer(crosssheet.durrett_company(row.get("ticker")), row.get("commodity"),
+                                            row.get("ticker"))
+        if hit:
+            refresh_ui.offer(row, "aisc", hit[0], "AISC", key=f"xs_sc_aisc_{row['id']}",
+                             widget_key=f"sc_aisc_{row['id']}", on_apply=lambda: _save(data), text=hit[1])
+    except Exception:
+        pass
+
+
 def _durrett_math(data: dict, row: dict) -> None:
     st.markdown(f"<b style='color:{TEXT};'>Värderingen</b> "
                 f"<span style='color:{DIM};font-size:0.78rem;'>"
@@ -686,6 +701,7 @@ def _durrett_math(data: dict, row: dict) -> None:
         aisc = h3.number_input("AISC ($/oz)", min_value=0.0, step=50.0,
                                value=_nonneg(row.get("aisc")),
                                key=f"sc_aisc_{row['id']}")
+        _durrett_aisc_offer(data, row)
         spot = spot_profit_line(_night_row(row), row.get("commodity"), prod, aisc)
         if spot:
             st.caption(spot.replace("$", "\\$"))

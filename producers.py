@@ -667,6 +667,53 @@ def _suggest(*args, **kw) -> None:
         pass
 
 
+def _durrett(row: dict):
+    """Durrett-bolaget för kortets ticker (crosssheet.durrett_company). None utan Durrett-rad eller vid fel."""
+    try:
+        import crosssheet
+        return crosssheet.durrett_company(row.get("ticker"))
+    except Exception:
+        return None
+
+
+def _durrett_offer(data: dict, row: dict, field: str, make, key: str, widget_key: str, on_apply=None) -> None:
+    """Ett förslag ur Durrett-arket med Använd — samma knapp som arkens andra förslag (refresh_ui.offer). make(
+    crosssheet) ger (värde, text) eller None. Att rita skriver ingenting; klicket skriver fältet och sparar i
+    sessionen. Tyst vid fel — ett förslag får aldrig fälla kortet."""
+    try:
+        import crosssheet
+        import refresh_ui
+        hit = make(crosssheet)
+        if hit:
+            refresh_ui.offer(row, field, hit[0], field, key=key, widget_key=widget_key,
+                             on_apply=on_apply or (lambda: _save(data)), text=hit[1])
+    except Exception:
+        pass
+
+
+def _apply_nav_pair(data: dict, row: dict, price, source: str) -> None:
+    """on_apply för NAV-paret: metallpriset i NAV och NAV-källan följer med NAV:n (rutorna via sina nycklar). Paret
+    skrivs ihop: utan pris töms kortets gamla Metallpris i NAV — det hörde till NAV:n som byttes ut."""
+    rid = row["id"]
+    if price is not None:
+        row["nav_price"] = price
+    else:
+        row.pop("nav_price", None)
+    st.session_state[f"pr_navp_{rid}"] = price
+    row["nav_source"] = source
+    st.session_state[f"pr_navs_{rid}"] = source
+    _save(data)
+
+
+def _unit_label(row: dict) -> str:
+    """'USD/lb · Koppar' vid kostnads- och prisrutorna (crosssheet.unit_label). Tom utan känd råvara."""
+    try:
+        import crosssheet
+        return crosssheet.unit_label(row.get("commodity"))
+    except Exception:
+        return ""
+
+
 def _commodity(row: dict, key: str, on_apply) -> bool:
     """Råvaran på kortet: väljaren och förslaget med Använd (refresh_ui.commodity_choice). True när du bytte."""
     try:
@@ -894,6 +941,10 @@ def _producers(data: dict) -> None:
             price = v4.number_input("Råvarupris nu", min_value=0.0, step=10.0,
                                     value=shown["price"],
                                     key=f"pr_p_{row['id']}")
+            ulabel = _unit_label(row)                   # fast enhet: kostnad och pris i råvarans prisenhet
+            if ulabel:
+                v3.caption(ulabel)
+                v4.caption(ulabel)
             _suggest("producers", row, "ev_ebitda", "ev_ebitda", "EV/EBITDA",
                      f"pr_ev_{row['id']}", lambda: _save(data), fmt="{:.1f}", lo=0.0)
             _suggest("producers", row, "nd_ebitda", "nd_ebitda", "nettoskuld/EBITDA",
@@ -906,6 +957,13 @@ def _producers(data: dict) -> None:
                 _suggest("producers", row, "price", "commodity_price", "råvarupris",
                          f"pr_p_{row['id']}", lambda: _save(data), fmt="{:,.2f}",
                          unit_field="commodity_unit")
+            # AISC ur Durrett-arket — bara samma råvara i samma enhet (crosssheet.cost_offer).
+            durrett = _durrett(row)
+            if durrett is not None:
+                _durrett_offer(data, row, "unit_cost",
+                               lambda xs: xs.cost_offer(durrett, row.get("commodity"), row.get("ticker"),
+                                                        row.get("price")),
+                               f"xs_pr_cost_{row['id']}", f"pr_c_{row['id']}")
             _neg_note(row, {"ev_ebitda": "EV/EBITDA", "unit_cost": "kostnad per enhet", "price": "råvarupris"})
             if _write_changed(row, (("ev_ebitda", ev, shown["ev_ebitda"]), ("nd_ebitda", nd, row.get("nd_ebitda")),
                                     ("unit_cost", cost, shown["unit_cost"]), ("price", price, shown["price"]))):
@@ -936,6 +994,10 @@ def _producers(data: dict) -> None:
                     or storage.differs(rp, row.get("rp_ratio"))):
                 row["mine_life"], row["rp_ratio"] = life, rp
                 changed = True
+            if durrett is not None:
+                _durrett_offer(data, row, "mine_life",
+                               lambda xs: xs.life_offer(durrett, row.get("ticker"), row.get("commodity")),
+                               f"xs_pr_life_{row['id']}", f"pr_life_{row['id']}")
 
             _extract_section(data, row, "rule",
                              {"unit_cost": f"pr_c_{row['id']}",
@@ -983,7 +1045,7 @@ def _producers(data: dict) -> None:
                 f"<div style='color:{TEXT};font-size:0.8rem;margin-top:3px;'>"
                 f"{vd2.why if vd2 else ''}</div></div>", unsafe_allow_html=True)
 
-            if _ev_nav_section(data, row):
+            if _ev_nav_section(data, row, durrett):
                 changed = True
 
             # Positionsstorleken styr vilka kontroller som krävs.
@@ -1050,8 +1112,9 @@ def _fetch_ev(row: dict, widget_key: str) -> None:
     st.session_state[f"{widget_key}_msg"] = f"EV {ev:,.0f} MUSD ur Börsdata ({s_.get('asof') or 'idag'})."
 
 
-def _ev_nav_section(data: dict, row: dict) -> bool:
-    """Värderingsraden: EV mot NAV efter skatt. Utanför poängen. True vid ändring."""
+def _ev_nav_section(data: dict, row: dict, durrett=None) -> bool:
+    """Värderingsraden: EV mot NAV efter skatt. Utanför poängen. True vid ändring. durrett = Durrett-bolaget för
+    kortets ticker: dess NAV (eller projekt-NPV) med metallpriset föreslås som ett par, och Använd fyller NAV-källan."""
     rid = row["id"]
     st.markdown(f"<div style='color:{TEXT};font-size:0.85rem;font-weight:600;margin-top:6px;'>"
                 f"Värdering — EV/NAV <span style='color:{DIM};font-weight:400;'>"
@@ -1066,6 +1129,9 @@ def _ev_nav_section(data: dict, row: dict) -> bool:
                                           "analytikerkonsensus). Aldrig före skatt.")
     np_ = n3.number_input("Metallpris i NAV", min_value=0.0, step=10.0, value=shown["nav_price"],
                           key=k_np, help="Priset NAV:n är räknad på, i samma enhet som råvarupriset ovan.")
+    ulabel = _unit_label(row)
+    if ulabel:
+        n3.caption(ulabel)
     src = st.text_input("NAV-källa", value=row.get("nav_source") or "", key=f"pr_navs_{rid}",
                         placeholder="t.ex. NI 43-101 2025, 5 % diskontering / analytikerkonsensus")
     b1, b2 = st.columns([1, 3])
@@ -1073,6 +1139,16 @@ def _ev_nav_section(data: dict, row: dict) -> bool:
     if st.session_state.get(f"{k_ev}_msg"):
         b2.caption(st.session_state[f"{k_ev}_msg"])
     _suggest("producers", row, "ev_musd", "ev_musd", "EV (MUSD)", k_ev, lambda: _save(data), fmt="{:,.0f}", lo=0.0)
+    if durrett is not None:
+        try:
+            import crosssheet
+            pair = crosssheet.nav_offer(durrett, row.get("commodity"), row.get("ticker"), row.get("price"),
+                                        row.get("nav_price"))
+        except Exception:
+            pair = None
+        if pair is not None:
+            _durrett_offer(data, row, "nav_musd", lambda xs: (pair.nav, pair.text), f"xs_pr_nav_{rid}", k_nav,
+                           on_apply=lambda: _apply_nav_pair(data, row, pair.price, pair.source))
     _neg_note(row, {"ev_musd": "EV", "nav_musd": "NAV efter skatt", "nav_price": "metallpris i NAV"})
     changed = _write_changed(row, (("ev_musd", ev, shown["ev_musd"]), ("nav_musd", nav, shown["nav_musd"]),
                                    ("nav_price", np_, shown["nav_price"])))
