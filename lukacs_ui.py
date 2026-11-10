@@ -8,6 +8,8 @@ True om något ändrats, precis som de andra kontrollsektionerna.
 
 from __future__ import annotations
 
+import re
+
 import streamlit as st
 
 import storage
@@ -74,15 +76,20 @@ def _sv_num(v: float) -> str:
     return f"{v:,.{2 if abs(v) >= 1 else 4}f}".rstrip("0").rstrip(".").replace(",", " ").replace(".", ",")
 
 
-def shares_scale_warning(typed, bd_shares, year=None) -> str:
-    """Varningstext när framtida antal aktier ligger mer än SHARES_SCALE_MAX× från Börsdatas aktieantal (miljoner)
-    — tusental i stället för miljoner gör FV per aktie lika många gånger fel, och ett för litet tal kan göra steg 5
-    grönt. Bara text: ingen räkning eller grind ändras. Tom sträng när något tal saknas eller de ligger nära."""
+def shares_scale_warning(typed, bd_shares, year=None, source: str = "Börsdata") -> str:
+    """Varningstext när framtida antal aktier ligger mer än SHARES_SCALE_MAX× från uppdateringens aktieantal
+    (miljoner) — tusental i stället för miljoner gör FV per aktie lika många gånger fel, och ett för litet tal kan
+    göra steg 5 grönt. source = var aktieantalet kommer ifrån (refresh_ui.source_name: 'Börsdata', eller
+    'Yahoo (ABC.V)' för Yahoo-reservens rad → 'Yahoos 135 miljoner (ABC.V)'). Bara text: ingen räkning eller grind
+    ändras. Tom sträng när något tal saknas eller de ligger nära."""
     t, b = fv.num(typed), fv.num(bd_shares)
     if not t or not b or t <= 0 or b <= 0:
         return ""
     yr = f", årsrapporten {int(year)}" if fv.num(year) else ""
-    ref = f"Börsdatas {_sv_num(b)} miljoner{yr}"
+    who = str(source or "").strip() or "Börsdata"
+    m = re.fullmatch(r"(.+?)\s*\((.+)\)", who)          # 'Yahoo (ABC.V)': genitiv på namnet, symbolen efter talet
+    name, sym = (m.group(1), m.group(2)) if m else (who, "")
+    ref = f"{name}s {_sv_num(b)} miljoner" + (f" ({sym}{yr})" if sym else yr)
     if t > SHARES_SCALE_MAX * b:
         k = f"{t / b:,.0f}".replace(",", " ")
         return (f"Framtida antal aktier {_sv_num(t)} är {k}× {ref}. Står talet i tusental? "
@@ -95,17 +102,20 @@ def shares_scale_warning(typed, bd_shares, year=None) -> str:
 
 
 def _shares_suggestion(row: dict, key: str, sheet: str, ref, shares, widget_key: str) -> None:
-    """Börsdatas aktieantal (shares_now_m, med året ur shares_year) som förslag med Använd vid 'Framtida antal
+    """Uppdateringens aktieantal (shares_now_m, med året ur shares_year) som förslag med Använd vid 'Framtida antal
     aktier' — samma refresh_ui.suggest som kortets andra förslag — och en varning, bara text, när talet i rutan
-    ligger mer än SHARES_SCALE_MAX× därifrån."""
+    ligger mer än SHARES_SCALE_MAX× därifrån. Varningen säger källan: Börsdata, eller Yahoo med symbolen när
+    'Hämta nu' fick Yahoo-reservens rad."""
     yr = fv.num((ref or {}).get("shares_year"))
     label = "aktier i dag (miljoner" + (f", årsrapporten {int(yr)}" if yr else "") + ")"
+    src = "Börsdata"
     try:
         import refresh_ui
+        src = refresh_ui.source_name(ref) or src
         refresh_ui.suggest(sheet, row, "framtida_antal_aktier", "shares_now_m", label, widget_key, row_id=key)
     except Exception:
         pass
-    w = shares_scale_warning(shares, (ref or {}).get("shares_now_m"), yr)
+    w = shares_scale_warning(shares, (ref or {}).get("shares_now_m"), yr, source=src)
     if w:
         st.warning(w)
 

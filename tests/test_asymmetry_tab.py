@@ -10,6 +10,8 @@ en gång.
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -478,17 +480,19 @@ def test_yahoo_is_the_fallback_when_borsdata_lacks_the_company():
 def test_ark_button_fetches_from_borsdata_now(monkeypatch):
     from streamlit.testing.v1 import AppTest
 
-    live = {"generated": "2026-09-27T05:00", "rows": {"confidence:GPR": {"ticker": "GPR", "ins_id": 105, "price": 7.1,
-            "asof": "2026-09-27", "currency": "USD", "mcap_musd": 1775.0, "cash_musd": 130.0, "fx_to_usd": 1.0}}}
+    import borsdata_api
+    import sheets_refresh as sr
+    live = {"ticker": "GPR", "ins_id": 105, "price": 7.1, "asof": "2026-09-27", "currency": "USD", "mcap_musd": 1775.0,
+            "cash_musd": 130.0, "fx_to_usd": 1.0, "source": "borsdata"}
     calls = []
 
-    def fake_now(company, api=None, info_getter=None):
-        calls.append(company.ticker)
-        from engines.durrett import refresh as dr
-        return live, dr.proposals(live, company), "2 tal ur Börsdata (kurs 7.1 USD)"
+    def fake_row(api, ticker, ins_id=None):                 # 'Hämta nu' går genom refresh_ui.fetch_live
+        calls.append(ticker)
+        return dict(live)
 
     app = _app(monkeypatch, _conf(dcs.gold_producer))
-    monkeypatch.setattr(fetch, "fetch_now", fake_now)
+    monkeypatch.setattr(borsdata_api, "BorsdataAPI", lambda *a, **k: object())
+    monkeypatch.setattr(sr, "fetch_row", fake_row)
     at = AppTest.from_function(app, default_timeout=60)
     at.session_state["asym_mode"] = "Ark"
     at.run()
@@ -501,3 +505,45 @@ def test_ark_button_fetches_from_borsdata_now(monkeypatch):
     assert not at.exception, at.exception
     f = at.session_state["confidence"]["companies"]["GPR"]["fields"]
     assert f["market_cap_musd"]["value"] == 1775.0 and f["market_cap_musd"]["pub_date"] == "2026-09-27"
+
+
+@pytest.mark.parametrize("ins_id", [105, None], ids=["med ins_id", "utan ins_id"])
+def test_ark_button_borsdata_error_keeps_the_night_row(monkeypatch, ins_id):
+    """Wolf Asymmetry → Ark med nattens rad för GPR: Börsdata svarar inte på 'Hämta nu'. Varningen 'Börsdata svarade
+    inte: …', nattens förslag står kvar, ingen hämtad rad och ingen Yahoo på den nakna tickern — med och utan ins_id."""
+    from streamlit.testing.v1 import AppTest
+    import borsdata_api
+    import refresh_ui
+    import sheets_refresh as sr
+
+    night = {"generated": "2026-09-27T05:00", "rows": {"confidence:GPR": {
+        "ticker": "GPR", "ins_id": 105, "price": 7.1, "asof": "2026-09-27", "currency": "USD", "mcap_musd": 1775.0,
+        "cash_musd": 130.0, "fx_to_usd": 1.0, "source": "borsdata"}}}
+
+    def gold():
+        c = dcs.gold_producer()
+        c.ins_id = ins_id
+        return c
+
+    def down(api, ticker, ins_id=None):
+        raise RuntimeError("429 kvoten slut")
+
+    asked = []
+    app = _app(monkeypatch, _conf(gold), blob=night)
+    monkeypatch.setattr(borsdata_api, "BorsdataAPI", lambda *a, **k: object())
+    monkeypatch.setattr(sr, "fetch_row", down)
+    monkeypatch.setattr(fetch, "yahoo_row", lambda t, getter=None: asked.append(t) or {
+        "ticker": t, "source": "yfinance", "yahoo": t, "yahoo_name": "Other Corp", "mcap_musd": 9.0, "price": 1.0})
+    at = AppTest.from_function(app, default_timeout=60)
+    at.session_state["asym_mode"] = "Ark"
+    at.run()
+    assert not at.exception, at.exception
+    before = {b.key for b in at.button if b.key and b.key.startswith("asym_rf_GPR_")}
+    assert "asym_rf_GPR_market_cap_musd" in before and "ur sifferuppdateringen" in _text(at)
+    at.button(key="asym_bd_go_GPR").click().run()
+    assert not at.exception, at.exception
+    assert [w.value for w in at.warning if w.value.startswith("Börsdata svarade inte")] == [
+        "Börsdata svarade inte: 429 kvoten slut"]
+    assert not asked and refresh_ui.LIVE_KEY not in at.session_state
+    assert {b.key for b in at.button if b.key and b.key.startswith("asym_rf_GPR_")} == before
+    assert "ur sifferuppdateringen" in _text(at) and "hämtade nu" not in _text(at) and "Other Corp" not in _text(at)

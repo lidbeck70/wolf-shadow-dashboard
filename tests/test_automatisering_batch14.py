@@ -942,8 +942,9 @@ def test_real_client_error_text_hides_the_key(session, monkeypatch, tmp_path, an
     """Med den riktiga klienten: requests-felets text har adressen med authKey — den når aldrig meddelandet."""
     import requests
     bd = _leaky_bd(tmp_path, monkeypatch, answers)
-    with pytest.raises(requests.RequestException, match=KEY):            # felet som klienten släpper igenom
+    with pytest.raises(requests.RequestException, match=r"authKey=\*\*\*") as err:   # klienten skär bort nyckeln
         bd()._get(next(p for p, a in answers.items() if not isinstance(a, dict)))
+    assert KEY not in str(err.value)
     _yahoo_spy(monkeypatch)
     got, why = rui.fetch_live("tiggre", {"id": "c1", "ticker": "TGR"}, api=bd())
     assert (got, why) == (None, f"Börsdata svarade inte: {text}") and KEY not in why
@@ -994,3 +995,254 @@ def test_tiggre_fetch_now_error_caption_hides_the_key(page, monkeypatch, tmp_pat
     assert "Börsdata svarade inte: HTTP 401 (nyckeln avvisades)" in cap and KEY not in cap
     assert KEY not in _md(at) and KEY not in str(at.session_state[rui.MSG_KEY])
     assert bd.http.paths == ["/instruments"] and rui.LIVE_KEY not in at.session_state and not page.saves
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  Rättelser 5: nyckeln i serverloggen, Durrett/Asymmetry efter Börsdata-fel, Yahoos aktieantal
+# ═════════════════════════════════════════════════════════════════════════════
+_REAL_FETCH_ROW = sr.fetch_row
+
+
+@pytest.fixture
+def bd_stub(tmp_path, monkeypatch):
+    """Den riktiga BorsdataAPI med nyckeln KEY och en riktig requests.Session mot en lokal http-stub, utan proxy och
+    utan väntetider. '403': stubben svarar 403 på den globala listan (den nordiska svarar 200). 'vägrad': adressen
+    pekar på en stängd port — anslutningen vägras — och den nordiska listan ligger i klientens diskcache. Ger en
+    fabrik i klassens ställe (borsdata_api.BorsdataAPI)."""
+    import json
+    import socket
+    import threading
+    import time as _time
+    import types
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    import borsdata_api
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            code, body = (200, NORDIC_LIST) if self.path.split("?", 1)[0] == "/v1/instruments" else (403, {})
+            raw = json.dumps(body).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def log_message(self, *a):                         # stubbens egen åtkomstlogg (med frågan) är inte panelens
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    monkeypatch.setattr(borsdata_api, "time", types.SimpleNamespace(time=_time.time, sleep=lambda s: None))
+
+    def setup(global_answer: str):
+        if global_answer == "403":
+            base = f"http://127.0.0.1:{server.server_address[1]}/v1"
+        else:
+            s = socket.socket()
+            s.bind(("127.0.0.1", 0))
+            base = f"http://127.0.0.1:{s.getsockname()[1]}/v1"
+            s.close()                                       # ingen lyssnar där: anslutningen vägras
+        monkeypatch.setattr(borsdata_api, "BASE_URL", base)
+        cache = str(tmp_path / f"bd_cache_{global_answer}")
+
+        def make(*a, **k):
+            api = _RealBorsdataAPI(api_key=KEY, cache_dir=cache)
+            api._session.trust_env = False
+            return api
+        if global_answer != "403":
+            make()._cache.set(f"{base}/instruments?", NORDIC_LIST)
+        return make
+    yield setup
+    server.shutdown()
+    server.server_close()
+
+
+def _logged(caplog) -> str:
+    return caplog.text + " ".join(r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.parametrize("global_answer", ["403", "vägrad"])
+def test_client_error_never_carries_the_key(bd_stub, global_answer):
+    """Felet ur klienten (_get) har samma typ, svar och statuskod som requests-felet — men authKey=*** i texten, och
+    den kedjade urllib3-orsaken (med samma adress) visas inte i en traceback."""
+    import traceback
+    import requests
+    bd = bd_stub(global_answer)
+    with pytest.raises(requests.RequestException) as err:
+        bd()._get("/instruments/global")
+    exc = err.value
+    shown = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    assert KEY not in str(exc) and KEY not in shown and "authKey=***" in str(exc)
+    if global_answer == "403":
+        assert type(exc) is requests.HTTPError and exc.response.status_code == 403
+        assert rui.bd_error(exc) == "HTTP 403 (nyckeln avvisades)"
+    else:
+        assert type(exc) is requests.ConnectionError and "Connection refused" in str(exc)
+        assert rui.bd_error(exc) == "nätverksfel"
+    assert bd()._get("/instruments") == NORDIC_LIST                   # det som svarar svarar som förut
+
+
+@pytest.mark.parametrize("global_answer", ["403", "vägrad"])
+def test_tiggre_global_list_failure_keeps_the_key_out_of_ui_and_logs(page, bd_stub, monkeypatch, caplog,
+                                                                     global_answer):
+    """'Hämta nu' på Tiggre-kortet (TGR, ingen ins_id) med den riktiga klienten: den globala listan svarar 403 eller
+    anslutningen vägras. Klienten loggar felet ('instruments/global failed: …') — utan nyckeln, liksom texten under
+    knappen. 403 ger 'känner inte' och Yahoo som förut; den vägrade anslutningen 'Börsdata svarade inte: nätverksfel'."""
+    import logging
+    import borsdata_api
+    caplog.set_level(logging.WARNING)
+    at = page("Tiggre", {}, _tiggre_store(), {})
+    at.run()
+    assert not at.exception, at.exception
+    monkeypatch.setattr(sr, "fetch_row", _REAL_FETCH_ROW)
+    monkeypatch.setattr(borsdata_api, "BorsdataAPI", bd_stub(global_answer))
+    _yahoo_answers_the_bare_ticker(monkeypatch, "TGR", "Tiger Gold Corp")
+    at.button(key="tg_live_c1").click().run()
+    assert not at.exception, at.exception
+    msgs = at.session_state[rui.MSG_KEY] if rui.MSG_KEY in at.session_state else {}
+    ui = _captions(at) + _md(at) + str(msgs)
+    logs = _logged(caplog)
+    assert KEY not in ui and KEY not in logs
+    assert "instruments/global failed" in logs and "authKey=***" in logs           # felet loggades — utan nyckeln
+    if global_answer == "403":
+        assert "🤖 Hämtat nu ur Yahoo (TGR)" in ui and "tiggre:c1" in at.session_state[rui.LIVE_KEY]
+    else:
+        assert "Börsdata svarade inte: nätverksfel" in ui and rui.LIVE_KEY not in at.session_state
+    assert not page.saves
+
+
+@pytest.mark.parametrize("global_answer, msg", [("403", "Börsdata har ingen EV för NEM"),
+                                                ("vägrad", "Börsdata svarade inte: nätverksfel")])
+def test_fetch_ev_now_global_list_failure_keeps_the_key_out_of_the_log(session, bd_stub, monkeypatch, caplog,
+                                                                       global_answer, msg):
+    """'Hämta EV nu' (Rick Rule, rad utan ins_id, ingen Yahoo) med den riktiga klienten: meddelandet och loggen utan
+    nyckeln."""
+    import logging
+    import borsdata_api
+    import producers
+    caplog.set_level(logging.WARNING)
+    monkeypatch.setattr(borsdata_api, "BorsdataAPI", bd_stub(global_answer))
+    producers._fetch_ev({"id": "p1", "ticker": "NEM", "name": "Newmont"}, "pr_evm_p1")
+    logs = _logged(caplog)
+    assert session["pr_evm_p1_msg"].startswith(msg), session["pr_evm_p1_msg"]
+    assert KEY not in str(session) and KEY not in logs and "instruments/global failed" in logs
+
+
+def test_log_filter_redacts_the_key_in_borsdata_and_sheets_refresh_logs(caplog):
+    """Reserven: loggfiltret på 'borsdata_api' och 'sheets_refresh' skär bort nyckeln ur meddelandet och ur ett
+    bifogat undantag — också för fel som inte gått genom _get (modulnivåfunktionerna anropar requests själva)."""
+    import logging
+    import requests
+    caplog.set_level(logging.INFO)
+    for name in ("borsdata_api", "sheets_refresh"):
+        lg = logging.getLogger(name)
+        lg.warning("get_all_instruments failed: %s", _http_401())
+        lg.info("hämtar %s", f"{LEAK_URL}&x=1")
+        try:
+            raise requests.ConnectionError(f"Max retries exceeded with url: {LEAK_URL}")
+        except requests.ConnectionError:
+            lg.exception("rapporter (år) %s: fel", 501)
+    logs = _logged(caplog)
+    assert KEY not in logs
+    assert logs.count("authKey=***") >= 6 and "authKey=***&x=1" in logs and "rapporter (år) 501: fel" in logs
+    logging.getLogger("borsdata_api").warning("utan nyckel %d%%", 5)                # annat som förut
+    assert caplog.records[-1].getMessage() == "utan nyckel 5%"
+
+
+def _durrett_night_store(ins_id):
+    from confidence import store as cs
+    from confidence.data.models import CompanyInput
+    data = cs.default()
+    cs.put(data, CompanyInput(ticker="NEM", name="Newmont", commodity="gold", stage="producer",
+                              maturity="production", ins_id=ins_id))
+    return {"confidence": data, "producers": {}, "tiggre": {}}
+
+
+@pytest.mark.parametrize("ins_id, how", [(501, "fetch_row kastar"), (None, "fetch_row kastar"),
+                                         (None, "instrumentlistan kastar")])
+def test_durrett_borsdata_error_keeps_the_night_row(page, monkeypatch, ins_id, how):
+    """Durrett-arket med nattens rad (NEM, 2026-11-06), med och utan ins_id: Börsdata svarar inte på 'Hämta nu'.
+    Varningen säger det, nattens förslag står kvar, ingen hämtad rad i sessionen och ingen Yahoo på den nakna tickern
+    (den kunde vara ett annat bolag) — förut ersatte Yahoos rad nattens."""
+    import borsdata_api
+    from asymmetry import fetch as af
+    night = {"rows": {"confidence:NEM": dict(NEM, asof="2026-11-06")}}
+    at = page("Durrett", night, _durrett_night_store(ins_id), {"NEM": NEM})
+    at.run()
+    assert not at.exception, at.exception
+    before = {k for k in _buttons(at) if k.startswith("durrett_rf_")}
+    assert "durrett_rf_NEM_market_cap_musd" in before
+    asked: list = []
+    monkeypatch.setattr(af, "yahoo_row", lambda t, getter=None: asked.append(t) or {
+        "ticker": t, "source": "yfinance", "yahoo": t, "yahoo_name": "Nemo Mining Inc", "mcap_musd": 4200.0,
+        "price": 31.0, "currency": "USD", "asof": TODAY})
+    if how == "fetch_row kastar":
+        monkeypatch.setattr(sr, "fetch_row", _raise_429)
+        text = "Börsdata svarade inte: 429 kvoten slut"
+    else:
+        monkeypatch.setattr(sr, "fetch_row", _REAL_FETCH_ROW)
+        monkeypatch.setattr(borsdata_api, "BorsdataAPI", lambda *a, **k: _DownApi())
+        text = "Börsdata svarade inte: 401 Unauthorized"
+    at.button(key="durrett_bd_go_NEM").click().run()
+    assert not at.exception, at.exception
+    assert any(w.value.startswith(text) for w in at.warning), [w.value for w in at.warning]
+    assert not asked and rui.LIVE_KEY not in at.session_state
+    assert {k for k in _buttons(at) if k.startswith("durrett_rf_")} == before        # nattens förslag står kvar
+    labels = " ".join(e.label for e in at.expander)
+    assert "🤖 Börsdata 2026-11-06:" in labels and "förslag ur sifferuppdateringen" in labels
+    assert "hämtade nu" not in labels and "Nemo" not in _md(at) + _captions(at)
+    assert at.session_state["confidence"]["companies"]["NEM"]["fields"] == {} and not page.saves
+
+
+def test_fetch_to_session_and_fetch_now_give_no_yahoo_after_a_borsdata_error(session, monkeypatch):
+    """Wolf Asymmetry och Durrett (fetch_to_session) och fetch_now: ett Börsdata-fel ger ingen Yahoo-reserv, med och
+    utan ins_id, och en tidigare hämtning står kvar. Svarar Börsdata men känner inte tickern ger det Yahoo som förut."""
+    from asymmetry import fetch as af
+    from confidence.data.models import CompanyInput
+    asked = _yahoo_spy(monkeypatch)
+    rui.put_live("confidence:NEM", dict(NEM))
+    monkeypatch.setattr(sr, "fetch_row", _raise_429)
+    for ins_id in (501, None):
+        nem = CompanyInput(ticker="NEM", name="Newmont", ins_id=ins_id)
+        assert af.fetch_to_session(nem, api=_Api()) == (False, "Börsdata svarade inte: 429 kvoten slut")
+        assert af.fetch_now(nem, api=_Api()) == (None, [], "Börsdata svarade inte: 429 kvoten slut")
+        assert not asked and rui.live_rows() == {"confidence:NEM": NEM}
+    monkeypatch.setattr(sr, "fetch_row", _REAL_FETCH_ROW)
+    assert af.fetch_to_session(CompanyInput(ticker="TGR"), api=_DownApi()) == (
+        False, "Börsdata svarade inte: 401 Unauthorized")
+    assert af.fetch_now(CompanyInput(ticker="TGR"), api=_DownApi())[2] == "Börsdata svarade inte: 401 Unauthorized"
+    assert not asked
+    ok, msg = af.fetch_to_session(CompanyInput(ticker="TGR"), api=_UnknownApi())
+    assert ok and msg.startswith("Börsdata känner inte TGR. ") and "tal ur Yahoo (TGR)" in msg and asked == ["TGR"]
+    assert rui.live_rows()["confidence:TGR"]["yahoo_name"] == "Tegra Holdings Inc"
+    blob, _props, _msg = af.fetch_now(CompanyInput(ticker="TGR"), api=_UnknownApi())
+    assert blob["rows"]["confidence:TGR"]["source"] == "yfinance" and asked == ["TGR", "TGR"]
+
+
+def test_shares_warning_names_its_source():
+    """Varningen vid 'Framtida antal aktier' säger var aktieantalet kommer ifrån — Börsdata som förut, Yahoo med
+    symbolen."""
+    import lukacs_ui
+    assert lukacs_ui.shares_scale_warning(1_234_000, 1234, 2025).startswith(
+        "Framtida antal aktier 1 234 000 är 1 000× Börsdatas 1 234 miljoner, årsrapporten 2025.")
+    w = lukacs_ui.shares_scale_warning(135_000, 135, source="Yahoo (NEM)")
+    assert w.startswith("Framtida antal aktier 135 000 är 1 000× Yahoos 135 miljoner (NEM). Står talet i tusental?")
+    assert "Börsdata" not in w
+    assert lukacs_ui.shares_scale_warning(1.35, 1350, 2025, source="Yahoo (ABC.V)").startswith(
+        "Framtida antal aktier 1,35 är bara 1/1 000 av Yahoos 1 350 miljoner (ABC.V, årsrapporten 2025).")
+    assert "Börsdatas 1 234 miljoner" in lukacs_ui.shares_scale_warning(1_234_000, 1234, source="")
+
+
+def test_rule_shares_warning_after_a_yahoo_fetch_does_not_say_borsdata(page, monkeypatch):
+    """Rick Rule: 'Hämta nu' får Yahoo-reservens rad (Börsdata känner inte NEM). Framtida antal aktier i rutan står i
+    tusental — varningen jämför med Yahoos aktieantal och säger Yahoo, inte 'Börsdatas'."""
+    _yahoo_answers_the_bare_ticker(monkeypatch, "NEM", "Newmont Corp")             # 135 miljoner aktier
+    at = page("Rick Rule", {}, _rule_store(framtida_antal_aktier=135_000.0), {})
+    at.run()
+    assert not at.exception, at.exception
+    assert not any("Framtida antal aktier" in w.value for w in at.warning)           # ingen rad än: ingen varning
+    at.button(key="pr_live_p1").click().run()
+    assert not at.exception, at.exception
+    w = " ".join(x.value for x in at.warning if "Framtida antal aktier" in x.value)
+    assert "Framtida antal aktier 135 000 är 1 000× Yahoos 135 miljoner (NEM)." in w
+    assert "Börsdatas" not in w and not page.saves

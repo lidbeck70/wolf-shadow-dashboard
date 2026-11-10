@@ -20,6 +20,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import time
 import threading
 from datetime import datetime, timedelta
@@ -29,6 +30,60 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests
 
 logger = logging.getLogger(__name__)
+
+# requests-felens text har hela adressen med frågan, och nyckeln går i frågan (authKey=…).
+_AUTH_KEY = re.compile(r"(authKey=)[^&\s'\")]+", re.IGNORECASE)
+
+
+def redact_auth_key(text) -> str:
+    """Texten med API-nyckeln bortskuren: 'authKey=***'. Annan text som den är."""
+    return _AUTH_KEY.sub(r"\1***", str(text))
+
+
+def _without_key(exc: Exception) -> Exception:
+    """Samma undantagstyp med authKey bortskuren ur texten. response och request följer med, så att isinstance och
+    exc.response.status_code fungerar som förut (refresh_ui.bd_error, refresh_ui._global_list_answered)."""
+    text = redact_auth_key(exc)
+    try:
+        return type(exc)(text, response=getattr(exc, "response", None), request=getattr(exc, "request", None))
+    except Exception:                                   # en undertyp med egen signatur: byt bara texten
+        exc.args = (text,)
+        return exc
+
+
+class RedactAuthKey(logging.Filter):
+    """Loggfilter som skär bort API-nyckeln ur meddelandet och ur ett bifogat undantags traceback — en reserv för
+    fel som inte gått genom _get (de modulnivåfunktioner som anropar requests själva)."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            msg = record.getMessage()
+        except Exception:
+            return True
+        safe = redact_auth_key(msg)
+        if safe != msg:
+            record.msg, record.args = safe, ()
+        if record.exc_info and not record.exc_text:
+            try:
+                tb = logging.Formatter().formatException(record.exc_info)
+            except Exception:
+                tb = ""
+            if redact_auth_key(tb) != tb:               # bara då: annars formaterar hanteraren som vanligt
+                record.exc_text = redact_auth_key(tb)
+        elif record.exc_text:
+            record.exc_text = redact_auth_key(record.exc_text)
+        return True
+
+
+def _redact_logs(*names: str) -> None:
+    """RedactAuthKey på loggarna (en gång per logg)."""
+    for name in names:
+        lg = logging.getLogger(name)
+        if not any(isinstance(f, RedactAuthKey) for f in lg.filters):
+            lg.addFilter(RedactAuthKey())
+
+
+_redact_logs(__name__, "sheets_refresh")    # nattjobbet loggar klientens fel med %s
 
 # KPIs that have returned 400 Bad Request — log once, then stay silent
 _KPI_ERROR_LOGGED: set[str] = set()
@@ -403,6 +458,12 @@ class BorsdataAPI:
             except requests.exceptions.Timeout:
                 logger.warning("Timeout on %s (attempt %d)", path, attempt + 1)
                 time.sleep(2 ** attempt)
+            except requests.exceptions.RequestException as exc:
+                # HTTP-fel och anslutningsfel har adressen med authKey i texten — samma typ utan nyckeln, och utan
+                # den kedjade urllib3-orsaken (som har samma adress).
+                if redact_auth_key(exc) == str(exc):
+                    raise
+                raise _without_key(exc) from None
 
         raise RuntimeError(f"Failed after 3 attempts: {path}")
 

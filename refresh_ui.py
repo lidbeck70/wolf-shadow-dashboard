@@ -316,6 +316,30 @@ def _global_list_answered(api) -> None:
             raise
 
 
+def borsdata_row(ticker: str, ins_id=None, api=None) -> tuple:
+    """Börsdatas rad för tickern (sheets_refresh.fetch_row) och om Börsdata svarade: (rad | None, fel). fel =
+    'Börsdata svarade inte: …' (bd_error, utan nyckeln) när klienten, instrumentlistan, raden eller — när inget
+    hittades — den globala listan kastade; tom sträng när Börsdata svarade, med eller utan rad. Bara (None, '') betyder
+    att Börsdata inte känner tickern — då, och bara då, får en Yahoo-reserv provas."""
+    import sheets_refresh as sr
+    try:
+        if api is None:
+            from borsdata_api import BorsdataAPI
+            api = BorsdataAPI()
+        # Instrumentlistan först: utan ins_id sväljer tickeruppslaget (sheets_refresh.resolve) felet och svarar 'känner
+        # inte', så en saknad nyckel, 401, 429 eller nätet gav Yahoo på bara tickern. fetch_row läser listan ändå, och
+        # klienten cachar den — ingen extra kvot.
+        instruments = getattr(api, "get_instruments", None)
+        if callable(instruments):
+            instruments()
+        got = sr.fetch_row(api, ticker, ins_id)
+        if got is None:
+            _global_list_answered(api)
+    except Exception as exc:
+        return None, f"Börsdata svarade inte: {bd_error(exc)}"
+    return got, ""
+
+
 def fetch_live(sheet: str, row: dict, row_id=None, commodity: Optional[str] = None, api=None, info_getter=None,
                yahoo: bool = True) -> tuple:
     """'Hämta nu' för en arkrad: samma rad som nattjobbet bygger (sheets_refresh.fetch_row, Börsdata) — eller Yahoo-
@@ -328,21 +352,9 @@ def fetch_live(sheet: str, row: dict, row_id=None, commodity: Optional[str] = No
     t = str((row or {}).get("ticker") or "").strip().upper()
     if not t:
         return None, "Raden saknar ticker."
-    try:
-        if api is None:
-            from borsdata_api import BorsdataAPI
-            api = BorsdataAPI()
-        # Instrumentlistan först: utan ins_id sväljer tickeruppslaget (sheets_refresh.resolve) felet och svarar 'känner
-        # inte', så en saknad nyckel, 401, 429 eller nätet gav Yahoo på bara tickern. fetch_row läser listan ändå, och
-        # klienten cachar den — ingen extra kvot.
-        instruments = getattr(api, "get_instruments", None)
-        if callable(instruments):
-            instruments()
-        got = sr.fetch_row(api, t, (row or {}).get("ins_id"))
-        if got is None:
-            _global_list_answered(api)
-    except Exception as exc:
-        return None, f"Börsdata svarade inte: {bd_error(exc)}"
+    got, err = borsdata_row(t, (row or {}).get("ins_id"), api)
+    if err:
+        return None, err
     why = "" if got is not None else f"Börsdata känner inte {t}."
     if got is None and yahoo:
         try:
