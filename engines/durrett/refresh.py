@@ -358,8 +358,35 @@ def production_unit_conflict(company: CompanyInput) -> Optional[str]:
     reg, base = _price_base(company)
     if not base:
         return None
-    return (resource_unit_conflict(company) or _base_mismatch(company, reg, base)
+    return (resource_unit_conflict(company) or _labels_disagree(company, base) or _base_mismatch(company, reg, base)
             or _scale_conflict(company, base))
+
+
+def _labels_disagree(company: CompanyInput, base: str) -> Optional[str]:
+    """Produktionsenheten har en annan bas än råvarans prisenhet (t för koppar), men talet produktion × pris läser är
+    Produktion nu och arkets resursenhet passar priset (lb): Durrett läser då talet i resursenheten (Ctx.quantity), så
+    produktionsenheten är en andra etikett som säger emot — vilken som stämmer går inte att avgöra, och 'räkna om
+    talet' vore fel råd när talet redan står i lb. None annars (_base_mismatch tar årsproduktionen och Produktion nu
+    utan resursenhet, där talet står i produktionsenheten)."""
+    pu = _text(company, "production_unit")
+    pb = _unit_base(pu) if pu else None
+    ru = _known_unit(company, "resource_unit", base)
+    key = next((k for k in ("annual_production", "production_current") if cval.usable(company, k)), None)
+    if pb is None or pb == base or not ru or key != "production_current":
+        return None
+    factor = _scaled(ru)
+    scale = (f" Produktion × pris räknar talet som {base}, så i {ru} blir det dessutom {_amount(factor)} gånger för "
+             f"litet — skriv det i {base} och båda enheterna {base}." if factor != 1.0 else "")
+    return (f"Produktionsenheten {pu} och {FIELD_BY_KEY['resource_unit'].label} {ru} säger olika om Produktion nu — "
+            f"Durrett läser talet i {ru}. Står det i {ru}, välj produktionsenheten {ru}. Står det i {pu}, räkna om det "
+            f"till {ru} och välj produktionsenheten {ru}.{scale}")
+
+
+# Fälten Durrett-motorn läser med Ctx.quantity — i produktionsenheten när resursenheten saknas (inte årsproduktionen:
+# att märka den är förslagets syfte)
+_UNIT_FALLBACK_KEYS = ("reserve_proven", "reserve_probable", "resource_measured", "resource_indicated",
+                       "resource_inferred", "production_current", "production_future", "production_3y_ago",
+                       "resource_3y_ago", "reserve_3y_ago")
 
 
 def production_unit_offer(company: CompanyInput) -> Optional[tuple]:
@@ -371,6 +398,10 @@ def production_unit_offer(company: CompanyInput) -> Optional[tuple]:
     Quality inte blåses upp. None annars."""
     reg, base = _price_base(company)
     if not base or _scaled(_known_unit(company, "resource_unit", base)) != 1.0 or _resource_base_mismatch(company):
+        return None
+    # utan användbar resursenhet läser Durrett (Ctx.quantity) reserver, resurser och Produktion nu/plan i
+    # produktionsenheten — en bar oz skulle märka resurser i Moz som oz. Enheten väljs då i Durrett-arket.
+    if not cval.usable(company, "resource_unit") and any(cval.usable(company, k) for k in _UNIT_FALLBACK_KEYS):
         return None
     cur = _text(company, "production_unit") or None
     if cur:

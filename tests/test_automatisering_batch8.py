@@ -601,15 +601,17 @@ def test_asymmetry_economy_offers_the_unit_and_warns_on_a_mismatch(monkeypatch):
     assert p["value"] == "oz" and p["kind"] == "ASSUMPTION"
     assert fk.box(at.text_input, "cf_GPR_", "production_unit").value == "oz"
     assert "cf_dv_GPR_production_unit" not in {b.key for b in at.button}
-    # en enhet som inte passar priset: varningen i Ekonomi och på Analys-kortet, men ingen Använd (talet står i lb)
+    # en enhet som inte passar priset: varningen i Ekonomi och på Analys-kortet, men ingen Använd. Produktion nu läses
+    # i arkets resursenhet oz, så etiketterna säger olika (bekräftelserunda 2) — texten säger båda fallen
     at = _ark(monkeypatch, _conf(_with_unit(dcs.gold_producer(), "lb")), "GPR")
-    warn = ("⚠ Produktionsenheten lb passar inte råvarans pris i USD/oz — produktion × pris blir fel. "
-            "Skriv produktionen i oz (räkna om talet) och enheten oz.")
+    warn = ("⚠ Produktionsenheten lb och Enhet för resurser/produktion oz säger olika om Produktion nu — Durrett läser "
+            "talet i oz. Står det i oz, välj produktionsenheten oz. Står det i lb, räkna om det till oz och välj "
+            "produktionsenheten oz.")
     assert warn in _captions(at)
     assert not any(c.startswith("Förslag: Produktionsenhet") for c in _captions(at))
     assert "cf_dv_GPR_production_unit" not in {b.key for b in at.button}
     at = _ark(monkeypatch, _conf(_with_unit(dcs.gold_producer(), "lb")), "GPR", mode="Analys")
-    assert any(c.startswith("⚠ Produktionsenheten lb passar inte") for c in _captions(at))
+    assert any(c.startswith("⚠ Produktionsenheten lb och") for c in _captions(at))
     at = _ark(monkeypatch, _conf(_with_unit(dcs.gold_producer(), "oz")), "GPR", mode="Analys")
     assert not any("Produktionsenheten" in c for c in _captions(at))
 
@@ -838,3 +840,50 @@ def test_annual_production_without_a_production_unit_next_to_koz_resources_is_fl
     d = CompanyInput(ticker="GAE", commodity="gold", stage="explorer")
     dcs.fill(d, dict(resource_unit="Moz", resource_inferred=2.5), **dcs._TR)    # resurser utan produktion: ingen
     assert dr.production_unit_conflict(d) is None
+
+
+def test_no_production_unit_offer_while_durrett_would_read_its_quantities_in_it():
+    """Bekräftelserunda 2: utan resursenhet läser Durrett (Ctx.quantity) reserver, resurser och Produktion nu/plan i
+    produktionsenheten — Använd 'oz' skulle märka resurser i Moz som oz (3,7 oz, EV/oz i miljoner) och ta bort
+    motorns 'enhet saknas'. Inget förslag då; bara årsproduktionen ensam får det."""
+    explorer = _moz_explorer()
+    explorer.fields.pop("resource_unit")
+    assert dr.production_unit_offer(explorer) is None and dr.derived_offers(explorer, ["production_unit"]) == []
+    developer = CompanyInput(ticker="GDV", commodity="gold", stage="developer", maturity="dfs")
+    dcs.fill(developer, dict(reserve_probable=2.1, production_future=0.15, annual_production=150_000), **dcs._TR)
+    assert dr.production_unit_offer(developer) is None
+    only_ap = CompanyInput(ticker="GAP", commodity="gold", stage="developer", maturity="dfs")
+    dcs.fill(only_ap, dict(annual_production=150_000), **dcs._TR)
+    assert dr.production_unit_offer(only_ap)[1].value == "oz"
+    # en resursenhet som inte går igenom valideringen räknas som tom (Ctx.text) — inget förslag heller
+    bad = _moz_explorer()
+    bad.fields["resource_unit"] = dp("Moz Au", kind="ACTUAL", source="test")
+    if not usable(bad, "resource_unit"):
+        assert dr.production_unit_offer(bad) is None
+
+
+def test_production_unit_on_another_base_next_to_a_fitting_resource_unit_says_both_cases():
+    """Bekräftelserunda 2: Produktion nu 260 000 000 i lb (Enhet för resurser/produktion lb) och Produktionsenhet t —
+    båda motorerna läser talet rätt i lb, så 'räkna om talet' vore fel råd (2 204 gånger för stort). Texten säger
+    att etiketterna säger olika och vad som gäller i vart fall. Utan resursenhet, och för årsproduktionen, står talet
+    i produktionsenheten och den gamla texten gäller."""
+    from engines.durrett._base import Ctx
+    c = CompanyInput(ticker="CPR", commodity="copper", stage="producer")
+    dcs.fill(c, dict(resource_unit="lb", production_current=260_000_000, production_unit="t"), **dcs._TR)
+    assert Ctx(c).quantity("production_current") == 260_000_000
+    assert dr.production_unit_conflict(c) == (
+        "Produktionsenheten t och Enhet för resurser/produktion lb säger olika om Produktion nu — Durrett läser talet "
+        "i lb. Står det i lb, välj produktionsenheten lb. Står det i t, räkna om det till lb och välj "
+        "produktionsenheten lb.")
+    uranium = CompanyInput(ticker="URP", commodity="uranium", stage="producer")
+    dcs.fill(uranium, dict(resource_unit="lb", production_current=20_000_000, production_unit="t"), **dcs._TR)
+    assert "räkna om talet" not in dr.production_unit_conflict(uranium)
+    mlb = CompanyInput(ticker="CML", commodity="copper", stage="producer")
+    dcs.fill(mlb, dict(resource_unit="Mlb", production_current=260, production_unit="t"), **dcs._TR)
+    assert dr.production_unit_conflict(mlb).endswith(
+        "Produktion × pris räknar talet som lb, så i Mlb blir det dessutom 1 000 000 gånger för litet — skriv det i "
+        "lb och båda enheterna lb.")
+    assert dr.production_unit_conflict(_copper_in_t()) == _T_LB          # ingen resursenhet: talet står i t
+    ap = CompanyInput(ticker="CAP", commodity="copper", stage="producer")
+    dcs.fill(ap, dict(resource_unit="lb", annual_production=50_000, production_unit="t"), **dcs._TR)
+    assert dr.production_unit_conflict(ap) == _T_LB                       # årsproduktionen står i produktionsenheten
