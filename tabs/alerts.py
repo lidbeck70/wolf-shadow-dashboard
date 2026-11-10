@@ -497,10 +497,11 @@ def _render_scheduled_settings(send_fn) -> None:
              "nedan. Bakgrundsinformation — ingen köp- eller säljsignal.", None),
             ("sheets", "📋 Arkens övergångar",
              "Färska kurser och nyckeltal mot dina arkrader: Insider-stopp "
-             "(−15 % under klustersnitt) och passa (+30 %), Tiggre +100 % "
-             "(sälj halva) och 0,8× NAV, Royalty-signal som byter, Rick Rule "
-             "skuld över 1,0×, Durretts 10×-regel. Förslagen syns i arken med "
-             "'Använd'.", None),
+             "(−15 % under klustersnitt), passa (+30 %) och nattens trigger "
+             "som gör raden till KÖP, Tiggre +100 % (sälj halva) och 0,8× NAV, "
+             "Royalty-signal som byter, Rick Rule skuld över 1,0× och "
+             "bedömning eller EV/NAV som byter med dagens tal, Durretts "
+             "10×-regel. Förslagen syns i arken med 'Använd'.", None),
             ("watch", "👀 Övervakning",
              "En aktie du bevakar (PORTFÖLJ → 👀 Övervakning) som BLIR KÖP i "
              "strategins egen körning, eller som faller ur strategins lista "
