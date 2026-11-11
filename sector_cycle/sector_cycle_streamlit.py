@@ -62,10 +62,10 @@ PAGE_CSS = f"""
 .regime-section-header {{
     font-family: monospace;
     font-size: 0.75rem;
-    letter-spacing: 0.18em;
+    letter-spacing: 0.1em;
     color: {CYAN};
     text-transform: uppercase;
-    border-bottom: 1px solid {DIM};
+    border-bottom: 1px solid rgba(138,133,120,0.35);
     padding-bottom: 4px;
     margin-bottom: 12px;
     margin-top: 24px;
@@ -140,6 +140,15 @@ PAGE_CSS = f"""
 .pct-pos {{ color: {GREEN}; }}
 .pct-neg {{ color: {RED}; }}
 .pct-neu {{ color: {YELLOW}; }}
+/* ---- sektorbrickor och nyckeltal ---- */
+.sc-chips {{ display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }}
+.sc-chip {{
+    font-family: monospace; font-size: 0.7rem; padding: 3px 9px; border-radius: 999px;
+    border: 1px solid; white-space: nowrap;
+}}
+.sc-stats {{ display: flex; flex-wrap: wrap; gap: 14px; font-family: monospace; font-size: 0.72rem;
+    color: {DIM}; padding-top: 6px; }}
+.sc-stats b {{ font-weight: 700; }}
 </style>
 """
 
@@ -220,8 +229,21 @@ def _trend_badge_html(trend: str) -> str:
 # Section 1: Sector Pie Wheel
 # ---------------------------------------------------------------------------
 
+# Korta namn inne i ringen — de långa får inte plats på en mobil (det fulla namnet står i hovringen)
+_SHORT = {"Energy": "Energy", "Financials": "Fin", "Technology": "Tech", "Healthcare": "Health",
+          "Industrials": "Indust", "Materials": "Mater", "Communication": "Comm", "Consumer Disc.": "Disc",
+          "Consumer Staples": "Staples", "Utilities": "Util", "Real Estate": "RE"}
+
+
+def _trend_color(trend: str, alpha: float = 1.0) -> str:
+    """Sidans egna trendfärger (grön/gul/röd), samma som brickorna och tabellen."""
+    hexc = GREEN if trend == TREND_UP else (RED if trend == TREND_DOWN else YELLOW)
+    r, g, b = int(hexc[1:3], 16), int(hexc[3:5], 16), int(hexc[5:7], 16)
+    return f"rgba({r},{g},{b},{alpha})"
+
+
 def _render_sector_pie(summary: pd.DataFrame) -> None:
-    st.markdown('<p class="regime-section-header">▣ Sector Cycle Wheel — US Sector ETFs</p>', unsafe_allow_html=True)
+    st.markdown('<p class="regime-section-header">▣ Sektorhjulet · USA</p>', unsafe_allow_html=True)
 
     sectors = summary[summary["category"] == "Sector"].copy()
 
@@ -231,22 +253,22 @@ def _render_sector_pie(summary: pd.DataFrame) -> None:
 
     bullish_count = int((sectors["trend_state"] == TREND_UP).sum())
 
-    marker_colors = [
-        trend_color_rgba(t, 0.85) for t in sectors["trend_state"]
-    ]
-    line_colors = [
-        trend_color_rgba(t, 0.4) for t in sectors["trend_state"]
-    ]
+    n = len(sectors)
+    marker_colors = [_trend_color(t, 0.9) for t in sectors["trend_state"]]
+    center = GREEN if bullish_count > n // 2 else (RED if bullish_count < 4 else YELLOW)
 
     fig = go.Figure(
         go.Pie(
             labels=sectors["name"].tolist(),
             values=[1] * len(sectors),           # equal slices
+            text=[_SHORT.get(nm, nm) for nm in sectors["name"]],
             marker=dict(
                 colors=marker_colors,
-                line=dict(color=line_colors, width=2),
+                line=dict(color=BG2, width=3),
             ),
-            textinfo="label",
+            textinfo="text",
+            textposition="inside",
+            insidetextorientation="horizontal",
             textfont=dict(size=11, color=TEXT, family="monospace"),
             hovertemplate=(
                 "<b>%{label}</b><br>"
@@ -256,27 +278,22 @@ def _render_sector_pie(summary: pd.DataFrame) -> None:
                 "<extra></extra>"
             ),
             customdata=sectors[["trend_state", "last_close", "pct_change_1m"]].values,
-            hole=0.48,
+            hole=0.55,
             direction="clockwise",
             sort=False,
         )
     )
 
     fig.update_layout(
-        **PLOTLY_LAYOUT_DEFAULTS,
-        height=420,
-        showlegend=True,
-        legend=dict(
-            font=dict(size=10, color=TEXT, family="monospace"),
-            bgcolor="rgba(0,0,0,0)",
-            bordercolor=DIM,
-            borderwidth=1,
-        ),
+        **{**PLOTLY_LAYOUT_DEFAULTS, "margin": dict(l=4, r=4, t=4, b=4), "paper_bgcolor": "rgba(0,0,0,0)"},
+        height=340,
+        showlegend=False,
+        uniformtext=dict(minsize=9, mode="hide"),
         annotations=[
             dict(
-                text=f"<b>{bullish_count}/11</b><br><span style='font-size:10px'>BULLISH</span>",
+                text=f"<b>{bullish_count}/{n}</b><br><span style='font-size:11px;color:{DIM}'>BULLISH</span>",
                 x=0.5, y=0.5,
-                font=dict(size=18, color=GREEN, family="monospace"),
+                font=dict(size=24, color=center, family="monospace"),
                 showarrow=False,
                 align="center",
             )
@@ -509,9 +526,9 @@ def _render_regime_summary(summary: pd.DataFrame) -> None:
 
 def _render_trend_distribution(summary: pd.DataFrame) -> None:
     """Stacked horizontal bar: Uptrend | Neutral | Downtrend per category."""
-    st.markdown('<p class="regime-section-header">▣ Trend Distribution by Category</p>', unsafe_allow_html=True)
+    st.markdown('<p class="regime-section-header">▣ Trend Distribution</p>', unsafe_allow_html=True)
 
-    categories = ["Sector", "Global", "Nordic"]
+    categories = [c for c in ("Sector", "Global", "Nordic") if (summary["category"] == c).any()]
     up_counts   = []
     neu_counts  = []
     dn_counts   = []
@@ -559,10 +576,11 @@ def _render_trend_distribution(summary: pd.DataFrame) -> None:
     ))
 
     fig.update_layout(
-        **PLOTLY_LAYOUT_DEFAULTS,
+        **{**PLOTLY_LAYOUT_DEFAULTS, "paper_bgcolor": "rgba(0,0,0,0)", "plot_bgcolor": "rgba(0,0,0,0)"},
         barmode="stack",
         height=180,
         legend=dict(
+            traceorder="normal",
             orientation="h",
             yanchor="bottom",
             y=1.02,
@@ -586,6 +604,20 @@ def _render_trend_distribution(summary: pd.DataFrame) -> None:
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
+def _sector_chips_html(summary: pd.DataFrame) -> str:
+    """En bricka per sektor (▲ grön, ◆ gul, ▼ röd), upptrend först."""
+    order = {TREND_UP: 0, TREND_NEUTRAL: 1, TREND_DOWN: 2}
+    rows = summary[summary["category"] == "Sector"].copy()
+    rows["_o"] = rows["trend_state"].map(order).fillna(1)
+    chips = []
+    for _, row in rows.sort_values("_o", kind="stable").iterrows():
+        t = row["trend_state"]
+        arrow = "▲" if t == TREND_UP else ("▼" if t == TREND_DOWN else "◆")
+        chips.append(f'<span class="sc-chip" style="color:{_trend_color(t)};border-color:{_trend_color(t, 0.5)};'
+                     f'background:{_trend_color(t, 0.1)};">{arrow} {row["name"]}</span>')
+    return f'<div class="sc-chips">{"".join(chips)}</div>'
+
 
 def render_sector_cycle_page() -> None:
     """Render the full Sector & Global Regime Analysis page."""
@@ -620,7 +652,7 @@ def render_sector_cycle_page() -> None:
     #  Controls sidebar                                                    #
     # ------------------------------------------------------------------ #
     # ── Controls in main area ────────────────────────────────────────────
-    ctrl_col1, ctrl_col2, ctrl_col3 = st.columns([2, 2, 1])
+    ctrl_col1, ctrl_col2, ctrl_col3 = st.columns([2, 2, 1], vertical_alignment="bottom")
 
     with ctrl_col1:
         # Category filter for the global grid section
@@ -639,20 +671,15 @@ def render_sector_cycle_page() -> None:
         total_ne = total - total_up - total_dn
 
         st.markdown(
-            f"""
-            <div style="font-family:monospace;font-size:0.68rem;color:{DIM};">
-              <p>All instruments: {total}</p>
-              <p style="color:{GREEN};">▲ Uptrend: {total_up}</p>
-              <p style="color:{YELLOW};">◆ Neutral: {total_ne}</p>
-              <p style="color:{RED};">▼ Downtrend: {total_dn}</p>
-            </div>
-            """,
+            f'<div class="sc-stats"><span>{total} instrument</span>'
+            f'<span style="color:{GREEN};">▲ <b>{total_up}</b> upp</span>'
+            f'<span style="color:{YELLOW};">◆ <b>{total_ne}</b> neutral</span>'
+            f'<span style="color:{RED};">▼ <b>{total_dn}</b> ned</span></div>',
             unsafe_allow_html=True,
         )
 
     with ctrl_col3:
-        st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
-        if st.button("📡 Uppdatera", key="sector_cycle_refresh"):
+        if st.button("📡 Uppdatera", key="sector_cycle_refresh", width="stretch"):
             compute_sector_summary.clear()
             st.rerun()
 
@@ -665,23 +692,11 @@ def render_sector_cycle_page() -> None:
         _render_sector_pie(summary)
 
     with dist_col:
-        st.markdown("<br><br>", unsafe_allow_html=True)
         _render_trend_distribution(summary)
 
-        # Compact sector status list
-        st.markdown(
-            f'<p style="font-family:monospace;font-size:0.65rem;color:{DIM};'
-            f'letter-spacing:0.1em;text-transform:uppercase;margin-top:12px;">Sector States</p>',
-            unsafe_allow_html=True,
-        )
-        for _, row in summary[summary["category"] == "Sector"].iterrows():
-            color = GREEN if row["trend_state"] == TREND_UP else (RED if row["trend_state"] == TREND_DOWN else YELLOW)
-            arrow = "▲" if row["trend_state"] == TREND_UP else ("▼" if row["trend_state"] == TREND_DOWN else "◆")
-            st.markdown(
-                f'<div style="font-family:monospace;font-size:0.7rem;color:{color};">'
-                f'{arrow} {row["name"]}</div>',
-                unsafe_allow_html=True,
-            )
+        # Sektorernas status som brickor — ett block, radbryts på smal skärm
+        st.markdown('<p class="regime-section-header">▣ Sektorer</p>', unsafe_allow_html=True)
+        st.markdown(_sector_chips_html(summary), unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
