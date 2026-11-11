@@ -324,6 +324,7 @@ def _render_inputs(data: dict, company: CompanyInput, tools: bool = True, store:
     if identity:
         with st.expander("Identitet", expanded=False):
             render_commodity_offer(data, company, store)
+            render_stage_offer(data, company, store)
             with st.form(f"conf_ident_{company.ticker}"):
                 ident = _identity_widgets(f"conf_id_{company.ticker}", company)
                 if st.form_submit_button("Uppdatera"):
@@ -364,6 +365,7 @@ def _render_inputs(data: dict, company: CompanyInput, tools: bool = True, store:
     for pillar, fields in groups.items():
         filled = sum(1 for f in fields if company.has(f.key))
         with st.expander(f"{_PILLAR_LABEL.get(pillar, pillar)} · {filled}/{len(fields)} ifyllda", expanded=False):
+            render_derived_offers(data, company, [f.key for f in fields], store)
             with st.form(f"conf_form_{company.ticker}_{pillar}"):
                 widgets = [(_field_widgets(company, f), f) for f in fields]
                 if st.form_submit_button("Uppdatera"):
@@ -515,8 +517,8 @@ def _render_prefill(data: dict, company: CompanyInput, store: str = cs.STORE) ->
 def _apply_prefill(data: dict, company: CompanyInput, key: str, point, store: str) -> None:
     """on_click för Använd i förslagen: skriv in förslaget och spara. Formernas rutor (Identitet, Börsdata fyller,
     Ekonomi, Confidence …) ritas om med det nya värdet av sig själva — deras nycklar bär ett avtryck av det sparade
-    (stored_tag / _identity_widgets). Klicket kör om sidan själv. Mognad och råvara är identitet, inte fält."""
-    if key in ("maturity", "commodity"):
+    (stored_tag / _identity_widgets). Klicket kör om sidan själv. Mognad, råvara och stage är identitet, inte fält."""
+    if key in ("maturity", "commodity", "stage"):
         setattr(company, key, point)
     else:
         company.set(key, point)
@@ -562,6 +564,45 @@ def render_commodity_offer(data: dict, company: CompanyInput, store: str = cs.ST
     a.caption(f"Förslag: {com.REGISTRY[key].label} ({why})".replace("$", "\\$"))
     b.button("Använd", key=f"cf_com_{company.ticker}", on_click=_apply_prefill,
              args=(data, company, "commodity", key, store))
+
+
+def render_stage_offer(data: dict, company: CompanyInput, store: str = cs.STORE) -> None:
+    """'Förslag: stage producer (Durrett-motorn, säkerhet hög): omsättning 600 MUSD (≥ 5); … · Använd' över
+    Identitet-formen — bara när motorns klassificering är säker och säger något annat än fältet
+    (engines/durrett/refresh.stage_offer). Inget skrivs förrän du trycker Använd; formen ritas sedan om med det
+    sparade (_identity_widgets)."""
+    try:
+        from engines.durrett import refresh as dr
+        offer = dr.stage_offer(company)
+    except Exception:                                   # pragma: no cover — förslaget är en hjälp, aldrig ett hinder
+        return
+    if not offer:
+        return
+    a, b = st.columns([3, 1], vertical_alignment="center")
+    a.caption(dr.stage_offer_text(offer).replace("$", "\\$"))
+    b.button("Använd", key=f"cf_stage_{company.ticker}", on_click=_apply_prefill,
+             args=(data, company, "stage", offer[0], store))
+
+
+def render_derived_offers(data: dict, company: CompanyInput, keys, store: str = cs.STORE) -> None:
+    """Förslag som härleds ur arket och råvaruregistret (engines/durrett/refresh.derived_offers) för fälten i keys,
+    över formen som håller dem: produktionsenhet ur råvarans prisenhet, högsta resurskategori ur arkets reserver och
+    resurser. Plus varningen när produktionsenheten inte passar prisenheten. Använd skriver fältet (_apply_prefill),
+    att rita skriver inget."""
+    try:
+        from engines.durrett import refresh as dr
+        offers = dr.derived_offers(company, keys)
+        conflict = dr.production_unit_conflict(company) if "production_unit" in keys else None
+    except Exception:                                   # pragma: no cover
+        return
+    if conflict:
+        st.caption(f"⚠ {conflict}".replace("$", "\\$"))
+    for key, point, cur in offers:
+        a, b = st.columns([3, 1], vertical_alignment="center")
+        text = f"Förslag: {cfg.FIELD_BY_KEY[key].label} {point.value} ({point.note})" + (f", ersätter {cur}" if cur else "")
+        a.caption(text.replace("$", "\\$"))
+        b.button("Använd", key=f"cf_dv_{company.ticker}_{key}", on_click=_apply_prefill,
+                 args=(data, company, key, point, store))
 
 
 def _render_extractor(data: dict, company: CompanyInput, store: str = cs.STORE,

@@ -17,9 +17,12 @@ from confidence.data.provenance import num, truth
 
 ERROR, WARN, MISSING = "error", "warn", "missing"
 
-# Fält som får vara negativa (allt annat ≥ 0)
+# Fält som får vara negativa (allt annat ≥ 0). Fritt och operativt kassaflöde och rörelsekapital är ofta negativa för
+# explorers och utvecklare (ägarens beslut, automatisering batch 8) — Durrett-motorns burn ur −OCF
+# (engines/durrett/balance_sheet.annual_burn) läser dem.
 _MAY_BE_NEGATIVE = {"net_debt_ebitda", "npv_musd", "npv_stress_price_musd", "npv_stress_capex_musd",
-                    "irr_stress_price_pct", "roic_pct", "fcf_yield_pct", "ebitda_margin_pct"}
+                    "irr_stress_price_pct", "roic_pct", "fcf_yield_pct", "ebitda_margin_pct",
+                    "free_cash_flow_musd", "operating_cash_flow_musd", "working_capital_musd"}
 
 # Fält utan vilka en stage inte kan få poäng i sin pelare (rapporteras som MISSING)
 _CORE_BY_STAGE = {

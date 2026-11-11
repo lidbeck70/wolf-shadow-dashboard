@@ -91,6 +91,22 @@ def _steps(steps: list) -> None:
         st.caption("· " + s)
 
 
+def _unit_conflict(company: CompanyInput) -> Optional[str]:
+    """Produktionsenheten mot råvarans prisenhet — samma kontroll som Durrett-motorn (engines/durrett/refresh.
+    production_unit_conflict) — och var den rättas. Poängen räknar produktion × pris utan omräkning, så en enhet som
+    inte passar ger fel tal. Arkets resursenhet (Enhet för resurser/produktion) finns bara i Durrett-arket."""
+    try:
+        from engines.durrett import refresh as dr
+        conflict = dr.production_unit_conflict(company)
+        if not conflict:
+            return None
+        where = (f"Durrett-arket → {ccfg.FIELD_BY_KEY['resource_unit'].label}"
+                 if conflict == dr.resource_unit_conflict(company) else "Ark → Ekonomi")
+        return f"{conflict} Rätta under {where}."
+    except Exception:                                     # pragma: no cover — varningen är en hjälp
+        return None
+
+
 # ── sidan ────────────────────────────────────────────────────────────────────
 def render_asymmetry_page() -> None:
     data = _load()
@@ -189,6 +205,9 @@ def _analysis(data: dict, company: CompanyInput) -> None:
     if missing:
         st.caption("⚠ DATA_MISSING: " + ", ".join(ccfg.FIELD_BY_KEY[k].label for k in missing[:10])
                    + (" …" if len(missing) > 10 else "") + " — fyll i under Ark.")
+    conflict = _unit_conflict(company)
+    if conflict:
+        st.caption(f"⚠ {conflict}".replace("$", "\\$"))
 
     with st.expander("Diagram", expanded=False):
         x, y = st.columns([3, 2])
@@ -244,6 +263,7 @@ def _sheet(data: dict, company: Optional[CompanyInput]) -> None:
     cui.render_prefill(data, company, store=ast.STORE)
     with st.expander("Identitet och strategi", expanded=False):
         cui.render_commodity_offer(data, company, store=ast.STORE)
+        cui.render_stage_offer(data, company, store=ast.STORE)
         with st.form(f"asym_ident_{company.ticker}"):
             ident = cui.identity_widgets(f"asym_id_{company.ticker}", company)
             tags = list(ast.strategy_tags())
@@ -294,6 +314,7 @@ def _chatgpt(data: dict, company: CompanyInput) -> None:
 def _block(data: dict, company: CompanyInput, key: str, title: str, specs: list, expanded: bool = False) -> None:
     filled = sum(1 for f in specs if company.has(f.key))
     with st.expander(f"{title} · {filled}/{len(specs)} ifyllda", expanded=expanded):
+        cui.render_derived_offers(data, company, [f.key for f in specs], store=ast.STORE)
         with st.form(f"asym_{key}_{company.ticker}"):
             widgets = [(cui._field_widgets(company, f), f) for f in specs]
             st.caption(SAVE_NOTE)

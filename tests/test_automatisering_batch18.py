@@ -534,7 +534,8 @@ def test_fetch_row_follows_the_same_rule(ccy):
 def test_asymmetry_fetch_now_proposes_no_usd_numbers_for_an_unknown_currency():
     from asymmetry import fetch
     from confidence.data.models import CompanyInput
-    blob, props, msg = fetch.borsdata_now(CompanyInput(ticker="T7", ins_id=907), _FakeBD("GBX"))
+    # producent: EV/EBITDA gäller bara producenter och royaltybolag, så bara de får förslaget (batch 8)
+    blob, props, msg = fetch.borsdata_now(CompanyInput(ticker="T7", ins_id=907, stage="producer"), _FakeBD("GBX"))
     keys = {k for k, _dp, _cur in props}
     assert blob is not None and "kurs 1520 GBX" in msg
     assert not keys & {"market_cap_musd", "enterprise_value_musd", "fx_to_usd", "cash_musd", "debt_musd",
