@@ -221,6 +221,112 @@
       "name": "Golden Energy Offshore",
       "nd_ebitda": 0.998,
       "ticker": "GEOS.OL"
+    },
+    {
+      "aqs_jurisdiktion": 0,
+      "aqs_livslangd": 1,
+      "aqs_management": 2,
+      "branch_id": 2,
+      "commodity": "Gas",
+      "csm": {
+        "bear_survival": true
+      },
+      "date": "2026-11-11",
+      "ds_aktier_3ar": 0,
+      "ds_historik": 1,
+      "ds_runway": 0,
+      "ev_ebitda": 0.5653403997421265,
+      "ev_musd": 62.4,
+      "fin_catalyst_text": "Ingen verifierad finansieringskatalysator eller annonserad kapitalanskaffning. OML 113 farm-down/divestment discussions pågår; detta är en möjlig portfölj-/kapitalallokeringshändelse, inte bekräftad finansiering.",
+      "forvantad_utspadning": 0.0,
+      "fully_diluted_shares": 142356855.0,
+      "fv": {
+        "Base": {},
+        "Bear": {},
+        "Bull": {}
+      },
+      "id": "19235d18",
+      "ins_id": 1155,
+      "insyn": true,
+      "jurisdiktion": false,
+      "kapitaldisciplin": true,
+      "mine_life": 9.1,
+      "name": "PetroNor E&P",
+      "nav_musd": 220.0,
+      "nav_price": 2.0,
+      "nd_ebitda": -0.7267146706581116,
+      "position_pct": 4.0,
+      "price": 3.29,
+      "rp_ratio": 9.1,
+      "secured_cash": true,
+      "sources": {
+        "ds_aktier_3ar": {
+          "source": "ChatGPT: https://petronorep.com/media/ty4jnnij/pnor-annual-report-2023_web.pdf (share capital); https://live.euronext.com/sites/default/files/company_press_releases/attachments_oslo/2026/04/30/671937_PetroNor%20E%26P%20ASA%20Annual%20Report%202025.pdf (Note 20); https://storage.mfn.se/c/aHR0cHM6Ly9hcGkzLm9zbG8ub3Nsb2JvcnMubm8vdjEvbmV3c3JlYWRlci9hdHRhY2htZW50P21lc3NhZ2VJZD02ODEwNzkmYXR0YWNobWVudElkPTMzMjIzMA/pnor-q2-26-interim-report.pdf?news-id=fb10f266-d33e-59e5-a49b-500d20a8f535 (Note 20) · 2026-08-28",
+          "value": 0
+        },
+        "ds_capex": {
+          "source": "ChatGPT: https://storage.mfn.se/c/aHR0cHM6Ly9hcGkzLm9zbG8ub3Nsb2JvcnMubm8vdjEvbmV3c3JlYWRlci9hdHRhY2htZW50P21lc3NhZ2VJZD02ODEwNzkmYXR0YWNobWVudElkPTMzMjIzMA/pnor-q2-26-interim-report.pdf?news-id=fb10f266-d33e-59e5-a49b-500d20a8f535 (s. 2, 8) · 2026-08-28",
+          "value": 0
+        },
+        "ds_historik": {
+          "source": "ChatGPT: https://petronorep.com/media/ty4jnnij/pnor-annual-report-2023_web.pdf (share capital); https://live.euronext.com/sites/default/files/company_press_releases/attachments_oslo/2026/04/30/671937_PetroNor%20E%26P%20ASA%20Annual%20Report%202025.pdf (Note 20); https://storage.mfn.se/c/aHR0cHM6Ly9hcGkzLm9zbG8ub3Nsb2JvcnMubm8vdjEvbmV3c3JlYWRlci9hdHRhY2htZW50P21lc3NhZ2VJZD02ODEwNzkmYXR0YWNobWVudElkPTMzMjIzMA/pnor-q2-26-interim-report.pdf?news-id=fb10f266-d33e-59e5-a49b-500d20a8f535 (Note 20) · 2026-08-28",
+          "value": 0
+        },
+        "ds_runway": {
+          "source": "ChatGPT: https://storage.mfn.se/c/aHR0cHM6Ly9hcGkzLm9zbG8ub3Nsb2JvcnMubm8vdjEvbmV3c3JlYWRlci9hdHRhY2htZW50P21lc3NhZ2VJZD02ODEwNzkmYXR0YWNobWVudElkPTMzMjIzMA/pnor-q2-26-interim-report.pdf?news-id=fb10f266-d33e-59e5-a49b-500d20a8f535 (s. 2, 6–8) · 2026-08-28",
+          "value": 0
+        },
+        "ds_warrants": {
+          "source": "ChatGPT: https://live.euronext.com/sites/default/files/company_press_releases/attachments_oslo/2026/04/30/671937_PetroNor%20E%26P%20ASA%20Annual%20Report%202025.pdf (s. 40; Options) · 2026-04-30",
+          "value": 0
+        },
+        "ev_musd": {
+          "source": "ChatGPT: https://storage.mfn.se/c/aHR0cHM6Ly9hcGkzLm9zbG8ub3Nsb2JvcnMubm8vdjEvbmV3c3JlYWRlci9hdHRhY2htZW50P21lc3NhZ2VJZD02ODEwNzkmYXR0YWNobWVudElkPTMzMjIzMA/pnor-q2-26-interim-report.pdf?news-id=fb10f266-d33e-59e5-a49b-500d20a8f535 (s. 2; market cap USD 151.2m och net cash USD 85.2m per 30 Jun 2026) · 2026-08-28",
+          "value": 66.0
+        },
+        "fin_catalyst_text": {
+          "source": "ChatGPT: https://storage.mfn.se/c/aHR0cHM6Ly9hcGkzLm9zbG8ub3Nsb2JvcnMubm8vdjEvbmV3c3JlYWRlci9hdHRhY2htZW50P21lc3NhZ2VJZD02ODEwNzkmYXR0YWNobWVudElkPTMzMjIzMA/pnor-q2-26-interim-report.pdf?news-id=fb10f266-d33e-59e5-a49b-500d20a8f535 (s. 2, OML 113) · 2026-08-28",
+          "value": "Ingen verifierad finansieringskatalysator eller annonserad kapitalanskaffning. OML 113 farm-down/divestment discussions pågår; detta är en möjlig portfölj-/kapitalallokeringshändelse, inte bekräftad finansiering."
+        },
+        "forvantad_utspadning": {
+          "source": "ChatGPT: https://live.euronext.com/sites/default/files/company_press_releases/attachments_oslo/2026/04/30/671937_PetroNor%20E%26P%20ASA%20Annual%20Report%202025.pdf (s. 40; Options) + https://storage.mfn.se/c/aHR0cHM6Ly9hcGkzLm9zbG8ub3Nsb2JvcnMubm8vdjEvbmV3c3JlYWRlci9hdHRhY2htZW50P21lc3NhZ2VJZD02ODEwNzkmYXR0YWNobWVudElkPTMzMjIzMA/pnor-q2-26-interim-report.pdf?news-id=fb10f266-d33e-59e5-a49b-500d20a8f535 (Note 20) · 2026-08-28",
+          "value": 0.0
+        },
+        "fully_diluted_shares": {
+          "source": "ChatGPT: https://storage.mfn.se/c/aHR0cHM6Ly9hcGkzLm9zbG8ub3Nsb2JvcnMubm8vdjEvbmV3c3JlYWRlci9hdHRhY2htZW50P21lc3NhZ2VJZD02ODEwNzkmYXR0YWNobWVudElkPTMzMjIzMA/pnor-q2-26-interim-report.pdf?news-id=fb10f266-d33e-59e5-a49b-500d20a8f535 (Note 20, s. 18) · 2026-08-28",
+          "value": 142356855.0
+        },
+        "insyn": {
+          "source": "ChatGPT: https://storage.mfn.se/c/aHR0cHM6Ly9hcGkzLm9zbG8ub3Nsb2JvcnMubm8vdjEvbmV3c3JlYWRlci9hdHRhY2htZW50P21lc3NhZ2VJZD02ODEwNzkmYXR0YWNobWVudElkPTMzMjIzMA/pnor-q2-26-interim-report.pdf?news-id=fb10f266-d33e-59e5-a49b-500d20a8f535 (s. 3, Top 20 per 7 Aug 2026); https://live.euronext.com/sites/default/files/company_press_releases/attachments_oslo/2026/04/30/671937_PetroNor%20E%26P%20ASA%20Annual%20Report%202025.pdf (s. 29–30) · 2026-08-28",
+          "value": true
+        },
+        "jurisdiktion": {
+          "source": "ChatGPT: https://live.euronext.com/sites/default/files/company_press_releases/attachments_oslo/2026/04/30/671937_PetroNor%20E%26P%20ASA%20Annual%20Report%202025.pdf (riskfaktorer och verksamhetsländer); https://storage.mfn.se/c/aHR0cHM6Ly9hcGkzLm9zbG8ub3Nsb2JvcnMubm8vdjEvbmV3c3JlYWRlci9hdHRhY2htZW50P21lc3NhZ2VJZD02ODEwNzkmYXR0YWNobWVudElkPTMzMjIzMA/pnor-q2-26-interim-report.pdf?news-id=fb10f266-d33e-59e5-a49b-500d20a8f535 (s. 3) · 2026-08-28",
+          "value": false
+        },
+        "kapitaldisciplin": {
+          "source": "ChatGPT: https://storage.mfn.se/c/aHR0cHM6Ly9hcGkzLm9zbG8ub3Nsb2JvcnMubm8vdjEvbmV3c3JlYWRlci9hdHRhY2htZW50P21lc3NhZ2VJZD02ODEwNzkmYXR0YWNobWVudElkPTMzMjIzMA/pnor-q2-26-interim-report.pdf?news-id=fb10f266-d33e-59e5-a49b-500d20a8f535 (s. 1, 3, 8) · 2026-08-28",
+          "value": true
+        },
+        "mine_life": {
+          "source": "ChatGPT: https://live.euronext.com/sites/default/files/company_press_releases/attachments_oslo/2026/04/30/671937_PetroNor%20E%26P%20ASA%20Annual%20Report%202025.pdf (Annual Report 2025, Annual Statement of Reserves, s. 17–19) · 2026-04-30",
+          "value": 9.1
+        },
+        "price": {
+          "source": "ChatGPT: https://www.reuters.com/business/energy/oil-falls-trump-downplays-prospect-escalation-with-iran-2026-11-10/ · 2026-11-10",
+          "value": 91.49
+        },
+        "rp_ratio": {
+          "source": "ChatGPT: https://live.euronext.com/sites/default/files/company_press_releases/attachments_oslo/2026/04/30/671937_PetroNor%20E%26P%20ASA%20Annual%20Report%202025.pdf (Annual Statement of Reserves, s. 17–19) · 2026-04-30",
+          "value": 9.1
+        },
+        "unit_cost": {
+          "source": "ChatGPT: https://live.euronext.com/sites/default/files/company_press_releases/attachments_oslo/2026/04/30/671937_PetroNor%20E%26P%20ASA%20Annual%20Report%202025.pdf (Annual Report 2025, assumptions; PNGF Sud OPEX) · 2026-04-30",
+          "value": 10.0
+        }
+      },
+      "ticker": "PNOR.OL",
+      "unit_cost": 10.0
     }
   ],
   "royalty": []
