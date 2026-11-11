@@ -12,6 +12,7 @@ gissning.
   eurostat(dataset, ...)   Eurostat (JSON-stat)
   scb_list(path)           SCB PxWeb: tabeller/mappar under en sökväg
   scb_table(path, ...)     SCB PxWeb: en tabell, ett värde per variabel
+  scb2_table(table_id,...) SCB PxWebApi 2 (TABxxxx, JSON-stat2), samma val som scb_table
   riksbank(id)             Riksbanken SWEA (växelkurser)
   yahoo(ticker)            Yahoo Finance via market_prices (delad cache)
   borsdata(ins_id)         Börsdata (kräver BORSDATA_API_KEY)
@@ -35,6 +36,9 @@ FRED_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={id}"
 ECB_URL = "https://data-api.ecb.europa.eu/service/data/{flow}/{key}?format=csvdata"
 EUROSTAT_URL = "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/{dataset}"
 SCB_URL = "https://api.scb.se/OV0104/v1/doris/sv/ssd/{path}"
+# PxWebApi 2. Penningmängdstabellen svarade i november 2026 bara 400/timeout i v1 (andra tabeller fungerade),
+# men finns här som TAB6541.
+SCB2_URL = "https://api.scb.se/OV0104/v2beta/api/v2/tables/{table}/{what}"
 RIKSBANK_URL = "https://api.riksbank.se/swea/v1/Observations/{id}/{start}"
 
 
@@ -247,6 +251,73 @@ def scb_table(path: str, prefer: Optional[dict] = None, prefer_text: tuple = (),
         cols = [c.get("code") for c in data.get("columns", [])]
         ti = cols.index(time_code) if time_code in cols else len(cols) - 2
         return _done(sd, _series((row["key"][ti], (row.get("values") or [None])[0]) for row in data.get("data", [])))
+    except Exception as exc:
+        return _fail(sd, exc)
+
+
+def _jsonstat_dims(js: dict) -> tuple:
+    """(dimensionsordning, tidsdimension, {dim: (koder i ordning, {kod: text})}) ur JSON-stat2."""
+    order = list(js.get("id") or [])
+    role_time = ((js.get("role") or {}).get("time") or [None])[0]
+    dims = {}
+    for d in order:
+        cat = ((js.get("dimension") or {}).get(d) or {}).get("category") or {}
+        idx = cat.get("index") or {}
+        codes = sorted(idx, key=idx.get) if isinstance(idx, dict) else list(idx)
+        dims[d] = (codes, cat.get("label") or {})
+    if role_time is None:
+        role_time = next((d for d in order if d.lower() in ("tid", "time", "manad", "månad")), None)
+    return order, role_time, dims
+
+
+def _scb2_data(url: str, params: list, http=None, tries: int = 3) -> dict:
+    """Datafrågan; upp till tre försök vid serverfel (5xx) — SCB svarade ibland 500 och nästa gång 200."""
+    for attempt in range(tries):
+        try:
+            return _get(url, http, params=params).json()
+        except Exception as exc:
+            code = getattr(getattr(exc, "response", None), "status_code", None)
+            if attempt + 1 >= tries or not (code is None and "500" in str(exc) or (code or 0) >= 500):
+                raise
+            logger.warning("SCB %s: %s — försöker igen", url, exc)
+    raise RuntimeError("SCB: inga försök")                # nås inte
+
+
+def scb2_table(table: str, prefer: Optional[dict] = None, prefer_text: tuple = (), http=None,
+               **meta) -> SeriesData:
+    """En tabell ur SCB:s PxWebApi 2 som tidsserie. Samma regel som scb_table: varje variabel utom tiden låses
+    till ett värde (_pick), valen står i meta["chosen"]."""
+    sd = SeriesData("SCB", table, **meta)
+    prefer = prefer or {}
+    try:
+        info = _get(SCB2_URL.format(table=table, what="metadata"), http,
+                    params={"lang": "sv", "outputFormat": "json-stat2"}).json()
+        order, time_code, dims = _jsonstat_dims(info)
+        if time_code is None:
+            return _done(sd, None, "ingen tidsvariabel i tabellen")
+        # lista, inte dict: tiden sist, som i SCB:s egna exempel (frågor i den ordningen svarade 200)
+        params, chosen = [("lang", "sv"), ("outputFormat", "json-stat2")], {}
+        for d in order:
+            if d == time_code:
+                continue
+            codes, texts = dims[d]
+            pick = _pick(codes, texts, d, prefer, prefer_text)
+            if pick is None:
+                continue
+            chosen[d] = f"{pick} ({texts.get(pick, pick)})"
+            params.append((f"valueCodes[{d}]", pick))
+        params.append((f"valueCodes[{time_code}]", "*"))
+        sd.meta.update({"title": info.get("label", ""), "chosen": chosen})
+        data = _scb2_data(SCB2_URL.format(table=table, what="data"), params, http)
+        d_order, d_time, d_dims = _jsonstat_dims(data)
+        values = data.get("value")
+        if isinstance(values, dict):                      # glest format {index: värde}
+            values = [values.get(str(i)) for i in range(len(d_dims.get(d_time, ([],))[0]))]
+        sizes = [len(d_dims[d][0]) for d in d_order]
+        if any(n != 1 for d, n in zip(d_order, sizes) if d != d_time):
+            return _done(sd, None, "fler än ett värde per variabel i svaret")
+        periods = d_dims[d_time][0]
+        return _done(sd, _series(zip(periods, values or [])))
     except Exception as exc:
         return _fail(sd, exc)
 

@@ -8,7 +8,7 @@ Källorna skarvas aldrig ihop i tysthet — enda undantaget är guld och silver,
 där Yahoo-terminer fyller 2000–2006 före Börsdatas spotserie och märks som
 "terminspris" (se ASSET_SPLICE).
 
-En källa är en dict: kind (fred/ecb/eurostat/scb/riksbank/yahoo/borsdata),
+En källa är en dict: kind (fred/ecb/eurostat/scb/scb2/riksbank/yahoo/borsdata),
 id/args för källan, samt unit, label och definition som visas i UI:t.
 """
 
@@ -42,6 +42,9 @@ _M2_US = ("Federal Reserves M2 = M1 + småsparkonton (< 100 000 USD) + privata p
 SERIES: dict = {
     # ── Penningmängd ──
     (M2, "SEK"): [
+        # PxWebApi 2 först: v1-adressen gav 400/timeout för just den här tabellen (november 2026)
+        {"kind": "scb2", "id": "TAB6541", "prefer_text": ("M2", "utestående", "mnkr"),
+         "unit": "mn SEK", "label": "M2 Sverige (SCB)", "definition": _M2_SE},
         {"kind": "scb", "id": "FM/FM5001/FM5001A/FM5001penningmangd", "prefer_text": ("M2", "utestående", "mnkr"),
          "unit": "mn SEK", "label": "M2 Sverige (SCB)", "definition": _M2_SE},
     ],
