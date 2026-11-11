@@ -313,21 +313,27 @@ def _render_refresh(data: dict, company: CompanyInput) -> None:
         from engines.durrett import refresh as dr
     except Exception:                                   # pragma: no cover
         return
-    blob = refresh_ui.load_refresh()
+    _fetch_now(company)
+    blob = refresh_ui.current_blob()
     props = dr.proposals(blob, company)
     t = company.ticker
     row = dr.refresh_row(blob, t)
+    live = refresh_ui.is_live(f"{dr.SHEET}:{t}")
     _ins_id_offer(data, company, row)
     if not props:
         if row:
-            st.caption("🤖 Börsdata: sifferuppdateringen har inga nya tal för raden.")
+            st.caption("🤖 Börsdata: raden du hämtade har inga nya tal." if live
+                       else "🤖 Börsdata: sifferuppdateringen har inga nya tal för raden.")
         elif company.ins_id is None:
-            st.caption("🤖 Börsdata: raden saknar ins_id och har ingen rad i sifferuppdateringen än. Den schemalagda "
-                       "körningen (sheets_refresh.py) matchar på tickern. Håven sätter id:t; för hand anges det under "
-                       "🐺 Wolf Asymmetry → Ark → Identitet och strategi (samma ark).")
+            st.caption("🤖 Börsdata: raden saknar ins_id och har ingen rad i sifferuppdateringen än — tryck Hämta nu, "
+                       "eller vänta på den schemalagda körningen (sheets_refresh.py), som matchar på tickern. Håven "
+                       "sätter id:t; för hand anges det under 🐺 Wolf Asymmetry → Ark → Identitet och strategi "
+                       "(samma ark).")
         return
     asof = props[0][1].pub_date or ""
-    with st.expander(f"🤖 Börsdata {asof}: {len(props)} förslag ur sifferuppdateringen", expanded=True):
+    src = refresh_ui.source_name(row)
+    with st.expander(f"🤖 {src} {asof}: {len(props)} förslag "
+                     + ("(hämtade nu)" if live else "ur sifferuppdateringen"), expanded=True):
         for key, point, cur in props:
             label = ccfg.FIELD_BY_KEY[key].label
             a, b = st.columns([4, 1])
@@ -348,6 +354,31 @@ def _render_refresh(data: dict, company: CompanyInput) -> None:
             cs.put(data, company)
             _save(data)
             st.rerun()
+
+
+def _fetch_now(company: CompanyInput) -> None:
+    """'Hämta nu' — Wolf Asymmetrys flöde (asymmetry/fetch.fetch_to_session: Börsdata först, Yahoo som reserv). Raden
+    läggs bara i sessionen under confidence:<TICKER>, och förslagen här (och på Wolf Asymmetry) läser den före nattens.
+    Ingenting skrivs i bolaget — det gör Använd, och 💾 sparar. Under knappen: vilket bolag som matchades."""
+    try:
+        import refresh_ui
+        from asymmetry import fetch
+    except Exception:                                   # pragma: no cover
+        return
+    t = company.ticker
+    a, b = st.columns([4, 1], vertical_alignment="center")
+    if b.button("Hämta nu", key=f"durrett_bd_go_{t}", help=refresh_ui.FETCH_HELP):
+        with st.spinner("Hämtar från Börsdata …"):
+            ok, msg = fetch.fetch_to_session(company)
+        if not ok:
+            st.warning(msg)
+        else:
+            st.rerun()
+    if refresh_ui.is_live(f"confidence:{t}"):
+        line = refresh_ui.fetched_line(fetch.refresh_row(refresh_ui.current_blob(), t),
+                                       {"name": company.name, "ins_id": company.ins_id})
+        if line:
+            a.caption(line.replace("$", "\\$"))
 
 
 def spot_line(company: CompanyInput, night: Optional[dict]) -> str:
@@ -375,7 +406,7 @@ def _spot_line(company: CompanyInput) -> None:
     try:
         import refresh_ui
         from engines.durrett import refresh as dr
-        txt = spot_line(company, dr.refresh_row(refresh_ui.load_refresh(), company.ticker))
+        txt = spot_line(company, dr.refresh_row(refresh_ui.current_blob(), company.ticker))
     except Exception:                                   # pragma: no cover — raden är en hjälp, aldrig ett hinder
         return
     if txt:
@@ -572,7 +603,7 @@ def _valuation_line(company: CompanyInput, a: DurrettAnalysis) -> None:
         import refresh_ui
         import scorecard
         from engines.durrett import refresh as dr
-        ref = dr.refresh_row(refresh_ui.load_refresh(), company.ticker)
+        ref = dr.refresh_row(refresh_ui.current_blob(), company.ticker)
         text = scorecard.valuation_suggestion({"ticker": company.ticker}, scorecard.DURRETT_SHEET_STRATEGY, ref,
                                               a.metrics)
         needs = _valuation_needs(company, a)

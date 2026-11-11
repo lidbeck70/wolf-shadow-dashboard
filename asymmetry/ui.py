@@ -434,25 +434,30 @@ def _render_refresh(data: dict, company: CompanyInput) -> None:
     except Exception:                                     # pragma: no cover
         return
     t = company.ticker
-    live_key = f"asym_bd_{t}"
+    ref = f"confidence:{t}"
     a, b = st.columns([4, 1])
-    if b.button("Hämta nu", key=f"asym_bd_go_{t}", help="Börsdata först (nordiskt eller globalt), Yahoo som reserv. Utan att vänta på det nattliga jobbet."):
+    # Raden läggs i sessionens överlagring (refresh_ui) under confidence:<TICKER> — Durrett-arket läser samma.
+    if b.button("Hämta nu", key=f"asym_bd_go_{t}", help=refresh_ui.FETCH_HELP):
         with st.spinner("Hämtar från Börsdata …"):
-            blob, props, msg = fetch.fetch_now(company)
-        if blob is None:
+            ok, msg = fetch.fetch_to_session(company)
+        if not ok:
             st.warning(msg)
         else:
-            st.session_state[live_key] = blob
             st.rerun()
-    blob = st.session_state.get(live_key) or refresh_ui.load_refresh()
-    live = live_key in st.session_state
+    blob = refresh_ui.current_blob()
+    live = refresh_ui.is_live(ref)
+    line = refresh_ui.fetched_line(fetch.refresh_row(blob, t), {"name": company.name, "ins_id": company.ins_id}) \
+        if live else ""
+    if line:
+        st.caption(line.replace("$", "\\$"))
     props = fetch.refresh_proposals(blob, company)
     if not props:
         a.caption("🤖 Börsdata: " + ("inga nya tal för raden." if fetch.refresh_row(blob, t)
                                     else "inga tal än — tryck Hämta nu, eller vänta på det nattliga jobbet."))
         return
     asof = props[0][1].pub_date or ""
-    a.caption(f"🤖 Börsdata {asof}: {len(props)} förslag" + (" (hämtade nu)" if live else " ur sifferuppdateringen"))
+    src = refresh_ui.source_name(fetch.refresh_row(blob, t))
+    a.caption(f"🤖 {src} {asof}: {len(props)} förslag" + (" (hämtade nu)" if live else " ur sifferuppdateringen"))
     for key, point, cur in props:
         label = ccfg.FIELD_BY_KEY[key].label
         a, b = st.columns([4, 1])

@@ -674,8 +674,15 @@ VALUATION_SOURCE = {DURRETT_STRATEGY: "Poängmodellen → Durrett (snabbpoäng)"
 
 
 def _ev_ebitda_part(ref: Optional[dict]) -> list:
+    """EV/EBITDA ur sifferuppdateringens rad, märkt med sin källa: Börsdata, eller Yahoo med symbolen som träffades
+    ('Hämta nu' när Börsdata inte känner tickern — suffixsökningen kan hitta fel bolag)."""
     ev_eb = _num((ref or {}).get("ev_ebitda")) if isinstance(ref, dict) else None
-    return [f"EV/EBITDA {_sv(ev_eb)}× (Börsdata)"] if ev_eb is not None and ev_eb > 0 else []
+    if ev_eb is None or ev_eb <= 0:
+        return []
+    src = "Börsdata"
+    if str(ref.get("source") or "") == "yfinance":
+        src = f"Yahoo {ref['yahoo']}" if ref.get("yahoo") else "Yahoo"
+    return [f"EV/EBITDA {_sv(ev_eb)}× ({src})"]
 
 
 def _metric(metrics: Optional[dict], name: str) -> Optional[float]:
@@ -753,7 +760,8 @@ def valuation_suggestion(entry: Optional[dict], strategy: str, ref: Optional[dic
 
 
 def _sheet_ev_ebitda(row: dict, field: str, ref: Optional[dict]) -> list:
-    """Arkets egen EV/EBITDA-ruta; tom ruta → Börsdatas (märkt) ur sifferuppdateringen. Negativ = lucka."""
+    """Arkets egen EV/EBITDA-ruta; tom ruta → sifferuppdateringens (märkt med källan, _ev_ebitda_part). Negativ =
+    lucka."""
     v = _num(row.get(field))
     if v is not None and v > 0:
         return [f"EV/EBITDA {_sv(v, 2)}×"]                # två decimaler, som kortets ruta

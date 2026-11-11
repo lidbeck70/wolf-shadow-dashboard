@@ -605,6 +605,17 @@ def _offer(row: dict, field: str, value, text: str, key: str, widget_key: str, o
         pass
 
 
+def _fetch_button(cand: dict, container) -> None:
+    """'Hämta nu' under Börsvärde (refresh_ui.fetch_button): kandidatens rad ur Börsdata nu (Yahoo som reserv) blir
+    kortets förslag — börsvärde, kassa och burn till DS-runwayn, aktieantalen till DS 'Aktier 3 år'; kursen står i
+    raden under knappen. Bara i sessionen; Använd skriver, 💾 sparar."""
+    try:
+        import refresh_ui
+    except Exception:                                   # pragma: no cover
+        return
+    refresh_ui.fetch_button("tiggre", cand, key=f"tg_live_{cand['id']}", container=container)
+
+
 def _registry_identity(ticker: str, name: str) -> dict:
     """ins_id och namn ur universum-registret för en kandidat du lägger in (refresh_ui.registry_identity). Bara på
     klicket; tom utan register — då blir raden som förut."""
@@ -767,6 +778,7 @@ def _candidate_card(data: dict, cand: dict, expanded: bool = False) -> None:
         mcap = m1.number_input("Börsvärde (MUSD)", min_value=0.0,
                                value=shown["mcap"],
                                step=10.0, key=f"tg_mcap_{cand['id']}")
+        _fetch_button(cand, m1)
         # Sifferuppdateringen räknar redan börsvärdet för kandidaterna
         # (tiggre:<id>) — det visades bara för positionerna förut.
         _suggest("tiggre", cand, "mcap", "mcap_musd", "börsvärde MUSD",

@@ -52,31 +52,33 @@ def refresh_proposals(blob: Optional[dict], company: CompanyInput) -> list:
     return dr.proposals(blob, company)
 
 
-def borsdata_now(company: CompanyInput, api=None) -> tuple:
-    """Hämta bolagets rad från Börsdata direkt (samma rad som det nattliga
-    jobbet) och översätt till förslag. Returnerar (blob, förslag, meddelande);
-    blob är None när nyckel saknas eller Börsdata inte känner tickern."""
-    import os
+def _borsdata_answer(company: CompanyInput, api=None) -> tuple:
+    """borsdata_now och om Börsdata svarade: (blob, förslag, meddelande, svarade). svarade=False när klienten,
+    instrumentlistan, raden eller den globala listan kastade (refresh_ui.borsdata_row) — då ska ingen Yahoo-reserv
+    provas. blob är None både då och när Börsdata svarade men inte känner tickern."""
     from datetime import datetime, timezone
 
+    import refresh_ui
     import sheets_refresh as sr
 
-    if api is None:
-        try:
-            from borsdata_api import BorsdataAPI
-            api = BorsdataAPI()
-        except Exception as exc:                          # pragma: no cover
-            return None, [], f"Börsdata-nyckel saknas eller klienten kunde inte startas ({exc})."
-    try:
-        row = sr.fetch_row(api, company.ticker, company.ins_id)
-    except Exception as exc:
-        return None, [], f"Börsdata svarade inte: {exc}"
+    row, err = refresh_ui.borsdata_row(company.ticker, company.ins_id, api)
+    if err:
+        return None, [], err, False                    # 'Börsdata svarade inte: …', utan nyckeln i adressen
     if row is None:
-        return None, [], f"Börsdata känner inte {company.ticker}."
+        return None, [], f"Börsdata känner inte {company.ticker}.", True
     blob = {"generated": datetime.now(tz=timezone.utc).isoformat(), "rows": {f"{sr.ref_key('confidence', {'id': company.ticker})}": row}}
     props = dr.proposals(blob, company)
     return blob, props, (f"{len(props)} tal ur Börsdata" + (f" (kurs {row['price']:g} {row.get('currency') or ''})"
-                                                            if row.get("price") is not None else ""))
+                                                            if row.get("price") is not None else "")), True
+
+
+def borsdata_now(company: CompanyInput, api=None) -> tuple:
+    """Hämta bolagets rad från Börsdata direkt (samma rad som det nattliga
+    jobbet) och översätt till förslag. Returnerar (blob, förslag, meddelande);
+    blob är None när Börsdata inte svarade (meddelandet 'Börsdata svarade
+    inte: …') eller inte känner tickern."""
+    blob, props, msg, _answered = _borsdata_answer(company, api)
+    return blob, props, msg
 
 
 # ── Yahoo som reserv (bolag utanför Börsdata: NYSE, TSX, ASX …) ──────────────
@@ -124,7 +126,8 @@ def yahoo_row(ticker: str, info_getter=None) -> Optional[dict]:
         if pence and price is not None:
             price = float(price) / 100.0               # pence → GBP, så att kurs, valuta och växelkurs stämmer
         shares = info.get("sharesOutstanding")
-        return {"ticker": t, "yahoo": sym, "ins_id": None, "source": "yfinance",
+        name = str(info.get("longName") or info.get("shortName") or "").strip() or None
+        return {"ticker": t, "yahoo": sym, "yahoo_name": name, "ins_id": None, "source": "yfinance",
                 "source_label": f"Yahoo Finance ({sym}, {_date.today().isoformat()})",
                 "price": float(price) if price is not None else None, "asof": _date.today().isoformat(),
                 "currency": ccy, "mcap_musd": musd(mc, fx), "cash_musd": musd(info.get("totalCash"), ffx),
@@ -136,9 +139,11 @@ def yahoo_row(ticker: str, info_getter=None) -> Optional[dict]:
 
 
 def fetch_now(company: CompanyInput, api=None, info_getter=None) -> tuple:
-    """Börsdata först, Yahoo som reserv. (blob, förslag, meddelande)."""
-    blob, props, msg = borsdata_now(company, api)
-    if blob is not None:
+    """Börsdata först, Yahoo som reserv när Börsdata svarade men inte känner tickern. (blob, förslag, meddelande).
+    Svarar Börsdata inte (kvoten, nätet, nyckeln) provas inte Yahoo: den söker på bara tickern och kan träffa ett
+    annat bolag."""
+    blob, props, msg, answered = _borsdata_answer(company, api)
+    if blob is not None or not answered:
         return blob, props, msg
     row = yahoo_row(company.ticker, info_getter)
     if row is None:
@@ -151,3 +156,23 @@ def fetch_now(company: CompanyInput, api=None, info_getter=None) -> tuple:
     yprops = dr.proposals(yblob, company)
     return yblob, yprops, (f"{msg} Yahoo ({row['yahoo']}): {len(yprops)} tal"
                           + (f" (kurs {row['price']:g} {row['currency']})" if row.get("price") is not None else ""))
+
+
+def fetch_to_session(company: CompanyInput, api=None, info_getter=None) -> tuple:
+    """'Hämta nu' på Wolf Asymmetry- och Durrett-arket: samma väg som de andra arkens knapp (refresh_ui.fetch_live) —
+    Börsdata först, Yahoo bara när Börsdata svarade men inte känner tickern — och raden in i sessionens överlagring
+    under confidence:<TICKER>, som båda arkens förslag läser före nattens blob. Svarar Börsdata inte (kvoten, nätet,
+    nyckeln) provas inte Yahoo, inte heller med ins_id: nattens rad och en tidigare hämtning står kvar. Ingenting
+    skrivs i bolaget; det gör Använd. (True, meddelande) när en rad hämtades, annars (False, varför)."""
+    import refresh_ui
+    t = company.ticker
+    row, why = refresh_ui.fetch_live("confidence", {"id": t, "ticker": t, "ins_id": company.ins_id,
+                                                    "name": company.name},
+                                     row_id=t, api=api, info_getter=info_getter)
+    if row is None:
+        return False, why
+    n = len(dr.proposals({"rows": {f"confidence:{t}": row}}, company))
+    px, ccy = row.get("price"), str(row.get("currency") or "")
+    kurs = (f" (kurs {px:g}{' ' + ccy if ccy else ''})"
+            if isinstance(px, (int, float)) and not isinstance(px, bool) else "")
+    return True, (f"{why} " if why else "") + f"{n} tal ur {refresh_ui.source_name(row)}{kurs}"

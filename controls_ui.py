@@ -76,7 +76,7 @@ def _shares_year(sheet: str, row: dict, key: str) -> Optional[int]:
     """Året aktieantalet i sifferuppdateringen kommer ur (senaste årsrapporten) — None i en äldre blob."""
     try:
         import refresh_ui
-        sug = refresh_ui.suggestion(refresh_ui.load_refresh(), sheet, row, "shares_year", row_id=key)
+        sug = refresh_ui.suggestion(refresh_ui.current_blob(), sheet, row, "shares_year", row_id=key)
         return int(sug[0]) if sug is not None else None
     except Exception:
         return None
@@ -145,7 +145,7 @@ def _match_txt(sheet: str, row: dict, row_id, blob=None) -> str:
         import html
         import refresh_ui
         if blob is None:
-            blob = refresh_ui.load_refresh()
+            blob = refresh_ui.current_blob()
         return html.unescape(refresh_ui.matched_note(blob, sheet, row, row_id))
     except Exception:
         return ""
@@ -156,7 +156,7 @@ def sheet_runway(sheet: str, row_id, row: Optional[dict] = None) -> tuple:
     slutar källtexten med '(matchat: …)' när nattjobbets bolag inte liknar radens namn — ett klick sätter DS-poäng."""
     try:
         import refresh_ui
-        blob = refresh_ui.load_refresh() or {}
+        blob = refresh_ui.current_blob() or {}
         r = (blob.get("rows") or {}).get(f"{sheet}:{row_id}")
     except Exception:
         blob, r = {}, None
@@ -217,7 +217,7 @@ def _refresh_pct(sheet: str, row: dict, field: str, row_id=None):
     """(värde, asof, valuta) ur sifferuppdateringen för arkraden, eller None (ingen blob, inget tal)."""
     try:
         import refresh_ui
-        return refresh_ui.suggestion(refresh_ui.load_refresh(), sheet, row, field, row_id=row_id)
+        return refresh_ui.suggestion(refresh_ui.current_blob(), sheet, row, field, row_id=row_id)
     except Exception:
         return None
 
