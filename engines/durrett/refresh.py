@@ -374,12 +374,9 @@ def _labels_disagree(company: CompanyInput, base: str) -> Optional[str]:
     key = next((k for k in ("annual_production", "production_current") if cval.usable(company, k)), None)
     if pb is None or pb == base or not ru or key != "production_current":
         return None
-    factor = _scaled(ru)
-    scale = (f" Produktion × pris räknar talet som {base}, så i {ru} blir det dessutom {_amount(factor)} gånger för "
-             f"litet — skriv det i {base} och båda enheterna {base}." if factor != 1.0 else "")
     return (f"Produktionsenheten {pu} och {FIELD_BY_KEY['resource_unit'].label} {ru} säger olika om Produktion nu — "
             f"Durrett läser talet i {ru}. Står det i {ru}, välj produktionsenheten {ru}. Står det i {pu}, räkna om det "
-            f"till {ru} och välj produktionsenheten {ru}.{scale}")
+            f"till {ru} och välj produktionsenheten {ru}.")
 
 
 # Fälten Durrett-motorn läser med Ctx.quantity — i produktionsenheten när resursenheten saknas (inte årsproduktionen:

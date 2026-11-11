@@ -880,9 +880,9 @@ def test_production_unit_on_another_base_next_to_a_fitting_resource_unit_says_bo
     assert "räkna om talet" not in dr.production_unit_conflict(uranium)
     mlb = CompanyInput(ticker="CML", commodity="copper", stage="producer")
     dcs.fill(mlb, dict(resource_unit="Mlb", production_current=260, production_unit="t"), **dcs._TR)
-    assert dr.production_unit_conflict(mlb).endswith(
-        "Produktion × pris räknar talet som lb, så i Mlb blir det dessutom 1 000 000 gånger för litet — skriv det i "
-        "lb och båda enheterna lb.")
+    assert dr.production_unit_conflict(mlb).endswith("Står det i t, räkna om det till Mlb och välj produktionsenheten Mlb.")
+    mlb.set("production_unit", dp("Mlb", kind="ACTUAL", source="test"))   # nästa steg: skalvarningen tar över
+    assert dr.production_unit_conflict(mlb).startswith("Produktionen i Mlb räknas som lb")
     assert dr.production_unit_conflict(_copper_in_t()) == _T_LB          # ingen resursenhet: talet står i t
     ap = CompanyInput(ticker="CAP", commodity="copper", stage="producer")
     dcs.fill(ap, dict(resource_unit="lb", annual_production=50_000, production_unit="t"), **dcs._TR)
