@@ -68,6 +68,9 @@ def fetch(spec: dict, http=None, yahoo_getter=None, bd_api=None) -> src.SeriesDa
     if kind == "scb":
         return src.scb_table(spec["id"], prefer=spec.get("prefer"), prefer_text=spec.get("prefer_text", ()),
                              http=http, **meta)
+    if kind == "scb2":
+        return src.scb2_table(spec["id"], prefer=spec.get("prefer"), prefer_text=spec.get("prefer_text", ()),
+                              http=http, **meta)
     if kind == "riksbank":
         return src.riksbank(spec["id"], start=spec.get("start", "1990-01-01"), http=http, **meta)
     if kind == "yahoo":

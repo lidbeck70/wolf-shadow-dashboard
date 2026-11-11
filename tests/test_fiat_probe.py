@@ -211,3 +211,53 @@ def test_scb_prefer_text_picks_m2_and_outstanding_amounts():
     sd = src.scb_table("FM/pm", prefer_text=("M2", "utestående"), http=http)
     assert sd.ok and sd.last_value == 5010000
     assert sd.meta["chosen"] == {"Penningmangdsmatt": "M2 (M2)", "ContentsCode": "T2 (Utestående belopp, mnkr)"}
+
+
+def test_scb2_table_reads_m2_from_pxwebapi_2():
+    """November 2026: v1-adressen för penningmängdstabellen gav 400/timeout — TAB6541 i PxWebApi 2 läses i stället,
+    med samma val (M2, utestående belopp) och tiden som JSON-stat2."""
+    def dims(sizes_codes):
+        return {d: {"label": d, "category": {"index": {c: i for i, c in enumerate(codes)},
+                                               "label": dict(zip(codes, texts))}}
+                for d, (codes, texts) in sizes_codes.items()}
+    meta = {"label": "Penningmängd", "id": ["Penningm", "ContentsCode", "Tid"], "size": [3, 2, 2],
+            "role": {"time": ["Tid"]},
+            "dimension": dims({"Penningm": (["M1", "M2", "M3"], ["M1", "M2", "M3"]),
+                               "ContentsCode": (["T1", "T2"], ["Tillväxttakt, procent", "Utestående belopp, mnkr"]),
+                               "Tid": (["2026M08", "2026M09"], ["2026M08", "2026M09"])})}
+    data = {"id": ["Penningm", "ContentsCode", "Tid"], "size": [1, 1, 2], "role": {"time": ["Tid"]},
+            "dimension": dims({"Penningm": (["M2"], ["M2"]), "ContentsCode": (["T2"], ["Utestående belopp, mnkr"]),
+                               "Tid": (["2026M08", "2026M09"], ["2026M08", "2026M09"])}),
+            "value": [5010000, 5021000]}
+    calls = []
+
+    class Http:
+        def get(self, url, timeout=None, params=None, **kw):
+            calls.append((url, params))
+            return _Resp(payload=meta if url.endswith("/metadata") else data)
+
+    sd = src.scb2_table("TAB6541", prefer_text=("M2", "utestående"), http=Http(), unit="mn SEK")
+    assert sd.ok and sd.last_value == 5021000 and str(sd.values.index[-1].date()) == "2026-09-01"
+    assert sd.meta["chosen"] == {"Penningm": "M2 (M2)", "ContentsCode": "T2 (Utestående belopp, mnkr)"}
+    url, params = calls[-1]
+    assert url.endswith("/tables/TAB6541/data") and params[-1] == ("valueCodes[Tid]", "*")       # tiden sist
+    assert dict(params)["valueCodes[Penningm]"] == "M2" and dict(params)["valueCodes[ContentsCode]"] == "T2"
+    broken = src.scb2_table("TAB6541", http=_Http({"TAB6541": _Resp(status=400)}))
+    assert not broken.ok and broken.error                                     # fel → reserven (v1) prövas
+    flaky, n = [_Resp(status=500), _Resp(payload=data)], []
+
+    class Flaky(Http):
+        def get(self, url, timeout=None, params=None, **kw):
+            if url.endswith("/metadata"):
+                return _Resp(payload=meta)
+            n.append(1)
+            return flaky[len(n) - 1]
+
+    again = src.scb2_table("TAB6541", prefer_text=("M2", "utestående"), http=Flaky())
+    assert again.ok and len(n) == 2                                           # 500 → ett nytt försök
+
+
+def test_sek_m2_tries_pxwebapi_2_first_then_v1():
+    from fiat_debasement import config as cfg
+    kinds = [s["kind"] for s in cfg.SERIES[(cfg.M2, "SEK")]]
+    assert kinds == ["scb2", "scb"]
