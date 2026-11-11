@@ -1043,6 +1043,33 @@ def _delayed_twice_offer(p: dict, cat: dict) -> None:
                     partial(positions.put, STRATEGY, p, "tiggre")))
 
 
+def _save_shares(row_id, key: str) -> None:
+    """Spara antal (on_click): rutans tal skrivs på positionen i registret (positions.put). Raden läses om ur
+    registret vid klicket, så inget annat fält skrivs tillbaka från en äldre vy."""
+    v = _num(st.session_state.get(key))
+    row = next((r for r in open_positions() if r.get("id") == row_id), None)
+    if v is None or v < 0 or row is None:
+        return
+    row["shares"] = v
+    positions.put(STRATEGY, row, "tiggre")
+
+
+def _shares_box(p: dict) -> None:
+    """Antal aktier för positionen — sparas bara när du klickar Spara antal. Kapital i risk räknas på det sparade
+    antalet. Rutans nyckel bär det sparade talet: ändras antalet någon annanstans (Holdings) ritas rutan om ur
+    registret i stället för att visa det gamla talet."""
+    saved = _num(p.get("shares"), 0.0) or 0.0
+    key = f"tg_p_shares_{p['id']}_{saved:g}"
+    s1, s2 = st.columns([2, 1], vertical_alignment="bottom")
+    typed = s1.number_input("Antal aktier", min_value=0.0, value=float(saved), step=1.0, format="%.0f", key=key,
+                            help="Antalet aktier du äger. Sparas när du klickar Spara antal.")
+    unsaved = storage.differs(typed, saved)
+    s2.button("Spara antal", key=f"tg_p_shares_save_{p['id']}", disabled=not unsaved,
+              on_click=_save_shares, args=(p["id"], key))
+    if unsaved:
+        st.caption("Antalet är inte sparat — klicka Spara antal.")
+
+
 def _positions(data: dict) -> None:
     pos = open_positions()
     st.markdown(
@@ -1119,9 +1146,11 @@ def _positions(data: dict) -> None:
                            "Räknat på arkets sparade börsvärde — ingen färsk siffra ännu.")))
         c5.metric("Kapital i risk", risk_text(new_entry, px_calc, p.get("shares"), p.get("half_sold"), ccy),
                   help=f"Entry × antal aktier, i {ccy}. Efter free ride är insatsen uttagen — resten åker på "
-                       f"husets pengar. Antal saknas = positionen har inget antal aktier.")
+                       f"husets pengar. Antal saknas = positionen har inget antal aktier: skriv det under Antal "
+                       f"aktier och klicka Spara antal.")
         if px_asof:
             st.caption(f"Avkastning och kapital i risk räknas på nattens kurs {px:g} {ccy} ({px_asof}).")
+        _shares_box(p)
         if (storage.differs(new_entry, entry)
                 or storage.differs(new_cur, cur)):
             p["entry"], p["current"] = new_entry, new_cur
