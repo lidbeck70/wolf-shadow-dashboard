@@ -23,6 +23,19 @@
       "trigger": "",
       "valuation": ""
     },
+    "|EQX": {
+      "granskning_klar": true,
+      "position_pct_strategy": 5.0,
+      "position_pct_total": 10.0,
+      "position_saljregel": true,
+      "screener_kval": true,
+      "sell_rule": "Sälj i kärleken — aldrig i hatet",
+      "strategi_aktiv": true,
+      "strategy": "producenter",
+      "trigger": "Högre guld pris ",
+      "trigger_definierad": true,
+      "valuation": "EV/NAV 556,27× (dyrt mot NAV) · EV/EBITDA 5,75×"
+    },
     "|VAR.OL": {
       "granskning_klar": true,
       "position_pct_strategy": 25.0,
