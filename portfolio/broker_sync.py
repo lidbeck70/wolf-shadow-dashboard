@@ -507,8 +507,9 @@ def _row_names(row: dict) -> set:
 
 def resolve(holdings: List[Holding], rows: Iterable[dict], bd_map: Optional[dict] = None) -> List[Holding]:
     """Fyller Holding.ticker i ordningen: radens sparade ISIN (en tidigare uppdatering), mäklarens namn sparat på
-    raden (bara för innehav utan ISIN — Nordnets innehavslista för USA och Kanada), Börsdata (bd_map), sist ett namn
-    som strängt liknar en rads namn i samma valuta. Utan träff förblir tickern None (skrivs i rutan)."""
+    raden (Nordnets innehavslista för USA och Kanada saknar ofta ISIN — gäller rader utan sparat ISIN eller med
+    samma, så ett ISIN lånat ur transaktionerna inte stänger av kopplingen), Börsdata (bd_map), sist ett namn som
+    strängt liknar en rads namn i samma valuta. Utan träff förblir tickern None (skrivs i rutan)."""
     rows = [r for r in rows or [] if isinstance(r, dict)]
     by_isin, by_name = {}, {}
     for r in rows:
@@ -516,12 +517,12 @@ def resolve(holdings: List[Holding], rows: Iterable[dict], bd_map: Optional[dict
         if i:
             by_isin.setdefault(i, r["ticker"])
         for n in _row_names(r):
-            by_name.setdefault(n, set()).add(r["ticker"])
+            by_name.setdefault(n, set()).add((r["ticker"], i))
     for h in holdings:
         if h.ticker:
             continue
         isin = h.isin.upper()
-        saved = by_name.get(_norm(h.name), set()) if not isin else set()
+        saved = {t for t, ri in by_name.get(_norm(h.name), set()) if not isin or not ri or ri == isin}
         if isin and isin in by_isin:
             h.ticker, h.how = by_isin[isin], SAVED_ISIN
         elif len(saved) == 1:
@@ -784,14 +785,18 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
         shaky = any(h.unsure or h.isin.upper() in shaky_isins for h in hs)
         if shaky and not same_q:
             notes.append(_shaky_note(hs))
-        tx = bool(_tx(hs)) and not same_q              # köp före filens period syns inte
+        tx = bool(_tx(hs)) and not (same_q and same_p)   # köp före filens period syns inte
         if tx:
             notes.append(TX_NOTE)
-        blind_here = _blind_for(row, blind) if nn_gap and not same_q else []
+        # utan känt konto kan Nordnet-delen också stå i listan utan ISIN
+        loose = not _row_accounts(row) and NORDNET in uploaded and not any(h.broker == NORDNET for h in hs)
+        blind_here = _blind_for(row, blind) if (nn_gap or loose) and not same_q else []
         if blind_here:                               # Nordnet-delen kan stå i listan utan ISIN
             notes.append("Nordnets innehavslista har " + ", ".join(sorted(h.name for h in blind_here))
                          + " utan ISIN — står Nordnet-delen där? Kryssa i bara om den är såld")
-        missing_brokers = sorted({NORDEA, NORDNET} - uploaded)
+        # Nordnet bara som transaktioner visar inte allt Nordnet har — räknas som saknad för en rad utan känt konto
+        nn_list = any(h.snap and h.broker == NORDNET for h in every)
+        missing_brokers = sorted(({NORDEA, NORDNET} - uploaded) | (set() if nn_list else {NORDNET}))
         unsure = not _row_accounts(row) and missing_brokers and not same_q
         if unsure:                                   # raden kan också ligga hos mäklaren vars fil saknas
             notes.append("raden har inget känt konto — innehavet kan också ligga hos "
@@ -838,10 +843,12 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
                            else f"heter som raden {names} — samma innehav? Rätta i så fall radens ticker till "
                                 f"{c.ticker} i stället för att lägga till")
     held_names = {frozenset(_tokens(h.name)) for h in every if not h.sold and _tokens(h.name)}
+    held_exact = {_norm(h.name) for h in every if not h.sold and h.name}
     for r in rows:
         if r["id"] in seen or r["ticker"].strip().upper() in held:
             continue
-        if frozenset(_tokens(r.get("name") or "")) in held_names or _row_isin(r) in ghosts:
+        if frozenset(_tokens(r.get("name") or "")) in held_names or _row_isin(r) in ghosts \
+                or _row_names(r) & held_exact:     # mäklarens sparade namn finns bland innehaven
             continue                                 # mäklaren har ett innehav med radens namn — inte 'såld?'
         accts = _row_accounts(r)
         if not accts or not _brokers_of(accts) <= uploaded:

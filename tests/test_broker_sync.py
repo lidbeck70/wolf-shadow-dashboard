@@ -905,3 +905,43 @@ def test_a_list_line_without_isin_or_ticker_keeps_a_row_in_its_currency_from_loo
     hs = bs.read_file("h.xlsx", xlsx)[1] + bs.read(LIST_FILE, lst)[1]
     c = next(c for c in bs.plan([both], bs.resolve(hs, [both], {}), {bs.NORDEA, bs.NORDNET}) if c.ticker == "NVDA")
     assert c.kind == bs.CHANGED and (c.old_qty, c.qty) == (30, 10) and c.pick is False and "NVIDIA" in c.notes[-1]
+
+
+# ── Bekräftelserundan ────────────────────────────────────────────────────────
+def test_an_isin_lent_from_the_transactions_does_not_turn_off_the_saved_broker_name():
+    """AMD kopplad via Nordnets sparade namn (listan har inget ISIN). Laddas transaktionerna upp samtidigt får
+    listans rad ISIN — raden hittas ändå via namnet och visas aldrig som 'såld?'."""
+    amd = _row("a", "AMD", 12, 150.0, extras={"broker_names": ["Advanced Micro Devices"],
+                                              "broker_accounts": ["nordnet_isk:depå …2222"]})
+    lst = nordnet_list([("Advanced Micro Devices", "USD", 12, 150.0, "")])
+    tx = nordnet_csv([("2026-10-02", "KÖPT", "Advanced Micro Devices", "US0079031078", 2, 160.0)])
+    hs, up, _m = bs.combine(_reads((LIST_FILE, lst), ("t.csv", tx)))
+    assert hs[0].isin == "US0079031078"
+    hs = bs.resolve(hs, [amd], {})
+    assert (hs[0].ticker, hs[0].how) == ("AMD", bs.SAVED_NAME)
+    out = bs.plan([amd], hs, up)
+    assert [(c.kind, c.ticker) for c in out] == [(bs.SAME, "AMD")]
+    other = dict(amd, extras=dict(amd["extras"], isin="US0000000009"))      # raden har ett annat ISIN: ingen koppling
+    assert bs.resolve(bs.combine(_reads((LIST_FILE, lst), ("t.csv", tx)))[0], [other], {})[0].ticker is None
+    hs = [bs.Holding(bs.NORDNET, "depå …2222", "", "Advanced Micro Devices", "USD", 12, 150.0, snap=True)]
+    assert not [c for c in bs.plan([other], hs, up) if c.kind == bs.MISSING]   # skyddsnätet: namnet finns kvar
+
+
+def test_a_row_without_known_account_is_not_cut_to_nordeas_count_when_nordnet_is_only_transactions():
+    xlsx = nordea_xlsx([("NO0010096985", "XOSL", "NOK", "Equinor", 100, 280.0, 28000.0)])
+    csv = nordnet_csv([("2026-09-02", "KÖPT", "Volvo B", "SE0000115446", 5, 250.0)])
+    rows = [_row("e", "EQNR.OL", 150, 283.0, name="Equinor")]
+    hs = bs.resolve(bs.read_file("h.xlsx", xlsx)[1] + bs.read_file("t.csv", csv)[1], rows,
+                    {"NO0010096985": "EQNR.OL"})
+    c = next(c for c in bs.plan(rows, hs, {bs.NORDEA, bs.NORDNET}) if c.ticker == "EQNR.OL")
+    assert c.kind == bs.CHANGED and c.pick is False and "Nordnet ISK" in c.notes[-1]
+
+
+def test_a_row_without_known_account_is_not_cut_when_the_nordnet_part_may_be_a_list_line_without_isin():
+    xlsx = nordea_xlsx([("US8740391003", "XNYS", "USD", "Taiwan Semiconductor Mfg", 30, 150.0, 4500.0)])
+    lst = nordnet_list([("Taiwan Semiconductor Manufacturing Co Ltd", "USD", 50, 140.0, "")])
+    rows = [_row("t", "TSM", 80, 145.0, name="Taiwan Semi")]
+    hs = bs.resolve(bs.read_file("h.xlsx", xlsx)[1] + bs.read(LIST_FILE, lst)[1], rows, {"US8740391003": "TSM"})
+    c = next(c for c in bs.plan(rows, hs, {bs.NORDEA, bs.NORDNET}) if c.ticker == "TSM")
+    assert c.kind == bs.CHANGED and (c.old_qty, c.qty) == (80, 30) and c.pick is False
+    assert "Taiwan Semiconductor Manufacturing Co Ltd" in c.notes[-1]
