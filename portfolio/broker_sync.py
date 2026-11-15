@@ -333,6 +333,7 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
     out: List[Change] = []
     groups: dict = {}
     unknown: dict = {}
+    card_names: dict = {}                            # alla mäklarnamn bakom ett nytt kort (Nordea och Nordnet stavar olika)
     for h in holdings:
         if not h.ticker:
             unknown.setdefault(h.isin.strip().upper() or h.name, []).append(h)
@@ -343,6 +344,7 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
         avg, note = _avg(hs)
         notes = ["ingen ticker hittad — skriv den för att lägga till"] + (
             [f"summa av {len(accts)} konton"] if len(accts) > 1 else []) + ([note] if note else [])
+        card_names[f"new:{key}"] = [h.name for h in hs]
         out.append(Change(NEW, f"new:{key}", None, hs[0].name, hs[0].isin, accts, qty=_qty(sum(h.qty for h in hs)),
                           price=round(avg, 6) if avg else None, currency=hs[0].currency, notes=notes))
     rows_by_t: dict = {}
@@ -373,6 +375,7 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
             notes.append(pnote)
         rs = rows_by_t.get(t, [])
         if not rs:
+            card_names[f"new:{t}"] = [h.name for h in hs]
             out.append(Change(NEW, f"new:{t}", t, name, isin, accts, qty=qty, price=price, currency=ccy, notes=notes))
             continue
         if len(rs) > 1:
@@ -404,9 +407,15 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
         same_p = price is None or _same(old_p, price, 5e-4)
         if by_name:
             notes.append("tickern gissad ur namnet — kryssa i om det stämmer")
+        missing_brokers = sorted({NORDEA, NORDNET} - uploaded)
+        unsure = not _row_accounts(row) and missing_brokers and not same_q
+        if unsure:                                   # raden kan också ligga hos mäklaren vars fil saknas
+            notes.append("raden har inget känt konto — innehavet kan också ligga hos "
+                         + ", ".join(BROKER_LABEL[b] for b in missing_brokers)
+                         + "; kryssa i bara om hela innehavet ligger här")
         out.append(Change(SAME if same_q and same_p else CHANGED, f"row:{row['id']}", t, name, isin, accts,
                           row=row, qty=qty, price=price, old_qty=old_q, old_price=old_p, currency=ccy, notes=notes,
-                          pick=not by_name))
+                          pick=not by_name and not unsure))
     seen = {c.row["id"] for c in out if c.row is not None}
     held = set(groups)
     # Namnet som skyddsnät. Journalens ISIN-karta kan ha gett äldre rader fel ticker ('ATCO-A.ST' med namnet
@@ -424,8 +433,9 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
     for c in out:
         if c.kind != NEW:
             continue
-        others = [r for r in rows_by_tokens.get(frozenset(_tokens(c.name)), [])
-                  if r["ticker"].strip().upper() != (c.ticker or "").strip().upper()]
+        tks = {frozenset(_tokens(n)) for n in card_names.get(c.key, [c.name]) if _tokens(n)}
+        others = list({r["id"]: r for tk in tks for r in rows_by_tokens.get(tk, [])
+                       if r["ticker"].strip().upper() != (c.ticker or "").strip().upper()}.values())
         if not others:
             continue
         c.pick = False

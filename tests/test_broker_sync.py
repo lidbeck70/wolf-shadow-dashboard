@@ -212,7 +212,8 @@ def page(monkeypatch):
     import storage
     saves: list = []
     data = {"holdings": {"swing": [], "ovtlyr": [], "momentum": [], "tiggre": [], "closed": [], "cash": 0,
-                         "long": [_row("r1", "TEST-B.ST", 60, 30.0, strategy="Quality", name="Testbolag B"),
+                         "long": [_row("r1", "TEST-B.ST", 60, 30.0, strategy="Quality", name="Testbolag B",
+                                       extras={"broker_accounts": ["nordea_ask:ASK Testkonto"]}),
                                   _row("r3", "GONE.OL", 10, 50.0, notes="import · nordea_ask · NOK")]}}
     monkeypatch.setattr(storage, "load_json", lambda n, default=None: copy.deepcopy(data.get(n, default)))
     monkeypatch.setattr(storage, "legacy_gist", lambda f: None)
@@ -306,7 +307,7 @@ def test_a_name_only_matches_on_the_same_words_and_currency_and_is_not_ticked():
     hs = bs.resolve(bs.read_file("h.xlsx", xlsx)[1], rows, {})
     assert [h.ticker for h in hs] == [None, "HOLM-B.ST"]
     c = next(c for c in bs.plan(rows, hs, {bs.NORDEA}) if c.ticker == "HOLM-B.ST")
-    assert c.kind == bs.CHANGED and c.pick is False and "gissad ur namnet" in c.notes[-1]
+    assert c.kind == bs.CHANGED and c.pick is False and any("gissad ur namnet" in n for n in c.notes)
 
 
 def test_an_unreadable_or_trade_less_nordnet_csv_does_not_count_as_uploaded():
@@ -450,3 +451,29 @@ def test_swapped_journal_tickers_never_show_a_held_position_as_sold():
     out = bs.plan(rows, hs, {bs.NORDNET})
     assert not [c for c in out if c.kind == bs.MISSING and c.ticker == "SAND.ST"]
     assert not [c for c in out if c.kind in (bs.NEW, bs.CHANGED) and c.pick]
+
+
+# ── Femte rundans fynd ───────────────────────────────────────────────────────
+def test_a_row_without_known_account_is_not_cut_to_one_brokers_count_by_default():
+    """Equinor 100 hos Nordea på en handskriven rad om 150 (resten hos Nordnet): bara Nordeas fil uppladdad →
+    ändringen 150 → 100 kryssas inte i. Båda filerna → den kryssas (hela innehavet syns)."""
+    xlsx = nordea_xlsx([("NO0010096985", "XOSL", "NOK", "Equinor", 100, 280.0, 28000.0)])
+    csv = nordnet_csv([("2026-01-02", "KÖPT", "Equinor", "NO0010096985", 40, 290.0)])
+    rows = [_row("h1", "EQNR.OL", 150, 283.33, stop=240.0)]
+    bd = {"NO0010096985": "EQNR.OL"}
+    c = bs.plan(rows, bs.resolve(bs.read_file("h.xlsx", xlsx)[1], rows, bd), {bs.NORDEA})[0]
+    assert c.kind == bs.CHANGED and c.pick is False and "Nordnet ISK" in c.notes[-1]
+    both = bs.read_file("h.xlsx", xlsx)[1] + bs.read_file("t.csv", csv)[1]
+    c = bs.plan(rows, bs.resolve(both, rows, bd), {bs.NORDEA, bs.NORDNET})[0]
+    assert c.kind == bs.CHANGED and c.qty == 140 and c.pick is True
+
+
+def test_the_name_guard_checks_every_brokers_spelling_whatever_the_upload_order():
+    xlsx = nordea_xlsx([("SE0000148884", "XSTO", "SEK", "Skandinaviska Enskilda Banken ser. A", 50, 140.0, 7000.0)])
+    csv = nordnet_csv([("2026-01-02", "KÖPT", "SEB A", "SE0000148884", 100, 150.0)])
+    rows = [_row("s", "SAND.ST", 100, 150.0, name="SEB A", notes="import · nordnet_isk · SEK")]
+    for files in ((("h.xlsx", xlsx), ("t.csv", csv)), (("t.csv", csv), ("h.xlsx", xlsx))):
+        hs = [h for n, d in files for h in bs.read_file(n, d)[1]]
+        c = next(c for c in bs.plan(rows, bs.resolve(hs, rows, {"SE0000148884": "SEB-A.ST"}),
+                                    {bs.NORDEA, bs.NORDNET}) if c.ticker == "SEB-A.ST")
+        assert c.kind == bs.NEW and c.pick is False and "SAND.ST" in c.notes[-1]
