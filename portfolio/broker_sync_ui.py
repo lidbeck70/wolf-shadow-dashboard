@@ -79,7 +79,7 @@ def _line(c: bs.Change) -> str:
         p = (f" · snittkurs {_fmt(c.old_price)} → <b>{_fmt(c.price)}</b>{unit}"
              if c.price is not None and not bs._same(c.old_price, c.price, 5e-4) else "")
         body = q + p
-    elif c.kind == bs.MISSING:
+    elif c.kind == bs.MISSING or (c.qty is None and c.old_qty is not None):
         body = f"raden: {_fmt(c.old_qty)} st à {_fmt(c.old_price)}"
     else:
         body = f"{_fmt(c.qty)} st" + (f" à {_fmt(c.price)}{unit}" if c.price is not None else " · snittkurs saknas")
@@ -225,5 +225,5 @@ def render_broker_sync() -> None:
             if group:                                  # ingen expander här — Streamlit tillåter inte expander i expander
                 st.markdown(f"**{titles[kind]}** ({len(group)})")
                 st.markdown("<br>".join(_line(c) for c in group), unsafe_allow_html=True)
-        if not actionable and not gone:
+        if not actionable and not gone and not any(c.kind == bs.INFO for c in changes):
             st.success("Positioner stämmer med mäklarens filer.")
