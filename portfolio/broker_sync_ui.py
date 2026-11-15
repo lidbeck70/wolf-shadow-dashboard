@@ -16,6 +16,7 @@ from portfolio import broker_sync as bs
 
 BD_MAP = "bsync_bd_map"
 RESULT = "bsync_result"
+PARSED = "bsync_parsed"
 
 
 def _esc(text) -> str:
@@ -130,6 +131,20 @@ def _ck(c: bs.Change) -> str:
     return f"bsync_ck_{c.key}:{int(c.pick)}:{c.qty}:{c.price}"
 
 
+def _read(f) -> tuple:
+    """read_file med sessionscache per fil (namn + innehållets hash): en PDF på hundra sidor tolkas en gång, inte vid
+    varje klick. Innehaven kopieras — resolve skriver tickern på dem."""
+    import copy
+    import hashlib
+    data = f.getvalue() if hasattr(f, "getvalue") else f.read()
+    key = f"{f.name}:{hashlib.sha1(data).hexdigest()}"
+    cache = st.session_state.setdefault(PARSED, {})
+    if key not in cache:
+        cache.clear() if len(cache) > 8 else None
+        cache[key] = bs.read_file(f.name, data)
+    return copy.deepcopy(cache[key])
+
+
 def _uploader():
     return st.file_uploader("Mäklarens filer", type=["xlsx", "csv", "pdf"], accept_multiple_files=True,
                             key="bsync_files")
@@ -138,8 +153,9 @@ def _uploader():
 def render_broker_sync() -> None:
     import positions
     with st.expander("📥 Uppdatera från mäklaren (Nordea ASK · Nordnet ISK)", expanded=False):
-        st.caption("Nordea: Innehav → Exportera → **My holdings (.xlsx)**. Nordnet: Transaktioner → Exportera → "
-                   "**CSV**, hela perioden sedan första köpet (innehaven räknas fram ur köp och sälj). Antal och "
+        st.caption("Nordea: Innehav → Exportera → **My holdings (.xlsx)**. Nordnet: Transaktioner och notor → "
+                   "Exportera som **CSV eller PDF**, gärna hela perioden sedan första köpet (innehaven räknas fram ur "
+                   "köp och sälj; ett bolag köpt före perioden syns inte och visas aldrig som sålt). Antal och "
                    "snittkurs uppdateras — stopp, mål, strategi och anteckningar rörs aldrig. Inget sparas förrän "
                    "du trycker på knappen.")
         files = _uploader()
@@ -152,7 +168,7 @@ def render_broker_sync() -> None:
         # summeras). Olika konton och mäklare läggs ihop.
         by_acct, uploaded, read = {}, set(), {}
         for f in files:
-            broker, hs, errors = bs.read_file(f.name, f)
+            broker, hs, errors = _read(f)
             for e in errors[:8]:
                 st.warning(f"{f.name}: {e}")
             if len(errors) > 8:

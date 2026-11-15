@@ -25,6 +25,7 @@ Inget skrivs utan klick: apply anropas bara av knappen.
 from __future__ import annotations
 
 import io
+import re
 from dataclasses import dataclass, field
 from typing import Iterable, List, Optional
 
@@ -54,6 +55,7 @@ class Holding:
     ticker: Optional[str] = None
     how: str = ""                 # hur tickern hittades
     unsure: bool = False          # antalet kan vara fel (Nordnet: split, flytt eller sälj utan köp i filen)
+    sold: bool = False            # Nordnet: allt sålt enligt filen (antal 0) — beviset för 'såld?'
 
 
 @dataclass
@@ -147,18 +149,17 @@ def parse_nordea_holdings(data: bytes) -> tuple:
     return out, errors, True
 
 
-def nordnet_holdings(data: bytes) -> tuple:
-    """Nordnets transaktionsexport (.csv) → ([Holding], fel, läst) via Journalens parser och FIFO. Snittkursen står i
-    handelsvalutan. Ett sälj utan köp före i filen = exporten börjar för sent; det står i felen. Nordnet listar
-    nyast först: köp sorteras före sälj samma dag (FIFO tar ändå de äldsta posterna först), annars blev en
-    dagsaffär (köp och sälj samma dag) kvar som innehav. Utan ett enda köp eller sälj (fel teckenkodning, en period
-    med bara utdelningar) räknas filen inte som läst — Nordnet-raderna ska då inte se sålda ut."""
+def _nordnet_result(txs: list, shaky: dict, errors: list, what: str) -> tuple:
+    """Nordnets köp och sälj → ([Holding], fel, läst) via FIFO. Köp sorteras före sälj samma dag (Nordnet listar
+    nyast först; FIFO tar ändå de äldsta posterna först). shaky = {ISIN: namn} där antalet kan vara fel (split,
+    flytt, sälj utan köp i filen). Utöver de öppna innehaven:
+      - spöken (antal 0, osäkra) för osäkra ISIN utan öppet innehav — raden visas då inte som 'såld?';
+      - sålda (antal 0, sold) för ISIN som filen visar sålda helt — bara de får Nordnet-rader att visas som 'såld?'.
+        Ett köp före filens period syns inte alls, så frånvaro i filen är inget bevis.
+    Utan ett enda köp eller sälj räknas filen inte som läst."""
     from journal_import.fifo import run_fifo
-    from journal_import.parsers import parse_nordnet
-    res = parse_nordnet(io.BytesIO(data))
-    shaky = _nordnet_shaky_isins(data)              # {ISIN: namn}
-    txs = sorted(res.transactions, key=lambda t: (t.account, t.isin, t.date, t.action != "BUY"))
-    _closed, open_pos, fifo_errors = run_fifo(txs, lambda *a, **k: None)
+    txs = sorted(txs, key=lambda t: (t.account, t.isin, t.date, t.action != "BUY"))
+    closed, open_pos, fifo_errors = run_fifo(txs, lambda *a, **k: None)
     for e in fifo_errors:                           # 'SELL without matching BUY: ISIN (namn) …'
         e = str(e)
         if "SELL without matching BUY:" in e:
@@ -172,21 +173,107 @@ def nordnet_holdings(data: bytes) -> tuple:
                    unsure=str(p.isin or "").upper() in shaky)
            for p in open_pos if (p.qty or 0) > 0]
     held = {h.isin.upper() for h in out}
-    # Osäkra ISIN utan öppet innehav (t.ex. köpt före en split och sedan delvis sålt): ett spöke med antal 0, så att
-    # plan inte visar radens position som 'såld?' — FIFO kan inte veta om den finns kvar.
     out += [Holding(NORDNET, NORDNET, isin, name, "", 0, None, unsure=True)
             for isin, name in shaky.items() if isin not in held]
-    errors = list(res.errors) + list(fifo_errors)
-    if not res.transactions:
-        errors.append("Nordnet: inga köp eller sälj i filen — är det transaktionsexporten som CSV (UTF-16, så som "
-                      "Nordnet sparar den), för hela perioden sedan första köpet?")
+    gone: dict = {}
+    for ct in closed:
+        i = str(ct.isin or "").upper()
+        if i and i not in held and i not in shaky:
+            gone.setdefault(i, (str(ct.account or NORDNET), str(ct.name or "")))
+    out += [Holding(NORDNET, acct, isin, name, "", 0, None, sold=True) for isin, (acct, name) in gone.items()]
+    unmatched = sorted({str(e).split("(", 1)[1].split(")", 1)[0] for e in fifo_errors
+                        if "SELL without matching BUY:" in str(e) and "(" in str(e)})
+    other = [e for e in fifo_errors if "SELL without matching BUY:" not in str(e)]
+    if unmatched:                                   # köpta före filens period — en rad, inte en per affär
+        other.insert(0, f"{len(unmatched)} bolag har försäljningar utan köp i filen (köpta före filens period): "
+                        f"{', '.join(unmatched)}. De räknas som osäkra och kryssas inte i.")
+    errors = list(errors) + other
+    if not txs:
+        errors.append(f"Nordnet: inga köp eller sälj i filen — {what}")
         return out, errors, False
     return out, errors, True
 
 
+def nordnet_holdings(data: bytes) -> tuple:
+    """Nordnets transaktionsexport (.csv) → ([Holding], fel, läst) via Journalens parser och FIFO."""
+    from journal_import.parsers import parse_nordnet
+    res = parse_nordnet(io.BytesIO(data))
+    return _nordnet_result(res.transactions, _nordnet_shaky_isins(data), res.errors,
+                           "är det transaktionsexporten som CSV (UTF-16, så som Nordnet sparar den)?")
+
+
+# Nordnets avräkningsnotor (PDF). Personnummer och namn läses aldrig ut.
+_NOTE = re.compile(r"för Er räkning (köpt|sålt) följande värdepapper:\s*(.+?)\(ISIN ([A-Z0-9]{12})\)\s*-\s*([^\n]+)",
+                   re.S)
+_SP = "\u00a0\u202f "                               # vanligt, hårt och smalt mellanslag (pypdf ger hårda)
+_FILL = re.compile(rf"^(\d+(?:,\d+)?)[{_SP}]+(\d[\d{_SP}]*,\d+)[{_SP}]+([A-Z]{{3}})[{_SP}]")
+# sidor som flyttar antal utan köp/sälj (split, in-/uttag av värdepapper, emission, byte, fusion, inlösen)
+_MOVE_WORDS = ("VP", "SPLIT", "BYTE", "FUSION", "EMISSION", "INLÖS", "AVREG")
+
+
+def _num_sv(text: str) -> float:
+    return float(re.sub(r"[\s\u00a0\u202f]", "", str(text)).replace(",", "."))
+
+
+def parse_nordnet_notes(pages: list) -> tuple:
+    """Sidornas text → ([Transaction], {ISIN: namn} osäkra, fel). En avräkningsnota per sida: köpt/sålt, värdepapper
+    med ISIN, depå, affärsdatum och avsluten ('antal pris valuta …', antalet utan tusentalsmellanslag). Summan
+    antal × pris × valutakurs prövas mot köpeskillingen; stämmer den inte blir ISIN:et osäkert. Sidor som flyttar
+    antal (VP, split, emission …) gör ISIN:et osäkert. Utdelning, källskatt och ränta hoppas över."""
+    from journal_import.parsers import Transaction, _make_hash
+    txs, shaky, errors = [], {}, []
+    for n, text in enumerate(pages, start=1):
+        t = str(text or "")
+        head = next((ln.strip() for ln in t.splitlines() if ln.strip() and not ln.strip().startswith("Nr ")), "")
+        head = head.split("Utskriftsdatum")[0].strip().upper()
+        depa = re.search(r"Depå:\s*(\d+)", t)
+        acct = f"depå {depa.group(1)}" if depa else NORDNET
+        m = _NOTE.search(t)
+        if m and "AVRÄKNINGSNOTA" in head:
+            action = "BUY" if m.group(1) == "köpt" else "SELL"
+            isin, name = m.group(3), m.group(4).strip()
+            day = re.search(r"Affärsdatum:\s*(\d{4}-\d{2}-\d{2})", t)
+            fills = [(_num_sv(f.group(1)), _num_sv(f.group(2)), f.group(3))
+                     for f in (_FILL.match(ln.strip()) for ln in t.splitlines()) if f]
+            fx = re.search(rf"Valutakurs [A-Z]{{3}}/SEK ([\d{_SP},]+)", t)
+            fx = _num_sv(fx.group(1)) if fx else 1.0
+            kop = re.search(rf"Köpeskilling \(SEK\)[{_SP}]+([\d{_SP},]+)", t)
+            qty = sum(q for q, _p, _c in fills)
+            if not fills or not day or qty <= 0:
+                shaky.setdefault(isin, name)
+                errors.append(f"Nordnet-PDF sida {n}: avräkningsnotan för {name} gick inte att läsa")
+                continue
+            price = sum(q * p for q, p, _c in fills) / qty
+            if kop and abs(qty * price * fx - _num_sv(kop.group(1))) > max(0.01 * _num_sv(kop.group(1)), 0.05):
+                shaky.setdefault(isin, name)
+                errors.append(f"Nordnet-PDF sida {n}: {name} — antal × pris stämmer inte med köpeskillingen")
+            txs.append(Transaction(account=acct, isin=isin, name=name, symbol="", exchange="", date=day.group(1),
+                                   action=action, qty=qty, price=price, currency=fills[0][2], fx_rate=fx, fee=0.0,
+                                   gross_amount=0.0, raw_hash=_make_hash(acct, isin, day.group(1), qty, price)))
+            continue
+        if any(w in head.split() or w in head for w in _MOVE_WORDS):
+            isin = re.search(r"ISIN:\s*([A-Z0-9]{12})", t)
+            antal = re.search(rf"Antal:\s*([\d{_SP},]+)", t)
+            name = re.search(r"Värdepapper:\s*([^\n]+)", t)
+            if isin and antal and _num_sv(antal.group(1)):
+                shaky.setdefault(isin.group(1), name.group(1).strip() if name else "")
+    return txs, shaky, errors
+
+
+def _pdf_pages(data: bytes) -> list:
+    import pypdf
+    return [p.extract_text() or "" for p in pypdf.PdfReader(io.BytesIO(data)).pages]
+
+
+def nordnet_pdf_holdings(data: bytes) -> tuple:
+    """Nordnets transaktioner som PDF (avräkningsnotor) → ([Holding], fel, läst)."""
+    txs, shaky, errors = parse_nordnet_notes(_pdf_pages(data))
+    return _nordnet_result(txs, shaky, errors, "är det Nordnets transaktioner och notor som PDF?")
+
+
 def _nordnet_shaky_isins(data: bytes) -> set:
-    """{ISIN: namn} med en antalsrad som inte är KÖPT/SÅLT (split, inlägg/uttag av värdepapper, byte, emission,
-    fusion …). FIFO räknar bara köp och sälj, så antalet för de ISIN:en kan vara fel — NVIDIA köpt före splitten
+    """{ISIN: namn} med en rad som flyttar antal utan köp/sälj (split, inlägg/uttag av värdepapper, byte, emission,
+    fusion …) — inte utdelning (dess antal är innehavet, inte en flytt). FIFO räknar bara köp och sälj, så antalet för de ISIN:en kan vara fel — NVIDIA köpt före splitten
     10:1 gav 100 → 10. Samma kolumner som journal_import.parsers.parse_nordnet."""
     from journal_import.parsers import _to_df, _parse_decimal
     try:
@@ -199,8 +286,8 @@ def _nordnet_shaky_isins(data: bytes) -> set:
         if len(vals) < 9:
             continue
         typ, isin = str(vals[5]).strip().upper(), str(vals[7]).strip().upper()
-        if not isin or isin in ("NAN", "NONE") or typ in ("KÖPT", "SÅLT"):
-            continue
+        if not isin or isin in ("NAN", "NONE") or not any(w in typ for w in _MOVE_WORDS):
+            continue                                 # köp/sälj, utdelning, källskatt, ränta: inte en flytt
         try:
             qty = _parse_decimal(vals[8])
         except Exception:
@@ -212,7 +299,7 @@ def _nordnet_shaky_isins(data: bytes) -> set:
 
 def read_file(name: str, file_obj) -> tuple:
     """(mäklare, [Holding], fel) ur en uppladdad fil. Mäklaren känns igen på filtypen: .xlsx = Nordeas
-    innehavslista, .csv = Nordnets transaktionsexport. PDF (avräkningsnotor) går inte att läsa som innehav.
+    innehavslista, .csv och .pdf = Nordnets transaktioner (CSV-exporten, eller avräkningsnotorna som PDF).
     Mäklaren är None när filen inte gick att läsa som sin typ — då räknas den inte som uppladdad (plan: rader hos
     den mäklaren blir varken 'saknas' eller kapade till den andra mäklarens antal)."""
     n = str(name or "").lower()
@@ -220,10 +307,10 @@ def read_file(name: str, file_obj) -> tuple:
         data = _bytes(file_obj)
     except Exception as exc:
         return None, [], [f"Kunde inte läsa filen: {exc}"]
-    if n.endswith(".pdf"):
-        return None, [], ["PDF:en är avräkningsnotor, inte en innehavslista. Från Nordnet: exportera "
-                          "transaktionerna som CSV (hela perioden sedan första köpet)."]
     try:
+        if n.endswith(".pdf") or data[:4] == b"%PDF":
+            h, e, ok = nordnet_pdf_holdings(data)
+            return (NORDNET if ok else None), h, e
         if n.endswith((".xlsx", ".xlsm")) or data[:2] == b"PK":
             h, e, ok = parse_nordea_holdings(data)
             return (NORDEA if ok else None), h, e
@@ -232,7 +319,8 @@ def read_file(name: str, file_obj) -> tuple:
             return (NORDNET if ok else None), h, e
     except Exception as exc:
         return None, [], [f"Kunde inte läsa {name}: {exc}"]
-    return None, [], [f"Okänd filtyp: {name} — Nordea: innehavslistan (.xlsx), Nordnet: transaktionerna (.csv)."]
+    return None, [], [f"Okänd filtyp: {name} — Nordea: innehavslistan (.xlsx), Nordnet: transaktionerna (.csv "
+                      f"eller .pdf)."]
 
 
 # ── 2. Tickern ──────────────────────────────────────────────────────────────
@@ -374,8 +462,10 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
     from portfolio import position_hints as ph
     rows = [r for r in rows or [] if isinstance(r, dict) and r.get("ticker")]
     uploaded = set(uploaded or ())
-    every = list(holdings)                           # spöken (antal 0, osäkra Nordnet-ISIN) räknas bara mot 'såld?'
-    ghosts = {h.isin.upper() for h in every if not h.qty and h.isin}
+    every = list(holdings)                           # spöken och sålda (antal 0) räknas bara mot 'såld?'
+    ghosts = {h.isin.upper() for h in every if not h.qty and h.unsure and h.isin}
+    sold_isins = {h.isin.upper() for h in every if h.sold and h.isin}
+    sold_names = {frozenset(_tokens(h.name)) for h in every if h.sold and _tokens(h.name)}
     holdings = [h for h in every if h.qty]
     # osäkra ISIN från alla innehav, spöken inräknade: Nordnet-aktier som flyttats in eller fått nytt ISIN vid en
     # split syns inte i köpen — samma ISIN hos Nordea är då bara en del av innehavet
@@ -510,7 +600,7 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
             c.notes.append(f"heter som raden {names} — skriv {names} om det är samma" if not c.ticker
                            else f"heter som raden {names} — samma innehav? Rätta i så fall radens ticker till "
                                 f"{c.ticker} i stället för att lägga till")
-    held_names = {frozenset(_tokens(h.name)) for h in every if _tokens(h.name)}
+    held_names = {frozenset(_tokens(h.name)) for h in every if not h.sold and _tokens(h.name)}
     for r in rows:
         if r["id"] in seen or r["ticker"].strip().upper() in held:
             continue
@@ -518,10 +608,16 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
             continue                                 # mäklaren har ett innehav med radens namn — inte 'såld?'
         accts = _row_accounts(r)
         if accts and _brokers_of(accts) <= uploaded:
+            # Nordnets fil är transaktioner för en period: en rad hos Nordnet är 'såld?' bara när filen visar
+            # försäljningen (ISIN eller namn bland de helt sålda). Nordeas innehavslista är en ögonblicksbild.
+            proven = _row_isin(r) in sold_isins or frozenset(_tokens(r.get("name") or "")) in sold_names
+            if NORDNET in _brokers_of(accts) and not proven:
+                continue
             out.append(Change(MISSING, f"miss:{r['id']}", r["ticker"], str(r.get("name") or ""),
                               _row_isin(r), tuple(sorted(accts)), row=r,
                               old_qty=positions._num(r.get("shares")), old_price=positions._num(r.get("entry_price")),
-                              notes=["finns inte i mäklarens fil — såld?"]))
+                              notes=["finns inte i mäklarens fil — såld?" if NORDNET not in _brokers_of(accts)
+                                     else "såld enligt Nordnets transaktioner"]))
     order = {NEW: 0, CHANGED: 1, MISSING: 2, INFO: 3, SAME: 4}
     return sorted(out, key=lambda c: (order[c.kind], c.ticker or c.name))
 

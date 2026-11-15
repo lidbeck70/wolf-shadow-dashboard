@@ -76,9 +76,9 @@ def test_nordea_holdings_list_is_read_from_its_header_row():
     assert hs[2].avg_price == pytest.approx(400.0)              # fonden: 8000 NOK ÷ 20 i kontots basvaluta
 
 
-def test_a_pdf_or_other_file_says_what_to_upload():
-    _b, hs, errors = bs.read_file("transaction-export.pdf", b"%PDF-1.4")
-    assert hs == [] and "CSV" in errors[0]
+def test_an_unreadable_pdf_or_other_file_says_what_to_upload():
+    b, hs, errors = bs.read_file("transaction-export.pdf", b"%PDF-1.4")
+    assert b is None and hs == [] and errors
     _b, hs, errors = bs.read_file("x.json", b"{}")
     assert hs == [] and "Okänd filtyp" in errors[0]
 
@@ -333,7 +333,8 @@ def test_nordnet_newest_first_same_day_round_trip_leaves_no_holding():
                         ("2026-03-02", "KÖPT", "Sinch", "SE0016101844", 500, 30.0),
                         ("2026-01-02", "KÖPT", "Investor B", "SE0015811963", 20, 250.0)])
     _b, hs, _e = bs.read_file("t.csv", data)
-    assert [(h.name, h.qty) for h in hs] == [("Investor B", 20)]
+    assert [(h.name, h.qty) for h in hs if h.qty] == [("Investor B", 20)]
+    assert [(h.name, h.sold) for h in hs if not h.qty] == [("Sinch", True)]    # helt såld: beviset för 'såld?'
 
 
 def test_two_isins_on_one_ticker_are_never_summed():
@@ -577,3 +578,86 @@ def test_shares_moved_into_nordnet_make_the_same_isin_at_nordea_uncertain():
                   {bs.NORDEA, bs.NORDNET})
     c = next(c for c in out if c.ticker == "INVE-B.ST")
     assert c.kind == bs.CHANGED and c.qty == 30 and c.pick is False and bs.SHAKY_NOTE in c.notes
+
+
+# ── Nordnet som PDF (avräkningsnotor) ────────────────────────────────────────
+def _note(action, isin, name, fills, day="2026-06-03", fx=None, kop=None, depa="11112222", nbsp=False):
+    """En påhittad avräkningsnota i Nordnets layout (pypdf-ordning: Avräkning före avsluten)."""
+    sp = " " if nbsp else " "
+    lines = [f"{q} {p} {c} US EXCHANGE NQ 15:30:01.017" for q, p, c in fills]
+    total = sum(float(q) * float(str(p).replace(sp, "").replace(" ", "").replace(",", ".")) for q, p, _c in fills)
+    rate = fx or 1.0
+    kop = kop if kop is not None else total * rate
+    kop_txt = f"{kop:,.2f}".replace(",", "X").replace(".", ",").replace("X", sp)
+    return "\n".join(["Nr 1", "AVRÄKNINGSNOTA I KOMMISSION Utskriftsdatum 2026-06-03", f"Depå: {depa}",
+                      "Depåinnehavare: (bort)", f"Affärsdatum: {day}",
+                      f"Enligt uppdrag har vi för Er räkning {action} följande värdepapper: ",
+                      f"X (ISIN {isin})  - {name}", "Avräkning"]
+                     + ([f"Valutakurs USD/SEK {str(rate).replace('.', ',')}"] if fx else [])
+                     + ["Antal Pris Valuta Marknad Tid"] + lines
+                     + [f"Köpeskilling (SEK) {kop_txt}", "Courtage (SEK) 9,00"])
+
+
+def _move(head, isin, name, qty, depa="11112222"):
+    return "\n".join([f"{head} Utskriftsdatum 2026-11-15", f"Depå: {depa}", f"Värdepapper: {name}",
+                      f"ISIN: {isin}", "Affärsdatum: 2025-12-10", f"Antal: {qty}", "Belopp: 0,00 SEK"])
+
+
+def test_nordnet_contract_notes_become_transactions_checked_against_the_purchase_sum():
+    pages = [_note("köpt", "US1252691001", "CF Industries", [(3, "114,0000", "USD")], fx=9.413876),
+             _note("köpt", "SE0000000009", "Dyrbolaget", [(2, "1 120,5000", "SEK"), (13000, "0,0300", "SEK")],
+                   nbsp=True),
+             _note("sålt", "US1252691001", "CF Industries", [(1, "120,0000", "USD")], day="2026-07-01", fx=9.5),
+             _note("köpt", "US0000000001", "Fel AB", [(5, "10,0000", "USD")], fx=10.0, kop=999.0),
+             _move("SPLIT INLÄGG VP", "US67066G1040", "NVIDIA", 100),
+             _move("UTDELNING", "US1252691001", "CF Industries", 2)]
+    txs, shaky, errors = bs.parse_nordnet_notes(pages)
+    assert [(t.action, t.isin, t.qty, round(t.price, 4)) for t in txs] == [
+        ("BUY", "US1252691001", 3, 114.0), ("BUY", "SE0000000009", 13002, round((2 * 1120.5 + 13000 * 0.03) / 13002, 4)),
+        ("SELL", "US1252691001", 1, 120.0), ("BUY", "US0000000001", 5, 10.0)]
+    assert txs[0].account == "depå 11112222" and txs[0].currency == "USD"
+    assert set(shaky) == {"US0000000001", "US67066G1040"}                  # fel summa, split — inte utdelningen
+    assert any("stämmer inte med köpeskillingen" in e for e in errors)
+
+
+def test_a_nordnet_pdf_is_read_through_its_pages(monkeypatch):
+    pages = [_note("köpt", "US1252691001", "CF Industries", [(3, "114,0000", "USD")], fx=9.4),
+             _note("köpt", "SE0000115446", "Volvo B", [(10, "250,0000", "SEK")], depa="33334444"),
+             _note("sålt", "SE0000115446", "Volvo B", [(10, "260,0000", "SEK")], day="2026-07-01", depa="33334444")]
+    monkeypatch.setattr(bs, "_pdf_pages", lambda data: pages)
+    broker, hs, errors = bs.read_file("transaction-export.pdf", b"%PDF-1.4 x")
+    assert broker == bs.NORDNET and errors == []
+    assert [(h.isin, h.qty, h.account) for h in hs if h.qty] == [("US1252691001", 3, "depå 11112222")]
+    assert [(h.name, h.sold) for h in hs if not h.qty] == [("Volvo B", True)]
+    monkeypatch.setattr(bs, "_pdf_pages", lambda data: [_move("UTDELNING", "US1252691001", "CF", 2)])
+    assert bs.read_file("x.pdf", b"%PDF")[0] is None                       # inga köp/sälj: inte läst
+
+
+def test_a_nordnet_row_is_sold_only_when_the_file_shows_the_sale(monkeypatch):
+    """Nordnets fil är en period: en rad hos Nordnet utan något i filen kan vara köpt före perioden — inte 'såld?'.
+    En rad vars bolag filen visar sålt helt får 'såld enligt Nordnets transaktioner'."""
+    pages = [_note("köpt", "US1252691001", "CF Industries", [(3, "114,0000", "USD")], fx=9.4),
+             _note("köpt", "SE0000115446", "Volvo B", [(10, "250,0000", "SEK")]),
+             _note("sålt", "SE0000115446", "Volvo B", [(10, "260,0000", "SEK")], day="2026-07-01")]
+    monkeypatch.setattr(bs, "_pdf_pages", lambda data: pages)
+    rows = [_row("v", "VOLV-B.ST", 10, 250.0, name="Volvo B", notes="import · nordnet_isk · SEK"),
+            _row("o", "OLD.ST", 5, 100.0, name="Gammalt Bolag", notes="import · nordnet_isk · SEK")]
+    hs = bs.resolve(bs.read_file("t.pdf", b"%PDF x")[1], rows, {"US1252691001": "CF"})
+    out = {c.ticker: c for c in bs.plan(rows, hs, {bs.NORDNET})}
+    assert out["VOLV-B.ST"].kind == bs.MISSING and "såld enligt Nordnets" in out["VOLV-B.ST"].notes[0]
+    assert "OLD.ST" not in out
+
+
+def test_dividends_in_the_nordnet_csv_do_not_make_a_stock_uncertain():
+    data = nordnet_csv([("2026-01-02", "KÖPT", "Equinor", "NO0010096985", 50, 280.0),
+                        ("2026-05-20", "UTDELNING", "Equinor", "NO0010096985", 50, 3.5)])
+    hs = bs.read_file("t.csv", data)[1]
+    assert [(h.qty, h.unsure) for h in hs if h.qty] == [(50, False)]
+
+
+def test_sells_before_the_period_are_one_summary_line():
+    data = nordnet_csv([("2026-02-02", "SÅLT", "Gammal", "SE0000000077", 10, 50.0),
+                        ("2026-02-03", "SÅLT", "Gammal", "SE0000000077", 5, 50.0),
+                        ("2026-01-02", "KÖPT", "Ny", "SE0000000088", 5, 10.0)])
+    _b, _hs, errors = bs.read_file("t.csv", data)
+    assert len(errors) == 1 and errors[0].startswith("1 bolag har försäljningar utan köp i filen") and "Gammal" in errors[0]
