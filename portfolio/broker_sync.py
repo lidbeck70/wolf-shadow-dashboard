@@ -4,18 +4,24 @@ portfolio/broker_sync.py — mäklarens innehavsfil mot Positioner (PORTFÖLJ �
 Filerna:
   Nordea ASK   innehavslistan "My holdings" (.xlsx, bladet Holdings): ISIN, MIC, valuta, namn, antal och
                snittkurs per konto. Läses rakt av.
-  Nordnet ISK  transaktionsexporten (.csv, samma fil som Journalens import): innehaven räknas fram med FIFO
-               (journal_import). Exporten måste täcka hela historiken — ett köp före exportens start syns inte.
+  Nordnet ISK  innehavslistan (.csv, 'aktier_kontonummer-….csv'): namn, valuta, antal, GAV (snittkurs i aktiens
+               valuta) och ISIN — som ofta saknas för USA och Kanada. Läses rakt av; den säkra vägen.
+               Transaktionerna (.csv, samma fil som Journalens import, eller avräkningsnotorna som .pdf) går också:
+               innehaven räknas fram med FIFO (journal_import). Ett köp före filens period syns inte, så de antalen
+               kryssas inte i när filen inte kan förklara dem. Med innehavslistan används transaktionerna bara för
+               att ge listans rader ISIN (exakt samma namn).
 
 Stegen (rena funktioner — inget Streamlit, inget nätverk utom isin_map som anroparen ger instrumenten):
-  read_file      fil → (mäklare, [Holding], fel)
+  read           fil → (mäklare, [Holding], fel, sort)    (read_file: utan sorten)
+  combine        alla filerna → innehaven: per konto ersätter en senare fil en tidigare, Nordnets transaktionsfiler
+                 räknas aldrig ihop, Nordnets innehavslista går före transaktionerna
   isin_map       Börsdatas instrument → {ISIN: Yahoo-ticker}
-  resolve        Holding.ticker ur radens sparade ISIN, Börsdata (på knapp) eller — strängt — namnet på en rad.
-                 Journalens ISIN-karta (journal_import.ticker_map) används inte: den kopplar flera nordiska ISIN
-                 till fel bolag (Volvo B → Atlas Copco).
+  resolve        Holding.ticker ur radens sparade ISIN, mäklarens namn sparat på raden (bara utan ISIN), Börsdata
+                 (på knapp) eller — strängt — namnet på en rad. Journalens ISIN-karta (journal_import.ticker_map)
+                 används inte: den kopplar flera nordiska ISIN till fel bolag (Volvo B → Atlas Copco).
   plan           [Change]: ny / ändrad / stämmer / saknas hos mäklaren / bara text
   apply          de markerade ändringarna till registret i EN sparning: antal och snittkurs (aldrig stopp, mål,
-                 strategi eller anteckningar); nya rader som Untagged
+                 strategi eller anteckningar), ISIN, konton och mäklarens namn; nya rader som Untagged
 
 Samma bolag på flera konton slås ihop till en rad bara när alla kontona finns i de uppladdade filerna — annars
 vore ett kontos antal inte radens innehav. En rad som står i flera strategier får bara text (vilken rad ska ändras?).
@@ -32,6 +38,9 @@ from typing import Iterable, List, Optional
 NORDEA = "nordea_ask"
 NORDNET = "nordnet_isk"
 BROKER_LABEL = {NORDEA: "Nordea ASK", NORDNET: "Nordnet ISK"}
+
+# Filens sort: en innehavslista (ögonblicksbild) eller Nordnets transaktioner (en period)
+LIST, TX = "innehavslista", "transaktioner"
 
 # Rutornas typer
 NEW, CHANGED, SAME, MISSING, INFO = "ny", "ändrad", "stämmer", "saknas", "text"
@@ -56,6 +65,9 @@ class Holding:
     how: str = ""                 # hur tickern hittades
     unsure: bool = False          # antalet kan vara fel (Nordnet: split, flytt eller sälj utan köp i filen)
     sold: bool = False            # Nordnet: allt sålt enligt filen (antal 0) — beviset för 'såld?'
+    snap: bool = False            # ur en innehavslista: antal och snittkurs är mäklarens, valutan instrumentets
+    sold_qty: float = 0.0         # Nordnets transaktioner: sålt antal i filen (kontot och ISIN:et)
+    first_buy: str = ""           # Nordnets transaktioner: filens första köp av ISIN:et (ÅÅÅÅ-MM-DD)
 
 
 @dataclass
@@ -74,6 +86,7 @@ class Change:
     currency: str = ""
     notes: list = field(default_factory=list)
     pick: bool = True             # kryssad från början (inte när tickern bara kommer ur ett namn)
+    names: tuple = ()             # mäklarens namn bakom kortet — sparas på raden (hittar den utan ISIN nästa gång)
 
 
 # ── Hjälpare ────────────────────────────────────────────────────────────────
@@ -92,6 +105,11 @@ def _num(v) -> Optional[float]:
 def _qty(v) -> float:
     q = _num(v) or 0.0
     return int(q) if abs(q - round(q)) < 1e-6 else round(q, 6)
+
+
+def _norm(name) -> str:
+    """Namnet för exakt jämförelse: gemener, ett mellanslag."""
+    return " ".join(str(name or "").split()).casefold()
 
 
 def _same(a, b, tol: float) -> bool:
@@ -143,7 +161,7 @@ def parse_nordea_holdings(data: bytes) -> tuple:
             avg = cost / qty if cost and cost > 0 and ccy and ccy == base else None
         acct = str(d.get("Account") or d.get("AccountKey") or "").strip()
         out.append(Holding(NORDEA, acct, isin, str(d.get("NAME") or "").strip(), ccy, _qty(qty),
-                           round(avg, 6) if avg else None, str(d.get("MIC") or "").strip().upper()))
+                           round(avg, 6) if avg else None, str(d.get("MIC") or "").strip().upper(), snap=True))
     if not out and not errors:
         errors.append("Nordea: inga innehav i filen.")
     return out, errors, True
@@ -156,9 +174,19 @@ def _nordnet_result(txs: list, shaky: dict, errors: list, what: str) -> tuple:
       - spöken (antal 0, osäkra) för osäkra ISIN utan öppet innehav — raden visas då inte som 'såld?';
       - sålda (antal 0, sold) för ISIN som filen visar sålda helt — bara de får Nordnet-rader att visas som 'såld?'.
         Ett köp före filens period syns inte alls, så frånvaro i filen är inget bevis.
-    Utan ett enda köp eller sälj räknas filen inte som läst."""
+    Varje innehav bär filens sålda antal (sold_qty) och första köpdag (first_buy) — plan prövar med dem om filen kan
+    förklara en minskning eller ett 'såld'. Utan ett enda köp eller sälj räknas filen inte som läst."""
     from journal_import.fifo import run_fifo
     txs = sorted(txs, key=lambda t: (t.account, t.isin, t.date, t.action != "BUY"))
+    sold_by: dict = {}                              # (konto, ISIN) → sålt antal i filen
+    first_buy: dict = {}                            # ISIN → filens första köpdag
+    for t in txs:
+        i, day = str(t.isin or "").upper(), str(t.date or "")[:10]
+        if t.action == "SELL":
+            k = (str(t.account or NORDNET), i)
+            sold_by[k] = sold_by.get(k, 0.0) + float(t.qty or 0)
+        elif t.action == "BUY" and day and (i not in first_buy or day < first_buy[i]):
+            first_buy[i] = day
     closed, open_pos, fifo_errors = run_fifo(txs, lambda *a, **k: None)
     for e in fifo_errors:                           # 'SELL without matching BUY: ISIN (namn) …'
         e = str(e)
@@ -170,7 +198,9 @@ def _nordnet_result(txs: list, shaky: dict, errors: list, what: str) -> tuple:
                 shaky.setdefault(isin, name)
     out = [Holding(NORDNET, str(p.account or NORDNET), str(p.isin or ""), str(p.name or ""),
                    str(p.currency or "").upper(), _qty(p.qty), round(p.avg_price, 6) if p.avg_price else None,
-                   unsure=str(p.isin or "").upper() in shaky)
+                   unsure=str(p.isin or "").upper() in shaky,
+                   sold_qty=sold_by.get((str(p.account or NORDNET), str(p.isin or "").upper()), 0.0),
+                   first_buy=first_buy.get(str(p.isin or "").upper(), ""))
            for p in open_pos if (p.qty or 0) > 0]
     held = {h.isin.upper() for h in out}
     out += [Holding(NORDNET, NORDNET, isin, name, "", 0, None, unsure=True)
@@ -180,7 +210,9 @@ def _nordnet_result(txs: list, shaky: dict, errors: list, what: str) -> tuple:
         i = str(ct.isin or "").upper()
         if i and i not in held and i not in shaky:
             gone.setdefault(i, (str(ct.account or NORDNET), str(ct.name or "")))
-    out += [Holding(NORDNET, acct, isin, name, "", 0, None, sold=True) for isin, (acct, name) in gone.items()]
+    out += [Holding(NORDNET, acct, isin, name, "", 0, None, sold=True,
+                    sold_qty=sum(q for (_a, i), q in sold_by.items() if i == isin), first_buy=first_buy.get(isin, ""))
+            for isin, (acct, name) in gone.items()]
     unmatched = sorted({str(e).split("(", 1)[1].split(")", 1)[0] for e in fifo_errors
                         if "SELL without matching BUY:" in str(e) and "(" in str(e)})
     other = [e for e in fifo_errors if "SELL without matching BUY:" not in str(e)]
@@ -199,7 +231,77 @@ def nordnet_holdings(data: bytes) -> tuple:
     from journal_import.parsers import parse_nordnet
     res = parse_nordnet(io.BytesIO(data))
     return _nordnet_result(res.transactions, _nordnet_shaky_isins(data), res.errors,
-                           "är det transaktionsexporten som CSV (UTF-16, så som Nordnet sparar den)?")
+                           "är det innehavslistan eller transaktionsexporten som CSV (UTF-16, så som Nordnet sparar "
+                           "den)?")
+
+
+# Nordnets innehavslista (kontots innehav → exportera): 'aktier_kontonummer-<nr>_<datum>.csv', UTF-16 med tabb.
+_POS_NEED = ("Namn", "Antal")
+_ACCT_IN_NAME = re.compile(r"kontonummer[-_ ]?(\d{4,})", re.I)
+_ISIN = re.compile(r"[A-Z]{2}[A-Z0-9]{9}\d")
+
+
+def _depa(number) -> str:
+    """'depå …5985' — de fyra sista siffrorna räcker för att skilja depåer åt; hela numret sparas aldrig."""
+    n = re.sub(r"\D", "", str(number or ""))
+    return f"depå …{n[-4:]}" if n else NORDNET
+
+
+def _csv_text(data: bytes) -> str:
+    if data[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        return data.decode("utf-16")
+    try:
+        return data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return data.decode("cp1252", errors="replace")
+
+
+def _pos_table(data: bytes) -> Optional[list]:
+    """Innehavslistans rader som {rubrik: värde}, eller None när filen inte är en (rubrikerna Namn och Antal, ingen
+    Transaktionstyp). Rubrikernas hårda mellanslag ('Värde\\xa0SEK') blir vanliga."""
+    import csv
+    try:
+        lines = _csv_text(data).splitlines()
+    except Exception:
+        return None
+    if not lines:
+        return None
+    sep = "\t" if "\t" in lines[0] else (";" if ";" in lines[0] else ",")
+    rows = list(csv.reader(lines, delimiter=sep))
+    cols = [re.sub(r"[\s  ]+", " ", c).strip() for c in rows[0]]
+    if not all(n in cols for n in _POS_NEED) or "Transaktionstyp" in cols:
+        return None
+    return [dict(zip(cols, r)) for r in rows[1:] if any(str(v).strip() for v in r)]
+
+
+def parse_nordnet_positions(data: bytes, filename: str = "") -> tuple:
+    """Nordnets innehavslista → ([Holding], fel, läst). Antal och GAV (snittkurs i aktiens valuta, kolumnen Valuta)
+    läses rakt av. ISIN saknas ofta för USA och Kanada; tickern hittas då via ISIN ur en transaktionsfil (combine),
+    mäklarens namn sparat på raden eller en namngissning. Antal × senaste kurs prövas mot värdet — stämmer det inte
+    blir antalet osäkert. Kontonumret i filnamnet blir 'depå …1234'; utan det gäller listan Nordnet ISK i stort."""
+    table = _pos_table(data)
+    if table is None:
+        return [], ["Nordnet: hittar inte rubrikerna Namn och Antal — är det innehavslistan?"], False
+    m = _ACCT_IN_NAME.search(str(filename or ""))
+    acct = _depa(m.group(1)) if m else NORDNET
+    out, errors = [], []
+    for d in table:
+        name = str(d.get("Namn") or "").strip()
+        qty = _num(d.get("Antal"))
+        if not name or not qty or qty <= 0:
+            continue
+        isin = str(d.get("ISIN") or "").strip().upper()
+        avg = _num(d.get("GAV"))
+        last, value = _num(d.get("Senaste kurs")), _num(d.get("Värde"))
+        unsure = bool(last and value and abs(qty * last - value) > max(0.01 * abs(value), 0.05))
+        if unsure:
+            errors.append(f"Nordnet: {name} — antal × senaste kurs stämmer inte med värdet i listan; kryssas inte i")
+        out.append(Holding(NORDNET, acct, isin if _ISIN.fullmatch(isin) else "", name,
+                           str(d.get("Valuta") or "").strip().upper(), _qty(qty),
+                           round(avg, 6) if avg and avg > 0 else None, snap=True, unsure=unsure))
+    if not out:
+        errors.append("Nordnet: inga innehav i innehavslistan.")
+    return out, errors, True
 
 
 # Nordnets avräkningsnotor (PDF). Personnummer och namn läses aldrig ut.
@@ -227,7 +329,7 @@ def parse_nordnet_notes(pages: list) -> tuple:
         head = next((ln.strip() for ln in t.splitlines() if ln.strip() and not ln.strip().startswith("Nr ")), "")
         head = head.split("Utskriftsdatum")[0].strip().upper()
         depa = re.search(r"Depå:\s*(\d+)", t)
-        acct = f"depå {depa.group(1)}" if depa else NORDNET
+        acct = _depa(depa.group(1)) if depa else NORDNET
         m = _NOTE.search(t)
         if m and "AVRÄKNINGSNOTA" in head:
             action = "BUY" if m.group(1) == "köpt" else "SELL"
@@ -273,8 +375,9 @@ def nordnet_pdf_holdings(data: bytes) -> tuple:
 
 def _nordnet_shaky_isins(data: bytes) -> set:
     """{ISIN: namn} med en rad som flyttar antal utan köp/sälj (split, inlägg/uttag av värdepapper, byte, emission,
-    fusion …) — inte utdelning (dess antal är innehavet, inte en flytt). FIFO räknar bara köp och sälj, så antalet för de ISIN:en kan vara fel — NVIDIA köpt före splitten
-    10:1 gav 100 → 10. Samma kolumner som journal_import.parsers.parse_nordnet."""
+    fusion …) — inte utdelning (dess antal är innehavet, inte en flytt). FIFO räknar bara köp och sälj, så antalet
+    för de ISIN:en kan vara fel — NVIDIA köpt före splitten 10:1 gav 100 → 10. Samma kolumner som
+    journal_import.parsers.parse_nordnet."""
     from journal_import.parsers import _to_df, _parse_decimal
     try:
         df = _to_df(io.BytesIO(data), encoding="utf-16", sep="\t")
@@ -297,30 +400,90 @@ def _nordnet_shaky_isins(data: bytes) -> set:
     return out
 
 
-def read_file(name: str, file_obj) -> tuple:
-    """(mäklare, [Holding], fel) ur en uppladdad fil. Mäklaren känns igen på filtypen: .xlsx = Nordeas
-    innehavslista, .csv och .pdf = Nordnets transaktioner (CSV-exporten, eller avräkningsnotorna som PDF).
-    Mäklaren är None när filen inte gick att läsa som sin typ — då räknas den inte som uppladdad (plan: rader hos
-    den mäklaren blir varken 'saknas' eller kapade till den andra mäklarens antal)."""
+def read(name: str, file_obj) -> tuple:
+    """(mäklare, [Holding], fel, sort) ur en uppladdad fil. Mäklaren känns igen på filen: .xlsx = Nordeas
+    innehavslista, .csv med rubrikerna Namn och Antal = Nordnets innehavslista, annan .csv och .pdf = Nordnets
+    transaktioner. Sorten är LIST eller TX. Mäklaren är None när filen inte gick att läsa som sin typ — då räknas den
+    inte som uppladdad (plan: rader hos den mäklaren blir varken 'saknas' eller kapade till den andra mäklarens
+    antal)."""
     n = str(name or "").lower()
     try:
         data = _bytes(file_obj)
     except Exception as exc:
-        return None, [], [f"Kunde inte läsa filen: {exc}"]
+        return None, [], [f"Kunde inte läsa filen: {exc}"], TX
     try:
         if n.endswith(".pdf") or data[:4] == b"%PDF":
             h, e, ok = nordnet_pdf_holdings(data)
-            return (NORDNET if ok else None), h, e
+            return (NORDNET if ok else None), h, e, TX
         if n.endswith((".xlsx", ".xlsm")) or data[:2] == b"PK":
             h, e, ok = parse_nordea_holdings(data)
-            return (NORDEA if ok else None), h, e
+            return (NORDEA if ok else None), h, e, LIST
         if n.endswith((".csv", ".txt")):
+            if _pos_table(data) is not None:
+                h, e, ok = parse_nordnet_positions(data, name)
+                return (NORDNET if ok else None), h, e, LIST
             h, e, ok = nordnet_holdings(data)
-            return (NORDNET if ok else None), h, e
+            return (NORDNET if ok else None), h, e, TX
     except Exception as exc:
-        return None, [], [f"Kunde inte läsa {name}: {exc}"]
-    return None, [], [f"Okänd filtyp: {name} — Nordea: innehavslistan (.xlsx), Nordnet: transaktionerna (.csv "
-                      f"eller .pdf)."]
+        return None, [], [f"Kunde inte läsa {name}: {exc}"], TX
+    return None, [], [f"Okänd filtyp: {name} — Nordea: innehavslistan (.xlsx), Nordnet: innehavslistan (.csv) "
+                      f"eller transaktionerna (.csv eller .pdf)."], TX
+
+
+def read_file(name: str, file_obj) -> tuple:
+    """(mäklare, [Holding], fel) — read utan sorten."""
+    broker, hs, errors, _kind = read(name, file_obj)
+    return broker, hs, errors
+
+
+TX_SLOT = f"{NORDNET}:{TX}"
+
+
+def combine(reads: Iterable[tuple]) -> tuple:
+    """De lästa filerna [(filnamn, mäklare, [Holding], sort)] i uppladdningsordning → ([Holding], {mäklare},
+    [(nivå, text)]).
+      - Per konto ersätter en senare innehavslista en tidigare (förra veckans och dagens export summeras inte).
+      - Nordnets transaktionsfiler (CSV och PDF) är EN källa: en senare ersätter alla tidigare. Två filer med samma
+        affärer får aldrig summeras, och kontona skrivs olika i CSV:n (okänd depå) och PDF:en (depå …1234).
+      - Finns Nordnets innehavslista ger den Nordnets antal. Transaktionerna ger då bara ISIN till listans rader
+        som saknar det — exakt samma namn, ett enda ISIN."""
+    slots: dict = {}                                # nyckel → (filnamn, [Holding])
+    uploaded, msgs, nn_list = set(), [], False
+    for fname, broker, hs, kind in reads:
+        if not broker:
+            continue
+        uploaded.add(broker)
+        tx = broker == NORDNET and kind == TX
+        nn_list = nn_list or (broker == NORDNET and not tx)
+        keys = {TX_SLOT} if tx else {_acct_key(h) for h in hs}
+        clash = keys & set(slots)
+        if broker == NORDNET and not tx:            # en lista utan kontonummer kan vara vilken depå som helst
+            gen = f"{NORDNET}:{NORDNET}"
+            lists = {k for k in slots if k.startswith(NORDNET + ":") and k != TX_SLOT}
+            clash |= lists if gen in keys else ({gen} & lists)
+        for old in sorted({slots[k][0] for k in clash}):
+            msgs.append(("warning", f"{fname} ersätter {old} för {BROKER_LABEL[broker]} — "
+                         + ("Nordnets transaktionsfiler räknas aldrig ihop." if tx else "samma konto räknas en gång.")))
+        for k in clash:
+            slots.pop(k)
+        for k in keys:
+            slots[k] = (fname, list(hs) if tx else [h for h in hs if _acct_key(h) == k])
+    tx_hs = slots.pop(TX_SLOT, (None, []))[1]
+    holdings = [h for _f, hs in slots.values() for h in hs]
+    if nn_list and tx_hs:
+        isins: dict = {}
+        for h in tx_hs:
+            if h.isin and h.name:
+                isins.setdefault(_norm(h.name), set()).add(h.isin.upper())
+        found = 0
+        for h in holdings:
+            hit = isins.get(_norm(h.name)) if h.broker == NORDNET and not h.isin else None
+            if hit and len(hit) == 1:
+                h.isin, found = next(iter(hit)), found + 1
+        msgs.append(("caption", f"Nordnets innehavslista ger antalen; transaktionsfilen används bara för ISIN "
+                                f"({found} rader utan ISIN fick det via samma namn)."))
+        tx_hs = []
+    return holdings + tx_hs, uploaded, msgs
 
 
 # ── 2. Tickern ──────────────────────────────────────────────────────────────
@@ -346,21 +509,33 @@ def _row_isin(row: dict) -> str:
     return str(((row or {}).get("extras") or {}).get("isin") or (row or {}).get("isin") or "").strip().upper()
 
 
+def _row_names(row: dict) -> set:
+    """Mäklarens namn som sparats på raden vid en tidigare uppdatering (normerade)."""
+    names = ((row or {}).get("extras") or {}).get("broker_names") or []
+    return {_norm(n) for n in names if isinstance(n, str) and n.strip()} if isinstance(names, (list, tuple)) else set()
+
+
 def resolve(holdings: List[Holding], rows: Iterable[dict], bd_map: Optional[dict] = None) -> List[Holding]:
-    """Fyller Holding.ticker i ordningen: radens sparade ISIN (en tidigare uppdatering), Börsdata (bd_map), sist ett
-    namn som strängt liknar en rads namn i samma valuta. Utan träff förblir tickern None (skrivs i rutan)."""
+    """Fyller Holding.ticker i ordningen: radens sparade ISIN (en tidigare uppdatering), mäklarens namn sparat på
+    raden (bara för innehav utan ISIN — Nordnets innehavslista för USA och Kanada), Börsdata (bd_map), sist ett namn
+    som strängt liknar en rads namn i samma valuta. Utan träff förblir tickern None (skrivs i rutan)."""
     rows = [r for r in rows or [] if isinstance(r, dict)]
-    by_isin = {}
+    by_isin, by_name = {}, {}
     for r in rows:
         i = _row_isin(r)
         if i:
             by_isin.setdefault(i, r["ticker"])
+        for n in _row_names(r):
+            by_name.setdefault(n, set()).add(r["ticker"])
     for h in holdings:
         if h.ticker:
             continue
         isin = h.isin.upper()
-        if isin in by_isin:
-            h.ticker, h.how = by_isin[isin], "ISIN sparat på raden"
+        saved = by_name.get(_norm(h.name), set()) if not isin else set()
+        if isin and isin in by_isin:
+            h.ticker, h.how = by_isin[isin], SAVED_ISIN
+        elif len(saved) == 1:
+            h.ticker, h.how = next(iter(saved)), SAVED_NAME
         elif bd_map and isin in bd_map:
             h.ticker, h.how = bd_map[isin], "Börsdata (ISIN)"
         else:
@@ -383,8 +558,24 @@ def resolve(holdings: List[Holding], rows: Iterable[dict], bd_map: Optional[dict
 
 
 BY_NAME = "namnet liknar radens"
+SAVED_ISIN = "ISIN sparat på raden"
+SAVED_NAME = "mäklarens namn sparat på raden"
 SHAKY_NOTE = ("split, flytt eller sälj utan köp i Nordnet-filen — antalet ur köp och sälj kan vara fel; kryssa i "
               "bara om det stämmer")
+LIST_SHAKY_NOTE = "antal × kurs stämmer inte med värdet i Nordnets innehavslista — kontrollera antalet"
+TX_NEW_NOTE = ("antalet är räknat ur köp och sälj i Nordnets transaktionsfil — stämmer bara om filen går tillbaka "
+               "till första köpet; kryssa i om det stämmer (säkrast: Nordnets innehavslista)")
+TX_DROP_NOTE = ("antalet minskar mer än Nordnet-filens försäljningar — filen kan börja efter första köpet; kryssa i "
+                "bara om det stämmer (säkrast: Nordnets innehavslista)")
+
+
+def _tx(hs: Iterable[Holding]) -> list:
+    """Innehaven som är räknade ur Nordnets transaktioner (inte ur en innehavslista)."""
+    return [h for h in hs if h.broker == NORDNET and not h.snap]
+
+
+def _shaky_note(hs: Iterable[Holding]) -> str:
+    return LIST_SHAKY_NOTE if any(h.unsure and h.snap for h in hs) else SHAKY_NOTE
 
 
 def _tokens(name) -> set:
@@ -397,9 +588,9 @@ def _tokens(name) -> set:
 def _name_match(h: Holding, rows: list) -> Optional[str]:
     """Tickern på den enda rad vars namn har exakt samma ord som mäklarens (bolagsformer och klassbeteckning räknas
     inte: 'Holmen AB ser. B' = 'Holmen B'). 'Hexagon AB' mot 'Hexagon Composites ASA', 'Lundin Gold' mot 'Lundin
-    Mining' eller 'Nel' mot 'Nelly' ger ingen träff. Nordeas valuta är instrumentets och måste vara radens
-    noteringsvaluta; Nordnets är alltid kontots (SEK) och prövas inte. En träff kryssas inte i från början
-    (Change.pick) — namnet är en gissning."""
+    Mining' eller 'Nel' mot 'Nelly' ger ingen träff. I innehavslistorna (Nordea, Nordnets innehavslista) är valutan
+    instrumentets och måste vara radens noteringsvaluta; i Nordnets transaktioner är den kontots (SEK) och prövas
+    inte. En träff kryssas inte i från början (Change.pick) — namnet är en gissning."""
     import positions
     want = _tokens(h.name)
     if not want:
@@ -410,7 +601,7 @@ def _name_match(h: Holding, rows: list) -> Optional[str]:
         if not own or own != want:
             continue
         listing = positions.currency_for(r["ticker"])
-        ccy = (h.currency or "").upper() if h.broker != NORDNET else ""
+        ccy = (h.currency or "").upper() if h.broker != NORDNET or h.snap else ""
         if ccy and not (ccy == listing or (r["ticker"].upper().endswith(".L") and ccy in ("GBP", "GBX"))):
             continue
         hits.add(r["ticker"])
@@ -452,20 +643,56 @@ def _resembles(own: str, broker: str) -> bool:
     return refresh_ui.name_resembles(own, broker)
 
 
+def _list_covers(accts: Iterable[str], list_accts: set) -> bool:
+    """Nordnets innehavslista täcker radens Nordnet-konton: varje konto är det allmänna (okänd depå) eller en depå
+    som en uppladdad lista gäller. En lista utan kontonummer i filnamnet täcker bara de allmänna."""
+    if not list_accts:
+        return False
+    for a in accts:
+        if a.split(":", 1)[0] != NORDNET or a in (NORDNET, f"{NORDNET}:{NORDNET}"):
+            continue
+        if a not in list_accts:
+            return False
+    return True
+
+
+def _sold_proof(row: dict, by_isin: dict, by_name: dict) -> bool:
+    """Nordnets transaktioner visar att radens hela innehav är sålt: samma ISIN (eller, när raden saknar ISIN,
+    exakt samma namn — radens eller mäklarens sparade), filen har sålt minst radens antal, och raden öppnades inte
+    före filens första köp. Annars kan aktier köpta före filens period finnas kvar (100 sedan 2024, +20 och −20 i
+    år ≠ sålt)."""
+    import positions
+    isin = _row_isin(row)
+    h = by_isin.get(isin) if isin else None
+    if h is None and not isin:
+        hits = {id(by_name[n]): by_name[n] for n in {_norm(row.get("name"))} | _row_names(row) if n in by_name}
+        h = next(iter(hits.values())) if len(hits) == 1 else None
+    if h is None or not h.first_buy:
+        return False
+    if h.sold_qty + 1e-6 < (positions._num(row.get("shares")) or 0):
+        return False
+    opened = str(row.get("entry_date") or "")[:10]
+    return not opened or opened >= h.first_buy
+
+
 def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str]) -> List[Change]:
     """Ändringarna mot registrets öppna rader. uploaded = mäklarna vars filer finns ({'nordea_ask', ...}).
 
     Per ticker: ny (ingen rad), ändrad/stämmer (en rad), text (flera rader med tickern, saknad ticker, eller kontot
     raden också ligger på saknas bland filerna). Rader som har ett konto hos en uppladdad mäklare men inget innehav
-    där blir 'saknas'. Rader utan känt konto röras inte — de kan ligga hos en annan mäklare."""
+    där blir 'saknas' — hos Nordnet bara när innehavslistan täcker radens depå, eller transaktionerna visar hela
+    innehavet sålt (_sold_proof). Rader utan känt konto röras inte — de kan ligga hos en annan mäklare.
+    Antal räknade ur Nordnets transaktioner kryssas inte i när filen inte kan förklara dem: ett nytt kort (köp före
+    filens period syns inte) eller en minskning större än filens försäljningar."""
     import positions
     from portfolio import position_hints as ph
     rows = [r for r in rows or [] if isinstance(r, dict) and r.get("ticker")]
     uploaded = set(uploaded or ())
     every = list(holdings)                           # spöken och sålda (antal 0) räknas bara mot 'såld?'
     ghosts = {h.isin.upper() for h in every if not h.qty and h.unsure and h.isin}
-    sold_isins = {h.isin.upper() for h in every if h.sold and h.isin}
-    sold_names = {frozenset(_tokens(h.name)) for h in every if h.sold and _tokens(h.name)}
+    sold_by_isin = {h.isin.upper(): h for h in every if h.sold and h.isin}
+    sold_by_name = {_norm(h.name): h for h in every if h.sold and h.name}
+    list_accts = {_acct_key(h) for h in every if h.snap and h.broker == NORDNET}
     holdings = [h for h in every if h.qty]
     # osäkra ISIN från alla innehav, spöken inräknade: Nordnet-aktier som flyttats in eller fått nytt ISIN vid en
     # split syns inte i köpen — samma ISIN hos Nordea är då bara en del av innehavet
@@ -473,7 +700,7 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
     out: List[Change] = []
     groups: dict = {}
     unknown: dict = {}
-    card_names: dict = {}                            # alla mäklarnamn bakom ett nytt kort (Nordea och Nordnet stavar olika)
+    card_names: dict = {}                            # alla mäklarnamn bakom ett kort (Nordea och Nordnet stavar olika)
     for h in holdings:
         if not h.ticker:
             unknown.setdefault(h.isin.strip().upper() or h.name, []).append(h)
@@ -487,9 +714,13 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
         card_names[f"new:{key}"] = [h.name for h in hs]
         shaky = any(h.unsure or h.isin.upper() in shaky_isins for h in hs)
         if shaky:
-            notes.append(SHAKY_NOTE)
+            notes.append(_shaky_note(hs))
+        tx = bool(_tx(hs))
+        if tx:
+            notes.append(TX_NEW_NOTE)
         out.append(Change(NEW, f"new:{key}", None, hs[0].name, hs[0].isin, accts, qty=_qty(sum(h.qty for h in hs)),
-                          price=round(avg, 6) if avg else None, currency=hs[0].currency, notes=notes, pick=not shaky))
+                          price=round(avg, 6) if avg else None, currency=hs[0].currency, notes=notes,
+                          pick=not shaky and not tx))
     rows_by_t: dict = {}
     for r in rows:
         rows_by_t.setdefault(r["ticker"].strip().upper(), []).append(r)
@@ -498,7 +729,7 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
         qty = _qty(sum(h.qty for h in hs))
         avg, anote = _avg(hs)
         name, isin, ccy = hs[0].name, hs[0].isin, hs[0].currency
-        hows = sorted({h.how for h in hs if h.how and h.how != "ISIN sparat på raden"})
+        hows = sorted({h.how for h in hs if h.how and h.how not in (SAVED_ISIN, SAVED_NAME)})
         notes = [f"ticker: {', '.join(hows)}"] if hows else []
         by_name = any(h.how == BY_NAME for h in hs)
         if len(accts) > 1:
@@ -520,8 +751,10 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
         if not rs:
             card_names[f"new:{t}"] = [h.name for h in hs]
             shaky = any(h.unsure or h.isin.upper() in shaky_isins for h in hs)
+            tx = bool(_tx(hs))
             out.append(Change(NEW, f"new:{t}", t, name, isin, accts, qty=qty, price=price, currency=ccy,
-                              notes=notes + ([SHAKY_NOTE] if shaky else []), pick=not shaky))
+                              notes=notes + ([_shaky_note(hs)] if shaky else []) + ([TX_NEW_NOTE] if tx else []),
+                              pick=not shaky and not tx))
             continue
         if len(rs) > 1:
             out.append(Change(INFO, f"info:{t}", t, name, isin, accts, qty=qty, price=price, currency=ccy,
@@ -529,7 +762,7 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
             continue
         row = rs[0]
         own_name = str(row.get("name") or "").strip()
-        saved = all(h.how == "ISIN sparat på raden" for h in hs)      # du har redan bekräftat kopplingen
+        saved = all(h.how in (SAVED_ISIN, SAVED_NAME) for h in hs)    # du har redan bekräftat kopplingen
         if own_name and name and not by_name and not saved and not _resembles(own_name, name):
             out.append(Change(INFO, f"info:{t}", t, name, isin, accts, row=row, qty=qty, price=price, currency=ccy,
                               notes=notes + [f"mäklarens '{name}' liknar inte radens '{own_name}' — kontrollera "
@@ -554,7 +787,11 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
             notes.append("tickern gissad ur namnet — kryssa i om det stämmer")
         shaky = any(h.unsure or h.isin.upper() in shaky_isins for h in hs)
         if shaky and not same_q:
-            notes.append(SHAKY_NOTE)
+            notes.append(_shaky_note(hs))
+        tx = _tx(hs)
+        drop = bool(tx) and old_q is not None and qty < old_q - sum(h.sold_qty for h in tx) - 1e-6
+        if drop:                                     # aktier köpta före filens period syns inte i köpen
+            notes.append(TX_DROP_NOTE)
         missing_brokers = sorted({NORDEA, NORDNET} - uploaded)
         unsure = not _row_accounts(row) and missing_brokers and not same_q
         if unsure:                                   # raden kan också ligga hos mäklaren vars fil saknas
@@ -563,7 +800,7 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
                          + "; kryssa i bara om hela innehavet ligger här")
         out.append(Change(SAME if same_q and same_p else CHANGED, f"row:{row['id']}", t, name, isin, accts,
                           row=row, qty=qty, price=price, old_qty=old_q, old_price=old_p, currency=ccy, notes=notes,
-                          pick=not by_name and not unsure and not (shaky and not same_q)))
+                          pick=not by_name and not unsure and not (shaky and not same_q) and not drop))
         card_names[f"row:{row['id']}"] = [h.name for h in hs]
     seen = {c.row["id"] for c in out if c.row is not None}
     held = set(groups)
@@ -608,26 +845,41 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
             continue                                 # mäklaren har ett innehav med radens namn — inte 'såld?'
         accts = _row_accounts(r)
         if accts and _brokers_of(accts) <= uploaded:
-            # Nordnets fil är transaktioner för en period: en rad hos Nordnet är 'såld?' bara när filen visar
-            # försäljningen (ISIN eller namn bland de helt sålda). Nordeas innehavslista är en ögonblicksbild.
-            proven = _row_isin(r) in sold_isins or frozenset(_tokens(r.get("name") or "")) in sold_names
-            if NORDNET in _brokers_of(accts) and not proven:
-                continue
+            # Innehavslistorna är ögonblicksbilder: frånvaro = 'såld?'. Nordnets transaktioner är en period: en rad
+            # hos Nordnet är 'såld' bara när filen visar hela innehavet sålt.
+            note = "finns inte i mäklarens fil — såld?"
+            if NORDNET in _brokers_of(accts):
+                if _list_covers(accts, list_accts):
+                    note = "finns inte i Nordnets innehavslista — såld?"
+                elif _sold_proof(r, sold_by_isin, sold_by_name):
+                    note = "såld enligt Nordnets transaktioner"
+                else:
+                    continue
             out.append(Change(MISSING, f"miss:{r['id']}", r["ticker"], str(r.get("name") or ""),
                               _row_isin(r), tuple(sorted(accts)), row=r,
                               old_qty=positions._num(r.get("shares")), old_price=positions._num(r.get("entry_price")),
-                              notes=["finns inte i mäklarens fil — såld?" if NORDNET not in _brokers_of(accts)
-                                     else "såld enligt Nordnets transaktioner"]))
+                              notes=[note]))
+    for c in out:                                    # mäklarens namn sparas på raden (apply)
+        if c.kind in (NEW, CHANGED, SAME):
+            c.names = tuple(sorted({n for n in card_names.get(c.key, [c.name]) if n}))
     order = {NEW: 0, CHANGED: 1, MISSING: 2, INFO: 3, SAME: 4}
     return sorted(out, key=lambda c: (order[c.kind], c.ticker or c.name))
 
 
 # ── 4. Sparningen ───────────────────────────────────────────────────────────
+def _add_names(ex: dict, names: Iterable[str]) -> None:
+    """Mäklarens namn på raden (extras.broker_names) — så hittas raden nästa gång även utan ISIN."""
+    new = {str(n).strip() for n in names or () if str(n or "").strip()}
+    if new:
+        old = ex.get("broker_names") if isinstance(ex.get("broker_names"), list) else []
+        ex["broker_names"] = sorted({str(n) for n in old if str(n).strip()} | new)
+
+
 def apply(changes: Iterable[Change], typed: Optional[dict] = None, today: str = "") -> tuple:
-    """De markerade ändringarna till registret i en sparning. ändrad → antal, snittkurs (när den föreslås), ISIN och
-    konton; ny → raden som Untagged med antal, snittkurs, namn, ISIN och konton. typed = {Change.key: ticker} för
-    nya utan ticker. Returnerar (gjorda, hoppade över, fel eller None). Stopp, mål, strategi och anteckningar rörs
-    aldrig. Stängning går genom positions.close (egen knapp)."""
+    """De markerade ändringarna till registret i en sparning. ändrad → antal, snittkurs (när den föreslås), ISIN,
+    konton och mäklarens namn; ny → raden som Untagged med antal, snittkurs, namn, ISIN, konton och mäklarens namn.
+    typed = {Change.key: ticker} för nya utan ticker. Returnerar (gjorda, hoppade över, fel eller None). Stopp, mål,
+    strategi och anteckningar rörs aldrig. Stängning går genom positions.close (egen knapp)."""
     import positions
     typed = typed or {}
     data = positions.load()
@@ -649,6 +901,7 @@ def apply(changes: Iterable[Change], typed: Optional[dict] = None, today: str = 
             if c.isin:
                 ex["isin"] = c.isin
             ex["broker_accounts"] = accts
+            _add_names(ex, c.names)
             done.append(c.ticker)
         elif c.kind == NEW:
             t = str(c.ticker or typed.get(c.key) or "").strip().upper()
@@ -659,9 +912,13 @@ def apply(changes: Iterable[Change], typed: Optional[dict] = None, today: str = 
             hits = [(b, r) for b in positions.BUCKET_KEYS for r in data[b] if r["ticker"] == t]
             if hits:
                 # en skriven ticker som redan står i Positioner: ingen ny rad (det vore dubbelt). En enda rad får
-                # ISIN:et, så nästa uppladdning går den vanliga vägen (ändrat: valuta, stopp och konton prövas).
-                if len(hits) == 1 and c.isin:
-                    hits[0][1].setdefault("extras", {})["isin"] = c.isin
+                # ISIN:et (och mäklarens namn), så nästa uppladdning går den vanliga vägen (ändrat: valuta, stopp
+                # och konton prövas).
+                if len(hits) == 1 and (c.isin or c.names):
+                    ex = hits[0][1].setdefault("extras", {})
+                    if c.isin:
+                        ex["isin"] = c.isin
+                    _add_names(ex, c.names)
                     done.append(f"{t} (kopplad till raden i {positions.BUCKETS[hits[0][0]]['name']} — ladda upp "
                                 f"igen för antal och snittkurs)")
                 else:
@@ -670,11 +927,13 @@ def apply(changes: Iterable[Change], typed: Optional[dict] = None, today: str = 
             if len(data[bucket]) >= positions.BUCKETS[bucket]["max"]:
                 skipped.append(f"{t}: {positions.BUCKETS[bucket]['name']} är full")
                 continue
+            extras = {"isin": c.isin, "broker_accounts": accts}
+            _add_names(extras, c.names)
             data[bucket].append(positions.normalize_row({
                 "ticker": t, "name": c.name, "strategy": "Untagged", "entry_price": c.price or 0,
                 "shares": c.qty or 0, "entry_date": today or positions._today(),
                 "notes": "mäklarfil · " + ", ".join(sorted(_brokers_of(accts))), "source": "broker",
-                "extras": {"isin": c.isin, "broker_accounts": accts}}))
+                "extras": extras}))
             done.append(t)
     if not done:
         return done, skipped, None

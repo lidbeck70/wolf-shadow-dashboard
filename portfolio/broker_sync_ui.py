@@ -1,10 +1,10 @@
 """
 portfolio/broker_sync_ui.py — rutan "📥 Uppdatera från mäklaren" i PORTFÖLJ → Positioner (bakom innehavslåset).
 
-Ladda upp Nordeas innehavslista (.xlsx) och/eller Nordnets transaktionsexport (.csv). Rutan visar vad som är nytt,
-ändrat, borta och oförändrat mot Positioner. Inget skrivs förrän du trycker "Uppdatera markerade" (en sparning)
-eller "Stäng" på en rad som saknas hos mäklaren. Att öppna sidan eller ladda upp en fil skriver ingenting;
-Börsdata frågas bara när du trycker "Hitta tickers i Börsdata".
+Ladda upp Nordeas innehavslista (.xlsx) och/eller Nordnets innehavslista (.csv) — eller Nordnets transaktioner
+(.csv eller .pdf). Rutan visar vad som är nytt, ändrat, borta och oförändrat mot Positioner. Inget skrivs förrän du
+trycker "Uppdatera markerade" (en sparning) eller "Stäng" på en rad som saknas hos mäklaren. Att öppna sidan eller
+ladda upp en fil skriver ingenting; Börsdata frågas bara när du trycker "Hitta tickers i Börsdata".
 """
 from __future__ import annotations
 
@@ -132,8 +132,8 @@ def _ck(c: bs.Change) -> str:
 
 
 def _read(f) -> tuple:
-    """read_file med sessionscache per fil (namn + innehållets hash): en PDF på hundra sidor tolkas en gång, inte vid
-    varje klick. Innehaven kopieras — resolve skriver tickern på dem."""
+    """bs.read med sessionscache per fil (namn + innehållets hash): en PDF på hundra sidor tolkas en gång, inte vid
+    varje klick. Innehaven kopieras — combine och resolve skriver ISIN och ticker på dem."""
     import copy
     import hashlib
     data = f.getvalue() if hasattr(f, "getvalue") else f.read()
@@ -141,7 +141,7 @@ def _read(f) -> tuple:
     cache = st.session_state.setdefault(PARSED, {})
     if key not in cache:
         cache.clear() if len(cache) > 8 else None
-        cache[key] = bs.read_file(f.name, data)
+        cache[key] = bs.read(f.name, data)
     return copy.deepcopy(cache[key])
 
 
@@ -153,36 +153,32 @@ def _uploader():
 def render_broker_sync() -> None:
     import positions
     with st.expander("📥 Uppdatera från mäklaren (Nordea ASK · Nordnet ISK)", expanded=False):
-        st.caption("Nordea: Innehav → Exportera → **My holdings (.xlsx)**. Nordnet: Transaktioner och notor → "
-                   "Exportera som **CSV eller PDF**, gärna hela perioden sedan första köpet (innehaven räknas fram ur "
-                   "köp och sälj; ett bolag köpt före perioden syns inte och visas aldrig som sålt). Antal och "
-                   "snittkurs uppdateras — stopp, mål, strategi och anteckningar rörs aldrig. Inget sparas förrän "
-                   "du trycker på knappen.")
+        st.caption("Nordea: Innehav → Exportera → **My holdings (.xlsx)**. Nordnet: kontots **innehavslista** "
+                   "(.csv, filen heter aktier_kontonummer-…) — säkrast, antal och snittkurs läses rakt av. Nordnets "
+                   "transaktioner (CSV eller PDF) går också: laddas de upp tillsammans med innehavslistan får "
+                   "aktierna i USA och Kanada sitt ISIN därifrån; ensamma räknas innehaven fram ur köp och sälj och "
+                   "kryssas inte i när filen kan sakna äldre köp. Antal och snittkurs uppdateras — stopp, mål, "
+                   "strategi och anteckningar rörs aldrig. Inget sparas förrän du trycker på knappen.")
         files = _uploader()
         res = st.session_state.pop(RESULT, None)
         if res:
             getattr(st, res[0])(res[1])
         if not files:
             return
-        # Per konto: en senare fil för samma konto ersätter en tidigare (förra veckans och dagens export ska inte
-        # summeras). Olika konton och mäklare läggs ihop.
-        by_acct, uploaded, read = {}, set(), {}
+        reads = []
         for f in files:
-            broker, hs, errors = _read(f)
+            broker, hs, errors, kind = _read(f)
             for e in errors[:8]:
                 st.warning(f"{f.name}: {e}")
             if len(errors) > 8:
                 st.caption(f"{f.name}: {len(errors) - 8} varningar till.")
-            if not broker:
-                continue
-            uploaded.add(broker)
-            keys = {bs._acct_key(h) for h in hs}
-            for k in keys & set(read):
-                st.warning(f"{f.name} ersätter {read[k]} för {bs.BROKER_LABEL[broker]} — samma konto räknas en gång.")
-            for k in keys:
-                by_acct[k], read[k] = [h for h in hs if bs._acct_key(h) == k], f.name
-            st.caption(f"✓ {f.name}: {bs.BROKER_LABEL[broker]}, {len(hs)} innehav.")
-        holdings = [h for hs in by_acct.values() for h in hs]
+            if broker:
+                st.caption(f"✓ {f.name}: {bs.BROKER_LABEL[broker]} ({kind}), {sum(1 for h in hs if h.qty)} innehav.")
+            reads.append((f.name, broker, hs, kind))
+        # per konto ersätter en senare fil en tidigare; Nordnets innehavslista går före transaktionerna (combine)
+        holdings, uploaded, msgs = bs.combine(reads)
+        for level, text in msgs:
+            getattr(st, level)(text)
         if not uploaded:                               # en läst fil utan innehav = allt sålt, och ska visas
             return
         rows = positions.all_positions()
