@@ -53,6 +53,7 @@ class Holding:
     mic: str = ""
     ticker: Optional[str] = None
     how: str = ""                 # hur tickern hittades
+    unsure: bool = False          # antalet kan vara fel (Nordnet: split, flytt eller sälj utan köp i filen)
 
 
 @dataclass
@@ -155,17 +156,58 @@ def nordnet_holdings(data: bytes) -> tuple:
     from journal_import.fifo import run_fifo
     from journal_import.parsers import parse_nordnet
     res = parse_nordnet(io.BytesIO(data))
+    shaky = _nordnet_shaky_isins(data)              # {ISIN: namn}
     txs = sorted(res.transactions, key=lambda t: (t.account, t.isin, t.date, t.action != "BUY"))
     _closed, open_pos, fifo_errors = run_fifo(txs, lambda *a, **k: None)
+    for e in fifo_errors:                           # 'SELL without matching BUY: ISIN (namn) …'
+        e = str(e)
+        if "SELL without matching BUY:" in e:
+            rest = e.split("SELL without matching BUY:", 1)[1].strip()
+            isin = rest.split()[0].strip().upper() if rest else ""
+            name = rest[rest.find("(") + 1:rest.find(")")] if "(" in rest and ")" in rest else ""
+            if isin:
+                shaky.setdefault(isin, name)
     out = [Holding(NORDNET, str(p.account or NORDNET), str(p.isin or ""), str(p.name or ""),
-                   str(p.currency or "").upper(), _qty(p.qty), round(p.avg_price, 6) if p.avg_price else None)
+                   str(p.currency or "").upper(), _qty(p.qty), round(p.avg_price, 6) if p.avg_price else None,
+                   unsure=str(p.isin or "").upper() in shaky)
            for p in open_pos if (p.qty or 0) > 0]
+    held = {h.isin.upper() for h in out}
+    # Osäkra ISIN utan öppet innehav (t.ex. köpt före en split och sedan delvis sålt): ett spöke med antal 0, så att
+    # plan inte visar radens position som 'såld?' — FIFO kan inte veta om den finns kvar.
+    out += [Holding(NORDNET, NORDNET, isin, name, "", 0, None, unsure=True)
+            for isin, name in shaky.items() if isin not in held]
     errors = list(res.errors) + list(fifo_errors)
     if not res.transactions:
         errors.append("Nordnet: inga köp eller sälj i filen — är det transaktionsexporten som CSV (UTF-16, så som "
                       "Nordnet sparar den), för hela perioden sedan första köpet?")
         return out, errors, False
     return out, errors, True
+
+
+def _nordnet_shaky_isins(data: bytes) -> set:
+    """{ISIN: namn} med en antalsrad som inte är KÖPT/SÅLT (split, inlägg/uttag av värdepapper, byte, emission,
+    fusion …). FIFO räknar bara köp och sälj, så antalet för de ISIN:en kan vara fel — NVIDIA köpt före splitten
+    10:1 gav 100 → 10. Samma kolumner som journal_import.parsers.parse_nordnet."""
+    from journal_import.parsers import _to_df, _parse_decimal
+    try:
+        df = _to_df(io.BytesIO(data), encoding="utf-16", sep="\t")
+    except Exception:
+        return {}
+    out: dict = {}
+    for _i, row in df.iterrows():
+        vals = row.tolist()
+        if len(vals) < 9:
+            continue
+        typ, isin = str(vals[5]).strip().upper(), str(vals[7]).strip().upper()
+        if not isin or isin in ("NAN", "NONE") or typ in ("KÖPT", "SÅLT"):
+            continue
+        try:
+            qty = _parse_decimal(vals[8])
+        except Exception:
+            qty = 0
+        if qty:
+            out.setdefault(isin, str(vals[6]).strip())
+    return out
 
 
 def read_file(name: str, file_obj) -> tuple:
@@ -253,6 +295,8 @@ def resolve(holdings: List[Holding], rows: Iterable[dict], bd_map: Optional[dict
 
 
 BY_NAME = "namnet liknar radens"
+SHAKY_NOTE = ("split, flytt eller sälj utan köp i Nordnet-filen — antalet ur köp och sälj kan vara fel; kryssa i "
+              "bara om det stämmer")
 
 
 def _tokens(name) -> set:
@@ -330,6 +374,9 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
     from portfolio import position_hints as ph
     rows = [r for r in rows or [] if isinstance(r, dict) and r.get("ticker")]
     uploaded = set(uploaded or ())
+    every = list(holdings)                           # spöken (antal 0, osäkra Nordnet-ISIN) räknas bara mot 'såld?'
+    ghosts = {h.isin.upper() for h in every if not h.qty and h.isin}
+    holdings = [h for h in every if h.qty]
     out: List[Change] = []
     groups: dict = {}
     unknown: dict = {}
@@ -345,6 +392,8 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
         notes = ["ingen ticker hittad — skriv den för att lägga till"] + (
             [f"summa av {len(accts)} konton"] if len(accts) > 1 else []) + ([note] if note else [])
         card_names[f"new:{key}"] = [h.name for h in hs]
+        if any(h.unsure for h in hs):
+            notes.append(SHAKY_NOTE)
         out.append(Change(NEW, f"new:{key}", None, hs[0].name, hs[0].isin, accts, qty=_qty(sum(h.qty for h in hs)),
                           price=round(avg, 6) if avg else None, currency=hs[0].currency, notes=notes))
     rows_by_t: dict = {}
@@ -376,7 +425,9 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
         rs = rows_by_t.get(t, [])
         if not rs:
             card_names[f"new:{t}"] = [h.name for h in hs]
-            out.append(Change(NEW, f"new:{t}", t, name, isin, accts, qty=qty, price=price, currency=ccy, notes=notes))
+            shaky = any(h.unsure for h in hs)
+            out.append(Change(NEW, f"new:{t}", t, name, isin, accts, qty=qty, price=price, currency=ccy,
+                              notes=notes + ([SHAKY_NOTE] if shaky else []), pick=not shaky))
             continue
         if len(rs) > 1:
             out.append(Change(INFO, f"info:{t}", t, name, isin, accts, qty=qty, price=price, currency=ccy,
@@ -407,6 +458,9 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
         same_p = price is None or _same(old_p, price, 5e-4)
         if by_name:
             notes.append("tickern gissad ur namnet — kryssa i om det stämmer")
+        shaky = any(h.unsure for h in hs)
+        if shaky and not same_q:
+            notes.append(SHAKY_NOTE)
         missing_brokers = sorted({NORDEA, NORDNET} - uploaded)
         unsure = not _row_accounts(row) and missing_brokers and not same_q
         if unsure:                                   # raden kan också ligga hos mäklaren vars fil saknas
@@ -415,7 +469,8 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
                          + "; kryssa i bara om hela innehavet ligger här")
         out.append(Change(SAME if same_q and same_p else CHANGED, f"row:{row['id']}", t, name, isin, accts,
                           row=row, qty=qty, price=price, old_qty=old_q, old_price=old_p, currency=ccy, notes=notes,
-                          pick=not by_name and not unsure))
+                          pick=not by_name and not unsure and not (shaky and not same_q)))
+        card_names[f"row:{row['id']}"] = [h.name for h in hs]
     seen = {c.row["id"] for c in out if c.row is not None}
     held = set(groups)
     # Namnet som skyddsnät. Journalens ISIN-karta kan ha gett äldre rader fel ticker ('ATCO-A.ST' med namnet
@@ -431,23 +486,28 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
         if tk:
             rows_by_tokens.setdefault(tk, []).append(r)
     for c in out:
-        if c.kind != NEW:
+        if c.kind not in (NEW, CHANGED):
             continue
         tks = {frozenset(_tokens(n)) for n in card_names.get(c.key, [c.name]) if _tokens(n)}
         others = list({r["id"]: r for tk in tks for r in rows_by_tokens.get(tk, [])
-                       if r["ticker"].strip().upper() != (c.ticker or "").strip().upper()}.values())
+                       if r["ticker"].strip().upper() != (c.ticker or "").strip().upper()
+                       and (c.kind == NEW or r["ticker"].strip().upper() not in held)}.values())
         if not others:
             continue
         c.pick = False
         names = ", ".join(sorted(r["ticker"] for r in others))
-        c.notes.append(f"heter som raden {names} — skriv {names} om det är samma" if not c.ticker
-                       else f"heter som raden {names} — samma innehav? Rätta i så fall radens ticker till {c.ticker} "
-                            f"i stället för att lägga till")
-    held_names = {frozenset(_tokens(h.name)) for h in holdings if _tokens(h.name)}
+        if c.kind == CHANGED:
+            c.notes.append(f"heter också som raden {names} — står en del av innehavet redan där? Kryssa i bara om "
+                           f"inte")
+        else:
+            c.notes.append(f"heter som raden {names} — skriv {names} om det är samma" if not c.ticker
+                           else f"heter som raden {names} — samma innehav? Rätta i så fall radens ticker till "
+                                f"{c.ticker} i stället för att lägga till")
+    held_names = {frozenset(_tokens(h.name)) for h in every if _tokens(h.name)}
     for r in rows:
         if r["id"] in seen or r["ticker"].strip().upper() in held:
             continue
-        if frozenset(_tokens(r.get("name") or "")) in held_names:
+        if frozenset(_tokens(r.get("name") or "")) in held_names or _row_isin(r) in ghosts:
             continue                                 # mäklaren har ett innehav med radens namn — inte 'såld?'
         accts = _row_accounts(r)
         if accts and _brokers_of(accts) <= uploaded:

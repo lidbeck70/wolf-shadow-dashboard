@@ -246,6 +246,13 @@ def page(monkeypatch):
     return make
 
 
+def _box(at, key):
+    """Kryssrutan för ett kort — nyckeln bär förslaget efter kortets nyckel ('bsync_ck_row:r1:1:70:32.53')."""
+    hits = [c for c in at.checkbox if c.key.startswith(f"bsync_ck_{key}:")]
+    assert len(hits) == 1, [c.key for c in at.checkbox]
+    return hits[0]
+
+
 def test_the_box_writes_nothing_until_a_button_is_pressed(page):
     at = page(False)
     at.run()
@@ -254,9 +261,8 @@ def test_the_box_writes_nothing_until_a_button_is_pressed(page):
     at.run()
     assert not at.exception, at.exception
     md = " ".join(m.value for m in at.markdown)
-    labels = {c.key: c.label for c in at.checkbox}
-    assert "antal 60 → **70**" in labels["bsync_ck_row:r1"] and "TEST\\-B\\.ST" in labels["bsync_ck_row:r1"]
-    assert "Silverfonden" in labels["bsync_ck_new:SE0000000003"] and "GONE.OL" in md
+    assert "antal 60 → **70**" in _box(at, "row:r1").label and "TEST\\-B\\.ST" in _box(at, "row:r1").label
+    assert "Silverfonden" in _box(at, "new:SE0000000003").label and "GONE.OL" in md
     # fonden saknar ticker: kryssad men räknas inte — knappen säger hur många som faktiskt sparas
     assert at.button(key="bsync_apply").label == "✅ Uppdatera markerade (2)"
     assert page.saves == []                                                   # visa + ladda upp = inget sparat
@@ -366,8 +372,7 @@ def test_a_later_file_for_the_same_account_replaces_the_earlier_one(page, monkey
     at.run()
     assert not at.exception, at.exception
     assert any("ersätter My_holdings.xlsx" in w.value for w in at.warning)
-    labels = {c.key: c.label for c in at.checkbox}
-    assert "antal 60 → **70**" in labels["bsync_ck_row:r1"]                  # inte 130
+    assert "antal 60 → **70**" in _box(at, "row:r1").label                  # inte 130
 
 
 # ── Kontrollrundans fynd ─────────────────────────────────────────────────────
@@ -477,3 +482,61 @@ def test_the_name_guard_checks_every_brokers_spelling_whatever_the_upload_order(
         c = next(c for c in bs.plan(rows, bs.resolve(hs, rows, {"SE0000148884": "SEB-A.ST"}),
                                     {bs.NORDEA, bs.NORDNET}) if c.ticker == "SEB-A.ST")
         assert c.kind == bs.NEW and c.pick is False and "SAND.ST" in c.notes[-1]
+
+
+# ── Sjätte rundans fynd ──────────────────────────────────────────────────────
+SEB_XLSX = nordea_xlsx([("SE0000148884", "XSTO", "SEK", "Skandinaviska Enskilda Banken ser. A", 50, 140.0, 7000.0)])
+SEB_CSV = nordnet_csv([("2026-01-02", "KÖPT", "SEB A", "SE0000148884", 100, 150.0)])
+
+
+def test_a_box_ticked_earlier_starts_over_when_the_plan_unticks_the_card(page, monkeypatch):
+    """Nordea först (SEB-A.ST nytt, kryssat), sedan Nordnet-filen: kortet ska nu inte kryssas (heter som raden
+    SAND.ST). Rutan får ny nyckel och börjar om från planen — ingen gammal bock och inget sparat."""
+    import storage
+    from portfolio import broker_sync_ui as ui
+    data = {"holdings": {"swing": [], "ovtlyr": [], "momentum": [], "tiggre": [], "closed": [], "cash": 0,
+                         "long": [_row("s", "SAND.ST", 100, 150.0, name="SEB A",
+                                       notes="import · nordnet_isk · SEK")]}}
+    monkeypatch.setattr(storage, "load_json", lambda n, default=None: copy.deepcopy(data.get(n, default)))
+    monkeypatch.setitem(BD, "SE0000148884", "SEB-A.ST")
+
+    class X(io.BytesIO):
+        name = "My_holdings.xlsx"
+
+    class C(io.BytesIO):
+        name = "transactions.csv"
+    at = page(True)
+    monkeypatch.setattr(ui, "_uploader", lambda: [X(SEB_XLSX)])
+    at.run()
+    assert not at.exception, at.exception
+    assert _box(at, "new:SEB-A.ST").value is True
+    monkeypatch.setattr(ui, "_uploader", lambda: [X(SEB_XLSX), C(SEB_CSV)])
+    at.run()
+    assert not at.exception, at.exception
+    assert _box(at, "new:SEB-A.ST").value is False
+    assert at.button(key="bsync_apply").label == "✅ Uppdatera markerade (0)" and page.saves == []
+
+
+def test_a_changed_card_named_like_a_row_that_is_not_held_is_not_ticked():
+    rows = [_row("n", "SEB-A.ST", 50, 140.0, name="Skandinaviska Enskilda Banken ser. A",
+                 extras={"isin": "SE0000148884", "broker_accounts": ["nordea_ask:ASK Testkonto"]}),
+            _row("s", "SAND.ST", 100, 150.0, name="SEB A", notes="import · nordnet_isk · SEK")]
+    hs = bs.read_file("h.xlsx", SEB_XLSX)[1] + bs.read_file("t.csv", SEB_CSV)[1]
+    c = next(c for c in bs.plan(rows, bs.resolve(hs, rows, {}), {bs.NORDEA, bs.NORDNET}) if c.ticker == "SEB-A.ST")
+    assert c.kind == bs.CHANGED and c.qty == 150 and c.pick is False and "SAND.ST" in c.notes[-1]
+
+
+def test_a_nordnet_split_makes_the_count_uncertain_and_never_sold():
+    """NVIDIA köpt före splitten 10:1: FIFO ser bara köpet (10). Ändringen 100 → 10 kryssas inte i, och efter en
+    försäljning visas raden inte som 'såld?'."""
+    split = [("2024-01-02", "KÖPT", "NVIDIA", "US67066G1040", 10, 500.0),
+             ("2024-06-10", "SPLIT INLÄGG VP", "NVIDIA", "US67066G1040", 100, 0.0),
+             ("2024-06-10", "SPLIT UTTAG VP", "NVIDIA", "US67066G1040", 10, 0.0)]
+    rows = [_row("n", "NVDA", 100, 50.0, name="NVIDIA", notes="import · nordnet_isk · SEK",
+                 extras={"isin": "US67066G1040"})]
+    hs = bs.resolve(bs.read_file("t.csv", nordnet_csv(split))[1], rows, {})
+    c = bs.plan(rows, hs, {bs.NORDNET})[0]
+    assert c.kind == bs.CHANGED and c.qty == 10 and c.pick is False and c.notes[-1].startswith("split")
+    sold = split + [("2025-03-01", "SÅLT", "NVIDIA", "US67066G1040", 60, 120.0)]
+    hs = bs.resolve(bs.read_file("t.csv", nordnet_csv(sold))[1], rows, {})
+    assert not [c for c in bs.plan(rows, hs, {bs.NORDNET}) if c.kind == bs.MISSING]

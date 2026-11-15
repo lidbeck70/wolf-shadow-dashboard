@@ -56,7 +56,7 @@ def _close(row_id: str, ticker: str, key: str) -> None:
 
 def _apply(changes: list) -> None:
     """on_click: de markerade raderna till registret i en sparning."""
-    picked = [c for c in changes if st.session_state.get(f"bsync_ck_{c.key}", c.pick)]
+    picked = [c for c in changes if st.session_state.get(_ck(c), c.pick)]
     typed = {c.key: st.session_state.get(f"bsync_t_{c.key}", "") for c in picked if not c.ticker}
     done, skipped, err = bs.apply(picked, typed)
     msg = f"Uppdaterat: {', '.join(done)}." if done else "Inget uppdaterades."
@@ -119,8 +119,15 @@ def _notes(c: bs.Change) -> str:
 
 def _ready(c: bs.Change) -> bool:
     """Markerad och går att spara: har en ticker, eller en skriven i rutan."""
-    return bool(st.session_state.get(f"bsync_ck_{c.key}", c.pick)) and bool(
+    return bool(st.session_state.get(_ck(c), c.pick)) and bool(
         c.ticker or str(st.session_state.get(f"bsync_t_{c.key}", "") or "").strip())
+
+
+def _ck(c: bs.Change) -> str:
+    """Kryssrutans nyckel bär förslaget (kryssad från början, antal, kurs). Streamlit behåller en nycklad rutas värde
+    även när value= ändras — ändras förslaget (en fil till, Börsdata-klicket) börjar rutan om från planens val i
+    stället för att en gammal bock står kvar på ett kort som nu inte ska kryssas."""
+    return f"bsync_ck_{c.key}:{int(c.pick)}:{c.qty}:{c.price}"
 
 
 def _uploader():
@@ -180,7 +187,7 @@ def render_broker_sync() -> None:
                 continue
             st.markdown(f"**{titles[kind]}** ({len(group)})")
             for c in group:
-                st.checkbox(_label(c), value=c.pick, key=f"bsync_ck_{c.key}")
+                st.checkbox(_label(c), value=c.pick, key=_ck(c))
                 if not c.ticker:
                     st.text_input(f"Ticker för {c.name or c.isin}", key=f"bsync_t_{c.key}",
                                   placeholder="t.ex. HUSQ-B.ST — tomt = hoppas över")
