@@ -237,6 +237,18 @@ def resolve(holdings: List[Holding], rows: Iterable[dict], bd_map: Optional[dict
             hit = _name_match(h, rows)
             if hit:
                 h.ticker, h.how = hit, BY_NAME
+    # samma ISIN på flera konton får samma ticker — annars blev ena kontot ett kort och det andra ett annat
+    found: dict = {}
+    for h in holdings:
+        if h.ticker and h.isin:
+            prev = found.get(h.isin.upper())
+            if prev is None or h.how != BY_NAME and prev[1] == BY_NAME:
+                found[h.isin.upper()] = (h.ticker, h.how)
+    weak = {i for i in found if any(x.how == BY_NAME for x in holdings if x.isin.upper() == i)}
+    for h in holdings:
+        hit = found.get(h.isin.upper()) if h.isin else None
+        if hit and not h.ticker:
+            h.ticker, h.how = hit[0], BY_NAME if h.isin.upper() in weak else hit[1]
     return holdings
 
 
@@ -244,26 +256,29 @@ BY_NAME = "namnet liknar radens"
 
 
 def _tokens(name) -> set:
+    """Namnets ord utan bolagsformer och klassbeteckning ('ser.', 'B'). Branschord räknas — 'Lundin Gold' och
+    'Lundin Mining' är olika bolag."""
     import refresh_ui
-    return {t for t in refresh_ui._name_tokens(name) if t not in refresh_ui._GENERIC}
+    return set(refresh_ui._name_tokens(name)) - {"ser", "serie", "series"}
 
 
 def _name_match(h: Holding, rows: list) -> Optional[str]:
-    """Tickern på den enda rad vars namn har exakt samma ord som mäklarens (bolagsformer och branschord räknas
-    inte: 'Holmen AB ser. B' = 'Holmen B') och vars noteringsvaluta är innehavets. 'Hexagon AB' mot 'Hexagon
-    Composites ASA', 'Volvo B' mot 'Volvo Car AB B' eller 'Nel' mot 'Nelly' ger ingen träff. En träff kryssas inte
-    i från början (Change.pick) — namnet är en gissning."""
+    """Tickern på den enda rad vars namn har exakt samma ord som mäklarens (bolagsformer och klassbeteckning räknas
+    inte: 'Holmen AB ser. B' = 'Holmen B'). 'Hexagon AB' mot 'Hexagon Composites ASA', 'Lundin Gold' mot 'Lundin
+    Mining' eller 'Nel' mot 'Nelly' ger ingen träff. Nordeas valuta är instrumentets och måste vara radens
+    noteringsvaluta; Nordnets är alltid kontots (SEK) och prövas inte. En träff kryssas inte i från början
+    (Change.pick) — namnet är en gissning."""
     import positions
-    want = _tokens(h.name) - {"ser", "serie", "series"}
+    want = _tokens(h.name)
     if not want:
         return None
     hits = set()
     for r in rows:
-        own = _tokens(r.get("name") or "") - {"ser", "serie", "series"}
+        own = _tokens(r.get("name") or "")
         if not own or own != want:
             continue
         listing = positions.currency_for(r["ticker"])
-        ccy = (h.currency or "").upper()
+        ccy = (h.currency or "").upper() if h.broker != NORDNET else ""
         if ccy and not (ccy == listing or (r["ticker"].upper().endswith(".L") and ccy in ("GBP", "GBX"))):
             continue
         hits.add(r["ticker"])
@@ -394,8 +409,15 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
                           pick=not by_name))
     seen = {c.row["id"] for c in out if c.row is not None}
     held = set(groups)
+    loose = {c.key: _tokens(c.name) for c in out if c.kind == NEW and not c.ticker}
     for r in rows:
         if r["id"] in seen or r["ticker"].strip().upper() in held:
+            continue
+        own = _tokens(r.get("name") or "")
+        twin = next((k for k, t in loose.items() if own and t == own), None)
+        if twin is not None:                         # innehavet utan ticker heter som raden: ingen 'såld?'
+            next(c for c in out if c.key == twin).notes.append(
+                f"heter som raden {r['ticker']} — skriv {r['ticker']} om det är samma")
             continue
         accts = _row_accounts(r)
         if accts and _brokers_of(accts) <= uploaded:

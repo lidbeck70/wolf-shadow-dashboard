@@ -367,3 +367,49 @@ def test_a_later_file_for_the_same_account_replaces_the_earlier_one(page, monkey
     assert any("ersätter My_holdings.xlsx" in w.value for w in at.warning)
     labels = {c.key: c.label for c in at.checkbox}
     assert "antal 60 → **70**" in labels["bsync_ck_row:r1"]                  # inte 130
+
+
+# ── Kontrollrundans fynd ─────────────────────────────────────────────────────
+def test_nordnet_holdings_in_foreign_stocks_match_their_row_by_name_although_the_file_says_sek():
+    """Nordnets fil anger kontots valuta (SEK) — valutan prövas inte för Nordnet, annars såg NVIDIA och Equinor
+    sålda ut."""
+    data = nordnet_csv([("2026-01-02", "KÖPT", "NVIDIA", "US67066G1040", 20, 1300.0),
+                        ("2026-01-02", "KÖPT", "Equinor", "NO0010096985", 30, 280.0)])
+    rows = [_row("n", "NVDA", 20, 130.0, name="NVIDIA", notes="import · nordnet_isk · SEK"),
+            _row("e", "EQNR.OL", 30, 270.0, name="Equinor", notes="import · nordnet_isk · SEK")]
+    hs = bs.resolve(bs.read_file("t.csv", data)[1], rows, {})
+    assert {h.ticker for h in hs} == {"NVDA", "EQNR.OL"}
+    kinds = {c.ticker: c.kind for c in bs.plan(rows, hs, {bs.NORDNET})}
+    assert kinds == {"NVDA": bs.SAME, "EQNR.OL": bs.SAME}                       # ingen 'saknas', ingen snittkurs i SEK
+
+
+def test_industry_words_count_in_the_name_lundin_gold_is_not_lundin_mining():
+    xlsx = nordea_xlsx([("CA5503711080", "XSTO", "SEK", "Lundin Gold Inc", 100, 200.0, 20000.0),
+                        ("CA5503721063", "XSTO", "SEK", "Lundin Mining Corporation", 300, 90.0, 27000.0)])
+    both = [_row("g", "LUG.ST", 100, 200.0, name="Lundin Gold", notes="import · nordea_ask · SEK"),
+            _row("m", "LUMI.ST", 300, 90.0, name="Lundin Mining", notes="import · nordea_ask · SEK")]
+    hs = bs.resolve(bs.read_file("h.xlsx", xlsx)[1], both, {})
+    assert [h.ticker for h in hs] == ["LUG.ST", "LUMI.ST"]
+    only_gold = both[:1]
+    hs = bs.resolve(bs.read_file("h.xlsx", xlsx)[1], only_gold, {})
+    assert [h.ticker for h in hs] == ["LUG.ST", None]                          # Mining gissas inte på Golds rad
+
+
+def test_one_isin_on_two_accounts_gets_one_ticker_and_one_card():
+    xlsx = nordea_xlsx([("NO0010096985", "XOSL", "NOK", "Equinor", 100, 280.0, 28000.0)])
+    csv = nordnet_csv([("2026-01-02", "KÖPT", "Equinor ASA", "NO0010096985", 50, 290.0)])
+    rows = [_row("e", "EQNR.OL", 150, 283.0, name="Equinor")]
+    hs = bs.read_file("h.xlsx", xlsx)[1] + bs.read_file("t.csv", csv)[1]
+    hs = bs.resolve(hs, rows, {})
+    assert [h.ticker for h in hs] == ["EQNR.OL", "EQNR.OL"]
+    cards = [c for c in bs.plan(rows, hs, {bs.NORDEA, bs.NORDNET}) if c.ticker == "EQNR.OL"]
+    assert len(cards) == 1 and cards[0].qty == 150 and cards[0].pick is False
+
+
+def test_a_row_named_like_a_holding_without_ticker_is_not_flagged_as_sold():
+    xlsx = nordea_xlsx([("SE0012673267", "XSTO", "SEK", "Evolution", 10, 900.0, 9000.0)])
+    rows = [_row("v", "EVO.ST", 10, 900.0, name="Evolution AB (publ)", notes="import · nordea_ask · SEK",
+                 extras={})]
+    hs = bs.resolve(bs.read_file("h.xlsx", xlsx)[1], [], {})                  # ingen rad att jämföra mot än
+    out = bs.plan(rows, hs, {bs.NORDEA})
+    assert [c.kind for c in out] == [bs.NEW] and "skriv EVO.ST" in out[0].notes[-1]
