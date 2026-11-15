@@ -1,4 +1,7 @@
 """Kom-ihåg-inloggningen: signerad kaka som överlever en ny Streamlit-session."""
+import pytest
+from streamlit.testing.v1 import AppTest
+
 import auth
 
 
@@ -24,7 +27,8 @@ def test_token_tampered_rejected():
 
 
 def test_token_garbage_is_false_not_error():
-    for bad in (None, "", "x", "abc.def", ".", "123", "1.2.3"):
+    for bad in (None, "", "x", "abc.def", ".", "123", "1.2.3", "9999999999.é", "9999999999." + "é" * 64,
+                "١٢٣٤٥٦٧٨٩٩.abc"):
         assert auth.token_valid(bad, "hemligt") is False
 
 
@@ -33,9 +37,6 @@ def test_token_holds_no_password():
 
 
 # ── Bryggan: token ur webbläsarens localStorage via ?wolf_t= (Streamlit Cloud skickar inte kakan till appen) ──
-import pytest
-from streamlit.testing.v1 import AppTest
-
 _GATE = """
 import auth
 import streamlit as st
@@ -124,3 +125,12 @@ def test_already_logged_in_drops_stray_token(gate):
     gate.query_params[auth.QUERY_KEY] = "skräp"
     at = gate.run()
     assert _inne(at) and auth.QUERY_KEY not in at.query_params
+
+
+def test_usage_stats_are_off_so_the_bridge_token_never_leaves_for_telemetry():
+    """Streamlits statistik skickar sidans adress (med ?wolf_t=) innan appen hunnit ta bort den."""
+    import os
+    import tomllib
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with open(os.path.join(root, ".streamlit", "config.toml"), "rb") as f:
+        assert tomllib.load(f)["browser"]["gatherUsageStats"] is False

@@ -49,12 +49,12 @@ def token_valid(token, password: str, now: Optional[float] = None) -> bool:
     try:
         exp_s, sig = str(token or "").split(".", 1)
         exp = int(exp_s)
-    except (ValueError, TypeError):
+        if exp < (time.time() if now is None else now):
+            return False
+        want = hmac.new(_sign_key(password), exp_s.encode("ascii"), hashlib.sha256).hexdigest()
+        return hmac.compare_digest(sig.encode("utf-8"), want.encode("ascii"))
+    except (ValueError, TypeError, UnicodeError):   # även en påhittad ?wolf_t= med andra tecken: falskt, aldrig fel
         return False
-    if exp < (time.time() if now is None else now):
-        return False
-    want = hmac.new(_sign_key(password), exp_s.encode("ascii"), hashlib.sha256).hexdigest()
-    return hmac.compare_digest(sig, want)
 
 
 def _cookie_token() -> str:

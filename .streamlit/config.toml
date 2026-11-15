@@ -1,2 +1,6 @@
 [theme]
 base = "dark"
+
+[browser]
+# Av: Streamlits användningsstatistik skickar sidans adress — med inloggningsbryggans ?wolf_t= i den (auth.py)
+gatherUsageStats = false
