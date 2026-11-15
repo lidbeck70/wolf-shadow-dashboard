@@ -409,22 +409,36 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
                           pick=not by_name))
     seen = {c.row["id"] for c in out if c.row is not None}
     held = set(groups)
-    # Ett nytt innehav som heter som en omatchad rad är troligen samma innehav (raden kan ha fått fel ticker av
-    # Journalens ISIN-karta: 'ATCO-A.ST' med namnet 'Volvo B'). Raden visas då inte som 'såld?', och kortet kryssas
-    # inte i — annars blev det en dubblettrad, eller Stäng på en position du fortfarande äger.
-    loose = {c.key: _tokens(c.name) for c in out if c.kind == NEW}
+    # Namnet som skyddsnät. Journalens ISIN-karta kan ha gett äldre rader fel ticker ('ATCO-A.ST' med namnet
+    # 'Volvo B', SEB A och Sandvik ombytta). Därför:
+    #   - ett nytt kort vars namn står på någon rad med annan ticker kryssas aldrig i (det vore en dubblettrad), och
+    #     kortet säger vilken rad det kan vara;
+    #   - en rad vars namn finns bland mäklarens innehav visas aldrig som 'såld?' (Stäng på en position du äger).
+    # _tokens tappar aktieslaget ('Atlas Copco A' = 'Atlas Copco B'), så skyddet kan ibland avkryssa ett riktigt nytt
+    # kort — det är den säkra riktningen; du kryssar själv.
+    rows_by_tokens: dict = {}
+    for r in rows:
+        tk = frozenset(_tokens(r.get("name") or ""))
+        if tk:
+            rows_by_tokens.setdefault(tk, []).append(r)
+    for c in out:
+        if c.kind != NEW:
+            continue
+        others = [r for r in rows_by_tokens.get(frozenset(_tokens(c.name)), [])
+                  if r["ticker"].strip().upper() != (c.ticker or "").strip().upper()]
+        if not others:
+            continue
+        c.pick = False
+        names = ", ".join(sorted(r["ticker"] for r in others))
+        c.notes.append(f"heter som raden {names} — skriv {names} om det är samma" if not c.ticker
+                       else f"heter som raden {names} — samma innehav? Rätta i så fall radens ticker till {c.ticker} "
+                            f"i stället för att lägga till")
+    held_names = {frozenset(_tokens(h.name)) for h in holdings if _tokens(h.name)}
     for r in rows:
         if r["id"] in seen or r["ticker"].strip().upper() in held:
             continue
-        own = _tokens(r.get("name") or "")
-        twin = next((k for k, t in loose.items() if own and t == own), None)
-        if twin is not None:
-            card = next(c for c in out if c.key == twin)
-            card.pick = False
-            card.notes.append(f"heter som raden {r['ticker']} — skriv {r['ticker']} om det är samma" if not card.ticker
-                              else f"heter som raden {r['ticker']} — samma innehav? Rätta i så fall radens ticker "
-                                   f"till {card.ticker} i stället för att lägga till")
-            continue
+        if frozenset(_tokens(r.get("name") or "")) in held_names:
+            continue                                 # mäklaren har ett innehav med radens namn — inte 'såld?'
         accts = _row_accounts(r)
         if accts and _brokers_of(accts) <= uploaded:
             out.append(Change(MISSING, f"miss:{r['id']}", r["ticker"], str(r.get("name") or ""),

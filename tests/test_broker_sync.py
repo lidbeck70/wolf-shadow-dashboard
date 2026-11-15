@@ -425,3 +425,28 @@ def test_a_journal_row_with_a_wrong_ticker_is_not_sold_when_borsdata_gives_the_r
     out = bs.plan(rows, hs, {bs.NORDNET})
     assert [c.kind for c in out] == [bs.NEW]
     assert out[0].ticker == "VOLV-B.ST" and out[0].pick is False and "ATCO-A.ST" in out[0].notes[-1]
+
+
+def test_a_wrong_journal_row_matched_as_text_still_unticks_the_new_card():
+    """Volvo B på raden ATCO-A.ST (Journalens karta) och Atlas Copco A hos mäklaren: Atlas-kortet blir text mot
+    'Volvo B'-raden, och det nya VOLV-B.ST-kortet kryssas inte i — annars blev Volvo dubbelräknad."""
+    csv = nordnet_csv([("2026-01-02", "KÖPT", "Volvo B", "SE0000115446", 40, 260.0),
+                       ("2026-01-02", "KÖPT", "Atlas Copco A", "SE0017486889", 30, 170.0)])
+    rows = [_row("j", "ATCO-A.ST", 40, 260.0, name="Volvo B", notes="import · nordnet_isk · SEK")]
+    hs = bs.resolve(bs.read_file("t.csv", csv)[1], rows, {"SE0000115446": "VOLV-B.ST",
+                                                          "SE0017486889": "ATCO-A.ST"})
+    by = {c.ticker: c for c in bs.plan(rows, hs, {bs.NORDNET})}
+    assert by["ATCO-A.ST"].kind == bs.INFO
+    assert by["VOLV-B.ST"].kind == bs.NEW and by["VOLV-B.ST"].pick is False and "ATCO-A.ST" in by["VOLV-B.ST"].notes[-1]
+
+
+def test_swapped_journal_tickers_never_show_a_held_position_as_sold():
+    """SEB A och Sandvik ombytta av Journalens karta; Sandvik är såld. Raden 'SAND.ST' med namnet 'SEB A' visas inte
+    som 'såld?' — mäklaren har SEB A."""
+    csv = nordnet_csv([("2026-01-02", "KÖPT", "SEB A", "SE0000148884", 100, 150.0)])
+    rows = [_row("s", "SAND.ST", 100, 150.0, name="SEB A", notes="import · nordnet_isk · SEK"),
+            _row("e", "SEB-A.ST", 50, 210.0, name="Sandvik", notes="import · nordnet_isk · SEK")]
+    hs = bs.resolve(bs.read_file("t.csv", csv)[1], rows, {"SE0000148884": "SEB-A.ST"})
+    out = bs.plan(rows, hs, {bs.NORDNET})
+    assert not [c for c in out if c.kind == bs.MISSING and c.ticker == "SAND.ST"]
+    assert not [c for c in out if c.kind in (bs.NEW, bs.CHANGED) and c.pick]
