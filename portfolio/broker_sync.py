@@ -409,15 +409,21 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
                           pick=not by_name))
     seen = {c.row["id"] for c in out if c.row is not None}
     held = set(groups)
-    loose = {c.key: _tokens(c.name) for c in out if c.kind == NEW and not c.ticker}
+    # Ett nytt innehav som heter som en omatchad rad är troligen samma innehav (raden kan ha fått fel ticker av
+    # Journalens ISIN-karta: 'ATCO-A.ST' med namnet 'Volvo B'). Raden visas då inte som 'såld?', och kortet kryssas
+    # inte i — annars blev det en dubblettrad, eller Stäng på en position du fortfarande äger.
+    loose = {c.key: _tokens(c.name) for c in out if c.kind == NEW}
     for r in rows:
         if r["id"] in seen or r["ticker"].strip().upper() in held:
             continue
         own = _tokens(r.get("name") or "")
         twin = next((k for k, t in loose.items() if own and t == own), None)
-        if twin is not None:                         # innehavet utan ticker heter som raden: ingen 'såld?'
-            next(c for c in out if c.key == twin).notes.append(
-                f"heter som raden {r['ticker']} — skriv {r['ticker']} om det är samma")
+        if twin is not None:
+            card = next(c for c in out if c.key == twin)
+            card.pick = False
+            card.notes.append(f"heter som raden {r['ticker']} — skriv {r['ticker']} om det är samma" if not card.ticker
+                              else f"heter som raden {r['ticker']} — samma innehav? Rätta i så fall radens ticker "
+                                   f"till {card.ticker} i stället för att lägga till")
             continue
         accts = _row_accounts(r)
         if accts and _brokers_of(accts) <= uploaded:

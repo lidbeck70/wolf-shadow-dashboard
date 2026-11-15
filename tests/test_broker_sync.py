@@ -413,3 +413,15 @@ def test_a_row_named_like_a_holding_without_ticker_is_not_flagged_as_sold():
     hs = bs.resolve(bs.read_file("h.xlsx", xlsx)[1], [], {})                  # ingen rad att jämföra mot än
     out = bs.plan(rows, hs, {bs.NORDEA})
     assert [c.kind for c in out] == [bs.NEW] and "skriv EVO.ST" in out[0].notes[-1]
+
+
+def test_a_journal_row_with_a_wrong_ticker_is_not_sold_when_borsdata_gives_the_right_one():
+    """Journalens karta gav raden 'ATCO-A.ST' namnet 'Volvo B'. Börsdata säger VOLV-B.ST: ingen 'såld?' på raden
+    och inget förkryssat nytt kort (det vore en dubblett)."""
+    csv = nordnet_csv([("2026-01-02", "KÖPT", "Volvo B", "SE0000115446", 40, 260.0)])
+    rows = [_row("j3", "ATCO-A.ST", 40, 260.0, strategy="Quality", name="Volvo B", stop=230.0,
+                 notes="import · nordnet_isk · SEK")]
+    hs = bs.resolve(bs.read_file("t.csv", csv)[1], rows, {"SE0000115446": "VOLV-B.ST"})
+    out = bs.plan(rows, hs, {bs.NORDNET})
+    assert [c.kind for c in out] == [bs.NEW]
+    assert out[0].ticker == "VOLV-B.ST" and out[0].pick is False and "ATCO-A.ST" in out[0].notes[-1]
