@@ -269,3 +269,101 @@ def test_the_box_writes_nothing_until_a_button_is_pressed(page):
     assert not at.exception, at.exception
     closed = page.saves[-1][1]["closed"]
     assert [r["ticker"] for r in closed] == ["GONE.OL"] and closed[0]["exit_reason"] == "Såld enligt mäklaren"
+
+
+# ── Granskningens fynd ───────────────────────────────────────────────────────
+def test_the_journals_isin_map_is_not_used_and_a_borsdata_ticker_must_resemble_the_rows_name():
+    """Journalens ISIN-karta kopplar Volvo B (SE0000115446) till ATCO-A.ST — den används inte. Börsdatas ticker på
+    en rad med ett helt annat namn blir bara text."""
+    xlsx = nordea_xlsx([("SE0000115446", "XSTO", "SEK", "Volvo B", 200, 245.1, 49020.0)])
+    rows = [_row("a", "ATCO-A.ST", 30, 150.0, name="Atlas Copco A"),
+            _row("v", "VOLV-B.ST", 200, 245.1, name="Volvo B")]
+    _b, hs, _e = bs.read_file("h.xlsx", xlsx)
+    h = bs.resolve(hs, rows, None)[0]                                         # inte ATCO-A.ST ur kartan
+    assert (h.ticker, h.how) == ("VOLV-B.ST", bs.BY_NAME)
+    _b, hs, _e = bs.read_file("h.xlsx", xlsx)
+    by = {c.ticker: c for c in bs.plan(rows, bs.resolve(hs, rows, {"SE0000115446": "VOLV-B.ST"}), {bs.NORDEA})}
+    assert by["VOLV-B.ST"].kind == bs.SAME and "ATCO-A.ST" not in by
+    _b, hs, _e = bs.read_file("h.xlsx", xlsx)
+    wrong = bs.plan(rows, bs.resolve(hs, rows, {"SE0000115446": "ATCO-A.ST"}), {bs.NORDEA})
+    c = next(c for c in wrong if c.ticker == "ATCO-A.ST")
+    assert c.kind == bs.INFO and "liknar inte" in c.notes[-1]
+
+
+def test_the_same_unknown_isin_on_two_accounts_is_one_card_with_the_summed_quantity():
+    hs = bs.read_file("h.xlsx", nordea_xlsx([("SE0012673267", "XSTO", "SEK", "Evolution", 10, 900.0, 9000.0)]))[1]
+    hs += bs.read_file("t.csv", nordnet_csv([("2026-01-02", "KÖPT", "Evolution", "SE0012673267", 5, 1200.0)]))[1]
+    news = [c for c in bs.plan([], bs.resolve(hs, [], {}), {bs.NORDEA, bs.NORDNET}) if c.kind == bs.NEW]
+    assert len(news) == 1 and news[0].key == "new:SE0012673267" and news[0].qty == 15
+    assert "summa av 2 konton" in news[0].notes and news[0].price == pytest.approx(1000.0)
+
+
+def test_a_name_only_matches_on_the_same_words_and_currency_and_is_not_ticked():
+    xlsx = nordea_xlsx([("NO0003067902", "XOSL", "NOK", "Hexagon Composites ASA", 100, 30.0, 3000.0),
+                        ("SE0011090018", "XSTO", "SEK", "Holmen AB ser. B", 21, 317.58, 6669.0)])
+    rows = [_row("h", "HEXA-B.ST", 50, 100.0, name="Hexagon AB"),
+            _row("o", "HOLM-B.ST", 20, 317.58, name="Holmen B")]
+    hs = bs.resolve(bs.read_file("h.xlsx", xlsx)[1], rows, {})
+    assert [h.ticker for h in hs] == [None, "HOLM-B.ST"]
+    c = next(c for c in bs.plan(rows, hs, {bs.NORDEA}) if c.ticker == "HOLM-B.ST")
+    assert c.kind == bs.CHANGED and c.pick is False and "gissad ur namnet" in c.notes[-1]
+
+
+def test_an_unreadable_or_trade_less_nordnet_csv_does_not_count_as_uploaded():
+    empty = nordnet_csv([])
+    assert bs.read_file("t.csv", empty)[0] is None
+    assert bs.read_file("t.csv", "skräp".encode("utf-8"))[0] is None
+    assert bs.read_file("x.xlsx", nordea_xlsx([])[:0] or b"PK")[0] is None
+    linked = {"broker_accounts": ["nordea_ask:ASK Testkonto", "nordnet_isk:nordnet_isk"]}
+    rows = [_row("e", "OLJE.OL", 150, 12.0, extras=linked),
+            _row("s", "SINCH.ST", 500, 30.0, notes="import · nordnet_isk · SEK")]
+    by = {c.ticker: c for c in bs.plan(rows, _hold(), {bs.NORDEA})}
+    assert by["OLJE.OL"].kind == bs.INFO and "SINCH.ST" not in by
+
+
+def test_nordnet_newest_first_same_day_round_trip_leaves_no_holding():
+    data = nordnet_csv([("2026-03-02", "SÅLT", "Sinch", "SE0016101844", 500, 31.0),
+                        ("2026-03-02", "KÖPT", "Sinch", "SE0016101844", 500, 30.0),
+                        ("2026-01-02", "KÖPT", "Investor B", "SE0015811963", 20, 250.0)])
+    _b, hs, _e = bs.read_file("t.csv", data)
+    assert [(h.name, h.qty) for h in hs] == [("Investor B", 20)]
+
+
+def test_two_isins_on_one_ticker_are_never_summed():
+    hs = bs.read_file("h.xlsx", FILE)[1]
+    hs = bs.resolve(hs, [], {"SE0000000001": "SAME.ST", "NO0000000002": "SAME.ST"})
+    c = next(c for c in bs.plan([], hs, {bs.NORDEA}) if c.ticker == "SAME.ST")
+    assert c.kind == bs.INFO and "2 olika ISIN" in c.notes[-1]
+
+
+def test_a_typed_ticker_that_already_stands_in_another_bucket_links_the_isin_instead_of_a_new_row(registry):
+    state, saves = registry
+    import positions
+    positions.load()
+    state["holdings"]["momentum"].append(_row("k", "KOG.OL", 30, 300.0, strategy="Momentum"))
+    fund = bs.Change(bs.NEW, "new:NO0003043309", None, "Kongsberg Gruppen", "NO0003043309", ("nordea_ask:A",),
+                     qty=30, price=300.0)
+    done, skipped, err = bs.apply([fund], {"new:NO0003043309": "kog.ol"})
+    assert err is None and skipped == [] and done[0].startswith("KOG.OL (kopplad")
+    assert [r["ticker"] for r in state["holdings"]["long"]] == ["TEST-B.ST"]          # ingen ny rad
+    mom = state["holdings"]["momentum"][0]
+    assert mom["extras"]["isin"] == "NO0003043309" and mom["shares"] == 30 and mom["strategy"] == "Momentum"
+
+
+def test_a_later_file_for_the_same_account_replaces_the_earlier_one(page, monkeypatch):
+    from portfolio import broker_sync_ui as ui
+
+    class Old(io.BytesIO):
+        name = "My_holdings.xlsx"
+
+    class New(io.BytesIO):
+        name = "My_holdings (1).xlsx"
+    old = nordea_xlsx([("SE0000000001", "XSTO", "SEK", "Testbolag B", 60, 30.0, 1800.0)])
+    new = nordea_xlsx([("SE0000000001", "XSTO", "SEK", "Testbolag B", 70, 32.5271, 2277.0)])
+    at = page(True)
+    monkeypatch.setattr(ui, "_uploader", lambda: [Old(old), New(new)])
+    at.run()
+    assert not at.exception, at.exception
+    assert any("ersätter My_holdings.xlsx" in w.value for w in at.warning)
+    labels = {c.key: c.label for c in at.checkbox}
+    assert "antal 60 → **70**" in labels["bsync_ck_row:r1"]                  # inte 130

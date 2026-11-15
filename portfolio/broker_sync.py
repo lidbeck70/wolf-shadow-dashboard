@@ -10,7 +10,9 @@ Filerna:
 Stegen (rena funktioner — inget Streamlit, inget nätverk utom isin_map som anroparen ger instrumenten):
   read_file      fil → (mäklare, [Holding], fel)
   isin_map       Börsdatas instrument → {ISIN: Yahoo-ticker}
-  resolve        Holding.ticker ur radens sparade ISIN, journalens ISIN-karta, Börsdata eller namnet på en rad
+  resolve        Holding.ticker ur radens sparade ISIN, Börsdata (på knapp) eller — strängt — namnet på en rad.
+                 Journalens ISIN-karta (journal_import.ticker_map) används inte: den kopplar flera nordiska ISIN
+                 till fel bolag (Volvo B → Atlas Copco).
   plan           [Change]: ny / ändrad / stämmer / saknas hos mäklaren / bara text
   apply          de markerade ändringarna till registret i EN sparning: antal och snittkurs (aldrig stopp, mål,
                  strategi eller anteckningar); nya rader som Untagged
@@ -68,6 +70,7 @@ class Change:
     old_price: Optional[float] = None
     currency: str = ""
     notes: list = field(default_factory=list)
+    pick: bool = True             # kryssad från början (inte när tickern bara kommer ur ett namn)
 
 
 # ── Hjälpare ────────────────────────────────────────────────────────────────
@@ -107,7 +110,7 @@ def _bytes(file_obj) -> bytes:
 
 # ── 1. Filerna ──────────────────────────────────────────────────────────────
 def parse_nordea_holdings(data: bytes) -> tuple:
-    """Nordeas innehavslista (.xlsx) → ([Holding], fel). Rubrikraden letas upp (raden med ISIN och HOLDINGS);
+    """Nordeas innehavslista (.xlsx) → ([Holding], fel, läst). Rubrikraden letas upp (raden med ISIN och HOLDINGS);
     kassakonton och tomma rader hoppas över. Snittkurs 0 (fonder) = saknas, utom när fondens valuta är kontots
     basvaluta — då är anskaffningsvärdet ÷ antal snittkursen."""
     import openpyxl
@@ -118,7 +121,7 @@ def parse_nordea_holdings(data: bytes) -> tuple:
                    if r and "ISIN" in [str(c).strip() for c in r if c is not None]
                    and "HOLDINGS" in [str(c).strip() for c in r if c is not None]), None)
     if head_i is None:
-        return [], ["Nordea: hittar inte rubrikraden (ISIN, HOLDINGS) — är det innehavslistan 'My holdings'?"]
+        return [], ["Nordea: hittar inte rubrikraden (ISIN, HOLDINGS) — är det innehavslistan 'My holdings'?"], False
     head = [str(c).strip() if c is not None else "" for c in rows[head_i]]
     out, errors = [], []
     for n, r in enumerate(rows[head_i + 1:], start=head_i + 2):
@@ -140,29 +143,36 @@ def parse_nordea_holdings(data: bytes) -> tuple:
                            round(avg, 6) if avg else None, str(d.get("MIC") or "").strip().upper()))
     if not out and not errors:
         errors.append("Nordea: inga innehav i filen.")
-    return out, errors
+    return out, errors, True
 
 
 def nordnet_holdings(data: bytes) -> tuple:
-    """Nordnets transaktionsexport (.csv) → ([Holding], fel) via Journalens parser och FIFO. Snittkursen står i
-    handelsvalutan. Ett sälj utan köp före i filen = exporten börjar för sent; det står i felen."""
+    """Nordnets transaktionsexport (.csv) → ([Holding], fel, läst) via Journalens parser och FIFO. Snittkursen står i
+    handelsvalutan. Ett sälj utan köp före i filen = exporten börjar för sent; det står i felen. Nordnet listar
+    nyast först: köp sorteras före sälj samma dag (FIFO tar ändå de äldsta posterna först), annars blev en
+    dagsaffär (köp och sälj samma dag) kvar som innehav. Utan ett enda köp eller sälj (fel teckenkodning, en period
+    med bara utdelningar) räknas filen inte som läst — Nordnet-raderna ska då inte se sålda ut."""
     from journal_import.fifo import run_fifo
     from journal_import.parsers import parse_nordnet
-    from journal_import.ticker_map import resolve_ticker
     res = parse_nordnet(io.BytesIO(data))
-    _closed, open_pos, fifo_errors = run_fifo(res.transactions, resolve_ticker)
+    txs = sorted(res.transactions, key=lambda t: (t.account, t.isin, t.date, t.action != "BUY"))
+    _closed, open_pos, fifo_errors = run_fifo(txs, lambda *a, **k: None)
     out = [Holding(NORDNET, str(p.account or NORDNET), str(p.isin or ""), str(p.name or ""),
                    str(p.currency or "").upper(), _qty(p.qty), round(p.avg_price, 6) if p.avg_price else None)
            for p in open_pos if (p.qty or 0) > 0]
     errors = list(res.errors) + list(fifo_errors)
     if not res.transactions:
-        errors.append("Nordnet: inga köp eller sälj i filen — är det transaktionsexporten som CSV?")
-    return out, errors
+        errors.append("Nordnet: inga köp eller sälj i filen — är det transaktionsexporten som CSV (UTF-16, så som "
+                      "Nordnet sparar den), för hela perioden sedan första köpet?")
+        return out, errors, False
+    return out, errors, True
 
 
 def read_file(name: str, file_obj) -> tuple:
     """(mäklare, [Holding], fel) ur en uppladdad fil. Mäklaren känns igen på filtypen: .xlsx = Nordeas
-    innehavslista, .csv = Nordnets transaktionsexport. PDF (avräkningsnotor) går inte att läsa som innehav."""
+    innehavslista, .csv = Nordnets transaktionsexport. PDF (avräkningsnotor) går inte att läsa som innehav.
+    Mäklaren är None när filen inte gick att läsa som sin typ — då räknas den inte som uppladdad (plan: rader hos
+    den mäklaren blir varken 'saknas' eller kapade till den andra mäklarens antal)."""
     n = str(name or "").lower()
     try:
         data = _bytes(file_obj)
@@ -173,11 +183,11 @@ def read_file(name: str, file_obj) -> tuple:
                           "transaktionerna som CSV (hela perioden sedan första köpet)."]
     try:
         if n.endswith((".xlsx", ".xlsm")) or data[:2] == b"PK":
-            h, e = parse_nordea_holdings(data)
-            return NORDEA, h, e
+            h, e, ok = parse_nordea_holdings(data)
+            return (NORDEA if ok else None), h, e
         if n.endswith((".csv", ".txt")):
-            h, e = nordnet_holdings(data)
-            return NORDNET, h, e
+            h, e, ok = nordnet_holdings(data)
+            return (NORDNET if ok else None), h, e
     except Exception as exc:
         return None, [], [f"Kunde inte läsa {name}: {exc}"]
     return None, [], [f"Okänd filtyp: {name} — Nordea: innehavslistan (.xlsx), Nordnet: transaktionerna (.csv)."]
@@ -207,9 +217,8 @@ def _row_isin(row: dict) -> str:
 
 
 def resolve(holdings: List[Holding], rows: Iterable[dict], bd_map: Optional[dict] = None) -> List[Holding]:
-    """Fyller Holding.ticker i ordningen: radens sparade ISIN (en tidigare uppdatering), journalens ISIN-karta,
-    Börsdata (bd_map), sist ett namn som liknar en rads namn. Utan träff förblir tickern None (skrivs i rutan)."""
-    from journal_import.ticker_map import ISIN_MAP
+    """Fyller Holding.ticker i ordningen: radens sparade ISIN (en tidigare uppdatering), Börsdata (bd_map), sist ett
+    namn som strängt liknar en rads namn i samma valuta. Utan träff förblir tickern None (skrivs i rutan)."""
     rows = [r for r in rows or [] if isinstance(r, dict)]
     by_isin = {}
     for r in rows:
@@ -222,31 +231,42 @@ def resolve(holdings: List[Holding], rows: Iterable[dict], bd_map: Optional[dict
         isin = h.isin.upper()
         if isin in by_isin:
             h.ticker, h.how = by_isin[isin], "ISIN sparat på raden"
-        elif isin in ISIN_MAP:
-            h.ticker, h.how = ISIN_MAP[isin], "journalens ISIN-karta"
         elif bd_map and isin in bd_map:
             h.ticker, h.how = bd_map[isin], "Börsdata (ISIN)"
         else:
-            hit = _name_match(h.name, rows)
+            hit = _name_match(h, rows)
             if hit:
-                h.ticker, h.how = hit, "namnet liknar radens"
+                h.ticker, h.how = hit, BY_NAME
     return holdings
 
 
-def _name_match(name: str, rows: list) -> Optional[str]:
-    """Tickern på den enda rad vars namn liknar mäklarens (strängt: ett av namnen ryms i det andra)."""
+BY_NAME = "namnet liknar radens"
+
+
+def _tokens(name) -> set:
     import refresh_ui
-    if not name:
+    return {t for t in refresh_ui._name_tokens(name) if t not in refresh_ui._GENERIC}
+
+
+def _name_match(h: Holding, rows: list) -> Optional[str]:
+    """Tickern på den enda rad vars namn har exakt samma ord som mäklarens (bolagsformer och branschord räknas
+    inte: 'Holmen AB ser. B' = 'Holmen B') och vars noteringsvaluta är innehavets. 'Hexagon AB' mot 'Hexagon
+    Composites ASA', 'Volvo B' mot 'Volvo Car AB B' eller 'Nel' mot 'Nelly' ger ingen träff. En träff kryssas inte
+    i från början (Change.pick) — namnet är en gissning."""
+    import positions
+    want = _tokens(h.name) - {"ser", "serie", "series"}
+    if not want:
         return None
-    norm = " ".join(refresh_ui._name_tokens(name)) if hasattr(refresh_ui, "_name_tokens") else name.lower()
     hits = set()
     for r in rows:
-        own = str(r.get("name") or "").strip()
-        if not own:
+        own = _tokens(r.get("name") or "") - {"ser", "serie", "series"}
+        if not own or own != want:
             continue
-        o = " ".join(refresh_ui._name_tokens(own)) if hasattr(refresh_ui, "_name_tokens") else own.lower()
-        if o and norm and (o in norm or norm in o):
-            hits.add(r["ticker"])
+        listing = positions.currency_for(r["ticker"])
+        ccy = (h.currency or "").upper()
+        if ccy and not (ccy == listing or (r["ticker"].upper().endswith(".L") and ccy in ("GBP", "GBX"))):
+            continue
+        hits.add(r["ticker"])
     return hits.pop() if len(hits) == 1 else None
 
 
@@ -270,6 +290,21 @@ def _acct_key(h: Holding) -> str:
     return f"{h.broker}:{h.account}"
 
 
+def _avg(hs: List[Holding]) -> tuple:
+    """(antalsvägd snittkurs, text) — bara när alla poster har snittkurs i samma valuta."""
+    ccys = {h.currency for h in hs}
+    if len(ccys) > 1:
+        return None, "kontona har olika valuta — snittkursen föreslås inte"
+    if not all(h.avg_price for h in hs):
+        return None, ""
+    return sum(h.avg_price * h.qty for h in hs) / sum(h.qty for h in hs), ""
+
+
+def _resembles(own: str, broker: str) -> bool:
+    import refresh_ui
+    return refresh_ui.name_resembles(own, broker)
+
+
 def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str]) -> List[Change]:
     """Ändringarna mot registrets öppna rader. uploaded = mäklarna vars filer finns ({'nordea_ask', ...}).
 
@@ -282,29 +317,41 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
     uploaded = set(uploaded or ())
     out: List[Change] = []
     groups: dict = {}
+    unknown: dict = {}
     for h in holdings:
         if not h.ticker:
-            out.append(Change(NEW, f"new:{h.isin}", None, h.name, h.isin, (_acct_key(h),), qty=h.qty,
-                              price=h.avg_price, currency=h.currency,
-                              notes=["ingen ticker hittad — skriv den för att lägga till"]))
+            unknown.setdefault(h.isin.strip().upper() or h.name, []).append(h)
             continue
         groups.setdefault(h.ticker.strip().upper(), []).append(h)
+    for key, hs in unknown.items():                  # samma ISIN på flera konton: ett kort, antalet summerat
+        accts = tuple(sorted({_acct_key(h) for h in hs}))
+        avg, note = _avg(hs)
+        notes = ["ingen ticker hittad — skriv den för att lägga till"] + (
+            [f"summa av {len(accts)} konton"] if len(accts) > 1 else []) + ([note] if note else [])
+        out.append(Change(NEW, f"new:{key}", None, hs[0].name, hs[0].isin, accts, qty=_qty(sum(h.qty for h in hs)),
+                          price=round(avg, 6) if avg else None, currency=hs[0].currency, notes=notes))
     rows_by_t: dict = {}
     for r in rows:
         rows_by_t.setdefault(r["ticker"].strip().upper(), []).append(r)
     for t, hs in groups.items():
         accts = tuple(sorted({_acct_key(h) for h in hs}))
         qty = _qty(sum(h.qty for h in hs))
-        ccys = {h.currency for h in hs}
-        prices = [h.avg_price for h in hs]
-        avg = (sum(h.avg_price * h.qty for h in hs) / sum(h.qty for h in hs)
-               if len(ccys) == 1 and all(p for p in prices) else None)
+        avg, anote = _avg(hs)
         name, isin, ccy = hs[0].name, hs[0].isin, hs[0].currency
-        notes = [f"ticker: {hs[0].how}"] if hs[0].how and hs[0].how != "ISIN sparat på raden" else []
+        hows = sorted({h.how for h in hs if h.how and h.how != "ISIN sparat på raden"})
+        notes = [f"ticker: {', '.join(hows)}"] if hows else []
+        by_name = any(h.how == BY_NAME for h in hs)
         if len(accts) > 1:
             notes.append(f"summa av {len(accts)} konton")
-        if avg is None and len(ccys) > 1:
-            notes.append("kontona har olika valuta — snittkursen föreslås inte")
+        if anote:
+            notes.append(anote)
+        isins = sorted({h.isin.upper() for h in hs if h.isin})
+        if len(isins) > 1:                           # två olika värdepapper på samma ticker — summeras aldrig
+            out.append(Change(INFO, f"info:{t}", t, name, isin, accts, qty=None, currency=ccy,
+                              row=(rows_by_t.get(t) or [None])[0] if len(rows_by_t.get(t) or []) == 1 else None,
+                              notes=notes + [f"{len(isins)} olika ISIN ({', '.join(isins)}) pekar på {t} — "
+                                             f"ändra själv"]))
+            continue
         price, pnote = ph.broker_price(t, avg, ccy) if avg is not None else (None, "")
         price = ph._round(price) if price is not None else None
         if pnote:
@@ -318,6 +365,13 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
                               notes=notes + [f"{t} står på {len(rs)} rader (olika strategier) — ändra raden själv"]))
             continue
         row = rs[0]
+        own_name = str(row.get("name") or "").strip()
+        saved = all(h.how == "ISIN sparat på raden" for h in hs)      # du har redan bekräftat kopplingen
+        if own_name and name and not by_name and not saved and not _resembles(own_name, name):
+            out.append(Change(INFO, f"info:{t}", t, name, isin, accts, row=row, qty=qty, price=price, currency=ccy,
+                              notes=notes + [f"mäklarens '{name}' liknar inte radens '{own_name}' — kontrollera "
+                                             f"tickern, inget ändras"]))
+            continue
         other = {a for a in _row_accounts(row) if a.split(":", 1)[0] not in uploaded}
         if other:
             out.append(Change(INFO, f"info:{t}", t, name, isin, accts, row=row, qty=qty, price=price, currency=ccy,
@@ -333,8 +387,11 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
             price = None
         same_q = _same(old_q, qty, 1e-6)
         same_p = price is None or _same(old_p, price, 5e-4)
+        if by_name:
+            notes.append("tickern gissad ur namnet — kryssa i om det stämmer")
         out.append(Change(SAME if same_q and same_p else CHANGED, f"row:{row['id']}", t, name, isin, accts,
-                          row=row, qty=qty, price=price, old_qty=old_q, old_price=old_p, currency=ccy, notes=notes))
+                          row=row, qty=qty, price=price, old_qty=old_q, old_price=old_p, currency=ccy, notes=notes,
+                          pick=not by_name))
     seen = {c.row["id"] for c in out if c.row is not None}
     held = set(groups)
     for r in rows:
@@ -384,8 +441,16 @@ def apply(changes: Iterable[Change], typed: Optional[dict] = None, today: str = 
                 skipped.append(f"{c.name or c.isin}: ticker saknas")
                 continue
             bucket = positions.bucket_for("Untagged")
-            if any(r["ticker"] == t for r in data[bucket]):
-                skipped.append(f"{t}: finns redan")
+            hits = [(b, r) for b in positions.BUCKET_KEYS for r in data[b] if r["ticker"] == t]
+            if hits:
+                # en skriven ticker som redan står i Positioner: ingen ny rad (det vore dubbelt). En enda rad får
+                # ISIN:et, så nästa uppladdning går den vanliga vägen (ändrat: valuta, stopp och konton prövas).
+                if len(hits) == 1 and c.isin:
+                    hits[0][1].setdefault("extras", {})["isin"] = c.isin
+                    done.append(f"{t} (kopplad till raden i {positions.BUCKETS[hits[0][0]]['name']} — ladda upp "
+                                f"igen för antal och snittkurs)")
+                else:
+                    skipped.append(f"{t}: finns redan i Positioner")
                 continue
             if len(data[bucket]) >= positions.BUCKETS[bucket]["max"]:
                 skipped.append(f"{t}: {positions.BUCKETS[bucket]['name']} är full")

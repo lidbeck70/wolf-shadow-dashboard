@@ -56,7 +56,7 @@ def _close(row_id: str, ticker: str, key: str) -> None:
 
 def _apply(changes: list) -> None:
     """on_click: de markerade raderna till registret i en sparning."""
-    picked = [c for c in changes if st.session_state.get(f"bsync_ck_{c.key}", True)]
+    picked = [c for c in changes if st.session_state.get(f"bsync_ck_{c.key}", c.pick)]
     typed = {c.key: st.session_state.get(f"bsync_t_{c.key}", "") for c in picked if not c.ticker}
     done, skipped, err = bs.apply(picked, typed)
     msg = f"Uppdaterat: {', '.join(done)}." if done else "Inget uppdaterades."
@@ -119,7 +119,7 @@ def _notes(c: bs.Change) -> str:
 
 def _ready(c: bs.Change) -> bool:
     """Markerad och går att spara: har en ticker, eller en skriven i rutan."""
-    return bool(st.session_state.get(f"bsync_ck_{c.key}", True)) and bool(
+    return bool(st.session_state.get(f"bsync_ck_{c.key}", c.pick)) and bool(
         c.ticker or str(st.session_state.get(f"bsync_t_{c.key}", "") or "").strip())
 
 
@@ -141,25 +141,34 @@ def render_broker_sync() -> None:
             getattr(st, res[0])(res[1])
         if not files:
             return
-        holdings, uploaded = [], set()
+        # Per konto: en senare fil för samma konto ersätter en tidigare (förra veckans och dagens export ska inte
+        # summeras). Olika konton och mäklare läggs ihop.
+        by_acct, uploaded, read = {}, set(), {}
         for f in files:
             broker, hs, errors = bs.read_file(f.name, f)
             for e in errors[:8]:
                 st.warning(f"{f.name}: {e}")
             if len(errors) > 8:
                 st.caption(f"{f.name}: {len(errors) - 8} varningar till.")
-            if broker:
-                uploaded.add(broker)
-                holdings += hs
-                st.caption(f"✓ {f.name}: {bs.BROKER_LABEL[broker]}, {len(hs)} innehav.")
-        if not holdings:
+            if not broker:
+                continue
+            uploaded.add(broker)
+            keys = {bs._acct_key(h) for h in hs}
+            for k in keys & set(read):
+                st.warning(f"{f.name} ersätter {read[k]} för {bs.BROKER_LABEL[broker]} — samma konto räknas en gång.")
+            for k in keys:
+                by_acct[k], read[k] = [h for h in hs if bs._acct_key(h) == k], f.name
+            st.caption(f"✓ {f.name}: {bs.BROKER_LABEL[broker]}, {len(hs)} innehav.")
+        holdings = [h for hs in by_acct.values() for h in hs]
+        if not uploaded:                               # en läst fil utan innehav = allt sålt, och ska visas
             return
         rows = positions.all_positions()
         bs.resolve(holdings, rows, st.session_state.get(BD_MAP))
         missing_t = [h for h in holdings if not h.ticker]
-        if missing_t and BD_MAP not in st.session_state:
-            st.button(f"🔎 Hitta tickers i Börsdata ({len(missing_t)} utan ticker)", key="bsync_bd",
-                      on_click=_bd_lookup)
+        guessed = [h for h in holdings if h.how == bs.BY_NAME]
+        if (missing_t or guessed) and BD_MAP not in st.session_state:
+            st.button(f"🔎 Hitta tickers i Börsdata ({len(missing_t) + len(guessed)} utan säker ticker)",
+                      key="bsync_bd", on_click=_bd_lookup)
         changes = bs.plan(rows, holdings, uploaded)
         actionable = [c for c in changes if c.kind in (bs.NEW, bs.CHANGED)]
         titles = {bs.NEW: "🆕 Nytt hos mäklaren — läggs till som Untagged",
@@ -171,7 +180,7 @@ def render_broker_sync() -> None:
                 continue
             st.markdown(f"**{titles[kind]}** ({len(group)})")
             for c in group:
-                st.checkbox(_label(c), value=True, key=f"bsync_ck_{c.key}")
+                st.checkbox(_label(c), value=c.pick, key=f"bsync_ck_{c.key}")
                 if not c.ticker:
                     st.text_input(f"Ticker för {c.name or c.isin}", key=f"bsync_t_{c.key}",
                                   placeholder="t.ex. HUSQ-B.ST — tomt = hoppas över")
