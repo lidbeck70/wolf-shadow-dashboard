@@ -222,7 +222,7 @@ def nordnet_holdings(data: bytes) -> tuple:
 # Nordnets innehavslista (kontots innehav → exportera): 'aktier_kontonummer-<nr>_<datum>.csv', UTF-16 med tabb.
 _POS_NEED = ("Namn", "Antal")
 _ACCT_IN_NAME = re.compile(r"kontonummer[-_ ]?(\d{4,})", re.I)
-_TABLE_IN_NAME = re.compile(r"([a-zåäö]+)_kontonummer", re.I)     # 'aktier_kontonummer-…' → aktier
+_TABLE_IN_NAME = re.compile(r"(.*?)[\s_-]*kontonummer", re.I)    # 'aktier_kontonummer-…' → aktier
 _ISIN = re.compile(r"[A-Z]{2}[A-Z0-9]{9}\d")
 
 
@@ -263,8 +263,9 @@ def parse_nordnet_positions(data: bytes, filename: str = "") -> tuple:
     """Nordnets innehavslista → ([Holding], fel, läst). Antal och GAV (snittkurs i aktiens valuta, kolumnen Valuta)
     läses rakt av. ISIN saknas ofta för USA och Kanada; tickern hittas då via ISIN ur en transaktionsfil (combine),
     mäklarens namn sparat på raden eller en namngissning. Antal × senaste kurs prövas mot värdet — stämmer det inte
-    blir antalet osäkert. Kontonumret i filnamnet blir 'depå …1234'; en annan tabell än aktierna ('fonder_konto…')
-    får ' · fonder', så varje lista bara visar sin egen tabell. Utan kontonummer: Nordnet ISK i stort (okänd depå —
+    blir antalet osäkert. Kontonumret i filnamnet blir 'depå …1234' för aktielistan ('aktier_kontonummer-…'); varje
+    annan tabell får sitt namn ('fonder_…' → ' · fonder', 'etf_er_…' → ' · etfer', oläsligt → ' · okänd tabell'),
+    så en lista aldrig ersätter eller täcker en annan tabell. Utan kontonummer: Nordnet ISK i stort (okänd depå —
     listan visar då aldrig att en rad är såld)."""
     table = _pos_table(data)
     if table is None:
@@ -272,8 +273,9 @@ def parse_nordnet_positions(data: bytes, filename: str = "") -> tuple:
     base = re.split(r"[\\/]", str(filename or ""))[-1]
     m, kind = _ACCT_IN_NAME.search(base), _TABLE_IN_NAME.match(base)
     acct = _depa(m.group(1)) if m else NORDNET
-    if m and kind and kind.group(1).lower() != "aktier":
-        acct += f" · {kind.group(1).lower()}"
+    tname = re.sub(r"[^a-zåäö]+", "", kind.group(1).lower()) if kind else ""
+    if m and tname != "aktier":
+        acct += f" · {tname or 'okänd tabell'}"
     out, errors = [], []
     for d in table:
         name = str(d.get("Namn") or "").strip()
@@ -319,7 +321,7 @@ def parse_nordnet_notes(pages: list) -> tuple:
         head = next((ln.strip() for ln in t.splitlines() if ln.strip() and not ln.strip().startswith("Nr ")), "")
         head = head.split("Utskriftsdatum")[0].strip().upper()
         depa = re.search(r"Depå:\s*(\d+)", t)
-        acct = _depa(depa.group(1)) if depa else NORDNET
+        acct = f"{_depa(depa.group(1))} · notor" if depa else NORDNET    # notan säger inte vilken tabell
         m = _NOTE.search(t)
         if m and "AVRÄKNINGSNOTA" in head:
             action = "BUY" if m.group(1) == "köpt" else "SELL"
@@ -764,11 +766,14 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
                                   BROKER_LABEL.get(b, b) for b in sorted(_brokers_of(other)))
                                   + " — ladda upp den filen också"]))
             continue
-        # raden har ett Nordnet-konto men kortet inget Nordnet-innehav: bara en lista för depån visar att den delen
-        # är borta — transaktioner för en period eller en annan depås lista gör det inte
-        row_nn = {a for a in _row_accounts(row) if a.split(":", 1)[0] == NORDNET}
-        nn_gap = bool(row_nn) and not any(h.broker == NORDNET for h in hs)
-        if nn_gap and not _list_covers(row_nn, list_accts):
+        # radens Nordnet-konton som kortet inte visar (en annan depå, eller inget Nordnet-innehav alls): bara en lista
+        # för den depån visar att den delen är borta — transaktioner för en period eller en annan depås lista gör det
+        # inte. Ett konto utan känd depå räknas som visat när kortet har något Nordnet-innehav.
+        card_nn = {a for a in accts if a.split(":", 1)[0] == NORDNET}
+        unseen = {a for a in _row_accounts(row) if a.split(":", 1)[0] == NORDNET and a not in card_nn
+                  and not (card_nn and a in (NORDNET, f"{NORDNET}:{NORDNET}"))}
+        nn_gap = bool(unseen)
+        if nn_gap and not _list_covers(unseen, list_accts):
             out.append(Change(INFO, f"info:{t}", t, name, isin, accts, row=row, qty=qty, price=price, currency=ccy,
                               notes=notes + [NN_GAP_NOTE]))
             continue

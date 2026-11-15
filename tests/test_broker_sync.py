@@ -638,7 +638,7 @@ def test_nordnet_contract_notes_become_transactions_checked_against_the_purchase
     assert [(t.action, t.isin, t.qty, round(t.price, 4)) for t in txs] == [
         ("BUY", "US1252691001", 3, 114.0), ("BUY", "SE0000000009", 13002, round((2 * 1120.5 + 13000 * 0.03) / 13002, 4)),
         ("SELL", "US1252691001", 1, 120.0), ("BUY", "US0000000001", 5, 10.0)]
-    assert txs[0].account == "depå …2222" and txs[0].currency == "USD"                # hela numret sparas aldrig
+    assert txs[0].account == "depå …2222 · notor" and txs[0].currency == "USD"        # hela numret sparas aldrig
     assert set(shaky) == {"US0000000001", "US67066G1040"}                  # fel summa, split — inte utdelningen
     assert any("stämmer inte med köpeskillingen" in e for e in errors)
 
@@ -650,7 +650,7 @@ def test_a_nordnet_pdf_is_read_through_its_pages(monkeypatch):
     monkeypatch.setattr(bs, "_pdf_pages", lambda data: pages)
     broker, hs, errors = bs.read_file("transaction-export.pdf", b"%PDF-1.4 x")
     assert broker == bs.NORDNET and errors == []
-    assert [(h.isin, h.qty, h.account) for h in hs if h.qty] == [("US1252691001", 3, "depå …2222")]
+    assert [(h.isin, h.qty, h.account) for h in hs if h.qty] == [("US1252691001", 3, "depå …2222 · notor")]
     assert [(h.name, h.sold) for h in hs if not h.qty] == [("Volvo B", True)]
     monkeypatch.setattr(bs, "_pdf_pages", lambda data: [_move("UTDELNING", "US1252691001", "CF", 2)])
     assert bs.read_file("x.pdf", b"%PDF")[0] is None                       # inga köp/sälj: inte läst
@@ -945,3 +945,48 @@ def test_a_row_without_known_account_is_not_cut_when_the_nordnet_part_may_be_a_l
     c = next(c for c in bs.plan(rows, hs, {bs.NORDEA, bs.NORDNET}) if c.ticker == "TSM")
     assert c.kind == bs.CHANGED and (c.old_qty, c.qty) == (80, 30) and c.pick is False
     assert "Taiwan Semiconductor Manufacturing Co Ltd" in c.notes[-1]
+
+
+def test_only_the_aktier_list_is_the_aktier_table_whatever_the_other_file_names():
+    aktier = nordnet_list([("Volvo B", "SEK", 5, 250.0, "SE0000115446")])
+    etf = nordnet_list([("Indexfonden ETF", "SEK", 3, 100.0, "SE0000000055")])
+    names = {"etf_er_kontonummer-11112222_2026-11-15.csv": "depå …2222 · etfer",
+             "etf-er_kontonummer-11112222_2026-11-15.csv": "depå …2222 · etfer",
+             "börshandlade_produkter_kontonummer-11112222_2026-11-15.csv": "depå …2222 · börshandladeprodukter",
+             "fonder-kontonummer-11112222_2026-11-15.csv": "depå …2222 · fonder",
+             "kontonummer-11112222_2026-11-15.csv": "depå …2222 · okänd tabell",
+             "Aktier_kontonummer-11112222_2026-11-15 (1).csv": "depå …2222"}
+    for name, acct in names.items():
+        assert bs.read(name, etf)[1][0].account == acct, name
+    volvo = _row("v", "VOLV-B.ST", 5, 250.0,
+                 extras={"isin": "SE0000115446", "broker_accounts": ["nordnet_isk:depå …2222"]})
+    for files in ([(LIST_FILE, aktier), ("etf_er_kontonummer-11112222_2026-11-15.csv", etf)],
+                  [("etf_er_kontonummer-11112222_2026-11-15.csv", etf), (LIST_FILE, aktier)],
+                  [("etf_er_kontonummer-11112222_2026-11-15.csv", etf)]):
+        hs, up, msgs = bs.combine(_reads(*files))
+        assert msgs == [] and not [c for c in bs.plan([volvo], bs.resolve(hs, [volvo], BD), up)
+                                   if c.kind == bs.MISSING]
+
+
+def test_an_account_from_nordnets_contract_notes_is_never_covered_by_a_list(monkeypatch):
+    monkeypatch.setattr(bs, "_pdf_pages", lambda data: [_note("köpt", "SE0000000077", "XACT Bull",
+                                                              [(10, "300,0000", "SEK")])])
+    acct = bs.read_file("t.pdf", b"%PDF x")[1][0].account
+    bull = _row("b", "XBULL.ST", 10, 300.0, extras={"broker_accounts": [f"nordnet_isk:{acct}"]})
+    lst = nordnet_list([("Testbolaget", "SEK", 70, 32.5, "SE0000000001")])
+    assert not [c for c in bs.plan([bull], bs.resolve(bs.read(LIST_FILE, lst)[1], [bull], BD), {bs.NORDNET})
+                if c.kind == bs.MISSING]
+
+
+def test_a_row_on_two_nordnet_depas_is_not_cut_by_one_depas_list():
+    rows = [_row("e", "EQNR.OL", 150, 283.0, name="Equinor",
+                 extras={"isin": "NO0010096985", "broker_accounts": ["nordnet_isk:depå …1111",
+                                                                     "nordnet_isk:depå …2222"]})]
+    lst = nordnet_list([("Equinor", "NOK", 100, 280.0, "NO0010096985")])
+    hs = bs.resolve(bs.read(LIST_FILE, lst)[1], rows, {})
+    c = bs.plan(rows, hs, {bs.NORDNET})[0]
+    assert c.kind == bs.INFO and c.notes[-1] == bs.NN_GAP_NOTE
+    other = nordnet_list([("Volvo B", "SEK", 5, 250.0, "SE0000115446")])      # depå …1111:s lista utan Equinor
+    hs, up, _m = bs.combine(_reads((LIST_FILE, lst), ("aktier_kontonummer-33331111_2026-11-15.csv", other)))
+    c = next(c for c in bs.plan(rows, bs.resolve(hs, rows, {}), up) if c.ticker == "EQNR.OL")
+    assert c.kind == bs.CHANGED and (c.old_qty, c.qty) == (150, 100) and c.pick is True
