@@ -13,48 +13,51 @@ from typing import Optional
 
 # ── ISIN map — add entries here for tickers not resolved via exchange suffix ──
 # Keys are ISINs; values are yfinance tickers.
+# Kontrollerad mot Börsdatas instrumentlistor 2026-11-15 (ISIN → bolag → ticker). Den gamla listan kopplade
+# de flesta nordiska ISIN till fel bolag (SEB A och Sandvik ombytta, Volvo B → Atlas Copco A, Mowi → Telenor …)
+# och hade ISIN som byts ut (Atlas Copco efter splitten, Investor, Boliden, Novo, Sampo). Golden Ocean, REC Silicon
+# och SpareBank 1 SR-Bank finns inte längre hos Börsdata och är borttagna. Lägg bara till rader som är
+# kontrollerade mot en källa — en gissning här ger fel ticker på journalens rader.
 ISIN_MAP: dict[str, str] = {
     # Sweden
-    "SE0000115446": "ATCO-A.ST",   # Atlas Copco A
-    "SE0011166610": "ATCO-B.ST",   # Atlas Copco B
-    "SE0000107419": "VOLV-B.ST",   # Volvo B
-    "SE0000667891": "SEB-A.ST",    # SEB A
-    "SE0000193120": "HM-B.ST",     # H&M B
-    "SE0000108656": "SHB-A.ST",    # Svenska Handelsbanken A
-    "SE0000652216": "INVE-B.ST",   # Investor B
-    "SE0005994832": "ALFA.ST",     # Alfa Laval
-    "SE0000872305": "AZN.ST",      # AstraZeneca (Swedish listing)
-    "SE0000148884": "SAND.ST",     # Sandvik
-    "SE0000667925": "SCA-B.ST",    # SCA B
-    "SE0000869646": "ERIC-B.ST",   # Ericsson B
-    "SE0000112724": "SKF-B.ST",    # SKF B
-    "SE0001116761": "SSAB-A.ST",   # SSAB A
-    "SE0000171100": "BOL.ST",      # Boliden
-    "SE0000101584": "SINCH.ST",    # Sinch
-    "SE0000454746": "NDA-SE.ST",   # Nordea Bank (SE)
+    "SE0017486889": "ATCO-A.ST",   # Atlas Copco A
+    "SE0017486897": "ATCO-B.ST",   # Atlas Copco B
+    "SE0000115446": "VOLV-B.ST",   # Volvo B
+    "SE0000148884": "SEB-A.ST",    # SEB A
+    "SE0000106270": "HM-B.ST",     # H&M B
+    "SE0007100599": "SHB-A.ST",    # Svenska Handelsbanken A
+    "SE0015811963": "INVE-B.ST",   # Investor B
+    "SE0000695876": "ALFA.ST",     # Alfa Laval
+    "GB0009895292": "AZN.ST",      # AstraZeneca (samma ISIN noteras också i London)
+    "SE0000667891": "SAND.ST",     # Sandvik
+    "SE0000112724": "SCA-B.ST",    # SCA B
+    "SE0000667925": "TELIA.ST",    # Telia Company
+    "SE0000108656": "ERIC-B.ST",   # Ericsson B
+    "SE0000108227": "SKF-B.ST",    # SKF B
+    "SE0000171100": "SSAB-A.ST",   # SSAB A
+    "SE0020050417": "BOL.ST",      # Boliden
+    "SE0016101844": "SINCH.ST",    # Sinch
+    "FI4000297767": "NDA-SE.ST",   # Nordea Bank (samma ISIN i Helsingfors och Köpenhamn)
     # Norway
     "NO0010096985": "EQNR.OL",    # Equinor
-    "NO0003054108": "TEL.OL",     # Telenor
-    "NO0010721050": "MOWI.OL",    # Mowi
-    "NO0003733800": "NHY.OL",     # Norsk Hydro
-    "NO0010096922": "DNB.OL",     # DNB Bank
-    "NO0003078900": "ORK.OL",     # Orkla
-    "NO0010081235": "STL.OL",     # Storebrand
-    "NO0003440709": "YAR.OL",     # Yara
-    "NO0005052605": "AKSO.OL",    # Aker Solutions
-    "NO0010140502": "SALM.OL",    # SalMar
-    "NO0003399084": "GOGL.OL",    # Golden Ocean
-    "NO0010209331": "RECSI.OL",   # REC Silicon
-    "NO0003399001": "SRBANK.OL",  # SpareBank 1 SR-Bank
+    "NO0010063308": "TEL.OL",     # Telenor
+    "NO0003054108": "MOWI.OL",    # Mowi
+    "NO0005052605": "NHY.OL",     # Norsk Hydro
+    "NO0010161896": "DNB.OL",     # DNB Bank
+    "NO0003733800": "ORK.OL",     # Orkla
+    "NO0003053605": "STB.OL",     # Storebrand
+    "NO0010208051": "YAR.OL",     # Yara International
+    "NO0010716582": "AKSO.OL",    # Aker Solutions
+    "NO0010310956": "SALM.OL",    # SalMar
     # Finland
     "FI0009000681": "NOKIA.HE",   # Nokia
-    "FI0009008403": "FORTUM.HE",  # Fortum
-    "FI0009013403": "NESTE.HE",   # Neste
-    "FI0009000202": "SAMPO.HE",   # Sampo A
+    "FI0009007132": "FORTUM.HE",  # Fortum
+    "FI0009013296": "NESTE.HE",   # Neste
+    "FI4000552500": "SAMPO.HE",   # Sampo
     # Denmark
-    "DK0060534915": "NOVO-B.CO",  # Novo Nordisk B
-    "DK0010234467": "MAERSK-B.CO", # Maersk B
-    "DK0060079531": "RBREW.CO",   # Royal Unibrew
+    "DK0062498333": "NOVO-B.CO",  # Novo Nordisk B
+    "DK0010244508": "MAERSK-B.CO",  # A.P. Møller-Mærsk B
+    "DK0060634707": "RBREW.CO",   # Royal Unibrew
     # US (common via Nordnet)
     "US0378331005": "AAPL",
     "US5949181045": "MSFT",
