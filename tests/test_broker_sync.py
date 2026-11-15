@@ -253,7 +253,11 @@ def test_the_box_writes_nothing_until_a_button_is_pressed(page):
     at.run()
     assert not at.exception, at.exception
     md = " ".join(m.value for m in at.markdown)
-    assert "TEST-B.ST" in md and "60 → <b>70</b>" in md and "GONE.OL" in md and "Silverfonden" in md
+    labels = {c.key: c.label for c in at.checkbox}
+    assert "antal 60 → **70**" in labels["bsync_ck_row:r1"] and "TEST\\-B\\.ST" in labels["bsync_ck_row:r1"]
+    assert "Silverfonden" in labels["bsync_ck_new:SE0000000003"] and "GONE.OL" in md
+    # fonden saknar ticker: kryssad men räknas inte — knappen säger hur många som faktiskt sparas
+    assert at.button(key="bsync_apply").label == "✅ Uppdatera markerade (2)"
     assert page.saves == []                                                   # visa + ladda upp = inget sparat
     at.button(key="bsync_apply").click().run()
     assert not at.exception, at.exception

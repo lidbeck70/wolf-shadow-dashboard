@@ -56,7 +56,7 @@ def _close(row_id: str, ticker: str, key: str) -> None:
 
 def _apply(changes: list) -> None:
     """on_click: de markerade raderna till registret i en sparning."""
-    picked = [c for c in changes if st.session_state.get(f"bsync_ck_{c.key}")]
+    picked = [c for c in changes if st.session_state.get(f"bsync_ck_{c.key}", True)]
     typed = {c.key: st.session_state.get(f"bsync_t_{c.key}", "") for c in picked if not c.ticker}
     done, skipped, err = bs.apply(picked, typed)
     msg = f"Uppdaterat: {', '.join(done)}." if done else "Inget uppdaterades."
@@ -85,6 +85,42 @@ def _line(c: bs.Change) -> str:
     extra = " · ".join(_esc(n) for n in c.notes)
     return (f"{who} — {body}" + (f" <span style='opacity:.7'>· {_esc(accts)}</span>" if accts else "")
             + (f"<br><span style='opacity:.7;font-size:.85em'>{extra}</span>" if extra else ""))
+
+
+_MD_SPECIAL = "\\`*_{}[]()#+-.!|<>$~"
+
+
+def _md(text) -> str:
+    """Text i en kryssrutas etikett (markdown, ingen HTML): specialtecken skrivs bokstavligt."""
+    return "".join("\\" + ch if ch in _MD_SPECIAL else ch for ch in str(text or ""))
+
+
+def _label(c: bs.Change) -> str:
+    """Kryssrutans etikett — samma innehåll som _line, i markdown, så rutan och texten står på samma rad även på
+    mobilen (kolumner staplas under varandra där)."""
+    who = f"**{_md(c.ticker or '?')}** {_md(c.name)}"
+    unit = f" {_md(c.currency)}" if c.currency else ""
+    if c.kind == bs.CHANGED:
+        q = (f"antal {_md(_fmt(c.old_qty))} → **{_md(_fmt(c.qty))}**" if not bs._same(c.old_qty, c.qty, 1e-6)
+             else f"antal {_md(_fmt(c.qty))}")
+        p = (f" · snittkurs {_md(_fmt(c.old_price))} → **{_md(_fmt(c.price))}**{unit}"
+             if c.price is not None and not bs._same(c.old_price, c.price, 5e-4) else "")
+        body = q + p
+    else:
+        body = f"{_md(_fmt(c.qty))} st" + (f" à {_md(_fmt(c.price))}{unit}" if c.price is not None
+                                           else " · snittkurs saknas")
+    return f"{who} — {body}"
+
+
+def _notes(c: bs.Change) -> str:
+    accts = ", ".join(bs.BROKER_LABEL.get(a.split(':', 1)[0], a) for a in c.accounts)
+    return " · ".join([accts] + list(c.notes)) if accts else " · ".join(c.notes)
+
+
+def _ready(c: bs.Change) -> bool:
+    """Markerad och går att spara: har en ticker, eller en skriven i rutan."""
+    return bool(st.session_state.get(f"bsync_ck_{c.key}", True)) and bool(
+        c.ticker or str(st.session_state.get(f"bsync_t_{c.key}", "") or "").strip())
 
 
 def _uploader():
@@ -135,14 +171,14 @@ def render_broker_sync() -> None:
                 continue
             st.markdown(f"**{titles[kind]}** ({len(group)})")
             for c in group:
-                cols = st.columns([0.08, 0.92] if c.ticker else [0.08, 0.62, 0.30], vertical_alignment="center")
-                cols[0].checkbox("välj", value=True, key=f"bsync_ck_{c.key}", label_visibility="collapsed")
-                cols[1].markdown(_line(c), unsafe_allow_html=True)
+                st.checkbox(_label(c), value=True, key=f"bsync_ck_{c.key}")
                 if not c.ticker:
-                    cols[2].text_input("Ticker", key=f"bsync_t_{c.key}", placeholder="t.ex. HUSQ-B.ST",
-                                       label_visibility="collapsed")
+                    st.text_input(f"Ticker för {c.name or c.isin}", key=f"bsync_t_{c.key}",
+                                  placeholder="t.ex. HUSQ-B.ST — tomt = hoppas över")
+                if _notes(c):
+                    st.caption(_notes(c))
         if actionable:
-            n = sum(1 for c in actionable if st.session_state.get(f"bsync_ck_{c.key}", True))
+            n = sum(1 for c in actionable if _ready(c))
             st.button(f"✅ Uppdatera markerade ({n})", key="bsync_apply", type="primary", disabled=n == 0,
                       on_click=_apply, args=(actionable,))
         gone = [c for c in changes if c.kind == bs.MISSING]
