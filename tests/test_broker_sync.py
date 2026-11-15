@@ -1009,3 +1009,18 @@ def test_a_row_without_known_account_is_not_cut_by_a_nordnet_list_that_does_not_
                             + _reads((LIST_FILE, aktier), ("etf_er_kontonummer-11112222_2026-11-15.csv", etf)))
     c = next(c for c in bs.plan(rows, bs.resolve(hs, rows, bd), up) if c.ticker == "XACT-OMXS30.ST")
     assert c.kind == bs.SAME and c.qty == 150
+
+
+def test_a_nordea_row_is_not_cut_or_sold_while_nordnets_list_has_a_line_without_isin_in_its_currency():
+    nordea = {"isin": "US8740391003", "broker_accounts": ["nordea_ask:ASK Testkonto"],
+              "broker_names": ["Taiwan Semiconductor Mfg"]}
+    rows = [_row("t", "TSM", 80, 145.0, name="TSMC", extras=nordea)]
+    lst = nordnet_list([("Taiwan Semiconductor Manufacturing Co Ltd", "USD", 50, 140.0, "")])
+    xlsx = nordea_xlsx([("US8740391003", "XNYS", "USD", "Taiwan Semiconductor Mfg", 30, 150.0, 4500.0)])
+    hs = bs.resolve(bs.read_file("h.xlsx", xlsx)[1] + bs.read(LIST_FILE, lst)[1], rows, {})
+    c = next(c for c in bs.plan(rows, hs, {bs.NORDEA, bs.NORDNET}) if c.ticker == "TSM")
+    assert c.kind == bs.CHANGED and (c.old_qty, c.qty) == (80, 30) and c.pick is False
+    other = nordea_xlsx([("SE0000115446", "XSTO", "SEK", "Volvo B", 5, 250.0, 1250.0)])     # TSM såld hos Nordea
+    hs = bs.resolve(bs.read_file("h.xlsx", other)[1] + bs.read(LIST_FILE, lst)[1], rows, {})
+    out = [c for c in bs.plan(rows, hs, {bs.NORDEA, bs.NORDNET}) if c.ticker == "TSM"]
+    assert [c.kind for c in out] == [bs.INFO] and "utan ISIN" in out[0].notes[0]

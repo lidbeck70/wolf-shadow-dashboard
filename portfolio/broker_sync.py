@@ -682,6 +682,7 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
     sold_by_isin = {h.isin.upper(): h for h in every if h.sold and h.isin}
     sold_by_name = {_norm(h.name): h for h in every if h.sold and h.name}
     list_accts = {_acct_key(h) for h in every if h.snap and h.broker == NORDNET and h.account != NORDNET}
+    nn_list = any(h.snap and h.broker == NORDNET for h in every)
     holdings = [h for h in every if h.qty]
     # listans rader utan ISIN och säker ticker — en av dem kan vara en rad som annars såg såld ut
     blind = [h for h in holdings if h.broker == NORDNET and h.snap and not h.isin and h.how in ("", BY_NAME)]
@@ -794,15 +795,16 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
         if tx:
             notes.append(TX_NOTE)
         # utan känt konto kan Nordnet-delen också stå i listan utan ISIN
-        loose = not _row_accounts(row) and NORDNET in uploaded and not any(h.broker == NORDNET for h in hs)
-        blind_here = _blind_for(row, blind) if (nn_gap or loose) and not same_q else []
+        no_nn = not any(h.broker == NORDNET for h in hs)
+        loose = not _row_accounts(row) and NORDNET in uploaded and no_nn
+        # en Nordnet-del kan stå i listan utan ISIN även för en rad som hittills bara legat hos Nordea
+        blind_here = _blind_for(row, blind) if (nn_gap or loose or (nn_list and no_nn)) and not same_q else []
         if blind_here:                               # Nordnet-delen kan stå i listan utan ISIN
             notes.append("Nordnets innehavslista har " + ", ".join(sorted(h.name for h in blind_here))
                          + " utan ISIN — står Nordnet-delen där? Kryssa i bara om den är såld")
         # Nordnet bara som transaktioner visar inte allt Nordnet har — räknas som saknad för en rad utan känt konto.
         # En lista visar bara sin depå och tabell, så den räcker inte heller när kortet saknar Nordnet-innehav
         # (raden kan ha en del i en annan tabell eller depå).
-        nn_list = any(h.snap and h.broker == NORDNET for h in every)
         missing_brokers = sorted(({NORDEA, NORDNET} - uploaded) | (set() if nn_list and not loose else {NORDNET}))
         unsure = not _row_accounts(row) and missing_brokers and not same_q
         if unsure:                                   # raden kan också ligga hos mäklaren vars fil saknas
@@ -876,6 +878,12 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
                     f"finns inte i Nordnets innehavslista med ISIN eller ticker — listan har {names} utan ISIN; är "
                     f"det raden, skriv {r['ticker']} där. Annars: stäng raden själv"]))
                 continue
+        elif nn_list and _blind_for(r, blind):           # Nordea-raden kan ha flyttat till Nordnet utan ISIN
+            names = ", ".join(sorted(h.name for h in _blind_for(r, blind)))
+            out.append(Change(INFO, f"info:row:{r['id']}", *ident, **old, notes=[
+                f"finns inte i mäklarens fil — Nordnets innehavslista har {names} utan ISIN; är det raden, skriv "
+                f"{r['ticker']} där. Annars: stäng raden själv"]))
+            continue
         note = "finns inte i Nordnets innehavslista — såld?" if NORDNET in _brokers_of(accts) \
             else "finns inte i mäklarens fil — såld?"
         out.append(Change(MISSING, f"miss:{r['id']}", *ident, notes=[note], **old))
