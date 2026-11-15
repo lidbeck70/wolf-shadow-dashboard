@@ -944,7 +944,7 @@ def test_a_row_without_known_account_is_not_cut_when_the_nordnet_part_may_be_a_l
     hs = bs.resolve(bs.read_file("h.xlsx", xlsx)[1] + bs.read(LIST_FILE, lst)[1], rows, {"US8740391003": "TSM"})
     c = next(c for c in bs.plan(rows, hs, {bs.NORDEA, bs.NORDNET}) if c.ticker == "TSM")
     assert c.kind == bs.CHANGED and (c.old_qty, c.qty) == (80, 30) and c.pick is False
-    assert "Taiwan Semiconductor Manufacturing Co Ltd" in c.notes[-1]
+    assert any("Taiwan Semiconductor Manufacturing Co Ltd" in n for n in c.notes)
 
 
 def test_only_the_aktier_list_is_the_aktier_table_whatever_the_other_file_names():
@@ -990,3 +990,22 @@ def test_a_row_on_two_nordnet_depas_is_not_cut_by_one_depas_list():
     hs, up, _m = bs.combine(_reads((LIST_FILE, lst), ("aktier_kontonummer-33331111_2026-11-15.csv", other)))
     c = next(c for c in bs.plan(rows, bs.resolve(hs, rows, {}), up) if c.ticker == "EQNR.OL")
     assert c.kind == bs.CHANGED and (c.old_qty, c.qty) == (150, 100) and c.pick is True
+
+
+# ── Bekräftelserunda 3 ───────────────────────────────────────────────────────
+def test_a_row_without_known_account_is_not_cut_by_a_nordnet_list_that_does_not_show_it():
+    """XACT 150 för hand: 100 hos Nordea, 50 i Nordnets ETF-tabell. Aktielistan (eller fondlistan, eller en annan
+    depås lista) visar inte ETF:en — 150 → 100 kryssas inte i. Med ETF-listan blir summan rätt och kryssad."""
+    xlsx = nordea_xlsx([("SE0000000066", "XSTO", "SEK", "XACT OMXS30", 100, 300.0, 30000.0)])
+    rows = [_row("x", "XACT-OMXS30.ST", 150, 300.0, name="XACT OMXS30")]
+    bd = {"SE0000000066": "XACT-OMXS30.ST"}
+    aktier = nordnet_list([("Volvo B", "SEK", 5, 250.0, "SE0000115446")])
+    for name in (LIST_FILE, "fonder_kontonummer-11112222_2026-11-15.csv", "aktier_kontonummer-33334444_2026-11-15.csv"):
+        hs, up, _m = bs.combine([("h.xlsx", *bs.read("h.xlsx", xlsx)[:2], bs.LIST)] + _reads((name, aktier)))
+        c = next(c for c in bs.plan(rows, bs.resolve(hs, rows, bd), up) if c.ticker == "XACT-OMXS30.ST")
+        assert c.kind == bs.CHANGED and (c.old_qty, c.qty) == (150, 100) and c.pick is False, name
+    etf = nordnet_list([("XACT OMXS30", "SEK", 50, 300.0, "SE0000000066")])
+    hs, up, _m = bs.combine([("h.xlsx", *bs.read("h.xlsx", xlsx)[:2], bs.LIST)]
+                            + _reads((LIST_FILE, aktier), ("etf_er_kontonummer-11112222_2026-11-15.csv", etf)))
+    c = next(c for c in bs.plan(rows, bs.resolve(hs, rows, bd), up) if c.ticker == "XACT-OMXS30.ST")
+    assert c.kind == bs.SAME and c.qty == 150

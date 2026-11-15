@@ -799,9 +799,11 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
         if blind_here:                               # Nordnet-delen kan stå i listan utan ISIN
             notes.append("Nordnets innehavslista har " + ", ".join(sorted(h.name for h in blind_here))
                          + " utan ISIN — står Nordnet-delen där? Kryssa i bara om den är såld")
-        # Nordnet bara som transaktioner visar inte allt Nordnet har — räknas som saknad för en rad utan känt konto
+        # Nordnet bara som transaktioner visar inte allt Nordnet har — räknas som saknad för en rad utan känt konto.
+        # En lista visar bara sin depå och tabell, så den räcker inte heller när kortet saknar Nordnet-innehav
+        # (raden kan ha en del i en annan tabell eller depå).
         nn_list = any(h.snap and h.broker == NORDNET for h in every)
-        missing_brokers = sorted(({NORDEA, NORDNET} - uploaded) | (set() if nn_list else {NORDNET}))
+        missing_brokers = sorted(({NORDEA, NORDNET} - uploaded) | (set() if nn_list and not loose else {NORDNET}))
         unsure = not _row_accounts(row) and missing_brokers and not same_q
         if unsure:                                   # raden kan också ligga hos mäklaren vars fil saknas
             notes.append("raden har inget känt konto — innehavet kan också ligga hos "
