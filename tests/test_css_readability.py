@@ -63,10 +63,12 @@ FIELDS = (".stSelectbox input", ".stTextInput input", ".stNumberInput input",
 def test_streamlit_config_forces_the_dark_base_theme():
     with open(os.path.join(ROOT, ".streamlit", "config.toml"), "rb") as fh:
         cfg = tomllib.load(fh)
-    assert cfg == {"theme": {"base": "dark"}}          # bara base: knappar/piller som förut
+    assert cfg["theme"] == {"base": "dark"}            # bara base: knappar/piller som förut
+    assert cfg.get("browser", {}) == {"gatherUsageStats": False}    # statistiken av (inloggningsbryggan, auth.py)
     from streamlit import config
-    for key in cfg["theme"]:
-        config.get_option(f"theme.{key}")              # Streamlit känner nyckeln
+    for section, opts in cfg.items():
+        for key in opts:
+            config.get_option(f"{section}.{key}")      # Streamlit känner nyckeln
     ignored = [ln.strip() for ln in _src(".gitignore").splitlines()]
     assert ".streamlit/" not in ignored and ".streamlit" not in ignored
     assert ".streamlit/secrets.toml" in ignored        # hemligheterna förblir utanför git
