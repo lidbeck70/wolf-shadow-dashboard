@@ -392,10 +392,11 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
         notes = ["ingen ticker hittad — skriv den för att lägga till"] + (
             [f"summa av {len(accts)} konton"] if len(accts) > 1 else []) + ([note] if note else [])
         card_names[f"new:{key}"] = [h.name for h in hs]
-        if any(h.unsure for h in hs):
+        shaky = any(h.unsure for h in hs)
+        if shaky:
             notes.append(SHAKY_NOTE)
         out.append(Change(NEW, f"new:{key}", None, hs[0].name, hs[0].isin, accts, qty=_qty(sum(h.qty for h in hs)),
-                          price=round(avg, 6) if avg else None, currency=hs[0].currency, notes=notes))
+                          price=round(avg, 6) if avg else None, currency=hs[0].currency, notes=notes, pick=not shaky))
     rows_by_t: dict = {}
     for r in rows:
         rows_by_t.setdefault(r["ticker"].strip().upper(), []).append(r)
@@ -485,13 +486,16 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
         tk = frozenset(_tokens(r.get("name") or ""))
         if tk:
             rows_by_tokens.setdefault(tk, []).append(r)
+    # en rad räknas som upptagen bara när ett eget ändrat/stämmer-kort matchade den — inte när tickern bara finns
+    # bland innehaven (Börsdata kan ge en annan aktie raden fel ticker, och det kortet blir då bara text)
+    matched = {c.row["id"] for c in out if c.kind in (CHANGED, SAME) and c.row is not None}
     for c in out:
         if c.kind not in (NEW, CHANGED):
             continue
         tks = {frozenset(_tokens(n)) for n in card_names.get(c.key, [c.name]) if _tokens(n)}
         others = list({r["id"]: r for tk in tks for r in rows_by_tokens.get(tk, [])
                        if r["ticker"].strip().upper() != (c.ticker or "").strip().upper()
-                       and (c.kind == NEW or r["ticker"].strip().upper() not in held)}.values())
+                       and (c.kind == NEW or r["id"] not in matched)}.values())
         if not others:
             continue
         c.pick = False

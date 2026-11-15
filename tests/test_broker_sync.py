@@ -540,3 +540,25 @@ def test_a_nordnet_split_makes_the_count_uncertain_and_never_sold():
     sold = split + [("2025-03-01", "SÅLT", "NVIDIA", "US67066G1040", 60, 120.0)]
     hs = bs.resolve(bs.read_file("t.csv", nordnet_csv(sold))[1], rows, {})
     assert not [c for c in bs.plan(rows, hs, {bs.NORDNET}) if c.kind == bs.MISSING]
+
+
+# ── Sjunde rundans fynd ──────────────────────────────────────────────────────
+def test_a_borsdata_ticker_on_a_text_only_card_does_not_retick_the_changed_card():
+    xlsx = nordea_xlsx([("SE0000148884", "XSTO", "SEK", "Skandinaviska Enskilda Banken ser. A", 50, 140.0, 7000.0),
+                        ("SE0000667891", "XSTO", "SEK", "Sandvik AB", 20, 220.0, 4400.0)])
+    rows = [_row("n", "SEB-A.ST", 50, 140.0, name="Skandinaviska Enskilda Banken ser. A",
+                 extras={"isin": "SE0000148884", "broker_accounts": ["nordea_ask:ASK Testkonto"]}),
+            _row("s", "SAND.ST", 100, 150.0, name="SEB A", notes="import · nordnet_isk · SEK")]
+    hs = bs.read_file("h.xlsx", xlsx)[1] + bs.read_file("t.csv", SEB_CSV)[1]
+    bd = {"SE0000148884": "SEB-A.ST", "SE0000667891": "SAND.ST"}
+    out = bs.plan(rows, bs.resolve(hs, rows, bd), {bs.NORDEA, bs.NORDNET})
+    c = next(c for c in out if c.ticker == "SEB-A.ST")
+    assert c.kind == bs.CHANGED and c.pick is False and "SAND.ST" in c.notes[-1]
+
+
+def test_an_uncertain_nordnet_holding_without_ticker_is_not_ticked():
+    split = [("2024-01-02", "KÖPT", "NVIDIA", "US67066G1040", 10, 500.0),
+             ("2024-06-10", "SPLIT INLÄGG VP", "NVIDIA", "US67066G1040", 100, 0.0),
+             ("2024-06-10", "SPLIT UTTAG VP", "NVIDIA", "US67066G1040", 10, 0.0)]
+    c = bs.plan([], bs.resolve(bs.read_file("t.csv", nordnet_csv(split))[1], [], {}), {bs.NORDNET})[0]
+    assert c.kind == bs.NEW and c.ticker is None and c.pick is False
