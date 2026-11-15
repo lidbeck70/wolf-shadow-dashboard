@@ -14,7 +14,14 @@ import streamlit as st
 # kakan är giltig. Kakan innehåller bara utgångstid + HMAC, aldrig lösenordet.
 # Byts lösenordet blir alla gamla kakor ogiltiga. Kakan förnyas vid varje ny
 # session, så den löper ut först efter REMEMBER_DAYS utan besök.
+#
+# Bryggan: på Streamlit Cloud når kakan inte fram till appen (st.context.cookies är tom bakom Clouds proxy), så
+# inloggningen glömdes ändå. Därför sparas samma signerade token också i webbläsarens localStorage, och
+# inloggningssidan har ett litet skript som läser den i webbläsaren och laddar om sidan med ?wolf_t=<token>.
+# Appen prövar token, släpper in och tar bort parametern ur adressen direkt. Ett försök per token och flik
+# (sessionStorage), så en ogiltig eller utgången token ger aldrig en omladdningsslinga.
 COOKIE_NAME = "wolf_auth"
+QUERY_KEY = "wolf_t"
 REMEMBER_DAYS = 30
 
 
@@ -42,12 +49,12 @@ def token_valid(token, password: str, now: Optional[float] = None) -> bool:
     try:
         exp_s, sig = str(token or "").split(".", 1)
         exp = int(exp_s)
-    except (ValueError, TypeError):
+        if exp < (time.time() if now is None else now):
+            return False
+        want = hmac.new(_sign_key(password), exp_s.encode("ascii"), hashlib.sha256).hexdigest()
+        return hmac.compare_digest(sig.encode("utf-8"), want.encode("ascii"))
+    except (ValueError, TypeError, UnicodeError):   # även en påhittad ?wolf_t= med andra tecken: falskt, aldrig fel
         return False
-    if exp < (time.time() if now is None else now):
-        return False
-    want = hmac.new(_sign_key(password), exp_s.encode("ascii"), hashlib.sha256).hexdigest()
-    return hmac.compare_digest(sig, want)
 
 
 def _cookie_token() -> str:
@@ -57,15 +64,55 @@ def _cookie_token() -> str:
         return ""
 
 
+def _query_token() -> str:
+    try:
+        return str(st.query_params.get(QUERY_KEY) or "")
+    except Exception:
+        return ""
+
+
+def _drop_query_token() -> None:
+    """Token ska aldrig ligga kvar i adressraden (historik, en delad länk)."""
+    try:
+        if QUERY_KEY in st.query_params:
+            del st.query_params[QUERY_KEY]
+    except Exception:
+        pass
+
+
 def _set_cookie(token: str) -> None:
-    """Skriver kakan i webbläsaren (JavaScript i sidan; Streamlit kan bara läsa kakor). Secure på https."""
+    """Skriver kakan och localStorage i webbläsaren (JavaScript i sidan; Streamlit kan bara läsa kakor). Secure på
+    https. localStorage är det bryggan läser när kakan inte når fram till appen."""
     js = (
         "<script>(function(){var s=location.protocol==='https:'?'; Secure':'';"
         f"document.cookie='{COOKIE_NAME}={token}; Max-Age={REMEMBER_DAYS * 86400}; Path=/; SameSite=Lax'+s;"
+        f"try{{localStorage.setItem('{COOKIE_NAME}','{token}');}}catch(e){{}}"
         "})();</script>"
     )
     try:
         st.html(js, unsafe_allow_javascript=True)
+    except Exception:
+        pass
+
+
+# Körs på inloggningssidan. Sparad token (localStorage, annars kakan) → ladda om sidan med den i adressen, en gång
+# per token och flik. Ingen token, fel form eller redan provad: ingenting händer och inloggningsrutan står kvar.
+_BRIDGE_JS = (
+    "<script>(function(){try{"
+    "var k='" + COOKIE_NAME + "',q='" + QUERY_KEY + "';"
+    "var t=localStorage.getItem(k)||'';"
+    "if(!t){var m=document.cookie.match(new RegExp('(?:^|; )'+k+'=([^;]+)'));t=m?m[1]:'';}"
+    "if(!/^[0-9]{1,12}[.][0-9a-f]{64}$/.test(t))return;"
+    "if(sessionStorage.getItem('wolf_bridge')===t)return;"
+    "sessionStorage.setItem('wolf_bridge',t);"
+    "var u=new URL(location.href);u.searchParams.set(q,t);location.replace(u.toString());"
+    "}catch(e){}})();</script>"
+)
+
+
+def _bridge() -> None:
+    try:
+        st.html(_BRIDGE_JS, unsafe_allow_javascript=True)
     except Exception:
         pass
 
@@ -78,6 +125,13 @@ def render_login_gate() -> bool:
     if not st.session_state.authenticated and token_valid(_cookie_token(), _password()):
         st.session_state.authenticated = True             # sparad inloggning från en tidigare session
         st.session_state["_auth_cookie_pending"] = True    # förnya kakan, så att 30 dagar räknas från nu
+
+    qtok = _query_token()
+    if qtok:
+        if not st.session_state.authenticated and token_valid(qtok, _password()):
+            st.session_state.authenticated = True          # bryggan: token ur webbläsarens localStorage
+            st.session_state["_auth_cookie_pending"] = True
+        _drop_query_token()                                # aldrig kvar i adressraden, giltig eller inte
 
     if st.session_state.authenticated:
         if st.session_state.pop("_auth_cookie_pending", False):
@@ -161,8 +215,8 @@ def render_login_gate() -> bool:
 
     col_l, col_m, col_r = st.columns([1, 1, 1])
     with col_m:
-        password = st.text_input("", type="password", key="login_pw",
-                                  placeholder="Enter access code...")
+        password = st.text_input("Access code", type="password", key="login_pw", label_visibility="collapsed",
+                                 placeholder="Enter access code...")
         if st.button("ACCESS SYSTEM", use_container_width=True, key="login_btn"):
             if password == _password():
                 st.session_state.authenticated = True
@@ -171,4 +225,5 @@ def render_login_gate() -> bool:
             else:
                 st.error("Access denied")
 
+    _bridge()
     return False
