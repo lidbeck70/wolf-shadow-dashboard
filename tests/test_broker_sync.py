@@ -1024,3 +1024,15 @@ def test_a_nordea_row_is_not_cut_or_sold_while_nordnets_list_has_a_line_without_
     hs = bs.resolve(bs.read_file("h.xlsx", other)[1] + bs.read(LIST_FILE, lst)[1], rows, {})
     out = [c for c in bs.plan(rows, hs, {bs.NORDEA, bs.NORDNET}) if c.ticker == "TSM"]
     assert [c.kind for c in out] == [bs.INFO] and "utan ISIN" in out[0].notes[0]
+
+
+def test_a_new_nordea_card_is_not_ticked_while_nordnets_list_has_the_same_stock_without_isin():
+    xlsx = nordea_xlsx([("US8740391003", "XNYS", "USD", "Taiwan Semiconductor Mfg", 30, 150.0, 4500.0)])
+    lst = nordnet_list([("Taiwan Semiconductor Manufacturing Co Ltd", "USD", 50, 140.0, ""),
+                        ("Volvo B", "SEK", 5, 250.0, "SE0000115446")])
+    hs = bs.resolve(bs.read_file("h.xlsx", xlsx)[1] + bs.read(LIST_FILE, lst)[1], [],
+                    {"US8740391003": "TSM", "SE0000115446": "VOLV-B.ST"})
+    by = {c.ticker or c.name: c for c in bs.plan([], hs, {bs.NORDEA, bs.NORDNET})}
+    assert by["TSM"].kind == bs.NEW and by["TSM"].pick is False and "Skriv TSM där" in by["TSM"].notes[-1]
+    assert by["VOLV-B.ST"].pick is True                                      # annan aktie: orörd
+    assert by["Taiwan Semiconductor Manufacturing Co Ltd"].ticker is None

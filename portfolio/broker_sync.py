@@ -744,9 +744,15 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
             card_names[f"new:{t}"] = [h.name for h in hs]
             shaky = any(h.unsure or h.isin.upper() in shaky_isins for h in hs)
             tx = bool(_tx(hs))
+            # samma aktie kan stå i Nordnets lista utan ISIN (eget kort utan ticker) — då är detta bara en del
+            tk = set().union(*(_tokens(h.name) for h in hs))
+            twins = [] if any(h.broker == NORDNET for h in hs) else [
+                b for b in blind if (not b.currency or b.currency == ccy) and _tokens(b.name) & tk]
+            twin_note = ([f"Nordnets innehavslista har {', '.join(sorted(b.name for b in twins))} utan ISIN — samma "
+                          f"aktie? Skriv {t} där så räknas båda ihop"] if twins else [])
             out.append(Change(NEW, f"new:{t}", t, name, isin, accts, qty=qty, price=price, currency=ccy,
-                              notes=notes + ([_shaky_note(hs)] if shaky else []) + ([TX_NOTE] if tx else []),
-                              pick=not shaky and not tx))
+                              notes=notes + ([_shaky_note(hs)] if shaky else []) + ([TX_NOTE] if tx else [])
+                              + twin_note, pick=not shaky and not tx and not twins))
             continue
         if len(rs) > 1:
             out.append(Change(INFO, f"info:{t}", t, name, isin, accts, qty=qty, price=price, currency=ccy,
