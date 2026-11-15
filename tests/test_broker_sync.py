@@ -562,3 +562,18 @@ def test_an_uncertain_nordnet_holding_without_ticker_is_not_ticked():
              ("2024-06-10", "SPLIT UTTAG VP", "NVIDIA", "US67066G1040", 10, 0.0)]
     c = bs.plan([], bs.resolve(bs.read_file("t.csv", nordnet_csv(split))[1], [], {}), {bs.NORDNET})[0]
     assert c.kind == bs.NEW and c.ticker is None and c.pick is False
+
+
+# ── Åttonde rundans fynd ─────────────────────────────────────────────────────
+def test_shares_moved_into_nordnet_make_the_same_isin_at_nordea_uncertain():
+    """40 Investor B flyttade in till Nordnet (INLÄGG VP, inget köp i filen), 30 hos Nordea, en rad om 70: ändringen
+    70 → 30 kryssas inte i."""
+    xlsx = nordea_xlsx([("SE0015811963", "XSTO", "SEK", "Investor AB ser. B", 30, 251.0, 7530.0)])
+    csv = nordnet_csv([("2026-01-02", "KÖPT", "Volvo B", "SE0000115446", 10, 260.0),
+                       ("2025-05-02", "INLÄGG VP", "Investor B", "SE0015811963", 40, 0.0)])
+    rows = [_row("h2", "INVE-B.ST", 70, 250.0, strategy="Quality", name="Investor B", stop=200.0)]
+    hs = bs.read_file("h.xlsx", xlsx)[1] + bs.read_file("t.csv", csv)[1]
+    out = bs.plan(rows, bs.resolve(hs, rows, {"SE0015811963": "INVE-B.ST", "SE0000115446": "VOLV-B.ST"}),
+                  {bs.NORDEA, bs.NORDNET})
+    c = next(c for c in out if c.ticker == "INVE-B.ST")
+    assert c.kind == bs.CHANGED and c.qty == 30 and c.pick is False and bs.SHAKY_NOTE in c.notes

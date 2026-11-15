@@ -377,6 +377,9 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
     every = list(holdings)                           # spöken (antal 0, osäkra Nordnet-ISIN) räknas bara mot 'såld?'
     ghosts = {h.isin.upper() for h in every if not h.qty and h.isin}
     holdings = [h for h in every if h.qty]
+    # osäkra ISIN från alla innehav, spöken inräknade: Nordnet-aktier som flyttats in eller fått nytt ISIN vid en
+    # split syns inte i köpen — samma ISIN hos Nordea är då bara en del av innehavet
+    shaky_isins = {h.isin.upper() for h in every if h.unsure and h.isin}
     out: List[Change] = []
     groups: dict = {}
     unknown: dict = {}
@@ -392,7 +395,7 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
         notes = ["ingen ticker hittad — skriv den för att lägga till"] + (
             [f"summa av {len(accts)} konton"] if len(accts) > 1 else []) + ([note] if note else [])
         card_names[f"new:{key}"] = [h.name for h in hs]
-        shaky = any(h.unsure for h in hs)
+        shaky = any(h.unsure or h.isin.upper() in shaky_isins for h in hs)
         if shaky:
             notes.append(SHAKY_NOTE)
         out.append(Change(NEW, f"new:{key}", None, hs[0].name, hs[0].isin, accts, qty=_qty(sum(h.qty for h in hs)),
@@ -426,7 +429,7 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
         rs = rows_by_t.get(t, [])
         if not rs:
             card_names[f"new:{t}"] = [h.name for h in hs]
-            shaky = any(h.unsure for h in hs)
+            shaky = any(h.unsure or h.isin.upper() in shaky_isins for h in hs)
             out.append(Change(NEW, f"new:{t}", t, name, isin, accts, qty=qty, price=price, currency=ccy,
                               notes=notes + ([SHAKY_NOTE] if shaky else []), pick=not shaky))
             continue
@@ -459,7 +462,7 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
         same_p = price is None or _same(old_p, price, 5e-4)
         if by_name:
             notes.append("tickern gissad ur namnet — kryssa i om det stämmer")
-        shaky = any(h.unsure for h in hs)
+        shaky = any(h.unsure or h.isin.upper() in shaky_isins for h in hs)
         if shaky and not same_q:
             notes.append(SHAKY_NOTE)
         missing_brokers = sorted({NORDEA, NORDNET} - uploaded)
