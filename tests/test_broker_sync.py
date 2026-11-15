@@ -1,0 +1,267 @@
+"""
+📥 Uppdatera från mäklaren (portfolio/broker_sync, broker_sync_ui) — påhittade filer, inget nätverk.
+
+1. Nordeas innehavslista (.xlsx): rubrikraden letas upp, kassakonton hoppas över, fondens snittkurs ur
+   anskaffningsvärdet när den saknas.
+2. Nordnets transaktionsexport (.csv): innehaven ur FIFO.
+3. Planen: ny / ändrad / stämmer / saknas / bara text — konton slås ihop bara när alla kontona är uppladdade.
+4. apply: en sparning, bara antal och snittkurs (stopp, mål, strategi orörda); nya rader som Untagged.
+5. Sidan: inget skrivs när rutan visas eller en fil laddas upp — bara knapparna skriver.
+"""
+import copy
+import io
+import logging
+import os
+import sys
+
+import pytest
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+logging.disable(logging.CRITICAL)
+
+from portfolio import broker_sync as bs   # noqa: E402
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+HEAD = ("Type", "AccountKey", "Account", "POA", "FREE/PENSION", "Value on account level",
+        "Value change on account level", "ISIN", "MIC", "CURRENCY", "NAME", "HOLDINGS", "PRICE", "PRICETIME",
+        "PRICETYPE", "Value change (currency)", "Value change (%)", "PRICEFACTOR", "FX", "Average purchase price",
+        "A.FX", "Purchase value of current holdings", "Current Value", "Value in base currency", "Base currency")
+
+
+def nordea_xlsx(rows) -> bytes:
+    """Nordeas 'My holdings' i samma form: tidsstämpel, rubrikrad, rader. rows: (isin, mic, ccy, namn, antal,
+    snitt, anskaffningsvärde)."""
+    import openpyxl
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Holdings"
+    ws.append(["01.01.2026 08:00:00"])
+    ws.append(list(HEAD))
+    for isin, mic, ccy, name, qty, avg, cost in rows:
+        d = dict.fromkeys(HEAD)
+        d.update({"Type": "Custody", "AccountKey": "ASK:1", "Account": "ASK Testkonto", "ISIN": isin, "MIC": mic,
+                  "CURRENCY": ccy, "NAME": name, "HOLDINGS": qty, "PRICE": 1.0, "Average purchase price": avg,
+                  "Purchase value of current holdings": cost, "Base currency": "NOK"})
+        ws.append([d[h] for h in HEAD])
+    ws.append(["CashAccount", "KS:1"] + [None] * (len(HEAD) - 2))
+    out = io.BytesIO()
+    wb.save(out)
+    return out.getvalue()
+
+
+def nordnet_csv(trades) -> bytes:
+    """Nordnets transaktionsexport: UTF-16, tabb, 27 kolumner. trades: (datum, typ, namn, isin, antal, kurs)."""
+    lines = ["\t".join(f"c{i}" for i in range(27))]
+    for day, typ, name, isin, qty, px in trades:
+        cols = [""] * 27
+        cols[2], cols[5], cols[6], cols[7] = day, typ, name, isin
+        cols[8], cols[9], cols[12], cols[13] = str(qty).replace(".", ","), str(px).replace(".", ","), "SEK", "0"
+        lines.append("\t".join(cols))
+    return ("\n".join(lines) + "\n").encode("utf-16")
+
+
+FILE = nordea_xlsx([("SE0000000001", "XSTO", "SEK", "Testbolag B", 70, 32.5271, 2000.0),
+                    ("NO0000000002", "XOSL", "NOK", "Oljebolaget", 605, 12.0916, 7300.0),
+                    ("SE0000000003", "FONDANO", "NOK", "Silverfonden", 20, 0.0, 8000.0)])
+BD = {"SE0000000001": "TEST-B.ST", "NO0000000002": "OLJE.OL"}
+
+
+# 1. Nordea
+def test_nordea_holdings_list_is_read_from_its_header_row():
+    broker, hs, errors = bs.read_file("My_holdings.xlsx", FILE)
+    assert broker == bs.NORDEA and errors == []
+    assert [(h.isin, h.qty, h.currency) for h in hs] == [("SE0000000001", 70, "SEK"), ("NO0000000002", 605, "NOK"),
+                                                         ("SE0000000003", 20, "NOK")]
+    assert hs[0].avg_price == pytest.approx(32.5271) and hs[0].mic == "XSTO"
+    assert hs[2].avg_price == pytest.approx(400.0)              # fonden: 8000 NOK ÷ 20 i kontots basvaluta
+
+
+def test_a_pdf_or_other_file_says_what_to_upload():
+    _b, hs, errors = bs.read_file("transaction-export.pdf", b"%PDF-1.4")
+    assert hs == [] and "CSV" in errors[0]
+    _b, hs, errors = bs.read_file("x.json", b"{}")
+    assert hs == [] and "Okänd filtyp" in errors[0]
+
+
+# 2. Nordnet
+def test_nordnet_holdings_come_from_fifo_over_the_transactions():
+    data = nordnet_csv([("2026-01-02", "KÖPT", "Volvo B", "SE0000115446", 10, 100.0),
+                        ("2026-02-02", "KÖPT", "Volvo B", "SE0000115446", 10, 120.0),
+                        ("2026-03-02", "SÅLT", "Volvo B", "SE0000115446", 5, 130.0)])
+    broker, hs, _errors = bs.read_file("transactions-and-notes-export.csv", data)
+    assert broker == bs.NORDNET and len(hs) == 1
+    assert hs[0].qty == 15 and hs[0].avg_price == pytest.approx((5 * 100 + 10 * 120) / 15, rel=1e-4)
+
+
+# 3. Planen
+def _row(rid, ticker, shares, price, strategy="Untagged", **kw):
+    return {"id": rid, "ticker": ticker, "name": kw.pop("name", ""), "strategy": strategy, "shares": shares,
+            "entry_price": price, "notes": kw.pop("notes", ""), "extras": kw.pop("extras", {}), **kw}
+
+
+def _hold():
+    _b, hs, _e = bs.read_file("h.xlsx", FILE)
+    return bs.resolve(hs, [], BD)
+
+
+def test_plan_sorts_new_changed_same_missing_and_text():
+    rows = [_row("r1", "TEST-B.ST", 60, 32.53, name="Testbolag B"),          # antal ändrat
+            _row("r2", "OLJE.OL", 605, 12.09),                                # stämmer
+            _row("r3", "GONE.OL", 10, 50.0, notes="import · nordea_ask · NOK"),   # hos Nordea, inte i filen
+            _row("r4", "NEM", 5, 50.0)]                                       # inget konto: rörs inte
+    by = {c.ticker or c.name: c for c in bs.plan(rows, _hold(), {bs.NORDEA})}
+    assert by["TEST-B.ST"].kind == bs.CHANGED and (by["TEST-B.ST"].old_qty, by["TEST-B.ST"].qty) == (60, 70)
+    assert by["OLJE.OL"].kind == bs.SAME
+    assert by["GONE.OL"].kind == bs.MISSING
+    assert "NEM" not in by
+    assert by["Silverfonden"].kind == bs.NEW and by["Silverfonden"].ticker is None
+
+
+def test_a_ticker_on_two_rows_or_on_an_account_not_uploaded_is_text_only():
+    rows = [_row("a", "TEST-B.ST", 10, 30.0, strategy="Quality"), _row("b", "TEST-B.ST", 10, 30.0, strategy="Wolf")]
+    c = next(c for c in bs.plan(rows, _hold(), {bs.NORDEA}) if c.ticker == "TEST-B.ST")
+    assert c.kind == bs.INFO and "2 rader" in c.notes[-1]
+    rows = [_row("a", "TEST-B.ST", 100, 30.0, extras={"broker_accounts": ["nordea_ask:ASK Testkonto",
+                                                                          "nordnet_isk:nordnet_isk"]})]
+    c = next(c for c in bs.plan(rows, _hold(), {bs.NORDEA}) if c.ticker == "TEST-B.ST")
+    assert c.kind == bs.INFO and "Nordnet ISK" in c.notes[-1]
+
+
+def test_two_uploaded_accounts_are_summed_and_the_price_only_in_the_listing_currency():
+    hs = _hold()
+    data = nordnet_csv([("2026-01-02", "KÖPT", "Testbolag B", "SE0000000001", 30, 40.0)])
+    _b, nn, _e = bs.read_file("t.csv", data)
+    hs = bs.resolve(hs + nn, [], BD)
+    c = next(c for c in bs.plan([], hs, {bs.NORDEA, bs.NORDNET}) if c.ticker == "TEST-B.ST")
+    assert c.kind == bs.NEW and c.qty == 100 and "summa av 2 konton" in c.notes
+    assert c.price == pytest.approx((70 * 32.5271 + 30 * 40) / 100, abs=0.01)
+
+
+def test_the_average_is_not_offered_at_or_below_the_rows_stop():
+    rows = [_row("r1", "TEST-B.ST", 70, 30.0, stop=33.0)]
+    c = next(c for c in bs.plan(rows, _hold(), {bs.NORDEA}) if c.ticker == "TEST-B.ST")
+    assert c.price is None and any("stoppen" in n for n in c.notes)
+
+
+def test_resolve_prefers_the_rows_saved_isin_then_borsdata_then_a_matching_name():
+    rows = [_row("r1", "MINE.ST", 1, 1.0, extras={"isin": "SE0000000001"}), _row("r2", "OLJ.OL", 1, 1.0,
+                                                                                 name="Oljebolaget")]
+    _b, hs, _e = bs.read_file("h.xlsx", FILE)
+    hs = bs.resolve(hs, rows, {})
+    want = [("MINE.ST", "ISIN sparat på raden"), ("OLJ.OL", "namnet liknar radens")]
+    assert [(h.ticker, h.how) for h in hs[:2]] == want
+
+
+def test_isin_map_uses_the_market_suffix():
+    import markets as mk
+    table = mk.current()
+    mid = next(m.id for m in table.values() if m.suffix == ".ST" and m.kind == mk.STOCK)
+    assert bs.isin_map([{"isin": "SE0000000001", "ticker": "TEST B", "marketId": mid}], table) == \
+        {"SE0000000001": "TEST-B.ST"}
+
+
+# 4. apply
+@pytest.fixture
+def registry(monkeypatch):
+    import streamlit
+    import storage
+    state: dict = {}
+    saves: list = []
+    seed = {"holdings": {"swing": [], "ovtlyr": [], "momentum": [], "tiggre": [], "closed": [], "cash": 0,
+                         "long": [_row("r1", "TEST-B.ST", 60, 30.0, strategy="Quality", stop=25.0, target=60.0,
+                                       notes="egen anteckning")]}}
+    monkeypatch.setattr(streamlit, "session_state", state)
+    monkeypatch.setattr(storage, "session_load", lambda name, default=None, legacy_file=None:
+                        state.setdefault(name, copy.deepcopy(seed.get(name, default))))
+    monkeypatch.setattr(storage, "save_session",
+                        lambda name: saves.append(copy.deepcopy(state[name])) or storage.SaveResult(name, "a", "u", "t"))
+    return state, saves
+
+
+def test_apply_writes_quantity_and_price_once_and_leaves_stop_target_strategy(registry):
+    state, saves = registry
+    import positions
+    changes = bs.plan(positions.all_positions(), _hold(), {bs.NORDEA})
+    picked = [c for c in changes if c.kind in (bs.NEW, bs.CHANGED)]
+    done, skipped, err = bs.apply(picked, {"new:SE0000000003": "silv.fund"}, today="2026-11-15")
+    assert err is None and len(saves) == 1                                   # en sparning
+    assert sorted(done) == ["OLJE.OL", "SILV.FUND", "TEST-B.ST"] and skipped == []
+    rows = {r["ticker"]: r for r in state["holdings"]["long"]}
+    t = rows["TEST-B.ST"]
+    assert (t["shares"], t["entry_price"], t["stop"], t["target"], t["strategy"], t["notes"]) == \
+        (70, 32.53, 25.0, 60.0, "Quality", "egen anteckning")
+    assert t["extras"]["isin"] == "SE0000000001" and t["extras"]["broker_accounts"] == ["nordea_ask:ASK Testkonto"]
+    assert rows["OLJE.OL"]["strategy"] == "Untagged" and rows["OLJE.OL"]["shares"] == 605
+    assert rows["OLJE.OL"]["source"] == "broker" and rows["OLJE.OL"]["entry_date"] == "2026-11-15"
+    assert rows["SILV.FUND"]["entry_price"] == 400.0
+
+
+def test_apply_skips_a_new_holding_without_a_ticker_and_writes_nothing_when_nothing_is_done(registry):
+    _state, saves = registry
+    fund = bs.Change(bs.NEW, "new:X", None, "Silverfonden", "SE0000000003", ("nordea_ask:A",), qty=1, price=1.0)
+    done, skipped, err = bs.apply([fund], {})
+    assert done == [] and skipped == ["Silverfonden: ticker saknas"] and err is None and saves == []
+
+
+# 5. Sidan
+@pytest.fixture
+def page(monkeypatch):
+    from streamlit.testing.v1 import AppTest
+    import gist_storage
+    import refresh_ui
+    import storage
+    saves: list = []
+    data = {"holdings": {"swing": [], "ovtlyr": [], "momentum": [], "tiggre": [], "closed": [], "cash": 0,
+                         "long": [_row("r1", "TEST-B.ST", 60, 30.0, strategy="Quality", name="Testbolag B"),
+                                  _row("r3", "GONE.OL", 10, 50.0, notes="import · nordea_ask · NOK")]}}
+    monkeypatch.setattr(storage, "load_json", lambda n, default=None: copy.deepcopy(data.get(n, default)))
+    monkeypatch.setattr(storage, "legacy_gist", lambda f: None)
+    monkeypatch.setattr(refresh_ui, "load_refresh", lambda: {})
+    monkeypatch.setattr(gist_storage, "load_blob", lambda n, default=None: default)
+
+    def _save(n):
+        import streamlit as st
+        saves.append((n, copy.deepcopy(st.session_state[n])))
+        return storage.SaveResult(n, "abc1234def", "https://x", "2026-11-15T10:00:00Z")
+    monkeypatch.setattr(storage, "save_session", _save)
+
+    from portfolio import broker_sync_ui as ui
+
+    class F(io.BytesIO):
+        name = "My_holdings.xlsx"
+
+    def make(with_file: bool):
+        monkeypatch.setattr(ui, "_uploader", (lambda: [F(FILE)]) if with_file else (lambda: []))
+
+        def app(root, bd):
+            import sys as _s
+            _s.path.insert(0, root)
+            import streamlit as st
+            from portfolio import broker_sync_ui as u
+            st.session_state.setdefault(u.BD_MAP, bd)
+            u.render_broker_sync()
+        return AppTest.from_function(app, args=(ROOT, BD), default_timeout=60)
+    make.saves = saves
+    return make
+
+
+def test_the_box_writes_nothing_until_a_button_is_pressed(page):
+    at = page(False)
+    at.run()
+    assert not at.exception, at.exception
+    at = page(True)
+    at.run()
+    assert not at.exception, at.exception
+    md = " ".join(m.value for m in at.markdown)
+    assert "TEST-B.ST" in md and "60 → <b>70</b>" in md and "GONE.OL" in md and "Silverfonden" in md
+    assert page.saves == []                                                   # visa + ladda upp = inget sparat
+    at.button(key="bsync_apply").click().run()
+    assert not at.exception, at.exception
+    assert len(page.saves) == 1
+    long = {r["ticker"]: r for r in page.saves[-1][1]["long"]}
+    assert long["TEST-B.ST"]["shares"] == 70 and long["TEST-B.ST"]["strategy"] == "Quality"
+    assert "OLJE.OL" in long and "Silverfonden" not in {r["name"] for r in long.values()}   # utan ticker: hoppas
+    at.button(key="bsync_close_r3").click().run()
+    assert not at.exception, at.exception
+    closed = page.saves[-1][1]["closed"]
+    assert [r["ticker"] for r in closed] == ["GONE.OL"] and closed[0]["exit_reason"] == "Såld enligt mäklaren"

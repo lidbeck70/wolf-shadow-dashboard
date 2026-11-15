@@ -1089,6 +1089,11 @@ def render_holdings_page() -> None:
     import storage_ui
     storage_ui.save_bar(STORE, "Holdings")
     _render_summary_header()
+    try:                                           # mäklarens filer → antal och snittkurs (sparas bara på klick)
+        from portfolio.broker_sync_ui import render_broker_sync
+        render_broker_sync()
+    except Exception as exc:                       # rutan får aldrig fälla Positioner
+        st.caption(f"Mäklarimporten gick inte att visa: {type(exc).__name__}")
 
     # Per-strategy sections
     all_flat = _get_all_holdings_flat()
