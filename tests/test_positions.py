@@ -195,3 +195,29 @@ def test_holdings_page_renders_from_the_register(monkeypatch):
     assert at.session_state["holdings"]["long"][0]["ticker"] == "BOL.ST"
     assert any(b.label == "💾 Spara" for b in at.button)                  # sparraden finns
     assert any("BOL.ST" in m.value for m in at.markdown)
+
+
+# ── Kursen: en miss sparas inte i 15 minuter ─────────────────────────────────
+def test_a_failed_price_fetch_is_not_cached_and_a_bad_ticker_is_never_asked(monkeypatch):
+    import pandas as pd
+    import holdings
+    calls = []
+
+    class T:
+        def __init__(self, t):
+            self.t = t
+
+        def history(self, period="6mo", auto_adjust=True):
+            calls.append(self.t)
+            if len(calls) <= 2:                                   # Yahoo strular två gånger
+                return pd.DataFrame()
+            return pd.DataFrame({"Close": [100.0, 102.0]}, index=pd.to_datetime(["2026-11-13", "2026-11-14"]))
+    monkeypatch.setattr(holdings.yf, "Ticker", T)
+    holdings._fetch_live_price_cached.clear()
+    holdings._PRICE_MISSES.clear()
+    assert holdings._fetch_live_price("HUSQ-B.ST")["price"] == 0 and len(calls) == 2      # två försök, sedan 0
+    assert holdings._fetch_live_price("HUSQ-B.ST")["price"] == 0 and len(calls) == 2      # missen minns en minut
+    monkeypatch.setattr(holdings, "_MISS_SECONDS", 0)
+    got = holdings._fetch_live_price("HUSQ-B.ST")
+    assert got["price"] == 102.0 and round(got["change_1d"], 2) == 2.0                    # ingen sparad miss
+    assert holdings._fetch_live_price("AUAG SILVERBULLET")["price"] == 0 and len(calls) == 3   # aldrig frågad
