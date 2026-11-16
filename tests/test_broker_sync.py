@@ -1107,3 +1107,40 @@ def test_the_box_looks_up_yahoo_on_click_only(page, monkeypatch):
     assert calls == ["Kanadagruvan"] and page.saves == []                        # sökt, inget sparat
     assert _box(at, "new:KAN.V").value is True and "KAN\\.V" in _box(at, "new:KAN.V").label
     assert not [b for b in at.button if b.key == "bsync_bd"]                     # knappen borta när allt sökts
+
+
+# ── Fonder och ogiltiga tickers ──────────────────────────────────────────────
+FUNDS = {"SE0000000077": [_q("0P0000AAAA.ST", "STO", "Silverfonden A", "MUTUALFUND")],
+         "Silverfonden": [_q("0P0000AAAA.ST", "STO", "Silverfonden A", "MUTUALFUND"),
+                          _q("0P0000BBBB.F", "FRA", "Silverfonden EUR", "MUTUALFUND")],
+         "Bara Namn Fond": [_q("0P0000CCCC.ST", "STO", "Bara Namn Fond", "MUTUALFUND"),
+                            _q("BNF", "NYQ", "Bara Namn Fond Inc.")],
+         "NO0000000088": [], "Oljebolaget": [_q("OLJE.OL", "OSL", "Oljebolaget ASA")]}
+
+
+def test_a_fund_gets_yahoos_fund_code_by_isin_and_a_stock_by_nordeas_mic():
+    fund = bs.Holding(bs.NORDEA, "ASK", "SE0000000077", "Silverfonden EUR", "NOK", 27.4689, mic="FONDANO", snap=True)
+    named = bs.Holding(bs.NORDEA, "ASK", "", "Bara Namn Fond", "SEK", 3, mic="FONDANO", snap=True)
+    oil = bs.Holding(bs.NORDEA, "ASK", "NO0000000088", "Oljebolaget", "NOK", 10, mic="XOSL", snap=True)
+    got = bs.yahoo_tickers([fund, named, oil], lambda q: FUNDS.get(q, []))
+    assert [got.get(bs.yahoo_key(h)) for h in (fund, named, oil)] == ["0P0000AAAA.ST", "0P0000CCCC.ST", "OLJE.OL"]
+
+
+def test_a_row_whose_ticker_is_a_fund_name_is_text_and_the_typed_name_is_refused(registry):
+    state, saves = registry
+    import positions
+    xlsx = nordea_xlsx([("SE0000000077", "FONDANO", "NOK", "Silverfonden EUR", 27.4689, 0.0, 8000.0)])
+    positions.load()
+    state["holdings"]["long"].append(_row("bad", "AUAG SILVERBULLET", 27.4689, 0.0, name="Silverfonden EUR",
+                                          extras={"isin": "SE0000000077", "broker_accounts": ["nordea_ask:ASK Testkonto"]}))
+    rows = positions.all_positions()
+    hs = bs.resolve(bs.read_file("h.xlsx", xlsx)[1], rows, {})
+    assert hs[0].ticker is None                                       # den sparade 'tickern' används inte
+    out = {c.key: c for c in bs.plan(rows, hs, {bs.NORDEA})}
+    assert out["info:bad:bad"].kind == bs.INFO and "ingen Yahoo-ticker" in out["info:bad:bad"].notes[0]
+    assert not [c for c in out.values() if c.kind == bs.MISSING]
+    new = out["new:SE0000000077"]
+    done, skipped, err = bs.apply([new], {new.key: "AuAg Silverbullet"})
+    assert done == [] and "är ingen ticker" in skipped[0] and saves == []
+    hs = bs.resolve(bs.read_file("h.xlsx", xlsx)[1], rows, {}, bs.yahoo_tickers(hs, lambda q: FUNDS.get(q, [])))
+    assert hs[0].ticker == "0P0000AAAA.ST" and hs[0].how == bs.YAHOO

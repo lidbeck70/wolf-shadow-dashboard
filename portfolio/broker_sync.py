@@ -523,6 +523,15 @@ _YH_MARKETS = {
     "nasdaq helsinki": ({"HEL"}, ".HE"), "nasdaq copenhagen": ({"CPH"}, ".CO"),
 }
 _YH_CCY = {"USD": (_US, ""), "CAD": ({"TOR", "VAN", "CNQ"}, None)}     # okänd börs: valutan (None = ändelsen prövas ej)
+# Nordeas MIC → Yahoos börskoder och ändelse (när Börsdata inte känner ISIN:et)
+_YH_MIC = {"XSTO": ({"STO"}, ".ST"), "XOSL": ({"OSL"}, ".OL"), "XCSE": ({"CPH"}, ".CO"), "XHEL": ({"HEL"}, ".HE"),
+           "XNYS": ({"NYQ"}, ""), "XNAS": ({"NMS", "NGM", "NCM", "NAS"}, ""), "XASE": ({"ASE"}, ""),
+           "XTSE": ({"TOR"}, ".TO"), "XTSX": ({"VAN"}, ".V"), "XETR": ({"GER"}, ".DE"), "XLON": ({"LSE"}, ".L")}
+
+
+def _is_fund(h: Holding) -> bool:
+    """En fond: Nordeas MIC 'FOND…' (FONDANO) eller Nordnets fondlista ('fonder_kontonummer-…')."""
+    return (h.broker == NORDEA and (h.mic or "").upper().startswith("FOND")) or h.account.endswith("· fonder")
 
 
 def yahoo_key(h: Holding) -> str:
@@ -540,18 +549,22 @@ def _yh_search(query: str) -> list:
 
 def yahoo_tickers(holdings: Iterable[Holding], search=None) -> dict:
     """{yahoo_key: Yahoo-ticker} för innehav utan ticker: Yahoos sökning på ISIN (när det finns), annars namnet. En
-    träff räknas bara när börsen är Nordnets (kolumnen Market; utan den valutan: USD = USA, CAD = Kanada), namnet
-    har samma ord (det ena rymmer det andra — 'Franco-Nevada' = 'Franco-Nevada Corporation') och sökningen ger
-    exakt en ticker. Annars ingen — skriv den själv. search(fråga) → [citat] kan bytas ut (tester)."""
+    träff räknas bara när börsen är Nordnets (kolumnen Market) eller Nordeas (MIC) — utan dem valutan: USD = USA,
+    CAD = Kanada —, namnet har samma ord (det ena rymmer det andra — 'Franco-Nevada' = 'Franco-Nevada
+    Corporation') och sökningen ger exakt en ticker. Fonder (_is_fund) har Yahoos fondkoder ('0P0000ULAP.ST'):
+    bara fondträffar räknas, på ISIN:et (en andelsklass) eller på exakt samma namn. Annars ingen — skriv den själv.
+    search(fråga) → [citat] kan bytas ut (tester)."""
     search = search or _yh_search
     out: dict = {}
     for h in holdings:
         k = yahoo_key(h)
-        rule = _YH_MARKETS.get(_norm(h.market)) or _YH_CCY.get((h.currency or "").upper())
+        fund = _is_fund(h)
+        rule = None if fund else (_YH_MARKETS.get(_norm(h.market)) or _YH_MIC.get((h.mic or "").upper())
+                                  or _YH_CCY.get((h.currency or "").upper()))
         want = _tokens(h.name)
-        if k in out or not rule or not want:
+        if k in out or not want or not (fund or rule):
             continue
-        exch, suffix = rule
+        exch, suffix = rule or (set(), None)
         for q in [x for x in (h.isin, h.name) if x]:
             try:
                 quotes = search(q) or []
@@ -560,13 +573,20 @@ def yahoo_tickers(holdings: Iterable[Holding], search=None) -> dict:
             syms = set()
             for qt in quotes:
                 sym = str((qt or {}).get("symbol") or "").strip().upper()
-                if not sym or str(qt.get("quoteType") or "").upper() not in ("EQUITY", "ETF"):
+                kind = str((qt or {}).get("quoteType") or "").upper()
+                names = [_tokens(qt.get(f) or "") for f in ("longname", "shortname")]
+                if not sym:
                     continue
-                if str(qt.get("exchange") or "").upper() not in exch:
+                if fund:                             # ISIN:et pekar ut andelsklassen; namnet måste vara exakt
+                    if kind == "MUTUALFUND" and (q == h.isin and any(_resembles(h.name, qt.get(f) or "")
+                                                                     for f in ("longname", "shortname"))
+                                                 or any(got == want for got in names)):
+                        syms.add(sym)
+                    continue
+                if kind not in ("EQUITY", "ETF") or str(qt.get("exchange") or "").upper() not in exch:
                     continue
                 if suffix is not None and not (sym.endswith(suffix) if suffix else "." not in sym):
                     continue
-                names = [_tokens(qt.get(f) or "") for f in ("longname", "shortname")]
                 if any(got and (want <= got or got <= want) for got in names):
                     syms.add(sym)
             if len(syms) == 1:
@@ -582,7 +602,7 @@ def resolve(holdings: List[Holding], rows: Iterable[dict], bd_map: Optional[dict
     samma, så ett ISIN lånat ur transaktionerna inte stänger av kopplingen), Börsdata (bd_map), Yahoo (yh_map ur
     yahoo_tickers: namn och börs), sist ett namn som strängt liknar en rads namn i samma valuta. Utan träff förblir
     tickern None (skrivs i rutan)."""
-    rows = [r for r in rows or [] if isinstance(r, dict)]
+    rows = [r for r in rows or [] if isinstance(r, dict) and ticker_ok(r.get("ticker"))]   # 'AUAG SILVERBULLET' nej
     by_isin, by_name = {}, {}
     for r in rows:
         i = _row_isin(r)
@@ -749,6 +769,9 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
     from portfolio import position_hints as ph
     rows = [r for r in rows or [] if isinstance(r, dict) and r.get("ticker")]
     uploaded = set(uploaded or ())
+    # en rad vars ticker inte är en Yahoo-ticker (ett fondnamn) får ingen kurs — text: ta bort och lägg till igen
+    bad = [r for r in rows if not ticker_ok(r["ticker"]) and _brokers_of(_row_accounts(r)) & uploaded]
+    rows = [r for r in rows if ticker_ok(r["ticker"])]
     every = list(holdings)                           # spöken och sålda (antal 0) räknas bara mot 'såld?'
     ghosts = {h.isin.upper() for h in every if not h.qty and h.unsure and h.isin}
     sold_by_isin = {h.isin.upper(): h for h in every if h.sold and h.isin}
@@ -965,6 +988,13 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
         note = "finns inte i Nordnets innehavslista — såld?" if NORDNET in _brokers_of(accts) \
             else "finns inte i mäklarens fil — såld?"
         out.append(Change(MISSING, f"miss:{r['id']}", *ident, notes=[note], **old))
+    for r in bad:
+        out.append(Change(INFO, f"info:bad:{r['id']}", r["ticker"], str(r.get("name") or ""), _row_isin(r),
+                          tuple(sorted(_row_accounts(r))), row=r, old_qty=positions._num(r.get("shares")),
+                          old_price=positions._num(r.get("entry_price")),
+                          notes=[f"'{r['ticker']}' är ingen Yahoo-ticker, så raden får ingen kurs — ta bort raden (✕) "
+                                 f"och lägg till innehavet igen härifrån (🔎 Hitta tickers ger fonder deras "
+                                 f"Yahoo-kod)"]))
     for c in out:                                    # mäklarens namn sparas på raden (apply)
         if c.kind in (NEW, CHANGED, SAME):
             c.names = tuple(sorted({n for n in card_names.get(c.key, [c.name]) if n}))
@@ -973,6 +1003,14 @@ def plan(rows: Iterable[dict], holdings: List[Holding], uploaded: Iterable[str])
 
 
 # ── 4. Sparningen ───────────────────────────────────────────────────────────
+_TICKER = re.compile(r"[A-Z0-9][A-Z0-9.\-^=&]{0,24}")
+
+
+def ticker_ok(t) -> bool:
+    """Ser ut som en Yahoo-ticker: inga mellanslag eller andra tecken ('AUAG SILVERBULLET' är ett fondnamn)."""
+    return bool(_TICKER.fullmatch(str(t or "").strip().upper()))
+
+
 def _add_names(ex: dict, names: Iterable[str]) -> None:
     """Mäklarens namn på raden (extras.broker_names) — så hittas raden nästa gång även utan ISIN."""
     new = {str(n).strip() for n in names or () if str(n or "").strip()}
@@ -1013,6 +1051,10 @@ def apply(changes: Iterable[Change], typed: Optional[dict] = None, today: str = 
             t = str(c.ticker or typed.get(c.key) or "").strip().upper()
             if not t:
                 skipped.append(f"{c.name or c.isin}: ticker saknas")
+                continue
+            if not ticker_ok(t):
+                skipped.append(f"{c.name or c.isin}: '{t}' är ingen ticker (en Yahoo-ticker har inga mellanslag — "
+                               f"tryck 🔎 Hitta tickers, eller skriv koden från Yahoo)")
                 continue
             bucket = positions.bucket_for("Untagged")
             hits = [(b, r) for b in positions.BUCKET_KEYS for r in data[b] if r["ticker"] == t]

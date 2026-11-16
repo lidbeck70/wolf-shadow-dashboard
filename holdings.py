@@ -165,23 +165,52 @@ def _edit_holding_field(portfolio_key: str, ticker: str, field: str, value) -> N
 
 # ── Live data & signals ───────────────────────────────────────────────────────
 
+class _NoPrice(Exception):
+    """Yahoo gav ingen kurs — kastas så att st.cache_data inte sparar missen."""
+
+
 @st.cache_data(ttl=900, show_spinner=False)
+def _fetch_live_price_cached(ticker: str, period: str = "6mo") -> dict:
+    tk = yf.Ticker(ticker)
+    df = tk.history(period=period, auto_adjust=True)
+    if df.index.tz is not None:
+        df.index = df.index.tz_localize(None)
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
+    if df.empty or "Close" not in df or df["Close"].dropna().empty:
+        raise _NoPrice(ticker)
+    close = df["Close"].dropna()
+    price = float(close.iloc[-1])
+    prev = float(close.iloc[-2]) if len(close) > 1 else price
+    change = (price / prev - 1) * 100
+    return {"price": price, "change_1d": change, "df": df}
+
+
+_PRICE_MISSES: dict = {}          # (ticker, period) → tid för senaste missen
+_MISS_SECONDS = 60
+
+
 def _fetch_live_price(ticker: str, period: str = "6mo") -> dict:
-    try:
-        tk = yf.Ticker(ticker)
-        df = tk.history(period=period, auto_adjust=True)
-        if df.index.tz is not None:
-            df.index = df.index.tz_localize(None)
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
-        if df.empty:
-            return {"price": 0, "change_1d": 0, "df": None}
-        price = float(df["Close"].iloc[-1])
-        prev = float(df["Close"].iloc[-2]) if len(df) > 1 else price
-        change = (price / prev - 1) * 100
-        return {"price": price, "change_1d": change, "df": df}
-    except Exception:
-        return {"price": 0, "change_1d": 0, "df": None}
+    """Senaste kursen ur Yahoo, sparad i 15 min. En miss (Yahoo strular, rate limit) sparas bara en minut — förut
+    stod kursen 0.00 en kvart efter en enda tillfällig miss. Ett nytt försök direkt. En ticker med mellanslag är
+    ingen Yahoo-ticker och frågas aldrig."""
+    import time
+    none = {"price": 0, "change_1d": 0, "df": None}
+    t = str(ticker or "").strip()
+    if not t or any(ch.isspace() for ch in t):
+        return none
+    key = (t, period)
+    if time.time() - _PRICE_MISSES.get(key, 0.0) < _MISS_SECONDS:
+        return none
+    for _try in range(2):
+        try:
+            got = _fetch_live_price_cached(t, period)
+            _PRICE_MISSES.pop(key, None)
+            return got
+        except Exception:
+            continue
+    _PRICE_MISSES[key] = time.time()
+    return none
 
 
 def _compute_swing_signal(df: pd.DataFrame) -> dict:
