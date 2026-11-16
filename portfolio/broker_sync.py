@@ -66,6 +66,7 @@ class Holding:
     unsure: bool = False          # antalet kan vara fel (Nordnet: split, flytt eller sälj utan köp i filen)
     sold: bool = False            # Nordnet: allt sålt enligt filen (antal 0) — beviset för 'såld?'
     snap: bool = False            # ur en innehavslista: antal och snittkurs är mäklarens, valutan instrumentets
+    market: str = ""              # Nordnets innehavslista: börsen ('New York Stock Exchange') — för Yahoo-uppslaget
 
 
 @dataclass
@@ -290,7 +291,8 @@ def parse_nordnet_positions(data: bytes, filename: str = "") -> tuple:
             errors.append(f"Nordnet: {name} — antal × senaste kurs stämmer inte med värdet i listan; kryssas inte i")
         out.append(Holding(NORDNET, acct, isin if _ISIN.fullmatch(isin) else "", name,
                            str(d.get("Valuta") or "").strip().upper(), _qty(qty),
-                           round(avg, 6) if avg and avg > 0 else None, snap=True, unsure=unsure))
+                           round(avg, 6) if avg and avg > 0 else None, snap=True, unsure=unsure,
+                           market=str(d.get("Market") or "").strip()))
     if not out:
         errors.append("Nordnet: inga innehav i innehavslistan.")
     return out, errors, True
@@ -507,11 +509,79 @@ def _row_names(row: dict) -> set:
     return {_norm(n) for n in names if isinstance(n, str) and n.strip()} if isinstance(names, (list, tuple)) else set()
 
 
-def resolve(holdings: List[Holding], rows: Iterable[dict], bd_map: Optional[dict] = None) -> List[Holding]:
+# ── Yahoo: tickern ur namn och börs (Nordnets innehavslista saknar ISIN för USA och Kanada) ──
+YAHOO = "Yahoo (namn och börs)"
+_US = {"NYQ", "NMS", "NGM", "NCM", "NAS", "ASE", "PCX", "BTS"}
+# Nordnets börsnamn (kolumnen Market) → Yahoos börskoder och tickerns ändelse ('' = ingen punkt: USA)
+_YH_MARKETS = {
+    "new york stock exchange": ({"NYQ"}, ""), "nyse": ({"NYQ"}, ""), "nyse american": ({"ASE"}, ""),
+    "nyse arca": ({"PCX"}, ""), "nasdaq": ({"NMS", "NGM", "NCM", "NAS"}, ""), "cboe bzx": ({"BTS"}, ""),
+    "toronto stock exchange": ({"TOR"}, ".TO"), "toronto venture exchange": ({"VAN"}, ".V"),
+    "tsx venture exchange": ({"VAN"}, ".V"), "canadian securities exchange": ({"CNQ"}, ".CN"),
+    "xetra": ({"GER"}, ".DE"), "london stock exchange": ({"LSE"}, ".L"), "oslo børs": ({"OSL"}, ".OL"),
+    "nasdaq stockholm ab": ({"STO"}, ".ST"), "nasdaq stockholm": ({"STO"}, ".ST"),
+    "nasdaq helsinki": ({"HEL"}, ".HE"), "nasdaq copenhagen": ({"CPH"}, ".CO"),
+}
+_YH_CCY = {"USD": (_US, ""), "CAD": ({"TOR", "VAN", "CNQ"}, None)}     # okänd börs: valutan (None = ändelsen prövas ej)
+
+
+def yahoo_key(h: Holding) -> str:
+    """Innehavets nyckel i Yahoo-uppslaget (namn, valuta, börs, ISIN)."""
+    return f"{_norm(h.name)}|{(h.currency or '').upper()}|{_norm(h.market)}|{h.isin.upper()}"
+
+
+def _yh_search(query: str) -> list:
+    """Yahoos sökning (yfinance.Search) → citaten. Inget nätverk förrän knappen trycks."""
+    import yfinance as yf
+    res = yf.Search(query, max_results=10, news_count=0, lists_count=0, include_cb=False, timeout=8,
+                    raise_errors=False)
+    return list(res.quotes or [])
+
+
+def yahoo_tickers(holdings: Iterable[Holding], search=None) -> dict:
+    """{yahoo_key: Yahoo-ticker} för innehav utan ticker: Yahoos sökning på ISIN (när det finns), annars namnet. En
+    träff räknas bara när börsen är Nordnets (kolumnen Market; utan den valutan: USD = USA, CAD = Kanada), namnet
+    har samma ord (det ena rymmer det andra — 'Franco-Nevada' = 'Franco-Nevada Corporation') och sökningen ger
+    exakt en ticker. Annars ingen — skriv den själv. search(fråga) → [citat] kan bytas ut (tester)."""
+    search = search or _yh_search
+    out: dict = {}
+    for h in holdings:
+        k = yahoo_key(h)
+        rule = _YH_MARKETS.get(_norm(h.market)) or _YH_CCY.get((h.currency or "").upper())
+        want = _tokens(h.name)
+        if k in out or not rule or not want:
+            continue
+        exch, suffix = rule
+        for q in [x for x in (h.isin, h.name) if x]:
+            try:
+                quotes = search(q) or []
+            except Exception:
+                quotes = []
+            syms = set()
+            for qt in quotes:
+                sym = str((qt or {}).get("symbol") or "").strip().upper()
+                if not sym or str(qt.get("quoteType") or "").upper() not in ("EQUITY", "ETF"):
+                    continue
+                if str(qt.get("exchange") or "").upper() not in exch:
+                    continue
+                if suffix is not None and not (sym.endswith(suffix) if suffix else "." not in sym):
+                    continue
+                names = [_tokens(qt.get(f) or "") for f in ("longname", "shortname")]
+                if any(got and (want <= got or got <= want) for got in names):
+                    syms.add(sym)
+            if len(syms) == 1:
+                out[k] = syms.pop()
+                break
+    return out
+
+
+def resolve(holdings: List[Holding], rows: Iterable[dict], bd_map: Optional[dict] = None,
+            yh_map: Optional[dict] = None) -> List[Holding]:
     """Fyller Holding.ticker i ordningen: radens sparade ISIN (en tidigare uppdatering), mäklarens namn sparat på
     raden (Nordnets innehavslista för USA och Kanada saknar ofta ISIN — gäller rader utan sparat ISIN eller med
-    samma, så ett ISIN lånat ur transaktionerna inte stänger av kopplingen), Börsdata (bd_map), sist ett namn som
-    strängt liknar en rads namn i samma valuta. Utan träff förblir tickern None (skrivs i rutan)."""
+    samma, så ett ISIN lånat ur transaktionerna inte stänger av kopplingen), Börsdata (bd_map), Yahoo (yh_map ur
+    yahoo_tickers: namn och börs), sist ett namn som strängt liknar en rads namn i samma valuta. Utan träff förblir
+    tickern None (skrivs i rutan)."""
     rows = [r for r in rows or [] if isinstance(r, dict)]
     by_isin, by_name = {}, {}
     for r in rows:
@@ -531,6 +601,8 @@ def resolve(holdings: List[Holding], rows: Iterable[dict], bd_map: Optional[dict
             h.ticker, h.how = next(iter(saved)), SAVED_NAME
         elif bd_map and isin in bd_map:
             h.ticker, h.how = bd_map[isin], "Börsdata (ISIN)"
+        elif yh_map and yahoo_key(h) in yh_map:
+            h.ticker, h.how = yh_map[yahoo_key(h)], YAHOO
         else:
             hit = _name_match(h, rows)
             if hit:

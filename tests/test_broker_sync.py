@@ -64,9 +64,9 @@ LIST_HEAD = ("Namn", "Valuta", "Antal", "GAV", "Idag %", "Senaste kurs", "Belån
              "Värde\xa0SEK", "Avkast. %", "Avkast.\xa0SEK", "ISIN", "Market")
 
 
-def nordnet_list(rows, last=None) -> bytes:
+def nordnet_list(rows, last=None, market=None) -> bytes:
     """Nordnets innehavslista: UTF-16, tabb, decimalkomma, hårda mellanslag i rubrikerna. rows: (namn, valuta, antal,
-    GAV, ISIN). Senaste kurs = GAV (eller last), värdet = antal × kurs."""
+    GAV, ISIN). Senaste kurs = GAV (eller last), värdet = antal × kurs, börsen Nasdaq (eller market[namn])."""
     def sv(x):
         return str(x).replace(".", ",")
     lines = ["\t".join(LIST_HEAD)]
@@ -74,7 +74,7 @@ def nordnet_list(rows, last=None) -> bytes:
         px = (last or {}).get(name, gav)
         value = (last or {}).get(f"{name}:värde", qty * px)
         lines.append("\t".join([name, ccy, sv(qty), sv(gav), "0", sv(px), "0", sv(value), sv(value), "0", "0", isin,
-                                "Nasdaq"]))
+                                (market or {}).get(name, "Nasdaq")]))
     return ("\n".join(lines) + "\n").encode("utf-16")
 
 
@@ -1036,3 +1036,74 @@ def test_a_new_nordea_card_is_not_ticked_while_nordnets_list_has_the_same_stock_
     assert by["TSM"].kind == bs.NEW and by["TSM"].pick is False and "Skriv TSM där" in by["TSM"].notes[-1]
     assert by["VOLV-B.ST"].pick is True                                      # annan aktie: orörd
     assert by["Taiwan Semiconductor Manufacturing Co Ltd"].ticker is None
+
+
+# ── Yahoo: tickern ur namn och börs (listan saknar ISIN för USA och Kanada) ──
+def _q(sym, exch, name, kind="EQUITY"):
+    return {"symbol": sym, "exchange": exch, "quoteType": kind, "longname": name, "shortname": name[:20]}
+
+
+YAHOO = {"Agnico Eagle Mines": [_q("AEM", "NYQ", "Agnico Eagle Mines Limited"),
+                                _q("AEM.TO", "TOR", "Agnico Eagle Mines Limited"),
+                                _q("AEM.F", "FRA", "Agnico Eagle Mines Limited")],
+         "Kanadagruvan": [_q("KAN.V", "VAN", "Kanadagruvan Corp."), _q("KANGF", "PNK", "Kanadagruvan Corp.")],
+         "Lundin Gold": [_q("LUMI.ST", "STO", "Lundin Mining Corporation")],
+         "Dubbel": [_q("DUB", "NYQ", "Dubbel Inc."), _q("DUBB", "NYQ", "Dubbel Inc.")],
+         "IE00B4L5Y983": [_q("EUNL.DE", "GER", "iShares Core MSCI World UCITS ETF USD (Acc)", "ETF"),
+                          _q("IWDA.AS", "AMS", "iShares Core MSCI World UCITS ETF USD (Acc)", "ETF")]}
+
+
+def _yh(q):
+    return YAHOO.get(q, [])
+
+
+def _h(name, ccy, market="", isin=""):
+    return bs.Holding(bs.NORDNET, "depå …2222", isin, name, ccy, 1, 1.0, snap=True, market=market)
+
+
+def test_yahoo_finds_the_ticker_on_nordnets_exchange_and_only_a_single_sure_one():
+    hs = [_h("Agnico Eagle Mines", "USD", "New York Stock Exchange"),
+          _h("Agnico Eagle Mines", "CAD", "Toronto Stock Exchange"),
+          _h("Kanadagruvan", "CAD", "Toronto Venture Exchange"),
+          _h("Lundin Gold", "SEK", "Nasdaq Stockholm AB"),                         # annat bolag: ingen träff
+          _h("Dubbel", "USD", "New York Stock Exchange"),                          # två tickers: ingen
+          _h("iShares Core MSCI World ETF", "EUR", "Xetra", isin="IE00B4L5Y983"),  # ISIN:et först
+          _h("Agnico Eagle Mines", "USD"),                                         # utan börs: valutan
+          _h("Okänt", "USD", "New York Stock Exchange")]
+    got = bs.yahoo_tickers(hs, _yh)
+    assert [got.get(bs.yahoo_key(h)) for h in hs] == ["AEM", "AEM.TO", "KAN.V", None, None, "EUNL.DE", "AEM", None]
+    assert bs.yahoo_tickers([_h("Agnico Eagle Mines", "USD", "New York Stock Exchange")],
+                            lambda q: 1 / 0) == {}                                 # Yahoo nere: inget, inget fel
+
+
+def test_a_yahoo_ticker_gives_a_ticked_new_card_and_the_name_is_saved_for_next_time():
+    lst = nordnet_list([("Agnico Eagle Mines", "USD", 4, 120.0, "")],
+                       market={"Agnico Eagle Mines": "New York Stock Exchange"})
+    hs = bs.read(LIST_FILE, lst)[1]
+    assert hs[0].market == "New York Stock Exchange"                               # kolumnen Market
+    hs = bs.resolve(hs, [], {}, bs.yahoo_tickers(hs, _yh))
+    assert (hs[0].ticker, hs[0].how) == ("AEM", bs.YAHOO)
+    c = bs.plan([], hs, {bs.NORDNET})[0]
+    assert c.kind == bs.NEW and c.ticker == "AEM" and c.pick is True and c.notes == ["ticker: Yahoo (namn och börs)"]
+    assert c.names == ("Agnico Eagle Mines",)
+
+
+def test_the_box_looks_up_yahoo_on_click_only(page, monkeypatch):
+    from portfolio import broker_sync_ui as ui
+
+    class Lst(io.BytesIO):
+        name = LIST_FILE
+    calls = []
+    monkeypatch.setattr(bs, "_yh_search", lambda q: calls.append(q) or _yh(q))
+    lst = nordnet_list([("Kanadagruvan", "CAD", 2400, 0.27, "")], market={"Kanadagruvan": "Toronto Venture Exchange"})
+    at = page(True)
+    monkeypatch.setattr(ui, "_uploader", lambda: [Lst(lst)])
+    at.run()
+    assert not at.exception, at.exception
+    assert calls == [] and at.button(key="bsync_bd").label.startswith("🔎 Hitta tickers i Börsdata och Yahoo (1")
+    assert _box(at, "new:Kanadagruvan").label.startswith("**?**")
+    at.button(key="bsync_bd").click().run()
+    assert not at.exception, at.exception
+    assert calls == ["Kanadagruvan"] and page.saves == []                        # sökt, inget sparat
+    assert _box(at, "new:KAN.V").value is True and "KAN\\.V" in _box(at, "new:KAN.V").label
+    assert not [b for b in at.button if b.key == "bsync_bd"]                     # knappen borta när allt sökts

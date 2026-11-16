@@ -4,7 +4,7 @@ portfolio/broker_sync_ui.py — rutan "📥 Uppdatera från mäklaren" i PORTFÖ
 Ladda upp Nordeas innehavslista (.xlsx) och/eller Nordnets innehavslista (.csv) — eller Nordnets transaktioner
 (.csv eller .pdf). Rutan visar vad som är nytt, ändrat, borta och oförändrat mot Positioner. Inget skrivs förrän du
 trycker "Uppdatera markerade" (en sparning) eller "Stäng" på en rad som saknas hos mäklaren. Att öppna sidan eller
-ladda upp en fil skriver ingenting; Börsdata frågas bara när du trycker "Hitta tickers i Börsdata".
+ladda upp en fil skriver ingenting; Börsdata och Yahoo frågas bara när du trycker "Hitta tickers".
 """
 from __future__ import annotations
 
@@ -15,6 +15,8 @@ import streamlit as st
 from portfolio import broker_sync as bs
 
 BD_MAP = "bsync_bd_map"
+YH_MAP = "bsync_yh_map"          # {yahoo_key: ticker} ur Yahoo-uppslaget
+YH_TRIED = "bsync_yh_tried"      # innehav som redan sökts hos Yahoo (knappen visas inte igen för dem)
 RESULT = "bsync_result"
 PARSED = "bsync_parsed"
 
@@ -30,20 +32,41 @@ def _fmt(v) -> str:
     return fmt_num(round(float(v), 4))
 
 
-def _bd_lookup() -> None:
-    """on_click: Börsdatas instrument (Norden + globalt) → {ISIN: ticker} i sessionen."""
+def _bd_lookup() -> str:
+    """Börsdatas instrument (Norden + globalt) → {ISIN: ticker} i sessionen. Returnerar en varning eller ''."""
     try:
         from borsdata_api import BorsdataAPI
         api = BorsdataAPI()
         if not api.is_configured:
             st.session_state[BD_MAP] = {}
-            st.session_state[RESULT] = ("warning", "Börsdata-nyckeln saknas — skriv tickern för hand.")
-            return
+            return "Börsdata-nyckeln saknas"
         insts = list(api.get_instruments() or []) + list(api.get_global_instruments_list() or [])
         st.session_state[BD_MAP] = bs.isin_map(insts)
     except Exception as exc:
         st.session_state[BD_MAP] = {}
-        st.session_state[RESULT] = ("warning", f"Börsdata svarade inte: {type(exc).__name__} — skriv tickern för hand.")
+        return f"Börsdata svarade inte ({type(exc).__name__})"
+    return ""
+
+
+def _lookup(pending: list) -> None:
+    """on_click: Börsdata (ISIN) en gång, sedan Yahoo (namn och börs) för innehaven som fortfarande saknar ticker —
+    Nordnets innehavslista har inget ISIN för USA och Kanada, så Börsdata hittar dem inte."""
+    warn = _bd_lookup() if BD_MAP not in st.session_state else ""
+    bd = st.session_state.get(BD_MAP) or {}
+    tried = st.session_state.setdefault(YH_TRIED, set())
+    rest = [h for h in pending if not (h.isin and h.isin.upper() in bd) and bs.yahoo_key(h) not in tried]
+    found = st.session_state.setdefault(YH_MAP, {})
+    try:
+        hits = bs.yahoo_tickers(rest)
+        found.update(hits)
+    except Exception as exc:
+        hits = {}
+        warn = (warn + " · " if warn else "") + f"Yahoo svarade inte ({type(exc).__name__})"
+    tried.update(bs.yahoo_key(h) for h in rest)
+    left = len({bs.yahoo_key(h) for h in rest} - set(hits))
+    if warn or left:
+        st.session_state[RESULT] = ("warning", " · ".join(x for x in (
+            warn, f"{left} utan säker ticker — skriv den i rutan" if left else "") if x) + ".")
 
 
 def _close(row_id: str, ticker: str, key: str) -> None:
@@ -182,12 +205,13 @@ def render_broker_sync() -> None:
         if not uploaded:                               # en läst fil utan innehav = allt sålt, och ska visas
             return
         rows = positions.all_positions()
-        bs.resolve(holdings, rows, st.session_state.get(BD_MAP))
-        missing_t = [h for h in holdings if not h.ticker]
-        guessed = [h for h in holdings if h.how == bs.BY_NAME]
-        if (missing_t or guessed) and BD_MAP not in st.session_state:
-            st.button(f"🔎 Hitta tickers i Börsdata ({len(missing_t) + len(guessed)} utan säker ticker)",
-                      key="bsync_bd", on_click=_bd_lookup)
+        bs.resolve(holdings, rows, st.session_state.get(BD_MAP), st.session_state.get(YH_MAP))
+        tried = st.session_state.get(YH_TRIED, set())
+        unsure_t = [h for h in holdings if h.qty and (not h.ticker or h.how == bs.BY_NAME)]
+        pending = [h for h in unsure_t if BD_MAP not in st.session_state or bs.yahoo_key(h) not in tried]
+        if pending:
+            st.button(f"🔎 Hitta tickers i Börsdata och Yahoo ({len(pending)} utan säker ticker)",
+                      key="bsync_bd", on_click=_lookup, args=(pending,))
         changes = bs.plan(rows, holdings, uploaded)
         actionable = [c for c in changes if c.kind in (bs.NEW, bs.CHANGED)]
         titles = {bs.NEW: "🆕 Nytt hos mäklaren — läggs till som Untagged",
