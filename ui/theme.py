@@ -10,9 +10,10 @@ a palette change in PALETTE propagates everywhere automatically.
 Public API
 ----------
     PALETTE          — colour dict
-    inject_css()     — injects the full CYBERPUNK_CSS stylesheet
-    render_header()  — branded page header (Arc icon + tagline)
-    render_footer()  — slim branded footer
+    inject_css()     — panelens stilblock via skalet (ui/shell.render_shell)
+    render_header()  — varumärkesraden; returnerar platsen som fill_bar() fyller om sist i main()
+    fill_bar(slot)   — fyller om raden (datum, osparat, låset, pulsen ur sessionen)
+    render_footer()  — sidfoten med årets år och "▲ Till toppen"
     section_title()  — cyan uppercase section label
     card()           — styled content card rendered via st.markdown
 """
@@ -21,6 +22,8 @@ from __future__ import annotations
 
 import os
 import base64
+from datetime import datetime
+from html import escape
 from typing import Optional
 
 import streamlit as st
@@ -129,108 +132,7 @@ _SVG_ICON = (
     '</svg>'
 )
 
-# ---------------------------------------------------------------------------
-# render_header — full branded page header
-# ---------------------------------------------------------------------------
-
-_HEADER_CSS = f"""
-<style>
-.nas-header {{
-    background: linear-gradient(
-        135deg,
-        {_P["surface"]}  0%,
-        #080D14          50%,
-        {_P["surface"]}  100%
-    );
-    border: 1px solid {_P["border"]};
-    border-top: 3px solid {_P["gold"]};
-    border-radius: 0 0 10px 10px;
-    padding: 18px 32px 16px;
-    margin: -1rem -1rem 1.5rem -1rem;
-    position: relative;
-    overflow: hidden;
-}}
-.nas-header::before {{
-    content: "";
-    position: absolute;
-    inset: 0;
-    background:
-        repeating-linear-gradient(
-            90deg, transparent, transparent 39px, rgba(0,229,255,0.025) 40px
-        ),
-        repeating-linear-gradient(
-            0deg,  transparent, transparent 39px, rgba(0,229,255,0.025) 40px
-        );
-    pointer-events: none;
-}}
-.nas-header::after {{
-    content: "";
-    position: absolute;
-    bottom: 0; left: 0; right: 0;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, {_P["gold"]}, transparent);
-}}
-.nas-brand {{
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    position: relative;
-    z-index: 1;
-}}
-.nas-wolf {{
-    font-size: 2.4rem;
-    line-height: 1;
-    filter: drop-shadow(0 0 8px rgba(0,229,255,0.5));
-}}
-.nas-wordmark {{
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}}
-.nas-title {{
-    font-family: 'Space Grotesk', 'Courier New', monospace;
-    font-size: 1.5rem;
-    font-weight: 900;
-    letter-spacing: 0.25em;
-    text-transform: uppercase;
-    color: {_P["text"]};
-    line-height: 1.1;
-}}
-.nas-arc-accent {{
-    color: {_P["gold"]};
-    text-shadow: 0 0 12px rgba(0,229,255,0.6);
-}}
-.nas-tagline {{
-    font-family: 'Inter Tight', 'Courier New', monospace;
-    font-size: 0.78rem;
-    letter-spacing: 0.05em;
-    color: {_P["text_dim"]};
-    font-style: italic;
-}}
-.nas-badges {{
-    margin-left: auto;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 4px;
-    position: relative;
-    z-index: 1;
-}}
-.nas-badge {{
-    font-family: 'JetBrains Mono', 'Courier New', monospace;
-    font-size: 0.6rem;
-    letter-spacing: 0.15em;
-    padding: 2px 10px;
-    border-radius: 3px;
-    border: 1px solid {_P["border"]};
-    color: {_P["text_dim"]};
-    background: rgba(255,255,255,0.03);
-    white-space: nowrap;
-}}
-</style>
-"""
-
-
+# Bannern ritas inte längre på sidorna (varumärkesraden, PR 13) men finns kvar: css.wolf_banner läser den.
 _BANNER_B64: dict = {}          # läses och kodas EN gång per process, inte per omritning
 
 
@@ -247,75 +149,209 @@ def _banner_b64() -> str:
     return _BANNER_B64["b64"]
 
 
-def render_header() -> None:
-    """
-    Render the branded page header.
+# ---------------------------------------------------------------------------
+# render_header — varumärkesraden (LIDSKJALV §3.5.2)
+# ---------------------------------------------------------------------------
+# 44 px på telefonen, 52 px på datorn, i stället för bannern på 260 px (inloggningen behåller sin logga).
+# render_header() lämnar en st.empty()-plats som fylls direkt; fill_bar(plats) fyller om den sist i main(),
+# när sidan räknat klart — så att osparat-chipet och pulsen stämmer. Utseendet står i ui/shell.shell_css().
+# Raden ritas med st.markdown: inline-SVG överlever där, inte i st.html.
 
-    Shows the banner image from assets/banner.jpg when present;
-    falls back to the SVG triangle+eye header with tagline.
-    """
+_WEEKDAYS = ("mån", "tis", "ons", "tor", "fre", "lör", "sön")
+_MONTHS = ("jan", "feb", "mar", "apr", "maj", "jun", "jul", "aug", "sep", "okt", "nov", "dec")
+
+# Pulsen läser BARA det som redan ligger i sessionen — I DAGs data och Lägets. Ingen laddare anropas här; utan
+# data i sessionen ritas ingen puls. Vilken av dem (puls_source):
+#   1. sidans egen när I DAG eller Läget visas — raden får aldrig säga emot kapitalraden under sig (dess legend)
+#   2. annars den som laddades senast — en ny dict under nyckeln är en ny load() (I DAG läser om sig själv efter
+#      RELOAD_MIN minuter eller en ny dag, Läget på 📡); minnet ligger i PULS_SEEN, bara i sessionen
+#   3. annars I DAGs, som har en färskhetsregel, före Lägets
+PULS_KEYS = ("home_today", "laget_data")
+PULS_PAGE = {("home",): "home_today", ("odin", "Läget"): "laget_data"}
+PULS_SEEN = "_wolf_puls_seen"
+
+
+def _icon(size: int) -> str:
+    return _SVG_ICON.replace('width="48" height="48"', f'width="{size}" height="{size}"')
+
+
+def _today_label(now: Optional[datetime] = None) -> str:
+    """'lör 21 nov' — svensk tid, samma klocka som I DAG."""
+    if now is None:
+        try:
+            from tabs.home_today import now_se
+            now = now_se()
+        except Exception:
+            now = datetime.now()
+    return f"{_WEEKDAYS[now.weekday()]} {now.day} {_MONTHS[now.month - 1]}"
+
+
+def _session_dict(state, key: str):
     try:
-        _b64 = _banner_b64()
-        if _b64:
-            st.markdown(
-                f"<div style='text-align:center;margin:-1rem -1rem 1rem -1rem;padding:0;'>"
-                f"<img src='data:image/jpeg;base64,{_b64}' "
-                f"style='width:100%;height:auto;border-radius:0 0 8px 8px;'/>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-            return
+        d = state.get(key)
     except Exception:
-        pass
+        return None
+    return d if isinstance(d, dict) else None
 
-    # SVG triangle+eye fallback header
-    st.markdown(_HEADER_CSS, unsafe_allow_html=True)
-    st.markdown(
-        '<div class="nas-header">'
-        '  <div class="nas-brand">'
-        f'    <div class="nas-wolf">{_SVG_ICON}</div>'
-        '    <div class="nas-wordmark">'
-        '      <div class="nas-title">'
-        '        NORDIC <span class="nas-arc-accent">ARC</span> SYSTEMS'
-        '      </div>'
-        "      <div class=\"nas-tagline\"><em>See What the Market Can't.</em></div>"
-        '    </div>'
-        '    <div class="nas-badges">'
-        '      <div class="nas-badge">SWING · POSITION · REGIME</div>'
-        '      <div class="nas-badge">SENTIMENT · ALERTS · STRATEGY</div>'
-        '    </div>'
-        '  </div>'
-        '</div>',
-        unsafe_allow_html=True,
+
+def mark_loads(state) -> dict:
+    """{nyckel: ordningsnummer} för pulsens källor — högst = senast laddad. laget.py och home.py lägger en NY dict
+    under sin nyckel vid varje load(), så ett annat objekt än sist betyder en omläsning. Minnet (objektet och
+    numret) ligger under PULS_SEEN i sessionen: inget sparas, inget laddas."""
+    try:
+        seen = dict(state.get(PULS_SEEN) or {})
+    except Exception:
+        seen = {}
+    n = max([v[1] for v in seen.values() if isinstance(v, tuple)] or [0])
+    changed = False
+    for key in reversed(PULS_KEYS):                 # laddas båda på en gång vinner den som står först i PULS_KEYS
+        d = _session_dict(state, key)
+        old = seen.get(key)
+        if d is None:
+            if old is not None:
+                seen.pop(key)
+                changed = True
+        elif not isinstance(old, tuple) or old[0] is not d:
+            n += 1
+            seen[key] = (d, n)
+            changed = True
+    if changed:
+        try:
+            state[PULS_SEEN] = seen
+        except Exception:
+            pass
+    return {k: v[1] for k, v in seen.items() if isinstance(v, tuple)}
+
+
+def page_source(state) -> Optional[str]:
+    """Sessionsnyckeln vars kapitalrad sidan som visas ritar (I DAG, Läget) — annars None."""
+    try:
+        from ui import nav
+        segs = list(nav.current(state))
+    except Exception:
+        return None
+    for prefix, key in PULS_PAGE.items():
+        if tuple(segs[:len(prefix)]) == prefix:
+            return key
+    return None
+
+
+def puls_source(state, seen=None, prefer=None) -> Optional[str]:
+    """Vilken nyckel pulsen läser: prefer (sidans egen) om den finns, annars den senast laddade enligt seen
+    (mark_loads), annars PULS_KEYS ordning. None när ingen av dem ligger i sessionen."""
+    present = [k for k in PULS_KEYS if _session_dict(state, k) is not None]
+    if not present:
+        return None
+    if prefer in present:
+        return prefer
+    seen = seen or {}
+    return max(present, key=lambda k: (seen.get(k, 0), -PULS_KEYS.index(k)))
+
+
+def puls_items(state, seen=None, prefer=None) -> list:
+    """Kapitalradens fyra ljus [(rubrik, ord, under, färg)] ur sessionens data — [] när inget är laddat.
+    Bara laget.capital_row på det som redan finns (puls_source väljer); aldrig ett fel, aldrig en laddning."""
+    key = puls_source(state, seen, prefer)
+    if key is None:
+        return []
+    d = _session_dict(state, key)
+    try:
+        from odin import laget
+        return laget.capital_row(d.get("alloc"), d.get("regime"), d.get("risk"), d.get("board"))
+    except Exception:
+        return []
+
+
+def _puls_html(items: list) -> str:
+    """Fyra prickar à 8 px, var och en i sitt eget ljus färg — de slås aldrig ihop. Orden står i aria-label."""
+    if not items:
+        return ""
+    from odin import laget
+    words = escape(laget.row_text(items), quote=True)
+    dots = "".join(f'<span style="background:{escape(str(c), quote=True)};"></span>' for _t, _w, _s, c in items)
+    return f'<span class="wolf-puls" role="img" aria-label="{words}" title="{words}">{dots}</span>'
+
+
+def bar_html(items=(), dirty=(), lock: str = "", today: str = "", snack: bool = False) -> str:
+    """Varumärkesradens HTML. items = puls_items(), dirty = storage.dirty_stores(),
+    lock = '🔒'/'🔓' ('' när låset inte är konfigurerat). snack lägger osparat-rutan (telefon) efter raden."""
+    right = ""
+    if today:
+        right += f'<span class="wolf-date">{escape(today)}</span>'
+    if dirty:
+        n = len(dirty)
+        names = escape("Osparade ändringar i: " + ", ".join(str(d) for d in dirty), quote=True)
+        right += f'<span class="wolf-dirty" title="{names}">● {n} {"osparad" if n == 1 else "osparade"}</span>'
+    if lock:
+        tip = "Innehaven är upplåsta" if lock == "🔓" else "Innehaven är låsta"
+        right += f'<span class="wolf-lock" title="{tip}">{escape(lock)}</span>'
+    right += _puls_html(list(items))
+    html = (
+        '<div class="wolf-bar" id="nas-top">'
+        f'<div class="wolf-brand">{_icon(24)}'
+        '<span class="wolf-word">NORDIC <b>ARC</b><span class="wolf-wide"> SYSTEMS</span></span>'
+        "<span class=\"wolf-tag wolf-wide\">See What the Market Can't.</span></div>"
+        f'<div class="wolf-meta">{right}</div>'
+        '</div>'
+    )
+    if snack and dirty:                                     # en ruta, hur många lager som än är osparade
+        html += '<div class="wolf-snack" role="status">⚠️ Osparade ändringar · Spara ↑</div>'
+    return html
+
+
+def _lock_glyph() -> str:
+    try:
+        from portfolio import private_lock
+        if not private_lock.configured():
+            return ""
+        return "🔓" if private_lock.unlocked() else "🔒"
+    except Exception:
+        return ""
+
+
+def _dirty() -> list:
+    try:
+        import storage
+        return list(storage.dirty_stores())
+    except Exception:
+        return []
+
+
+def fill_bar(slot) -> None:
+    """Fyller (om) varumärkesradens plats med det sessionen vet just nu. Läser bara — det enda den skriver är
+    pulsens minne i sessionen (mark_loads); inget sparas och inget laddas."""
+    try:
+        dirty = _dirty()
+        state = st.session_state
+        items = puls_items(state, mark_loads(state), page_source(state))
+        html = bar_html(items, dirty, _lock_glyph(), _today_label(), snack=bool(dirty))
+    except Exception:
+        html = bar_html()                                   # märket utan meta hellre än en trasig sida
+    slot.markdown(html, unsafe_allow_html=True)
+
+
+def render_header():
+    """Varumärkesraden överst på varje sida. Returnerar platsen (st.empty) som fill_bar() fyller om sist."""
+    slot = st.empty()
+    fill_bar(slot)
+    return slot
+
+
+# ---------------------------------------------------------------------------
+# render_footer — sidfoten (LIDSKJALV §3.5.21)
+# ---------------------------------------------------------------------------
+
+def footer_html(year: Optional[int] = None) -> str:
+    """En rad i MUTED med årets år, och "▲ Till toppen" (ankare till märkesraden — fungerar utan skript)."""
+    year = year or datetime.now().year
+    return (
+        '<div class="wolf-foot">'
+        f"<div class=\"wolf-foot-line\">Nordic Arc Systems © {year} · See What the Market Can't.</div>"
+        '<a class="wolf-top" href="#nas-top">▲ Till toppen</a>'
+        '</div>'
     )
 
 
-# ---------------------------------------------------------------------------
-# render_footer — slim branded footer
-# ---------------------------------------------------------------------------
-
-_FOOTER_HTML = (
-    f'<div style="'
-    f'margin-top:48px;padding:14px 24px;'
-    f'border-top:1px solid {_P["border"]};'
-    f'background:linear-gradient(0deg,{_P["surface"]},{_P["bg"]});'
-    f'border-radius:8px 8px 0 0;'
-    f'display:flex;justify-content:space-between;align-items:center;'
-    f'flex-wrap:wrap;gap:8px;'
-    f'">'
-    f'<div style="display:flex;align-items:center;gap:8px;">'
-    f'  <span style="font-family:\'Inter Tight\',sans-serif;font-size:0.72rem;'
-    f'  font-style:italic;color:{_P["text_dim"]};">'
-    f"  See What the Market Can't.</span>"
-    f'</div>'
-    f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:0.58rem;'
-    f'letter-spacing:0.1em;color:{_P["text_dim"]};">'
-    f'Nordic Arc Systems &nbsp;&copy;&nbsp;2025'
-    f'</div>'
-    f'</div>'
-)
-
-
 def render_footer() -> None:
-    """Render the slim branded footer at the bottom of the page."""
-    st.markdown(_FOOTER_HTML, unsafe_allow_html=True)
+    """Sidfoten längst ned (efter lagringsraden)."""
+    st.markdown(footer_html(), unsafe_allow_html=True)

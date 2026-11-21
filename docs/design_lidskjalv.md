@@ -807,7 +807,7 @@ Styled from the shell only. `ovtlyr/ui/rules_page.py` is not edited until decisi
 |---|---|---|---|
 | 1 | Phone tab bar: six stacked emoji-over-word cells (CSS-generated from `nav.TOP`), **sticky** at the top on all widths? | **JA** | Today's scrolling row, plus JS that scrolls the active tab into view |
 | 2 | Replace the 260 px banner on every page with the 44/52 px brand bar? The art stays on the login. | **JA** | Banner kept and shrunk to 120 px |
-| 3 | Hide Streamlit's header, Deploy and ⋮ on phones (`toolbarMode="minimal"` + CSS; ⋮ floats on desktop)? | **JA** | Header stays; chrome +60 px |
+| 3 | Hide Streamlit's header, Deploy and ⋮ on phones (`toolbarMode="viewer"` + CSS; ⋮ floats on desktop)? | **JA** | Header stays; chrome +60 px |
 | 4 | `[theme]` cyan primary plus the panel palette (primaryColor `#00E5FF`, backgroundColor `#05070A`, red/orange/green/violet = panel tokens), with dirty Spara amber and "Ja, ta bort" red? Changes `test_css_readability.py:66`. | **JA** | Checkboxes, toggles and primary buttons stay Streamlit red; the frame is fixed by CSS only |
 | 5 | Ink tints for small coloured text (GREEN_INK `#45b36b`, RED_INK `#e36464`, PURPLE_INK `#c35cff`)? Base colours stay for fills and borders. | **JA** | Small green and red text stays at 3.4–4.7:1 |
 | 6 | I DAG: "Dagens besked" (labelled counts plus 4 tap tiles) above the PR 8 order? | **JA** | Page starts at VÄNDNING as today, in the new styling |
@@ -847,7 +847,7 @@ Every PR runs the full `pytest` and attaches 390 px and 1440 px screenshots of t
 
 **Notes for PR 13 (Ramen)**
 - What:
-  - `[client] toolbarMode="minimal"`.
+  - `[client] toolbarMode="viewer"` (not "minimal": in 1.59.1 minimal draws no toolbar locally — no ⋮ and no running indicator for the PR 14 beam; viewer still has no Deploy and no developer menu). Cloud host buttons (`stToolbarActions`) hidden by CSS on desktop.
   - `render_shell()` writes one `<style>` with the PWA metas folded in, inside the hidden `wolf_shell` container.
   - The brand bar slot plus `fill_bar()` (puls from the session only, dirty chip, lock glyph, single snackbar).
   - Header hidden on ≤640 px; transparent with a floating ⋮ on desktop.
