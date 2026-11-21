@@ -4,13 +4,11 @@ import streamlit as st
 
 CYBERPUNK_CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=Inter+Tight:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
-/* ── Global Reset ────────────────────────────────────────────── */
-html, body, [class*="css"] {
-    font-family: 'Inter Tight', sans-serif;
-}
-
+/* ── Typsnitt ─────────────────────────────────────────────────── */
+/* Brödtext och långa regeltexter: Streamlits Source Sans (designbeslut 13). Ett tredje typsnitt importerades
+   men nådde bara Deploy-knappen och sidfoten — importen och html/body-regeln är borta. */
 h1, h2, h3,
 .stMarkdown h1, .stMarkdown h2, .stMarkdown h3 {
     font-family: 'Space Grotesk', sans-serif;
@@ -538,7 +536,10 @@ hr {
 
 
 def inject_css():
-    st.markdown(CYBERPUNK_CSS, unsafe_allow_html=True)
+    """Panelens stilar. Delegerar till skalet (ui/shell.render_shell): ETT dolt <style> per körning med
+    CYBERPUNK_CSS, ramens regler och PWA-taggarna — anroparna är oförändrade."""
+    from ui.shell import render_shell
+    render_shell()
 
 
 def wolf_banner():

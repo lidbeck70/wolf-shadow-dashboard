@@ -43,25 +43,15 @@ st.set_page_config(
     page_icon="🔱",
 )
 
-# PWA / Mobile meta tags for iPad home screen
-st.markdown(
-    """
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Nordic Arc">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#05070A">
-    <link rel="apple-touch-icon" href="https://em-content.zobj.net/source/apple/391/trident_1f531.png">
-    """,
-    unsafe_allow_html=True,
-)
+# PWA-taggarna (hemskärmsikon, statusrad) ligger i skalets stilblock — ui/shell.PWA_METAS (LIDSKJALV PR 13)
 
 # ---------------------------------------------------------------------------
 # LOCAL MODULE IMPORTS
 # ---------------------------------------------------------------------------
 from ui.css import tab_not_found
 from ui import nav
-from ui.theme import inject_css, render_header, render_footer
+from ui.shell import PWA_METAS
+from ui.theme import inject_css, render_header, render_footer, fill_bar
 from auth import render_login_gate
 from tabs.home import tab_home
 # ── LEGACY (designförslaget PR 12, beslut 11) ───────────────────────────────
@@ -599,10 +589,11 @@ def _tab_more() -> None:
 
 def main():
     if not render_login_gate():
+        st.markdown(PWA_METAS, unsafe_allow_html=True)     # inloggningen har inget skal än (PR 17)
         return
 
-    inject_css()
-    render_header()
+    inject_css()                                           # skalet: ETT dolt <style> med PWA-taggarna
+    bar = render_header()                                  # varumärkesraden, fylls om sist (fill_bar)
     _apply_deep_link()
 
     tab_labels = [nav.tab_label(k) for k, _label in nav.TOP]
@@ -647,6 +638,7 @@ def main():
     # Senast sparad, och vad som ligger osparat i sessionen.
     storage_ui.footer()
     render_footer()
+    fill_bar(bar)                                          # osparat och pulsen som sidan lämnade dem
     _sync_url()
 
 

@@ -4,3 +4,9 @@ base = "dark"
 [browser]
 # Av: Streamlits användningsstatistik skickar sidans adress — med inloggningsbryggans ?wolf_t= i den (auth.py)
 gatherUsageStats = false
+
+[client]
+# Tyst topp (LIDSKJALV, beslut 3): ingen Deploy-knapp och inga utvecklarval. "viewer", inte "minimal": minimal ritar
+# ingen verktygsrad alls lokalt — varken ⋮ eller Streamlits körindikator (Running/Stop), som strålen i PR 14 läser.
+# På telefonen döljer skalets CSS huvudet helt, på datorn flyter ⋮ över varumärkesraden (ui/shell.py).
+toolbarMode = "viewer"
