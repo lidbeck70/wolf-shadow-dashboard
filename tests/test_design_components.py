@@ -504,3 +504,30 @@ def test_kpis_metric_values_wrap_instead_of_clipping_on_the_phone():
 def test_no_model_names_or_secrets_in_the_parts(path):
     src = _src(*path.split("/"))
     assert "wolf2026" not in src and "claude" not in src.lower() and "gpt" not in src.lower()
+
+
+# ── LIDSKJALV PR 20: thor.cards.storlek_grid (§3.5.14) ───────────────────────
+def test_storlek_grid_shows_exactly_the_sz_values_and_the_row_text():
+    from thor import cards
+    from thor import storlek as sk
+    sz = sk.size(100.0, 92.0, 100000, risk=1.5, cap=6.0)
+    row = sk.row_text("ABC.ST", "🛡 Viking", sz)
+    html = cards.storlek_grid(sz, 1.5, row)
+    text = _text(html)
+    labels = [m.upper() for m in re.findall(r"text-transform:uppercase;overflow-wrap:anywhere;\">([^<]+)<", html)]
+    assert labels == ["KÖP", "STOPP", "MÅL 3R", "RISKSTORLEK", "RISK", "TAK"]          # 2 × 3 i specens ordning
+    values = re.findall(r"font-variant-numeric:tabular-nums;margin-top:4px;overflow-wrap:anywhere;\">([^<]+)<", html)
+    assert values == [f"{sz['entry']:.2f}", f"{sz['stop']:.2f}", f"{sz['target_3r']:.2f}", str(sz["risk_shares"]),
+                      "1 500", str(sz["cap_shares"])] == ["100.00", "92.00", "124.00", "187", "1 500", "60"]
+    assert "6 000 kr" in text and "1.5 %" in text                                      # taket i kronor, risk-%
+    assert row in text and html.count(row) == 1                                        # raden att kopiera, ordagrant
+    assert "user-select:all" in html and f"color:{tokens.MUTED};font-size:12px" in html
+    assert min(_sizes(html)) >= 12 and "None" not in text
+    half = sk.halved(sz)                                                               # GUL regim: Thors egen halvering
+    h = cards.storlek_grid(half, 1.5, sk.row_text("ABC.ST", "x", half))
+    assert ">93<" in h and ">30<" in h and "halverat" in _text(h)                     # talen ur dicten, ingen ny räkning
+    bare = sk.size(100.0, 92.0, 100000)                                                # ingen risk-% och inget tak
+    b = cards.storlek_grid(bare, None)
+    assert _text(b).count("Saknas") == 3 and "None" not in _text(b) and "thor-rowtext" not in b
+    src = inspect.getsource(cards.storlek_grid)
+    assert not re.search(r"(?<![a-z_])(sz\[[^\]]+\]|v|x)\s*[-+*/]\s*[\d(]", src)        # ingen aritmetik på talen
