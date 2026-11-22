@@ -13,6 +13,10 @@ rangordnar och slår inte ihop något som motorerna inte redan gör. Ordningen:
   Senaste larmen            larmloggen (alerts/history)
   I dag förfaller           Årshjulets rutiner (routines.due_today)
 
+Överst Dagens besked (LIDSKJALV §4.3, beslut 6): counts() räknar det som raderna ovan redan visar — rutorna i
+köpfönstret, kvalarna, säljraderna och rutinerna — och besked() väljer meningen. Bara räknat: inget nytt ord,
+ingen ny regel, ingen aritmetik på kurser. size_parts() är Storlek-radens tal för kvalarnas mono-rad.
+
 Rena funktioner här; tabs/home.py ritar.
 """
 from __future__ import annotations
@@ -96,14 +100,42 @@ def stale_tag(c) -> str:
     return f" · GAMMAL (körd {c.asof})" if getattr(c, "stale", False) else ""
 
 
-def size_line(c, capital: float) -> str:
-    from thor import registry as reg
+def _sized(c, capital: float) -> Optional[dict]:
+    """Storleken som Storlek-raden visar: sk.size med strategins risk och tak, halverad i GUL regim (strategins
+    egen regel). None utan giltiga nivåer."""
     from thor import storlek as sk
     ccy, fx = sk.fx_for(c.ticker)
     sz = sk.size(c.entry, c.stop, capital, sk.risk_pct(c.strategy), sk.cap_pct(c.strategy), fx=fx, currency=ccy)
     if sz and "GUL regim" in (c.status or ""):
         sz = sk.halved(sz)
+    return sz
+
+
+def size_line(c, capital: float) -> str:
+    from thor import registry as reg
+    from thor import storlek as sk
+    sz = _sized(c, capital)
     return sk.row_text(c.ticker, reg.label(c.strategy), sz) if sz else f"{c.ticker} · {reg.label(c.strategy)} · nivåer saknas"
+
+
+def size_parts(c, capital: float) -> list:
+    """Storlek-radens tal för kvalarnas mono-rad: ['120 st', 'risk 1 500 kr', 'tak 22 st'] — ur samma storlek som
+    size_line (samma sz, ingen ny räkning). Utan risk-% och tak: köp och stopp. [] när nivåerna saknas."""
+    sz = _sized(c, capital)
+    if not sz:
+        return []
+    out = []
+    if sz.get("risk_shares") is not None:
+        out.append(f"{sz['risk_shares']} st")
+    if sz.get("risk_amt") is not None:
+        out.append(f"risk {sz['risk_amt']:,.0f} kr".replace(",", " "))
+    if sz.get("cap_shares") is not None:
+        out.append(f"tak {sz['cap_shares']} st")
+    if not out:
+        out = [f"köp {sz['entry']:.2f}", f"stopp {sz['stop']:.2f}"]
+    if "halverat" in (sz.get("formula") or ""):
+        out.append("halverat")
+    return out
 
 
 # swing_verdict sparar sina egna strängar (SÄLJ, 'DELVINST — sälj halva', BEVAKA) — nyckla på dem (granskning 2, D3)
@@ -141,6 +173,78 @@ def all_hold_line(alert_state: Optional[dict], n_open: Optional[int] = None) -> 
     head = f"Alla {n} Momentum-positioner: HÅLL" if n and not unknown else \
         (f"{hold} av {n} Momentum-positioner: HÅLL · {unknown} saknar läge" if n else "Inga Momentum-positioner bedöms")
     return head + other
+
+
+# ── Dagens besked (LIDSKJALV §4.3) ───────────────────────────────────────────
+GIST_HEAD = "Gisten gick inte att läsa"
+GIST_MISSING = f"Saknas — {GIST_HEAD}"
+NOTHING_TODAY = "Inga KÖP, SÄLJ eller vändningar i dag"
+MAP_MISSING = "Saknas — Valhalls karta gick inte att läsa"     # vändningen okänd: grått, aldrig "Ingen vändning"
+
+
+def gist_error(d: Optional[dict]) -> Optional[str]:
+    """Thors fel när ingen enda körning gick att läsa (thor.candidates sätter errors['gist']), annars None."""
+    thor = (d or {}).get("thor") if isinstance(d, dict) else None
+    errors = thor.get("errors") if isinstance(thor, dict) else None
+    err = errors.get("gist") if isinstance(errors, dict) else None
+    return str(err) if err else None
+
+
+def gist_reason(err) -> str:
+    """Felets orsak utan inledningen 'Gisten gick inte att läsa' — meningen ovanför säger den redan, en gång."""
+    s = str(err or "").strip()
+    if s.startswith(GIST_HEAD):
+        s = s[len(GIST_HEAD):].strip(" —–-:·.")
+    return s
+
+
+_ASK = object()
+
+
+def counts(d: Optional[dict], unlocked: bool = True, today=None, due=_ASK) -> dict:
+    """De fyra rutornas antal — bara ur det sidan redan visar: rutorna i köpfönstret (turn_cards), kvalarna
+    (qualifiers), säljraderna (holdings_lines) och Årshjulets rutiner (routines.due_today). Ingen ny regel, ingen
+    aritmetik på kurser. None = okänt och visas Saknas, aldrig en tyst nolla: kartan saknas → vändning okänd,
+    Gisten oläslig → KÖP okänt, innehaven låsta eller larmtillståndet oläsligt → SÄLJ okänt.
+    due = dagens rutiner om sidan redan läst dem (en lista, eller None när de inte gick att läsa).
+
+    {turn, on_way, buy, watch, sell, vaksam, due, locked, gist}"""
+    d = d if isinstance(d, dict) else {}
+    day = pd.Timestamp(today if today is not None else now_se()).normalize()
+    board, gist = d.get("board"), gist_error(d)
+    thor = d.get("thor") if isinstance(d.get("thor"), dict) else {}
+    out = {"turn": len(turn_cards(board, day)) if isinstance(board, dict) else None,
+           "on_way": on_the_way(board), "buy": None, "watch": None, "sell": None, "vaksam": None, "due": None,
+           "locked": not unlocked, "gist": gist}
+    if not gist:
+        out["buy"], out["watch"], _top = qualifiers(thor.get("rows"))
+    if unlocked and isinstance(d.get("alert_state"), dict):
+        words = [w for _t, w, _why in holdings_lines(d.get("alert_state"))]
+        out["sell"] = sum(1 for w in words if w in ("SÄLJ", "MINSKA"))
+        out["vaksam"] = words.count("VAKSAM")
+    if due is _ASK:
+        try:
+            import routines
+            due = routines.due_today(day.date())
+        except Exception:
+            due = None
+    out["due"] = len(due) if isinstance(due, (list, tuple)) else None
+    return out
+
+
+def besked(n: dict, cards: list, board: Optional[dict]) -> tuple:
+    """(meningen, saknas?) under DAGENS BESKED: Gisten oläslig → GIST_MISSING (grå); ett öppet köpfönster → första
+    turn_headline; inga KÖP, SÄLJ, vändningar eller vändningar på väg → NOTHING_TODAY; annars no_turn_line.
+    Säger aldrig 'inga' om ett antal som är okänt (None)."""
+    if n.get("gist"):
+        return GIST_MISSING, True
+    if cards:
+        return turn_headline(cards[0]), False
+    if n.get("turn") is None:                       # kartan saknas: säg inte "Ingen vändning" bredvid en Saknas-ruta
+        return MAP_MISSING, True
+    if all(n.get(k) == 0 for k in ("turn", "on_way", "buy", "sell")):
+        return NOTHING_TODAY, False
+    return no_turn_line(board), False
 
 
 RELOAD_MIN = 30
