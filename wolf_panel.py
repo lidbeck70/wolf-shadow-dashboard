@@ -10,6 +10,7 @@ Run:
 
 import sys
 import os
+import html
 import warnings
 
 warnings.filterwarnings("ignore")
@@ -50,7 +51,7 @@ st.set_page_config(
 # ---------------------------------------------------------------------------
 from ui.css import tab_not_found
 from ui import nav
-from ui.shell import PWA_METAS
+from ui.shell import PWA_METAS, nav_script
 from ui.theme import inject_css, render_header, render_footer, fill_bar
 from auth import render_login_gate
 from tabs.home import tab_home
@@ -368,10 +369,25 @@ def _is_open(tab) -> bool:
 def _sub(path: str) -> str:
     """Underflikarna ur navigationsträdet (ui/nav.py) — samma lista som
     FLIKGUIDEN och Home ritar, med widget-nyckeln ur nav.STATE_KEY så att
-    djuplänken kan seeda den. Etiketten finns (skärmläsare) men döljs."""
+    djuplänken kan seeda den. Etiketten finns (skärmläsare) men döljs.
+    Skalet ritar radion som chip-rad (L2) eller understruken rad (L3); L3 får brödsmulan ovanför sig."""
+    if "/" in path:
+        _crumb(path)
     return st.radio(f"Val i {path.replace('/', ' → ')}", nav.options(path),
                     label_visibility="collapsed", horizontal=True,
                     key=nav.STATE_KEY[path])
+
+
+def _crumb(path: str) -> None:
+    """Brödsmulan vid djup 3, direkt ovanför L3-raden som dess rubrik: 'ODIN › Råvaror' (LIDSKJALV §3.5.6).
+    Byggs ur nav.current — toppfliken i versaler, lövet utelämnas eftersom raden under markerar det."""
+    depth = path.count("/") + 1
+    if depth < 2:
+        return
+    segs = nav.current(st.session_state)[:depth]
+    top = nav.TOP_LABEL.get(segs[0], segs[0]).split(" ", 1)[-1].upper()
+    text = " › ".join([top] + list(segs[1:]))
+    st.markdown(f'<div class="wolf-crumb">{html.escape(text)}</div>', unsafe_allow_html=True)
 
 
 def _apply_deep_link() -> None:
@@ -445,7 +461,6 @@ def _background_note() -> None:
 
 def _tab_odin() -> None:
     group = _sub("odin")
-    st.markdown("---")
     if group == "Läget":
         from odin.laget import render_laget_page
         _page(True, render_laget_page, "Läget", "odin/laget")
@@ -459,7 +474,6 @@ def _tab_odin() -> None:
         _page(True, render_sektorrotation_page, "Sektorrotation", "odin/sektorrotation")
     elif group == "Marknad":
         sub = _sub("odin/Marknad")
-        st.markdown("---")
         _background_note()
         if sub == "Sektorflöde":
             _page(SECTOR_CYCLE_AVAILABLE, render_sector_cycle_page, "Sector & Global Regime", "sector_cycle")
@@ -467,7 +481,6 @@ def _tab_odin() -> None:
             _page(HEATMAP_AVAILABLE, render_heatmap_page, "Heatmap", "heatmap")
     elif group == "Makro":
         sub = _sub("odin/Makro")
-        st.markdown("---")
         if sub == "🐺 Fiat Debasement":
             _page(FIAT_AVAILABLE, render_fiat_debasement_page, "Fiat Debasement", "fiat_debasement")
         elif sub == "Sentiment":
@@ -477,7 +490,6 @@ def _tab_odin() -> None:
                 _page(SENTIMENT_AVAILABLE, render_sentiment_page, "Sentiment & Flow", "sentiment")
     else:
         sub = _sub("odin/Råvaror")
-        st.markdown("---")
         if sub == "Odin's Blindspot":
             _page(BLINDSPOT_AVAILABLE, render_blindspot_page, "Odin's Blindspot Index", "blindspot")
         elif sub == "🔥 EMBER":
@@ -495,7 +507,6 @@ def _tab_odin() -> None:
 
 def _tab_review() -> None:
     sub = _sub("review")
-    st.markdown("---")
     if sub in ("Rick Rule", "Royalty C", "🐺 Wolf Asymmetry", "🚀 Råvaruhävstång") and FIAT_ENV_AVAILABLE:
         render_fiat_environment()             # bakgrund, ingen signal
     if sub in ("Rick Rule", "Royalty C"):
@@ -522,7 +533,6 @@ def _tab_review() -> None:
 
 def _tab_portfolio() -> None:
     sub = _sub("portfolio")
-    st.markdown("---")
     if sub == "Journal":
         _page(JOURNAL_AVAILABLE, render_trade_journal_page, "Trade Journal", "trade_journal")
     elif sub == "🎯 Mot målet":
@@ -551,13 +561,14 @@ def _tab_portfolio() -> None:
 
 def _tab_more() -> None:
     sub = _sub("more")
-    st.markdown("---")
     if sub == "Larm":
         tab_alerts()
     elif sub == "⚙️ Inställningar":
         from ui.settings import render_settings_page
         _page(True, render_settings_page, "Inställningar", "ui/settings")
     elif sub == "Regler & Guider":
+        if RULES_AVAILABLE:
+            _crumb("more/Regler & Guider")             # rules_page ritar L3-raden (rules_sub) först
         _page(RULES_AVAILABLE, render_rules_page, "Rules", "ovtlyr/ui")
     elif sub == "Copilot":
         try:
@@ -568,7 +579,6 @@ def _tab_more() -> None:
             render_copilot_page()
     elif sub == "Motorsidor":
         inner = _sub("more/Motorsidor")
-        st.markdown("---")
         if inner == "Wolf Regime":
             _page(True, tab_regime, "Wolf Regime", "tabs/regime", rules_key="wolf")
         elif inner == "Viking Regime":
@@ -592,9 +602,10 @@ def main():
         st.markdown(PWA_METAS, unsafe_allow_html=True)     # inloggningen har inget skal än (PR 17)
         return
 
-    inject_css()                                           # skalet: ETT dolt <style> med PWA-taggarna
+    shell = inject_css()                                   # skalet: ETT dolt <style> med PWA-taggarna
     bar = render_header()                                  # varumärkesraden, fylls om sist (fill_bar)
     _apply_deep_link()
+    nav_script(shell)                                      # nav-skriptet i skalet, med sidan efter djuplänken
 
     tab_labels = [nav.tab_label(k) for k, _label in nav.TOP]
     tabs = dict(zip([k for k, _l in nav.TOP],

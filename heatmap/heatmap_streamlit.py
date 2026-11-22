@@ -127,14 +127,18 @@ PLOTLY_TEMPLATE = "plotly_dark"
 # ---------------------------------------------------------------------------
 
 def _inject_css() -> None:
-    st.markdown(
+    """Sidans egen CSS via skalets page_style (LIDSKJALV PR 14): ett dolt <style>, och varje regel börjar med
+    page_scope — den når bara elementen som ritas efter stilen, alltså värmekartans egna. Ramens rälsar ovanför,
+    sidfoten och rullningslisten för hela sidan rörs inte (förut färgade .stRadio label chip-raderna cyan)."""
+    from ui.shell import page_scope, page_style
+    s = page_scope("heatmap")
+    page_style(
         f"""
-        <style>
-        /* ── Värmekartan: bara sidans egna klasser (designförslaget PR 12) — html/body/.stApp, rubriker och
-           sidofältet är panelens tema och skrivs inte över härifrån. ── */
+        /* ── Värmekartan: bara sidans egna element (designförslaget PR 12, avgränsad i PR 14) — html/body/.stApp,
+           rubriker, sidofältet och ramen är panelens tema och skrivs inte över härifrån. ── */
 
         /* KPI cards */
-        .kpi-card {{
+        {s} .kpi-card {{
             background: linear-gradient(135deg, {BG2}, #1a1a28);
             border: 1px solid rgba(0,229,255,0.27);
             border-radius: 8px;
@@ -143,15 +147,15 @@ def _inject_css() -> None:
             box-shadow: 0 0 16px rgba(0,229,255,0.13);
             margin-bottom: 8px;
         }}
-        .kpi-card .kpi-value {{
+        {s} .kpi-card .kpi-value {{
             font-size: 1.8rem;
             font-weight: 700;
             color: {CYAN};
             line-height: 1.1;
         }}
-        .kpi-card .kpi-positive {{ color: {GREEN}; }}
-        .kpi-card .kpi-negative {{ color: {RED};   }}
-        .kpi-card .kpi-label {{
+        {s} .kpi-card .kpi-positive {{ color: {GREEN}; }}
+        {s} .kpi-card .kpi-negative {{ color: {RED};   }}
+        {s} .kpi-card .kpi-label {{
             font-size: 0.7rem;
             color: {DIM};
             text-transform: uppercase;
@@ -160,7 +164,7 @@ def _inject_css() -> None:
         }}
 
         /* Section headers */
-        .section-header {{
+        {s} .section-header {{
             color: {CYAN};
             font-size: 0.75rem;
             text-transform: uppercase;
@@ -171,7 +175,7 @@ def _inject_css() -> None:
         }}
 
         /* Sidebar labels */
-        .stSelectbox label, .stSlider label, .stMultiSelect label, .stRadio label {{
+        {s} .stSelectbox label, {s} .stSlider label, {s} .stMultiSelect label, {s} .stRadio label {{
             color: {CYAN} !important;
             font-size: 0.75rem;
             text-transform: uppercase;
@@ -179,7 +183,7 @@ def _inject_css() -> None:
         }}
 
         /* Buttons */
-        .stButton > button {{
+        {s} .stButton > button {{
             background: linear-gradient(90deg, rgba(0,229,255,0.2), rgba(139,115,64,0.2));
             border: 1px solid {CYAN};
             color: {CYAN};
@@ -188,33 +192,32 @@ def _inject_css() -> None:
             letter-spacing: 0.1em;
             transition: all 0.2s;
         }}
-        .stButton > button:hover {{
+        {s} .stButton > button:hover {{
             background: linear-gradient(90deg, rgba(0,229,255,0.4), rgba(139,115,64,0.4));
             box-shadow: 0 0 20px rgba(0,229,255,0.33);
         }}
 
-        hr {{
+        {s} hr {{
             border-color: rgba(0,229,255,0.13);
         }}
 
-        .stProgress > div > div {{
+        {s} .stProgress > div > div {{
             background: linear-gradient(90deg, {CYAN}, {MAGENTA});
         }}
 
-        [data-testid="stExpander"] {{
+        {s} [data-testid="stExpander"] {{
             border: 1px solid rgba(0,229,255,0.13) !important;
             background-color: {BG2} !important;
         }}
 
-        ::-webkit-scrollbar {{ width: 6px; }}
-        ::-webkit-scrollbar-track {{ background: {BG}; }}
-        ::-webkit-scrollbar-thumb {{
+        {s} ::-webkit-scrollbar {{ width: 6px; }}
+        {s} ::-webkit-scrollbar-track {{ background: {BG}; }}
+        {s} ::-webkit-scrollbar-thumb {{
             background: rgba(0,229,255,0.27);
             border-radius: 3px;
         }}
-        </style>
         """,
-        unsafe_allow_html=True,
+        "heatmap",
     )
 
 

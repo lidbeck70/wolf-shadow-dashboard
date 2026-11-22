@@ -537,9 +537,10 @@ hr {
 
 def inject_css():
     """Panelens stilar. Delegerar till skalet (ui/shell.render_shell): ETT dolt <style> per körning med
-    CYBERPUNK_CSS, ramens regler och PWA-taggarna — anroparna är oförändrade."""
+    CYBERPUNK_CSS, ramens regler och PWA-taggarna — anroparna är oförändrade. Returnerar skalets dolda behållare
+    (wolf_panel lägger nav-skriptet i den), None om skalet redan är ritat i körningen."""
     from ui.shell import render_shell
-    render_shell()
+    return render_shell()
 
 
 def wolf_banner():
