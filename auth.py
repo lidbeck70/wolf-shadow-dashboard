@@ -1,5 +1,6 @@
 import os
 import base64
+import functools
 import hashlib
 import hmac
 import time
@@ -117,6 +118,89 @@ def _bridge() -> None:
         pass
 
 
+# ── Inloggningssidan (LIDSKJALV §4.1) ────────────────────────────────────────
+# Skalets stilblock (ui/shell.py) ritas före inloggningen: panelens bakgrund, typsnitten, fältet (52 px, 16 px —
+# ingen iOS-zoom), knappen, kortet på datorn och det dolda huvudet kommer därifrån, valda på nycklarna nedan.
+# Här står bara sidans egna klasser (.arc-login-*): loggan, devisen och raden om kakan.
+LOGIN_KEY = "login_card"          # kolumnen — ett kort på datorn
+WRONG_CODE = "Fel kod — försök igen."
+TAGLINE = "See What the Market Can't."
+
+# Loggan beskärs till en kvadrat runt triangeln och ordmärket (logo_arc är 1536 × 1024 med svart runt om):
+# bildens kvadrat x 390–1110, y 89–809 → bredd 1536/720, vänster −390/720, topp −89/720 av rutan.
+LOGIN_CSS = """
+.arc-login-logo { position: relative; width: 148px; height: 148px; margin: 0 auto; overflow: hidden;
+    border-radius: 16px; background: #000; filter: drop-shadow(0 0 32px rgba(0,229,255,.3));
+    animation: arc-login-breathe 4s ease-in-out infinite; }
+.arc-login-logo img { display: block; width: 100%; height: 100%; max-width: none; object-fit: cover; }
+.arc-login-logo img.arc-login-crop { position: absolute; width: 213.33%; height: auto; left: -54.17%;
+    top: -12.36%; object-fit: fill; }
+@keyframes arc-login-breathe {
+    0%, 100% { filter: drop-shadow(0 0 22px rgba(0,229,255,.22)); }
+    50% { filter: drop-shadow(0 0 40px rgba(0,229,255,.42)); }
+}
+.arc-login-word { font: 700 20px/1.2 'Space Grotesk', sans-serif; letter-spacing: .2em; color: #e8e4dc;
+    text-align: center; padding: 24px 0 0; }
+.arc-login-word b { font-weight: 700; color: #00E5FF; text-shadow: 0 0 12px rgba(0,229,255,.6); }
+.arc-login-tag { font: italic 400 14px/20px 'Space Grotesk', sans-serif; color: #a8a397; text-align: center;
+    margin: 12px 0 0; }
+.arc-login-note { font: 400 12px/1.4 'Space Grotesk', sans-serif; color: #a8a397; text-align: center; }
+@media (min-width: 641px) {
+    .arc-login-logo { width: 180px; height: 180px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .arc-login-logo { animation: none; }
+}
+"""
+
+# (fil, bildtyp, beskär) — Arc-loggan först, den gamla som reserv
+_LOGOS = (("logo_arc.png", "png", True), ("logo_arc.jpg", "jpeg", True), ("logo.jpeg", "jpeg", False))
+
+
+@functools.lru_cache(maxsize=1)
+def _logo_img() -> str:
+    """Loggan som <img> med base64 (läses en gång per process). Ingen fil: tom sträng."""
+    for name, kind, crop in _LOGOS:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", name)
+        try:
+            with open(path, "rb") as fh:
+                b64 = base64.b64encode(fh.read()).decode()
+        except OSError:
+            continue
+        cls = " class='arc-login-crop'" if crop else ""
+        return f"<img{cls} alt='Nordic Arc Systems' src='data:image/{kind};base64,{b64}'/>"
+    return ""
+
+
+def _brand_html() -> str:
+    """Stilen, loggan och devisen i EN markdown. Konsten bär redan NORDIC ARC SYSTEMS — ordmärket i text står bara
+    där ingen bild finns."""
+    img = _logo_img()
+    mark = (f"<div class='arc-login-logo'>{img}</div>" if img
+            else "<div class='arc-login-word'>NORDIC <b>ARC</b> SYSTEMS</div>")
+    return f"<style>{LOGIN_CSS}</style>{mark}<div class='arc-login-tag'>{TAGLINE}</div>"
+
+
+def _login_form() -> None:
+    """Loggan, formuläret och raden om kakan i en kolumn. Ett formulär: tangentbordets "Gå" (Enter) loggar in,
+    och sidan körs inte om för varje tecken."""
+    with st.container(key=LOGIN_KEY):
+        st.markdown(_brand_html(), unsafe_allow_html=True)
+        with st.form("login_form", border=False, enter_to_submit=True):
+            password = st.text_input("Åtkomstkod", type="password", key="login_pw", placeholder="Ange åtkomstkod",
+                                     autocomplete="current-password")
+            sent = st.form_submit_button("LOGGA IN", key="login_btn", type="primary", width="stretch")
+        if sent:
+            if password == _password():
+                st.session_state.authenticated = True
+                st.session_state["_auth_cookie_pending"] = True   # kakan skrivs i nästa körning
+                st.rerun()
+            else:
+                st.error(WRONG_CODE)
+        st.markdown(f"<div class='arc-login-note'>Inloggningen sparas i {REMEMBER_DAYS} dagar på den här enheten."
+                    f"</div>", unsafe_allow_html=True)
+
+
 def render_login_gate() -> bool:
     """Render the login screen. Returns True if authenticated, False otherwise."""
     if "authenticated" not in st.session_state:
@@ -138,92 +222,6 @@ def render_login_gate() -> bool:
             _set_cookie(make_token(_password()))
         return True
 
-    # Arc Systems login page styling
-    st.markdown("""
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;700;900&family=Inter+Tight:wght@400;500&display=swap');
-    .stApp { background-color: #05070A !important; }
-    .arc-login-wrapper {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        padding: 40px 0 20px 0;
-    }
-    .arc-login-wrapper img {
-        max-width: 340px;
-        width: 100%;
-        border-radius: 16px;
-        filter: drop-shadow(0 0 32px rgba(0,229,255,0.3));
-    }
-    .arc-login-title {
-        font-family: 'Space Grotesk', monospace;
-        font-size: 1.6rem;
-        font-weight: 900;
-        letter-spacing: 0.2em;
-        color: #E8EDF2;
-        text-align: center;
-        margin-top: 20px;
-    }
-    .arc-login-title span { color: #00E5FF; text-shadow: 0 0 12px rgba(0,229,255,0.6); }
-    .arc-login-slogan {
-        font-family: 'Inter Tight', sans-serif;
-        font-size: 0.85rem;
-        font-style: italic;
-        color: #6B7280;
-        text-align: center;
-        margin-top: 6px;
-        letter-spacing: 0.05em;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-    _logo_col1, _logo_col2, _logo_col3 = st.columns([1, 2, 1])
-    with _logo_col2:
-        try:
-            # Try new Arc logo first, then fall back to old logo
-            for _logo_name in ["logo_arc.png", "logo_arc.jpg", "logo.jpeg"]:
-                _logo_path = os.path.join(os.path.dirname(__file__), "assets", _logo_name)
-                if os.path.exists(_logo_path):
-                    _ext = "png" if _logo_name.endswith(".png") else "jpeg"
-                    with open(_logo_path, "rb") as _lf:
-                        _logo_b64 = base64.b64encode(_lf.read()).decode()
-                    st.markdown(
-                        f"<div class='arc-login-wrapper'>"
-                        f"<img src='data:image/{_ext};base64,{_logo_b64}'/>"
-                        f"<div class='arc-login-title'>NORDIC <span>ARC</span> SYSTEMS</div>"
-                        f"<div class='arc-login-slogan'>See What the Market Can't.</div>"
-                        f"</div>",
-                        unsafe_allow_html=True,
-                    )
-                    break
-            else:
-                st.markdown(
-                    "<div class='arc-login-wrapper'>"
-                    "<div class='arc-login-title'>NORDIC <span>ARC</span> SYSTEMS</div>"
-                    "<div class='arc-login-slogan'>See What the Market Can't.</div>"
-                    "</div>",
-                    unsafe_allow_html=True,
-                )
-        except Exception:
-            st.markdown(
-                "<div class='arc-login-wrapper'>"
-                "<div class='arc-login-title'>NORDIC <span>ARC</span> SYSTEMS</div>"
-                "</div>",
-                unsafe_allow_html=True,
-            )
-
-    col_l, col_m, col_r = st.columns([1, 1, 1])
-    with col_m:
-        password = st.text_input("Access code", type="password", key="login_pw", label_visibility="collapsed",
-                                 placeholder="Enter access code...")
-        if st.button("ACCESS SYSTEM", use_container_width=True, key="login_btn"):
-            if password == _password():
-                st.session_state.authenticated = True
-                st.session_state["_auth_cookie_pending"] = True   # kakan skrivs i nästa körning
-                st.rerun()
-            else:
-                st.error("Access denied")
-
+    _login_form()
     _bridge()
     return False

@@ -60,8 +60,12 @@ def lock(state) -> None:
     state[STATE] = False
 
 
+CARD_PREFIX = "lock_"    # låskortets behållare: lock_<nyckel> — skalets CSS (ui/shell.py) gör den till ett kort
+
+
 def gate(key: str = "holdings_pw") -> bool:
-    """Ritar låset. True när innehaven får visas."""
+    """Ritar låset. True när innehaven får visas. Låst: ett centrerat kort med fältet och knappen i ett formulär, så
+    att tangentbordets "Gå" (Enter) låser upp — samma nycklar, etiketter, meddelanden och spärr som förut."""
     import streamlit as st
 
     from ui.components import note
@@ -70,18 +74,21 @@ def gate(key: str = "holdings_pw") -> bool:
             lock(st.session_state)
             st.rerun()
         return True
-    st.markdown("#### 🔒 Dina innehav är låsta")
-    if not configured():
-        note(f"Lägg in {SECRET} i Streamlit (Settings → Secrets) för att kunna låsa upp. Innehaven visas inte förrän "
-             f"lösenordet är satt.")
-        return False
-    pw = st.text_input("Lösenord för innehaven", type="password", key=key)
-    if st.button("Lås upp", key=f"{key}_btn"):
-        res = check(pw, st.session_state, _secret())
-        if res == "ok":
-            st.rerun()
-        elif res == "spärrad":
-            st.error(f"För många försök — vänta {BLOCK_S} sekunder.")
-        else:
-            st.error("Fel lösenord.")
+    with st.container(key=f"{CARD_PREFIX}{key}"):
+        st.markdown("#### 🔒 Dina innehav är låsta")
+        if not configured():
+            note(f"Lägg in {SECRET} i Streamlit (Settings → Secrets) för att kunna låsa upp. Innehaven visas inte "
+                 f"förrän lösenordet är satt.")
+            return False
+        with st.form(f"{key}_form", border=False):
+            pw = st.text_input("Lösenord för innehaven", type="password", key=key)
+            sent = st.form_submit_button("Lås upp", key=f"{key}_btn", width="stretch")
+        if sent:
+            res = check(pw, st.session_state, _secret())
+            if res == "ok":
+                st.rerun()
+            elif res == "spärrad":
+                st.error(f"För många försök — vänta {BLOCK_S} sekunder.")
+            else:
+                st.error("Fel lösenord.")
     return False
