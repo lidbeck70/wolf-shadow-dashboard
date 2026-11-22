@@ -548,6 +548,8 @@ def _tab_portfolio() -> None:
             st.markdown("---")
             from portfolio.metals import render_metals_section
             _page(True, render_metals_section, "Fysiska metaller", "portfolio/metals")
+        from ui import routine             # Morgonrundans sista steg; låst bara foten (navigering, inga innehav)
+        routine.footer("holdings")         # så rundan kan avslutas även när innehaven är låsta
     elif sub == "👀 Övervakning":           # utanför låset: listan säger bara vilka aktier som bevakas
         from portfolio.watch_ui import render_watch_page
         _page(True, render_watch_page, "Övervakning", "portfolio/watch_ui")

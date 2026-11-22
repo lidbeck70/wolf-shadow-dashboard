@@ -5,9 +5,17 @@ Läser wolf_regime.json (genererad av wolf_data.py) via Gist/lokal fallback och
 visar trafikljus + regelverk, index vs MA200, marknadsbredd (dör före index),
 antal kvalande bolag och historiken (en punkt per handelsdag, högst 60 ≈ tre månader):
 överblick, stapeldiagram (höjd = bredd, färg = regim, streckat vid 55 % och 45 %) och perioderna.
+
+render_wolf_regime_page(embedded=True) är Swing-läget inbäddat på 👁 ODIN → Läget (LIDSKJALV §4.4, beslut 11):
+ingen egen rubrik och ingen egen 📡 (Lägets Uppdatera läser om båda), regimkortet i domrutans form med EN punkt per
+regel, bevisen som tre kompakta kort (sparklinje, bredd, kvalande) och historiken i en hopfälld ruta. Samma data,
+samma trösklar och samma regeltexter — bara visningen. embedded=False (förval) ritar sidan exakt som förut.
 """
 
 from __future__ import annotations
+
+import re
+from html import escape
 
 import streamlit as st
 
@@ -53,7 +61,11 @@ def _get_data(force: bool = False):
     return st.session_state[_CACHE]
 
 
-def render_wolf_regime_page() -> None:
+def render_wolf_regime_page(embedded: bool = False):
+    """Swing-läget. embedded=True: Lägets inbäddade vy (se modulens text) — returnerar regimdatan (None utan data)
+    så att Läget kan rita 'Kolla en ticker' sist med _ticker_check(d, embedded=True). embedded=False: som förut."""
+    if embedded:
+        return _render_embedded()
     try:
         c_head, c_btn = st.columns([4, 1])
         with c_head:
@@ -115,13 +127,8 @@ def render_wolf_regime_page() -> None:
                         f"Marknadsbredd (andel över MA200)</div>", unsafe_allow_html=True)
             st.markdown(f"<div style='font-size:1.5rem;font-weight:800;color:{TEXT};'>"
                         f"{_pct(breadth)}</div>", unsafe_allow_html=True)
-            bcol = GREEN if breadth > 0.55 else AMBER if breadth > 0.45 else RED
-            st.markdown(
-                f"<div style='background:#2a2a38;border-radius:5px;height:8px;margin-top:4px;'>"
-                f"<div style='width:{min(breadth*100,100):.0f}%;background:{bcol};height:8px;"
-                f"border-radius:5px;'></div></div>",
-                unsafe_allow_html=True)
-            st.caption("> 55 % friskt · 45–55 % smalnar · < 45 % bredden dör — den dör före index.")
+            st.markdown(_breadth_bar(breadth), unsafe_allow_html=True)
+            st.caption(BREADTH_CAPTION)
 
         with m3:
             st.markdown(f"<div style='color:{DIM};font-size:0.7rem;text-transform:uppercase;'>"
@@ -138,19 +145,178 @@ def render_wolf_regime_page() -> None:
         st.error(f"Regim-fliken kunde inte renderas: {e}")
 
 
-def _ticker_check(regime_data: dict) -> None:
+BREADTH_CAPTION = "> 55 % friskt · 45–55 % smalnar · < 45 % bredden dör — den dör före index."
+
+
+def _breadth_bar(breadth: float) -> str:
+    """Bredd-stapeln: grön över 55 %, gul över 45 %, annars röd (samma gränser som texten under den)."""
+    bcol = GREEN if breadth > 0.55 else AMBER if breadth > 0.45 else RED
+    return (f"<div style='background:#2a2a38;border-radius:5px;height:8px;margin-top:4px;'>"
+            f"<div style='width:{min(breadth*100,100):.0f}%;background:{bcol};height:8px;"
+            f"border-radius:5px;'></div></div>")
+
+
+# ── Inbäddat på Läget (LIDSKJALV §4.4) ───────────────────────────────────────
+_BULLET = re.compile(r"^\s*•\s*")
+
+
+def _t(x) -> str:
+    return escape("" if x is None else str(x), quote=False)
+
+
+def sv_stamp(generated) -> str:
+    """'2026-11-20T18:05' → '20 nov 18:05' (klockan som den står sparad); oläsbart → texten som den är."""
+    d = _parse_date(generated)
+    if d is None:
+        return str(generated or "?")
+    m = re.search(r"[T ](\d{2}:\d{2})", str(generated))
+    return f"{_sv_date(d)} {m.group(1)}" if m else _sv_date(d)
+
+
+def rule_lines(rules) -> list:
+    """Regeltexterna för visning, en per rad: ett inledande '• ' tas bort eftersom kortet ritar punkten själv
+    (förut stod den två gånger: listans punkt och textens). Texterna i wolf_regime.json är oförändrade."""
+    out = []
+    for r in rules if isinstance(rules, (list, tuple)) else []:
+        text = _BULLET.sub("", "" if r is None else str(r)).strip()
+        if text:
+            out.append(text)
+    return out
+
+
+def regime_card_html(d: dict) -> str:
+    """Regimkortet i domrutans form (§3.5.9): '● GUL — selektiv, halv storlek' i 20 px 800 och reglerna under,
+    EN punkt per regel. Färgen är regimens; orden är _STYLE:s och wolf_regime.json:s — inget härleds."""
+    from ui.tokens import FONT_UI, MUTED, tint
+    stl = _STYLE.get(d.get("regime"), _STYLE["OKÄND"])
+    col = stl["dot"]
+    word, _sep, rest = stl["label"].partition(" — ")
+    lines = "".join(f'<li style="display:flex;gap:8px;margin:4px 0 0;"><span aria-hidden="true" '
+                    f'style="color:{MUTED};">•</span><span style="min-width:0;">{_t(r)}</span></li>'
+                    for r in rule_lines(d.get("rules")))
+    return (f'<div class="wolf-regime-card" style="background:{tint(col, .06)};border:1px solid {tint(col, .4)};'
+            f'border-left:4px solid {col};border-radius:14px;padding:12px 14px;margin:0 0 8px;min-width:0;">'
+            f'<div style="font-family:{FONT_UI};font-size:20px;font-weight:800;line-height:1.25;color:{TEXT};'
+            f'letter-spacing:.01em;"><span style="color:{col};">● {_t(word)}</span>'
+            + (f' — {_t(rest)}' if rest else "") + "</div>"
+            + (f'<ul style="list-style:none;margin:8px 0 0;padding:0;color:{TEXT};font-size:14px;line-height:1.45;">'
+               f"{lines}</ul>" if lines else "")
+            + "</div>")
+
+
+def _ev_card(label: str, body: str, caption: str = "") -> str:
+    """Ett kompakt bevis-kort: etikett (12 px MUTED versaler), värdet, en dämpad rad."""
+    from ui.tokens import BG_CARD, BORDER_CARD, FONT_UI, MUTED
+    return (f'<div class="wolf-ev-card" style="background:{BG_CARD};border:1px solid {BORDER_CARD};'
+            f'border-radius:12px;padding:10px 12px;min-width:0;">'
+            f'<div style="color:{MUTED};font-family:{FONT_UI};font-size:12px;font-weight:600;line-height:1.2;'
+            f'letter-spacing:.1em;text-transform:uppercase;">{_t(label)}</div>{body}'
+            + (f'<div style="color:{MUTED};font-size:12px;line-height:1.4;margin-top:4px;">{caption}</div>'
+               if caption else "")
+            + "</div>")
+
+
+def _value(text: str, after: str = "") -> str:
+    from ui.tokens import FONT_MONO
+    return (f'<div style="margin-top:4px;line-height:1.2;"><span style="color:{TEXT};font-family:{FONT_MONO};'
+            f'font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;">{_t(text)}</span>{after}</div>')
+
+
+def evidence_html(d: dict) -> str:
+    """Bevisen som tre kompakta kort i ETT block: OMXSPI mot MA200 med 30 dagars sparklinje (samma serie som
+    förut, idx['spark']), marknadsbredden med samma stapel och samma gränser, och kvalande bolag. Bredd-texten
+    escapas — som markdown blev '> 55 %' ett citatblock; nu står tecknet kvar."""
+    from ui.charts import sparkline_svg
+    from ui.components import missing
+    from ui.tokens import FONT_UI, NOTE, ink
+    idx = d.get("index") if isinstance(d.get("index"), dict) else None
+    small = f"font-family:{FONT_UI};font-size:13px;font-weight:700;margin-left:6px;"
+    if idx:
+        above = idx.get("above")
+        dist = _num(idx.get("dist"))
+        word = (f'<span style="color:{ink(GREEN if above else RED)};{small}">'
+                f'{"över" if above else "UNDER"}</span>')
+        body = _value(_sv_pct(dist, 1), word) if dist is not None else \
+            f'<div style="margin-top:6px;">{missing("avståndet till MA200 saknas")}</div>'
+        spark = sparkline_svg(idx.get("spark") or [], NOTE, height=40, label="OMXSPI, senaste 30 dagarna")
+        if spark:
+            body += f'<div style="margin-top:6px;">{spark}</div>'
+        idx_card = _ev_card("OMXSPI vs MA200", body,
+                            _t(f"{idx.get('close', '?')} vs MA200 {idx.get('ma200', '?')} · 30 dagar"))
+    else:
+        idx_card = _ev_card("OMXSPI vs MA200", f'<div style="margin-top:6px;">{missing("index saknas")}</div>')
+    breadth = _num(d.get("breadth"))
+    if breadth is None:
+        b_body = f'<div style="margin-top:6px;">{missing("bredden saknas i wolf_regime.json")}</div>'
+    else:
+        b_body = _value(_sv_pct(breadth, 1)) + _breadth_bar(breadth)
+    # Etiketten kort (§4.4 "MARKNADSBREDD") så de tre värdena står i linje på desktop; "andel över MA200" står
+    # i bildtexten. Motorsidans etikett (embedded=False) är oförändrad.
+    b_card = _ev_card("Marknadsbredd", b_body, _t(f"Andel över MA200 · {BREADTH_CAPTION}"))
+    universe = f'<span style="color:{NOTE};{small}font-weight:400;">av {_t(d.get("universe", "?"))}</span>'
+    q_card = _ev_card("Kvalande bolag", _value(str(d.get("qualifying", "?")), universe),
+                      "Krympande lista vecka för vecka = momentum smalnar.")
+    return (f'<div class="wolf-ev" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));'
+            f'gap:8px;min-width:0;">{idx_card}{b_card}{q_card}</div>')
+
+
+def _no_data_html() -> str:
+    """Saknas är grått och ärligt (§2.7): chipet, samma två meningar som sidan alltid sagt — i 13 px, inte i
+    st.caption, där kodrutan för 'python wolf_data.py' blev 10,5 px."""
+    from ui.components import missing
+    from ui.tokens import BG_CARD, BORDER_CARD, FONT_MONO, MUTED
+    code = f'<span style="font-family:{FONT_MONO};font-size:13px;color:{TEXT};">python wolf_data.py</span>'
+    return (f'<div class="wolf-regime-card" style="background:{BG_CARD};border:1px dashed {BORDER_CARD};'
+            f'border-radius:14px;padding:12px 14px;min-width:0;">{missing("wolf_regime.json gick inte att läsa")}'
+            f'<span style="color:{TEXT};font-size:14px;margin-left:8px;">Ingen regimdata hittad ännu.</span>'
+            f'<div style="color:{MUTED};font-size:13px;line-height:1.45;margin-top:6px;">Kör {code} så att '
+            f'<b>wolf_regime.json</b> hamnar i Gist:en eller panelens public-/data-mapp.</div></div>')
+
+
+def _render_embedded():
+    """Lägets Swing-läge: sektionsrubriken med tiden, regimkortet och bevisen (sida vid sida från 640 px, 2:3),
+    historiken i en hopfälld ruta. Ingen rubrik och ingen 📡 — Lägets Uppdatera läser om datan (beslut 11)."""
+    from ui.components import section
+    try:
+        d = _get_data()
+        if not d or not isinstance(d, dict):
+            st.markdown(section("Swing-läget", count="Saknas"), unsafe_allow_html=True)
+            st.markdown(_no_data_html(), unsafe_allow_html=True)
+            return None
+        st.markdown(section("Swing-läget", count=f"uppdaterad {sv_stamp(d.get('generated'))}"),
+                    unsafe_allow_html=True)
+        left, right = st.columns([2, 3], gap="small")
+        with left:
+            st.markdown(regime_card_html(d), unsafe_allow_html=True)
+        with right:
+            st.markdown(evidence_html(d), unsafe_allow_html=True)
+        if clean_history(d.get("history", [])):
+            with st.expander("Historik", expanded=False):
+                _history(d.get("history", []), embedded=True)
+        return d
+    except Exception as e:
+        st.error(f"Regim-fliken kunde inte renderas: {e}")
+        return None
+
+
+def _ticker_check(regime_data: dict, embedded: bool = False) -> None:
     """Slå en ticker mot momentum-reglerna: köp, bevaka, håll eller sälj.
 
     Samma dom som Copiloten ger — swing_verdict.verdict är EN funktion som
     båda flikarna anropar, så de kan inte säga olika saker. Underlaget är
     regimljuset ovan, screenerrankingen och dina positioner i Swing-fliken.
+    embedded=True (Läget): en sektionsrubrik i stället för h3 — fältet och domen som förut.
     """
     import storage
     import swing_verdict
     import wolf_screener_ui
 
-    st.markdown(f"<h3 style='color:{TEXT};margin:18px 0 4px;'>Kolla en "
-                f"ticker</h3>", unsafe_allow_html=True)
+    if embedded:
+        from ui.components import section
+        st.markdown(section("Kolla en ticker"), unsafe_allow_html=True)
+    else:
+        st.markdown(f"<h3 style='color:{TEXT};margin:18px 0 4px;'>Kolla en "
+                    f"ticker</h3>", unsafe_allow_html=True)
     ticker = st.text_input("Ticker", key="swreg_ticker",
                            placeholder="t.ex. ANOT, ERIC B eller ERIC-B.ST",
                            label_visibility="collapsed").strip()
@@ -470,12 +636,18 @@ def _box_grid_html(rows: list) -> str:
     return f"<div style='display:flex;gap:2px;height:64px;margin:6px 0;'>{cells}</div>"
 
 
-def _history(hist: list) -> None:
+def _history(hist: list, embedded: bool = False) -> None:
+    """embedded=True (Lägets hopfällda Historik-ruta): rubriken i 12 px MUTED i stället för 0,7 rem DIM."""
     rows = clean_history(hist)
     if not rows:
         return
-    st.markdown(f"<div style='color:{DIM};font-size:0.7rem;text-transform:uppercase;"
-                f"margin:14px 0 6px;'>Regim-historik — senaste {len(rows)} handelsdagarna "
+    if embedded:
+        from ui.tokens import MUTED
+        size, color, margin = "12px", MUTED, "0 0 6px"
+    else:
+        size, color, margin = "0.7rem", DIM, "14px 0 6px"
+    st.markdown(f"<div style='color:{color};font-size:{size};text-transform:uppercase;"
+                f"margin:{margin};'>Regim-historik — senaste {len(rows)} handelsdagarna "
                 f"(regim · bredd)</div>",
                 unsafe_allow_html=True)
     st.markdown(_overview_html(history_summary(rows)), unsafe_allow_html=True)

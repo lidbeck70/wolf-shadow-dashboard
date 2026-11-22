@@ -924,6 +924,17 @@ violetTextColor = "#c35cff"
   - Widgets that Streamlit fills with the primary colour keep readable text: multiselect tags and the date picker's selected day get `#05070A` (white was 1.5:1); the number input's −/+ icon turns dark on its cyan hover; CYBERPUNK_CSS's cyan box behind the slider value is removed, because the value text is now cyan.
   - No scoped cyan primaries existed to remove: `login_btn` and `morning_next_*` arrive in PR 17/18 and inherit the theme.
 
+**Notes for PR 19 (Läget och rundans steg)**
+- As built (PR 19):
+  - `render_wolf_regime_page(embedded=False)` renders byte-identically (a test fingerprints the element tree). The motor page MER › Motorsidor › Wolf Regime is `tabs/regime.tab_regime`, which never called this function, so it is unchanged by construction.
+  - `embedded=True` returns the regime dict; Läget draws "Kolla en ticker" last, after the Marknadsrisk row (the §4.4 order), via `_ticker_check(d, embedded=True)`.
+  - The section reads "SWING-LÄGET" with "uppdaterad 20 nov 18:05" as its mono count on the right. Evidence numbers use the existing `_sv_pct` ("3,1 %", "48,0 %"); a missing index or breadth shows the Saknas chip instead of a silent "0.0%". The sparkline is NOTE-grey (a price series: no sign colour, and cyan means interaction).
+  - On Thor, Scorecard and Positioner the head row exists only while the round shows, so a normal visit is drawn as before. During the round the subtitle moves under the head row (`head_row(subtitle=…)`), so the pill stays beside the title on the phone.
+  - Positioner: the pill only when unlocked (it sits in the page); the closing footer "✓ Morgonrundan klar · Till I DAG ↑" also shows under the lock card — navigation only, no holdings — so a locked Positioner can still end the round (otherwise the pill and footer stayed on Läget, Thor and Scorecard all day).
+  - The Marknadsrisk row: the toggle's label fills the 56 px card, so the whole card is the tap target (§2.4). The breadth card's label is "Marknadsbredd" (§4.4); "Andel över MA200" leads its caption.
+  - `ui/routine.CSS`: the footer's markdown gets `margin-bottom:0` — without it the button covered the dots on every page except I DAG.
+  - Open: `links.go("thor")` keeps an open `thor_ticker`, so the round can land in Thor's analysis (no pill there). The Marknadsrisk page inside `st.status` still has labels under 12 px (`market_risk_ui.py`).
+
 **Backlog, owner-gated, not in the 12 PRs:**
 - decision 12 content (`rules_page` hard rules first; new `tests/test_design_rules_order.py` asserting every rule text is present exactly once);
 - decision 15 (inner tabs; Swedish metrics, editing `test_fix_panelen_korrekthet.py:121-123,132`);
