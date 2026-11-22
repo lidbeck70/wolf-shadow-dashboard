@@ -937,13 +937,19 @@ def _render_summary_header() -> None:
     # Title + cash input
     title_col, cash_col = st.columns([3, 1])
     with title_col:
-        st.markdown(
-            f"<h1 style='color:{STRATEGY_COLORS['Quality']};letter-spacing:0.12em;"
-            f"margin:0 0 2px 0;'>POSITIONER</h1>"
-            f"<p style='color:{DIM};font-size:0.7rem;letter-spacing:0.08em;margin:0;'>"
-            f"Alla strategiers positioner · säljreglerna · signalerna</p>",
-            unsafe_allow_html=True,
-        )
+        from ui import routine
+        from ui.components import head_row
+        h1 = (f"<h1 style='color:{STRATEGY_COLORS['Quality']};letter-spacing:0.12em;"
+              f"margin:0 0 2px 0;'>POSITIONER</h1>")
+        sub = (f"<p style='color:{DIM};font-size:0.7rem;letter-spacing:0.08em;margin:0;'>"
+               f"Alla strategiers positioner · säljreglerna · signalerna</p>")
+        if routine.shows("holdings"):          # Morgonrundans pill bredvid rubriken, underraden under raden
+            with head_row("holdings"):
+                st.markdown(f"<div class='wolf-head'>{h1}</div>", unsafe_allow_html=True)
+                routine.pill("holdings")
+            st.markdown(sub, unsafe_allow_html=True)
+        else:                                  # utan runda ritas rubriken som förut
+            st.markdown(h1 + sub, unsafe_allow_html=True)
     with cash_col:
         new_cash = st.number_input(
             "Cash (SEK)", value=cash, min_value=0.0, step=1000.0,

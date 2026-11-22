@@ -374,10 +374,21 @@ def _apply_links(st) -> None:
 # ── Sidan ───────────────────────────────────────────────────────────────────
 def render_thor_page() -> None:
     import streamlit as st
-    from ui.components import note, page_header
-    page_header("🔨 Thor", "Alla strategiers kandidater på ett ställe — tryck på en aktie, så kommer analysen "
-                "innan köp. Inga nya regler: varje rad bär strategins eget verdikt.")
+    from ui import routine
+    from ui.components import head_row, note, page_header
     _apply_links(st)
+    # Morgonrundan (§3.5.20) bara i listläget och bara under rundan — analysen av en aktie är inte rundans steg, och
+    # utan runda ritas rubriken som förut. Fältets värde läses ur sessionen innan fältet ritas (samma värde som
+    # st.text_input ger längre ned i körningen).
+    in_round = not tc.yf(st.session_state.get("thor_ticker") or "") and routine.shows("thor")
+    sub = ("Alla strategiers kandidater på ett ställe — tryck på en aktie, så kommer analysen innan köp. Inga nya "
+           "regler: varje rad bär strategins eget verdikt.")
+    if in_round:                                     # underraden under huvudraden, så pillret står bredvid rubriken
+        with head_row("thor", subtitle=sub):
+            page_header("🔨 Thor")
+            routine.pill("thor")
+    else:
+        page_header("🔨 Thor", sub)
     c1, c2 = st.columns([1, 3])
     if c1.button("📡 Uppdatera", key="thor_refresh") or _STATE not in st.session_state:
         with st.spinner("Läser körningarna ur Gisten …"):
@@ -419,6 +430,8 @@ def render_thor_page() -> None:
     note("Thor-rank 0–100 är bara en sorteringsskala mellan strategier — strategins egen siffra står alltid "
          "bredvid. KÖP/BEVAKA/HÅLL/SPÄRRAD är strategins eget verdikt, översatt rakt av. Listan läses ur de "
          "schemalagda körningarna; kör dem i GitHub Actions för färska rader. Riktiga order läggs alltid manuellt.")
+    if not ticker:
+        routine.footer("thor")
 
 
 def _scan_now(st, data: dict, strategy: str) -> None:

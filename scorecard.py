@@ -33,7 +33,8 @@ import csv_export
 import lukacs
 import storage
 import storage_ui
-from ui.components import confirm_delete, page_header
+from ui import routine
+from ui.components import confirm_delete, head_row, page_header
 
 _CACHE_KEY = "scorecard_data"
 STORE = "scorecard"   # data/scorecard.json
@@ -454,14 +455,21 @@ def engine_summary(ticker: str) -> Optional[str]:
 def render_scorecard_page() -> None:
     data = _load()
     storage_ui.save_bar(STORE, "Master Scorecard")
-    page_header("Scorecard", "Sista steget före köp. Kandidaterna läses ur de andra "
-                "flikarna — här fattas bara beslutet.")
+    # Morgonrundans pill bredvid rubriken — huvudraden bara under rundan, annars ritas rubriken som förut
+    sub = "Sista steget före köp. Kandidaterna läses ur de andra flikarna — här fattas bara beslutet."
+    if routine.shows("scorecard"):              # underraden under huvudraden, så pillret står bredvid rubriken
+        with head_row("scorecard", subtitle=sub):
+            page_header("Scorecard")
+            routine.pill("scorecard")
+    else:
+        page_header("Scorecard", sub)
 
     entries = collect(_gather())
     if not entries:
         st.info("Inga kandidater ännu. Lägg upp dem i Poängmodellen, Tiggre, "
                 "Granskningsarken, Durrett/Confidence eller Insider — de dyker "
                 "upp här automatiskt.")
+        routine.footer("scorecard")
         return
 
     cards = data.setdefault("cards", {})
@@ -481,6 +489,7 @@ def render_scorecard_page() -> None:
         _card(data, cards, entry, expanded=bool(foc))
 
     _stale(cards)
+    routine.footer("scorecard")                    # Morgonrundan: "Nästa: Positioner →" (bara under rundan)
 
 
 def _rc():

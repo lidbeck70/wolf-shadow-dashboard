@@ -161,3 +161,192 @@ def test_i_dag_wires_the_pill_in_the_head_row_and_the_footer(monkeypatch):
     assert at.session_state["nav_goto"] == "odin/laget" and at.session_state["morning"]["seen"] == ["home"]
     src = open(routine.__file__, encoding="utf-8").read()
     assert "load(" not in src and "save" not in src.lower() and "storage" not in src     # ingen data i rundan
+
+
+# ── LIDSKJALV PR 19: rundans steg på sidorna — Läget, Thor (listan), 🎯 Scorecard, Positioner (upplåst) ──────────
+import os  # noqa: E402
+import sys  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+STARTED = {"morning": {"date": DAY, "seen": ["home"]}}
+
+
+def _round_keys(at) -> dict:
+    return {b.key: b.label for b in at.button if str(b.key).startswith("morning_")}
+
+
+def _page(script, state=None, timeout=120):
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_function(script, default_timeout=timeout)
+    for k, v in (state or {}).items():
+        at.session_state[k] = v
+    return at.run()
+
+
+def _laget():
+    from odin import laget
+    laget.render_laget_page()
+
+
+def _thor():
+    from thor import ui as t
+    t.render_thor_page()
+
+
+def _scorecard():
+    import scorecard
+    scorecard.render_scorecard_page()
+
+
+def _positioner():
+    import os as _o
+    import sys as _s
+    _s.path.insert(0, _o.environ["MORNING_TEST_ROOT"])
+    import wolf_panel
+    wolf_panel._tab_portfolio()
+
+
+def _patch_laget(monkeypatch):
+    import wolf_regime_ui
+    from odin import laget
+    monkeypatch.setattr(laget, "load", lambda: {"alloc": None, "regime": None, "risk": None, "board": None})
+    monkeypatch.setattr(wolf_regime_ui, "_load_wolf", lambda name: {"regime": "GUL", "generated": "2026-11-20T18:05",
+                                                                    "rules": ["Halv storlek."]})
+
+
+def _patch_store(monkeypatch):
+    import storage
+    import streamlit as st
+    monkeypatch.setattr(storage, "session_load",
+                        lambda name, default=None, legacy_file=None: st.session_state.setdefault(name, default))
+
+
+def _patch_positioner(monkeypatch):
+    import copy
+
+    import holdings
+    import refresh_ui
+    import storage
+    seed = {"holdings": {"long": [{"id": "q1", "ticker": "BOL.ST", "strategy": "Quality", "entry_price": 70.0,
+                                   "shares": 10}], "cash": 1000}}
+    monkeypatch.setattr(storage, "load_json", lambda name, default=None: copy.deepcopy(seed.get(name, default)))
+    monkeypatch.setattr(storage, "legacy_gist", lambda *a, **k: None)
+    monkeypatch.setattr(refresh_ui, "load_refresh", lambda: {})
+    monkeypatch.setattr(holdings, "_fetch_live_price", lambda t, period="6mo": {"price": 0, "change_1d": 0, "df": None})
+    monkeypatch.setattr(holdings, "_get_regime_signal", lambda t, s: None)
+    monkeypatch.setenv("MORNING_TEST_ROOT", ROOT)
+
+
+def _assert_round(at, step, shown):
+    assert not at.exception, at.exception
+    keys = _round_keys(at)
+    if not shown:
+        assert keys == {}, (step, keys)
+        assert not [m for m in at.markdown if "wolf-dots" in m.value], step
+        return
+    i = routine.index(step) + 1
+    assert keys == {f"morning_top_{step}": f"{i}/5 ›", f"morning_next_{step}": routine.next_label(step)}, keys
+    order = [b.key for b in at.button]
+    assert order.index(f"morning_top_{step}") < order.index(f"morning_next_{step}")   # pillret överst, foten sist
+    assert order[-1] == f"morning_next_{step}" or step == "holdings", order
+
+
+def test_laget_has_the_pill_in_the_head_row_and_the_footer_only_during_the_round(monkeypatch):
+    monkeypatch.setattr(routine, "_today", lambda: DAY)
+    _patch_laget(monkeypatch)
+    _assert_round(_page(_laget), "laget", False)
+    at = _page(_laget, STARTED)
+    _assert_round(at, "laget", True)
+    keys = [b.key for b in at.button]
+    assert keys[:2] == ["laget_refresh", "morning_top_laget"]          # huvudraden: 📡 och pillret
+    assert keys[-1] == "morning_next_laget"
+    assert at.session_state["morning"] == STARTED["morning"]          # inget skrivs när sidan öppnas
+    at.button(key="morning_top_laget").click().run()
+    assert at.session_state["nav_goto"] == "thor" and at.session_state["morning"]["seen"] == ["home", "laget"]
+
+
+def test_thor_shows_the_round_in_list_mode_only(monkeypatch):
+    import test_thor_ui as tu
+    monkeypatch.setattr(routine, "_today", lambda: DAY)
+    tu._patch(monkeypatch)
+    _assert_round(_page(_thor), "thor", False)
+    at = _page(_thor, STARTED)
+    _assert_round(at, "thor", True)
+    assert "32 KANDIDATER" in " ".join(m.value for m in at.markdown)  # listan som förut
+    at = _page(_thor, {**STARTED, "thor_ticker": "bol.st"})           # analysen: inte rundans steg
+    _assert_round(at, "thor", False)
+    assert "VAD SKA JAG GÖRA?" in " ".join(m.value for m in at.markdown)
+
+
+def test_scorecard_shows_the_round_with_and_without_candidates(monkeypatch):
+    import test_thor_scorecard_entry as tse
+    monkeypatch.setattr(routine, "_today", lambda: DAY)
+    _patch_store(monkeypatch)
+    _assert_round(_page(_scorecard), "scorecard", False)
+    _assert_round(_page(_scorecard, STARTED), "scorecard", True)                     # inga kandidater: foten ändå
+    at = _page(_scorecard, {**STARTED, **tse._stores()})
+    _assert_round(at, "scorecard", True)
+    assert {m.label: m.value for m in at.metric}["Klara för köp"] == "1"            # sidan som förut
+    at.button(key="morning_next_scorecard").click().run()
+    assert at.session_state["nav_goto"] == "portfolio/positioner"
+
+
+def test_positioner_shows_the_pill_only_after_unlock_and_the_closing_footer_always(monkeypatch):
+    """Låst: bara foten ('✓ Morgonrundan klar') under låskortet — navigering, inga innehav — så rundan kan avslutas;
+    annars stod pillret och foten kvar på Läget, Thor och Scorecard resten av dagen."""
+    from portfolio import private_lock as pl
+    monkeypatch.setattr(routine, "_today", lambda: DAY)
+    _patch_positioner(monkeypatch)
+    late = {"morning": {"date": DAY, "seen": ["home", "laget", "thor", "scorecard"]}, "sub_portfolio": "Positioner"}
+    at = _page(_positioner, late)                                                    # låst: bara foten
+    assert not at.exception, at.exception
+    assert _round_keys(at) == {"morning_next_holdings": routine.DONE}
+    assert any("låsta" in m.value for m in at.markdown)
+    at.button(key="morning_next_holdings").click().run()
+    assert at.session_state["nav_goto"] == "home"
+    assert not routine.active({"morning": at.session_state["morning"]}, DAY)        # rundan är klar
+    at = _page(_positioner, {**late, pl.STATE: True})                                # upplåst: pillret och foten
+    _assert_round(at, "holdings", True)
+    assert at.button(key="morning_next_holdings").label == "✓ Morgonrundan klar · Till I DAG ↑"
+    at = _page(_positioner, {"sub_portfolio": "Positioner", pl.STATE: True})        # upplåst utan runda: rent
+    _assert_round(at, "holdings", False)
+
+
+def _chain():
+    """Panelens väg mellan rundans sidor: nav_goto → sidans steg (som wolf_panel._apply_deep_link) → sidans pill."""
+    import streamlit as st
+    from ui import nav, routine as r
+    slug = st.session_state.pop("nav_goto", None) or st.session_state.get("_at", "home")
+    st.session_state["_at"] = slug
+    step = {nav.target_slug(k): k for k in r.KEYS}[slug]
+    st.session_state["_steps"] = st.session_state.get("_steps", []) + [step]
+    r.pill(step)
+    r.footer(step)
+
+
+def test_four_taps_from_i_dag_reach_positioner(monkeypatch):
+    """§8.11: från I DAG når pillret Positioner på fyra tryck — Läget, Thor, 🎯 Scorecard, Positioner."""
+    monkeypatch.setattr(routine, "_today", lambda: DAY)
+    at = _page(_chain)
+    taps = 0
+    for step in routine.KEYS[:-1]:
+        assert at.session_state["_steps"][-1] == step
+        at.button(key=f"morning_top_{step}").click().run()
+        taps += 1
+    assert taps == 4 and at.session_state["_steps"][-1] == "holdings" and at.session_state["_at"] == "portfolio/positioner"
+    assert at.session_state["morning"]["seen"] == ["home", "laget", "thor", "scorecard"]
+    at.button(key="morning_next_holdings").click().run()                             # klar: tillbaka till I DAG
+    assert at.session_state["_at"] == "home" and not routine.active({"morning": at.session_state["morning"]}, DAY)
+
+
+def test_step_pages_wire_the_round_in_the_source():
+    import pathlib
+    root = pathlib.Path(ROOT)
+    for path, step in (("odin/laget.py", "laget"), ("thor/ui.py", "thor"), ("scorecard.py", "scorecard"),
+                       ("holdings.py", "holdings")):
+        src = (root / path).read_text(encoding="utf-8")
+        assert f'routine.pill("{step}")' in src, path
+    panel = (root / "wolf_panel.py").read_text(encoding="utf-8")
+    gate = panel.split("if gate():", 1)[1].split("elif sub ==", 1)[0]
+    assert 'routine.footer("holdings")' in gate                       # Positionerns fot efter sidan (och låskortet)

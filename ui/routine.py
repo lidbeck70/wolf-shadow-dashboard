@@ -36,6 +36,8 @@ CSS = f"""
 {PILL} p, {PILL} [data-testid="stMarkdownContainer"] {{ font: inherit; color: inherit; letter-spacing: inherit; }}
 {PILL}:hover, {PILL}:focus-visible {{ color: {ACCENT}; background: rgba(0,229,255,.08); }}
 [class*="st-key-morning_foot_"] {{ gap: 8px; margin-top: 24px; }}
+/* Markdown-rutans -1rem drog knappen över prickraden på sidor utan egen nollning (I DAG har home_page-regeln) */
+[class*="st-key-morning_foot_"] [data-testid="stMarkdownContainer"] {{ margin-bottom: 0; }}
 [class*="st-key-morning_next_"] .stButton > button[kind="primary"] {{ min-height: 48px; }}
 .wolf-dots {{ display: flex; align-items: center; gap: 8px; font: 600 12px/1.2 {FONT_UI}; color: {MUTED};
     letter-spacing: .12em; text-transform: uppercase; }}
