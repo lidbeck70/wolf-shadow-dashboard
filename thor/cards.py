@@ -107,6 +107,18 @@ def kpi_row(items: list) -> str:
             + "".join(kpi_chip(*it) for it in items) + "</div>")
 
 
+def lage_strip(items: list) -> str:
+    """Lägets rutor som en svepbar remsa (LIDSKJALV §4.5, ui/components.kpi_strip) — samma etiketter, ordning, värden
+    och färger som thor.ui.lage_items. Remsan staplar värden med ' · ' och visar Nordens 'n/m GRÖN' som 'n/m gröna';
+    källornas ord står därför ordagrant i aria-label ('Kandidater 32 · 13 KÖP'), som skärmläsaren läser. Ett '—'
+    (Valhall-kartan saknas) visas som Saknas-chipet med underraden som förklaring (§2.7)."""
+    from ui.components import kpi_strip
+    said = " · ".join(f"{it[0]} {it[1]}" for it in items or ())
+    shown = [(it[0], None if it[1] == "—" else it[1], *it[2:]) for it in items or ()]   # '—' = ingen karta: Saknas
+    return (f"<div class='thor-lage' role='group' aria-label=\"{escape(said, quote=True)}\">"
+            f"{kpi_strip(shown)}</div>")
+
+
 # ── Kandidatraden ───────────────────────────────────────────────────────────
 def levels_text(c: tc.Candidate) -> str:
     parts = []
@@ -237,6 +249,63 @@ def vn_execution_row(decision) -> str:
     return (f"<div style='margin:4px 0 8px;'><div style='color:{CYAN};font-size:12px;letter-spacing:0.12em;'>"
             f"VIKING EXECUTION {decision.execution_passed}/{decision.execution_total}</div>"
             f"<div style='display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;'>{''.join(chips)}</div></div>")
+
+
+def _val(x, fmt):
+    """Ett nyckeltal som text — None (ingen kurs, för kort historik) blir None, så att rutan visar Saknas."""
+    return None if x is None else fmt(x)
+
+
+def snapshot_items(snap: Optional[dict]) -> list:
+    """Ögonblicksbilden som kpi_strip-rutor (LIDSKJALV §4.6): Kurs · 1 mån · 3 mån · ATR · EMA50 · EMA200 · 52 v ur
+    samma dict som snapshot_row. Bara förändringarna (1 mån, 3 mån) färgas efter tecknet — en kurs eller ett avstånd
+    färgas aldrig. Ett saknat tal blir Saknas-chipet, aldrig '—' eller 0."""
+    s = snap or {}
+    return [("Kurs", _val(s.get("price"), _num), TEXT, s.get("as_of") or ""),
+            ("1 mån", _val(s.get("ret_1m_pct"), _pct), TEXT, "", s.get("ret_1m_pct")),
+            ("3 mån", _val(s.get("ret_3m_pct"), _pct), TEXT, "", s.get("ret_3m_pct")),
+            ("ATR", _val(s.get("atr_pct"), lambda v: _pct(v).lstrip("+")), TEXT, "per dag"),
+            ("EMA50", _val(s.get("dist_ema50_pct"), _pct), TEXT, "avstånd"),
+            ("EMA200", _val(s.get("dist_ema200_pct"), _pct), TEXT, "avstånd"),
+            ("52 v", _val(s.get("from_high_pct"), _pct), TEXT, "från toppen")]
+
+
+def storlek_grid(sz: Optional[dict], risk_pct=None, footnote: str = "") -> str:
+    """Storleken som 2 × 3 rutor (LIDSKJALV §3.5.14), lästa rakt ur thor.storlek.size()-dicten som Thor redan räknat
+    (efter halved() när raden säger GUL regim): rad 1 KÖP · STOPP · MÅL 3R, rad 2 RISKSTORLEK · RISK · TAK. Ingen ny
+    aritmetik — talen skrivs bara ut; ett None blir Saknas-chipet med orsaken i tooltipen. footnote = sk.row_text(),
+    hela raden i 12 px MUTED att kopiera (formeln står där)."""
+    from ui.components import tile
+    from ui.tokens import MUTED
+    sz = sz or {}
+    ccy = sz.get("currency") or "SEK"
+
+    def kr(x):
+        return f"{x:,.0f}".replace(",", " ")
+
+    half = "halverat" if "halverat" in str(sz.get("formula") or "") else ""
+    no_risk = "strategin har ingen fast risk per affär"
+    no_cap = "inget tak i Allokering för strategin"
+
+    def sub(*parts):
+        return " · ".join(p for p in parts if p)
+
+    # Talet i rutan, enheten i underraden — så att talet aldrig bryts mitt i ("1 500" / "kr") på telefonen
+    row1 = [tile("Köp", _val(sz.get("entry"), lambda v: f"{v:.2f}"), TEXT, ccy),
+            tile("Stopp", _val(sz.get("stop"), lambda v: f"{v:.2f}"), TEXT, ccy),
+            tile("Mål 3R", _val(sz.get("target_3r"), lambda v: f"{v:.2f}"), TEXT, ccy)]
+    has_risk, has_cap = sz.get("risk_shares") is not None, sz.get("cap_shares") is not None
+    row2 = [tile("Riskstorlek", sz.get("risk_shares"), TEXT, sub("st", half) if has_risk else no_risk),
+            tile("Risk", _val(sz.get("risk_amt"), kr), TEXT,
+                 sub("kr", f"{risk_pct:g} %" if risk_pct else "") if sz.get("risk_amt") is not None else no_risk),
+            tile("Tak", sz.get("cap_shares"), TEXT,
+                 sub("st", kr(sz["cap_amt"]) + " kr" if sz.get("cap_amt") is not None else "", half) if has_cap
+                 else no_cap)]
+    grid = "".join(f"<div style='display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;'>{''.join(r)}</div>"
+                   for r in (row1, row2))
+    foot = (f"<div class='thor-rowtext' style='color:{MUTED};font-size:12px;line-height:1.45;margin-top:8px;"
+            f"-webkit-user-select:all;user-select:all;overflow-wrap:anywhere;'>{_e(footnote)}</div>" if footnote else "")
+    return f"<div class='thor-storlek' style='display:grid;gap:8px;min-width:0;'>{grid}{foot}</div>"
 
 
 def snapshot_row(snap: Optional[dict]) -> str:

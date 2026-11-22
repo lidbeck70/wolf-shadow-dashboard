@@ -98,9 +98,15 @@ def shows(step: str, state=None, today: Optional[str] = None) -> bool:
 
 
 def advance(step: str, state=None) -> None:
-    """Knapparnas callback: steget är taget, nästa sida öppnas (ui/links.go → nav_goto)."""
+    """Knapparnas callback: steget är taget, nästa sida öppnas (ui/links.go → nav_goto). Rundans Thor-steg är listan:
+    en öppen analys (thor_ticker) stängs, så att Thor öppnar i listläget — bara navigering, ingen data."""
     mark(step, state)
-    links.go(next_step(step), state=state)
+    nxt = next_step(step)
+    if nxt == "thor":
+        st_ = _state(state)
+        if st_.get("thor_ticker"):
+            st_["thor_ticker"] = ""
+    links.go(nxt, state=state)
 
 
 def next_label(step: str) -> str:
