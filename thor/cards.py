@@ -46,7 +46,7 @@ def chip(text, color: str = DIM, filled: bool = False, strike: bool = False) -> 
     bg = f"background:{color}22;" if filled else ""
     line = "text-decoration:line-through;" if strike else ""
     return (f"<span style='display:inline-block;border:1px solid {color};border-radius:3px;padding:0 5px;color:{color};"
-            f"font-size:0.66rem;font-weight:700;white-space:nowrap;line-height:1.5;{bg}{line}'>{_e(text)}</span>")
+            f"font-size:12px;font-weight:700;white-space:nowrap;line-height:1.5;{bg}{line}'>{_e(text)}</span>")
 
 
 def main_word(c: tc.Candidate) -> str:
@@ -96,9 +96,9 @@ def kpi_chip(label: str, value, color: str = CYAN, sub: str = "") -> str:
     """Lägets kort: etikett, värde, en dämpad rad — fyra på en rad i telefonen tack vare flex-wrap."""
     return (f"<div style='flex:1 1 140px;min-width:0;background:{BG_ALT};border:1px solid {BORDER_FAINT};"
             f"border-left:3px solid {color};border-radius:6px;padding:6px 10px;'>"
-            f"<div style='color:{DIM};font-size:0.6rem;letter-spacing:0.12em;text-transform:uppercase;'>{_e(label)}</div>"
+            f"<div style='color:{DIM};font-size:12px;letter-spacing:0.12em;text-transform:uppercase;'>{_e(label)}</div>"
             f"<div style='color:{color};font-size:0.95rem;font-weight:700;'>{_e(value)}</div>"
-            + (f"<div style='color:{DIM};font-size:0.64rem;'>{_e(sub)}</div>" if sub else "") + "</div>")
+            + (f"<div style='color:{DIM};font-size:12px;'>{_e(sub)}</div>" if sub else "") + "</div>")
 
 
 def kpi_row(items: list) -> str:
@@ -146,10 +146,10 @@ def candidate_card(c: tc.Candidate) -> str:
             f"<div style='display:flex;justify-content:space-between;align-items:baseline;gap:8px;'>"
             f"<div style='min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'>"
             f"<b style='color:{TEXT};font-size:0.95rem;'>{_e(c.ticker)}</b> "
-            f"<span style='color:{DIM};font-size:0.74rem;'>{_e(c.name)}</span></div>"
+            f"<span style='color:{DIM};font-size:12px;'>{_e(c.name)}</span></div>"
             f"<div style='color:{col};font-family:{FONT_MONO};font-size:1.3rem;font-weight:700;flex:none;'>{score}</div></div>"
             f"<div style='display:flex;flex-wrap:wrap;gap:4px;margin:4px 0 3px;'>{''.join(ch for ch in chips if ch)}</div>"
-            f"<div style='color:{DIM};font-size:0.7rem;line-height:1.5;'>{_e(detail)}</div></div>")
+            f"<div style='color:{DIM};font-size:12px;line-height:1.5;'>{_e(detail)}</div></div>")
 
 
 # ── Analysblockets huvud ────────────────────────────────────────────────────
@@ -160,12 +160,12 @@ def verdict_card(word: str, sentence: str, detail: str = "", color: str = DIM, l
     klartext under ordet (GAMMAL KÖRNING …) — ordet står kvar, varningen säger hur gammalt det är."""
     word, own = vocab.pair(word)
     return (f"<div style='border:2px solid {color}66;background:{color}0d;border-radius:10px;padding:14px 16px;margin:8px 0;'>"
-            f"<div style='color:{DIM};font-size:0.66rem;letter-spacing:0.14em;'>{_e(label)}</div>"
+            f"<div style='color:{DIM};font-size:12px;letter-spacing:0.14em;'>{_e(label)}</div>"
             f"<div style='color:{color};font-size:2rem;font-weight:900;letter-spacing:0.04em;line-height:1.1;'>{_e(word)}</div>"
             + (f"<div style='margin-top:4px;'>{chip(own, color)}</div>" if own else "")
             + (f"<div style='color:{AMBER};font-size:0.8rem;font-weight:700;margin-top:6px;'>{_e(flag)}</div>" if flag else "")
             + f"<div style='color:{TEXT};font-size:0.9rem;margin-top:6px;line-height:1.4;'>{_e(sentence)}</div>"
-            + (f"<div style='color:{DIM};font-size:0.74rem;margin-top:4px;'>{_e(detail)}</div>" if detail else "") + "</div>")
+            + (f"<div style='color:{DIM};font-size:12px;margin-top:4px;'>{_e(detail)}</div>" if detail else "") + "</div>")
 
 
 def verdict_for(c: Optional[tc.Candidate], strategy: str) -> str:
@@ -202,7 +202,7 @@ def vn_decision_row(status: str, nine_text: str, exec_text: str, block: str, blo
             f"</div></div>"
             f"<div style='color:{block_color};font-size:0.86rem;margin-top:6px;'>Stoppar: {_e(block)}</div>"
             + (f"<div style='color:{TEXT};font-size:0.8rem;margin-top:2px;'>{_e(levels)}</div>" if levels else "")
-            + f"<div style='color:{DIM};font-size:0.72rem;margin-top:4px;'>{_e(bars)}</div></div>")
+            + f"<div style='color:{DIM};font-size:12px;margin-top:4px;'>{_e(bars)}</div></div>")
 
 
 def vn_nine_compact(nine) -> str:
@@ -234,7 +234,7 @@ def vn_execution_row(decision) -> str:
             col, m = DIM, "?"
         text = f"{m} {c.label}" + (f" · {c.flag}" if c.flag else "") + ("" if c.required else " (info)")
         chips.append(chip(text, col, filled=c.status == "PASS"))
-    return (f"<div style='margin:4px 0 8px;'><div style='color:{CYAN};font-size:0.66rem;letter-spacing:0.12em;'>"
+    return (f"<div style='margin:4px 0 8px;'><div style='color:{CYAN};font-size:12px;letter-spacing:0.12em;'>"
             f"VIKING EXECUTION {decision.execution_passed}/{decision.execution_total}</div>"
             f"<div style='display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;'>{''.join(chips)}</div></div>")
 
@@ -282,8 +282,8 @@ def header_card(t: dict, cands: list, held: bool = False, board: Optional[dict] 
             f"<div><b style='color:{TEXT};font-size:1.3rem;'>{_e(t.get('yf'))}</b> "
             f"<span style='color:{DIM};font-size:0.84rem;'>{_e(t.get('name'))}</span></div>"
             f"<div style='display:flex;flex-wrap:wrap;gap:4px;'>{''.join(chips)}</div></div>"
-            + (f"<div style='color:{DIM};font-size:0.68rem;margin-top:4px;'>finns i dag i: {found}</div>" if cands else
-               f"<div style='color:{DIM};font-size:0.68rem;margin-top:4px;'>inte i någon strategis lista i dag</div>")
+            + (f"<div style='color:{DIM};font-size:12px;margin-top:4px;'>finns i dag i: {found}</div>" if cands else
+               f"<div style='color:{DIM};font-size:12px;margin-top:4px;'>inte i någon strategis lista i dag</div>")
             + "</div>")
 
 
@@ -296,7 +296,7 @@ def phase_strip(phase: Optional[str], buy: list, hold: list, sell: list) -> str:
         col = GREEN if p in buy else AMBER if p in hold else RED if p in sell else GREY
         here = p == phase
         emoji = MARKET_CYCLE_RULES[p].get("emoji", "")
-        out.append(f"<span title='{_e(p)}' style='display:inline-block;padding:1px 4px;border-radius:3px;font-size:0.62rem;"
+        out.append(f"<span title='{_e(p)}' style='display:inline-block;padding:1px 4px;border-radius:3px;font-size:12px;"
                    f"color:{TEXT if here else col};background:{col + '55' if here else 'transparent'};"
                    f"border:1px solid {col};font-weight:{'700' if here else '400'};'>"
                    f"{emoji} {_e(p.replace('_', ' ').title())}</span>")
@@ -310,19 +310,19 @@ def gate_card(gate: dict, playbook: str) -> str:
     title = f"Cykelgrinden ({playbook})" if playbook else "Cykelgrinden"
     return (f"<div style='border:1px solid {col}55;background:{col}0d;border-radius:8px;padding:8px 12px;margin:6px 0;'>"
             f"<span style='color:{col};font-weight:700;'>{_e(title)}: {_e(status)}</span>"
-            f"<div style='color:{DIM};font-size:0.72rem;margin-top:2px;'>{_e((gate or {}).get('note'))}</div></div>")
+            f"<div style='color:{DIM};font-size:12px;margin-top:2px;'>{_e((gate or {}).get('note'))}</div></div>")
 
 
 def wolf_score_card(total, label: str, color: str, ticker: str, when: str = "") -> str:
     """Wolf Regimes stora poängkort: n / 125 MAX och etiketten — samma som sidan, i en kolumn."""
     return (f"<div style='border:1px solid {color};border-radius:12px;padding:22px 16px;text-align:center;"
             f"background:linear-gradient(135deg, rgba(0,229,255,0.06) 0%, rgba(139,115,64,0.03) 100%);margin:6px 0;'>"
-            f"<div style='font-size:11px;letter-spacing:4px;color:rgba(0,229,255,0.5);'>REGIME SCORE</div>"
+            f"<div style='font-size:12px;letter-spacing:4px;color:rgba(0,229,255,0.5);'>REGIME SCORE</div>"
             f"<div style='font-size:64px;font-weight:900;line-height:1;color:{color};font-family:{FONT_MONO};'>{_e(total)}</div>"
-            f"<div style='font-size:11px;letter-spacing:3px;color:rgba(0,229,255,0.4);margin-top:4px;'>/ 125 MAX</div>"
+            f"<div style='font-size:12px;letter-spacing:3px;color:rgba(0,229,255,0.4);margin-top:4px;'>/ 125 MAX</div>"
             f"<div style='margin-top:12px;'><span style='background:{color}1a;border:1px solid {color};border-radius:20px;"
-            f"color:{color};font-size:11px;font-weight:700;letter-spacing:3px;padding:5px 16px;'>{_e(label)}</span></div>"
-            f"<div style='margin-top:14px;font-size:10px;color:rgba(0,229,255,0.3);letter-spacing:2px;'>{_e(ticker)}"
+            f"color:{color};font-size:12px;font-weight:700;letter-spacing:3px;padding:5px 16px;'>{_e(label)}</span></div>"
+            f"<div style='margin-top:14px;font-size:12px;color:rgba(0,229,255,0.3);letter-spacing:2px;'>{_e(ticker)}"
             + (f" &nbsp;·&nbsp; {_e(when)}" if when else "") + "</div></div>")
 
 
@@ -334,7 +334,7 @@ def gate_chips(gs: list, summary: dict) -> str:
             c, icon = GREY, "◌"
         else:
             c, icon = (GREEN, "✓") if g["passed"] else (RED, "✗")
-        out.append(f"<div style='background:{BG_ALT};border:1px solid {c};border-radius:4px;padding:3px 8px;font-size:0.65rem;'>"
+        out.append(f"<div style='background:{BG_ALT};border:1px solid {c};border-radius:4px;padding:3px 8px;font-size:12px;'>"
                    f"<span style='color:{c};font-weight:700;'>{icon}</span> <span style='color:{TEXT};'>{_e(g['rule'])}</span> "
                    f"<span style='color:{DIM};'>({_e(g['value'])})</span></div>")
     gc = summary.get("color", DIM)
@@ -364,7 +364,7 @@ def detail_rows(title: str, details: dict, color: str = CYAN, score_text: str = 
         rows.append(f"<div style='font-size:0.76rem;line-height:1.5;color:{TEXT};'><span style='color:{c};font-weight:700;'>"
                     f"{'✓' if ok else '✗' if ok is False else '?'}</span> {_e(name)} <span style='color:{DIM};'>{_e(val)}</span></div>")
     return (f"<div style='border:1px solid {color}55;border-radius:6px;padding:8px 10px;margin:4px 0;background:{BG_ALT};'>"
-            f"<div style='color:{color};font-size:0.7rem;letter-spacing:0.1em;'>{_e(title)}"
+            f"<div style='color:{color};font-size:12px;letter-spacing:0.1em;'>{_e(title)}"
             + (f" <span style='color:{TEXT};'>{_e(score_text)}</span>" if score_text else "") + "</div>"
             + "".join(rows) + "</div>")
 
@@ -376,5 +376,5 @@ def review_card(key: str, rev: dict) -> str:
     controls = " · ".join(f"{lbl} {st}" for st, lbl, _n in (rev or {}).get("controls") or [])
     return (f"<div style='border:1px solid {col}55;background:{col}0d;border-radius:8px;padding:8px 12px;margin:4px 0;'>"
             f"<span style='color:{col};font-weight:700;'>{_e((rev or {}).get('sheet') or key)}: {_e(status)}</span>"
-            f"<div style='color:{DIM};font-size:0.72rem;margin-top:2px;'>{_e((rev or {}).get('note'))}</div>"
-            + (f"<div style='color:{DIM};font-size:0.7rem;'>{_e(controls)}</div>" if controls else "") + "</div>")
+            f"<div style='color:{DIM};font-size:12px;margin-top:2px;'>{_e((rev or {}).get('note'))}</div>"
+            + (f"<div style='color:{DIM};font-size:12px;'>{_e(controls)}</div>" if controls else "") + "</div>")

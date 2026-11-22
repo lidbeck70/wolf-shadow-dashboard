@@ -188,3 +188,35 @@ def build_gauge(value, max_val, label, color_cyan=True):
         margin=dict(l=20, r=20, t=30, b=10),
     )
     return fig
+
+
+# ── Sparklinjen (LIDSKJALV §3.5.15 punkt 5) ──────────────────────────────────
+def sparkline_svg(series, colour: str = "#00E5FF", width: int = 320, height: int = 48, label: str = "") -> str:
+    """Samma serie som st.line_chart ritade, som en liten inline-SVG — ritas med st.markdown (inte st.html: där
+    tar DOMPurify bort SVG). Ingen ny uträkning: punkterna är seriens värden i ordning, skalade till rutan.
+    Tom sträng när serien har färre än två tal."""
+    from html import escape
+    try:
+        raw = series.tolist() if hasattr(series, "tolist") else list(series or [])
+    except (TypeError, ValueError):
+        return ""
+    vals = []
+    for v in raw:                                           # ett None/pd.NA hoppas över, sparklinjen ritas ändå
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            continue
+        if f == f and f not in (float("inf"), float("-inf")):
+            vals.append(f)
+    if len(vals) < 2:
+        return ""
+    lo, hi = min(vals), max(vals)
+    span = (hi - lo) or 1.0
+    pad = 2.0
+    step = (width - 2 * pad) / (len(vals) - 1)
+    pts = " ".join(f"{pad + i * step:.1f},{pad + (hi - v) / span * (height - 2 * pad):.1f}" for i, v in enumerate(vals))
+    aria = escape(label or "Sparklinje", quote=True)
+    return (f'<svg class="wolf-spark" role="img" aria-label="{aria}" viewBox="0 0 {int(width)} {int(height)}" '
+            f'preserveAspectRatio="none" style="display:block;width:100%;height:{int(height)}px;">'
+            f'<polyline points="{pts}" fill="none" stroke="{escape(str(colour), quote=True)}" stroke-width="1.5" '
+            f'vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/></svg>')

@@ -16,6 +16,11 @@ nav_css() är navigeringen (PR 14, §3.5.3–§3.5.6) — genererad ur ui/nav.py
     nav.TOP, med Safari-reserven först), på datorn dagens rad oförändrad; strålen medan Streamlit räknar
   · L2 chip-rad och L3 understruken rad ur nav.STATE_KEY efter djup; Thors pills-rader rullar i sidled
   · L4 sidornas inre flikar: 44 px, radbryts på telefonen; brödsmulan ovanför L3-raden
+parts_css() är byggstenarna (PR 15, §3.5.7–§3.5.19) — det ui/components inte kan skriva i ett stilattribut:
+  · knapparna: sekundär 44 px med radie 10, :active scale(.98), :disabled som ser avstängd ut, kompakta i huvud-
+    och sparraden; ladda ned- och formulärknappar som sekundära. Primärknappar lämnas i fred (beslut 4, PR 16)
+  · huvudraden (head_<sida>), tryckkortets osynliga knapp (tapc_<nyckel>), länkraderna (links_<nyckel>),
+    st.metric som rutor (kpis_<sida>), ljusrutnätets kolumner, nyckeltalsremsan och skelettets skimmer
 nav_js() är nav-skriptet: centrerar valt chip, till toppen vid ny sida och vid tryck på aktiv flik / "▲ Till
 toppen", data-jump och osparat-rutan. Det ritas i skalet med st.html (nav_script) och innehåller aldrig '<'.
 Inga widgetar, nycklar eller etiketter ändras — allt här är CSS och ett skript.
@@ -28,16 +33,11 @@ import re
 import streamlit as st
 
 from ui import nav
-from ui.components import NOTE
 from ui.nav import TABS_KEY
-from ui.tokens import ACCENT, AMBER, BG, PURPLE, TEXT
+from ui.tokens import ACCENT, AMBER, APP_BG, BG, BG_ALT, BG_CARD, BORDER_FAINT, MUTED, NOTE, PURPLE, TEXT
 
 SHELL_KEY = "wolf_shell"
 PAGE_KEY_PREFIX = "pcss_"
-
-MUTED = "#a8a397"         # etiketter och meta, 8:1 mot #05070A (flyttar till ui/tokens.MUTED i PR 15)
-APP_BG = "#05070A"        # .stApp — den klistrade flikradens bakgrund (ui/tokens.APP_BG i PR 15)
-CARD_BG = "#14141e"       # chipens yta (ui/tokens.BG_CARD)
 
 # ── Navigeringens selektorer (Streamlit 1.59, React Aria) ────────────────────
 # Toppflikarna: div.stTabs.st-key-main_tabs > div > div[role=tablist] > div[role=tab] > stMarkdownContainer > p.
@@ -167,7 +167,8 @@ a.wolf-top:hover, a.wolf-top:focus-visible {{ background: rgba(0,229,255,.08); c
     body:has(.wolf-snack) [data-testid="stToastContainer"] {{ transform: translateY(-56px); }}
     .wolf-snack {{ cursor: pointer; -webkit-tap-highlight-color: transparent; }}
 }}
-{nav_css()}"""
+{nav_css()}
+{parts_css()}"""
 
 
 # ── Navigeringen (PR 14) ─────────────────────────────────────────────────────
@@ -263,7 +264,7 @@ body:has([data-testid="stStatusWidgetRunningIcon"], [data-testid="stStatusWidget
     scrollbar-width: none; scroll-snap-type: x proximity; margin: 0 -1rem; padding: 4px 1rem 0;
     -webkit-mask-image: {FADE}; mask-image: {FADE}; }}
 {_each(l2, OPTION)} {{ flex: 0 0 auto; display: flex; align-items: center; box-sizing: border-box; min-height: 44px;
-    margin: 0; padding: 0 16px; border-radius: 999px; border: 1px solid rgba(0,229,255,.25); background: {CARD_BG};
+    margin: 0; padding: 0 16px; border-radius: 999px; border: 1px solid rgba(0,229,255,.25); background: {BG_CARD};
     scroll-snap-align: center; cursor: pointer; -webkit-tap-highlight-color: transparent;
     transition: transform .12s ease; }}
 {_each(l2, OPTION + " p")} {{ font: 600 14px/1 'Space Grotesk', sans-serif; color: {TEXT} !important;
@@ -328,6 +329,142 @@ body:has([data-testid="stStatusWidgetRunningIcon"], [data-testid="stStatusWidget
 [data-testid="stElementContainer"]:has(.wolf-crumb) {{ margin-top: -1rem; }}
 .wolf-crumb {{ height: 20px; font: 500 12px/20px 'JetBrains Mono', monospace; color: {MUTED};
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+"""
+
+
+# ── Byggstenarna (PR 15) ─────────────────────────────────────────────────────
+# Sekundärknappen: selektorn står ordagrant i ui/css.py (test_pr6) — här samma selektor senare i blocket, så att
+# lika specifika regler vinner på ordningen och CYBERPUNK_CSS lämnas orörd (test_css_tabs läser bara den).
+BTN_SECONDARY = '.stButton > button[kind="secondary"]'
+BTN_ALL = ('.stButton > button', '[data-testid="stDownloadButton"] button', '[data-testid="stFormSubmitButton"] button')
+BTN_AS_SECONDARY = (BTN_SECONDARY, '[data-testid="stDownloadButton"] button[kind="secondary"]',
+                    '[data-testid="stFormSubmitButton"] button[kind="secondaryFormSubmit"]')
+HEAD = '[class*="st-key-head_"]'          # components.head_row
+TAPC = '[class*="st-key-tapc_"]'          # components.tap_card
+LINKS = '[class*="st-key-links_"]'        # components.link_rows
+KPIS = '[class*="st-key-kpis_"]'          # st.metric som rutor (sidornas kpis_<sida>-behållare)
+SAVE_ROW = '[class*="st-key-save_"][class*="_row"]'    # storage_ui.save_bar: sparraden på en rad
+# Knappar vars etikett tar knappens storlek (Streamlit sätter 14 px på etikettens markdown-ruta)
+BTN_INHERIT = BTN_AS_SECONDARY + (f"{HEAD} .stButton > button", f"{SAVE_ROW} .stButton > button")
+
+
+def _sel(sels, suffix: str = "") -> str:
+    return ",\n".join(f"{s}{suffix}" for s in sels)
+
+
+def parts_css() -> str:
+    """Byggstenarnas regler (§3.5.7–§3.5.19) som EN sträng: knapparna, huvudraden, tryckkortet, länkraderna,
+    st.metric-rutorna, ljusrutnätet, nyckeltalsremsan och skelettet. Utseendet i övrigt bor i stilattributen
+    som ui/components skriver; här står bara det som kräver mediafrågor, :has(), pseudoelement eller animering."""
+    return f"""
+/* ── LIDSKJALV · byggstenarna (PR 15) ────────────────────────── */
+/* Knappar (§3.5.16): sekundär = 44 px, radie 10, cyan kant och svag cyan yta, 14 px versaler .06em. Ladda ned- och
+   formulärknappar ser likadana ut när de inte är primära. Primärknappar lämnas i fred tills beslut 4 (PR 16). */
+{_sel(BTN_AS_SECONDARY)} {{ min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid {ACCENT};
+    background: rgba(0,229,255,.08); color: {ACCENT}; font-family: 'Space Grotesk', sans-serif; font-size: 14px;
+    font-weight: 600; letter-spacing: .06em; text-transform: uppercase; box-shadow: none; text-shadow: none;
+    transition: transform .12s ease, background-color .12s ease; }}
+{_sel(BTN_INHERIT, ' [data-testid="stMarkdownContainer"]')},
+{_sel(BTN_INHERIT, " p")} {{ font-size: inherit; font-weight: inherit; letter-spacing: inherit; }}
+{_sel(BTN_AS_SECONDARY, ":hover")} {{ background: rgba(0,229,255,.16); border-color: {ACCENT}; color: {ACCENT};
+    box-shadow: none; text-shadow: none; }}
+{_sel(BTN_AS_SECONDARY, ":focus-visible")} {{ box-shadow: 0 0 0 2px rgba(0,229,255,.5); }}
+/* Tryck: 120 ms scale(.98) */
+{_sel(BTN_ALL, ":active")} {{ transform: scale(.98); }}
+/* Avstängd ser avstängd ut (förut såg den aktiv ut): halv opacitet, svag kant, ingen glöd */
+{_sel(BTN_ALL, ":disabled")} {{ opacity: .45; cursor: not-allowed; box-shadow: none; transform: none; }}
+{_sel(BTN_AS_SECONDARY, ":disabled")},
+{_sel(BTN_AS_SECONDARY, ":disabled:hover")} {{ border-color: rgba(0,229,255,.25); background: rgba(0,229,255,.08);
+    color: {ACCENT}; box-shadow: none; }}
+/* Kompakta knappar i huvudraden och sparraden: 44 px, 13 px */
+{HEAD} .stButton > button, {SAVE_ROW} .stButton > button {{ min-height: 44px; padding: 0 12px; font-size: 13px;
+    letter-spacing: .04em; }}
+
+/* Huvudraden (§3.5.7): rubriken tar raden, knapparna till höger — och bryts högerställda till nästa rad när de
+   inte ryms bredvid. Rubrikens bas är dess egen bredd (minst 180 px): då flyttar knappen ned i stället för att
+   rubriken bryts mellan emojin och ordet ("🥇" ovanför "RÅVARUHÄVSTÅNG" på 390 px) */
+{HEAD} {{ flex-wrap: wrap; gap: 8px; row-gap: 4px; justify-content: flex-end; }}
+{HEAD} > [data-testid="stElementContainer"]:has(.wolf-head) {{ flex: 1 1 auto; min-width: min(180px, 100%);
+    width: auto; }}
+{HEAD} > :not(:has(.wolf-head)) {{ flex: 0 0 auto; width: auto; }}
+
+/* Sparraden (§3.5.17): knappen och raden bredvid på en rad */
+{SAVE_ROW} {{ flex-wrap: wrap; gap: 8px 12px; }}
+{SAVE_ROW} > [data-testid="stElementContainer"] {{ width: auto; min-width: 0; }}
+/* Markdown-rutans -1rem (för p-marginalen) gör texten 1 px hög i en rad — då centreras den under knappens mitt */
+{HEAD} [data-testid="stMarkdownContainer"], {SAVE_ROW} [data-testid="stMarkdownContainer"] {{ margin-bottom: 0; }}
+
+/* Sektionsrubriken (§3.5.8) — ui/css.section_title ritar class="section-title": samma utseende som section() */
+.section-title {{ font: 600 12px/1.2 'Space Grotesk', sans-serif; letter-spacing: .12em; color: {MUTED};
+    border-bottom: 1px solid rgba(0,229,255,.15); padding-bottom: 6px; margin: 20px 0 8px; }}
+
+/* Tryckkortet (§3.5.11): hela kortet är knappen — en osynlig st.button ovanpå, chevronen › från CSS:en */
+{TAPC} {{ position: relative; gap: 0; }}
+{TAPC} > [data-testid="stElementContainer"]:has(.stButton) {{ position: absolute; inset: 0; z-index: 2;
+    width: auto !important; margin: 0; }}
+{TAPC} .stButton, {TAPC} .stButton button {{ width: 100%; height: 100%; min-height: 0; opacity: 0; padding: 0;
+    margin: 0; cursor: pointer; }}
+{TAPC}:has(button:focus-visible) {{ outline: 2px solid {ACCENT}; outline-offset: 2px; border-radius: 12px; }}
+{TAPC}::after {{ content: "›"; position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+    color: {ACCENT}; font: 700 22px/1 'Space Grotesk', sans-serif; pointer-events: none; z-index: 3; }}
+/* Markdown-rutans -1rem skulle låta kortets sista 16 px hänga utanför behållaren — och utanför knappen */
+{TAPC} [data-testid="stMarkdownContainer"] {{ margin-bottom: 0; }}
+{TAPC} [data-testid="stMarkdownContainer"] > div {{ padding-right: 36px !important; transition: transform .12s ease; }}
+{TAPC}:active [data-testid="stMarkdownContainer"] > div {{ transform: scale(.99); background: {BG_ALT} !important; }}
+
+/* Länkrader (§3.5.13): tertiära knappar i links_<nyckel> — hela bredden, 48 px, cyan › till höger */
+{LINKS} {{ gap: 0; }}
+{LINKS} > [data-testid="stElementContainer"], {LINKS} .stButton {{ width: 100% !important; }}
+{LINKS} .stButton > button[kind="tertiary"] {{ position: relative; width: 100%; min-height: 48px;
+    justify-content: flex-start; text-align: left; padding: 0 32px 0 2px; border-radius: 0;
+    border-bottom: 1px solid {BORDER_FAINT}; color: {TEXT}; font: 600 15px/1.3 'Space Grotesk', sans-serif; }}
+{LINKS} .stButton > button[kind="tertiary"] > div {{ justify-content: flex-start; }}
+{LINKS} .stButton > button[kind="tertiary"] p {{ font: inherit; text-align: left; }}
+{LINKS} .stButton > button[kind="tertiary"]::after {{ content: "›"; position: absolute; right: 8px; top: 50%;
+    transform: translateY(-50%); color: {ACCENT}; font: 700 20px/1 'Space Grotesk', sans-serif; }}
+{LINKS} .stButton > button[kind="tertiary"]:hover {{ color: {ACCENT}; background: rgba(0,229,255,.06); }}
+
+/* st.metric som rutor (§3.5.10): kpis_<sida> är en horisontell behållare — 2 × 2 på telefonen, 4 i rad från
+   1024 px; etikett 12 px MUTED, värde 20 px mono i TEXT (inte 28 px cyan, ingen ::before-linje) */
+{KPIS} {{ flex-wrap: wrap; gap: 8px; }}
+{KPIS} > [data-testid="stElementContainer"] {{ flex: 1 1 calc(50% - 4px); min-width: 0; width: auto !important; }}
+{KPIS} [data-testid="stMetric"] {{ background: {BG_ALT} !important; border: 1px solid rgba(255,255,255,.08) !important;
+    border-radius: 10px !important; padding: 10px 12px !important; min-height: 64px; box-sizing: border-box; }}
+{KPIS} [data-testid="stMetric"]::before {{ content: none !important; display: none !important; }}
+{KPIS} [data-testid="stMetricLabel"], {KPIS} [data-testid="stMetricLabel"] p {{ color: {MUTED} !important;
+    font-family: 'Space Grotesk', sans-serif !important; font-size: 12px !important; font-weight: 600 !important;
+    letter-spacing: .1em !important; text-transform: uppercase !important; }}
+{KPIS} [data-testid="stMetricValue"], {KPIS} [data-testid="stMetricValue"] > div {{ color: {TEXT} !important;
+    font-family: 'JetBrains Mono', monospace !important; font-size: 20px !important; font-weight: 600 !important;
+    text-shadow: none !important; }}
+/* Telefon: rutan är 114–149 px bred — Streamlit klipper värdet med '…' ("1,120,000 S…"). 16 px, och värde och
+   etikett får radbrytas (SEK hamnar då på raden under) i stället för att klippas */
+@media (max-width: 640px) {{
+    {KPIS} [data-testid="stMetricValue"], {KPIS} [data-testid="stMetricValue"] * {{
+        font-size: 16px !important; white-space: normal !important; overflow: visible !important;
+        text-overflow: clip !important; line-height: 1.25 !important; }}
+    {KPIS} [data-testid="stMetricLabel"], {KPIS} [data-testid="stMetricLabel"] * {{
+        white-space: normal !important; overflow: visible !important; text-overflow: clip !important; }}
+}}
+
+/* Ljusrutnätet (§3.5.10): två kolumner, fyra från 1024 px */
+.wolf-grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
+@media (min-width: 1024px) {{
+    {KPIS} > [data-testid="stElementContainer"] {{ flex-basis: calc(25% - 6px); }}
+    .wolf-grid {{ grid-template-columns: repeat(4, minmax(0, 1fr)); }}
+}}
+/* Nyckeltalsremsan: en rad rutor som sveps, tonar ut vid högerkanten */
+.wolf-kstrip {{ -webkit-mask-image: {FADE}; mask-image: {FADE}; }}
+.wolf-kstrip::-webkit-scrollbar {{ display: none; }}
+
+/* Skelettet (§3.5.19): skimrar 1.2 s medan data laddas första gången; står still med reducerad rörelse */
+.wolf-skel {{ background-image: linear-gradient(90deg, {BG_CARD} 0%, {BG_ALT} 50%, {BG_CARD} 100%);
+    background-size: 200% 100%; animation: wolf-shimmer 1.2s linear infinite; }}
+@keyframes wolf-shimmer {{ from {{ background-position: 100% 0; }} to {{ background-position: -100% 0; }} }}
+@media (prefers-reduced-motion: reduce) {{
+    .wolf-skel {{ animation: none; }}
+    {_sel(BTN_ALL, ":active")}, {TAPC}:active [data-testid="stMarkdownContainer"] > div {{ transform: none; }}
+}}
 """
 
 
