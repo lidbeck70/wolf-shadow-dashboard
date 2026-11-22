@@ -51,7 +51,7 @@ st.set_page_config(
 # ---------------------------------------------------------------------------
 from ui.css import tab_not_found
 from ui import nav
-from ui.shell import PWA_METAS, nav_script
+from ui.shell import nav_script
 from ui.theme import inject_css, render_header, render_footer, fill_bar
 from auth import render_login_gate
 from tabs.home import tab_home
@@ -598,11 +598,10 @@ def _tab_more() -> None:
 
 
 def main():
-    if not render_login_gate():
-        st.markdown(PWA_METAS, unsafe_allow_html=True)     # inloggningen har inget skal än (PR 17)
-        return
+    shell = inject_css()                                   # skalet: ETT dolt <style> med PWA-taggarna — även på
+    if not render_login_gate():                            # inloggningen (bakgrund, typsnitt, fältet, kortet), men
+        return                                             # där varken märkesrad, nav-skript eller flikar
 
-    shell = inject_css()                                   # skalet: ETT dolt <style> med PWA-taggarna
     bar = render_header()                                  # varumärkesraden, fylls om sist (fill_bar)
     _apply_deep_link()
     nav_script(shell)                                      # nav-skriptet i skalet, med sidan efter djuplänken

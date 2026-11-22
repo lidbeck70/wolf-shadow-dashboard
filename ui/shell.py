@@ -169,7 +169,8 @@ a.wolf-top:hover, a.wolf-top:focus-visible {{ background: rgba(0,229,255,.08); c
     .wolf-snack {{ cursor: pointer; -webkit-tap-highlight-color: transparent; }}
 }}
 {nav_css()}
-{parts_css()}"""
+{parts_css()}
+{login_css()}"""
 
 
 # ── Navigeringen (PR 14) ─────────────────────────────────────────────────────
@@ -504,6 +505,73 @@ button[kind="primary"]:not(:disabled), button[kind="primaryFormSubmit"]:not(:dis
     .wolf-skel {{ animation: none; }}
     {_sel(BTN_ALL, ":active")}, {TAPC}:active [data-testid="stMarkdownContainer"] > div {{ transform: none; }}
 }}
+"""
+
+
+# ── Inloggningen och låset (PR 17, §4.1, §4.9) ───────────────────────────────
+# Valda på widgetarnas egna nycklar (auth.py, portfolio/private_lock.py) — inga etiketter, inga nya widgetar.
+LOGIN_CARD = ".st-key-login_card"         # auth.LOGIN_KEY: kolumnen, ett kort på datorn
+LOCK_CARD = '[class*="st-key-lock_"]'     # private_lock.gate: lock_<nyckel> (holdings_pw, holdings_pw_alloc)
+PW_FIELDS = (".st-key-login_pw", f"{LOCK_CARD} .stTextInput")
+PW_BUTTONS = (".st-key-login_btn .stFormSubmitButton", f"{LOCK_CARD} .stFormSubmitButton")   # (0,2,1): slår 44 px
+FIELD_LOGIN_H = 52                        # §3.3: fält 48, inloggningen och låset 52
+
+
+def login_css() -> str:
+    """Inloggningssidans och låskortets regler: kolumnen (kortet på datorn), fältet 52 px med 16 px JetBrains Mono
+    (iOS zoomar in på fält under 16 px), knappen 52 px, ögat i fältet som 44 px tryckyta och inget Streamlit-huvud
+    på inloggningen. Loggan, devisen och raden om kakan har egna klasser i auth.py (.arc-login-*)."""
+    root = '[data-testid="stTextInputRootElement"]'
+    return f"""
+/* ── LIDSKJALV · inloggningen och låset (PR 17) ───────────────── */
+/* Inget Streamlit-huvud på inloggningen, på någon bredd: ⋮ och körindikatorn skulle ligga över loggan */
+body:has({LOGIN_CARD}) [data-testid="stHeader"] {{ display: none; }}
+/* Kolumnen: centrerad, högst 360 px; på telefonen utan ram — på datorn ett kort */
+{LOGIN_CARD} {{ max-width: 360px; width: 100%; margin: 44px auto 0; gap: 16px; box-sizing: border-box; }}
+{LOGIN_CARD} .stMarkdown [data-testid="stMarkdownContainer"] {{ margin-bottom: 0; }}
+{LOGIN_CARD} > [data-testid="stElementContainer"]:first-child {{ margin-bottom: 8px; }}
+@media (min-width: 641px) {{
+    {LOGIN_CARD} {{ margin-top: 64px; padding: 28px; background: {BG}; border: 1px solid rgba(0,229,255,.15);
+        border-radius: 16px; }}
+}}
+/* Låskortet (§4.9): centrerat kort med rubriken, fältet och knappen */
+{LOCK_CARD} {{ max-width: 420px; width: 100%; margin: 8px auto 0; padding: 20px 16px; gap: 12px;
+    box-sizing: border-box; background: {BG_CARD}; border: 1px solid rgba(255,255,255,.08); border-radius: 12px; }}
+{LOCK_CARD} h4 {{ text-align: center; padding: 0; font: 700 18px/1.3 'Space Grotesk', sans-serif; color: {TEXT}; }}
+{LOCK_CARD} [data-testid="stHeaderActionElements"] {{ display: none; }}   /* ankarlänken drog rubriken ur mitten */
+{LOCK_CARD} .stMarkdown [data-testid="stMarkdownContainer"] {{ margin-bottom: 0; }}
+@media (min-width: 641px) {{
+    {LOCK_CARD} {{ margin-top: 24px; padding: 24px; }}
+}}
+/* Formulären: tätare än Streamlits 16 px mellan etikett/fält och knapp */
+{LOGIN_CARD} [data-testid="stForm"] [data-testid="stVerticalBlock"],
+{LOCK_CARD} [data-testid="stForm"] [data-testid="stVerticalBlock"] {{ gap: 12px; }}
+/* Etiketten: synlig, 13 px MUTED */
+{_sel(PW_FIELDS, ' [data-testid="stWidgetLabel"]')},
+{_sel(PW_FIELDS, ' [data-testid="stWidgetLabel"] p')} {{ color: {MUTED} !important;
+    font: 500 13px/1.3 'Space Grotesk', sans-serif; letter-spacing: .02em; }}
+/* Fältet: 52 px, radie 10, en kant (CYBERPUNK_CSS ger annars inputen en egen ram innanför), cyan vid fokus */
+{_sel(PW_FIELDS, " " + root)} {{ height: {FIELD_LOGIN_H}px; border-radius: 10px !important; overflow: hidden;
+    border: 1px solid rgba(0,229,255,.25) !important; background-color: {BG_ALT} !important; }}
+{_sel(PW_FIELDS, " " + root + ":focus-within")} {{ border-color: {ACCENT} !important;
+    box-shadow: 0 0 0 2px rgba(0,229,255,.25); }}
+{_sel(PW_FIELDS, " " + root + " input")},
+{_sel(PW_FIELDS, " " + root + " input:focus")} {{ height: 100%; padding: 0 14px; border: 0 !important;
+    border-radius: 0 !important; background: transparent !important; box-shadow: none !important;
+    font-family: 'JetBrains Mono', monospace !important; font-size: 16px !important; letter-spacing: .04em; }}
+{_sel(PW_FIELDS, " " + root + " input::placeholder")} {{ font-family: 'Space Grotesk', sans-serif !important;
+    letter-spacing: 0; }}
+/* Ögat (visa koden): hela fältets höjd och 44 px bred — tryckytan */
+{_sel(PW_FIELDS, " " + root + " button")} {{ align-self: stretch; height: auto; min-width: 44px; width: 44px;
+    margin: 0; padding: 0; justify-content: center; color: {MUTED}; }}
+{_sel(PW_FIELDS, " " + root + " button:hover")} {{ color: {ACCENT}; background: rgba(0,229,255,.08); }}
+/* "Press Enter to submit form" — engelska; Gå/Enter skickar ändå */
+{_sel(PW_FIELDS, ' [data-testid="InputInstructions"]')} {{ display: none; }}
+/* Knapparna: 52 px; LOGGA IN med .12em spärrning och 700 */
+{_sel(PW_BUTTONS, " button")} {{ min-height: {FIELD_LOGIN_H}px; }}
+{_sel(PW_BUTTONS, ' button [data-testid="stMarkdownContainer"]')},
+{_sel(PW_BUTTONS, " button p")} {{ font-family: inherit; }}   /* etiketten i knappens Space Grotesk */
+.st-key-login_btn button[kind="primaryFormSubmit"] {{ font-weight: 700; letter-spacing: .12em; }}
 """
 
 

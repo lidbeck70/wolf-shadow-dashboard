@@ -408,7 +408,7 @@ def test_panel_draws_the_bar_and_refills_it_last():
     assert main.index("storage_ui.footer()") < main.index("fill_bar(bar)") < main.index("_sync_url()")
     assert main.index("inject_css()") < main.index("bar = render_header()") < main.index("st.tabs(")
     assert "apple-mobile-web-app-capable" not in src                             # taggarna ligger i skalet
-    assert "PWA_METAS" in main[:main.index("return")]                              # och på inloggningen tills PR 17
+    assert main.index("inject_css()") < main.index("render_login_gate()")       # skalet även på inloggningen (PR 17)
 
 
 def test_inject_css_delegates_to_the_shell():
