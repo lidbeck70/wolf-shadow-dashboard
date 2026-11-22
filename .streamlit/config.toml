@@ -1,5 +1,18 @@
 [theme]
+# Panelens färger i Streamlits tema (LIDSKJALV, beslut 4): cyan primärfärg i stället för Streamlit-rött på
+# kryssrutor, reglage, skjutreglage, radioknappar, primärknappar och fokusringar; röd/orange/grön/lila = ui/tokens.
+# Textfärgerna är bläcktonerna (beslut 5) — läsbara i liten text. Primärknappens mörka text och undantagen
+# (osparat = bärnsten, "Ja, ta bort" = röd) står i skalets CSS (ui/shell.py).
 base = "dark"
+primaryColor = "#00E5FF"
+backgroundColor = "#05070A"
+redColor = "#c44545"
+orangeColor = "#d4943a"
+greenColor = "#2d8a4e"
+violetColor = "#B400FF"
+redTextColor = "#e36464"
+greenTextColor = "#45b36b"
+violetTextColor = "#c35cff"
 
 [browser]
 # Av: Streamlits användningsstatistik skickar sidans adress — med inloggningsbryggans ?wolf_t= i den (auth.py)

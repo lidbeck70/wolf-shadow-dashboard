@@ -18,7 +18,8 @@ nav_css() är navigeringen (PR 14, §3.5.3–§3.5.6) — genererad ur ui/nav.py
   · L4 sidornas inre flikar: 44 px, radbryts på telefonen; brödsmulan ovanför L3-raden
 parts_css() är byggstenarna (PR 15, §3.5.7–§3.5.19) — det ui/components inte kan skriva i ett stilattribut:
   · knapparna: sekundär 44 px med radie 10, :active scale(.98), :disabled som ser avstängd ut, kompakta i huvud-
-    och sparraden; ladda ned- och formulärknappar som sekundära. Primärknappar lämnas i fred (beslut 4, PR 16)
+    och sparraden; ladda ned- och formulärknappar som sekundära. Primärknappen (PR 16, beslut 4) har temats cyan
+    med mörk text och samma form; undantagen: osparat är bärnsten, "Ja, ta bort" är röd
   · huvudraden (head_<sida>), tryckkortets osynliga knapp (tapc_<nyckel>), länkraderna (links_<nyckel>),
     st.metric som rutor (kpis_<sida>), ljusrutnätets kolumner, nyckeltalsremsan och skelettets skimmer
 nav_js() är nav-skriptet: centrerar valt chip, till toppen vid ny sida och vid tryck på aktiv flik / "▲ Till
@@ -34,7 +35,7 @@ import streamlit as st
 
 from ui import nav
 from ui.nav import TABS_KEY
-from ui.tokens import ACCENT, AMBER, APP_BG, BG, BG_ALT, BG_CARD, BORDER_FAINT, MUTED, NOTE, PURPLE, TEXT
+from ui.tokens import ACCENT, AMBER, APP_BG, BG, BG_ALT, BG_CARD, BORDER_FAINT, MUTED, NOTE, PURPLE, RED, TEXT, tint
 
 SHELL_KEY = "wolf_shell"
 PAGE_KEY_PREFIX = "pcss_"
@@ -339,13 +340,21 @@ BTN_SECONDARY = '.stButton > button[kind="secondary"]'
 BTN_ALL = ('.stButton > button', '[data-testid="stDownloadButton"] button', '[data-testid="stFormSubmitButton"] button')
 BTN_AS_SECONDARY = (BTN_SECONDARY, '[data-testid="stDownloadButton"] button[kind="secondary"]',
                     '[data-testid="stFormSubmitButton"] button[kind="secondaryFormSubmit"]')
+# Primärknappen (PR 16, beslut 4): temats cyan — och två undantag, valda på knapparnas egna nycklar (inga etiketter)
+BTN_PRIMARY = ('.stButton > button[kind="primary"]', '[data-testid="stDownloadButton"] button[kind="primary"]',
+               '[data-testid="stFormSubmitButton"] button[kind="primaryFormSubmit"]')
+SAVE_DIRTY = '[class*="st-key-save_"] button[kind="primary"]'         # storage_ui.save_bar: primär = osparat
+CONFIRM_DEL = ('[class*="__confirm"] button[kind="primary"]',           # components.confirm_delete: <nyckel>__confirm
+               '[class*="st-key-watch_del_"] button[kind="primary"]')   # Övervakningens "Ja, ta bort …" (watch_ui)
+PRIMARY_TEXT = APP_BG     # mörk text på cyan (13,1:1) och bärnsten (7,8:1) — vit text på cyan är 1,5:1
+AMBER_HOVER, RED_HOVER = "#c0842c", "#b03c3c"   # mörkare vid hovring: mörk text 6,3:1, vit text 5,9:1
 HEAD = '[class*="st-key-head_"]'          # components.head_row
 TAPC = '[class*="st-key-tapc_"]'          # components.tap_card
 LINKS = '[class*="st-key-links_"]'        # components.link_rows
 KPIS = '[class*="st-key-kpis_"]'          # st.metric som rutor (sidornas kpis_<sida>-behållare)
 SAVE_ROW = '[class*="st-key-save_"][class*="_row"]'    # storage_ui.save_bar: sparraden på en rad
 # Knappar vars etikett tar knappens storlek (Streamlit sätter 14 px på etikettens markdown-ruta)
-BTN_INHERIT = BTN_AS_SECONDARY + (f"{HEAD} .stButton > button", f"{SAVE_ROW} .stButton > button")
+BTN_INHERIT = BTN_AS_SECONDARY + BTN_PRIMARY + (f"{HEAD} .stButton > button", f"{SAVE_ROW} .stButton > button")
 
 
 def _sel(sels, suffix: str = "") -> str:
@@ -359,7 +368,7 @@ def parts_css() -> str:
     return f"""
 /* ── LIDSKJALV · byggstenarna (PR 15) ────────────────────────── */
 /* Knappar (§3.5.16): sekundär = 44 px, radie 10, cyan kant och svag cyan yta, 14 px versaler .06em. Ladda ned- och
-   formulärknappar ser likadana ut när de inte är primära. Primärknappar lämnas i fred tills beslut 4 (PR 16). */
+   formulärknappar ser likadana ut när de inte är primära. Primärknappen: se nedan (PR 16). */
 {_sel(BTN_AS_SECONDARY)} {{ min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid {ACCENT};
     background: rgba(0,229,255,.08); color: {ACCENT}; font-family: 'Space Grotesk', sans-serif; font-size: 14px;
     font-weight: 600; letter-spacing: .06em; text-transform: uppercase; box-shadow: none; text-shadow: none;
@@ -369,6 +378,36 @@ def parts_css() -> str:
 {_sel(BTN_AS_SECONDARY, ":hover")} {{ background: rgba(0,229,255,.16); border-color: {ACCENT}; color: {ACCENT};
     box-shadow: none; text-shadow: none; }}
 {_sel(BTN_AS_SECONDARY, ":focus-visible")} {{ box-shadow: 0 0 0 2px rgba(0,229,255,.5); }}
+/* Primärknappen (beslut 4, PR 16): fyllningen är temats cyan (primaryColor), formen sekundärens och texten MÖRK —
+   Streamlits vita text på cyan är 1,5:1. Streamlit mörkar fyllningen vid hovring och fokus; texten står kvar. */
+button[kind="primary"]:not(:disabled), button[kind="primaryFormSubmit"]:not(:disabled) {{ color: {PRIMARY_TEXT}; }}
+{_sel(BTN_PRIMARY)} {{ min-height: 44px; padding: 0 16px; border-radius: 10px; font-family: 'Space Grotesk', sans-serif;
+    font-size: 14px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; text-shadow: none;
+    transition: transform .12s ease, background-color .12s ease; }}
+{_sel(BTN_PRIMARY, ":not(:disabled)")} {{ color: {PRIMARY_TEXT}; }}
+/* Avstängd primär som avstängd sekundär (Streamlits egen är grå text på genomskinligt — osynlig vid opacitet .45) */
+{_sel(BTN_PRIMARY, ":disabled")},
+{_sel(BTN_PRIMARY, ":disabled:hover")} {{ border-color: rgba(0,229,255,.25); background: rgba(0,229,255,.08);
+    color: {ACCENT}; }}
+/* Osparat (§3.5.16–17): sparradens primärknapp i bärnsten, som "⚠️ Du har osparade ändringar." bredvid — osparat ser
+   aldrig ut som "Lägg till" */
+{SAVE_DIRTY}:not(:disabled) {{ background: {AMBER}; border-color: {AMBER}; color: {PRIMARY_TEXT}; }}
+{SAVE_DIRTY}:not(:disabled):hover {{ background: {AMBER_HOVER}; border-color: {AMBER_HOVER}; }}
+{SAVE_DIRTY}:focus-visible {{ box-shadow: 0 0 0 2px {tint(AMBER, .5)}; }}
+/* Bekräfta radering (§3.5.18): "Ja, ta bort" är röd med vit text (4,9:1) */
+{_sel(CONFIRM_DEL, ":not(:disabled)")} {{ background: {RED}; border-color: {RED}; color: #ffffff; }}
+{_sel(CONFIRM_DEL, ":not(:disabled):hover")} {{ background: {RED_HOVER}; border-color: {RED_HOVER}; }}
+{_sel(CONFIRM_DEL, ":focus-visible")} {{ box-shadow: 0 0 0 2px {tint(RED, .5)}; }}
+/* Widgetar som Streamlit fyller med primärfärgen (PR 16) — där cyan text eller vit text på cyan inte syns:
+   talfältets − och + (CYBERPUNK_CSS:s cyan ikon på cyan vid hovring), flervalets valda etiketter och datumväljarens
+   valda dag (vit text, 1,5:1) och skjutreglagets värde (Streamlit skriver det i primärfärgen — på CYBERPUNK_CSS:s
+   cyan ruta försvann det; rutan bort, värdet står i cyan ovanför tummen som i Streamlit) */
+[data-testid="stNumberInputContainer"] button:hover:enabled,
+[data-testid="stNumberInputContainer"] button:focus:enabled {{ color: {PRIMARY_TEXT} !important; }}
+.stMultiSelect [data-baseweb="tag"], .stMultiSelect [data-baseweb="tag"] * {{ color: {PRIMARY_TEXT}; }}
+[data-baseweb="calendar"] [role="gridcell"][aria-label^="Selected"] {{ color: {PRIMARY_TEXT}; }}
+.stSlider [data-testid="stSliderThumbValue"],
+.stSlider [data-testid="stSliderTickBar"] [data-testid="stMarkdownContainer"] {{ background: none !important; }}
 /* Tryck: 120 ms scale(.98) */
 {_sel(BTN_ALL, ":active")} {{ transform: scale(.98); }}
 /* Avstängd ser avstängd ut (förut såg den aktiv ut): halv opacitet, svag kant, ingen glöd */

@@ -172,9 +172,10 @@ code, pre, .stCode, [class*="monospace"] {
 }
 
 /* ── Buttons ─────────────────────────────────────────────────── */
-/* Bara sekundära knappar får panelens cyanram. type="primary" lämnas i fred,
-   så sparradens "osparat = primär" faktiskt syns och en bekräfta-radera-knapp
-   inte ser ut som "Lägg till". */
+/* Bara sekundära knappar får panelens cyanram här. type="primary" får temats
+   cyan (config.toml, beslut 4) med mörk text i skalet (ui/shell.py), där
+   sparradens "osparat = primär" blir bärnsten och en bekräfta-radera-knapp
+   röd — så att ingen av dem ser ut som "Lägg till". */
 .stButton > button[kind="secondary"] {
     background: linear-gradient(135deg, rgba(0,229,255,0.15) 0%, rgba(0,168,191,0.1) 100%);
     border: 1px solid #00E5FF;
