@@ -173,7 +173,8 @@ def test_config_hides_the_toolbar_and_keeps_theme_and_browser():
     # viewer: ingen Deploy och inga utvecklarval, men ⋮ och körindikatorn (stStatusWidget) finns kvar i DOM:en —
     # minimal ritar ingen verktygsrad alls, och strålen i PR 14 läser körindikatorn
     assert cfg["client"] == {"toolbarMode": "viewer"}
-    assert cfg["theme"] == {"base": "dark"} and cfg["browser"] == {"gatherUsageStats": False}
+    # temat: mörk bas — hela [theme] (panelens färger, PR 16) låses ordagrant i test_css_readability
+    assert cfg["theme"]["base"] == "dark" and cfg["browser"] == {"gatherUsageStats": False}
     from streamlit import config
     assert config.get_option("client.toolbarMode") in ("minimal", "auto", "developer", "viewer")
 

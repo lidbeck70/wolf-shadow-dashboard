@@ -33,7 +33,7 @@ PURPLE = "#B400FF"        # Aurora — regim/sekundär accent
 GREY = "#6b7280"          # okänt, avstängt
 
 # Bläcktoner (designbeslut 5): samma färg, ljusare, för färgad text under 19 px — fyllningar och kanter behåller
-# basfärgen. ink() nedan väljer; den lämnar basfärgen tills INK_ON slås på (PR 16, en rad).
+# basfärgen. ink() nedan väljer. Samma toner är temats redTextColor/greenTextColor/violetTextColor (config.toml).
 GREEN_INK = "#45b36b"     # 7,6:1 mot APP_BG
 RED_INK = "#e36464"       # 6,0:1
 PURPLE_INK = "#c35cff"    # 6,1:1
@@ -93,12 +93,12 @@ def regime_color(label) -> str:
 
 # ── Bläck och toner ──────────────────────────────────────────────────────────
 INK = {GREEN: GREEN_INK, RED: RED_INK, PURPLE: PURPLE_INK}
-INK_ON = False            # PR 16 (designbeslut 5) slår på bläcket — fram till dess ger ink() basfärgen
+INK_ON = True             # påslaget i PR 16 (designbeslut 5) — False ger basfärgen överallt igen
 
 
 def ink(color: str) -> str:
     """Färgen för färgad text under 19 px: bläcktonen för GREEN, RED och PURPLE, alla andra oförändrade.
-    Tills INK_ON slås på (PR 16) returneras basfärgen — ett godkänt beslut 5 blir då en enda rad."""
+    Med INK_ON = False returneras basfärgen (så var det före PR 16)."""
     if not INK_ON:
         return color
     key = str(color or "").strip().lower()

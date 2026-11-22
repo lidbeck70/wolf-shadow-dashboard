@@ -916,6 +916,13 @@ violetTextColor = "#c35cff"
 - CSS: `button[kind=primary]` gets `#05070A` text; dirty save is amber; confirm delete is red; the now-redundant scoped cyan rules are removed.
 - `ink()` switches to the ink tints.
 - Check that the dirty save still reads as "osparat" next to "⚠️ Du har osparade ändringar.".
+- As built (PR 16):
+  - Every `theme.*` key above exists in 1.59.1; `[browser]` and `[client]` are unchanged.
+  - White on cyan measures 1.5:1 (not 1.2:1); `#05070A` on cyan is 13.1:1, and 6.4:1 on Streamlit's darker hover/focus cyan.
+  - Primaries also take the secondary's shape (44 px, radius 10, Space Grotesk 14 px 600 .06em caps). A disabled primary looks like a disabled secondary, because Streamlit's own disabled primary (grey text on transparent) vanished at opacity .45.
+  - Confirm delete is keyed on `[class*="__confirm"]` (the `confirm_delete` key suffix) plus `st-key-watch_del_` (Övervakning's "Ja, ta bort …"), not `[class*="confirm"]`: that would also turn the journal's "Confirm Import" (`import_confirm_btn`, not a delete) red. Hover is darker: amber `#c0842c` (dark text 6.3:1), red `#b03c3c` (white 5.9:1).
+  - Widgets that Streamlit fills with the primary colour keep readable text: multiselect tags and the date picker's selected day get `#05070A` (white was 1.5:1); the number input's −/+ icon turns dark on its cyan hover; CYBERPUNK_CSS's cyan box behind the slider value is removed, because the value text is now cyan.
+  - No scoped cyan primaries existed to remove: `login_btn` and `morning_next_*` arrive in PR 17/18 and inherit the theme.
 
 **Backlog, owner-gated, not in the 12 PRs:**
 - decision 12 content (`rules_page` hard rules first; new `tests/test_design_rules_order.py` asserting every rule text is present exactly once);

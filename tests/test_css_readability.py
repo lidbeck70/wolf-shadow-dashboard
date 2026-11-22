@@ -63,7 +63,10 @@ FIELDS = (".stSelectbox input", ".stTextInput input", ".stNumberInput input",
 def test_streamlit_config_forces_the_dark_base_theme():
     with open(os.path.join(ROOT, ".streamlit", "config.toml"), "rb") as fh:
         cfg = tomllib.load(fh)
-    assert cfg["theme"] == {"base": "dark"}            # bara base: knappar/piller som förut
+    assert cfg["theme"] == {                           # panelens färger i temat (LIDSKJALV beslut 4 och 5, PR 16)
+        "base": "dark", "primaryColor": "#00E5FF", "backgroundColor": "#05070A",
+        "redColor": "#c44545", "orangeColor": "#d4943a", "greenColor": "#2d8a4e", "violetColor": "#B400FF",
+        "redTextColor": "#e36464", "greenTextColor": "#45b36b", "violetTextColor": "#c35cff"}
     assert cfg.get("browser", {}) == {"gatherUsageStats": False}    # statistiken av (inloggningsbryggan, auth.py)
     from streamlit import config
     for section, opts in cfg.items():

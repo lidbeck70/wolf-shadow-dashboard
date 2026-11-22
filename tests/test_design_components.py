@@ -2,8 +2,8 @@
 LIDSKJALV PR 15 — byggstenarna: tokens, rubrik, ruta, kort, statuschip, beslutsremsa, knappar (docs/design_lidskjalv.md
 §3.1–§3.5.19, §7).
 
-  · tokens: bara tillägg (APP_BG, NOTE flyttad och omexporterad, MUTED, bläcktonerna, skalorna); ink() ger basfärgen
-    tills PR 16 slår på bläcket; tint() ger rgba(r,g,b,a); skalets tillfälliga konstanter kommer ur ui/tokens
+  · tokens: bara tillägg (APP_BG, NOTE flyttad och omexporterad, MUTED, bläcktonerna, skalorna); ink() ger
+    bläcktonerna sedan PR 16 (beslut 5); tint() ger rgba(r,g,b,a); skalets tillfälliga konstanter kommer ur ui/tokens
   · tile: sign > 0 grönt, < 0 rött, annars rutans färg; ' · ' staplas; Nordens 'n/m GRÖN' visas som 'n/m gröna'
     utan att laget.row_text eller ljuset ändras; saknas-ord blir det grå Saknas-chipet
   · all text som byggstenarna tar emot escapas
@@ -82,17 +82,20 @@ def test_note_moved_to_tokens_and_is_re_exported_and_the_shell_reads_tokens():
     assert not re.search(r'^(MUTED|APP_BG|CARD_BG) = "#', src, re.M)  # inga tillfälliga konstanter kvar
 
 
-def test_ink_returns_the_base_colour_until_pr16():
-    assert tokens.INK_ON is False
-    for col in (tokens.GREEN, tokens.RED, tokens.PURPLE, tokens.AMBER, tokens.ACCENT, "#123456"):
-        assert tokens.ink(col) == col
+def test_ink_returns_the_ink_tones_since_pr16():
+    assert tokens.INK_ON is True                                       # beslut 5 godkänt (PR 16)
+    assert tokens.ink(tokens.GREEN) == tokens.GREEN_INK == "#45b36b"
+    assert tokens.ink(tokens.RED) == tokens.RED_INK == "#e36464"
+    assert tokens.ink(tokens.PURPLE) == tokens.PURPLE_INK == "#c35cff"
+    for col in (tokens.AMBER, tokens.ACCENT, tokens.GOLD, tokens.EMBER, tokens.GREY, "#123456"):
+        assert tokens.ink(col) == col                                  # alla andra oförändrade
 
 
 def test_ink_switch_is_one_flag(monkeypatch):
-    monkeypatch.setattr(tokens, "INK_ON", True)
-    assert tokens.ink(tokens.GREEN) == tokens.GREEN_INK and tokens.ink(tokens.GREEN.upper()) == tokens.GREEN_INK
-    assert tokens.ink(tokens.RED) == tokens.RED_INK and tokens.ink(tokens.PURPLE) == tokens.PURPLE_INK
-    assert tokens.ink(tokens.AMBER) == tokens.AMBER and tokens.ink(tokens.ACCENT) == tokens.ACCENT
+    assert tokens.ink(tokens.GREEN.upper()) == tokens.GREEN_INK        # skiftläget spelar ingen roll
+    monkeypatch.setattr(tokens, "INK_ON", False)                       # avslaget: basfärgen överallt
+    for col in (tokens.GREEN, tokens.RED, tokens.PURPLE, tokens.AMBER, tokens.ACCENT):
+        assert tokens.ink(col) == col
 
 
 def test_tint_format():
@@ -129,7 +132,8 @@ def test_tile_number_is_mono_word_is_grotesk_and_long_words_shrink():
 def test_tile_stacks_parts_coloured_by_laget_color():
     html = cp.tile("Marknadsrisk", "SPY LÅG · OMXS30 FÖRHÖJD", tokens.AMBER, kind="word")
     lines = re.findall(r'<div style="color:([^;]+);[^"]*font-size:15px[^"]*">([^<]+)</div>', html)
-    assert lines == [(laget._color("LÅG"), "SPY LÅG"), (laget._color("FÖRHÖJD"), "OMXS30 FÖRHÖJD")]
+    # 15 px: bläcktonen av laget._color (beslut 5, PR 16) — LÅG är grön → GREEN_INK
+    assert lines == [(tokens.ink(laget._color("LÅG")), "SPY LÅG"), (tokens.ink(laget._color("FÖRHÖJD")), "OMXS30 FÖRHÖJD")]
 
 
 def test_norden_display_rule_leaves_row_text_and_the_light_unchanged():
@@ -432,8 +436,8 @@ def test_buttons_disabled_and_active_states():
     # skalet ligger EFTER CYBERPUNK_CSS: samma selektor vinner på ordningen
     block = shell.style_block()
     assert block.index("LIDSKJALV · byggstenarna") > block.index('.stButton > button[kind="secondary"] {')
-    # primärknappar lämnas i fred tills beslut 4 (PR 16)
-    assert 'button[kind="primary"]' not in PARTS
+    # primärknappen sedan beslut 4 (PR 16): mörk text på temats cyan — tests/test_design_theme.py
+    assert '.stButton > button[kind="primary"]:not(:disabled)' in RULES
 
 
 def test_tap_card_head_row_links_and_kpis_css():
