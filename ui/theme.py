@@ -14,7 +14,7 @@ Public API
     render_header()  — varumärkesraden; returnerar platsen som fill_bar() fyller om sist i main()
     fill_bar(slot)   — fyller om raden (datum, osparat, låset, pulsen ur sessionen)
     render_footer()  — sidfoten med årets år och "▲ Till toppen"
-    section_title()  — cyan uppercase section label
+    section_title()  — sektionsrubriken (omslag kring ui/components.section)
     card()           — styled content card rendered via st.markdown
 """
 
@@ -76,14 +76,9 @@ _P = PALETTE  # shorthand used internally
 # ---------------------------------------------------------------------------
 
 def section_title(text: str, icon: str = "") -> None:
-    """Render a cyan uppercase section label with a thin underline."""
-    prefix = f"{icon}&nbsp;&nbsp;" if icon else ""
-    st.markdown(
-        f'<p style="font-size:11px;letter-spacing:4px;text-transform:uppercase;'
-        f'color:{_P["gold_muted"]};border-bottom:1px solid {_P["border"]};'
-        f'padding-bottom:6px;margin-bottom:16px;">{prefix}{text}</p>',
-        unsafe_allow_html=True,
-    )
+    """Sektionsrubriken — tunt omslag kring ui/components.section (12 px versaler i MUTED, LIDSKJALV §3.5.8)."""
+    from ui.components import section
+    st.markdown(section(f"{icon}  {text}" if icon else str(text)), unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------------------

@@ -889,6 +889,12 @@ Every PR runs the full `pytest` and attaches 390 px and 1440 px screenshots of t
   - `test_watch_ui` (title in `st.markdown`);
   - `test_fix_panelen_lagring`, `test_positions`, `test_normalisering_och_plan:149,267`.
 - New tests: tile sign colours, escaping, `verdict_strip` uses only the words passed in, `tap_card` keeps its key, label and callback (AppTest), the Norden display rule leaves `row_text` unchanged.
+- As built (PR 15):
+  - `head_row`: the title is `flex: 1 1 auto; min-width: min(180px, 100%)`, not `1 1 180px` — with 180 px the button stayed beside a long title and the title broke between its emoji and word ("🥇" over "RÅVARUHÄVSTÅNG" at 390 px); now the button wraps right-aligned instead.
+  - `action_row`: the chip column is 84 px, not 76 — "● VAKSAM" measures 81 px at 12 px.
+  - The scoped cyan primaries (`login_btn`, `morning_next_*`) are left to PR 17/18: the login does not load the shell yet, and both arrive after PR 16's cyan primary.
+  - `ui/css.py` is not in this PR: its `.section-title` class gets the `section()` look from the shell CSS; `tabs/home._block` moves with PR 18.
+  - `ui/charts.sparkline_svg(series, colour)` is added here (PR 19 uses it).
 
 **Notes for PR 16 (Cyan och bläck)**
 - Config:
