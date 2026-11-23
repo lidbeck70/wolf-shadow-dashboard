@@ -372,3 +372,162 @@ def test_page_style_wrappers_take_no_space():
     assert hidden["display"] == "none"
     assert GLOBAL[f'[data-testid="stLayoutWrapper"]:has(> .st-key-{shell.SHELL_KEY})']["display"] == "none"
     assert shell.page_scope("x") == ':is([data-testid="stLayoutWrapper"]:has(> .st-key-pcss_x), .st-key-pcss_x) ~ *'
+
+
+# ── PR 23: Regler & Guider (§4.10) — sidbytesradiorna, linjen, sidans CSS ───
+def _radio_keys(path: str) -> list:
+    """Nyckeluttrycken för varje st.radio( i en källfil, i ordning."""
+    src = _src(*path.split("/"))
+    out, i = [], src.find("st.radio(")
+    while i >= 0:
+        m = re.search(r"key=([^,)\n]+)", src[i:])
+        out.append(m.group(1).strip())
+        i = src.find("st.radio(", i + 1)
+    return out
+
+
+def test_every_rules_page_radio_is_a_rail_and_the_page_switches_are_chips():
+    """Varje radio i rules_page är en räls: rules_sub (L3 ur nav.STATE_KEY), playbook-väljarna rules_pb_*,
+    strategiguidens sg_pick och Snabbreferensens rules_ref_view som L2-chip — 44 px, en rad som sveps, valt chip i
+    cyan, ringen dold, radbryts på datorn — och nav-skriptet centrerar det valda chipet."""
+    keys = _radio_keys("ovtlyr/ui/rules_page.py")
+    assert sorted(keys) == sorted(['f"rules_pb_{suffix}"', '"sg_pick"', '"rules_ref_view"',
+                                   '_nav.STATE_KEY["more/Regler & Guider"]'])
+    assert shell.PAGE_RAILS == ('[class*="st-key-rules_pb_"]', ".st-key-sg_pick", ".st-key-rules_ref_view")
+    assert '_pick_playbook("rules")' in _src("ovtlyr", "ui", "rules_page.py")       # rules_pb_rules, rules_pb_cheat
+    assert '_pick_playbook("cheat")' in _src("ovtlyr", "ui", "rules_page.py")
+    for sel in shell.PAGE_RAILS:
+        opt = GLOBAL[f"{sel} {shell.OPTION}"]
+        assert opt["min-height"] == "44px" and opt["border-radius"] == "999px", sel
+        assert GLOBAL[f"{sel} {shell.OPTION}[data-selected]"]["border-color"] == CYAN
+        assert GLOBAL[f"{sel} {shell.OPTION}[data-selected] p"]["color"] == CYAN
+        grp = GLOBAL[f"{sel} {shell.GROUP}"]
+        assert grp["flex-wrap"] == "nowrap" and grp["overflow-x"] == "auto" and "mask-image" in grp
+        assert grp["position"] == "relative"                        # de dolda radioknapparna klipps av rälsen
+        assert GLOBAL[f"{sel} {shell.RADIO_DOT}"]["display"] == "none"
+        assert WIDE[f"{sel} {shell.GROUP}"]["flex-wrap"] == "wrap"
+        assert f"{sel} {shell.GROUP}" in shell.rail_selector()
+    assert nav.STATE_KEY["more/Regler & Guider"] in shell.rail_keys()[1]
+    # sidbytesradiorna är inga undernivåer: de ger inte flikpanelen chip-radens nollade luft
+    tab_panel = [s for s in PHONE if s.startswith(shell.TAB_PANEL + ":has(")]
+    assert tab_panel and not any("rules_pb_" in s or "sg_pick" in s for s in tab_panel)
+    assert "<" not in shell.nav_js("more/regler-guider/handelsregler|")[len("<script>"):-len("</script>")]
+
+
+def test_the_divider_after_rules_sub_is_hidden():
+    sel = '.st-key-rules_sub + [data-testid="stElementContainer"]:has(hr)'
+    assert GLOBAL[sel]["display"] == "none"
+    src = _src("ovtlyr", "ui", "rules_page.py")
+    body = src[src.index("def render_rules_page("):src.index("def render_inline_rules(")]
+    radio = body.index('key=_nav.STATE_KEY["more/Regler & Guider"]')
+    assert body.index("st.markdown(\"<hr", radio) > radio                  # linjen ritas direkt efter rälsen
+
+
+def test_wolf_panel_draws_regler_and_guider_in_its_scope_container_with_the_page_css():
+    src = _src("wolf_panel.py")
+    more = src[src.index("def _tab_more("):src.index("def main():")]
+    crumb = more.index('_crumb("more/Regler & Guider")')
+    box = more.index('with st.container(key="nav_rules_page"):')
+    css = more.index('page_style(rules_css.page_css(), "rules")')
+    assert crumb < box < css < more.index("render_rules_page")
+    from ui import rules_css
+    assert rules_css.SCOPE == ".st-key-nav_rules_page"
+
+
+def _rules_page_css():
+    from ui import rules_css
+    return rules_css, rules_css.page_css()
+
+
+def _split_selectors(group: str) -> list:
+    """'a, b' → ['a', 'b'] — men inte vid kommatecken inne i (…) eller "…" (rgb(196, 69, 69) i en attributselektor)."""
+    out, depth, quote, cur = [], 0, False, ""
+    for ch in group:
+        if ch == '"':
+            quote = not quote
+        elif not quote and ch in "([":
+            depth += 1
+        elif not quote and ch in ")]":
+            depth -= 1
+        if ch == "," and depth == 0 and not quote:
+            out.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    return out + [cur]
+
+
+def test_rules_page_css_is_scoped_to_the_page_container():
+    rules_css, css = _rules_page_css()
+    flat = re.sub(r"@media[^{]*\{", "", _nocomments(css))
+    for group in re.findall(r"([^{}]+)\{[^{}]*\}", flat):
+        for sel in _split_selectors(group):
+            sel = " ".join(sel.split())
+            if sel:
+                assert sel.startswith(rules_css.SCOPE + " "), sel
+
+
+def test_rules_page_floor_covers_every_inline_size_under_12px():
+    rules_css, css = _rules_page_css()
+    src = _src("ovtlyr", "ui", "rules_page.py")
+    small = set()
+    for num, unit in re.findall(r"font-size:\s*([\d.]+)(rem|px)", src):
+        px = float(num) * (16 if unit == "rem" else 1)
+        if px < 12:
+            small.add(f"{num}{unit}")
+    assert small and small <= set(rules_css.SMALL), small - set(rules_css.SMALL)
+    rules = _global(css)
+    for v in rules_css.SMALL:
+        for spelled in (f"font-size:{v}", f"font-size: {v}"):        # webbläsaren skriver med mellanslag
+            assert rules[f'{rules_css.SCOPE} [style*="{spelled}"]']["font-size"] == "12px", v
+    assert rules[f'{rules_css.SCOPE} [data-testid="stCaptionContainer"] code']["font-size"] == "12px"
+
+
+def test_rules_page_headings_tables_riskmodell_and_targets():
+    rules_css, css = _rules_page_css()
+    g, phone = _global(css), _media(css, "(max-width: 640px)")
+    s = rules_css.SCOPE
+    h2 = g[f"{s} h2"]
+    assert h2["color"] == tokens.GOLD.lower() and h2["font-size"] == "clamp(20px, 5.6vw, 26px)"
+    assert h2["word-break"] == "keep-all" and h2["overflow-wrap"] == "normal" and h2["text-align"] == "left"
+    head = next(v for k, v in g.items() if "text-align: center" in k and k.endswith("> h2)"))
+    assert head["text-align"] == "left"
+    sec = g[f"{s} {rules_css.SECTION}"]
+    assert sec["font-size"] == "20px" and sec["color"] == tokens.GOLD.lower()
+    assert g[f"{s} h2"]["word-break"] == "keep-all"
+    wrap = g[f'{s} [data-testid="stMarkdownContainer"]:has(> table)']
+    assert wrap["overflow-x"] == "auto" and wrap["max-width"] == "100%"
+    grid = phone[f"{s} div:has(> {rules_css.RISK_LABEL})"]
+    assert grid["display"] == "grid" and grid["grid-template-columns"] == "minmax(0, 38fr) minmax(0, 62fr)"
+    assert phone[f"{s} {rules_css.RISK_LABEL}"]["min-width"] == "0"
+    assert g[f"{s} summary"]["min-height"] == "44px"
+    assert g[f"{s} .st-key-rules_gloss_q input"]["font-size"] == "16px"
+    assert g[f'{s} .st-key-rules_gloss_q [data-testid="stTextInputRootElement"]']["height"] == "48px"
+
+
+def test_every_rules_page_table_that_scrolls_on_the_phone_has_a_cue():
+    """§8.8: bara rälsar, remsor och tabeller rullar i sidled, var och en med ett tecken. Flikguiden (4 spalter, alltid
+    bredare än telefonen) tonar ut; varje smalare tabell (Snabbreferens, Riskdoktrinen, larmlistan) får en cyan kant
+    som bara syns när den faktiskt är bredare än rutan (Screeners på 320–375, Datakällor på 320): täcken i sidans
+    bakgrund som följer innehållet (local) över glöder fast i rutans kanter (scroll), lika breda — en tabell som ryms
+    får ingen kant och ingen toning. 6 px sidluft gör att Screeners ryms på 390."""
+    rules_css, css = _rules_page_css()
+    phone, s = _media(css, "(max-width: 640px)"), rules_css.SCOPE
+    box = rules_css.TABLE_BOX
+    assert _global(css)[f"{s} {box}"]["overflow-x"] == "auto"
+    four = f'{s} [data-testid="stMarkdownContainer"]:has(> table th:nth-child(4))'
+    assert phone[four]["mask-image"] == rules_css.FADE.lower()
+    assert rules_css.NARROW_TABLE == box + ":not(:has(> table th:nth-child(4)))"   # alla andra tabeller
+    narrow = phone[f"{s} {rules_css.NARROW_TABLE}"]
+    assert "mask-image" not in narrow
+    layers = [" ".join(x.split()) for x in _split_selectors(narrow["background"])]
+    assert len(layers) == 4
+    size = f"/ {rules_css.EDGE_PX}px 100% no-repeat"
+    covers, edges = layers[:2], layers[2:]                         # täckena överst
+    for layer, side in zip(covers, ("left", "right")):
+        assert layer.endswith(f"{side} center {size} local") and layer.count(tokens.APP_BG.lower()) == 2, layer
+    for layer, side in zip(edges, ("left", "right")):
+        assert layer.endswith(f"{side} center {size} scroll") and "rgba(0, 229, 255, .75) 0 2px" in layer, layer
+    for cell in ("th", "td"):
+        pad = phone[f'{s} [data-testid="stMarkdownContainer"] > table:not(:has(th:nth-child(4))) {cell}']
+        assert pad["padding-left"] == pad["padding-right"] == "6px"

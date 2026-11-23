@@ -1071,8 +1071,88 @@ violetTextColor = "#c35cff"
     - Metaller likewise keeps its own "#### 🥇 Fysiska metaller" under the new FYSISKA METALLER label, so the title shows twice; `portfolio/metals.py` is outside this PR. Handle Risk, Rapporter and Metaller together in a later PR.
     - Later PR: the merged `review/card.slot()` and the brand-bar slot (`render_header()` → `theme.fill_bar`) are also `st.empty()`, so they blank the same way on a slow rerun. Switching them to `st.container()` is a one-token change each, but it is outside this PR.
 
+**Notes for PR 23 (Regler & Guider: hårda regler först och en lugn sida på telefonen)**
+- As built (PR 23):
+  - **Two parts.** Part A is the §4.10 styling above the "After decision 12" line. Part B is owner decision 12 (`ovtlyr/ui/rules_page.py` is not frozen), which was in the Backlog and is now **done in this PR**. The table row's "No edit in `ovtlyr/`" is superseded by decision 12: `rules_page.py` changes only in content order, with every rule text verbatim. No other `ovtlyr/` file changes. `strategy_rules*.py`, nav and the Viking files are untouched (`test_design_invariants`).
+  - **Scope container:** `wolf_panel._tab_more` draws `_crumb("more/Regler & Guider")`, then `st.container(key="nav_rules_page")`. Inside it come `page_style(rules_css.page_css(), "rules")` and `render_rules_page()`. `rules_sub` sits inside the container, and the crumb stays directly above it.
+  - **Shell (`ui/shell.py`):**
+    - `PAGE_RAILS = ('[class*="st-key-rules_pb_"]', ".st-key-sg_pick", ".st-key-rules_ref_view")` get the L2 chip rail: 44 px chips, one swipeable row, selected chip cyan, radio ring hidden, wrapping at ≥ 1024 px.
+    - `rail_selector()` includes them, so the nav script centres the selected chip. Measured: picking Tiggre puts its chip at x 109–281 in the 0–390 rail, and Insider at 91–299.
+    - They do not join the tab panel's zero top padding, which belongs to the sub-levels only.
+    - `rules_sub` already had the L3 underline rail from the generator.
+    - `.st-key-rules_sub + [data-testid="stElementContainer"]:has(hr){display:none}` hides the divider.
+    - `_each()` accepts a ready selector, so the existing generated strings are unchanged.
+  - **Page CSS (`ui/rules_css.py`, every selector starts with `.st-key-nav_rules_page`):**
+    - **Inline style attributes are serialized by the browser** (`font-size: 0.7rem`, `padding: 3px 0px`, colours as `rgb(…)`). So attribute selectors use that form, and the 12 px floor lists both spellings.
+    - **h2:** gold, left, `clamp(20px,5.6vw,26px)`, `keep-all`. Streamlit's 16 px heading padding is removed. The intro is 13 px NOTE, and the red "HÅRD REGEL" in the Handelsregler intro is in red ink, nowrap.
+    - **Section heads** (`_section_header_html`): 20 px gold with a MUTED subline. Before, "Kvartalsritualen" and "Kom igång-ordningen" broke mid-word at 390.
+    - **12 px floor:** `SMALL` covers every inline size under .75rem in `rules_page.py` (0.55, 0.6, 0.62, 0.65, 0.66, 0.68, 0.7, 0.72, 0.74 rem, plus 9, 10 and 11 px; a test reads the source). Captions are 13 px and their `code` (`?p=…`, 10.5 px before) is 12 px. Chips (HÅRD REGEL, level, support, routine status) are inline-block and nowrap, so "HÅRD / REGEL" no longer splits.
+    - **Tables:** the markdown container around a table gets `overflow-x:auto`. On the phone (≤ 640 px), every table that scrolls in its box has a cue (§8.8).
+      - The 4-column Flikguide table is always wider than the phone. It fades at the right edge.
+      - **Deviation (readability):** on the phone, Flikguide's FLIK column may wrap (min 120 px), KONTROLLERAR has a 140 px floor, and the usage column `min(320px, 100vw − 48px)`. Without floors every column shrank to its longest word, so rows were up to 301 px tall and the table 5,061 px high, with only FLIK on the first screen. Now FLIK and KONTROLLERAR fill the first screen, and one swipe shows the usage text in a single screen width. The table is 865 px wide at 390 (817 at 320) and 4,068 px high.
+      - **Every other table** (2–3 columns: the five Snabbreferens views, Riskdoktrinen, Flikguide's alert list) uses `rules_css.NARROW_TABLE` and gets a scroll-aware cyan edge, not a static fade. A static fade would dim the right column of a table that fits, such as Datakällor at 360–412.
+        - How it works (no JS): two 10 px covers in APP_BG with `background-attachment: local` sit over two 10 px cyan edges (a 2 px line plus glow) with `scroll`.
+        - The edge shows only on the side that has more to scroll to, and it is gone at the end. A table that fits shows none.
+        - Because the cover is exactly as wide as the edge, the whole edge shows from 10 px of overflow.
+      - On the phone these tables have 6 px side padding instead of 8, so Screeners fits at 390.
+      - **Correction from review:** this note first said "the 2–3 column tables fit at 390, and at 320 Screeners' clipped text is the cue". That was wrong. Screeners overflowed by 8 px at 390 (its right border was clipped), Datakällor also scrolled at 320, and neither had a cue. Wrapper scrollWidth/clientWidth, before → now:
+
+        | Width | Screeners | Datakällor |
+        |---|---|---|
+        | 390 | 366/358 → **358/358, fits** | 358/358 → 358/358 |
+        | 375 | 366/343 → 354/343, edge | fits |
+        | 360 | 366/328 → 354/328, edge | fits |
+        | 320 | 366/288 → 354/288, edge | 323/288 → 311/288, edge |
+
+        Säljregler, Ordlista, Riskdoktrinen and the alert list fit at 320–412 and show no edge. At 1440 nothing scrolls, and the cue rules sit only in the phone query.
+    - **RISKMODELL** at ≤ 640 px: each row is a `minmax(0,38fr) minmax(0,62fr)` grid and the label's `min-width:140px` is cancelled. Measured 119/193 px at 390 and 92/150 at 320.
+    - **Tap targets:** every expander summary is 44 px (Årshjulet's "🔬 Backtestern" was 38). The glossary field `rules_gloss_q` is 48 px with 16 px text (no iOS zoom).
+    - **Dividers:** the `<hr>` under `sg_pick` is hidden the same way as the one after `rules_sub`. The Ember guide's own divider before its 13-section ruleset stays, because it is content, not a rail divider.
+  - **Part B (`rules_page.py`, decision 12; no rule, threshold, key, label or existing function changes; `_PANEL_GUIDE` byte-identical):**
+    - **Handelsregler:** h2/intro → picker → playbook line → **card "HÅRDA REGLER — BRYTS ALDRIG"** → RISKMODELL → "Så gör du" → Entry/Exit → Mindset → Misstag.
+      - `_hard_card_html(pb)` collects the hard rules of Entry, Exit and Mindset (Mindset has none today) under small "ENTRY" / "EXIT" labels, with a mono count ("6 st"). Each rule is drawn with the unchanged `_rule_row(r, colour)` in its list's colour: number, text, HÅRD REGEL, explanation and 📍.
+      - In the lists, `_rule_slot` keeps the number and shows "↑ Hård regel — står överst" (44 px, `data-jump="rules-hard"`). Tapping it scrolls the card (`scroll-margin-top:72px`) to y = 72 at 390. Numbering stays continuous, and "n regler" still counts the whole list.
+      - With no hard rules there is no card (`_hard_groups` is empty; tested with a softened playbook).
+      - `thor/regim.py` and `render_inline_rules` keep using `_rule_row` and `_risk_box` as before.
+    - **Fusklapp:** the existing "HÅRDA REGLER — BRYTS ALDRIG" box, verbatim, now comes before the grid, with 12 px of air below it (page CSS).
+    - **Kom igång:**
+      - The intro reads "15 strategier, olika svårighetsgrad. Lär dig en i taget — börja överst." The count is `len(LEARNING_ORDER)`, and "börja överst" still holds, because the strategy list starts at Momentum Swing.
+      - Order: Börja här → VECKORUTINEN — MOMENTUM SWING (steps + the Årshjulet note) → `section("Strategierna — lättast först", count="15")` → 15 closed `st.expander`s.
+      - Each expander is labelled `"{i}\. {pb.name} · {LEVEL}"`. Without the backslash, markdown makes "1. Name" a list and the label loses its number. Keys are `rules_start_<key>`.
+      - Each expander holds `_start_card(pb)`: badges, tagline, idea, Horisont, Risk per affär, Var, Källa and the support note, verbatim. Number and name are in the label.
+      - **Deviation:** the old `<hr>` between the cards and Veckorutinen became that section label (§3.5.8).
+    - **Årshjulet:** `_om_dagar(n)` gives "om 1 dag" or "om N dagar" in the "Ingen rutin i dag … Nästa: …" line. `_routine_card` keeps "I morgon" for 1.
+  - **Tests:**
+    - New `tests/test_design_rules_order.py` (9 tests; 6 of them fail on origin/main):
+      - for every playbook in LEARNING_ORDER, each rule text, explanation, panel guide and pitfall appears on Handelsregler exactly as often as in the playbook's own fields (once when unique; a few texts sit in two fields, e.g. "Max 10 % per aktie" as a rule and as the RISKMODELL value), and each `_rule_row` is drawn exactly once;
+      - the card sits between the playbook line and RISKMODELL and holds exactly the hard rules;
+      - the pointers keep their numbers;
+      - Fusklapp has its box before the grid and every value once;
+      - Kom igång order, keys and labels, plus the old card texts verbatim;
+      - "om 1 dag" / "om 2 dagar" on real routine dates.
+    - Appended to `tests/test_design_nav.py` (7 functions, existing ones untouched):
+      - every `st.radio` in `rules_page` is covered (`rules_pb_*`, `sg_pick`, `rules_ref_view` as chips, `rules_sub` as L3) and the hr rule is present;
+      - `wolf_panel` order: crumb → container → page CSS → render;
+      - the page CSS is fully scoped, its floor covers every inline size under 12 px in the source, and the h2, section head, table, RISKMODELL and target rules are in place;
+      - every table that can scroll on the phone has a cue: the 4-column table keeps the fade, and every other table gets the edge. The test checks that the edge has local covers over scroll glows, that covers and edges are both 10 px wide, and that the padding is 6 px.
+  - **Measured** (live app with offline data; iPhone 13, 320 × 640, 1440 × 1000; all 7 subpages, all 5 Snabbreferens views, all 5 strategy guides, Ember's ruleset open, two Kom igång expanders open, Tiggre and Insider picked):
+    - §8.3: crumb 152–172, `rules_sub` 172–216, page h2 block top **y = 232** at 390 and 320 (244 at 1440). Before, the h2 was 36 px cyan, centred, and started at 271.
+    - §4.10 layout at 390 (Momentum Swing): h2 240–265 (21.8 px), intro 269–307, picker rail 311–359 (**48 px**, chips 44; before it was 8 rows of radios, 450–741), **hard card from y = 485**, RISKMODELL 1533–1851, "Så gör du" 1870.
+      - Fusklapp: hard box 423–641 (before 1589).
+      - Kom igång: Börja här and Veckorutinen above the fold, first expander at 933 (44 px each).
+      - At 1440: hard card 524, RISKMODELL 1211 (before 556).
+    - **Deviation, §8.4 "RISKMODELL box top above the fold":** decision 12 puts the hard rules above RISKMODELL, so the hard card takes RISKMODELL's slot (485 vs the spec's ~470). RISKMODELL now follows the card: 1533 at 390 for Momentum Swing (6 hard rules), 2222 for Tiggre (9).
+    - §8.5: 0 visible HTML text nodes under 12 px at 390, 320 and 1440, on every page and view listed above. Before: 231 on Kom igång, 166 on Flikguide, 64 on Årshjulet.
+    - §8.7 at 390: no button, radio option, summary, text field or `a.wolf-top` under 44 × 44. Before: playbook, guide and reference options were 22 px and the Årshjulet summary 38 px. At 320 the only small targets are the shell's tab cells (38–44 px wide), outside this PR.
+    - §8.8: stMain scrollWidth equals clientWidth at 390 and 320 (and 1440) on every subpage, including Flikguide (868 before) and all five Snabbreferens views. It also holds at 360, 375 and 412 on Flikguide and all five Snabbreferens views. Every table that scrolls inside its box shows a cue: the fade on Flikguide, the edge on Screeners (320–375) and Datakällor (320). Shots: `ref1_{320,360,375,390}_table.png`, `ref2_…_table.png`, and `ref_table_*_end.png` (scrolled to the end: the right edge is gone and the left edge shows).
+  - **Open:**
+    - The page keeps its own colours inside the cards (cyan VECKORUTINEN kicker, rule-colour 📍 lines, DIM explanations at 12–13 px). §3.2 colour roles and ink are applied only where this PR draws new HTML. A later pass could map them in the page CSS.
+    - Flikguide on the phone is still a wide table. A card per row (§3.5.15, rule 3) would read better; PR 24 owns tables.
+    - The edge on Screeners and Datakällor is drawn behind the text, so the last visible word still stops hard at the box edge (for example "Börsd" at 320). Fading the text only while a table scrolls needs a scroll-driven animation (`@keyframes`, which the page-CSS scope test does not allow) or JS. PR 24 can turn these tables into cards on the phone instead.
+    - On a table that fits, the two 10 px covers are flat APP_BG over the page's faint grid and vignette (about 5 RGB units darker). This is not visible at normal zoom.
+    - The strategy guides' own h3 titles (Quality, Deep Contrarian, …) keep their cyan/ember colours and are not restyled.
+
 **Backlog, owner-gated, not in the 12 PRs:**
-- decision 12 content (`rules_page` hard rules first; new `tests/test_design_rules_order.py` asserting every rule text is present exactly once);
 - decision 15 (inner tabs; Swedish metrics, editing `test_fix_panelen_korrekthet.py:121-123,132`);
 - decision 17 (bottom dock);
 - the other pages' Beslutsremsor (Kartan, EMBER, Fiat, Allokering, Veckorutin, Larm).

@@ -9,14 +9,15 @@ den dolda linjen efter rules_sub ligger i skalet (ui/shell.nav_css), som rälsar
 
   · sidrubrikerna (h2): guld, vänsterställda, clamp(20px, 5.6vw, 26px), aldrig brutna mitt i ett ord
   · sektionsrubrikerna (_section_header_html): 20 px guld, aldrig brutna mitt i ett ord
-  · breda tabeller (Flikguide, Snabbreferens) rullar i sin egen ruta — stMain rullar aldrig i sidled
+  · breda tabeller (Flikguide, Snabbreferens) rullar i sin egen ruta — stMain rullar aldrig i sidled — och varje
+    tabell som rullar visar det på telefonen (Flikguiden tonar ut, de smalare får en cyan kant bara när de rullar)
   · 12 px-golvet för sidans inline-storlekar under .75rem, och kodtexten i bildtexterna
   · RISKMODELL som rutnät 38/62 (etikett/värde) på telefonen
   · tryckytor: expandrar, sökfältet i ordlistan (48 px, 16 px text — iOS zoomar annars)
 """
 from __future__ import annotations
 
-from ui.tokens import ACCENT, GOLD, MUTED, NOTE, RED_INK
+from ui.tokens import ACCENT, APP_BG, GOLD, MUTED, NOTE, RED_INK
 
 PAGE_KEY = "nav_rules_page"
 SCOPE = f".st-key-{PAGE_KEY}"
@@ -29,6 +30,27 @@ FADE = "linear-gradient(90deg, #000 calc(100% - 28px), transparent)"
 H2_BOX = '[data-testid="stHeadingWithActionElements"]'
 RISK_LABEL = 'span[style*="min-width: 140px"]'       # _risk_box: etiketten (Risk per affär …) i varje rad
 SECTION = f'div[style*="border-bottom: 2px solid"] > {H2_BOX} > h3'     # _section_header_html
+TABLE_BOX = '[data-testid="stMarkdownContainer"]:has(> table)'
+NARROW_TABLE = f'{TABLE_BOX}:not(:has(> table th:nth-child(4)))'   # 2–3 spalter: Snabbreferens, Riskdoktrinen, larmen
+EDGE_PX = 10                                                        # kantens bredd = täckets bredd
+
+
+def _edge(side: str, deg: int) -> str:
+    """Glöden vid en kant: 2 px cyan linje (ACCENT) som tonar ut över 10 px — fast i rutans kant (scroll)."""
+    return (f"linear-gradient({deg}deg, rgba(0, 229, 255, .75) 0 2px, rgba(0, 229, 255, .25) 2px, "
+            f"rgba(0, 229, 255, 0)) {side} center / {EDGE_PX}px 100% no-repeat scroll")
+
+
+def _cover(side: str) -> str:
+    """Täcket i sidans bakgrund: följer innehållet (local) och täcker glöden där tabellen tar slut."""
+    return f"linear-gradient({APP_BG}, {APP_BG}) {side} center / {EDGE_PX}px 100% no-repeat local"
+
+
+# Kanten som bara syns när tabellen är bredare än sin ruta (rullande skuggor, ingen JS): täckena ligger överst och
+# följer innehållet, glöderna under dem sitter fast i rutans kanter. Ryms tabellen täcker de båda glöderna; rullar
+# den syns glöden på den sida där det finns mer, och försvinner när du nått änden. Täcket är lika brett som glöden,
+# så hela kanten syns redan när tabellen är 10 px för bred (Screeners på 375: 11 px).
+EDGE = ", ".join((_cover("left"), _cover("right"), _edge("left", 90), _edge("right", 270)))
 
 
 def floor_selector() -> str:
@@ -59,14 +81,28 @@ def page_css() -> str:
 {SCOPE} div[style*="border-bottom: 2px solid"] > span {{ color: {MUTED} !important; }}
 {SCOPE} h2, {SCOPE} h3 {{ word-break: keep-all !important; overflow-wrap: normal !important; hyphens: manual; }}
 
-/* Breda tabeller (Flikguide 852 px på 390): tabellen rullar i sin egen ruta, stMain aldrig. Fyrkolumnstabellen
-   tonar ut vid högerkanten på telefonen — tecknet på att den går att svepa. */
-{SCOPE} [data-testid="stMarkdownContainer"]:has(> table) {{ overflow-x: auto; max-width: 100%;
+/* Breda tabeller (Flikguide 852 px på 390): tabellen rullar i sin egen ruta, stMain aldrig. Varje tabell som
+   rullar har ett tecken på telefonen (§8.8): fyrkolumnstabellen (Flikguide, alltid bredare än skärmen) tonar ut vid
+   högerkanten; de smalare får en cyan kant bara när de faktiskt är bredare än rutan (Screeners på 320–375,
+   Datakällor på 320) — en tabell som ryms får ingen. */
+{SCOPE} {TABLE_BOX} {{ overflow-x: auto; max-width: 100%;
     overscroll-behavior-x: contain; }}
 {SCOPE} [data-testid="stMarkdownContainer"] > table {{ min-width: 100%; }}
 @media (max-width: 640px) {{
     {SCOPE} [data-testid="stMarkdownContainer"]:has(> table th:nth-child(4)) {{
         -webkit-mask-image: {FADE}; mask-image: {FADE}; }}
+    {SCOPE} {NARROW_TABLE} {{ background: {EDGE}; }}
+    /* 6 px sidluft i stället för 8 i de smalare tabellerna: Screeners (366 px i en 358 px ruta) ryms då på 390 */
+    {SCOPE} [data-testid="stMarkdownContainer"] > table:not(:has(th:nth-child(4))) th,
+    {SCOPE} [data-testid="stMarkdownContainer"] > table:not(:has(th:nth-child(4))) td {{
+        padding-left: 6px !important; padding-right: 6px !important; }}
+    /* Flikguiden: utan golv krymper varje spalt till sitt längsta ord (rader upp till 301 px höga). Användningen
+       får en skärmbredd, så en rad läses utan att svepa fram och tillbaka */
+    {SCOPE} [data-testid="stMarkdownContainer"] > table:has(th:nth-child(4)) td:nth-child(1) {{
+        white-space: normal !important; min-width: 120px; }}
+    {SCOPE} [data-testid="stMarkdownContainer"] > table:has(th:nth-child(4)) td:nth-child(2) {{ min-width: 140px; }}
+    {SCOPE} [data-testid="stMarkdownContainer"] > table:has(th:nth-child(4)) td:nth-child(3) {{
+        min-width: min(320px, calc(100vw - 48px)); }}
 }}
 
 /* 12 px-golvet (§2.6): sidans inline-storlekar under .75rem, bildtexterna 13 px och deras kod 12 px */
