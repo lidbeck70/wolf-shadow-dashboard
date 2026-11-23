@@ -547,7 +547,8 @@ def _tab_portfolio() -> None:
         from portfolio.private_lock import gate
         if gate():                         # lösenord på de egna innehaven (HOLDINGS_PASSWORD)
             _page(HOLDINGS_AVAILABLE, render_holdings_page, "Holdings", "holdings")
-            st.markdown("---")
+            from ui.components import section
+            st.markdown(section("Fysiska metaller"), unsafe_allow_html=True)   # sektionsrubrik i stället för ---
             from portfolio.metals import render_metals_section
             _page(True, render_metals_section, "Fysiska metaller", "portfolio/metals")
         from ui import routine             # Morgonrundans sista steg; låst bara foten (navigering, inga innehav)
