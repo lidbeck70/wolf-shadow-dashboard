@@ -574,7 +574,12 @@ def _tab_more() -> None:
     elif sub == "Regler & Guider":
         if RULES_AVAILABLE:
             _crumb("more/Regler & Guider")             # rules_page ritar L3-raden (rules_sub) först
-        _page(RULES_AVAILABLE, render_rules_page, "Rules", "ovtlyr/ui")
+        with st.container(key="nav_rules_page"):       # sidans CSS (ui/rules_css, §4.10) når bara den här behållaren
+            if RULES_AVAILABLE:
+                from ui import rules_css
+                from ui.shell import page_style
+                page_style(rules_css.page_css(), "rules")
+            _page(RULES_AVAILABLE, render_rules_page, "Rules", "ovtlyr/ui")
     elif sub == "Copilot":
         try:
             from tabs.copilot import render_copilot_page
