@@ -864,6 +864,60 @@ def _rule_row(rule, color: str) -> str:
     )
 
 
+# Beslut 12: de hårda reglerna står först på Handelsregler, i ett eget kort — varje regeltext en gång på sidan.
+HARD_ID = "rules-hard"                   # kortets id; listornas pekare hoppar dit (nav-skriptets data-jump)
+HARD_POINTER = "↑ Hård regel — står överst"
+
+
+def _hard_groups(pb) -> list:
+    """[(lista, färg, regler)] — de hårda reglerna ur Entry, Exit och Mindset i playbookens ordning, i samma
+    färg som listan de hör till. Samma Rule-objekt, ingen kopia."""
+    out = []
+    for label, rules, color in (("Entry", pb.entry, pb.color), ("Exit", pb.exit, _RED),
+                                ("Mindset", pb.mindset, _YELLOW)):
+        hard = [r for r in rules if getattr(r, "hard", False)]
+        if hard:
+            out.append((label, color, hard))
+    return out
+
+
+def _hard_card_html(pb) -> str:
+    """Kortet 'Hårda regler' överst på Handelsregler: varje hård regel ritad med _rule_row (nummer, text, HÅRD
+    REGEL, förklaring, 📍) under sin listas namn. Tom sträng när playbooken saknar hårda regler."""
+    from ui.tokens import BORDER_CARD, MUTED, RED, ink
+    groups = _hard_groups(pb)
+    if not groups:
+        return ""
+    n = sum(len(rules) for _l, _c, rules in groups)
+    html = (f"<div id='{HARD_ID}' style='border:1px solid {RED}88;"
+            f"background:{RED}0d;border-radius:12px;padding:12px 14px 4px;margin:6px 0 4px;"
+            f"scroll-margin-top:72px;'>"
+            f"<div style='display:flex;align-items:baseline;justify-content:space-between;gap:8px;"
+            f"padding-bottom:6px;margin-bottom:8px;border-bottom:1px solid {BORDER_CARD};'>"
+            f"<span style='color:{ink(RED)};font-size:12px;font-weight:700;letter-spacing:0.12em;'>"
+            f"HÅRDA REGLER — BRYTS ALDRIG</span>"
+            f"<span style='color:{MUTED};font-size:12px;font-family:\"JetBrains Mono\",monospace;"
+            f"white-space:nowrap;'>{n} st</span></div>")
+    for label, color, rules in groups:
+        html += (f"<div style='color:{MUTED};font-size:12px;font-weight:600;letter-spacing:0.12em;"
+                 f"text-transform:uppercase;margin:4px 0 6px;'>{label}</div>"
+                 + "".join(_rule_row(r, color) for r in rules))
+    return html + "</div>"
+
+
+def _rule_slot(rule, color: str) -> str:
+    """En plats i Entry-, Exit- eller Mindset-listan. En hård regel står redan i kortet överst: här bara numret och
+    en pekare dit (tryck = hoppa till kortet), så numreringen löper obruten och texten finns en gång på sidan."""
+    if not getattr(rule, "hard", False):
+        return _rule_row(rule, color)
+    from ui.tokens import MUTED
+    return (f"<div class='rules-pointer' data-jump='{HARD_ID}' style='border-left:3px solid {color};"
+            f"background:rgba(255,255,255,0.02);border-radius:0 6px 6px 0;padding:0 14px;margin-bottom:8px;"
+            f"min-height:44px;display:flex;align-items:center;gap:6px;cursor:pointer;'>"
+            f"<span style='color:{color};font-size:0.9rem;font-weight:700;'>{rule.number}.</span>"
+            f"<span style='color:{MUTED};font-size:13px;'>{HARD_POINTER}</span></div>")
+
+
 def _pick_playbook(suffix: str):
     """Strategy picker, ordered easiest-first."""
     names = [PLAYBOOKS[k].name for k in LEARNING_ORDER]
@@ -892,13 +946,35 @@ def _risk_box(pb) -> None:
     st.markdown(html + "</div>", unsafe_allow_html=True)
 
 
+def _start_card(pb) -> str:
+    """En strategis kort i Kom igång: nivå, stöd, tagline, idé, horisont, risk, var, källa och stödnoten —
+    samma innehåll som förr, ordagrant. Numret och namnet står i expanderns etikett (beslut 12)."""
+    return (
+        f"<div style='border-left:4px solid {pb.color};padding:2px 0 2px 14px;'>"
+        f"<div style='display:flex;align-items:center;gap:10px;flex-wrap:wrap;'>"
+        f"{_level_badge(pb.level)}{_support_badge(pb)}</div>"
+        f"<div style='color:{_TEXT};font-size:0.85rem;margin-top:8px;'>{pb.tagline}</div>"
+        f"<div style='color:{_DIM};font-size:0.8rem;margin-top:8px;line-height:1.6;'>"
+        f"{pb.idea}</div>"
+        f"<div style='color:{_DIM};font-size:0.72rem;margin-top:10px;line-height:1.7;'>"
+        f"⏱ <b style='color:{_TEXT};'>Horisont:</b> {pb.horizon}<br>"
+        f"🎯 <b style='color:{_TEXT};'>Risk per affär:</b> {pb.risk.risk_per_trade}<br>"
+        f"📍 <b style='color:{_TEXT};'>Var:</b> {pb.where}<br>"
+        + (f"📖 <b style='color:{_TEXT};'>Källa:</b> {pb.source}" if pb.source else "")
+        + (f"<br>⚠️ <span style='color:{SUPPORT_COLOR.get(pb.support, _DIM)};'>"
+           f"{pb.support_note}</span>" if pb.support != SUPPORT_FULL and pb.support_note else "")
+        + f"</div>"
+        f"</div>")
+
+
 def _page_start() -> None:
-    """Kom igång — which strategy, in what order, and the routine."""
+    """Kom igång — Börja här, veckorutinen och sedan strategierna i lärordning, en kompakt expander var
+    (beslut 12: samma texter, ny ordning; antalet ur LEARNING_ORDER)."""
     st.markdown(
         f"<div style='text-align:center;padding:14px 0 6px;'>"
         f"<h2 style='color:{_CYAN};letter-spacing:0.12em;margin:0;'>KOM IGÅNG</h2>"
         f"<p style='color:{_DIM};font-size:0.78rem;margin:6px 0 0;'>"
-        f"Fyra strategier, olika svårighetsgrad. Lär dig en i taget — "
+        f"{len(LEARNING_ORDER)} strategier, olika svårighetsgrad. Lär dig en i taget — "
         f"börja överst.</p></div>",
         unsafe_allow_html=True)
 
@@ -912,32 +988,6 @@ def _page_start() -> None:
         f"innan du går vidare — de andra kräver att du tolkar grafer själv.</span></div>",
         unsafe_allow_html=True)
 
-    for i, key in enumerate(LEARNING_ORDER, start=1):
-        pb = PLAYBOOKS[key]
-        st.markdown(
-            f"<div style='border:1px solid {pb.color}44;border-left:4px solid {pb.color};"
-            f"border-radius:0 8px 8px 0;padding:14px 18px;margin-bottom:12px;"
-            f"background:rgba(255,255,255,0.015);'>"
-            f"<div style='display:flex;align-items:center;gap:10px;flex-wrap:wrap;'>"
-            f"<span style='color:{pb.color};font-size:1.05rem;font-weight:800;'>"
-            f"{i}. {pb.name}</span>{_level_badge(pb.level)}"
-            f"{_support_badge(pb)}</div>"
-            f"<div style='color:{_TEXT};font-size:0.85rem;margin-top:4px;'>{pb.tagline}</div>"
-            f"<div style='color:{_DIM};font-size:0.8rem;margin-top:8px;line-height:1.6;'>"
-            f"{pb.idea}</div>"
-            f"<div style='color:{_DIM};font-size:0.72rem;margin-top:10px;line-height:1.7;'>"
-            f"⏱ <b style='color:{_TEXT};'>Horisont:</b> {pb.horizon}<br>"
-            f"🎯 <b style='color:{_TEXT};'>Risk per affär:</b> {pb.risk.risk_per_trade}<br>"
-            f"📍 <b style='color:{_TEXT};'>Var:</b> {pb.where}<br>"
-            + (f"📖 <b style='color:{_TEXT};'>Källa:</b> {pb.source}" if pb.source else "")
-            + (f"<br>⚠️ <span style='color:{SUPPORT_COLOR.get(pb.support, _DIM)};'>"
-               f"{pb.support_note}</span>" if pb.support != SUPPORT_FULL and pb.support_note else "")
-            + f"</div>"
-            f"</div>",
-            unsafe_allow_html=True)
-
-    st.markdown(f"<hr style='border-color:{_CYAN}22;margin:24px 0 14px;'/>",
-                unsafe_allow_html=True)
     st.markdown(
         f"<div style='color:{_CYAN};font-size:0.7rem;font-weight:700;"
         f"letter-spacing:0.14em;margin-bottom:10px;'>VECKORUTINEN — MOMENTUM SWING</div>",
@@ -957,6 +1007,18 @@ def _page_start() -> None:
         f"kvartalsritualen och årsgenomgången — ligger i "
         f"<b style='color:{_AMBER};'>🗓 ÅRSHJULET</b> här ovanför.</div>",
         unsafe_allow_html=True)
+
+    # Strategierna, lättast först — en expander var (nyckel rules_start_<playbook>), stängda från början.
+    # En sektionsrubrik i stället för den gamla <hr>-linjen (designsystemet §3.5.8).
+    from ui.components import section
+    st.markdown(section("Strategierna — lättast först", count=str(len(LEARNING_ORDER))),
+                unsafe_allow_html=True)
+    for i, key in enumerate(LEARNING_ORDER, start=1):
+        pb = PLAYBOOKS[key]
+        # "1\." — utan snedstrecket blir "1. Namn" en numrerad lista, och etiketten tappar numret
+        with st.expander(f"{i}\\. {pb.name} · {pb.level.upper()}", expanded=False,
+                         key=f"rules_start_{key}"):
+            st.markdown(_start_card(pb), unsafe_allow_html=True)
 
 
 def _page_rules() -> None:
@@ -981,6 +1043,10 @@ def _page_rules() -> None:
         f"📍 {pb.where}</div>",
         unsafe_allow_html=True)
 
+    hard = _hard_card_html(pb)          # beslut 12: de hårda reglerna först, ovanför RISKMODELL
+    if hard:
+        st.markdown(hard, unsafe_allow_html=True)
+
     _risk_box(pb)
 
     if pb.workflow:
@@ -996,19 +1062,19 @@ def _page_rules() -> None:
         st.markdown(_section_header_html("Entry — när du får köpa",
                                          f"{len(pb.entry)} regler", pb.color),
                     unsafe_allow_html=True)
-        st.markdown("".join(_rule_row(r, pb.color) for r in pb.entry),
+        st.markdown("".join(_rule_slot(r, pb.color) for r in pb.entry),
                     unsafe_allow_html=True)
     with col_out:
         st.markdown(_section_header_html("Exit — när du måste sälja",
                                          f"{len(pb.exit)} regler", _RED),
                     unsafe_allow_html=True)
-        st.markdown("".join(_rule_row(r, _RED) for r in pb.exit),
+        st.markdown("".join(_rule_slot(r, _RED) for r in pb.exit),
                     unsafe_allow_html=True)
 
     if pb.mindset:
         st.markdown(_section_header_html("Mindset", "Handla planen — inte prediktionen",
                                          _YELLOW), unsafe_allow_html=True)
-        st.markdown("".join(_rule_row(r, _YELLOW) for r in pb.mindset),
+        st.markdown("".join(_rule_slot(r, _YELLOW) for r in pb.mindset),
                     unsafe_allow_html=True)
 
     if pb.pitfalls:
@@ -1038,18 +1104,7 @@ def _page_cheatsheet() -> None:
         f"<div style='color:{pb.color};font-size:1.1rem;font-weight:800;"
         f"margin:12px 0 8px;'>{pb.name}</div>", unsafe_allow_html=True)
 
-    cells = ""
-    for label, val in pb.cheatsheet:
-        cells += (f"<div style='border:1px solid {pb.color}33;border-radius:6px;"
-                  f"padding:9px 12px;background:rgba(255,255,255,0.02);'>"
-                  f"<div style='color:{_DIM};font-size:0.62rem;letter-spacing:0.1em;"
-                  f"text-transform:uppercase;'>{label}</div>"
-                  f"<div style='color:{_TEXT};font-size:0.86rem;font-weight:600;"
-                  f"margin-top:2px;'>{val}</div></div>")
-    st.markdown(
-        f"<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));"
-        f"gap:8px;margin-bottom:20px;'>{cells}</div>", unsafe_allow_html=True)
-
+    # Beslut 12: de hårda reglerna först — samma ruta och samma texter, ovanför fusklappens rutnät
     hard = [r for r in (pb.entry + pb.exit) if getattr(r, "hard", False)]
     if hard:
         st.markdown(
@@ -1061,6 +1116,18 @@ def _page_cheatsheet() -> None:
                 f"<div style='color:{_TEXT};font-size:0.84rem;padding:3px 0;'>"
                 f"<span style='color:{_RED};'>✕</span> {r.text}</div>" for r in hard)
             + "</div>", unsafe_allow_html=True)
+
+    cells = ""
+    for label, val in pb.cheatsheet:
+        cells += (f"<div style='border:1px solid {pb.color}33;border-radius:6px;"
+                  f"padding:9px 12px;background:rgba(255,255,255,0.02);'>"
+                  f"<div style='color:{_DIM};font-size:0.62rem;letter-spacing:0.1em;"
+                  f"text-transform:uppercase;'>{label}</div>"
+                  f"<div style='color:{_TEXT};font-size:0.86rem;font-weight:600;"
+                  f"margin-top:2px;'>{val}</div></div>")
+    st.markdown(
+        f"<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));"
+        f"gap:8px;margin-bottom:20px;'>{cells}</div>", unsafe_allow_html=True)
 
 
 _PANEL_GUIDE: list[tuple] = [
@@ -1341,6 +1408,11 @@ def _routine_card(row) -> str:
     )
 
 
+def _om_dagar(n) -> str:
+    """'om 1 dag' i singular, annars 'om 3 dagar' (beslut 12)."""
+    return f"om {n} {'dag' if n == 1 else 'dagar'}"
+
+
 def _page_routines() -> None:
     """Årshjulet — when you sit down and do the work, and for how long."""
     today = _date.today()
@@ -1375,7 +1447,7 @@ def _page_routines() -> None:
             f"<b style='color:{_DIM};'>Ingen rutin i dag "
             f"({routines.fmt_date(today)}).</b> "
             f"<span style='color:{_TEXT};font-size:0.85rem;'>Nästa: "
-            f"{nxt['routine'].title} om {nxt['days_until']} dagar.</span> "
+            f"{nxt['routine'].title} {_om_dagar(nxt['days_until'])}.</span> "
             f"<span style='color:{_DIM};font-size:0.8rem;'>Att inte göra "
             f"någonting mellan rutinerna är en del av systemet.</span></div>",
             unsafe_allow_html=True)

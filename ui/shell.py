@@ -14,7 +14,8 @@ shell_css() är ramen:
 nav_css() är navigeringen (PR 14, §3.5.3–§3.5.6) — genererad ur ui/nav.py, inga handskrivna fliknamn eller nycklar:
   · L1 flikraden: klistrar överst på alla bredder; på telefonen sex celler med emoji över ord (etiketterna ur
     nav.TOP, med Safari-reserven först), på datorn dagens rad oförändrad; strålen medan Streamlit räknar
-  · L2 chip-rad och L3 understruken rad ur nav.STATE_KEY efter djup; Thors pills-rader rullar i sidled
+  · L2 chip-rad och L3 understruken rad ur nav.STATE_KEY efter djup; Regler & Guiders sidbytesradior (PAGE_RAILS)
+    som L2 och linjen efter rules_sub dold (PR 23); Thors pills-rader rullar i sidled
   · L4 sidornas inre flikar: 44 px, radbryts på telefonen; brödsmulan ovanför L3-raden
 parts_css() är byggstenarna (PR 15, §3.5.7–§3.5.19) — det ui/components inte kan skriva i ett stilattribut:
   · knapparna: sekundär 44 px med radie 10, :active scale(.98), :disabled som ser avstängd ut, kompakta i huvud-
@@ -53,6 +54,9 @@ GROUP = '[role="radiogroup"]'
 OPTION = '[role="radiogroup"] > label[data-testid="stRadioOption"]'
 RADIO_DOT = '[data-testid="stRadioOption"] > div > div > div:first-child'   # ordagrant ur prototypen (proto.py)
 PILLS = ("thor_filters", "thor_markets")                                   # Thors st.pills-rader
+# Regler & Guiders sidbytesradior (ovtlyr/ui/rules_page): playbook-väljarna rules_pb_<sida>, strategiguidens och
+# Snabbreferensens — samma L2 chip-rad som undernivåerna (§3.5.4), och nav-skriptet centrerar det valda chipet
+PAGE_RAILS = ('[class*="st-key-rules_pb_"]', ".st-key-sg_pick", ".st-key-rules_ref_view")
 FADE = "linear-gradient(90deg, #000 calc(100% - 28px), transparent)"      # tona ut vid högerkanten
 
 # Hemskärmsikonen och statusraden på iPad/iPhone — förut en egen markdown överst i wolf_panel.py
@@ -180,8 +184,9 @@ def _q(text: str) -> str:
 
 
 def _each(keys, suffix: str = "") -> str:
-    """'.st-key-a <suffix>, .st-key-b <suffix>' — en selektor per widgetnyckel."""
-    return ",\n".join(f".st-key-{k} {suffix}".rstrip() for k in keys)
+    """'.st-key-a <suffix>, .st-key-b <suffix>' — en selektor per widgetnyckel; en post som redan är en selektor
+    ('.' eller '[' först, som PAGE_RAILS) står som den är."""
+    return ",\n".join(f"{k if k[:1] in '.[' else f'.st-key-{k}'} {suffix}".rstrip() for k in keys)
 
 
 def rail_keys() -> tuple:
@@ -193,9 +198,10 @@ def rail_keys() -> tuple:
 
 
 def rail_selector() -> str:
-    """Alla rälsars radiogrupper — nav-skriptet centrerar det valda chipet i var och en."""
+    """Alla rälsars radiogrupper (undernivåerna och Regler & Guiders sidbytesradior) — nav-skriptet centrerar det
+    valda chipet i var och en."""
     l2, l3 = rail_keys()
-    return ", ".join(f".st-key-{k} {GROUP}" for k in l2 + l3)
+    return ", ".join([f".st-key-{k} {GROUP}" for k in l2 + l3] + [f"{s} {GROUP}" for s in PAGE_RAILS])
 
 
 def tab_label_css() -> str:
@@ -213,8 +219,10 @@ def tab_label_css() -> str:
 
 def nav_css() -> str:
     """Flikraden, rälsarna, de inre flikarna och brödsmulan som EN sträng (§3.5.3–§3.5.6)."""
-    l2, l3 = rail_keys()
+    l2_keys, l3 = rail_keys()
+    l2 = l2_keys + list(PAGE_RAILS)          # sidbytesradiorna får chip-radens utseende (inte flikpanelens luft)
     rails = l2 + l3
+    rules_sub = nav.STATE_KEY["more/Regler & Guider"]
     pills = ",\n".join(f'.st-key-{k} [role="toolbar"]' for k in PILLS)
     return f"""
 /* ── LIDSKJALV · navigeringen (PR 14) ────────────────────────── */
@@ -248,7 +256,7 @@ body:has([data-testid="stStatusWidgetRunningIcon"], [data-testid="stStatusWidget
     {tab_label_css()}
     /* Panelens 16 px-luft blir 8 px; en chip-rad ligger an mot flikraden */
     {TAB_PANEL} {{ padding-top: 8px; }}
-    {TAB_PANEL}:has({", ".join(f".st-key-{k}" for k in l2)}) {{ padding-top: 0; }}
+    {TAB_PANEL}:has({", ".join(f".st-key-{k}" for k in l2_keys)}) {{ padding-top: 0; }}
 }}
 /* Smal telefon (320 px): cellerna får krympa under 52 px så att alla sex ryms */
 @media (max-width: 359px) {{
@@ -286,6 +294,8 @@ body:has([data-testid="stStatusWidgetRunningIcon"], [data-testid="stStatusWidget
     white-space: nowrap; margin: 0; }}
 {_each(l3, OPTION + "[data-selected]")} {{ box-shadow: inset 0 -2px 0 {ACCENT}; }}
 {_each(l3, OPTION + "[data-selected] p")} {{ color: {TEXT} !important; font-weight: 700; }}
+/* Avdelaren (§3.5.4): raden bär sin egen luft — linjen som rules_page ritar direkt efter rules_sub döljs */
+.st-key-{rules_sub} + [data-testid="stElementContainer"]:has(hr) {{ display: none; }}
 
 /* Radioringen bort i båda raderna, och ingen rullningslist */
 {_each(rails, RADIO_DOT)} {{ display: none; }}
