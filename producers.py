@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import streamlit as st
 from dataclasses import dataclass
+from html import escape
 from datetime import date
 from typing import Optional
 
@@ -43,7 +44,8 @@ import csv_export
 import lukacs
 import storage
 import storage_ui
-from ui.components import confirm_delete, page_header
+from ui.components import confirm_delete, head_row, page_header, verdict_strip
+from ui.tokens import GREY, MUTED
 import controls as ctl
 import controls_ui
 
@@ -90,6 +92,11 @@ P_WATCH = "Bevaka"
 P_PASS = "Passa"
 PROD_COLOR = {P_BUY: GREEN, P_WATCH: AMBER, P_PASS: DIM}
 NAV_COLOR = {NAV_CHEAP: GREEN, NAV_FAIR: AMBER, NAV_RICH: RED}
+INCOMPLETE = "ofullständig"          # rubrikens ord när poängen inte går att räkna (pris eller kostnad saknas)
+# Visningen (LIDSKJALV §4.8): bedömningsordet i ordlistans färg — KÖP grön, BEVAKA bärnsten, NEJ grå — i remsan och
+# rutan, och samma ord som Streamlit-färg i kortets rubrik. Bedömningen själv (producer_verdict) är orörd.
+VOCAB_COLOR = {P_BUY: GREEN, P_WATCH: AMBER, P_PASS: GREY}
+HEAD_COLOR = {P_BUY: "green", P_WATCH: "orange", P_PASS: "gray"}
 
 CHECKS = (
     ("jurisdiktion", "Jurisdiktion OK",
@@ -588,6 +595,70 @@ def ranked_royalty(rows: list) -> list:
     return out
 
 
+# ── Visningen (LIDSKJALV §4.8) — läser raderna ranked_* redan bedömt, härleder inget eget ord ────────────────────
+ROYALTY_ORDER = (R_BUY, R_NEAR, R_NEUTRAL, R_GEO_WARN)       # samma ordning som ranked_royalty
+
+
+def _label(r: dict) -> str:
+    """Radens bedömning som ranked_producers/ranked_royalty satt den — 'ofullständig' utan poäng."""
+    return r["verdict"].label if r.get("verdict") else INCOMPLETE
+
+
+def strip_words(ranked: list, sheet: str = SHEET_RULE) -> list:
+    """Beslutsremsans ord: antalet rader per bedömning, [('1 Köpkandidat', GREEN), …], i arkets ordning och
+    ordlistans färg. Köpordet står alltid med (0 i MUTED); övriga när de förekommer; 'ofullständig' i MUTED.
+    Bara räkningar av ranked_producers/ranked_royalty — ingen ny bedömning."""
+    n: dict = {}
+    for r in ranked or []:
+        n[_label(r)] = n.get(_label(r), 0) + 1
+    if sheet == SHEET_ROYALTY:
+        order, colors, first = ROYALTY_ORDER, ROYALTY_COLOR, R_BUY
+    else:
+        order, colors, first = (P_BUY, P_WATCH, P_PASS, INCOMPLETE), VOCAB_COLOR, P_BUY
+    words = [w for w in order if n.get(w) or w == first] + [w for w in n if w not in order]
+    return [(f"{n.get(w, 0)} {w}", colors.get(w, MUTED) if n.get(w) else MUTED) for w in words]
+
+
+def rule_head(r: dict) -> str:
+    """Rick Rule-kortets rubrik: 'BOL · Koppar · 4/5 p · :green[Köpkandidat] · 0.62× NAV' — samma text som förut,
+    bara bedömningsordet inslaget i en Streamlit-färg ('ofullständig' ofärgat)."""
+    row, sc, word = r["row"], r["score"], _label(r)
+    shown = f":{HEAD_COLOR[word]}[{word}]" if word in HEAD_COLOR else word
+    return (f"{row.get('ticker', '?')} · {row.get('commodity') or '—'} · "
+            f"{sc if sc is not None else '–'}/{PROD_MAX_SCORE} p · {shown}"
+            + (f" · {r['ev_nav']:.2f}× NAV" if r.get("ev_nav") is not None else ""))
+
+
+def royalty_head(r: dict) -> str:
+    """Royalty-kortets rubrik, oförändrad: 'FNV · nivå 1 · Neutral'. Signalen färgas inte här —
+    test_automatisering_batch13 läser att rubriken slutar med signalens ord."""
+    row = r["row"]
+    return f"{row.get('ticker', '?')} · nivå {row.get('level', '?')} · {r['verdict'].label}"
+
+
+def rule_verdict_html(rc, score: Optional[int], verdict: Optional[Verdict]) -> str:
+    """Domen överst i Rick Rule-kortet: '4/5 Köpkandidat' i ordlistans färg och skälet — samma poäng, ord och skäl
+    som rutan under fälten visade förut. Utan poäng: '–/5 Fyll i pris och kostnad'."""
+    lead = f"{score if score is not None else '–'}/{PROD_MAX_SCORE}"
+    if verdict is None:
+        word, color, why = "Fyll i pris och kostnad", GREY, ""
+    else:
+        word, color, why = verdict.label, VOCAB_COLOR.get(verdict.label, GREY), verdict.why
+    fg = MUTED if color == GREY else None                  # NEJ-ord i MUTED text, kanten grå (chiptabellen)
+    if rc is None:
+        return f"<b style='color:{fg or color};'>{escape(lead)} {escape(word)}</b> {escape(why)}"
+    return rc.verdict_box(word, color, why=why, lead=lead, size=20, text_color=fg)
+
+
+def royalty_verdict_html(rc, verdict: Verdict) -> str:
+    """Royalty-signalen överst i kortet: ordet i arkets färg (ROYALTY_COLOR) och skälet — samma som rutan under
+    fälten visade förut."""
+    color = ROYALTY_COLOR.get(verdict.label, DIM)
+    if rc is None:
+        return f"<b style='color:{color};'>{escape(verdict.label)}</b> {escape(verdict.why)}"
+    return rc.verdict_box(verdict.label, color, why=verdict.why, size=20 if len(verdict.label) <= 14 else 16)
+
+
 # ── Lagring ──────────────────────────────────────────────────────────────────
 def _today() -> str:
     return date.today().isoformat()
@@ -818,21 +889,54 @@ def render_producers_page(sheet: Optional[str] = None) -> None:
     sheet väljer arket direkt. Utan det ritas en egen väljare, så funktionen
     fungerar både som underflik och fristående — panelen skickar in valet
     eftersom arken numera är egna underflikar under ARKEN.
-    """
-    data = _load()
-    storage_ui.save_bar(STORE, "Granskningsarken")
-    title = sheet if sheet in (SHEET_RULE, SHEET_ROYALTY) else "Granskningsarken"
-    page_header(title, "Rotationen säger var kapitalet ska, screenern vilka bolag som "
-                "kvalar. Det här säger vilket av dem du köper.")
 
-    which = sheet
-    if which not in (SHEET_RULE, SHEET_ROYALTY):
-        which = st.radio("Ark", [SHEET_RULE, SHEET_ROYALTY], horizontal=True,
-                         key="pr_which", label_visibility="collapsed")
+    LIDSKJALV §4.8: sparraden, huvudraden (titel · ⬇ CSV, samma knapp och data som förut), Beslutsremsan med
+    bedömningarnas antal, poängnoten och korten med domen överst. Inget räknas om; ordningen och utseendet är nya.
+    """
+    rc = _rc()
+    with st.container(key="pr_page"):
+        if rc:
+            rc.style()
+        data = _load()
+        storage_ui.save_bar(STORE, "Granskningsarken")
+        title = sheet if sheet in (SHEET_RULE, SHEET_ROYALTY) else "Granskningsarken"
+        which = sheet if sheet in (SHEET_RULE, SHEET_ROYALTY) else None
+        with head_row(HEAD_KEY.get(which, "producers"),
+                      subtitle="Rotationen säger var kapitalet ska, screenern vilka bolag som "
+                               "kvalar. Det här säger vilket av dem du köper."):
+            page_header(title)
+            if which:
+                _csv(data, which)
+        if which is None:
+            which = st.radio("Ark", [SHEET_RULE, SHEET_ROYALTY], horizontal=True,
+                             key="pr_which", label_visibility="collapsed")
+            _csv(data, which)
+        if which == SHEET_RULE:
+            _producers(data)
+        else:
+            _royalty(data)
+
+
+HEAD_KEY = {SHEET_RULE: "rule", SHEET_ROYALTY: "royalty"}     # huvudraden: head_rule / head_royalty
+
+
+def _csv(data: dict, which: str) -> None:
+    """⬇ CSV för arket — samma knapp, nyckel och rader som förut, i huvudraden."""
     if which == SHEET_RULE:
-        _producers(data)
-    else:
-        _royalty(data)
+        csv_export.download_button([_csv_row(r) for r in ranked_producers(data[PRODUCERS])],
+                                   PROD_CSV, "rick_rule", key="csv_producers")
+        return
+    csv_export.download_button(
+        [{**r["row"], "_discount": _r1(r["discount"]),
+          "_median": _r1(r["median"]), "_geo": _r1(r["geo"]),
+          "_signal": r["verdict"].label}
+         for r in ranked_royalty(data[ROYALTY])],
+        ROYALTY_CSV, "royalty_c", key="csv_royalty")
+
+
+def _strip(ranked: list, sheet: str) -> None:
+    """Beslutsremsan: bedömningarnas antal ur raderna ranked_* redan bedömt (strip_words)."""
+    st.markdown(verdict_strip("BEDÖMNINGAR · ANTAL", strip_words(ranked, sheet)), unsafe_allow_html=True)
 
 
 PROD_CSV = [("date", "Datum"), ("ticker", "Ticker"), ("name", "Bolag"),
@@ -883,17 +987,15 @@ def _csv_row(r: dict) -> dict:
 
 
 def _producers(data: dict) -> None:
-    st.markdown(f"<div style='color:{DIM};font-size:0.78rem;margin-bottom:4px;'>"
+    _strip(ranked_producers(data[PRODUCERS]), SHEET_RULE)
+    st.markdown(f"<div class='arken-intro' style='color:{MUTED};font-size:13px;line-height:1.45;margin-bottom:4px;'>"
                 f"<b style='color:{TEXT};'>{SHEET_RULE} — Överlevarna.</b> "
                 f"Överlevar-screenern körs i Börsdata; de fyra "
                 f"granskningsstegen — landrisk, kostnadsposition, ledning, "
                 f"kapitaldisciplin — är fälten nedan. "
-                f"<span style='color:{DIM};'>Guiden kallar arket "
+                f"<span style='color:{MUTED};'>Guiden kallar arket "
                 f"{GUIDE_NAME_RULE}.</span></div>",
                 unsafe_allow_html=True)
-    csv_export.download_button([_csv_row(r)
-                                for r in ranked_producers(data[PRODUCERS])],
-                               PROD_CSV, "rick_rule", key="csv_producers")
     st.caption(f"Marginal ≥ {MARGIN_STRONG:g} % ger 2 p, ≥ {MARGIN_OK:g} % ger "
                f"1 p. Tre disciplinfrågor ger 1 p var. "
                f"{PROD_BUY_MIN}–{PROD_MAX_SCORE} = köpkandidat · "
@@ -927,15 +1029,15 @@ def _producers(data: dict) -> None:
     rc = _rc()
     foc = rc.focus("rule", [r["row"].get("ticker") for r in rows]) if rc else None
     for r in rows:
-        row, sc, vd = r["row"], r["score"], r["verdict"]
+        row = r["row"]
         if rc and not rc.same_ticker(row.get("ticker"), foc):
             continue
-        head = (f"{row.get('ticker','?')} · {row.get('commodity') or '—'} · "
-                f"{sc if sc is not None else '–'}/{PROD_MAX_SCORE} p · "
-                f"{vd.label if vd else 'ofullständig'}"
-                + (f" · {r['ev_nav']:.2f}× NAV" if r.get("ev_nav") is not None else ""))
-        with st.expander(head, expanded=bool(foc)):
-            top = rc.slot() if rc else None
+        # Nycklad expander: rubrikens bedömning får byta text utan att kortet fälls ihop. Suffixet medan ett bolag står
+        # i fokus monterar om kortet, så att det öppnas när du väljer det i Fokus (en nycklad expander minns annars
+        # sitt läge i webbläsaren och struntar i expanded=)
+        with st.expander(rule_head(r), expanded=bool(foc),
+                         key=f"pr_card_{row['id']}" + ("_fokus" if foc else "")):
+            top = rc.slot() if rc else None             # domen, räknaren och "Saknas" — fylls sist i kortet
             changed = _commodity(row, f"pr_com_{row['id']}", lambda: _save(data))
             _fetch_button(row)
             v1, v2, v3, v4 = st.columns(4)
@@ -1045,18 +1147,7 @@ def _producers(data: dict) -> None:
             except Exception:
                 pass
 
-            sc2 = producer_score(row)
-            vd2 = producer_verdict(sc2, asset_dying(row))
-            c2_ = PROD_COLOR.get(vd2.label if vd2 else "", DIM)
-            st.markdown(
-                f"<div style='border:1px solid {c2_}55;background:{c2_}0d;"
-                f"border-radius:8px;padding:10px 14px;margin:8px 0;'>"
-                f"<span style='color:{c2_};font-weight:700;font-size:1.05rem;'>"
-                f"{sc2 if sc2 is not None else '–'} / {PROD_MAX_SCORE}</span>"
-                f"<span style='color:{c2_};font-weight:700;margin-left:12px;'>"
-                f"{vd2.label if vd2 else 'Fyll i pris och kostnad'}</span>"
-                f"<div style='color:{TEXT};font-size:0.8rem;margin-top:3px;'>"
-                f"{vd2.why if vd2 else ''}</div></div>", unsafe_allow_html=True)
+            # Poängen och bedömningen (förr en ruta här) står överst i kortet — fylls sist, med körningens värden
 
             if _ev_nav_section(data, row, durrett):
                 changed = True
@@ -1093,8 +1184,12 @@ def _producers(data: dict) -> None:
                 st.rerun()
             if changed:
                 _save(data)
-            if rc:
-                rc.fill(top, "rule", row)
+            sc2 = producer_score(row)
+            html = rule_verdict_html(rc, sc2, producer_verdict(sc2, asset_dying(row)))
+            if rc and top is not None:
+                rc.fill(top, "rule", row, verdict_html=html)
+            else:
+                st.markdown(html, unsafe_allow_html=True)
 
 
 def _fetch_ev(row: dict, widget_key: str) -> None:
@@ -1314,12 +1409,7 @@ def _geo_calc(data: dict, row: dict, fresh: dict) -> None:
 
 
 def _royalty(data: dict) -> None:
-    csv_export.download_button(
-        [{**r["row"], "_discount": _r1(r["discount"]),
-          "_median": _r1(r["median"]), "_geo": _r1(r["geo"]),
-          "_signal": r["verdict"].label}
-         for r in ranked_royalty(data[ROYALTY])],
-        ROYALTY_CSV, "royalty_c", key="csv_royalty")
+    _strip(ranked_royalty(data[ROYALTY]), SHEET_ROYALTY)
     st.caption(f"Köpläge kräver tre saker samtidigt: högst {DISCOUNT_MAX:g} % "
                f"över egen P/NAV-botten, EV/EBITDA under egen median, och "
                f"växande GEO per aktie.")
@@ -1352,13 +1442,13 @@ def _royalty(data: dict) -> None:
     rc = _rc()
     foc = rc.focus("royalty", [r["row"].get("ticker") for r in rows]) if rc else None
     for r in rows:
-        row, vd = r["row"], r["verdict"]
+        row = r["row"]
         if rc and not rc.same_ticker(row.get("ticker"), foc):
             continue
-        head = (f"{row.get('ticker','?')} · nivå {row.get('level','?')} · "
-                f"{vd.label}")
-        with st.expander(head, expanded=bool(foc)):
-            top = rc.slot() if rc else None
+        # Nycklad som Rick Rule-korten, med samma fokussuffix (kortet öppnas när du väljer det i Fokus)
+        with st.expander(royalty_head(r), expanded=bool(foc),
+                         key=f"ro_card_{row['id']}" + ("_fokus" if foc else "")):
+            top = rc.slot() if rc else None             # signalen, räknaren och "Saknas" — fylls sist i kortet
             _identity_note(row)
             changed = _level(row)
 
@@ -1425,14 +1515,7 @@ def _royalty(data: dict) -> None:
                                     ("geo_now", gn, shown["geo_now"]), ("geo_3y", g3y, shown["geo_3y"]))):
                 changed = True
 
-            vd2 = royalty_signal(row)
-            c2_ = ROYALTY_COLOR.get(vd2.label, DIM)
-            st.markdown(
-                f"<div style='border:1px solid {c2_}55;background:{c2_}0d;"
-                f"border-radius:8px;padding:10px 14px;margin:8px 0;'>"
-                f"<span style='color:{c2_};font-weight:700;'>{vd2.label}</span>"
-                f"<div style='color:{TEXT};font-size:0.8rem;margin-top:3px;'>"
-                f"{vd2.why}</div></div>", unsafe_allow_html=True)
+            # Signalen (förr en ruta här) står överst i kortet — fylls sist, med körningens värden
 
             _chatgpt(data, row, "royalty")
             if confirm_delete("Ta bort", key=f"ro_del_{row['id']}"):
@@ -1441,5 +1524,8 @@ def _royalty(data: dict) -> None:
                 st.rerun()
             if changed:
                 _save(data)
-            if rc:
-                rc.fill(top, "royalty", row)
+            html = royalty_verdict_html(rc, royalty_signal(row))
+            if rc and top is not None:
+                rc.fill(top, "royalty", row, verdict_html=html)
+            else:
+                st.markdown(html, unsafe_allow_html=True)
