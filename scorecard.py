@@ -34,7 +34,8 @@ import lukacs
 import storage
 import storage_ui
 from ui import routine
-from ui.components import confirm_delete, head_row, page_header
+from ui.components import confirm_delete, head_row, page_header, verdict_strip
+from ui.tokens import FONT_MONO, MUTED
 
 _CACHE_KEY = "scorecard_data"
 STORE = "scorecard"   # data/scorecard.json
@@ -311,6 +312,99 @@ def is_ready(card: dict, entry: Optional[dict] = None) -> bool:
     return gate_state(card, entry)["ready"]
 
 
+# ── Visningen (LIDSKJALV §4.7, §3.5.14) — läser gate_state, räknar ingen egen regel ─────────────────────────────
+METER_HATCH = "repeating-linear-gradient(45deg,#6b7280 0 3px,transparent 3px 6px)"   # 'Saknas': randigt grått
+
+
+def live_card(card: dict, entry: dict, session=None) -> dict:
+    """Kortet som dess widgetar visar det i den här körningen: _shown(card) med kortets egna widgetvärden ur sessionen
+    (Strategi, Position (% av total) och kryssen) när de finns — samma värden som widgetarna längre ned ger tillbaka och
+    kortet sparar. Då säger rubriken, ordningen, remsan och st.metric samma sak som mätaren i kortet redan i körningen
+    efter ett kryss (förr låg de ett steg efter). Läses bara; inget skrivs. Utan widgetvärden (första ritningen) = _shown."""
+    c = _shown(card, entry)
+    ss = st.session_state if session is None else session
+    k = (entry or {}).get("key", "")
+    try:
+        strategy = ss.get(f"sc_strat_{k}")
+        if strategy in ((entry or {}).get("strategies") or []):
+            c["strategy"] = strategy
+        if f"sc_post_{k}" in ss:
+            c["position_pct_total"] = ss[f"sc_post_{k}"]
+        for g in GATES:
+            if f"sc_g_{k}_{g.key}" in ss:
+                c[g.key] = bool(ss[f"sc_g_{k}_{g.key}"])
+    except Exception:
+        return _shown(card, entry)
+    return c
+
+
+def passed(state: dict) -> int:
+    """Antalet kryss som håller — de sanna värdena i gate_state()['checks']."""
+    return sum(1 for ok in ((state or {}).get("checks") or {}).values() if ok is True)
+
+
+def display_order(entries: list, states: dict) -> list:
+    """Korten i visningsordning: klara först, sedan flest kryss, sedan ticker (lika ticker: collects ordning).
+    states = {kortnyckel: gate_state(...)} — samma resultat som korten ritas med. Bara ordningen: inget skrivs."""
+    def _key(e):
+        s = states.get(e["key"]) or {}
+        return (not s.get("ready"), -passed(s), e["ticker"])
+    return sorted(entries or [], key=_key)
+
+
+def card_head(entry: dict, state: dict) -> str:
+    """Kortets rubrik: '📋  BOL · Boliden · durrett, producenter · 5/7 kryss' — klar: '✅  BOL · … ·
+    :green[KLAR FÖR KÖP]'. Ikonen först som förut (test_review_focus läser '📋  BOL'), sedan tickern. Ingen färg under
+    7/7 — antalet är bara ett antal."""
+    base = f"{entry['ticker']} · {entry['name'] or '—'} · {', '.join(entry['strategies'])}"
+    if state.get("ready"):
+        return f"✅  {base} · :green[{READY}]"
+    return f"📋  {base} · {passed(state)}/{len(GATES)} kryss"
+
+
+def gate_meter(checks, labels) -> str:
+    """Köpgrindens mätare (§3.5.14): ett segment per grind, lika breda, 8 px höga med 2 px mellanrum — True grönt,
+    False rött, allt annat randigt grått ('Saknas'). Under: 'n/7 kryss · saknas: …' med grindarnas egna etiketter
+    (samma strängar som gate_state()['missing']). Inga färgtrösklar: 5/7 är inte orange. Ren funktion.
+    checks = värdena i GATES-ordning (eller en dict i den ordningen), labels = etiketterna i samma ordning."""
+    vals = list(checks.values()) if isinstance(checks, dict) else list(checks or ())
+    names = [str(x) for x in (labels or ())]
+    segs, missing = [], []
+    for i, v in enumerate(vals):
+        name = names[i] if i < len(names) else ""
+        if v is True:
+            bg, word = GREEN, "✓"
+        elif v is False:
+            bg, word = RED, "✗"
+        else:
+            bg, word = METER_HATCH, "Saknas"
+        if v is not True and name:
+            missing.append(name)
+        segs.append(f'<span title="{escape(f"{name} — {word}", quote=True)}" style="flex:1 1 0;min-width:0;'
+                    f'height:8px;border-radius:2px;background:{bg};"></span>')
+    count = f"{sum(1 for v in vals if v is True)}/{len(vals)} kryss"
+    text = count + (f" · saknas: {', '.join(missing)}" if missing else "")
+    return (f'<div class="sc-meter" role="img" aria-label="{escape(text, quote=True)}" style="margin:2px 0 6px;">'
+            f'<div style="display:flex;gap:2px;">{"".join(segs)}</div>'
+            f'<div style="color:{MUTED};font-size:12px;line-height:1.4;margin-top:4px;">'
+            f'<span style="font-family:{FONT_MONO};">{escape(count)}</span>'
+            + (f" · saknas: {escape(', '.join(missing))}" if missing else "") + "</div></div>")
+
+
+def verdict_html(state: dict, rc=None) -> str:
+    """Domen överst i kortet: mätaren (med grindarna som saknas) och rutan — grön KLAR FÖR KÖP, eller röd 'Luckor i
+    tabellen = standardbeslut INGEN AFFÄR'. Bara gate_state:s resultat; inget räknas här."""
+    checks = state.get("checks") or {}
+    meter = gate_meter([checks.get(g.key) for g in GATES], [g.label for g in GATES])
+    box = getattr(rc, "verdict_box", None)
+    if state.get("ready"):
+        return meter + (box(READY, GREEN, size=20) if box else f"<b style='color:{GREEN};'>{READY}</b>")
+    if box:   # grindarna som saknas står redan i mätarens "saknas: …" direkt ovanför — rutan bär bara beslutet
+        return meter + box(NO_TRADE, RED, size=15)
+    return meter + f"<b style='color:{RED};'>{NO_TRADE}</b>" + "".join(
+        f"<div>• {escape(m)}</div>" for m in state.get("missing") or ())
+
+
 def stale_controls(cards: list, today: Optional[date] = None) -> list:
     """Årsregeln: kontroller som inte påverkat ett beslut på tolv månader."""
     day = today or date.today()
@@ -452,19 +546,32 @@ def engine_summary(ticker: str) -> Optional[str]:
 
 
 # ── UI ───────────────────────────────────────────────────────────────────────
+SUBTITLE = "Sista steget före köp. Kandidaterna läses ur de andra flikarna — här fattas bara beslutet."
+
+
 def render_scorecard_page() -> None:
+    """🎯 Scorecard (LIDSKJALV §4.7): sparraden, huvudraden (titel · ⬇ CSV · rundans pill), Beslutsremsan med antalen
+    och de två st.metric som ett kompakt par, fokusraden och korten — klara först, sedan flest kryss. I varje kort
+    står domen överst (mätaren, KLAR FÖR KÖP eller INGEN AFFÄR, räknaren och "Saknas") och "Registrera beslut" under
+    den. Ritordningen och utseendet är nya; grinden, kryssen och det sparade är desamma."""
+    rc = _rc()
+    with st.container(key="sc_page"):
+        if rc:
+            rc.style()
+        _page(rc)
+
+
+def _page(rc) -> None:
     data = _load()
     storage_ui.save_bar(STORE, "Master Scorecard")
-    # Morgonrundans pill bredvid rubriken — huvudraden bara under rundan, annars ritas rubriken som förut
-    sub = "Sista steget före köp. Kandidaterna läses ur de andra flikarna — här fattas bara beslutet."
-    if routine.shows("scorecard"):              # underraden under huvudraden, så pillret står bredvid rubriken
-        with head_row("scorecard", subtitle=sub):
-            page_header("Scorecard")
-            routine.pill("scorecard")
-    else:
-        page_header("Scorecard", sub)
-
     entries = collect(_gather())
+    cards = data.setdefault("cards", {}) if entries else {}
+    # Huvudraden alltid: rubriken, exporten (samma knapp, nyckel och data) och Morgonrundans pill (bara under rundan)
+    with head_row("scorecard", subtitle=SUBTITLE):
+        page_header("Scorecard")
+        if entries:
+            _export(entries, cards)
+        routine.pill("scorecard")
     if not entries:
         st.info("Inga kandidater ännu. Lägg upp dem i Poängmodellen, Tiggre, "
                 "Granskningsarken, Durrett/Confidence eller Insider — de dyker "
@@ -472,21 +579,23 @@ def render_scorecard_page() -> None:
         routine.footer("scorecard")
         return
 
-    cards = data.setdefault("cards", {})
-    _export(entries, cards)
+    # gate_state en gång per kort, på kortet som det visas i den här körningen (live_card) — rubriken, ordningen,
+    # remsan och st.metric läser samma resultat
+    states = {e["key"]: gate_state(live_card(cards.get(e["key"], {}), e), e) for e in entries}
+    ready = [e for e in entries if states[e["key"]]["ready"]]
+    st.markdown(verdict_strip("KÖPGRINDEN · ANTAL",
+                              [(f"{len(ready)} KLARA FÖR KÖP", GREEN if ready else MUTED),
+                               (f"{len(entries)} kandidater", TEXT)], sentence=NO_TRADE),
+                unsafe_allow_html=True)
+    with st.container(horizontal=True, key="kpis_scorecard"):
+        st.metric("Kandidater", len(entries))
+        st.metric("Klara för köp", len(ready))
 
-    ready = [e for e in entries
-             if is_ready(_shown(cards.get(e["key"], {}), e), e)]
-    c1, c2 = st.columns(2)
-    c1.metric("Kandidater", len(entries))
-    c2.metric("Klara för köp", len(ready))
-
-    rc = _rc()
     foc = rc.focus("scorecard", [e["ticker"] for e in entries]) if rc else None
-    for entry in entries:
+    for entry in display_order(entries, states):
         if rc and not rc.same_ticker(entry["ticker"], foc):
             continue
-        _card(data, cards, entry, expanded=bool(foc))
+        _card(data, cards, entry, expanded=bool(foc), state=states[entry["key"]])
 
     _stale(cards)
     routine.footer("scorecard")                    # Morgonrundan: "Nästa: Positioner →" (bara under rundan)
@@ -513,17 +622,22 @@ def _shown(card: dict, entry: dict) -> dict:
     return c
 
 
-def _card(data: dict, cards: dict, entry: dict, expanded: bool = False) -> None:
+def _card(data: dict, cards: dict, entry: dict, expanded: bool = False, state: Optional[dict] = None) -> None:
     card = cards.get(entry["key"])
     card = card if isinstance(card, dict) else {}       # läggs i cards först när något ändras
-    state = gate_state(_shown(card, entry), entry)
+    state = state or gate_state(_shown(card, entry), entry)
     rc = _rc()
-    head = (f"{'✅' if state['ready'] else '📋'}  {entry['ticker']}"
-            f"  ·  {entry['name'] or '—'}"
-            f"  ·  {', '.join(entry['strategies'])}")
 
-    with st.expander(head, expanded=expanded):
-        top = rc.slot() if rc else None
+    # Nycklad expander: rubriken får byta text (n/7 kryss) utan att kortet fälls ihop. En nycklad expander minns sitt
+    # öppna/stängda läge i webbläsaren och bryr sig sedan inte om expanded= — därför får nyckeln ett eget suffix
+    # medan ett bolag står i fokus: kortet monteras om och öppnas när du väljer det i Fokus, och "Visa alla" fäller ihop
+    with st.expander(card_head(entry, state), expanded=expanded,
+                     key=f"sc_card_{entry['key']}" + ("_fokus" if expanded else "")):
+        # Toppen skapas först och fylls sist med körningens värden: domen (en markdown med räknaren) och, när kortet
+        # är klart, "Registrera beslut" direkt under
+        top = st.container(key=f"sc_top_{entry['key']}")
+        with top:
+            place = rc.slot() if rc else None
         changed = False
 
         # Vilken strategi beslutet gäller — styr proportionalitetsregeln.
@@ -610,35 +724,24 @@ def _card(data: dict, cards: dict, entry: dict, expanded: bool = False) -> None:
                         f"padding-left:22px;'>• {gap}</div>",
                         unsafe_allow_html=True)
 
+        # Domen med den här körningens kryss — ritas överst i kortet (toppen), inte här
         state = gate_state(_shown(card, entry), entry)
-        if state["ready"]:
-            st.markdown(
-                f"<div style='background:{GREEN}22;border:2px solid {GREEN};"
-                f"border-radius:10px;padding:14px;text-align:center;"
-                f"margin:10px 0;'><span style='color:{GREEN};font-size:1.3rem;"
-                f"font-weight:800;letter-spacing:0.1em;'>{READY}</span></div>",
-                unsafe_allow_html=True)
-            if st.button("Registrera beslut", key=f"sc_dec_{entry['key']}"):
-                card["last_decision"] = date.today().isoformat()
-                cards[entry["key"]] = card
-                _save(data)
-                st.rerun()
-        else:
-            st.markdown(
-                f"<div style='background:{RED}11;border:1px solid {RED}66;"
-                f"border-radius:8px;padding:10px 14px;margin:10px 0;'>"
-                f"<b style='color:{RED};'>{NO_TRADE}</b>"
-                + "".join(f"<div style='color:{TEXT};font-size:0.82rem;"
-                          f"margin-top:4px;'>• {m}</div>"
-                          for m in state["missing"])
-                + "</div>", unsafe_allow_html=True)
 
         if changed:
             cards[entry["key"]] = card
             _save(data)
         _chatgpt(entry, _shown(card, entry), data)
-        if rc:
-            rc.fill(top, "scorecard", _shown(card, entry), entry=entry)
+        html = verdict_html(state, rc)
+        if rc and place is not None:
+            rc.fill(place, "scorecard", _shown(card, entry), entry=entry, verdict_html=html)
+        else:
+            top.markdown(html, unsafe_allow_html=True)
+        if state["ready"]:
+            if top.button("Registrera beslut", key=f"sc_dec_{entry['key']}"):
+                card["last_decision"] = date.today().isoformat()
+                cards[entry["key"]] = card
+                _save(data)
+                st.rerun()
 
 
 def _sv(v: float, d: int = 1) -> str:
@@ -1360,7 +1463,7 @@ def _summary_row(entry: dict, state: dict, strategy: str) -> None:
                 f"border-radius:5px;padding:3px 10px;margin-right:6px;"
                 f"display:inline-block;margin-bottom:4px;'>"
                 f"<b style='color:{color};'>{label} {value}</b>"
-                f"<span style='color:{DIM};font-size:0.72rem;'> {band}</span>"
+                f"<span style='color:{MUTED};font-size:12px;'> {band}</span>"
                 f"</span>")
 
     if ctl.SEC_DS in req:

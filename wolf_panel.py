@@ -508,7 +508,9 @@ def _tab_odin() -> None:
 def _tab_review() -> None:
     sub = _sub("review")
     if sub in ("Rick Rule", "Royalty C", "🐺 Wolf Asymmetry", "🚀 Råvaruhävstång") and FIAT_ENV_AVAILABLE:
-        render_fiat_environment()             # bakgrund, ingen signal
+        # bakgrund, ingen signal — hopfälld (LIDSKJALV §4.8), samma plats och innehåll
+        with st.expander("🌍 Bakgrund — fiatmiljön (styr inga beslut)", expanded=False, key="arken_fiat"):
+            render_fiat_environment()
     if sub in ("Rick Rule", "Royalty C"):
         if PRODUCERS_AVAILABLE:
             render_producers_page(sheet=sub)

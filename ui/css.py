@@ -320,6 +320,11 @@ code, pre, .stCode, [class*="monospace"] {
 [data-testid="stExpander"] summary p {
     font-weight: 600 !important;
 }
+/* Fiatmiljöns hopfällda ruta (ARKEN, Wolf Asymmetry, Råvaruhävstång): 44 px tryckyta på alla fyra sidorna */
+.st-key-arken_fiat summary {
+    min-height: 44px;
+    box-sizing: border-box;
+}
 [data-testid="stExpander"] summary:hover p,
 [data-testid="stExpander"] summary:hover [data-testid="stIconMaterial"] {
     color: #00E5FF !important;
