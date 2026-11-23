@@ -126,7 +126,7 @@ def test_review_sheets_share_one_header_and_one_badge():
 
 
 def test_deletes_sit_behind_a_confirmation():
-    for path in ("producers.py", "scoring.py", "insider.py",
+    for path in ("producers.py", "scoring.py", "insider.py", "holdings.py",
                  os.path.join("confidence", "ui.py"), os.path.join("engines", "durrett", "ui.py")):
         src = _src(path)
         assert "confirm_delete(" in src, path
