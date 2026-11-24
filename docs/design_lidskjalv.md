@@ -1152,6 +1152,103 @@ violetTextColor = "#c35cff"
     - On a table that fits, the two 10 px covers are flat APP_BG over the page's faint grid and vignette (about 5 RGB units darker). This is not visible at normal zoom.
     - The strategy guides' own h3 titles (Quality, Deep Contrarian, …) keep their cyan/ember colours and are not restyled.
 
+**Notes for PR 24 (Tabeller på telefonen: färre kolumner först, korten för reglerna)**
+- As built (PR 24):
+  - **Files:** `ui/tables.py` (new), `portfolio/watch_ui.py`, `portfolio/mot_malet.py`, `ui/settings.py`, `tests/test_design_tables.py` (new), plus one import and one line in `ui/shell.py` (the table CSS joins `parts_css()`). `table_rows()`, `strategy_rows()` and `rules_rows()` are unchanged. `strategy_rules*.py`, nav and the Viking files are untouched. No existing test was edited.
+  - **`ui/tables.table(df, key, primary_cols=None, style=None)`:**
+    - It draws ONE `st.dataframe` inside `st.container(key="tbl_<key>")`, with `hide_index=True` and `width="stretch"`. The first column is pinned (`st.column_config.Column(pinned=True)`). `style` is an optional `df → Styler`, such as the watch page's Läge colours.
+    - **Deviation, "—" for missing values:** the helper uses Streamlit 1.59's own `placeholder="—"`, not `Styler.format(na_rep="—")`. A Styler gives every float six decimals (40 → "40.000000"), so on Mot målet it would change how the numbers read. The placeholder changes only the missing cells.
+    - **From 7 columns with `primary_cols`:** `st.toggle("Visa alla kolumner", key="tbl_<key>_all", value=False)` sits above the table.
+      - Off: `column_order` holds the primary columns in the table's own order, always with the first column.
+      - On: `column_order=None`, so every column shows.
+    - **The data is always the whole df, in the same order.** The subset only changes what is displayed, so `at.dataframe[0].value` is unchanged with the toggle off and on (tested). There is still exactly one dataframe where there was one, at the same index.
+  - **`ui/tables.cards_html(rows, title)`:** one card per row, built from the same rows (§3.5.15 rule 3).
+    - Card anatomy: the title (16 px 700), then every other key as a 12 px MUTED caps label, with its value verbatim below (14 px TEXT). Values wrap and are never truncated. Everything is escaped, and the HTML is one string with no newline, so markdown never touches the text.
+    - The card looks like `components.card` and the holding card: BG_CARD, 1 px BORDER_CARD, radius 12, padding 12/14.
+    - The grid is `repeat(auto-fill, minmax(min(320px,100%),1fr))`: one column on the phone, three at 1440 (two from about 700 px).
+  - **CSS (`tables.CSS`, in the shell's style block):** like the other components' CSS, it sits in `parts_css()`, so no page gets a new element and `at.markdown`/`at.dataframe` indices stay the same. Every selector starts with `[class*="st-key-tbl_"]` (tested).
+    - **Phone edge (deviation: scroll-linked instead of a static fade).** Glide paints on canvases under its own transparent scroller (`.dvn-scroller`). The scroller gets `scroll-timeline: --wolf-tbl x`, and `stDataFrameResizable` gets `timeline-scope` and an `animation-timeline`.
+      - While there is more to the right, the edge fades.
+      - Over the last 8 % of the scroll, the fade slides out (`mask-size` 100 % → `calc(100% + 28px)`), and at the end it is gone, so the last column's text is never dimmed.
+      - A table that fits has no active timeline, so it shows no fade.
+      - The mask follows the scroll position only; nothing moves on its own.
+      - **Fallback:** without scroll-driven animations (`@supports`), or with `prefers-reduced-motion: reduce`, the spec's static `FADE` applies at ≤ 640 px.
+    - The toggle label is 44 px tall.
+    - **Addition, a lane for the touch toolbar.** On `(hover: none)`, Streamlit shows the dataframe toolbar (eye, download, search, fullscreen) all the time, 42 px above the frame. At 390 it used to cover the end of "Benchmark och standardbolag" (heading x 16–332, toolbar x 269–375).
+      - A `tbl_` box without a toggle gets `padding-top: 32px` on touch, so the heading now ends at y = 196 and the toolbar starts at 201.
+      - With the toggle, the toolbar sits to the right of it (toggle x 16–163).
+      - Cost: 32 px on Mot målet and Inställningar on touch screens. Desktop is unchanged.
+  - **👀 Övervakning:** `watch_ui.PRIMARY` = Aktie, Läge, Avstånd, Entry/Stopp, Kurs, Till entry, Över stopp, Strategi, Strategins ord, Anteckning. A column is shown only when the table has it.
+    - **Decision first (review follow-up):** with the toggle off the subset is shown in `PRIMARY`'s order, not the data order. Läge and Avstånd now sit right after the pinned Aktie, so the phone's first screen answers "how close to a buy". The review found that, in data order, the first screen at 390 showed Aktie | Strategi | Läge | the start of Strategins ord, the same as before the PR. Trimming to 5 columns would not help, because Avstånd still started about 300 px in: Strategins ord and Avstånd are wide text columns. With the toggle on, every column shows in the data order.
+    - **Deviation, subset size:** the spec asks for 4–5 columns. Here it is 6 by default, 7 with a note, and 10 after 💲 Hämta kurser.
+      - §3.5.15(2) puts every column a test reads in the subset. Besides the decision columns, the tests read Strategi, Anteckning, Kurs and Till entry.
+      - Strategi also tells apart two rows for the same ticker.
+      - The prices join because you just asked for them, and Över stopp comes with them.
+      - Hidden by default: Körd, Sedan and Vid tillägg, the history columns.
+      - `test_design_tables` reads the column names straight from `test_watch_ui.py` and `test_thor_watch.py` (`df["…"]`, `.value["…"]`). A future test that reads a hidden column therefore fails there first.
+    - The toggle changes the order: off shows the decision columns first (`PRIMARY`), on shows the data order. `at.dataframe[0].value` is the data order either way.
+    - `.fillna("")` and the `lage_color` Styler are kept, so no watch cell is missing.
+  - **🎯 Mot målet:** the table goes through `table(…, "goal")` with no subset. §7 asks only for "—", and Mot målet is not one of the §8.4 decision pages. Cells that are None in `strategy_rows()` now read "—" instead of a grey "None".
+  - **⚙️ Inställningar:**
+    - "Reglerna (låsta)" is `cards_html(rules_rows(), "Strategi")`: 15 cards. The labels are the row keys, and every value is verbatim (tested value by value, in order).
+    - No test read the rules dataframe (no AppTest renders the page), so the Benchmark table moving to `dataframe[0]` breaks nothing.
+    - Benchmark goes through `table(…, "benchmarks")`. It has 3 columns, so no toggle.
+  - **Tests:** new `tests/test_design_tables.py` (12 functions). They check:
+    - the subset rule;
+    - one dataframe with the full `.value` with the toggle off, on and off again (`column_order` subset, then all);
+    - the pinned first column, the "—" placeholder and the hidden index;
+    - no toggle under 7 columns;
+    - on the watch page: Avstånd plus every column a test reads in the subset, prices joining it, the Läge colours, and nothing written on open or on toggle;
+    - on Mot målet: a Wolf row with None shows "—", there is no Styler display text, the data matches `strategy_rows()` and nothing is written;
+    - on Inställningar: one card per PLAYBOOKS entry with every `rules_rows()` value verbatim, no rules dataframe, Benchmark in `tbl_benchmarks`, and nothing written;
+    - escaping and the 12 px floor in the cards;
+    - the CSS: it is in the shell, scoped, has the fade fallback, the scroll-linked edge, the 44 px toggle and the touch lane.
+  - **Measured:**
+    - Setup: a scratch fixture app with the generic watch rows HEXA-B.ST/Viking Nine, VOLV-B.ST/Wolf (own levels) and ABB.ST/Momentum (with a note) on Thor's test data. Mot målet has a paper where Wolf is at 5/20 closed. Storage is in memory and nothing is saved. Devices: iPhone 13 (390 × 664), 320 × 640 and 1440 × 1000. The baseline is HEAD served beside it.
+    - **Table width** (glide scroller scrollWidth/clientWidth):
+      - Övervakning at 390: 1,310/356 → **1,039/356** with the subset (1,237 after the prices, 1,310 with the toggle on). At 1440: 1,310/1,278 (it scrolled) → 1,278/1,278 (it fits).
+      - Mot målet: 1,045/356, unchanged.
+      - Rules: **2,276/356 at every width → no table, 15 cards.**
+      - Benchmark: 503/356.
+    - **Inställningar page height** (stMain scrollHeight): 390: 1,724 → **6,244**; 320: 1,822 → 6,829; 1440: 1,610 → **2,879**.
+      - The card list is 4,901 px at 390 (cards 273–378 px each, one column of 358 px) and 1,683 px at 1440 (3 columns of 421 px).
+      - The sideways 2,276 px scroll and every cut-off value are gone. Showing the full text costs height on the phone (see Open).
+    - **§8.5:** no text under 12 px in the cards, the toggle or the tables at 390, 320 and 1440. The pages' other small text is older and unchanged, with the same count before and after:
+      - Övervakning: the "→ …" lines under Nära köp nu (0.74rem).
+      - Mot målet: the goal-bar caption (0.7rem).
+      - Inställningar: Datakällor (0.72rem).
+    - **§8.7 at 390:** the toggle label is 147 × 44 px, and nothing new is under 44. The older small targets, with the same counts before and after (Övervakning 36, Mot målet 1, Inställningar 21), are:
+      - 40 px help-wrapped buttons (💲 Hämta kurser, the 👀 pins) and popover buttons (✕ Ta bort …);
+      - 38 px expander summaries, number steppers and selectboxes;
+      - Position Sizing's radios (22 px) and Mot målet's "Visa Valhalls backtester" toggle (21 px).
+    - **§8.8:** stMain scrollWidth equals clientWidth at 390, 320 and 1440 on all three pages, with the toggle off and on and after the prices.
+    - **§8.15:** no "None" in the touched tables. Mot målet shows "—" (`goal_390_end.png`).
+    - **The edge, in Chromium at 390:**
+      - Mot målet: mask-size 100 % at scroll 0 and 50 %, `calc(100% + 10.7px)` at 95 %, and `calc(100% + 28px)` (fully off) at the end. "räcker för slutsats" is fully legible at the end.
+      - Benchmark at 600 px fits (566/566) and has no mask.
+      - With reduced motion, the static fade applies.
+      - At 1440 there is no mask.
+  - **Open:**
+    - **Inställningar is 3.6 × taller on the phone** (6,244 px against 1,724), because the full rule text takes room. Positionskalkylator and Datakällor moved from about y = 1,350 to about 5,850 at 390. If that is a problem, two options, both an order or visibility call for the owner and not done here:
+      - put the card list in one `st.expander("Reglerna (låsta) · 15 strategier")`;
+      - move the expanders above the rules.
+    - Streamlit draws pinned columns in its index style (lighter text, header background), so "HEXA-B.ST" and "Wolf Regime" read dimmer than the cells beside them. This is drawn on the canvas, where CSS cannot reach.
+    - The toolbar's own buttons are 22 px (Streamlit's), on every dataframe as before.
+    - Help-wrapped buttons and popover buttons are 40 px everywhere outside Positioner (PR 22 fixed help buttons only in its own scope). Toggles and checkboxes outside `tbl_` boxes and Positioner are about 21 px. One shell rule for each would close this panel-wide.
+    - The scroll-linked edge needs scroll-driven animations (Chromium 115+, Safari 26 / iOS 26). Older iOS gets the static fade, which dims the last column's last 28 px at the end of the scroll. Check this on a real iPhone.
+    - Mot målet's 10 columns could get a subset (Strategi, Papper stängda, Papper årstakt %, Journal stängda, Slutsats) if the owner counts it as a decision page.
+- **Wrap-up after the 12-PR series (PR 13–24).** The frame, navigation, components, theme, login, I DAG, Läget, Thor, ARKEN, Positioner, Regler & Guider and the phone tables are built. What remains:
+  - **Owner-gated (Backlog below):** decision 15 (Positioner inner tabs and Swedish metrics), decision 17 (a bottom dock, only after a real-iPhone test), and Beslutsremsor on the other pages.
+  - **§3.5.15, not finished:**
+    - Rule 4: the `.wolf-scroll` wrapper for raw HTML tables (Fiat, Guld, Poängmodell) was not built. PR 23 handled the rules page's tables with scoped CSS instead.
+    - Rule 5: Positioner's Plotly charts still show the mode bar (PR 22 Open). `st.line_chart` still draws in `berserk/screen_ui.py`, `valhall/paper_ui.py` and one path in `wolf_regime_ui.py`.
+    - Flikguide is still a wide table on the phone, where a card per row would read better (PR 23 Open). `cards_html` can now do that with no new code.
+  - **Carried open items:**
+    - PR 22: strip rows of 60–81 px; Risk, Rapporter and Metaller show their titles twice; the `st.empty()` slots in `review/card.slot()` and the brand bar should become `st.container()`.
+    - PR 23: the rules page's own colours inside its cards are not mapped to §3.2.
+    - PR 24: the panel-wide 44 px rule for help, popover and toggle targets.
+  - **Hardware check still owed:** the §8 list on a real iPhone in Safari. That covers sticky tabs, `:has()`, styles inside a `display:none` container, the fixed snackbar and the scroll-linked table edge.
+
 **Backlog, owner-gated, not in the 12 PRs:**
 - decision 15 (inner tabs; Swedish metrics, editing `test_fix_panelen_korrekthet.py:121-123,132`);
 - decision 17 (bottom dock);

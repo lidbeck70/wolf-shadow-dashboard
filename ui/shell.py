@@ -23,6 +23,7 @@ parts_css() är byggstenarna (PR 15, §3.5.7–§3.5.19) — det ui/components i
     med mörk text och samma form; undantagen: osparat är bärnsten, "Ja, ta bort" är röd
   · huvudraden (head_<sida>), tryckkortets osynliga knapp (tapc_<nyckel>), länkraderna (links_<nyckel>),
     st.metric som rutor (kpis_<sida>), ljusrutnätets kolumner, nyckeltalsremsan och skelettets skimmer
+  · tabellerna (tbl_<nyckel>, ui/tables.CSS, PR 24): tonad högerkant på telefonen, reglaget 44 px
 nav_js() är nav-skriptet: centrerar valt chip, till toppen vid ny sida och vid tryck på aktiv flik / "▲ Till
 toppen", data-jump och osparat-rutan. Det ritas i skalet med st.html (nav_script) och innehåller aldrig '<'.
 Inga widgetar, nycklar eller etiketter ändras — allt här är CSS och ett skript.
@@ -34,7 +35,7 @@ import re
 
 import streamlit as st
 
-from ui import nav
+from ui import nav, tables
 from ui.nav import TABS_KEY
 from ui.tokens import ACCENT, AMBER, APP_BG, BG, BG_ALT, BG_CARD, BORDER_FAINT, MUTED, NOTE, PURPLE, RED, TEXT, tint
 
@@ -515,7 +516,7 @@ button[kind="primary"]:not(:disabled), button[kind="primaryFormSubmit"]:not(:dis
     .wolf-skel {{ animation: none; }}
     {_sel(BTN_ALL, ":active")}, {TAPC}:active [data-testid="stMarkdownContainer"] > div {{ transform: none; }}
 }}
-"""
+{tables.CSS}"""
 
 
 # ── Inloggningen och låset (PR 17, §4.1, §4.9) ───────────────────────────────

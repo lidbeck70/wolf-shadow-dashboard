@@ -9,6 +9,7 @@ data/watchlist.json (bara inmatningar — läget skrivs aldrig vid ritning).
   Min bevakning      Aktie · Strategi · Läge · Strategins ord · Avstånd · Entry/Stopp · Körd · Sedan · Vid tillägg,
                      och per rad → Thor (strategin förvald) och ✕ Ta bort. 💲 Hämta kurser lägger kursen bredvid
                      (bara i sessionen). Egna nivåer och en anteckning per rad. ✕ Ta bort går via en bekräftelse.
+                     Tabellen visar huvudspalterna först (PRIMARY) — "Visa alla kolumner" visar resten.
   Nära köp nu        Thors BEVAKA-rader — strategins eget "nästan" — de första per strategi i listans ordning,
                      med 👀 för att bevaka. Svarar på frågan även innan något är bevakat.
 """
@@ -18,6 +19,12 @@ from typing import Optional
 
 AUTO_TOP = 5                                # Nära köp nu: rader per strategi
 _PRICES = "_watch_prices"                   # {ticker: (kurs, datum)} — bara sessionen, sparas aldrig
+# Min bevakning på telefonen (ui/tables, §3.5.15), i den här ordningen: läget och avståndet först (telefonens första
+# skärm), nivåerna och kurserna när du tryckt 💲 Hämta kurser, sedan Strategi (skiljer två rader för samma aktie),
+# strategins ord och din anteckning — varje spalt ett test läser. Körd, Sedan och Vid tillägg står bakom "Visa alla
+# kolumner", som visar alla i tabellens ordning. Bara visningen: tabellens data är hel och i samma ordning.
+PRIMARY = ("Aktie", "Läge", "Avstånd", "Entry/Stopp", "Kurs", "Till entry", "Över stopp", "Strategi", "Strategins ord",
+           "Anteckning")
 
 
 # ── Rena funktioner ─────────────────────────────────────────────────────────
@@ -203,6 +210,7 @@ def render_watch_page() -> None:
 def _mine(st, pd, items: list, rows: list, data: dict) -> None:
     """Min bevakning: tabellen och knapparna per rad."""
     from thor import registry as reg
+    from ui import tables
     from ui.components import empty_state, section
     from ui.links import go
     st.markdown(section("Min bevakning"), unsafe_allow_html=True)
@@ -218,7 +226,7 @@ def _mine(st, pd, items: list, rows: list, data: dict) -> None:
             except Exception as exc:
                 st.warning(f"Kurserna gick inte att hämta: {exc}")
     df = pd.DataFrame(table_rows(items, rows, data, st.session_state.get(_PRICES))).fillna("")
-    st.dataframe(df.style.map(lage_color, subset=["Läge"]), hide_index=True, width="stretch")
+    tables.table(df, "watch", PRIMARY, style=lambda d: d.style.map(lage_color, subset=["Läge"]))
     for it in items:
         t, label = it["ticker"], reg.label(it["strategy"])
         a, b = st.columns([3, 1])
