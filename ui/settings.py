@@ -68,6 +68,7 @@ def render_settings_page() -> None:
 
     import storage
     import storage_ui
+    from ui import tables
     from ui.components import note, page_header
     page_header("⚙️ Inställningar", "Kapital, regler, länkadress och datakällor på ett ställe. Sidan visar och "
                 "sparar — den ändrar inga regler.")
@@ -88,12 +89,14 @@ def render_settings_page() -> None:
          "Sidornas egna fält finns kvar för tillfälliga räkningar. Gamla Viking läser det aldrig.")
 
     st.markdown("#### Reglerna (låsta)")
-    st.dataframe(pd.DataFrame(rules_rows()), hide_index=True, width="stretch")
+    # Ett kort per strategi ur samma rader (§3.5.15 regel 3) — varje värde ordagrant och helt. Förut en tabell
+    # som var 2 276 px bred på telefonen, med varje värde avklippt.
+    st.markdown(tables.cards_html(rules_rows(), "Strategi"), unsafe_allow_html=True)
     note("Ur strategy_rules.py och allokeraren — den enda sanningen. Ändras bara där, med ditt beslut.")
 
     st.markdown("#### Benchmark och standardbolag")
-    st.dataframe(pd.DataFrame([{"Sida": a, "Benchmark": b, "Standardbolag": c} for a, b, c in BENCHMARKS]),
-                 hide_index=True, width="stretch")
+    tables.table(pd.DataFrame([{"Sida": a, "Benchmark": b, "Standardbolag": c} for a, b, c in BENCHMARKS]),
+                 "benchmarks")
     note("Ändras inte härifrån: benchmark är indata till grindarna för relativ styrka.")
 
     st.markdown("#### Länkadress i larmen")

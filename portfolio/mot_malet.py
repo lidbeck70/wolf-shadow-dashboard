@@ -154,6 +154,7 @@ def render_mot_malet_page() -> None:
 
     import journal_stats as js
     from thor import cards
+    from ui import tables
     from ui.components import note, page_header
     from ui.links import go
     from ui.tokens import CYAN, DIM, GOLD, GREEN, RED
@@ -191,8 +192,8 @@ def render_mot_malet_page() -> None:
          "inte in — kontovärdet över tid finns inte i panelen.")
     st.markdown("#### Per strategi — papper och journal")
     rows = strategy_rows(d.get("paper"), trades)
-    if rows:
-        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+    if rows:                               # ui/tables: Strategi fastnålad, None visas som "—" (aldrig "None")
+        tables.table(pd.DataFrame(rows), "goal")
     else:
         note("Inga affärer än — varken på papper eller i journalen.")
     st.button("📊 Papperskonton →", key="goal_paper", on_click=go, args=("paper",), width="stretch")
