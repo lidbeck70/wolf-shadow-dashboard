@@ -11,6 +11,10 @@ Thors underlag (Rick Rule + Insider + Scorecard) fick läsas in kort för kort. 
                                ark som inte kan ta emot svar härifrån, med skälet
   live_row(sheet, …)           raden i sessionens lager — aldrig en kopia (Tiggres positioner i registret är vyer)
   missing_now(…)               det som fortfarande saknas för köpbeslut per ark, efter inskrivningen
+  find_company(…)              första arket (av de givna) där ett bolag finns, och formen raden står på — importens
+                               "Öppna XXX och läs in där" när svaret gäller ett annat bolag (exakt rad först; aldrig
+                               en bar rad som kan vara ett annat bolag, same_listing)
+  unsure_company(…)            en rad som KANSKE är bolaget (utan registrets karta) — importen säger det, flyttar inget
 
 Inget sparas härifrån — kvittot i importen har en 💾-knapp för de ark som fick svar. Inget nätverk utöver det
 storage.session_load redan gör när ett lager läses första gången i sessionen.
@@ -326,6 +330,84 @@ def plan(exp, targets: dict, reset: tuple, stores: Optional[dict], load_failed: 
                 p.blocked[sheet] = (f"{cat.SHEETS[sheet].label} kunde inte läsas i den här sessionen ({err}) — "
                                     f"ladda om sidan innan något skrivs in där")
     return p
+
+
+def _tickers_in(sheet: str, stores: dict) -> list:
+    """Tickrarna arkets rader står på (Durrett: bolagen i companies)."""
+    data = (stores or {}).get(cat.SHEETS[sheet].store)
+    if not isinstance(data, dict):
+        return []
+    if sheet in cat.CONFIDENCE_SHEETS:
+        comps = data.get("companies")
+        return [str(c.get("ticker") or t) for t, c in comps.items() if isinstance(c, dict)] if isinstance(comps, dict) \
+            else []
+    rows = data.get(cat.SHEETS[sheet].bucket)
+    return [str(r.get("ticker") or "") for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
+
+
+def same_listing(a, b, sheet_map: Optional[dict] = None) -> bool:
+    """Samma notering utan gissning: exakt samma ticker, eller samma arkformer (importer.same_company) när ingen av
+    dem kan vara ett annat bolag (ambiguous åt båda hållen). Utan registrets karta är en bar 'TEL' alltså inte
+    Telenor TEL.OL, och en bar 'BOL' inte säkert BOL.ST — med kartan avgör den. Importens "Öppna XXX" och det
+    flyttade svaret går bara dit."""
+    from review import importer as im
+    x, y = str(a or "").strip().upper(), str(b or "").strip().upper()
+    if not x or not y:
+        return False
+    if x == y:
+        return True
+    return im.same_company(x, y, sheet_map) and not ambiguous(x, y, sheet_map) and not ambiguous(y, x, sheet_map)
+
+
+def find_company(ticker: str, sheets, stores: Optional[dict], sheet_map: Optional[dict] = None) -> Optional[tuple]:
+    """(ark, tickern raden står på) för det första av arken där bolaget finns, eller None. En rad med exakt samma
+    ticker först, annars samma notering i arkformerna (same_listing): 'BOL' i svaret når raden 'BOL.ST' med
+    registrets karta, en utländsk notering bara sin egen form — och utan kartan aldrig en bar rad som kan vara ett
+    annat bolag ('TEL' för TEL.OL). Scorecardet: kortet card_key väljer. Bara läsning."""
+    t = str(ticker or "").strip().upper()
+    if not t or not isinstance(stores, dict):
+        return None
+    for sheet in sheets or ():
+        if sheet not in cat.SHEETS:
+            continue
+        sheet = "confidence" if sheet in cat.CONFIDENCE_SHEETS else sheet
+        try:
+            if sheet == "scorecard":
+                key, _shown, found = card_key(t, stores, sheet_map)
+                on = (card_on(key, found) or t) if key else ""
+                if on and same_listing(on, t, sheet_map):
+                    return sheet, on
+                continue
+            rows = [x.strip().upper() for x in _tickers_in(sheet, stores) if x.strip()]
+            hit = (next((x for x in rows if x == t), None)
+                   or next((x for x in rows if same_listing(x, t, sheet_map)), None))
+        except Exception:                               # ett trasigt lager får aldrig fälla importen
+            continue
+        if hit:
+            return sheet, hit
+    return None
+
+
+def unsure_company(ticker: str, sheets, stores: Optional[dict], sheet_map: Optional[dict] = None) -> Optional[tuple]:
+    """(ark, raden) för en rad som KANSKE är bolaget: samma arkformer men inte säkert samma notering utan registrets
+    karta ('TEL' för TEL.OL, 'BOL.ST' för 'BOL'). Importen flyttar inget dit — den säger bara att raden finns. None
+    när find_company hittar bolaget eller ingen sådan rad finns. Bara läsning."""
+    from review import importer as im
+    t = str(ticker or "").strip().upper()
+    if not t or not isinstance(stores, dict) or find_company(t, sheets, stores, sheet_map):
+        return None
+    for sheet in sheets or ():
+        if sheet not in cat.SHEETS or sheet == "scorecard":
+            continue
+        sheet = "confidence" if sheet in cat.CONFIDENCE_SHEETS else sheet
+        try:
+            hit = next((x.strip().upper() for x in _tickers_in(sheet, stores)
+                        if x.strip() and im.same_company(x, t, sheet_map)), None)
+        except Exception:
+            continue
+        if hit:
+            return sheet, hit
+    return None
 
 
 def resolved_targets(p: Plan, sheets) -> dict:

@@ -11,6 +11,9 @@ review/importer.py — ChatGPT-svaret tillbaka in i arket: kontrollera, visa ski
                           en tom plats svaret hoppade över tas bort, och källan står på katalysatorns id
                           ('catalysts.#<id>.date') — inte på platsen i listan
   widget_keys(…)          widgetnycklarna som ska släppas så att kortet ritas om med de nya värdena
+  other_tickers(…)        svarets rader för ett annat bolag, per bolag — importen visar EN ruta per bolag i stället
+                          för en rad per avvisad rad; split_issues delar check:s issues likadant (issues är orörda)
+  answer_sheets(…)        arken ett annat bolags rader pekar på — där importen letar efter bolaget
 
 Inget sparas härifrån — 💾 Spara sköter GitHub som vanligt. Rena funktioner, ingen Streamlit.
 """
@@ -313,6 +316,83 @@ def check(answers: list, exp, writable: Optional[set] = None, blocked: Optional[
                             warnings=notes)
     res.changes = [ch for _line, ch in picked.values()]
     return res
+
+
+# ── Annan ticker: en ruta per bolag ──────────────────────────────────────────
+OTHER_TICKER = "annan ticker ("          # början på check:s skäl för en rad med ett annat bolags ticker
+
+
+def same_company(a, b, sheet_map: Optional[dict] = None) -> bool:
+    """Samma bolag i arkformerna (_forms, som check): 'BOL.ST' och 'BOL' ja, 'EQX' och EQX.TO nej — och med
+    registrets karta är 'TEL' inte Telenor TEL.OL."""
+    return bool(_forms(a, sheet_map) & _forms(b, sheet_map))
+
+
+def other_tickers(answers: list, exp) -> dict:
+    """{ticker: antal rader} för svarets rader med ett annat bolags ticker än underlaget exp — samma prövning som
+    check (underlagets karta). Tomma rader räknas med och varje rad en gång; ett bolag i två former ('BOL' och
+    'BOL.ST') är en grupp under formen som stod först. Flest rader först, sedan svarets ordning. Tom ticker räknas
+    som kortets (check godtar den)."""
+    smap = getattr(exp, "sheet_map", None)
+    want = _forms(getattr(exp, "ticker", ""), smap)
+    if not want:
+        return {}
+    seen: dict = {}                                   # ticker → former (en gång per form)
+    groups: dict = {}                                 # gruppens namn → [former, rader, första plats]
+    for i, a in enumerate(answers or []):
+        t = str(getattr(a, "ticker", "") or "").strip().upper()
+        if not t:
+            continue
+        fs = seen[t] if t in seen else seen.setdefault(t, _forms(t, smap))
+        if fs & want:
+            continue
+        hit = next((g for g in groups.values() if g[0] & fs), None)
+        if hit is None:
+            groups[t] = [set(fs), 1, i]
+        else:
+            hit[0] |= fs
+            hit[1] += 1
+    order = sorted(groups.items(), key=lambda kv: (-kv[1][1], kv[1][2]))
+    return {name: g[1] for name, g in order}
+
+
+def split_issues(issues: list) -> tuple:
+    """(annan ticker, övriga) ur check:s res.issues, i samma ordning — inget skäl ändras. Raderna med annan ticker
+    visas som en ruta per bolag (other_tickers), de övriga listas som förr."""
+    other = [i for i in issues or [] if str(i[2] if len(i) > 2 else "").startswith(OTHER_TICKER)]
+    rest = [i for i in issues or [] if not str(i[2] if len(i) > 2 else "").startswith(OTHER_TICKER)]
+    return other, rest
+
+
+def _sheet_of(key: str, fields: dict) -> Optional[str]:
+    """Arket en fältnyckel pekar på: prefixet ('confidence:…', 'rule:…'), annars underlagets fält. Durrett och Wolf
+    Asymmetry delar raden — båda blir 'confidence'."""
+    k = str(key or "").strip()
+    if not k:
+        return None
+    sheet = k.split(":", 1)[0] if ":" in k else None
+    if sheet is None:
+        f, _why = resolve(k, fields)
+        sheet = f.sheet if f is not None else None
+    if sheet not in cat.SHEETS:
+        return None
+    return "confidence" if sheet in cat.CONFIDENCE_SHEETS else sheet
+
+
+def answer_sheets(answers: list, exp, ticker: str) -> list:
+    """Arken svarets rader för bolaget ticker pekar på (Fältnyckeln), i svarets ordning — tomma rader räknas, en
+    nyckel som inte går att placera hoppas över. Tom lista när ingen rad går att placera."""
+    smap = getattr(exp, "sheet_map", None)
+    want = _forms(ticker, smap)
+    fields = getattr(exp, "fields", None) or {}
+    out: list = []
+    for a in answers or []:
+        if not want or not (_forms(getattr(a, "ticker", ""), smap) & want):
+            continue
+        s = _sheet_of(getattr(a, "key", ""), fields)
+        if s and s not in out:
+            out.append(s)
+    return out
 
 
 # ── Skriva in ────────────────────────────────────────────────────────────────
