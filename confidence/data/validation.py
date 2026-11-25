@@ -22,7 +22,11 @@ ERROR, WARN, MISSING = "error", "warn", "missing"
 # (engines/durrett/balance_sheet.annual_burn) läser dem.
 _MAY_BE_NEGATIVE = {"net_debt_ebitda", "npv_musd", "npv_stress_price_musd", "npv_stress_capex_musd",
                     "irr_stress_price_pct", "roic_pct", "fcf_yield_pct", "ebitda_margin_pct",
-                    "free_cash_flow_musd", "operating_cash_flow_musd", "working_capital_musd"}
+                    "free_cash_flow_musd", "operating_cash_flow_musd", "working_capital_musd",
+                    # Kurs mot MA200 och kursutveckling 6 mån är negativa för en aktie i nedtrend — Durretts
+                    # momentumtabell har redan stegen −10 % → 35 och −25 % → 20, och "Hämta" räknar dem så
+                    # (ägarens beslut 2026-11-25: tillåt negativa; tabellen, gränserna och vikterna oförändrade)
+                    "price_vs_ma200_pct", "momentum_6m_pct"}
 
 # Fält utan vilka en stage inte kan få poäng i sin pelare (rapporteras som MISSING)
 _CORE_BY_STAGE = {
